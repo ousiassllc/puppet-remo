@@ -92,12 +92,12 @@ graph TD
 
 | ドキュメント | パス | 概要 |
 |------------|------|------|
-| 機能要件 | `docs/requirements/functional.md` | （作成後に確定） |
-| 非機能要件 | `docs/requirements/non-functional.md` | （作成後に確定） |
-| アーキテクチャ設計 | `docs/architecture/overview.md` | （作成後に確定） |
-| ER / データモデル | `docs/architecture/er.md` | （作成後に確定） |
-| API 仕様 | `docs/api/endpoints.md` | （作成後に確定） |
-| コンポーネント設計 | `docs/components/overview.md` | （作成後に確定） |
+| 機能要件 | [`docs/requirements/functional.md`](requirements/functional.md) | ユースケースと機能要件（接続・認可、操作リース、MCP ツール、内蔵エージェント、Web UI、ホスト GUI、監査、設定） |
+| 非機能要件 | [`docs/requirements/non-functional.md`](requirements/non-functional.md) | 脅威モデル、性能・セキュリティ（自己保護、API キー、プロンプトインジェクション対策）、可用性、プライバシー、未決事項 |
+| アーキテクチャ設計 | [`docs/architecture/overview.md`](architecture/overview.md) | 技術選定、構成図、レイヤー、GUI／リモートのルーター分離、主要フロー、画面配信、Judge、HALT の適用、ディレクトリ構成 |
+| ER / データモデル | [`docs/architecture/er.md`](architecture/er.md) | SQLite のテーブル定義（clients、client_tokens、connection_requests、settings、agent_tasks、audit_logs、audit_thumbnails）と保守処理 |
+| API 仕様 | [`docs/api/endpoints.md`](api/endpoints.md) | MCP ツール、Web UI のルート、WebSocket のプロトコル、JSON API、ホスト GUI のルートと SSE、エラー形式 |
+| コンポーネント設計 | [`docs/components/overview.md`](components/overview.md) | パッケージの責務・依存、Go インターフェース、goroutine と状態の所有者、起動・終了順序、テスト方針（モックと実機スモーク） |
 
 ## マイルストーン / リリース計画
 
@@ -136,3 +136,4 @@ graph TD
 | 1.0 | 2026-10-28 | 新規作成 | 初版 |
 | 1.1 | 2026-10-28 | ライブ画面の形式を JPEG のみに修正 | アーキテクチャ決定（純 Go・cgo なし）との整合 |
 | 1.2 | 2026-10-29 | ホスト内蔵エージェント（OpenAI `computer` ツール）を主役に追加、MCP は低レベルツールと `run_task` を併存、M4 を追加 | 「ホストが AI と直接通信し、指示を受けて実行する」という要件の確認 |
+| 1.3 | 2026-10-29 | ドキュメントマップを確定（全 6 文書のリンクと要約） | 仕様書の完成 |
