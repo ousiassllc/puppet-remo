@@ -4,12 +4,14 @@
 
 ## 設計方針
 
-- **単一の Go プロセス**がすべてを担う。ホスト GUI・Web UI・MCP・画面キャプチャ・入力注入・永続化を 1 つの Wails アプリに内蔵する
+- **単一の Go プロセス**がすべてを担う。ホスト GUI・Web UI・MCP・内蔵エージェント・画面キャプチャ・入力注入・永続化を 1 つの Wails アプリに内蔵する
 - **フロントエンドは HALT（HTMX + Atomic Design + Lit + Templ）**。SPA を作らず、サーバー（Go）が UI を制御する。状態駆動レンダリング（操作可能なアクションだけを HTML に出す）を徹底する
 - **ホスト GUI は外部から到達できない**。ホスト GUI（トークン発行・承認・設定・キルスイッチ解除）は Wails のアセットハンドラ経由でプロセス内だけで配信し、ソケットを開かない。tailnet に公開するルーターは別にする（セキュリティ上の最重要分離）
 - **OS 依存部はインターフェースの背後に置く**（`platform` パッケージ）。コアは OS 非依存でテストできる（[NFR-O03](../requirements/non-functional.md)）
 - **純 Go（cgo なし）**。画像は JPEG のみ（配信・サムネイルとも）
 - tailnet への参加は**ホストの tailscaled** に任せ、本アプリは LocalAPI クライアントになる
+- **内蔵エージェントは「別の操作主体」であり、安全機構は共通**。OpenAI の `computer` ツールが返すアクションを 1 件ずつ、MCP 直接・Web UI と同じ入力層（InputGuard → リース → キルスイッチ → 監査）に通す。モデルが生成したコードをホストで実行する方式（`exec_py` 等）は採らない。ほかに承認を省略できる経路を作らない（[NFR-S15](../requirements/non-functional.md)）
+- **外部通信は GitHub（更新）と OpenAI（エージェント有効時のみ）**。OpenAI API キーは Windows 資格情報マネージャーにだけ置く
 
 ## 技術選定
 
@@ -31,6 +33,10 @@
 | 入力注入 | Win32 `SendInput`（`golang.org/x/sys/windows`） | cgo 不要。`type` は `KEYEVENTF_UNICODE` で日本語を直接送る |
 | UI Automation | COM `IUIAutomation`（`go-ole` 等） | `get_ui_tree` 用 |
 | 画像エンコード | 標準 `image/jpeg` | 純 Go 制約のため JPEG のみ |
+| OpenAI クライアント | `github.com/openai/openai-go/v3` | v3.90.0 で確認済み: `responses.ComputerToolParam`（`{type:"computer"}`）、`ResponseComputerToolCall` の `Actions`（`click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot`）と `PendingSafetyChecks`、`ResponseComputerToolCallOutputItem` の `AcknowledgedSafetyChecks`。旧 `computer_use_preview`（`environment: "windows"` 等を指定する旧方式）は使わない |
+| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` を候補。v0.2.8 を確認。cgo 不要かは実装時に確認） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く |
+| Judge（判定補助） | 既定はルールベース（自前） | 外部モデル（Jev 等）は未決。TypeSafe の API に Go SDK は無く、使う場合は HTTP（`POST https://api.typesafe.ai/v1/systemone`）を直接呼ぶ |
+| 検討したが採らない | Cua Driver（`trycua/cua`、Rust 製、MIT） | CLI・MCP・型付き SDK 経由で OS 操作を提供するが、本アプリは同一プロセス・純 Go で InputGuard・リース・監査を一貫して制御するため `platform` 層を自前実装する |
 | 自動更新 | GitHub Releases + Ed25519 署名検証 | [NFR-S10](../requirements/non-functional.md) |
 
 ## システム構成図
@@ -40,6 +46,9 @@ graph TD
     subgraph Clients["tailnet 上のクライアント"]
         MCPC["MCP クライアント"]
         BR["ブラウザ"]
+    end
+    subgraph Cloud["インターネット"]
+        OAI["OpenAI API<br/>(Responses / computer ツール)"]
     end
     subgraph Host["ホスト (Windows) — 単一プロセス puppet-remo"]
         TS["tailscaled"]
@@ -59,6 +68,8 @@ graph TD
             AUDIT["監査 (Audit)"]
             TOOLS["操作ツール (Control)"]
             STREAM["画面配信 (Streamer)"]
+            AGENT["内蔵エージェント (Agent)<br/>タスク実行ループ"]
+            JUDGE["判定 (Judge)<br/>ルールベース + 差し込み可"]
             BUS["イベントバス"]
         end
         subgraph Plat["platform (Windows)"]
@@ -67,6 +78,7 @@ graph TD
             WNDW["WindowManager"]
             UIA["UIAutomation"]
             CLIP["Clipboard"]
+            SECRET["SecretStore<br/>(資格情報マネージャー)"]
         end
         DB[("SQLite")]
     end
@@ -76,6 +88,14 @@ graph TD
     MW -- "WhoIs" --> TS
     MW --> AUTHZ
     RR --> TOOLS
+    RR --> AGENT
+    AGENT --> JUDGE
+    AGENT --> TOOLS
+    AGENT --> LEASE
+    AGENT --> AUDIT
+    AGENT --> SECRET
+    AGENT -- "HTTPS (指示・スクリーンショット・履歴)" --> OAI
+    GR --> AGENT
     RR --> STREAM
     WIN --> GR
     GR --> LEASE
@@ -104,10 +124,11 @@ HALT のレイヤードアーキテクチャを採用し、OS アダプタとプ
 graph TD
     H["web/handler・mcp・ws<br/>(プロトコル入口)"]
     T["web テンプレート<br/>atoms / molecules / organisms / pages"]
-    S["service<br/>(Authz, Lease, Approval, Control, Streamer, Audit, Updater)"]
+    S["service<br/>(Authz, Lease, Approval, Control, Agent, Judge, Streamer, Audit, Updater)"]
     R["repository<br/>(SQLite)"]
     P["platform<br/>(interface + windows 実装)"]
     TN["tailnet<br/>(LocalAPI クライアント)"]
+    OA["openai<br/>(Responses API クライアント)"]
     D["domain<br/>(純粋なモデル・ルール)"]
     H --> S
     H --> T
@@ -118,15 +139,18 @@ graph TD
     R --> D
     P --> D
     TN --> D
+    S --> OA
+    OA --> D
 ```
 
 | レイヤー | 責務 | 依存してよい先 |
 |---------|------|--------------|
 | `domain` | クライアント、リース状態機械、承認モード、座標変換、ツール引数、エラー種別などの純粋なモデルとルール | なし |
 | `repository` | SQLite へのアクセス（クライアント、トークン、設定、接続要求、監査ログ） | `domain` |
-| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・クリップボード・オーバーレイ補助のインターフェースと Windows 実装 | `domain` |
+| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・クリップボード・資格情報（SecretStore）・オーバーレイ補助のインターフェースと Windows 実装 | `domain` |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs + 10 秒キャッシュ、Listener 管理） | `domain` |
-| `service` | ユースケース。リース、承認、操作ツール、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet` |
+| `openai` | OpenAI Responses API のクライアント（`computer` ツールの要求・応答、タイムアウト、キーの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
+| `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai` |
 | `web/handler`、`mcp`、`ws` | HTTP / MCP / WebSocket の入口。`repository` と `platform` を直接使わない | `service`、`domain` |
 | `web` テンプレート | Templ（Atomic Design） | `domain`（表示用データ） |
 
@@ -134,7 +158,7 @@ graph TD
 
 | ルーター | 配信経路 | 提供するもの | 認可 |
 |---------|---------|-------------|------|
-| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、承認ダイアログ、監査ログ、設定、更新）、`/events`（SSE） | プロセス内到達のみ。ネットワークからは到達不能 |
+| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/events`（SSE） | プロセス内到達のみ。ネットワークからは到達不能 |
 | **リモートルーター** | tailnet IP の TCP ポート（FR-S01、既定 8765） | `/mcp`、`/viewer`（Web UI）、`/ws/screen`、`/api/v1/*`、静的ファイル | ミドルウェア連鎖（下図） |
 
 2 つのルーターは `templ` コンポーネント（atoms / molecules）を共有できるが、ハンドラは共有しない（ホスト専用操作がリモートに露出しないことを構造で保証する）。
@@ -163,6 +187,8 @@ sequenceDiagram
     end
 ```
 
+`/mcp` の手前には、本アプリ自前の Host / Origin 検証ミドルウェア（NFR-S02）を必ず置く。MCP Go SDK の `StreamableHTTPOptions` には localhost 向けの保護（`DisableLocalhostProtection`、`CrossOriginProtection`）があるが、本アプリは tailnet IP で Listen するため SDK の保護には依存せず、SDK 側の設定の挙動は実装時に確認する。また SDK の `SessionTimeout`（MCP セッションの寿命）とリースのアイドル解放（FR-S04、既定 5 分）は別のものとして独立に設定する。
+
 ## 主要フロー
 
 ### MCP ツール呼び出し（リース取得と承認を含む）
@@ -176,7 +202,7 @@ sequenceDiagram
     participant G as ホスト GUI 承認ダイアログ
     participant I as InputGuard / Injector
     participant AU as Audit
-    C->>M: tools/call click(x, y)
+    C->>M: tools/call left_click(x, y)
     M->>L: Ensure(session) (リース未保持)
     alt 他者が保持
         L-->>M: lease_held_by_other
@@ -195,6 +221,61 @@ sequenceDiagram
         M-->>C: 結果
     end
 ```
+
+### 内蔵エージェントのタスク実行
+
+```mermaid
+sequenceDiagram
+    participant C as MCP クライアント
+    participant M as /mcp
+    participant A as Agent (TaskRunner)
+    participant L as LeaseManager
+    participant P as Approval / ホスト GUI
+    participant J as Judge
+    participant O as OpenAI API
+    participant I as InputGuard / Injector
+    participant AU as Audit
+    C->>M: tools/call run_task(prompt)
+    M->>A: Start(client, prompt)
+    alt 無効 / キー未登録 / クライアント未許可
+        A-->>M: agent_disabled
+    else 実行可能
+        A->>L: Acquire(kind=agent) (承認モードを適用)
+        L->>P: 承認が必要なら 60 秒で確認
+        P-->>L: 許可 / 拒否 / タイムアウト
+        A-->>M: task_id, status (即時)
+        M-->>C: task_id
+        loop ステップ上限・時間上限まで
+            A->>O: Responses(computer ツール, 指示 / 画面)
+            O-->>A: computer_call (actions[], pending_safety_checks)
+            opt pending_safety_checks がある
+                A->>P: 安全チェックの内容を表示 (60 秒)
+                P-->>A: 許可 / 拒否 (拒否は failed)
+            end
+            loop actions[] を順に
+                A->>J: Assess(action, 対象ウィンドウ)
+                opt require_approval
+                    J->>P: 個別承認 (60 秒)
+                    P-->>J: 許可 / 拒否
+                end
+                A->>I: 座標変換 → InputGuard → 実行
+                I-->>A: ok / input_blocked (ブロックは failed)
+                A->>AU: アクション・判定・サムネイル
+            end
+            A->>O: computer_call_output (新しい画面, acknowledged_safety_checks)
+        end
+        A->>L: Release
+    end
+    C->>M: tools/call get_task(task_id)
+    M-->>C: 状態・ステップ数・最終回答
+```
+
+- **ループの 1 ステップ**は Responses API の呼び出し 1 回。`computer_call` が返らなくなったら最終回答として `completed` にする（[FR-G04](../requirements/functional.md)）
+- **画面**は MCP の `screenshot` と同じキャプチャを使い、FR-M16 の縮小規則で縮小した PNG を `detail: "original"` で送る。モデルが返す座標は縮小座標として物理座標に戻す（OpenAI のガイドが求める「縮小した場合はモデルの座標を元の座標空間に戻す」に一致）
+- **すべてのアクションを 1 件ずつ検査**する。ブロック・拒否が 1 回でも起きたら、残りの `actions[]` は実行せずタスクを `failed` にする（FR-G07）
+- **中断**は、実行中の OpenAI 呼び出しの `context` を取り消し、押下中のキー・ボタンを解放し、リースを解放する。キルスイッチ・リース剥奪・`cancel_task` はすべて同じ経路（FR-G10）
+- **状態の永続化**: タスクは状態遷移のたびに `agent_tasks` を更新する。ステップは監査ログの行として `task_id` と連番付きで保存する（[ER](er.md)）。実行状態（ループ・リース）はメモリのみで、再起動時に `running` / `pending_approval` のタスクを `aborted` にする（NFR-A08）
+- **会話の継続方式**（`previous_response_id` を使うか、全履歴を再送するか）と OpenAI 側の保存（`store`）は、実装時に OpenAI の最新仕様とデータ保持の扱い（NFR 未決事項）を確認して確定する
 
 ### Web UI のライブ表示と手動操作
 
@@ -237,7 +318,7 @@ sequenceDiagram
 
 ### キルスイッチ
 
-発動経路（トレイ、ダッシュボード、グローバルホットキー）はいずれも `KillSwitch.Trigger()` を呼ぶ。処理順は、(1) 状態を `active` に永続化、(2) 全リース剥奪、(3) リモートルーターのリクエストを 503 `kill_switch_active` で拒否、(4) 全 MCP・WebSocket セッションを切断、(5) オーバーレイ消去、(6) 監査記録。順序は NFR-P05（1 秒以内）を満たすため同期で行い、永続化は先頭に置いて再起動後も維持する（[NFR-S07](../requirements/non-functional.md)）。
+発動経路（トレイ、ダッシュボード、グローバルホットキー）はいずれも `KillSwitch.Trigger()` を呼ぶ。処理順は、(1) 状態を `active` に永続化、(2) 全リース剥奪、(3) 実行中のエージェントのタスクを中断（OpenAI 呼び出しの取り消し、押下中入力の解放）、(4) リモートルーターのリクエストを 503 `kill_switch_active` で拒否、(5) 全 MCP・WebSocket セッションを切断、(6) オーバーレイ消去、(7) 監査記録。順序は NFR-P05（1 秒以内）を満たすため同期で行い、永続化は先頭に置いて再起動後も維持する（[NFR-S07](../requirements/non-functional.md)）。
 
 ## 画面配信パイプライン
 
@@ -263,9 +344,27 @@ graph TD
   1. 注入先の座標にあるトップレベルウィンドウ、またはフォアグラウンドウィンドウが**自プロセスのもの**ならブロック（`input_blocked`）
   2. 管理者権限ウィンドウ（UIPI）が対象なら `input_blocked`
   3. キルスイッチ中・リース非保持なら拒否
+  4. エージェントの入力は、上記に加えて Judge（次節）を通す。InputGuard はすべての保持者種別（`mcp` / `web` / `agent`）に同じ規則を適用する
 - **自ウィンドウのキャプチャ除外**: ホスト GUI・承認ダイアログ・オーバーレイは Wails の `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）を有効にする。AI のスクリーンショットにも Web UI のライブ画面にも写らない
 - **オーバーレイ**: モニターごとに 1 ウィンドウ。枠なし・透過背景・最前面・`IgnoreMouseEvents`（クリック透過）・タスクバー非表示。リースの保持・解放イベントで表示・消去する
 - **承認ダイアログ**: 承認要求ごとに専用の Wails ウィンドウを開く（Go 側でウィンドウ生成）。内容は GUI ルーターが Templ で描画し、「許可 / 拒否」は HTMX の `hx-post` で GUI ルーターへ送る。操作は入力ガードにより AI から押せない
+
+## Judge（判定インターフェース）
+
+エージェントの各アクションの直前に、実行してよいかを助言させるインターフェース。
+
+```go
+type Verdict int // Allow < RequireApproval < Deny の順に厳しい
+
+type Judge interface {
+    Assess(ctx context.Context, a Action, w WindowInfo) (Verdict, error)
+}
+```
+
+- **合成**: 複数の Judge は `Chain` で束ね、**最も厳しい判定**を採る。したがって後から差し込む Judge が `Allow` を返しても、他の判定を緩めることはできない（引き上げ専用）
+- **fail-closed**: `error`・タイムアウト・低 confidence は `RequireApproval` に変換する。外部に到達できないときに「許可」にしない
+- **既定の `RuleJudge`**: 対象ウィンドウ（InputGuard が解決したウィンドウ）のプロセス名が `agent.deny_processes` に一致すれば `Deny`、`agent.approve_processes` に一致すれば `RequireApproval`、それ以外は `Allow`（FR-G12、FR-S13）
+- **外部判定（Jev 等）を足す場合の制約**（未決。決まるまで実装しない）: 入力はテキストと JSON（アクションの JSON、ウィンドウのタイトル・プロセス名、UI Automation の要素名）に限る。座標や数値の判定は任せない（Jev の jaggedness ページが数値・算術の精度が弱いと明記している）。画像入力は「Dreamer-ready」で `TypeSafe-Danger-Zone-Images: true` ヘッダーが必要なため使わない。プロンプトインジェクションの検知精度は公開評価で 74.1%（n=116）にとどまるため、**防御の唯一の主体にしない**。送信データと通信先は [NFR](../requirements/non-functional.md) の未決事項に従って追記する
 
 ## HALT の適用
 
@@ -317,9 +416,10 @@ puppet-remo/
 │   ├── repository/               # SQLite (clients, tokens, settings, ...)
 │   │   └── migrations/           # 埋め込み SQL マイグレーション
 │   ├── platform/                 # interface 定義
-│   │   └── windows/              # capture(DXGI/GDI), input, window, uia, clipboard
+│   │   └── windows/              # capture(DXGI/GDI), input, window, uia, clipboard, secret(資格情報)
 │   ├── tailnet/                  # LocalAPI クライアント、Watcher、Listener 管理
-│   ├── service/                  # authz, lease, approval, control, streamer, audit, updater
+│   ├── openai/                   # Responses API クライアント (Model インターフェース + 実装、モック)
+│   ├── service/                  # authz, lease, approval, control, agent, judge, streamer, audit, updater
 │   ├── mcp/                      # MCP サーバー (ツール定義と service 呼び出し)
 │   ├── ws/                       # WebSocket プロトコル (画面フレーム・入力)
 │   ├── router/                   # gui.go, remote.go
@@ -356,3 +456,4 @@ puppet-remo/
 | 版 | 日付 | 変更内容 | 変更理由 |
 |---|------|---------|---------|
 | 1.0 | 2026-10-28 | 初版作成 | — |
+| 1.1 | 2026-10-29 | 内蔵エージェント（OpenAI `computer` ツール）を追加: 構成図・レイヤー（`openai`、`Agent`、`Judge`、`SecretStore`）、タスク実行フロー、キルスイッチの手順、Judge インターフェース、技術選定（openai-go v3、資格情報）、MCP SDK の保護に関する注記。MCP フローのツール名を `left_click` に更新 | ホスト内蔵エージェントを主役にする決定 |

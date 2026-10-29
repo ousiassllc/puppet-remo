@@ -12,9 +12,10 @@
 | 時刻 | UTC の Unix ミリ秒（`INTEGER`）。表示時にローカル時刻へ変換する |
 | 真偽値 | `INTEGER`（0 / 1）。`CHECK (col IN (0, 1))` を付ける |
 | 列挙値 | `TEXT` + `CHECK (col IN (...))` |
-| 永続化しないもの | **リース**（[NFR-A01](../requirements/non-functional.md)）、**接続中セッション**（監査ログに `session_id` を文字列として記録するのみ）、承認待ち要求、WhoIs キャッシュ、Web UI の閲覧設定（モニター・品質・FPS はブラウザセッション単位） |
+| 永続化しないもの | **リース**（[NFR-A01](../requirements/non-functional.md)）、**接続中セッション**（監査ログに `session_id` を文字列として記録するのみ）、承認待ち要求、WhoIs キャッシュ、Web UI の閲覧設定（モニター・品質・FPS はブラウザセッション単位）、**エージェントの実行状態**（ループ・会話。タスクの記録のみ `agent_tasks` に持つ。[NFR-A08](../requirements/non-functional.md)） |
 | サムネイル | 画像は**ファイル**として `%LOCALAPPDATA%\puppet-remo\thumbs\` に保存し、DB にはパスとサイズを持つ |
 | 改ざん検知 | 設けない（同一ユーザー権限の悪意あるプロセスは脅威モデル外） |
+| シークレット | **OpenAI API キーは DB に保存しない**。Windows 資格情報マネージャーにのみ置く（[NFR-S14](../requirements/non-functional.md)）。`settings`・ログ・監査ログにも値を書かない |
 
 ## 全体 ER 図
 
@@ -23,6 +24,8 @@ erDiagram
     clients ||--o{ client_tokens : "発行"
     clients |o--o{ audit_logs : "操作主体"
     clients |o--o{ connection_requests : "許可により登録"
+    clients |o--o{ agent_tasks : "依頼"
+    agent_tasks |o--o{ audit_logs : "ステップ"
     audit_logs ||--o| audit_thumbnails : "サムネイル"
     settings
 ```
@@ -34,7 +37,8 @@ erDiagram
 | `clients` | 許可リスト（tailnet デバイス + ユーザー）と、クライアント別の利用可否・承認モード | FR-A04, A09, H04, L07 |
 | `client_tokens` | MCP 用 Bearer トークン（ハッシュのみ） | FR-A05, A08 |
 | `connection_requests` | 未登録デバイスからの接続要求 | FR-A06, A07 |
-| `settings` | アプリ設定とキルスイッチ状態（キー・値） | FR-S01〜S09, FR-H06 |
+| `agent_tasks` | 内蔵エージェントのタスク（指示、状態、使用トークン、最終回答）。ステップは `audit_logs` に `task_id` で紐づく | FR-G02, G03, G09, G15, H10 |
+| `settings` | アプリ設定、キルスイッチ状態、エージェント設定（キー・値） | FR-S01〜S13, FR-H06 |
 | `audit_logs` | 監査ログ | FR-AU01〜AU05 |
 | `audit_thumbnails` | 監査ログに紐づく縮小スクリーンショットのメタ情報 | FR-AU02, AU04 |
 
@@ -53,6 +57,7 @@ erDiagram
         TEXT display_name "デバイス名（表示用）"
         INTEGER web_enabled "Web UI 利用可 (0/1)"
         INTEGER mcp_enabled "MCP 利用可 (0/1)"
+        INTEGER agent_enabled "エージェント(run_task)利用可 (0/1、既定 0)"
         TEXT approval_mode "always / first_time / auto"
         INTEGER approved_at "first_time で承認済みになった時刻"
         INTEGER created_at
@@ -84,13 +89,14 @@ erDiagram
 | `display_name` | TEXT | NO | — | デバイス名。GUI の表示用 |
 | `web_enabled` | INTEGER | NO | 1 | Web UI の利用可否 |
 | `mcp_enabled` | INTEGER | NO | 1 | MCP の利用可否 |
+| `agent_enabled` | INTEGER | NO | 0 | 内蔵エージェント（`run_task`）の利用可否。**既定は無効**（FR-A09） |
 | `approval_mode` | TEXT | NO | `'always'` | `always` / `first_time` / `auto`（FR-L07） |
 | `approved_at` | INTEGER | YES | NULL | `first_time` で一度承認された時刻。NULL なら未承認（承認の取り消しは NULL に戻す）。`approval_mode` を変更したときも NULL に戻す |
 | `created_at` | INTEGER | NO | — | 登録時刻 |
 | `updated_at` | INTEGER | NO | — | 更新時刻 |
 | `last_seen_at` | INTEGER | YES | NULL | 最終に認可を通過した時刻 |
 
-制約: `UNIQUE (stable_node_id)`、`CHECK (approval_mode IN ('always','first_time','auto'))`、`CHECK (web_enabled IN (0,1))`、`CHECK (mcp_enabled IN (0,1))`。
+制約: `UNIQUE (stable_node_id)`、`CHECK (approval_mode IN ('always','first_time','auto'))`、`CHECK (web_enabled IN (0,1))`、`CHECK (mcp_enabled IN (0,1))`、`CHECK (agent_enabled IN (0,1))`。
 
 インデックス: UNIQUE 制約による `stable_node_id` のインデックスのみ（行数は最大 50。NFR-C01）。
 
@@ -224,8 +230,80 @@ erDiagram
 | `update.apply_mode` | string `"confirm"` / `"auto_idle"` | `"confirm"` | FR-S09 |
 | `update.last_checked_at` | number | なし | FR-H09 |
 | `log.level` | string | `"info"` | NFR-O01 |
+| `agent.enabled` | boolean | false | FR-S10、FR-G14 |
+| `agent.consent_at` | number（UTC ミリ秒） | なし | FR-G14（OpenAI へのスクリーンショット送信への同意の日時。有効化時に記録し、無効化で削除） |
+| `agent.model` | string | `"gpt-6.1-sol"` | FR-S11 |
+| `agent.max_steps` | number | 50 | FR-S12 |
+| `agent.max_duration_sec` | number | 600 | FR-S12 |
+| `agent.deny_processes` | array of string | `["KeePass.exe","KeePassXC.exe","1Password.exe","Bitwarden.exe"]` | FR-S13 |
+| `agent.approve_processes` | array of string | `[]` | FR-S13 |
 
-ログオン時の自動起動（FR-S08）の有効・無効は OS（スタートアップ登録）が真実の源であり、DB には持たない。クライアント別の承認モード（FR-S05）は `clients.approval_mode` に持つ。
+ログオン時の自動起動（FR-S08）の有効・無効は OS（スタートアップ登録）が真実の源であり、DB には持たない。クライアント別の承認モード（FR-S05）は `clients.approval_mode`、エージェント利用許可（FR-A09）は `clients.agent_enabled` に持つ。OpenAI API キーは `settings` にも置かない（資格情報マネージャーのみ）。
+
+### agent_tasks
+
+内蔵エージェントの 1 回の実行（[FR-G02〜G15](../requirements/functional.md)）。ステップ（アクション・Judge の判定・安全チェック・サムネイル）は `audit_logs` に `kind = 'agent'`、`task_id`、`step_no` で保存し、ここには集計だけを持つ。
+
+```mermaid
+erDiagram
+    agent_tasks {
+        TEXT id PK "ULID"
+        TEXT client_id FK "clients.id (削除で NULL)"
+        TEXT client_label "依頼元の表示名"
+        TEXT prompt "run_task の指示"
+        TEXT status "pending_approval / running / completed / failed / cancelled / limit_reached / aborted / denied"
+        TEXT model "使用したモデル名"
+        INTEGER max_steps "適用した上限"
+        INTEGER max_duration_sec "適用した上限"
+        INTEGER step_count
+        INTEGER input_tokens
+        INTEGER output_tokens
+        TEXT result_text "最終回答"
+        TEXT error_code
+        INTEGER created_at
+        INTEGER started_at
+        INTEGER finished_at
+    }
+    clients {
+        TEXT id PK
+    }
+    audit_logs {
+        INTEGER id PK
+        TEXT task_id FK
+    }
+    clients |o--o{ agent_tasks : "依頼"
+    agent_tasks |o--o{ audit_logs : "ステップ"
+```
+
+| カラム | 型 | NULL | 既定値 | 説明 |
+|--------|----|------|--------|------|
+| `id` | TEXT | NO | — | PK。ULID。`run_task` が返す `task_id` |
+| `client_id` | TEXT | YES | NULL | 依頼したクライアント。FK → `clients.id`、`ON DELETE SET NULL` |
+| `client_label` | TEXT | NO | — | 依頼元の表示名のスナップショット |
+| `prompt` | TEXT | NO | — | 指示本文（10,000 文字まで。NFR-S09）。タスクの記録として常に保存する（FR-AU03） |
+| `status` | TEXT | NO | `'pending_approval'` または `'running'` | FR-G03 の状態 |
+| `model` | TEXT | NO | — | 使用したモデル名（開始時の `agent.model`） |
+| `max_steps` | INTEGER | NO | — | 適用した上限（`run_task` の指定は設定値以下） |
+| `max_duration_sec` | INTEGER | NO | — | 適用した上限 |
+| `step_count` | INTEGER | NO | 0 | 実行したステップ（Responses API 呼び出し）の数 |
+| `input_tokens` / `output_tokens` | INTEGER | NO | 0 | 使用トークンの累計（金額上限は設けない。FR-G09） |
+| `result_text` | TEXT | YES | NULL | 最終回答（10,000 文字で切り詰め）。`completed` はモデルの申告（FR-G13） |
+| `error_code` | TEXT | YES | NULL | 失敗の理由。`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` など（FR-M17、FR-G） |
+| `created_at` | INTEGER | NO | — | `run_task` の受付時刻 |
+| `started_at` | INTEGER | YES | NULL | `running` になった時刻（承認拒否の `denied` は NULL） |
+| `finished_at` | INTEGER | YES | NULL | 終了状態になった時刻 |
+
+制約: `CHECK (status IN ('pending_approval','running','completed','failed','cancelled','limit_reached','aborted','denied'))`、`CHECK (status IN ('pending_approval','running') OR finished_at IS NOT NULL)`（終了状態は `finished_at` が必須）、`CHECK (step_count >= 0 AND input_tokens >= 0 AND output_tokens >= 0)`。
+
+インデックス:
+
+| 名称 | 対象 | 種別 | 目的 |
+|------|------|------|------|
+| `ix_task_created` | `(created_at DESC)` | 通常 | タスク一覧（FR-H10）、保持期間の削除 |
+| `ix_task_client_created` | `(client_id, created_at DESC)` | 通常 | クライアント別の一覧、`get_task` の所有確認 |
+| `ix_task_active` | `(status) WHERE status IN ('pending_approval','running')` | 部分 | 起動時の `aborted` 更新（NFR-A08）、実行中の確認 |
+
+同時に実行できるタスクは 1 件（NFR-C05）。これは排他リースがメモリ上で保証し、DB では制約にしない。
 
 ### audit_logs
 
@@ -236,13 +314,15 @@ erDiagram
     audit_logs {
         INTEGER id PK "AUTOINCREMENT"
         INTEGER ts "UTC ミリ秒"
-        TEXT kind "auth / client / token / lease / tool / input / killswitch / settings / update"
-        TEXT event "例: lease.acquire, tool.click"
-        TEXT actor_type "mcp / web / host / system"
+        TEXT kind "auth / client / token / lease / tool / input / agent / killswitch / settings / update"
+        TEXT event "例: lease.acquire, tool.left_click, agent.step"
+        TEXT actor_type "mcp / web / agent / host / system"
         TEXT client_id FK "clients.id (削除で NULL)"
         TEXT client_label "表示名のスナップショット"
         TEXT session_id "接続セッション (文字列)"
         TEXT lease_id "リース (文字列)"
+        TEXT task_id FK "agent_tasks.id (agent のとき)"
+        INTEGER step_no "エージェントのステップ番号"
         TEXT tool "MCP ツール名 / 入力種別"
         TEXT result "ok / error / denied"
         TEXT error_code "FR-M17 のコード等"
@@ -264,20 +344,22 @@ erDiagram
 |--------|----|------|--------|------|
 | `id` | INTEGER | NO | AUTOINCREMENT | PK |
 | `ts` | INTEGER | NO | — | 発生時刻（UTC ミリ秒） |
-| `kind` | TEXT | NO | — | 分類: `auth`（接続要求・認証失敗）/ `client`（登録・変更・削除）/ `token` / `lease` / `tool`（MCP ツール呼び出し）/ `input`（Web UI からの入力操作）/ `killswitch` / `settings` / `update` |
-| `event` | TEXT | NO | — | イベント名（例: `lease.acquire`、`lease.revoke`、`tool.click`、`auth.bearer_failed`） |
-| `actor_type` | TEXT | NO | — | `mcp` / `web` / `host`（ホスト GUI 操作）/ `system` |
+| `kind` | TEXT | NO | — | 分類: `auth`（接続要求・認証失敗）/ `client`（登録・変更・削除）/ `token` / `lease` / `tool`（MCP ツール呼び出し）/ `input`（Web UI からの入力操作）/ `agent`（タスクのライフサイクル・各ステップ・安全チェック・Judge の判定・有効化と同意）/ `killswitch` / `settings` / `update` |
+| `event` | TEXT | NO | — | イベント名（例: `lease.acquire`、`lease.revoke`、`tool.left_click`、`auth.bearer_failed`、`agent.task_start`、`agent.step`、`agent.safety_check`、`agent.judge`、`agent.consent`） |
+| `actor_type` | TEXT | NO | — | `mcp` / `web` / `agent`（内蔵エージェント）/ `host`（ホスト GUI 操作）/ `system` |
 | `client_id` | TEXT | YES | NULL | FK → `clients.id`、`ON DELETE SET NULL`。ホスト操作・システム・未登録デバイスは NULL |
 | `client_label` | TEXT | NO | — | 表示名のスナップショット。未登録デバイスはデバイス名、ホスト操作は `(host)` |
 | `session_id` | TEXT | YES | NULL | 接続セッション ID（メモリ上の ID を文字列で記録） |
 | `lease_id` | TEXT | YES | NULL | リース ID（メモリ上の ID を文字列で記録） |
-| `tool` | TEXT | YES | NULL | ツール名（`click` 等）。`input` では `mouse` / `key` 等 |
+| `task_id` | TEXT | YES | NULL | FK → `agent_tasks.id`、`ON DELETE SET NULL`。エージェントのステップ・タスクのイベントで設定する |
+| `step_no` | INTEGER | YES | NULL | タスク内のステップ番号（1 始まり）。ステップ内のアクションは `detail_json` に順序付きで持つ |
+| `tool` | TEXT | YES | NULL | ツール名（`left_click` 等）。`input` では `mouse` / `key` 等、`agent` ではアクション種別（`click` / `type` など） |
 | `result` | TEXT | NO | — | `ok` / `error` / `denied` |
 | `error_code` | TEXT | YES | NULL | FR-M17 のエラーコード等 |
 | `duration_ms` | INTEGER | YES | NULL | 所要時間 |
 | `detail_json` | TEXT | YES | NULL | 引数・補足（JSON）。`type` の本文とクリップボードは既定では文字数のみ（FR-AU03）。トークンは含めない |
 
-制約: `CHECK (result IN ('ok','error','denied'))`、`CHECK (actor_type IN ('mcp','web','host','system'))`、`CHECK (detail_json IS NULL OR json_valid(detail_json))`。
+制約: `CHECK (result IN ('ok','error','denied'))`、`CHECK (actor_type IN ('mcp','web','agent','host','system'))`、`CHECK (detail_json IS NULL OR json_valid(detail_json))`。
 
 インデックス:
 
@@ -288,6 +370,7 @@ erDiagram
 | `ix_audit_kind_ts` | `(kind, ts DESC)` | 種別の絞り込み |
 | `ix_audit_result_ts` | `(result, ts DESC)` | 結果（失敗のみ）の絞り込み |
 | `ix_audit_session` | `(session_id)` | セッション単位のドリルダウン |
+| `ix_audit_task_step` | `(task_id, step_no)` | タスク詳細でのステップ一覧（FR-H10） |
 
 ### audit_thumbnails
 
@@ -331,6 +414,8 @@ erDiagram
 | 容量の削除 | サムネイル保存の都度、起動時 | `SUM(size_bytes)` が `audit.thumbs_max_bytes` を超えたら `created_at` の古い順にサムネイルのファイルと行を削除する（ログ行は残す） |
 | 孤児ファイルの掃除 | 起動時 | `thumbs/` にあって DB に行がないファイル、行はあるのにファイルがない行を削除する |
 | 接続要求の整理 | 1 時間ごと | `pending` の失効、`last_seen_at` から 7 日を過ぎた行の削除 |
+| タスクの保持期間 | 起動時と 1 時間ごと | `agent_tasks.finished_at` が `audit.retention_days` を超えた行を削除する（`audit_logs.task_id` は `SET NULL`）。実行中・承認待ちの行は削除しない |
+| 異常終了したタスクの回収 | 起動時 | 状態が `pending_approval` / `running` のまま残った行を `aborted`（`finished_at` を設定）に更新する。自動では再開しない（[NFR-A08](../requirements/non-functional.md)） |
 | 整合性チェック | 起動時 | `PRAGMA quick_check`。失敗時は DB を隔離（リネーム）して空 DB で起動し GUI に通知（[NFR-A06](../requirements/non-functional.md)） |
 | ファイル削除と DB 削除の順序 | 常時 | DB 行を先に削除（トランザクション）してからファイルを削除する。途中で落ちても残るのは孤児ファイルで、起動時の掃除で回収できる |
 
@@ -339,3 +424,4 @@ erDiagram
 | 版 | 日付 | 変更内容 | 変更理由 |
 |---|------|---------|---------|
 | 1.0 | 2026-10-28 | 初版作成 | — |
+| 1.1 | 2026-10-29 | 内蔵エージェント向けに `agent_tasks` を追加、`clients.agent_enabled`、`audit_logs.task_id` / `step_no` / `actor_type = 'agent'` / `kind = 'agent'`、エージェントの設定キー、保守処理（タスクの保持期間・異常終了の回収）を追加。API キーは DB に置かない旨を明記。`tool.click` の例を `tool.left_click` に更新 | ホスト内蔵エージェントを主役にする決定 |
