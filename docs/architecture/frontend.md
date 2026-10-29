@@ -473,6 +473,9 @@ graph LR
 | Wails の dev で GUI ルーターへ到達できること | `FRONTEND_DEVSERVER_URL` を設定せず `wails3 dev` を実行したとき、カスタムの `AssetOptions.Handler` に到達するか。`/wails/*` の予約と合わせて実機で確認する |
 | GUI の WebView でのクリップボード | トークンのコピーボタンに `navigator.clipboard` が使えるか。使えない場合は全選択して手動コピーを案内する |
 | htmx の版と拡張 | htmx 2.x と、拡張（`htmx-ext-response-targets`、`htmx-ext-sse`）の版を実装時に固定する |
+| 静的ファイルのキャッシュ（§2） | `no-cache` + `ETag` は提案。ユーザーの確認は未了。ファイル名にハッシュを付ける方式も選択肢 |
+| `lib/api.ts` を初版で作らないこと（§2・§6.1） | 提案。ユーザーの確認は未了 |
+| CSP（`script-src 'self'`、インライン禁止） | 未選択のため未決。採用する場合、API キー入力画面を持つホスト GUI に付ける。HTMX の `hx-on` などインライン属性が使えなくなる |
 | Playwright の CI 実行環境 | `windows-latest` でヘッドレス Chromium を実行できること。重ければ Linux の別ジョブに分ける（E2E は偽の platform なので OS 非依存） |
 
 ## 改訂履歴
