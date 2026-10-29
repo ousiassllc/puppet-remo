@@ -103,7 +103,7 @@
 | NFR-O01 | アプリ運用ログ（slog、JSON）を `%LOCALAPPDATA%\puppet-remo\logs\` にローテーション（10 MiB × 5 世代）で出力する。監査ログ（業務記録）とは別物。レベルは設定可 |
 | NFR-O02 | 配布は GitHub Releases の NSIS インストーラ（Wails 標準）。更新はアプリ内自動更新（NFR-S10）。更新の適用はホスト GUI の確認後を既定とし、リース保持中・接続中は適用しない |
 | NFR-O03 | OS 依存部（画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・オーバーレイ）はインターフェースの背後に置き、コアロジックは OS 非依存でテスト可能にする（将来の他 OS 対応のため） |
-| NFR-O04 | CI は GitHub Actions の `windows-latest` で build / vet / lint / test を実行する。OS アダプタは実機でのスモークテスト手順を `docs` に記載する |
+| NFR-O04 | CI は GitHub Actions の `windows-latest` で templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / test、Lit のテスト、Playwright（偽の platform。[フロントエンド設計](../architecture/frontend.md) §9）を実行する。OS アダプタは実機でのスモークテスト手順を `docs` に記載する |
 | NFR-O05 | データベースのスキーマ変更はバージョン付きマイグレーションで管理する |
 | NFR-O06 | OpenAI API はインターフェースの背後に置き、CI のテストでは実 API を呼ばない（モックで `computer_call` の連鎖・安全チェック・上限・中断を検証する）。実 API を使うスモークテスト手順は `docs` に記載する |
 

@@ -22,8 +22,8 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | 時刻 | JSON は RFC 3339（UTC）。DB の Unix ミリ秒は変換して返す |
 | ID | ULID（クライアント・トークン・接続要求・タスク）。監査ログは整数 |
 | バージョン | JSON API は `/api/v1`。MCP のツール・WebSocket のプロトコルは本書の版で固定し、破壊的変更時に WebSocket のサブプロトコル名（`puppet-remo.v1`）を上げる |
-| 状態を変更するリクエスト（リモート） | ヘッダー `X-Puppet-Remo: 1` 必須（NFR-S03）。`Content-Type` は HTMX のフォーム（`application/x-www-form-urlencoded`）または `application/json`。MCP は Bearer 必須のため対象外 |
-| HTMX リクエスト | `HX-Request: true` を持つリクエストには HTML フラグメントを返す。それ以外には JSON を返す（エラーは problem+json） |
+| 状態を変更するリクエスト（リモート） | ヘッダー `X-Puppet-Remo: 1` 必須（NFR-S03）。Web UI のルートは HTMX のフォーム（`Content-Type: application/x-www-form-urlencoded`）のみ受け付ける。`/api/v1` は参照専用（GET のみ）で、状態を変更する JSON リクエストは存在しない。MCP は Bearer 必須のため対象外 |
+| 応答の種類 | **ページルート・アクションルート（Web UI、GUI）は常に HTML**（`HX-Request` の有無で JSON に切り替えない。ページルートは `HX-Request` でフルページとフラグメントを出し分け、アクションルートは常にフラグメント）。JSON を返すのは `/api/v1/*` と MCP のみ。詳細は [フロントエンド設計](../architecture/frontend.md) |
 | サイズ上限 | HTTP ボディ ≤ 1 MiB、WebSocket のクライアント→サーバーのメッセージ ≤ 64 KiB（NFR-S09） |
 
 ### リモートルーターのミドルウェア連鎖
@@ -39,11 +39,11 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | 5 | `/mcp` のみ: Bearer トークン（ハッシュ・定数時間・node ID 束縛。FR-A05）。認証失敗は同一デバイスにつき 1 分 10 回まで（NFR-S04） | 401 `unauthorized`（`WWW-Authenticate: Bearer`）、超過は 429 `rate_limited` |
 | 6 | キルスイッチ | 503 `kill_switch_active` |
 
-ブラウザ（`Accept: text/html`）が 403 `device_not_registered` を受けると、「接続要求を送信しました」という待機ページ（HTML）を返す（FR-W02）。それ以外は problem+json を返す。
+エラーの形式は経路で決まる。**`/api/v1/*` と `/ws/screen` の接続前（ハンドシェイク）のエラーは problem+json**（§2）、**MCP（`/mcp`）は HTTP ステータス（401 / 403 / 429 / 503 など）と、ツール実行後のエラーは `isError`**（§3.4）、**Web UI と GUI のルートは HTML**（ページルートはエラーページ、アクションルートはエラーのフラグメント。同じステータスコードを返し、フラグメントには `data-error-code="<code>"` を付ける）。403 `device_not_registered` をブラウザ（Web UI のルート）が受けたときは、「接続要求を送信しました」という待機ページ（HTML）を返す（FR-W02）。
 
 ## 2. エラー形式（RFC 9457 problem+json）
 
-リモートの HTTP API と GUI ルーターの JSON 応答は `application/problem+json` で返す。
+`/api/v1/*` と `/ws/screen` のハンドシェイク前のエラー、およびミドルウェア連鎖が `/api/v1` と `/mcp` へのリクエストを拒否するときの応答は `application/problem+json` で返す。
 
 ```json
 {
@@ -56,7 +56,7 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 ```
 
 - `type` は `urn:puppet-remo:error:<code>`。`code` は拡張メンバーで、機械処理にはこれを使う
-- HTMX リクエストには、同じ内容を表示する HTML のエラーフラグメントを同じステータスで返す（`response-targets` の `hx-target-4*` / `hx-target-5*` が受ける）
+- Web UI・GUI のルート（HTML を返す経路）は problem+json を返さない。同じ `code` と HTTP ステータスで、HTML のエラーフラグメント（またはエラーページ）を返す。バリデーションエラー（422）はフォームを入力値とエラーメッセージ付きで再描画する。表示先は `response-targets` の `hx-target-422` / `hx-target-4*` / `hx-target-5*` が決める（[フロントエンド設計](../architecture/frontend.md)）
 - MCP のツールエラーは HTTP ステータスではなく、ツール結果の `isError: true` と `structuredContent: {code, message}` で返す（§3.4）
 
 ### エラーコードと HTTP ステータス
@@ -268,7 +268,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 ## 4. Web UI（リモートルーター）
 
-状態駆動レンダリングで、リース状態に応じた操作だけを HTML に出す。HTMX のフラグメントを返し、`HX-Request` が無いリクエストには JSON を返す。
+状態駆動レンダリングで、リース状態に応じた操作だけを HTML に出す。ページルート（`GET /viewer` など）は `HX-Request` の有無でフルページとフラグメントを出し分け、アクションルート（`POST /viewer/...`）は常にフラグメントを返す。JSON は返さない。
 
 ### 4.1 ビューアのセッション（`viewer_id`）
 
@@ -368,7 +368,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 ## 6. JSON API（`/api/v1`、Huma）
 
-Lit アイランドと運用確認のための小さな API。OpenAPI は `GET /api/v1/openapi.json`。認可は §1 の連鎖（登録済みのクライアント）。エラーは problem+json。
+運用確認と将来の Lit アイランドのための小さな参照専用 API（初版のビューアはこれを呼ばない）。OpenAPI は `GET /api/v1/openapi.json`。認可は §1 の連鎖（登録済みのクライアント）。エラーは problem+json。
 
 | メソッド | パス | 概要 | 応答 |
 |---------|------|------|------|
@@ -461,3 +461,4 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | 版 | 日付 | 変更内容 | 変更理由 |
 |---|------|---------|---------|
 | 1.0 | 2026-10-29 | 初版作成 | — |
+| 1.1 | 2026-10-29 | ページ・アクションルートは常に HTML、JSON は `/api/v1` と MCP のみとし、エラー形式を経路別に整理。`/api/v1` を参照専用に | HALT の規約（[フロントエンド設計](../architecture/frontend.md)）との整合 |

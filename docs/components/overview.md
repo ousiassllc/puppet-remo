@@ -545,7 +545,7 @@ type Windows interface { // ウィンドウの生成・破棄（Wails v3 のラ�
 | HTMX | 拡張 | 部分更新。リモートは `response-targets` のみ、ホスト GUI は `sse` を追加 |
 | `<remo-screen-viewer>`（Lit） | Web Component | `canvas` への描画（`createImageBitmap`）、WebSocket の受信・再接続、マウス・キーの捕捉と送信、座標のスケーリング（表示サイズ → ストリームの物理座標）。属性: `ws-url`、`readonly`、`monitor`、`quality`、`fps`。イベント: `remo:lease-changed`、`remo:error` |
 | `lib/ws.ts` | ユーティリティ | 自動再接続（指数バックオフ）、サブプロトコル `puppet-remo.v1`、メッセージの型 |
-| `lib/api.ts` | ユーティリティ | `X-Puppet-Remo` と `X-Viewer-Id` の付与 |
+| `lib/logger.ts` | ユーティリティ | レベル付きのコンソールロガー |
 
 HTMX は Lit のアイランドを swap しない。ツールバー（モニター・品質・FPS・クリップボード・リース）は Lit の外に Templ で描画する。
 

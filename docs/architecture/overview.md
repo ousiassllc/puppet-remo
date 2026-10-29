@@ -368,43 +368,24 @@ type Judge interface {
 
 ## HALT の適用
 
-### フロントエンド構成
+フロントエンドは HALT で構成する。規約・ディレクトリ・HTMX パターン・Lit コンポーネント・ビルド・テストの詳細は [フロントエンド設計](frontend.md) に集約する。ここでは全体構成との接点だけを示す。
 
-```mermaid
-graph TD
-    subgraph GUI["ホスト GUI (Wails WebView)"]
-        GP["Templ ページ + HTMX"]
-        SSE["SSE 拡張 /events<br/>(状態更新を push)"]
-    end
-    subgraph WEB["Web UI (ブラウザ)"]
-        WP["Templ ページ + HTMX"]
-        LIT["Lit アイランド<br/>remo-screen-viewer"]
-    end
-    GP --> SSE
-    WP -- "HTMX の外側に配置" --- LIT
-    LIT -- "WebSocket (JSON + バイナリ)" --> RR["リモートルーター"]
-    WP -- "HTML フラグメント" --> RR
-    GP -- "HTML フラグメント" --> GR["GUI ルーター"]
-```
+- 画面の大半（ホスト GUI、ビューアの周辺 UI、リースパネル）は **Templ + HTMX** で描画する。ページ・アクションルートは常に HTML を返し、JSON は `/api/v1` と MCP だけが返す（[API 仕様](../api/endpoints.md) §1）
+- **Lit は `<remo-screen-viewer>` のみ**（Canvas 描画、WebSocket のバイナリフレーム、入力の捕捉）
+- ホスト GUI は GUI ルーター（プロセス内）、Web UI はリモートルーター（tailnet）で配信し、ハンドラを共有しない
 
-- 画面の大半（ダッシュボード、クライアント管理、接続要求、設定、監査ログ、ビューアの周辺 UI、リースパネル）は **Templ + HTMX** で描画する
-- **Lit は `<remo-screen-viewer>` のみ**。理由は Canvas 描画、WebSocket のバイナリフレーム、マウス・キー入力のキャプチャが必要でハイパーメディアに載せられないため（HALT の使用基準に該当）
-- Lit アイランドの属性: `ws-url`（サーバーが注入）、`readonly`（操作権なしなら付与）、`monitor`、`quality`、`fps`
-- **HTMX ↔ Lit 境界**: HTMX は Lit アイランドを swap しない。ビューアのツールバー（モニター・品質・FPS・クリップボード・リースボタン）は Lit の外に Templ で描画し、設定変更は `hx-post` でサーバーに送る。サーバーが WS 経由で設定を反映する。リース状態の変化は WS 制御メッセージ → Lit の CustomEvent → HTMX の `hx-trigger` でパネルを再取得する
-- **状態駆動レンダリング**: リースが `idle` なら「操作権を取得」だけ、他者保持なら「強制剥奪」だけ、自分が保持なら「解放」だけを描画する。キルスイッチ中は操作系を一切描画しない。判定は Go 側で行う
-- 命名規則: カスタム要素のプレフィックスは `remo`（例: `<remo-screen-viewer>`）
-- 共通ライブラリ: `lib/ws.ts`（自動再接続）、`lib/api.ts`、`lib/logger.ts`（HALT 標準）。直接 `fetch()` / `new WebSocket()` は使わない
+### HALT 標準からの差分（要約）
 
-### HALT 標準からの差分
+| 項目 | 本プロジェクト |
+|------|--------------|
+| 認証・CSRF | Cookie を使わない。WhoIs + Host / Origin 検証 + `X-Puppet-Remo` |
+| サーバー | GUI ルーターとリモートルーターに分離 |
+| HTMX 拡張 | `response-targets`（両 UI）、`sse`（ホスト GUI のみ） |
+| JSON API | `/api/v1` は読み取り専用。アクションは HTML を返す HTMX ルート |
+| 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない） |
+| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform） |
 
-| HALT 標準 | 本プロジェクト | 理由 |
-|-----------|--------------|------|
-| Cookie セッション + CSRF トークン（meta タグ） | **Cookie を使わない**。識別は WhoIs、CSRF 対策は Host / Origin 検証 + カスタムヘッダー（`X-Puppet-Remo: 1`。`hx-headers` と `lib/api.ts` が付与） | tailnet 上の ID が真実の源であり、Cookie ベースの認証がそもそも無い（NFR-S03） |
-| 単一の HTTP サーバー | **GUI ルーター（プロセス内）とリモートルーター（tailnet）に分離** | ホスト専用操作を構造的にネットワークから隔離するため |
-| HTMX 拡張は最小限 | ホスト GUI のみ `sse` 拡張を追加 | 承認要求・リース・接続要求をほぼリアルタイムに GUI へ反映するため（NFR-P06）。Web UI は WS 経由で足りるため追加しない |
-| Lit は編集系リッチ UI | ライブ画面ビューア 1 つのみ | 要件が 1 画面に限られる |
-| Huma で JSON API | `/api/v1/*` は小規模（モニター一覧・状態・OpenAPI）のみ。MCP と WebSocket は Huma の対象外 | JSON API の主な利用者が Lit アイランドと運用確認に限られる |
-| 静的ファイルは Gin の `Static` で配信 | `go:embed` した `dist/` を両ルーターで配信 | 単一バイナリ配布のため |
+全項目と理由は [フロントエンド設計](frontend.md) §2 を参照。
 
 ## ディレクトリ構成
 
@@ -423,18 +404,19 @@ puppet-remo/
 │   ├── mcp/                      # MCP サーバー (ツール定義と service 呼び出し)
 │   ├── ws/                       # WebSocket プロトコル (画面フレーム・入力)
 │   ├── router/                   # gui.go, remote.go
-│   ├── web/
-│   │   ├── handler/              # 機能別ハンドラ
-│   │   ├── middleware/           # hostcheck, whois, allowlist, bearer, killswitch
-│   │   ├── atoms/ molecules/ organisms/ pages/ layout/
+│   ├── web/                      # 詳細は frontend.md §3
+│   │   ├── view/ handler/{gui,remote}/ middleware/
+│   │   ├── atoms/ molecules/ organisms/{gui,remote}/ pages/{gui,remote}/ layout/
 │   └── app/                      # Wails ウィンドウ・トレイ・オーバーレイ・ホットキー
 ├── static/
-│   └── src/
-│       ├── components/
-│       │   ├── screen-viewer/    # <remo-screen-viewer>
-│       │   └── lib/              # api.ts, ws.ts, logger.ts
-│       ├── css/
-│       └── dist/                 # ビルド成果物 (go:embed)
+│   ├── package.json              # esbuild, tailwind, lit, htmx, テスト
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── screen-viewer/    # <remo-screen-viewer>
+│   │   │   └── lib/              # ws.ts, logger.ts
+│   │   └── css/
+│   ├── dist/                     # ビルド成果物 (go:embed)
+│   └── e2e/                      # Playwright
 ├── build/                        # Wails パッケージング (NSIS、マニフェスト)
 ├── docs/
 └── Taskfile.yml                  # templ / tailwind / esbuild / wails3 package
@@ -449,7 +431,7 @@ puppet-remo/
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
 | 配布・更新 | GitHub Releases。インストーラと署名ファイル（Ed25519）を公開し、アプリが署名検証して適用 |
-| CI | GitHub Actions `windows-latest` で templ 生成の差分チェック、フロントエンドビルド、build / vet / lint / test |
+| CI | GitHub Actions `windows-latest` で templ 生成の差分チェック、フロントエンドビルド、build / vet / lint / test、Lit のテスト、Playwright（[フロントエンド設計](frontend.md) §9） |
 
 ## 改訂履歴
 
@@ -457,3 +439,4 @@ puppet-remo/
 |---|------|---------|---------|
 | 1.0 | 2026-10-28 | 初版作成 | — |
 | 1.1 | 2026-10-29 | 内蔵エージェント（OpenAI `computer` ツール）を追加: 構成図・レイヤー（`openai`、`Agent`、`Judge`、`SecretStore`）、タスク実行フロー、キルスイッチの手順、Judge インターフェース、技術選定（openai-go v3、資格情報）、MCP SDK の保護に関する注記。MCP フローのツール名を `left_click` に更新 | ホスト内蔵エージェントを主役にする決定 |
+| 1.2 | 2026-10-29 | 「HALT の適用」を [フロントエンド設計](frontend.md) へ分離し、差分の要約とリンクに縮小。ディレクトリ構成を更新（`lib/api.ts` を初版から除外、`e2e/` 追加）、CI にフロントエンドのテストを追加 | HALT の規約を 1 か所に集約 |
