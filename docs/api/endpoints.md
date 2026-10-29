@@ -30,16 +30,16 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 
 ### リモートルーターのミドルウェア連鎖
 
-すべてのリクエストは次の順に検査される。いずれかで拒否されたら以降は実行しない（[アーキテクチャ設計](../architecture/overview.md)）。
+すべてのリクエストは次の順に検査される。いずれかで拒否されたら以降は実行しない（[アーキテクチャ設計](../architecture/overview.md)）。**キルスイッチの判定（3）は、WhoIs・許可リスト照合・接続要求の作成（4・5）より前**に置く。キルスイッチ中は未登録デバイスのリクエストにも接続要求を作らず 503 を返す（FR-A06、FR-H06）。
 
 | 順 | 検査 | 失敗時 |
 |----|------|--------|
 | 1 | `Host` ヘッダー（tailnet IP / MagicDNS 名 + ポート以外は拒否）と、`Origin` ヘッダー（同一オリジンのみ）。NFR-S02 | 400 `invalid_host` / 403 `invalid_origin` |
 | 2 | 状態変更なら `X-Puppet-Remo: 1`（Web UI・JSON API）。NFR-S03 | 403 `missing_header` |
-| 3 | WhoIs で接続元のユーザーと node ID を解決（10 秒キャッシュ）。NFR-S05 | 403 `whois_failed` |
-| 4 | 許可リスト照合（node ID + ログイン名） | 403 `device_not_registered`（接続要求を作成・集約。FR-A06）。登録済みでも該当機能が無効なら 403 `client_disabled` |
-| 5 | `/mcp` のみ: Bearer トークン（ハッシュ・定数時間・node ID 束縛。FR-A05）。認証失敗は同一デバイスにつき 1 分 10 回まで（NFR-S04） | 401 `unauthorized`（`WWW-Authenticate: Bearer`）、超過は 429 `rate_limited` |
-| 6 | キルスイッチ | 503 `kill_switch_active` |
+| 3 | キルスイッチ（FR-H06）。発動中は以降を実行しない（接続要求も作らない） | 503 `kill_switch_active` |
+| 4 | WhoIs で接続元のユーザーと node ID を解決（10 秒キャッシュ）。NFR-S05 | 403 `whois_failed` |
+| 5 | 許可リスト照合（node ID + ログイン名） | 403 `device_not_registered`（接続要求を作成・集約。FR-A06）。登録済みでも該当機能が無効なら 403 `client_disabled` |
+| 6 | `/mcp` のみ: Bearer トークン（形式・照合は NFR-S04。node ID 束縛は FR-A05）。認証失敗は同一デバイスにつき 1 分 10 回まで（NFR-S04） | 401 `unauthorized`（`WWW-Authenticate: Bearer`）、超過は 429 `rate_limited` |
 
 エラーの形式は経路で決まる。**`/api/v1/*` と `/ws/screen` の接続前（ハンドシェイク）のエラーは problem+json**（§2）、**MCP（`/mcp`）は HTTP ステータス（401 / 403 / 429 / 503 など）と、ツール実行後のエラーは `isError`**（§3.4）、**Web UI と GUI のルートは HTML**（ページルートはエラーページ、アクションルートはエラーのフラグメント。同じステータスコードを返し、フラグメントには `data-error-code="<code>"` を付ける）。403 `device_not_registered` をブラウザ（Web UI のルート）が受けたときは、「接続要求を送信しました」という待機ページ（HTML）を返す（FR-W02）。
 
@@ -220,9 +220,9 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 | ツール | 出力 |
 |--------|------|
-| `acquire_control` | `get_control_status` と同じ。承認が必要なら承認を待つ（最大 60 秒） |
+| `acquire_control` | `get_control_status` と同じ。M1 は承認なしで取得できる（`idle → held`）。承認が必要な場合（承認モード。M3 から）は承認を待つ（最大 60 秒） |
 | `release_control` | `{ "ok": true }`。保持者でなければ何もしない |
-| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき） |
+| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M1 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` のみ。`pending_approval` は M3、`web` は M2、`agent`（と `task_id`）は M4 から |
 
 #### 内蔵エージェント
 
@@ -401,7 +401,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | パス | 画面 | 優先度 |
 |------|------|--------|
-| `/` | ダッシュボード（サーバー状態、接続中セッション、リース保持者と強制剥奪、実行中タスクと中断、キルスイッチ）。FR-H02 | M1 |
+| `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（表示のみ）、キルスイッチ、接続要求・クライアント管理への導線。リース強制剥奪ボタンは M2（FR-L06）、実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1 |
 | `/requests` | 接続要求の一覧（許可 / 拒否）。FR-H03 | M1 |
 | `/clients` | クライアント一覧。`/clients/{id}`: 詳細（有効化・承認モード・トークン）。FR-H04 | M1 |
 | `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウ）。FR-H05 | M3 |
@@ -416,9 +416,9 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト（フォーム） | 応答 |
 |---------|------|-----------------------|------|
-| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
+| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。**M3 から**。M1 のフォームには出さず、`always` で保存して M3 まで参照しない。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
 | POST | `/requests/{id}/deny` | なし | 200 一覧フラグメント（`denied`。24 時間は同デバイスの再要求を作らない） |
-| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`、`approval_mode`（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻す） | 200 クライアントのフラグメント。無効にしたクライアントのセッション・タスクは即時に切断・中断 |
+| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`、`approval_mode`（M3 から）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻す） | 200 クライアントのフラグメント。無効にしたクライアントのセッション・タスクは即時に切断・中断 |
 | POST | `/clients/{id}/approval/reset` | なし | 200（`first_time` の承認済みを取り消す） |
 | DELETE | `/clients/{id}` | なし | 200（許可リストから除外。トークンは `CASCADE` で削除、セッション・タスクは切断・中断） |
 | POST | `/clients/{id}/tokens` | `label`\*、`expires_in_days`（既定 90、`never` で無期限） | 200 **トークン平文を一度だけ表示するフラグメント**。`Cache-Control: no-store`。ラベル重複は 409。以後は `token_prefix` のみ表示 |
@@ -428,7 +428,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト | 応答 |
 |---------|------|-----------|------|
-| POST | `/lease/revoke` | なし | 200 リースのフラグメント（保持者を剥奪。`agent` ならタスクを中断） |
+| POST | `/lease/revoke` | なし | 200 リースのフラグメント（保持者を剥奪。`agent` ならタスクを中断）。**M2 から**（M1 のダッシュボードに強制剥奪ボタンは無い。FR-H02）。`agent` の剥奪は M4 |
 | POST | `/killswitch/trigger` | なし | 200 ダッシュボードのフラグメント（FR-H06 の手順。1 秒以内） |
 | POST | `/killswitch/release` | なし | 200（解除。受付を再開） |
 | POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`）。`id` が失効（60 秒）・解決済みなら 410 `approval_timeout` |
@@ -454,10 +454,10 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 |-------|---------------|---------------|
 | `server-status` | サーバー状態のフラグメント（tailnet IP・ポート・tailscaled 状態） | ダッシュボード |
 | `sessions` | 接続中セッション一覧のフラグメント | ダッシュボード |
-| `lease` | リース保持者のフラグメント（種別付き。強制剥奪ボタンを含む） | ダッシュボード |
+| `lease` | リース保持者のフラグメント（種別付き。M2 から強制剥奪ボタンを含む） | ダッシュボード |
 | `connection-requests` | 接続要求の一覧と件数バッジ | 接続要求、トレイ通知 |
 | `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く | （ウィンドウ生成） |
-| `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由） | ダッシュボード、タスク |
+| `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由。M4） | ダッシュボード、タスク |
 | `killswitch` | キルスイッチ状態のフラグメント | 全画面のヘッダー |
 | `toast` | 通知メッセージ（更新の通知、DB 破損の隔離、TypeSafe が 401 を返して高速パスを無効にした通知など） | 全画面 |
 
@@ -490,3 +490,4 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | 1.0 | 2026-10-29 | 初版作成 | — |
 | 1.1 | 2026-10-29 | ページ・アクションルートは常に HTML、JSON は `/api/v1` と MCP のみとし、エラー形式を経路別に整理。`/api/v1` を参照専用に | HALT の規約（[フロントエンド設計](../architecture/frontend.md)）との整合 |
 | 1.2 | 2026-10-29 | MCP `get_task` に `fast_steps` / `openai_steps` / `handoff_reason` を追加し、`run_task` で高速パスが透過であることを明記。WebSocket `wheel` と MCP `scroll` の単位をノッチに統一（変換規則を追記）。共通規約に CSP ヘッダーと静的ファイルのキャッシュ（`no-cache` + ETag）を追加。GUI ルーターに高速パスの設定ルート（`/agent/fastpath`、`/agent/fastpath/api-key`）と `keep_screenshots` を追加し、タスク詳細・SSE にステップの経路と引き継ぎ理由を追加。§8 を決定事項と実機検証事項に改め、MCP SDK の設定値・OpenAPI の範囲・高解像度の扱いを決定。Jev による外部 Judge の項は削除（高速パスは内部機構） | 未決事項の決定 |
+| 1.3 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチ（3）を WhoIs・許可リスト・接続要求の作成より前に移動（キルスイッチ中は接続要求を作らない）。Bearer の参照先を NFR-S04 に統一。M1 のリース（`state` は `idle` / `held`、`holder.kind` は `mcp` のみ、承認なし）と、ダッシュボードの段階（強制剥奪ボタンは M2、実行中タスクと中断ボタンは M4）を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |

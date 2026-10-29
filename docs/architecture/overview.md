@@ -57,7 +57,7 @@ graph TD
         TS["tailscaled"]
         subgraph Net["tailnet 公開面 (tailnet IP のみ Listen)"]
             RR["リモートルーター (Gin)<br/>/mcp /ws /viewer /api/v1"]
-            MW["ミドルウェア<br/>Host/Origin 検証 → WhoIs → 許可リスト → Bearer(/mcp)"]
+            MW["ミドルウェア<br/>Host/Origin 検証 → キルスイッチ → WhoIs → 許可リスト → Bearer(/mcp)"]
         end
         subgraph Local["プロセス内のみ (ソケットなし)"]
             GR["GUI ルーター (Gin)<br/>Wails AssetOptions.Handler"]
@@ -185,18 +185,21 @@ sequenceDiagram
     C->>N: HTTP / WS リクエスト
     N->>N: Host ヘッダー検証 (NFR-S02)
     N->>N: Origin 検証 / X-Puppet-Remo (NFR-S03)
-    N->>TS: WhoIs (キャッシュ 10 秒)
-    TS-->>N: ユーザー + node ID
-    N->>A: 許可リスト照合
-    alt 未登録
-        A-->>N: 未登録
-        N-->>C: 403 (接続要求を作成 / 集約、レート制限)
-    else 登録済み
-        alt /mcp
-            N->>A: Bearer 照合 (ハッシュ・定数時間・node 束縛)
+    alt キルスイッチ発動中
+        N-->>C: 503 kill_switch_active (接続要求は作らない)
+    else 発動していない
+        N->>TS: WhoIs (キャッシュ 10 秒)
+        TS-->>N: ユーザー + node ID
+        N->>A: 許可リスト照合
+        alt 未登録
+            A-->>N: 未登録
+            N-->>C: 403 (接続要求を作成 / 集約、レート制限)
+        else 登録済み
+            alt /mcp
+                N->>A: Bearer 照合 (NFR-S04: ハッシュの定数時間比較・node 束縛)
+            end
+            N-->>C: 業務ハンドラへ
         end
-        N->>N: キルスイッチ確認
-        N-->>C: 業務ハンドラへ
     end
 ```
 
@@ -231,7 +234,7 @@ sequenceDiagram
         L-->>M: lease_held_by_other
         M-->>C: エラー
     else 取得可能
-        alt 承認が必要
+        alt 承認が必要 (M3 から。M1 は承認なしで idle → held)
             L->>P: Request(client)
             P->>G: 承認ダイアログを開く (60 秒)
             G-->>P: 許可 / 拒否 / タイムアウト
@@ -381,7 +384,7 @@ sequenceDiagram
     R-->>D: 403 (Web UI は「接続要求を送信しました」画面)
     R->>DB: 接続要求を upsert (device 単位に集約)
     R->>U: イベント (トレイ通知 + 接続要求画面)
-    U->>DB: 許可: クライアント登録 + 承認モード選択 / 拒否: 破棄
+    U->>DB: 許可: クライアント登録 (M3 から承認モード選択。M1 は既定 always で保存) / 拒否: 破棄
 ```
 
 ### キルスイッチ
@@ -513,3 +516,4 @@ puppet-remo/
 | 1.1 | 2026-10-29 | 内蔵エージェント（OpenAI `computer` ツール）を追加: 構成図・レイヤー（`openai`、`Agent`、`Judge`、`SecretStore`）、タスク実行フロー、キルスイッチの手順、Judge インターフェース、技術選定（openai-go v3、資格情報）、MCP SDK の保護に関する注記。MCP フローのツール名を `left_click` に更新 | ホスト内蔵エージェントを主役にする決定 |
 | 1.2 | 2026-10-29 | 「HALT の適用」を [フロントエンド設計](frontend.md) へ分離し、差分の要約とリンクに縮小。ディレクトリ構成を更新（`lib/api.ts` を初版から除外、`e2e/` 追加）、CI にフロントエンドのテストを追加 | HALT の規約を 1 か所に集約 |
 | 1.3 | 2026-10-29 | 未決事項の決定を反映: 外部通信に TypeSafe（高速パス有効時のみ）を追加、高速パス（Jev による候補選択、引き継ぎ理由、縮退）のフローとコンポーネント（`typesafe`、`FastPath`、`domain.Candidate`）を追加、Judge は RuleJudge のまま Jev を Judge にしない旨を明記、OpenAI の会話継続を `store: false` のステートレス方式に確定、技術選定のライブラリ・バージョン・ライセンス確定（go-keyring、go-ole、go-d3d、coder/websocket、ulid、MCP SDK の設定）、Wails dev の待受（esbuild `--serve`）、CSP、CI（Playwright は別の ubuntu ジョブ）、署名なしを追記 | 未決事項の決定 |
+| 1.4 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチを WhoIs・許可リスト・接続要求の作成より前に移動（構成図・シーケンス図）。Bearer の照合を NFR-S04 の参照に統一。承認が必要な分岐と接続要求の許可時の承認モード選択は M3 からと明記（M1 は承認なしの `idle → held`） | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |

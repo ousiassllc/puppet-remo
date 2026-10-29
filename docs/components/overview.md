@@ -291,7 +291,7 @@ type Clients interface {
 }
 type Tokens interface {
     Create(ctx, t TokenRecord) error                            // ハッシュのみ
-    ByHash(ctx, sha256 [32]byte) (TokenRecord, error)           // 定数時間比較は Authz が行う
+    ByHash(ctx, sha256 [32]byte) (TokenRecord, error)           // 引数はトークン文字列（接頭辞 `prm_` を含む）の SHA-256。形式は NFR-S04。ハッシュの定数時間比較は Authz が行う
     ListByClient(ctx, clientID string) ([]TokenRecord, error)
     Revoke(ctx, id string, at time.Time) error
     TouchUsed(ctx, id string, at time.Time) error
@@ -348,14 +348,15 @@ type WhoIs interface { // 接続元 IP → ユーザー・デバイス（10 秒�
 }
 type Identity struct{ LoginName, StableNodeID, NodeName string }
 
-type Listener interface { // tailnet IP だけで Listen する
-    // 状態の変化に追従して Listen を張り直す。IP が無い間は停止して理由を Reason に出す。
+type Listener interface { // tailnet アドレスだけで Listen する
+    // Status.IPs のうち取れたアドレス（IPv4・IPv6）のそれぞれに bind する。片方だけ取れたらそれで動作する。
+    // 両方とも取れない間は停止して理由を Reason に出す。状態の変化に追従して Listen を張り直す。
     Serve(ctx context.Context, h http.Handler, port func() int) error
     State() ListenState // { Listening bool; Addrs []string; Reason string }
 }
 ```
 
-**所有する goroutine**: `Watcher` が 1 本（`WatchIPNBus` の読み取り）、`Listener` が Listen 用に 1 本と接続ごとの標準の `http.Server` の goroutine。`WhoIs` は goroutine を持たず、キャッシュは `sync.Map` + 有効期限（TTL 10 秒）。Listener の再起動は 10 秒以内に完了する（NFR-A03）。`0.0.0.0` と `127.0.0.1` では Listen しない（NFR-S01）。
+**所有する goroutine**: `Watcher` が 1 本（`WatchIPNBus` の読み取り）、`Listener` が Listen 用にアドレスごとに 1 本（最大 IPv4・IPv6 の 2 本）と接続ごとの標準の `http.Server` の goroutine。`WhoIs` は goroutine を持たず、キャッシュは `sync.Map` + 有効期限（TTL 10 秒）。Listener の再起動は 10 秒以内に完了する（NFR-A03）。`0.0.0.0`・`127.0.0.1`・tailnet 以外のアドレスでは Listen しない（FR-A01、NFR-S01。ビルドタグ `e2e` のテスト専用の `Listener` だけがループバックで Listen する）。
 
 ### 4.3 openai
 
@@ -454,11 +455,11 @@ func New(key func(ctx context.Context) (string, error), cfg Config) Chooser
 
 ```go
 type LeaseManager interface {
-    // 取得。承認が必要なら Approval に問い合わせて待つ（最大 60 秒）。他者が保持中は ErrLeaseHeldByOther。
+    // 取得。M1 は承認なしで idle → held（保持者種別は mcp のみ）。M3 から、承認が必要なら Approval に問い合わせて待つ（最大 60 秒）。他者が保持中は ErrLeaseHeldByOther。
     Acquire(ctx context.Context, who domain.Actor) (Lease, error)
     // 保持者のみ。保持していなければ何もしない。
     Release(who domain.Actor)
-    // 強制剥奪（Web・ホスト）。保持者が agent ならタスクを中断する（Agent.Cancel を呼ぶ）。
+    // 強制剥奪（Web・ホスト。M2 から）。保持者が agent（M4）ならタスクを中断する（Agent.Cancel を呼ぶ）。
     Revoke(by domain.Actor) error
     // 以後の入力操作が許されるかの確認。活動時刻を更新する（アイドル解放の起点）。
     Check(who domain.Actor) error // ErrLeaseRequired / ErrLeaseHeldByOther / ErrLeaseRevoked
@@ -470,9 +471,9 @@ type LeaseManager interface {
 type Lease struct{ ID string; Holder domain.Actor; Since time.Time }
 ```
 
-- 状態は `idle → pending_approval → held → idle`（FR-L03）。`pending_approval` の間は他者の取得を `ErrLeaseHeldByOther` で断る
-- アイドルタイマーは `lease.idle_timeout_sec`（既定 300 秒）。`Check` が呼ばれるたびに延長する。`agent` のリースは、エージェントの各アクション実行が `Check` を呼ぶことで延長される（FR-L05）
-- **リースは MCP セッションに紐づく**: セッション終了で `Release`。WebSocket の切断で `web` のリースを `Release`
+- 状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は他者の取得を `ErrLeaseHeldByOther` で断る
+- アイドルタイマーは `lease.idle_timeout_sec`（既定 300 秒）。`Check` が呼ばれるたびに延長する。`agent` のリース（M4）は、エージェントの各アクション実行が `Check` を呼ぶことで延長される（FR-L08）
+- **リースは MCP セッションに紐づく**: セッション終了で `Release`。WebSocket の切断で `web` のリースを `Release`（M2）
 - 状態遷移はすべて `Audit` に記録し、`Bus` に `lease` イベントを出す（Web UI・GUI が購読）
 
 ### 5.3 Approval
@@ -493,7 +494,7 @@ type ApprovalRequest struct {
 }
 ```
 
-要求を作るたびに `Bus` へ `approval` を出す。承認ダイアログのウィンドウを開くのは `app`（購読側）で、`Approval` は UI を知らない。
+要求を作るたびに `Bus` へ `approval` を出す。承認ダイアログのウィンドウを開くのは `app`（購読側）で、`Approval` は UI を知らない。`Approval` は M3 から使う（M1 の `LeaseManager` は `Approval` を呼ばず、承認なしで取得させる）。
 
 ### 5.4 Control と InputGuard（すべての入力の唯一の入口）
 
@@ -517,7 +518,7 @@ type Control interface {
 3. `InputGuard.Check(op)` → 自ウィンドウ・昇格ウィンドウ・SAS を `ErrInputBlocked` で拒否（NFR-S06、UIPI）
 4. `who.Kind == agent` のとき `Judge.Assess` → `Deny` は `ErrJudgeDenied`、`RequireApproval` は `Approval.Request`（拒否・失効は `ErrApprovalDenied`）
 5. `platform` の注入を実行
-6. `Audit.Append`（引数、結果、所要時間。`type` の本文は既定で文字数のみ。FR-AU03）と、設定が有効ならサムネイル保存
+6. `Audit.Append`（引数、結果、所要時間。`type` の本文は既定で文字数のみ。FR-AU03）。M1 はここまで（DB への追記のみ）。設定が有効ならサムネイル保存は M3（FR-AU02）
 
 ```go
 // InputGuard は事実（platform）から判定する純粋なロジック。状態を持たない。
@@ -685,7 +686,7 @@ type KillSwitch interface {
 
 ```go
 type Authz interface {
-    // ミドルウェア連鎖の 3〜5 を担う。
+    // ミドルウェア連鎖の 4〜6（WhoIs、許可リスト、Bearer）を担う。キルスイッチ（3）は Authorize より前、接続要求の作成より前に判定する。
     Authorize(ctx context.Context, r Request) (Principal, error)
     IssueToken(ctx context.Context, clientID, label string, ttl *time.Duration) (plaintext string, err error)
     // 未登録デバイスの接続要求を作る（レート制限付き。超過は GUI に出さず記録のみ）。
@@ -694,13 +695,13 @@ type Authz interface {
 type Principal struct{ Client domain.Client; Identity tailnet.Identity; Token *TokenRecord }
 ```
 
-トークンは 256 bit の乱数、DB にはハッシュのみ、比較は `subtle.ConstantTimeCompare`。認証失敗のカウンタ（デバイスごと、1 分 10 回）はメモリに持つ。
+Bearer トークンは `prm_` + base64url（パディングなし）の 32 バイト乱数。DB には接頭辞を含むトークン文字列（UTF-8）の SHA-256 だけを保存し、照合は提示された文字列の SHA-256 とのハッシュの `subtle.ConstantTimeCompare`（形式・保存・照合の定義は NFR-S04）。認証失敗のカウンタ（デバイスごと、1 分 10 回）はメモリに持つ。
 
 ### 5.10 そのほか
 
 | コンポーネント | インターフェース（要点） | 備考 |
 |---------------|-------------------------|------|
-| `Audit` | `Record(ctx, e domain.AuditEvent)`（非同期キューへ。満杯時は呼び出しを遅延させず、ドロップ数を `slog` に警告） | サムネイル保存は `Control` が `Capturer.Grab` → 縮小 → JPEG → `ThumbStore`。保持期間・容量の削除は `Maintenance` |
+| `Audit` | `Record(ctx, e domain.AuditEvent)`（非同期キューへ。満杯時は呼び出しを遅延させず、ドロップ数を `slog` に警告） | **M1**: 認証失敗・リース・ツール実行を `repository.Audit.Append` で DB に追記するところまで（閲覧 UI と縮小スクリーンショットは作らない）。**M3**: 全イベントの記録、閲覧（`Query`）、サムネイル保存（`Control` が `Capturer.Grab` → 縮小 → JPEG → `ThumbStore`）、保持期間・容量の削除（`Maintenance`） |
 | `Updater` | `Check(ctx)`、`Apply(ctx)` | 署名検証（Ed25519）に失敗・ダウングレードは適用しない。リース・タスク実行中は適用しない |
 | `Bus` | `Publish(Event)`、`Subscribe(topics ...string) (<-chan Event, cancel func())` | イベント: `lease` / `approval` / `tasks` / `connection-requests` / `killswitch` / `server-status` / `sessions` / `toast` |
 | `Maintenance` | `Run(ctx)` | 起動時と 1 時間ごと: 接続要求の失効、監査の保持期間、サムネイル容量、孤児ファイルの掃除、タスクの保持期間。起動時に `Tasks.AbortActive` |
@@ -713,7 +714,7 @@ type Principal struct{ Client domain.Client; Identity tailnet.Identity; Token *T
 | パッケージ | 責務 | 依存してよい先 |
 |-----------|------|---------------|
 | `router` | GUI ルーターとリモートルーターの組み立て、ミドルウェア連鎖（API 仕様 §1） | `service`、`domain` |
-| `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`whois`、`allowlist`、`bearer`、`killswitch` | `service.Authz`、`tailnet.WhoIs` |
+| `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`killswitch`、`whois`、`allowlist`、`bearer`（API 仕様 §1 の連鎖の順） | `service.Authz`、`tailnet.WhoIs` |
 | `web/handler` | 機能別の HTTP ハンドラ（viewer、clients、tasks、settings、audit …）。Templ で描画 | `service`、`domain` |
 | `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換 | `service`、`domain` |
 | `ws` | WebSocket のプロトコル（JSON とバイナリフレームの符号化・復号）。入力メッセージを `domain.Op` に変換して `Control` へ | `service`、`domain` |
@@ -850,3 +851,4 @@ CI（`windows-latest`）には**対話デスクトップがない**ため、DXGI
 |---|------|---------|---------|
 | 1.0 | 2026-10-29 | 初版作成 | — |
 | 1.1 | 2026-10-29 | 未決事項の決定を反映: `typesafe`（`Chooser`）、`domain.Candidate` / `CandidateTable`・`UISnapshot`・`HandoffReason`、`FastPath`（状態機械・引き継ぎ・縮退）、`UIAutomation.Snapshot`、`InputInjector.Wheel`、`SecretStore` のキー名を追加。`openai.Model` を `store: false` のステートレス継続（`History`・スクリーンショットの間引き）に変更。Judge から外部 Jev の記述を削除。テスト方針・トレース・起動終了の記述を追従。§12 を決定事項と実機・実 API の検証事項に再編 | 未決事項の決定 |
+| 1.2 | 2026-10-29 | PR #2 のレビュー対応: `Listener` を tailnet の IPv4・IPv6 のそれぞれに bind し、片方だけでも動作・両方取れなければ停止と明記（`127.0.0.1` 等では Listen しない旨を NFR-S01 と揃える）。Bearer の形式・保存・照合を NFR-S04 に揃える。ミドルウェアの順序でキルスイッチを接続要求の作成より前に移動。`LeaseManager` の状態・取得・剥奪・切断の段階（M1 は承認なしの `idle → held`・`mcp` のみ、`pending_approval` は M3、強制剥奪は M2、`agent` は M4）、`Audit` の M1（追記のみ）/ M3（閲覧・サムネイル）の段階を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |

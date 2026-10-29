@@ -491,8 +491,8 @@ graph LR
 | 要件 | 担当 |
 |------|------|
 | FR-W01〜W09（Web UI） | `pages/remote`、`organisms/remote`、`<remo-screen-viewer>`、`handler/remote` |
-| FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`、SSE |
-| FR-L06（強制剥奪） | `lease_panel`（リモート・GUI）の状態駆動レンダリング |
+| FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`、SSE。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。`lease_panel`（GUI）の強制剥奪ボタンは M2、`task_panel` と中断ボタンは M4（FR-H02） |
+| FR-L06（強制剥奪。M2） | `lease_panel`（リモート・GUI）の状態駆動レンダリング。M1 の GUI の `lease_panel` は保持者の表示のみで、`CanRevoke` のボタンは描画しない |
 | NFR-S02・S03（Host / Origin、カスタムヘッダー） | `middleware`、`layout` の `hx-headers` |
 | NFR-S06（自己保護） | ビューアに自ウィンドウが写らない（キャプチャ除外）。GUI に AI の入力が届かない（InputGuard） |
 | NFR-P02（表示遅延） | ビューアの描画方式（§6.2）、`lib/ws.ts` |
@@ -515,3 +515,4 @@ graph LR
 |---|------|---------|---------|
 | 1.0 | 2026-10-29 | 初版作成（`overview.md` の「HALT の適用」から詳細を分離） | HALT の規約を 1 か所に集約する |
 | 1.1 | 2026-10-29 | CSP（§7.1）を新設。ホイールの単位をノッチに確定（§6.2）。トークンのコピーの方式を確定（§7）。`wails3 dev` の `FRONTEND_DEVSERVER_URL` に関する記述を、ソースで確認した事実（`WAILS_VITE_PORT` での待ち受けが必須、カスタム Handler は転送されない）に訂正し、`dev:frontend` を esbuild の `serve` に確定（§8.3）。Playwright を ubuntu の別ジョブに確定（§9）。静的ファイルのキャッシュ・`lib/api.ts` を作らないことをユーザー承認済みとして確定（§2）。htmx の版の固定手順を明記（§8.1）。§11 を実機で検証する事項だけに改めた | 未決事項の決定 |
+| 1.2 | 2026-10-29 | PR #2 のレビュー対応: §10 のトレースに、M1 のダッシュボードの範囲（強制剥奪ボタンは M2、`task_panel` と中断ボタンは M4）を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
