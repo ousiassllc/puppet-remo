@@ -10,32 +10,34 @@
 - **OS 依存部はインターフェースの背後に置く**（`platform` パッケージ）。コアは OS 非依存でテストできる（[NFR-O03](../requirements/non-functional.md)）
 - **純 Go（cgo なし）**。画像は JPEG のみ（配信・サムネイルとも）
 - tailnet への参加は**ホストの tailscaled** に任せ、本アプリは LocalAPI クライアントになる
-- **内蔵エージェントは「別の操作主体」であり、安全機構は共通**。OpenAI の `computer` ツールが返すアクションを 1 件ずつ、MCP 直接・Web UI と同じ入力層（InputGuard → リース → キルスイッチ → 監査）に通す。モデルが生成したコードをホストで実行する方式（`exec_py` 等）は採らない。ほかに承認を省略できる経路を作らない（[NFR-S15](../requirements/non-functional.md)）
-- **外部通信は GitHub（更新）と OpenAI（エージェント有効時のみ）**。OpenAI API キーは Windows 資格情報マネージャーにだけ置く
+- **内蔵エージェントは「別の操作主体」であり、安全機構は共通**。OpenAI の `computer` ツールが返すアクションを 1 件ずつ、MCP 直接・Web UI と同じ入力層（キルスイッチ → リース → InputGuard → Judge → 操作 → 監査）に通す。モデルが生成したコードをホストで実行する方式（`exec_py` 等）は採らない。ほかに承認を省略できる経路を作らない（[NFR-S15](../requirements/non-functional.md)）
+- **高速パス（任意。既定は無効）は「選ぶだけ」の補助**。TypeSafe の Jev は、アプリが UI Automation から作った**不変の候補表から ID を 1 つ選ぶ**だけで、ツール名・座標・引数を生成しない。迷ったら OpenAI の `computer` ツールのループへ引き継ぎ、**タスクの完了宣言は常に OpenAI が行う**。Jev は Judge ではなく、承認を緩めることはない（[FR-G16](../requirements/functional.md)、[NFR-S17](../requirements/non-functional.md)）
+- **外部通信は GitHub（更新）、OpenAI（エージェント有効時のみ）、TypeSafe（高速パス有効時のみ）の 3 つだけ**。OpenAI API キーと TypeSafe API キーは Windows 資格情報マネージャーにだけ置く。OpenAI へは常に `store: false` で送る（[FR-G24](../requirements/functional.md)、[NFR-PR03](../requirements/non-functional.md)）
 
 ## 技術選定
 
 | 領域 | 技術 | 選定理由・備考 |
 |------|------|--------------|
 | 言語 | Go | Wails / Tailscale クライアントライブラリと同じ言語。cgo を使わず Windows ビルドを単純化 |
-| アプリシェル | Wails v3 | トレイ常駐・複数ウィンドウ・`AssetOptions.Handler`（`http.Handler` を WebView に配信）・`IgnoreMouseEvents` / `AlwaysOnTop` / 透過背景（オーバーレイ）・`ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）・単一インスタンスを標準で持つ。ドキュメント上は beta 表記のため、実装時にバージョンを固定する（`go.mod` は v3.0.0 タグを確認済み） |
+| アプリシェル | Wails v3 | トレイ常駐・複数ウィンドウ・`AssetOptions.Handler`（`http.Handler` を WebView に配信）・`IgnoreMouseEvents` / `AlwaysOnTop` / 透過背景（オーバーレイ）・`ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）・単一インスタンスを標準で持つ。ドキュメント上は beta 表記のため `go.mod` で v3.0.0 に固定する。`wails3 dev` は常に `FRONTEND_DEVSERVER_URL=http://<host>:$WAILS_VITE_PORT`（既定 9245）を設定し、その待受を確認できないと起動に失敗する（ソースで確認済み）。デフォルトの AssetFileServer だけが開発サーバーへプロキシし、カスタム `AssetOptions.Handler`（本アプリの GUI ルーター）には適用されない。開発時は WebView の開始 URL のポートも開発サーバーのポートになる |
 | HTTP ルーティング / SSR | Gin | HALT 標準 |
 | JSON API | Huma | HALT 標準。Lit アイランドが使う JSON API と OpenAPI を提供 |
 | テンプレート | Templ | 型安全な SSR。Atomic Design（atoms / molecules / organisms / pages / layout）で構成 |
-| インタラクション | HTMX（`response-targets`、ホスト GUI のみ `sse` 拡張） | サーバー駆動の DOM 更新 |
+| インタラクション | HTMX（`response-targets`、ホスト GUI のみ `sse` 拡張） | サーバー駆動の DOM 更新。CSP（`script-src 'self'` 等）下で動かすため、`allowEval=false`・`includeIndicatorStyles=false` を同梱 JS で設定し、`hx-on` と `js:` 接頭辞は使わない（[NFR-S19](../requirements/non-functional.md)、[フロントエンド設計](frontend.md)） |
 | リッチ UI | Lit（Web Components） | ライブ画面ビューア 1 つだけ（`<remo-screen-viewer>`）。Canvas + WebSocket + 入力キャプチャのため |
-| スタイル / ビルド | Tailwind CSS / esbuild | HALT 標準。成果物は `go:embed` で単一バイナリに同梱 |
-| MCP | 公式 Go SDK（`github.com/modelcontextprotocol/go-sdk`） | `NewStreamableHTTPHandler` で Streamable HTTP を提供 |
+| スタイル / ビルド | Tailwind CSS / esbuild | HALT 標準。成果物は `go:embed` で単一バイナリに同梱。`wails3 dev` が開発サーバーの待受を要求するため、`dev:frontend` タスクは esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（ウォッチ付き）を起動する。これは待受の代替とライブ再ビルドのみで、GUI のページは GUI ルーターが配信する。開発時の静的ファイルはディスクから読む |
+| MCP | 公式 Go SDK（`github.com/modelcontextprotocol/go-sdk` v1.8.0） | `NewStreamableHTTPHandler` で Streamable HTTP を提供。オプションの扱い（`SessionTimeout` 30 分、`MaxRequestBodyBytes` 1 MiB、`Stateless=false`、`CrossOriginProtection` 不使用など）は「ルーターの分離とリクエスト処理」を参照 |
 | tailnet 連携 | `tailscale.com/client/local` | LocalAPI の `WhoIs`、`WatchIPNBus`（IP 変化監視）、`StatusWithoutPeers`。Windows では名前付きパイプ経由でライブラリが接続する |
-| WebSocket | `github.com/coder/websocket` | context 対応・バイナリフレーム・軽量（候補。実装時に確定） |
+| WebSocket | `github.com/coder/websocket` v1.8.15（ISC） | context 対応・バイナリフレーム・軽量 |
 | 永続化 | SQLite（`modernc.org/sqlite`、純 Go）+ 埋め込み SQL マイグレーション | cgo なし。WAL モード（[NFR-A06](../requirements/non-functional.md)） |
-| 画面キャプチャ | DXGI Desktop Duplication（主）、GDI BitBlt（フォールバック） | DXGI は変更矩形を OS から取得でき低 CPU。失敗時は GDI へ切り替え |
+| 画面キャプチャ | DXGI Desktop Duplication（主、`github.com/kirides/go-d3d` v1.0.1・MIT・cgo なし）、GDI BitBlt（フォールバック） | DXGI は変更矩形を OS から取得でき低 CPU。失敗時は GDI へ切り替え。`go-d3d` は M2 のキャプチャスパイクの結果を見て採用を確定し、スパイクが失敗した場合は自前の syscall 実装に切り替える |
 | 入力注入 | Win32 `SendInput`（`golang.org/x/sys/windows`） | cgo 不要。`type` は `KEYEVENTF_UNICODE` で日本語を直接送る |
-| UI Automation | COM `IUIAutomation`（`go-ole` 等） | `get_ui_tree` 用 |
+| UI Automation | COM `IUIAutomation`（`github.com/go-ole/go-ole` v1.3.0・MIT。IUIAutomation の vtable バインディングは自前で書く） | `get_ui_tree` と高速パスの候補表（スナップショット）用 |
 | 画像エンコード | 標準 `image/jpeg` | 純 Go 制約のため JPEG のみ |
 | OpenAI クライアント | `github.com/openai/openai-go/v3` | v3.90.0 で確認済み: `responses.ComputerToolParam`（`{type:"computer"}`）、`ResponseComputerToolCall` の `Actions`（`click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot`）と `PendingSafetyChecks`、`ResponseComputerToolCallOutputItem` の `AcknowledgedSafetyChecks`。旧 `computer_use_preview`（`environment: "windows"` 等を指定する旧方式）は使わない |
-| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` を候補。v0.2.8 を確認。cgo 不要かは実装時に確認） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く |
-| Judge（判定補助） | 既定はルールベース（自前） | 外部モデル（Jev 等）は未決。TypeSafe の API に Go SDK は無く、使う場合は HTTP（`POST https://api.typesafe.ai/v1/systemone`）を直接呼ぶ |
+| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` v0.2.8・MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go で、cgo 不要をソースと `go list` で確認済み） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く。OpenAI キーと TypeSafe キー（ターゲット名 `puppet-remo/typesafe`）は同じ SecretStore に置く |
+| 高速パス（Jev による候補選択） | TypeSafe API（`POST https://api.typesafe.ai/v1/systemone`、モデル既定 `jev-1.13`）を `internal/typesafe` から直接呼ぶ。Go SDK は無いため標準 `net/http` | 既定は無効（`agent.fastpath.enabled`）。入力はテキストと JSON のみ（スクリーンショットは送らない）。呼び出しは 5 秒タイムアウト・再試行なし。**Jev は Judge ではない**（承認を緩めない）。Judge は既定のルールベース（自前の `RuleJudge`）のまま。品質は自前のタスクで M4 に測定して確認し、仕様書には性能の主張を書かない（[FR-G16](../requirements/functional.md)） |
+| ID 生成 | `github.com/oklog/ulid/v2` v2.1.2（Apache-2.0） | タスク・監査ログなどの ID。時刻順に並ぶ |
 | 検討したが採らない | Cua Driver（`trycua/cua`、Rust 製、MIT） | CLI・MCP・型付き SDK 経由で OS 操作を提供するが、本アプリは同一プロセス・純 Go で InputGuard・リース・監査を一貫して制御するため `platform` 層を自前実装する |
 | 自動更新 | GitHub Releases + Ed25519 署名検証 | [NFR-S10](../requirements/non-functional.md) |
 
@@ -49,6 +51,7 @@ graph TD
     end
     subgraph Cloud["インターネット"]
         OAI["OpenAI API<br/>(Responses / computer ツール)"]
+        TSAFE["TypeSafe API<br/>(Jev・高速パス有効時のみ)"]
     end
     subgraph Host["ホスト (Windows) — 単一プロセス puppet-remo"]
         TS["tailscaled"]
@@ -69,7 +72,8 @@ graph TD
             TOOLS["操作ツール (Control)"]
             STREAM["画面配信 (Streamer)"]
             AGENT["内蔵エージェント (Agent)<br/>タスク実行ループ"]
-            JUDGE["判定 (Judge)<br/>ルールベース + 差し込み可"]
+            FASTPATH["高速パス (FastPath)<br/>候補表 → Jev → 1 ステップ実行"]
+            JUDGE["判定 (Judge)<br/>ルールベース RuleJudge"]
             BUS["イベントバス"]
         end
         subgraph Plat["platform (Windows)"]
@@ -95,6 +99,11 @@ graph TD
     AGENT --> AUDIT
     AGENT --> SECRET
     AGENT -- "HTTPS (指示・スクリーンショット・履歴)" --> OAI
+    AGENT --> FASTPATH
+    FASTPATH --> UIA
+    FASTPATH --> TOOLS
+    FASTPATH --> SECRET
+    FASTPATH -- "HTTPS (候補表の JSON のみ・スクリーンショットなし)" --> TSAFE
     GR --> AGENT
     RR --> STREAM
     WIN --> GR
@@ -124,11 +133,12 @@ HALT のレイヤードアーキテクチャを採用し、OS アダプタとプ
 graph TD
     H["web/handler・mcp・ws<br/>(プロトコル入口)"]
     T["web テンプレート<br/>atoms / molecules / organisms / pages"]
-    S["service<br/>(Authz, Lease, Approval, Control, Agent, Judge, Streamer, Audit, Updater)"]
+    S["service<br/>(Authz, Lease, Approval, Control, Agent, FastPath, Judge, Streamer, Audit, Updater)"]
     R["repository<br/>(SQLite)"]
     P["platform<br/>(interface + windows 実装)"]
     TN["tailnet<br/>(LocalAPI クライアント)"]
     OA["openai<br/>(Responses API クライアント)"]
+    TY["typesafe<br/>(Chooser: Jev クライアント)"]
     D["domain<br/>(純粋なモデル・ルール)"]
     H --> S
     H --> T
@@ -141,16 +151,19 @@ graph TD
     TN --> D
     S --> OA
     OA --> D
+    S --> TY
+    TY --> D
 ```
 
 | レイヤー | 責務 | 依存してよい先 |
 |---------|------|--------------|
-| `domain` | クライアント、リース状態機械、承認モード、座標変換、ツール引数、エラー種別などの純粋なモデルとルール | なし |
+| `domain` | クライアント、リース状態機械、承認モード、座標変換、ツール引数、エラー種別、高速パスの候補（`Candidate` / `CandidateTable`: 役割クラスの対応表、除外、ID 導出、選択の検証）などの純粋なモデルとルール | なし |
 | `repository` | SQLite へのアクセス（クライアント、トークン、設定、接続要求、監査ログ） | `domain` |
-| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・クリップボード・資格情報（SecretStore）・オーバーレイ補助のインターフェースと Windows 実装 | `domain` |
+| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree` と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助のインターフェースと Windows 実装 | `domain` |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs + 10 秒キャッシュ、Listener 管理） | `domain` |
-| `openai` | OpenAI Responses API のクライアント（`computer` ツールの要求・応答、タイムアウト、キーの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
-| `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai` |
+| `openai` | OpenAI Responses API のクライアント（`computer` ツールの要求・応答、`store: false` 固定、タイムアウト、キーの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
+| `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`（`Choose(ctx, ChoiceRequest) (ChoiceResult, error)`）の背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
+| `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、高速パス（`FastPath`。Agent の内部）、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai`、`typesafe` |
 | `web/handler`、`mcp`、`ws` | HTTP / MCP / WebSocket の入口。`repository` と `platform` を直接使わない | `service`、`domain` |
 | `web` テンプレート | Templ（Atomic Design） | `domain`（表示用データ） |
 
@@ -187,7 +200,17 @@ sequenceDiagram
     end
 ```
 
-`/mcp` の手前には、本アプリ自前の Host / Origin 検証ミドルウェア（NFR-S02）を必ず置く。MCP Go SDK の `StreamableHTTPOptions` には localhost 向けの保護（`DisableLocalhostProtection`、`CrossOriginProtection`）があるが、本アプリは tailnet IP で Listen するため SDK の保護には依存せず、SDK 側の設定の挙動は実装時に確認する。また SDK の `SessionTimeout`（MCP セッションの寿命）とリースのアイドル解放（FR-S04、既定 5 分）は別のものとして独立に設定する。
+`/mcp` の手前には、本アプリ自前の Host / Origin 検証ミドルウェア（NFR-S02）を必ず置く。MCP Go SDK v1.8.0 の `StreamableHTTPOptions` は次のとおり扱う（ソースで確認済み）。
+
+| オプション | 方針 | 理由 |
+|-----------|------|------|
+| `DisableLocalhostProtection` | SDK の保護に依存しない | ループバックのアドレスで届いたリクエストにだけ働く。tailnet IP で Listen する本アプリでは無関係で、保護は自前の Host / Origin ミドルウェア（NFR-S02）が担う |
+| `CrossOriginProtection` | 使わない | 非推奨のため |
+| `SessionTimeout` | 30 分（アイドル）を明示 | 既定の 0 は「セッションを閉じない」。リースのアイドル解放（FR-S04、既定 5 分）とは独立に設定する |
+| `EventStore` | v1 では使わない | ストリームの再開は提供せず、クライアントは再 initialize する |
+| `MaxRequestBodyBytes` | 1 MiB を明示 | [NFR-S09](../requirements/non-functional.md) |
+| `Stateless` | `false` | リース保持者をセッションに束縛するため |
+| `JSONResponse` | 既定のまま | — |
 
 ## 主要フロー
 
@@ -245,6 +268,9 @@ sequenceDiagram
         P-->>L: 許可 / 拒否 / タイムアウト
         A-->>M: task_id, status (即時)
         M-->>C: task_id
+        opt 高速パスが有効でキー・同意あり (FR-G22)
+            A->>A: 高速パスのループ (下のフローチャート)。エスカレーションで OpenAI のループへ
+        end
         loop ステップ上限・時間上限まで
             A->>O: Responses(computer ツール, 指示 / 画面)
             O-->>A: computer_call (actions[], pending_safety_checks)
@@ -270,12 +296,54 @@ sequenceDiagram
     M-->>C: 状態・ステップ数・最終回答
 ```
 
-- **ループの 1 ステップ**は Responses API の呼び出し 1 回。`computer_call` が返らなくなったら最終回答として `completed` にする（[FR-G04](../requirements/functional.md)）
+- **ループの 1 ステップ**は、OpenAI ループでは Responses API の呼び出し 1 回、高速パスでは Jev 1 回 + アクション 1 件。`computer_call` が返らなくなったら最終回答として `completed` にする（[FR-G04](../requirements/functional.md)）。監査の各ステップに `route`（`fast` / `openai`）を記録する
 - **画面**は MCP の `screenshot` と同じキャプチャを使い、FR-M16 の縮小規則で縮小した PNG を `detail: "original"` で送る。モデルが返す座標は縮小座標として物理座標に戻す（OpenAI のガイドが求める「縮小した場合はモデルの座標を元の座標空間に戻す」に一致）
 - **すべてのアクションを 1 件ずつ検査**する。ブロック・拒否が 1 回でも起きたら、残りの `actions[]` は実行せずタスクを `failed` にする（FR-G07）
 - **中断**は、実行中の OpenAI 呼び出しの `context` を取り消し、押下中のキー・ボタンを解放し、リースを解放する。キルスイッチ・リース剥奪・`cancel_task` はすべて同じ経路（FR-G10）
 - **状態の永続化**: タスクは状態遷移のたびに `agent_tasks` を更新する。ステップは監査ログの行として `task_id` と連番付きで保存する（[ER](er.md)）。実行状態（ループ・リース）はメモリのみで、再起動時に `running` / `pending_approval` のタスクを `aborted` にする（NFR-A08）
-- **会話の継続方式**（`previous_response_id` を使うか、全履歴を再送するか）と OpenAI 側の保存（`store`）は、実装時に OpenAI の最新仕様とデータ保持の扱い（NFR 未決事項）を確認して確定する
+- **会話の継続はステートレス**（[FR-G24](../requirements/functional.md)）: すべての Responses API 呼び出しで `store: false` を送り、`previous_response_id` は使わない。毎回、指示・これまでの出力アイテム（原文のまま）・`computer_call_output` アイテムを含む履歴を再送する。スクリーンショットは直近 `agent.keep_screenshots` 枚（既定 3、FR-S19）だけを残し、古いものはテキストのプレースホルダに置き換える。`reasoning` の暗号化コンテンツなど `include` に必要なものは、実装時のスモークテストで実 API に対して確認する
+- **OpenAI 側のデータ保持**（OpenAI の文書による）: API のデータは既定で学習に使われない。不正利用監視のログは最大 30 日保持される（ゼロデータ保持の承認があれば除く）。`store` を省略または `true` にするとアプリの状態が 30 日以上保持される。画像入力は CSAM のスキャン対象で、ゼロデータ保持でも審査のために保持されうる（[NFR-PR03](../requirements/non-functional.md)）
+- **スクリーンショットの大きさ**: 最大辺の既定は 1568 px（FR-S03）。16:9 では 1568×882 = 49×28 = 1,372 パッチで、文書上の拒否上限 30,000 パッチと、リサイズの予算（10,000 / 2,500 パッチ）を大きく下回る。PNG を `detail: "original"` で送る。測定に基づく調整は設定で行える
+
+### 高速パス（Jev による 1 ステップずつの候補選択）
+
+任意機能（`agent.fastpath.enabled`、既定 false）。タスクの先頭で、Jev が候補表から 1 件ずつ選んで実行する。**迷ったら OpenAI のループへ引き継ぎ、一度引き継いだらタスクの終了まで OpenAI のまま**（v1 では戻さない）。完了の宣言は常に OpenAI が、確認用のスクリーンショット 1 枚を見たうえで行う（[FR-G16](../requirements/functional.md)〜[FR-G23](../requirements/functional.md)）。
+
+```mermaid
+flowchart TD
+    START["タスク開始 (リース取得後)"] --> EN{"高速パス有効かつ<br/>キー・同意あり?"}
+    EN -- "いいえ (黙ってスキップ)" --> OAI
+    EN -- "はい" --> SNAP["UI Automation スナップショット<br/>→ 候補表を構築 (domain.CandidateTable)"]
+    SNAP --> EMPTY{"候補あり?"}
+    EMPTY -- "なし: no_candidates" --> ESC
+    EMPTY -- "あり" --> CALL["Jev に問い合わせ (Choice next + Noul goal_maybe_done)<br/>5 秒・再試行なし"]
+    CALL -- "タイムアウト / ネットワーク / 5xx / 429: chooser_unavailable" --> ESC
+    CALL --> CHK{"応答の検証"}
+    CHK -- "表にない・重複・不正・古い ID: invalid_choice" --> ESC
+    CHK -- "confidence が min_confidence 未満: low_confidence" --> ESC
+    CHK -- "abstain" --> ESC
+    CHK -- "goal_maybe_done が 0.5 以上: goal_maybe_done" --> ESC
+    CHK -- "reobserve" --> RE{"連続 2 回以内?"}
+    RE -- "はい" --> SNAP
+    RE -- "いいえ: abstain" --> ESC
+    CHK -- "候補 ID" --> ACT["1 アクションを実行<br/>キルスイッチ → リース → InputGuard → RuleJudge → Control → 監査"]
+    ACT -- "ブロック・拒否" --> FAIL["タスクを failed にする"]
+    ACT --> OBS["再観測 (UIA ツリーのハッシュ・フォアグラウンドウィンドウ)"]
+    OBS --> PROG{"進捗あり?"}
+    PROG -- "3 回連続でなし: no_progress" --> ESC
+    PROG -- "あり" --> LIM{"高速ステップが max_steps 到達?"}
+    LIM -- "はい: fast_step_limit" --> ESC
+    LIM -- "いいえ" --> SNAP
+    ESC["エスカレーション (handoff_reason を記録)"] --> OAI["OpenAI の computer ツールのループ<br/>最初のリクエスト: 指示 + 高速ステップの要約 + 新しいスクリーンショット"]
+    OAI --> DONE["完了は OpenAI のみが宣言<br/>(確認用スクリーンショット 1 枚)"]
+```
+
+- **候補表**は `domain` の純粋なロジック（[FR-G17](../requirements/functional.md)）。フォアグラウンドウィンドウの UI Automation スナップショット（フォーカス移動は `list_windows`）から作る。v1 の候補は UIA 要素の `click`（外接矩形の中心をアプリが計算）と `focus_window`、メタ候補の `reobserve` / `abstain`。`type` / `key` / `scroll` は高速パスに載せず、必要になった時点で OpenAI へ引き継ぐ。候補は有効・画面内・ラベルが空でないネイティブ要素に限り、最大 24 件。ID は（役割クラス + 正規化したラベル + 操作可能な祖先パス）のハッシュで、要素の添字やランタイム ID は使わない。`agent.fastpath.excluded_labels`（FR-S18。既定: delete、send、purchase、close、削除、送信 など）に一致するラベルは除外する
+- **Jev に送るもの**: 指示、ウィンドウのタイトルとプロセス名、候補（ID・役割・ラベル・有効）、直近 5 件の高速ステップの短い文。**送らないもの**: スクリーンショット、要素の値、クリップボード、入力テキストの本文、API キー（[FR-G18](../requirements/functional.md)、[NFR-PR04](../requirements/non-functional.md)）。Jev の回答は構築時の不変の表と照合し、一致しなければ採らない
+- **共通の入力層**: 高速パスの 1 アクションも、MCP・OpenAI の経路と同じ層を通る。Judge は Jev の回答を見ず、RuleJudge が判定する。高速ステップも全体の `agent.max_steps`（50）と `agent.max_duration_sec`（600）に数える
+- **縮退**（[FR-G21](../requirements/functional.md)）: 高速パスの失敗でタスクは失敗にならない。TypeSafe 呼び出しの失敗（タイムアウト・ネットワーク・5xx・429）は、そのステップを `chooser_unavailable` で OpenAI へ引き継ぐ（引き継いだタスクは最後まで OpenAI で続ける）。HTTP 401 は GUI に通知し、`agent.fastpath.enabled` を false にする（キー無効）
+- **引き継ぎ理由**（`handoff_reason`）: `abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable`。引き継ぎが起きなかった場合（高速パス無効、または高速パス中にキャンセル・失敗で終了）は NULL。`agent_tasks` に `fast_steps` / `openai_steps` / `handoff_reason` を持ち、`get_task` と監査（ステップの `route`、候補数、除外数、選択 ID、confidence、goal_maybe_done の確率）に出す。入力テキストと要素の値は記録しない（[FR-G23](../requirements/functional.md)、[ER](er.md)）
+- **評価**: 高速パスの品質の根拠は、Cua の小規模な自己申告テスト（8/9 対 9/9、判断の中央値が 13.6 倍速い）しかない。M4 で、固定したタスク集合を使って自前で測定し、結果が出るまで仕様に性能の主張を書かない。Jev のプロンプトインジェクション検知は一切あてにしない。敵対的なコンテンツへの弱さ（Jev の jaggedness の文書）は、固定の候補表、RuleJudge、InputGuard、ステップ上限で緩和する
 
 ### Web UI のライブ表示と手動操作
 
@@ -318,7 +386,7 @@ sequenceDiagram
 
 ### キルスイッチ
 
-発動経路（トレイ、ダッシュボード、グローバルホットキー）はいずれも `KillSwitch.Trigger()` を呼ぶ。処理順は、(1) 状態を `active` に永続化、(2) 全リース剥奪、(3) 実行中のエージェントのタスクを中断（OpenAI 呼び出しの取り消し、押下中入力の解放）、(4) リモートルーターのリクエストを 503 `kill_switch_active` で拒否、(5) 全 MCP・WebSocket セッションを切断、(6) オーバーレイ消去、(7) 監査記録。順序は NFR-P05（1 秒以内）を満たすため同期で行い、永続化は先頭に置いて再起動後も維持する（[NFR-S07](../requirements/non-functional.md)）。
+発動経路（トレイ、ダッシュボード、グローバルホットキー）はいずれも `KillSwitch.Trigger()` を呼ぶ。処理順は、(1) 状態を `active` に永続化、(2) 全リース剥奪、(3) 実行中のエージェントのタスクを中断（OpenAI・TypeSafe 呼び出しの取り消し、押下中入力の解放）、(4) リモートルーターのリクエストを 503 `kill_switch_active` で拒否、(5) 全 MCP・WebSocket セッションを切断、(6) オーバーレイ消去、(7) 監査記録。順序は NFR-P05（1 秒以内）を満たすため同期で行い、永続化は先頭に置いて再起動後も維持する（[NFR-S07](../requirements/non-functional.md)）。
 
 ## 画面配信パイプライン
 
@@ -364,7 +432,7 @@ type Judge interface {
 - **合成**: 複数の Judge は `Chain` で束ね、**最も厳しい判定**を採る。したがって後から差し込む Judge が `Allow` を返しても、他の判定を緩めることはできない（引き上げ専用）
 - **fail-closed**: `error`・タイムアウト・低 confidence は `RequireApproval` に変換する。外部に到達できないときに「許可」にしない
 - **既定の `RuleJudge`**: 対象ウィンドウ（InputGuard が解決したウィンドウ）のプロセス名が `agent.deny_processes` に一致すれば `Deny`、`agent.approve_processes` に一致すれば `RequireApproval`、それ以外は `Allow`（FR-G12、FR-S13）
-- **外部判定（Jev 等）を足す場合の制約**（未決。決まるまで実装しない）: 入力はテキストと JSON（アクションの JSON、ウィンドウのタイトル・プロセス名、UI Automation の要素名）に限る。座標や数値の判定は任せない（Jev の jaggedness ページが数値・算術の精度が弱いと明記している）。画像入力は「Dreamer-ready」で `TypeSafe-Danger-Zone-Images: true` ヘッダーが必要なため使わない。プロンプトインジェクションの検知精度は公開評価で 74.1%（n=116）にとどまるため、**防御の唯一の主体にしない**。送信データと通信先は [NFR](../requirements/non-functional.md) の未決事項に従って追記する
+- **Jev は Judge ではない**: Jev（TypeSafe）は高速パス（「主要フロー」の「高速パス」節）の**候補選択**にだけ使い、アクションの可否は判定しない。Judge は既定の `RuleJudge`（ルールベース）のまま。Jev の回答は Judge を通らずに実行されることはなく、Jev が承認を減らすこともない（[NFR-S17](../requirements/non-functional.md)）。外部モデルを Judge として足す案は採らない
 
 ## HALT の適用
 
@@ -382,8 +450,10 @@ type Judge interface {
 | サーバー | GUI ルーターとリモートルーターに分離 |
 | HTMX 拡張 | `response-targets`（両 UI）、`sse`（ホスト GUI のみ） |
 | JSON API | `/api/v1` は読み取り専用。アクションは HTML を返す HTMX ルート |
-| 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない） |
-| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform） |
+| 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない）。`wails3 dev` が開発サーバーの待受を要求するため、esbuild の `--serve` を待受として起動する |
+| CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
+| 静的ファイル | `Cache-Control: no-cache` + `ETag`（ビルド ID） |
+| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform。Windows ジョブとは別の ubuntu ジョブ） |
 
 全項目と理由は [フロントエンド設計](frontend.md) §2 を参照。
 
@@ -393,14 +463,15 @@ type Judge interface {
 puppet-remo/
 ├── cmd/puppet-remo/              # エントリーポイント (Wails アプリ起動、DI)
 ├── internal/
-│   ├── domain/                   # クライアント、リース、承認、座標、エラー
+│   ├── domain/                   # クライアント、リース、承認、座標、エラー、高速パスの候補 (Candidate / CandidateTable)
 │   ├── repository/               # SQLite (clients, tokens, settings, ...)
 │   │   └── migrations/           # 埋め込み SQL マイグレーション
 │   ├── platform/                 # interface 定義
 │   │   └── windows/              # capture(DXGI/GDI), input, window, uia, clipboard, secret(資格情報)
 │   ├── tailnet/                  # LocalAPI クライアント、Watcher、Listener 管理
 │   ├── openai/                   # Responses API クライアント (Model インターフェース + 実装、モック)
-│   ├── service/                  # authz, lease, approval, control, agent, judge, streamer, audit, updater
+│   ├── typesafe/                 # TypeSafe (Jev) HTTP クライアント (Chooser インターフェース + 実装、モック)
+│   ├── service/                  # authz, lease, approval, control, agent (fastpath を含む), judge, streamer, audit, updater
 │   ├── mcp/                      # MCP サーバー (ツール定義と service 呼び出し)
 │   ├── ws/                       # WebSocket プロトコル (画面フレーム・入力)
 │   ├── router/                   # gui.go, remote.go
@@ -419,7 +490,7 @@ puppet-remo/
 │   └── e2e/                      # Playwright
 ├── build/                        # Wails パッケージング (NSIS、マニフェスト)
 ├── docs/
-└── Taskfile.yml                  # templ / tailwind / esbuild / wails3 package
+└── Taskfile.yml                  # templ / tailwind / esbuild (dev は --serve) / wails3 package
 ```
 
 ## ビルドと配布
@@ -431,7 +502,8 @@ puppet-remo/
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
 | 配布・更新 | GitHub Releases。インストーラと署名ファイル（Ed25519）を公開し、アプリが署名検証して適用 |
-| CI | GitHub Actions `windows-latest` で templ 生成の差分チェック、フロントエンドビルド、build / vet / lint / test、Lit のテスト、Playwright（[フロントエンド設計](frontend.md) §9） |
+| CI | GitHub Actions。`windows-latest` のジョブで templ 生成の差分チェック、フロントエンドビルド、build / vet / lint / go test、Lit のテストを実行する。Playwright の E2E は別の `ubuntu-latest` ジョブで実行する（偽の platform と偽の tailnet により OS に依存せず、Chromium を容易に使えるため。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
+| 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
 
 ## 改訂履歴
 
@@ -440,3 +512,4 @@ puppet-remo/
 | 1.0 | 2026-10-28 | 初版作成 | — |
 | 1.1 | 2026-10-29 | 内蔵エージェント（OpenAI `computer` ツール）を追加: 構成図・レイヤー（`openai`、`Agent`、`Judge`、`SecretStore`）、タスク実行フロー、キルスイッチの手順、Judge インターフェース、技術選定（openai-go v3、資格情報）、MCP SDK の保護に関する注記。MCP フローのツール名を `left_click` に更新 | ホスト内蔵エージェントを主役にする決定 |
 | 1.2 | 2026-10-29 | 「HALT の適用」を [フロントエンド設計](frontend.md) へ分離し、差分の要約とリンクに縮小。ディレクトリ構成を更新（`lib/api.ts` を初版から除外、`e2e/` 追加）、CI にフロントエンドのテストを追加 | HALT の規約を 1 か所に集約 |
+| 1.3 | 2026-10-29 | 未決事項の決定を反映: 外部通信に TypeSafe（高速パス有効時のみ）を追加、高速パス（Jev による候補選択、引き継ぎ理由、縮退）のフローとコンポーネント（`typesafe`、`FastPath`、`domain.Candidate`）を追加、Judge は RuleJudge のまま Jev を Judge にしない旨を明記、OpenAI の会話継続を `store: false` のステートレス方式に確定、技術選定のライブラリ・バージョン・ライセンス確定（go-keyring、go-ole、go-d3d、coder/websocket、ulid、MCP SDK の設定）、Wails dev の待受（esbuild `--serve`）、CSP、CI（Playwright は別の ubuntu ジョブ）、署名なしを追記 | 未決事項の決定 |

@@ -15,6 +15,7 @@ graph TD
     plat["platform<br/>(interface + windows)"]
     tn["tailnet"]
     oa["openai"]
+    ty["typesafe"]
     dom["domain"]
 
     app --> router
@@ -24,21 +25,24 @@ graph TD
     svc --> plat
     svc --> tn
     svc --> oa
+    svc --> ty
     svc --> dom
     repo --> dom
     plat --> dom
     tn --> dom
     oa --> dom
+    ty --> dom
     router --> dom
 ```
 
 | パッケージ | 責務（一行） | 主な FR / NFR |
 |-----------|------------|---------------|
-| `domain` | 純粋なモデルとルール（リース状態機械、座標変換、承認モード、判定、エラー型） | FR-L、FR-M16/M17、FR-G03 |
+| `domain` | 純粋なモデルとルール（リース状態機械、座標変換、承認モード、判定、エラー型、高速パスの候補表 `Candidate` / `CandidateTable`） | FR-L、FR-M16/M17、FR-G03、FR-G17 |
 | `repository` | SQLite と `thumbs/` へのアクセス、マイグレーション | ER、NFR-A06/O05 |
 | `platform` | OS 依存のインターフェースと Windows 実装 | FR-M、NFR-S06/S14/O03 |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs、Listener） | FR-A01〜A03、NFR-S05/A03 |
-| `openai` | Responses API の `computer` ツール呼び出し | FR-G04〜G06、NFR-S16 |
+| `openai` | Responses API の `computer` ツール呼び出し。`store: false` 固定のステートレス継続（履歴の再送とスクリーンショットの間引き） | FR-G04〜G06、FR-G24、NFR-S16 |
+| `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`。高速パスが有効なときだけ呼ばれる | FR-G18、FR-G21、NFR-S18 |
 | `service` | ユースケース（下記 §5）。状態を持つのは主にここ | 全般 |
 | `mcp` / `web` / `ws` / `router` | リモート・GUI の入口。`service` と `domain` だけに依存する | API 仕様 |
 | `app` | Wails のウィンドウ・トレイ・オーバーレイ・グローバルホットキー、起動・終了の組み立て | FR-H、FR-S08 |
@@ -46,7 +50,7 @@ graph TD
 **依存の規則**
 
 - 矢印の逆向きの import は禁止。`mcp` / `web` / `ws` は `repository` と `platform` を import しない（CI で `go list -deps` により検査する）
-- インターフェースの置き場所は、OS・外部サービスの境界（`platform`、`tailnet`、`openai`）では**境界側のパッケージ**に置き、`service` のテストはそれを偽の実装に差し替える。`service` 内のコンポーネント（`LeaseManager`、`Judge` など）は `service` に置く。いずれも、利用側が具象型ではなくインターフェースに依存する
+- インターフェースの置き場所は、OS・外部サービスの境界（`platform`、`tailnet`、`openai`、`typesafe`）では**境界側のパッケージ**に置き、`service` のテストはそれを偽の実装に差し替える。`service` 内のコンポーネント（`LeaseManager`、`Judge`、`FastPath` など）は `service` に置く。いずれも、利用側が具象型ではなくインターフェースに依存する
 - 時刻と乱数は `domain.Clock` / `domain.IDGen` を注入する（テストの決定性のため）
 - すべての長時間処理は `context.Context` を第 1 引数に取り、キャンセルで確実に終了する
 
@@ -95,6 +99,7 @@ type Scroll struct{ At Point; Dir Direction; Amount int; Monitor int }
 type KeyPress struct{ Keys KeyCombo }
 type TypeText struct{ Text string }
 type FocusWindow struct{ ID string }
+type Wheel struct{ At Point; DX, DY float64; Monitor int } // ホイール。単位はノッチ（小数可。dy > 0 が下、dx > 0 が右。API 仕様 §5.3）。WebSocket の input.mouse wheel 用
 // ... ClipboardRead / ClipboardWrite / GetUITree / Wait
 
 // エージェントが 1 件ずつ検査を受ける対象。OpenAI のアクションを Op へ写像したもの。
@@ -119,7 +124,77 @@ var (
 type Error struct{ Code string; Msg string; Detail map[string]any } // errors.As で取り出す
 ```
 
-**不変条件**: `domain` は他の内部パッケージを import しない。`Monitor.ScaledToPhysical` と `PhysicalToScaled` は丸めの誤差が 1 px を超えない（プロパティテスト）。
+```go
+// --- 高速パスの候補（FR-G16〜G20）。純粋な値と関数のみ。外部 I/O をしない ---
+
+// UI Automation のスナップショット。platform.UIAutomation.Snapshot が返す。要素の値・テキスト本文は持たない。
+type UIElement struct {
+    ControlType int      // UIA の ControlType ID
+    Name        string   // UIA の Name（ラベル）
+    Enabled     bool
+    Offscreen   bool
+    Rect        Rect     // 物理座標の外接矩形
+    Path        []string // 祖先パス: 役割クラスとラベルを持つ祖先の "role:label" を、根 → 親の順に並べたもの
+    Chrome      bool     // ウィンドウ枠（タイトルバー・システムメニュー・最小化 / 最大化 / 閉じる）
+    SameAsValue bool     // 名前と値が同一か（値そのものは持たない）
+}
+type UISnapshot struct {
+    Window    WindowInfo
+    Hash      string // ツリーのハッシュ。ControlType・名前・有効・画面外・矩形・トグル / 選択状態から作る。テキスト値は含めない
+    Elements  []UIElement
+    Truncated bool
+}
+
+type RoleClass string // button | menu_item | tab_item | hyperlink | check_box | radio_button | list_item | tree_item | combo_box | window
+// UIA の ControlType → 役割クラスの対応表。表にない型（Edit・Document・Pane など）は ok=false で候補にしない。
+func RoleClassOf(controlType int) (RoleClass, bool)
+
+type CandidateKind string // "click" | "focus_window" | "reobserve" | "abstain"（v1 の高速パスに type / key / scroll はない）
+type Candidate struct {
+    ID       string // CandidateID の結果。要素の添字・実行時 ID は使わない
+    Kind     CandidateKind
+    Role     RoleClass
+    Label    string
+    Enabled  bool
+    At       Point  // click: 外接矩形の中心（物理座標。アプリが計算する。Jev には送らない）
+    Monitor  int
+    WindowID string // focus_window
+}
+
+// ID = "c_" + hex(SHA-256(role, 0x00, NormalizeLabel(label), 0x00, join(path, "/")))[:12]
+func CandidateID(role RoleClass, label string, path []string) string
+func NormalizeLabel(s string) string                         // 前後の空白除去・連続空白の圧縮・小文字化
+func LabelExcluded(label string, excluded []string) bool     // 大文字小文字を区別しない部分一致
+
+type CandidateSource struct { Snapshot UISnapshot; Windows []WindowInfo } // Windows は list_windows の結果（focus_window 用）
+type CandidateOptions struct { Max int; ExcludedLabels []string }        // Max は 24
+
+// 候補表は構築後に変更できない値（変更するメソッドを持たない）。Jev の応答は、問い合わせに使った表そのものに対して検証する。
+type CandidateTable struct{ /* 非公開: candidates []Candidate; byID map[string]int; dropped int */ }
+func BuildCandidateTable(src CandidateSource, opt CandidateOptions) CandidateTable
+func (t CandidateTable) Candidates() []Candidate // 複製を返す。reobserve / abstain は含まない
+func (t CandidateTable) Len() int
+func (t CandidateTable) Dropped() int            // 上限超過と ID 衝突で表から落とした数（ログに出す）
+// 選択の検証。表に 1 件だけある ID、または "reobserve" / "abstain" だけを受理する。
+// 未知・空・重複・形式不正・古い表の ID は ErrInvalidChoice。
+func (t CandidateTable) Validate(choice string) (Candidate, error)
+
+const ChoiceReobserve, ChoiceAbstain = "reobserve", "abstain"
+var ErrInvalidChoice error // 内部エラー。API の code には対応しない（引き継ぎ理由 invalid_choice へ写像）
+
+type HandoffReason string // abstain | low_confidence | no_candidates | invalid_choice | no_progress | goal_maybe_done | fast_step_limit | chooser_unavailable
+func (r HandoffReason) Valid() bool
+```
+
+`BuildCandidateTable` の規則（FR-G17）:
+
+1. 採用する要素は、有効・画面内・ラベルが空でない・`Chrome` でない・`SameAsValue` でない、かつ `RoleClassOf` が ok のものだけ
+2. `LabelExcluded`（`agent.fastpath.excluded_labels`。FR-S18）に当たるラベルは除く
+3. `click` 候補は外接矩形の（上端, 左端）の昇順に並べ、その後ろに `list_windows` から作る `focus_window` 候補（前面・自プロセス・昇格ウィンドウは除く）を並べる
+4. ID が衝突する候補は、決定的にするため**すべて**表から落とす（`Dropped` に数える）
+5. 先頭から `Max`（24）件で切り、超過分を `Dropped` に数える
+
+**不変条件**: `domain` は他の内部パッケージを import しない。`Monitor.ScaledToPhysical` と `PhysicalToScaled` は丸めの誤差が 1 px を超えない（プロパティテスト）。`CandidateID` は同じ入力に同じ出力を返し、要素の並び・添字・実行時 ID に依存しない。`CandidateTable.Validate` は表に無い文字列を一切受理しない（プロパティテスト）。
 
 ## 3. platform（OS 依存）
 
@@ -144,6 +219,7 @@ type InputInjector interface {
     Click(ctx context.Context, b domain.Button, count int, mods []domain.Modifier) error
     Drag(ctx context.Context, from, to domain.Point, mods []domain.Modifier) error
     Scroll(ctx context.Context, at domain.Point, dir domain.Direction, amount int) error
+    Wheel(ctx context.Context, at domain.Point, dx, dy float64) error // ノッチ単位（小数可）。× 120（WHEEL_DELTA）を丸めて注入し、端数は実装が持ち越す。縦は Win32 の正が上向きのため dy の符号を反転する
     Key(ctx context.Context, k domain.KeyCombo) error
     KeyEvent(ctx context.Context, e domain.KeyEvent) error // Web UI の down / up
     Text(ctx context.Context, s string) error // KEYEVENTF_UNICODE
@@ -164,16 +240,23 @@ type WindowInfo struct {
 
 type UIAutomation interface {
     Tree(ctx context.Context, windowID string, maxDepth, maxNodes int) (domain.UINode, error)
+    // 高速パスの候補表の入力。windowID が空なら前面ウィンドウ。1 回の呼び出しで 1 つの整合したスナップショットを返す。
+    // 要素の値・テキスト本文は返さない（名前と値が同一かの真偽だけ）。maxNodes を超えたら Truncated。
+    Snapshot(ctx context.Context, windowID string, maxNodes int) (domain.UISnapshot, error)
 }
 type Clipboard interface {
     ReadText(ctx context.Context) (string, error)
     WriteText(ctx context.Context, s string) error
 }
-type SecretStore interface { // 資格情報マネージャー
+type SecretStore interface { // 資格情報マネージャー（go-keyring）。name は下記の定数
     Get(name string) (string, error)  // 未登録は ErrNotFound
     Set(name, value string) error
     Delete(name string) error
 }
+const (
+    SecretOpenAI   = "puppet-remo/openai"
+    SecretTypeSafe = "puppet-remo/typesafe" // 高速パス。値は登録後に表示しない（FR-G22）
+)
 type Hotkey interface { // グローバルホットキー
     Register(spec string, fn func()) (unregister func(), err error)
 }
@@ -184,13 +267,13 @@ type Power interface { // スリープ抑止
 
 **所有する goroutine**: `Capturer.Watch` が 1 モニターにつき 1 本のキャプチャ goroutine を持つ（`ctx` で停止。呼び出し側が閲覧者ゼロで取り消す）。`Hotkey.Register` が Win32 のメッセージループ用に 1 本の専用 OS スレッド（`runtime.LockOSThread`）を持つ。それ以外のインターフェースは goroutine を内部に持たず、呼び出し元のそれで同期的に動く。
 
-**スレッドの制約**: Win32 の入力注入・UI Automation（COM）は、スレッドアフィニティを持つ。`InputInjector` と `UIAutomation` の実装は、専用の goroutine（OS スレッドに固定）へ呼び出しを直列化して渡す（呼び出し側から見るとスレッドセーフな同期呼び出し）。
+**スレッドの制約**: Win32 の入力注入・UI Automation（COM）は、スレッドアフィニティを持つ。`InputInjector` と `UIAutomation`（`Tree` / `Snapshot`）の実装は、専用の goroutine（OS スレッドに固定）へ呼び出しを直列化して渡す（呼び出し側から見るとスレッドセーフな同期呼び出し）。`Snapshot` はこのスレッドで 1 回のキャッシュ要求（`CacheRequest`）にまとめ、COM の往復を減らす。`InputInjector` のホイールの端数の持ち越しも、この専用スレッドが所有する（排他不要。`ReleaseAll` で破棄）。
 
 ### InputGuard は platform ではなく service にある
 
 `InputGuard`（NFR-S06）は `WindowManager` と `domain` を使う純粋な判定なので `service` に置く（§5.4）。`platform` は事実（座標上のウィンドウ、自プロセスか、昇格しているか）を返すだけで、許可・拒否を決めない。
 
-## 4. repository・tailnet・openai
+## 4. repository・tailnet・openai・typesafe
 
 ### 4.1 repository
 
@@ -249,6 +332,8 @@ type ThumbStore interface { // thumbs/ 配下のファイル
 
 **所有する goroutine / 状態**: `repository` は goroutine を持たない（保守処理のタイマーは `service/maintenance` が持つ）。マイグレーションは `Open` が起動時に同期で実行する。
 
+`TaskRecord` / `TaskPatch` は `fast_steps`、`openai_steps`、`handoff_reason`（NULL 可。8 種の列挙を `CHECK`）を持つ（[ER](../architecture/er.md)、FR-G23）。
+
 ### 4.2 tailnet
 
 ```go
@@ -277,28 +362,71 @@ type Listener interface { // tailnet IP だけで Listen する
 ```go
 // service/agent が使うモデルのインターフェース。テストではモックする（NFR-O06）。
 type Model interface {
-    // 1 ステップ（Responses API 呼び出し 1 回）。60 秒でタイムアウト（NFR-S16）。
+    // 1 ステップ（Responses API 呼び出し 1 回）。60 秒でタイムアウト（NFR-S16）。再試行しない。
+    // 常に store: false。previous_response_id は使わない（FR-G24）。
     Step(ctx context.Context, in StepInput) (StepOutput, error)
 }
 type StepInput struct {
-    Model       string
-    Prompt      string               // 最初のステップのみ
-    PrevID      string               // 継続（previous_response_id）
-    CallID      string               // 直前の computer_call への返答
-    Screenshot  []byte               // PNG（縮小済み）
-    Acknowledged []SafetyCheck       // 許可された pending_safety_checks
+    Model   string
+    History *History // 呼び出し側（run）が所有し、Step は読むだけ
 }
 type StepOutput struct {
-    ResponseID  string
-    Actions     []domain.Op          // computer_call の actions[] を写像したもの
-    CallID      string
-    SafetyChecks []SafetyCheck       // pending_safety_checks
-    FinalText   string               // computer_call が返らなかったときの最終回答
-    Usage       Usage                // input / output トークン
+    ResponseID   string               // 診断用（監査・ログ）。継続には使わない
+    Items        []OutputItem         // 出力アイテム（原文のまま。History へ追記して次回に返す）
+    Actions      []domain.Op          // computer_call の actions[] を写像したもの
+    CallID       string
+    SafetyChecks []SafetyCheck        // pending_safety_checks
+    FinalText    string               // computer_call が返らなかったときの最終回答
+    Usage        Usage                // input / output トークン
 }
+type OutputItem struct{ Raw json.RawMessage } // 変更せず、そのまま次の呼び出しへ返す
+
+// ステートレス継続の履歴（FR-G24）。run が 1 タスクにつき 1 つ持つ。
+type History struct{ /* 非公開: items []item; keep int */ }
+// 指示、高速パスの文章要約（無ければ空）、最初のスクリーンショットから最初のユーザーメッセージを作る。
+func NewHistory(instruction, handoffSummary string, firstShot []byte, keepScreenshots int) *History
+func (h *History) AddOutput(items []OutputItem)
+// computer_call_output を追加し、直近 keep 枚を超える古いスクリーンショットをプレースホルダのテキストへ置き換える。
+func (h *History) AddComputerOutput(callID string, shot []byte, ack []SafetyCheck)
+func (h *History) Screenshots() int
+const OmittedScreenshot = "[screenshot omitted]"
 ```
 
-実装は `openai-go/v3` の `responses.ComputerToolParam`（`{type:"computer"}`）を使う。未知のアクション種別は `ErrUnsupportedAction`。API キーは呼び出しごとに `SecretStore` から読み、**ログ・エラーメッセージに出さない**（`http.RoundTripper` で `Authorization` を伏せる）。**所有する goroutine**: なし（呼び出しは `ctx` で取り消せる）。
+実装は `openai-go/v3` の `responses.ComputerToolParam`（`{type:"computer"}`）を使う。毎回の要求は、指示・これまでの出力アイテム（原文のまま）・`computer_call_output`（`History` が保持する直近 `agent.keep_screenshots` 枚だけ画像つき）で組み立てる。スクリーンショットは PNG・`detail: "original"`（最大辺の既定 1568 px。FR-S03）。`include` に何が要るか（推論の暗号化コンテンツなど）は実 API のスモークで確認する（§12.2）。未知のアクション種別は `ErrUnsupportedAction`。API キーは呼び出しごとに `SecretStore`（`puppet-remo/openai`）から読み、**ログ・エラーメッセージに出さない**（`http.RoundTripper` で `Authorization` を伏せる）。**所有する goroutine**: なし（呼び出しは `ctx` で取り消せる）。`History` は `run` の goroutine だけが触る。
+
+### 4.4 typesafe
+
+```go
+package typesafe
+
+// 境界のインターフェース。FastPath が使い、テストではモックする（NFR-O06）。
+type Chooser interface {
+    // 1 回の問い合わせ。5 秒でタイムアウト（NFR-S18）。自動再試行はしない。
+    Choose(ctx context.Context, req ChoiceRequest) (ChoiceResult, error)
+}
+type ChoiceRequest struct {
+    Model    string          // agent.fastpath.model（既定 jev-1.13）
+    Goal     string          // タスクの指示
+    Window   ChoiceWindow    // { Title, Process string }。タイトルは送る（NFR-PR04）
+    Elements []ChoiceElement // { ID, Role, Label string; Enabled bool }。値・テキスト本文は持たない。focus_window の候補は Role "window"
+    History  []string        // 直近 5 件の高速ステップの短い文（入力した文字列の本文は含めない）
+}
+type ChoiceResult struct {
+    Choice        string  // 候補の ID、"reobserve"、"abstain"
+    Confidence    float64 // Choice 質問の確信度（0〜1）
+    GoalMaybeDone float64 // Noul 質問 goal_maybe_done の確率（0〜1）
+}
+var (
+    ErrUnavailable  error // タイムアウト・ネットワークエラー・5xx・429・要求本文が 256 KiB 超
+    ErrUnauthorized error // 401（キー無効）
+    ErrBadResponse  error // 応答の解析に失敗（FastPath は invalid_choice として扱う）
+)
+
+type Config struct { Endpoint string; Timeout time.Duration; MaxBody int } // 既定: https://api.typesafe.ai/v1/systemone、5 秒、256 KiB（Endpoint の差し替えはテスト用の引数で、設定項目にはしない）
+func New(key func(ctx context.Context) (string, error), cfg Config) Chooser
+```
+
+`Choose` は、`Elements` から Choice 質問 `next`（criteria は「候補 ID → 短い説明」に `reobserve` と `abstain` を加えたもの）と Noul 質問 `goal_maybe_done`（履歴と要素から見て目的は既に達成されているか）を組み立て、`POST /v1/systemone` を 1 回送る。`Authorization: Bearer` のキーは**呼び出しごとに** `key` 関数（実体は `SecretStore.Get(SecretTypeSafe)`）から読み、ログ・エラー・`slog` に出さない（`http.RoundTripper` で伏せる）。スクリーンショット・要素の値・クリップボード・入力した文字列の本文・API キーは `ChoiceRequest` に入る欄がなく、送れない。**所有する goroutine**: なし（呼び出しは `ctx` で取り消せる）。
 
 ## 5. service
 
@@ -310,7 +438,8 @@ type StepOutput struct {
 | `Approval` | 承認待ちの要求（id → チャネル） | なし（要求ごとの待機は呼び出し側の goroutine） | `sync.Mutex` |
 | `Control` | なし（ステートレス。検査の順序を定義する） | なし | — |
 | `Judge` | なし（設定のスナップショットは都度読む） | なし | — |
-| `Agent` | 実行中タスクの `*run`（高々 1 つ） | タスクごとに 1 本（ループ） | `sync.Mutex`（`run` の参照の差し替え） |
+| `Agent` | 実行中タスクの `*run`（高々 1 つ。ステップ数・`History`・高速パスのカウンタを含む） | タスクごとに 1 本（ループ。高速パスもこの goroutine で動く） | `sync.Mutex`（`run` の参照の差し替え）。`run` の内部状態は goroutine 1 本だけが触る |
+| `FastPath` | なし（`Agent` の内部部品。タスクごとの状態は `run` が持つ） | なし（`run` の goroutine で同期的に動く） | 不要（候補表は不変の値） |
 | `Streamer` | 閲覧者の一覧、(モニター, 品質, FPS) ごとのプロファイルとエンコード結果 | モニターごとにキャプチャ受信 1 本 + エンコード、閲覧者ごとに送信 1 本 | `sync.RWMutex` |
 | `KillSwitch` | 発動状態（永続化済みのものをキャッシュ） | なし | `sync.Mutex` |
 | `Authz` | なし（レート制限のカウンタのみメモリ） | なし | 固定窓のカウンタを `sync.Mutex` で保護 |
@@ -410,46 +539,116 @@ func Chain(js ...Judge) Judge
 func FailClosed(j Judge, timeout time.Duration) Judge
 ```
 
-既定は `RuleJudge`（`agent.deny_processes` / `agent.approve_processes` をプロセス名で照合。FR-G12）。外部モデル（Jev 等）の実装は未決で、決まるまで作らない（[非機能要件](../requirements/non-functional.md) の未決事項）。
+既定は `RuleJudge`（`agent.deny_processes` / `agent.approve_processes` をプロセス名で照合。FR-G12）。**Jev は Judge ではない**: 高速パスの Jev は候補表から ID を 1 つ選ぶだけで、判定に関与せず、承認を減らす・判定を緩めることはない。高速パスの行動も `Control.Do` の手順 4 で RuleJudge の判定を受ける（§5.6.1、NFR-S17）。外部モデルを使う Judge 実装は作らない。
 
 ### 5.6 Agent（TaskRunner）
 
 ```go
 type Agent interface {
     Start(ctx context.Context, by domain.Actor, in StartInput) (Task, error) // 条件は FR-G01
-    Get(ctx context.Context, by domain.Actor, id string) (Task, error)       // 他クライアントのタスクは ErrTaskNotFound
+    Get(ctx context.Context, by domain.Actor, id string) (Task, error)       // 他クライアントのタスクは ErrTaskNotFound。fast_steps / openai_steps / handoff_reason を含む
     Cancel(ctx context.Context, by domain.Actor, id string) (Task, error)
     CancelAll(reason string)                                                 // キルスイッチ・無効化・クライアント削除
 }
 ```
 
-**所有する状態**: 実行中のタスク `*run`（`id`、`cancel context.CancelFunc`、`done chan struct{}`）を 1 つだけ。`Start` は排他リース（種別 `agent`）の取得に成功した場合だけ goroutine を起動する。実行状態はメモリのみ（NFR-A08）。
+**所有する状態**: 実行中のタスク `*run`（`id`、`cancel context.CancelFunc`、`done chan struct{}`、ステップ数 `steps` / `fastSteps` / `openaiSteps`、`*openai.History`）を 1 つだけ。`Start` は排他リース（種別 `agent`）の取得に成功した場合だけ goroutine を起動する。実行状態はメモリのみ（NFR-A08）。
 
-ループの擬似コード（FR-G04〜G10 と一致）:
+ループの擬似コード（FR-G04〜G10、G16〜G24 と一致）:
 
 ```go
 func (r *run) loop(ctx context.Context) {
     defer r.finish()                          // 状態を永続化、押下中入力を ReleaseAll、リースを Release
-    shot := r.capture(ctx)                    // MCP の screenshot と同じ縮小規則
-    for step := 1; step <= r.maxSteps && !r.timeUp(); step++ {
-        out, err := r.model.Step(ctx, r.input(shot))        // 60 秒タイムアウト。再試行しない
-        // err → failed(openai_error)。out.Actions が空 → completed（FinalText を保存）
+    var summary []string                      // 高速ステップの文章要約（OpenAI へ渡す）
+    if r.fast.Enabled(ctx) {                  // 設定・キー・同意のどれかが欠ければ黙ってスキップ（FR-G22）
+        h, err := r.fast.Run(ctx, r)          // 1 ステップに 1 アクション。引き継ぐか、終了する
+        if err != nil { r.endWith(err); return } // キャンセル・Control の拒否・全体の上限（handoff_reason は NULL のまま）
+        r.persistHandoff(h.Reason); summary = h.Steps
+    }
+    hist := openai.NewHistory(r.instruction, joinSummary(summary), r.capture(ctx), r.keepShots) // 新しく撮る。縮小規則は FR-G06
+    for !r.overLimit() {                      // steps（高速ステップを含む）< agent.max_steps、経過時間 < agent.max_duration_sec
+        out, err := r.model.Step(ctx, openai.StepInput{Model: r.modelName, History: hist}) // 60 秒タイムアウト。再試行しない
+        // err → failed(openai_error)。out.Actions が空 → completed（FinalText を保存。完了を宣言できるのは OpenAI だけ）
+        hist.AddOutput(out.Items)
         if len(out.SafetyChecks) > 0 && !r.askSafety(ctx, out) { r.fail("safety_check_denied"); return }
         for _, op := range out.Actions {
             if _, err := r.control.Do(ctx, r.actor, op); err != nil { // Do が Lease / Guard / Judge / 承認 / 監査を担う
                 r.fail(codeOf(err)); return                        // 1 件でも拒否・ブロックなら終了（残りは実行しない）
             }
         }
-        shot = r.capture(ctx)                                      // 実行後の画面を次のステップへ
+        hist.AddComputerOutput(out.CallID, r.capture(ctx), r.acknowledged(out)) // 実行後の画面を次のステップへ。古い画像は間引かれる
+        r.steps++; r.openaiSteps++            // ステップごとに agent_tasks を更新
     }
     r.finishWith(limitReached)
 }
 ```
 
-- `ctx` は `Cancel` / `CancelAll` / リース剥奪で取り消される。取り消しは `Model.Step` の HTTP を打ち切り、`InputInjector.ReleaseAll` を呼ぶ
+- `ctx` は `Cancel` / `CancelAll` / リース剥奪で取り消される。取り消しは `Model.Step` と `Chooser.Choose` の HTTP を打ち切り、`InputInjector.ReleaseAll` を呼ぶ
 - 画面の縮小・座標の逆変換は `domain.Monitor` のメソッドで行い、MCP と同じ規則を使う（FR-G06）
 - `computer_call` の `actions[]` のうち `screenshot` は、実行時に新しい画面を撮るだけの操作として扱う
-- ステップごとに `agent_tasks`（`step_count`、トークン）を更新し、`Audit` にステップを書く（`task_id`、`step_no`）
+- ステップごとに `agent_tasks`（`step_count`、`fast_steps`、`openai_steps`、トークン）を更新し、`Audit` にステップを書く（`task_id`、`step_no`、`route` = `fast` | `openai`）
+- 高速パスで全体の上限（`agent.max_steps`・`agent.max_duration_sec`）に達したときは `limit_reached` で終了する（引き継ぎはしない）
+
+### 5.6.1 FastPath（Agent の内部。FR-G16〜G23）
+
+`FastPath` は `Agent` が使う `service` 内の部品で、公開インターフェースを持たず、**専用の goroutine も持たない**（`run` の goroutine で 1 ステップずつ同期的に動く）。`Jev` が選べるのは候補表の ID だけで、ツール名・座標・引数を生成させない（NFR-S17）。
+
+```go
+type FastPath struct {
+    UI      platform.UIAutomation // 読み取り（Snapshot）だけ。入力は注入しない
+    Control Control               // Windows()（focus_window 用）と Do()（実行）
+    Chooser typesafe.Chooser
+    Secrets platform.SecretStore  // キーの有無の確認だけ（読んだ値は即座に捨てる）
+    Settings Settings
+    Audit   Audit
+    Bus     Bus
+}
+// 設定 agent.fastpath.enabled が true、SecretTypeSafe が登録済み、agent.fastpath.consent_at がある、の 3 つがそろうときだけ true。
+func (f *FastPath) Enabled(ctx context.Context) bool
+// 引き継ぐ（Handoff を返す）か、終了する（error を返す）まで 1 ステップずつ進める。
+// r の steps / fastSteps を進め、永続化と監査も行う。設定（モデル・確信度・最大ステップ・除外ラベル）はタスク開始時に読み、そのタスクでは固定する。
+func (f *FastPath) Run(ctx context.Context, r *run) (Handoff, error)
+type Handoff struct {
+    Reason domain.HandoffReason
+    Steps  []string // 実行した高速ステップの文章要約（アクションの説明。type の本文は含めない）
+}
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> Observe
+    Observe --> Build: UIA スナップショット + list_windows
+    Build --> Escalate: 候補 0 件 (no_candidates)
+    Build --> Choose
+    Choose --> Escalate: エラー (chooser_unavailable)
+    Choose --> Validate
+    Validate --> Escalate: 不正・古い・重複 (invalid_choice)
+    Validate --> Escalate: goal_maybe_done >= 0.5
+    Validate --> Escalate: abstain
+    Validate --> Escalate: confidence < min (low_confidence)
+    Validate --> Observe: reobserve (連続 2 回まで)
+    Validate --> Escalate: reobserve が 3 回目 (abstain)
+    Validate --> Act: 候補を受理
+    Act --> Reobserve: Control.Do (1 アクション)
+    Act --> [*]: Control が拒否・キャンセル
+    Reobserve --> Observe: 進捗あり
+    Reobserve --> Escalate: 進捗なしが 3 回連続 (no_progress)
+    Reobserve --> Escalate: fast_steps >= max_steps (fast_step_limit)
+    Escalate --> [*]: Handoff を返す（OpenAI のループへ。戻らない）
+```
+
+1 ステップの手順（番号が検査の優先順）:
+
+1. **観測**: `UI.Snapshot`（前面ウィンドウ）と `Control.Windows` を取り、`CandidateTable` を `domain.BuildCandidateTable` で作る。`Len() == 0` は `no_candidates`。件数と `Dropped()` を監査に残す
+2. **問い合わせ**: `ChoiceRequest` を組み立て（要素は ID・役割・ラベル・有効のみ。値なし）、`Chooser.Choose`。エラーは下記の縮退
+3. **検証**（同じ表に対して、この順）: `Validate` が `ErrInvalidChoice`（`ErrBadResponse` も同じ）→ `invalid_choice`。`GoalMaybeDone >= 0.5` → `goal_maybe_done`（行動せずに引き継ぎ、OpenAI が確認用スクリーンショットで完了を宣言する）。`abstain` → `abstain`。`Confidence < min_confidence` → `low_confidence`。`reobserve` → 手順 1 へ（連続 2 回まで。3 回目は `abstain`）
+4. **実行**: 受理した候補を 1 つだけ `domain.Op` にして `Control.Do(ctx, r.actor, op)` を呼ぶ。`click` は中心座標（物理）を `Monitor.PhysicalToScaled` で縮小座標にして `domain.Click`（左・1 回）にし、`focus_window` は `domain.FocusWindow`。検査順序は `KillSwitch → Lease → InputGuard → RuleJudge → Control → Audit`（§5.4）で、高速パスだけを通す近道はない。`Control.Do` がエラーなら、OpenAI のループと同じくタスクを終了する（`handoff_reason` は NULL）
+5. **再観測と進捗**: `UI.Snapshot` を取り直し、(ツリーのハッシュ, 前面ウィンドウ ID) の組が実行前と異なれば進捗あり。進捗なしが 3 回連続で `no_progress`。`fastSteps >= agent.fastpath.max_steps`（既定 15）で `fast_step_limit`
+6. 各ステップで `r.steps` と `r.fastSteps` を進め、監査に `route=fast`、`candidate_count`、`dropped_count`、`chosen_id`、`confidence`、`goal_maybe_done`、（引き継ぎ時は）`handoff_reason` を書く。**入力した文字列と要素の値は書かない**
+
+**縮退（FR-G21）**: `Choose` が `ErrUnavailable`（タイムアウト・ネットワーク・5xx・429・本文超過）のとき、そのステップを `chooser_unavailable` で引き継ぐ。引き継いだタスクは OpenAI のまま終わる（戻らない）。`ErrUnauthorized`（401）は `Bus` の `toast` でホスト GUI に通知し、`agent.fastpath.enabled` を `false` に戻し（監査に記録）、同じく `chooser_unavailable` で引き継ぐ。どの場合もタスクは失敗させない。
+
+**引き継ぎ**: `FastPath.Run` が返した `Handoff` を `run` が `handoff_reason` として保存し、`openai.NewHistory` に指示・要約・新しいスクリーンショットを渡す。以後は OpenAI のループだけが動く。完了の宣言は、`Model.Step` が `computer_call` を返さなかったとき（確認用のスクリーンショット 1 枚を見たうえで）だけ。
 
 ### 5.7 Streamer
 
@@ -507,12 +706,14 @@ type Principal struct{ Client domain.Client; Identity tailnet.Identity; Token *T
 | `Maintenance` | `Run(ctx)` | 起動時と 1 時間ごと: 接続要求の失効、監査の保持期間、サムネイル容量、孤児ファイルの掃除、タスクの保持期間。起動時に `Tasks.AbortActive` |
 | `Settings`（service） | `Get[T](key) T`、`Set(ctx, key, v)` | 型付きの取り出し。既定値はコードで持つ。変更時に `Bus` と、影響のあるコンポーネント（`Listener` のポートなど）へ通知 |
 
+`agent.fastpath.enabled` の変更時、`Settings` は `agent.fastpath.consent_at` を設定（有効化）または削除（無効化）し、エージェントの有効化とは別の監査イベント（`fastpath_consent`）を記録する（FR-G22）。
+
 ## 6. 入口（mcp / web / ws / router）
 
 | パッケージ | 責務 | 依存してよい先 |
 |-----------|------|---------------|
 | `router` | GUI ルーターとリモートルーターの組み立て、ミドルウェア連鎖（API 仕様 §1） | `service`、`domain` |
-| `web/middleware` | `hostcheck`、`csrfheader`、`whois`、`allowlist`、`bearer`、`killswitch` | `service.Authz`、`tailnet.WhoIs` |
+| `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`whois`、`allowlist`、`bearer`、`killswitch` | `service.Authz`、`tailnet.WhoIs` |
 | `web/handler` | 機能別の HTTP ハンドラ（viewer、clients、tasks、settings、audit …）。Templ で描画 | `service`、`domain` |
 | `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換 | `service`、`domain` |
 | `ws` | WebSocket のプロトコル（JSON とバイナリフレームの符号化・復号）。入力メッセージを `domain.Op` に変換して `Control` へ | `service`、`domain` |
@@ -543,9 +744,9 @@ type Windows interface { // ウィンドウの生成・破棄（Wails v3 のラ�
 |---------------|------|------|
 | Templ（atoms / molecules / organisms / pages / layout） | SSR | 画面の大半。状態駆動レンダリング（リース状態に応じたボタンのみ描画。キルスイッチ中は操作系を描画しない） |
 | HTMX | 拡張 | 部分更新。リモートは `response-targets` のみ、ホスト GUI は `sse` を追加 |
-| `<remo-screen-viewer>`（Lit） | Web Component | `canvas` への描画（`createImageBitmap`）、WebSocket の受信・再接続、マウス・キーの捕捉と送信、座標のスケーリング（表示サイズ → ストリームの物理座標）。属性: `ws-url`、`readonly`、`monitor`、`quality`、`fps`。イベント: `remo:lease-changed`、`remo:error` |
+| `<remo-screen-viewer>`（Lit） | Web Component | `canvas` への描画（`createImageBitmap`）、WebSocket の受信・再接続、マウス・キーの捕捉と送信、座標のスケーリング（表示サイズ → ストリームの物理座標）、ホイールのノッチへの換算（`deltaMode` が PIXEL なら `delta ÷ 100`、LINE なら `÷ 3`、PAGE なら `× 10`。`dy > 0` が下）。属性: `ws-url`、`readonly`、`monitor`、`quality`、`fps`。イベント: `remo:lease-changed`、`remo:error` |
 | `lib/ws.ts` | ユーティリティ | 自動再接続（指数バックオフ）、サブプロトコル `puppet-remo.v1`、メッセージの型 |
-| `lib/logger.ts` | ユーティリティ | レベル付きのコンソールロガー |
+| `lib/logger.ts` | ユーティリティ | レベル付きのコンソールロガー（`lib/api.ts` は v1 では作らない。JSON API を叩く画面がないため） |
 
 HTMX は Lit のアイランドを swap しない。ツールバー（モニター・品質・FPS・クリップボード・リース）は Lit の外に Templ で描画する。
 
@@ -559,15 +760,16 @@ sequenceDiagram
     participant T as tailnet
     participant A as app
     M->>R: Open (WAL・マイグレーション・quick_check)
-    M->>S: 組み立て (KillSwitch は永続化済みの状態を読む)
+    M->>S: 組み立て (KillSwitch は永続化済みの状態を読む。typesafe.Chooser と FastPath も組み立てる: 通信も goroutine も起動しない)
     M->>S: Maintenance 起動時処理 (Tasks.AbortActive・孤児掃除)
     M->>A: Wails 起動 (トレイ・GUI ルーター・ホットキー)
     M->>T: Watcher 開始 → Listener.Serve (tailnet IP があれば Listen)
-    Note over M,T: 終了: Listener 停止 → Agent.CancelAll → LeaseManager.ReleaseAll → InputInjector.ReleaseAll → Audit キューを flush → DB を閉じる
+    Note over M,T: 終了: Listener 停止 → Agent.CancelAll (実行中の FastPath・Chooser・Model の HTTP を打ち切る) → LeaseManager.ReleaseAll → InputInjector.ReleaseAll → Audit キューを flush → DB を閉じる
 ```
 
 - 終了時は、受付を止めてから実行中の操作を中断し、押下中の入力を解放し、監査のキューを書き切ってから DB を閉じる
 - `KillSwitch` が `active` で起動した場合、`Listener` は Listen するが全リクエストが 503 になる（NFR-S07）
+- 高速パスは起動順序に依存を足さない。`Chooser` は組み立て時に作るだけで、TypeSafe への通信は高速パスが有効なタスクの最初のステップまで発生しない。`agent.fastpath.enabled` が `false`（既定）のときは `typesafe` を一切呼ばない
 
 ## 10. テスト方針
 
@@ -579,14 +781,17 @@ CI（`windows-latest`）には**対話デスクトップがない**ため、DXGI
 | `Capturer` | `Frame` の差分・タイル化・エンコード・ファンアウト（偽のフレーム列を流す）。`ACCESS_LOST` の復旧の分岐（偽のエラー） | DXGI の実キャプチャ、GDI へのフォールバック、マルチモニター・DPI スケール、ロック画面で `desktop_unavailable` |
 | `InputInjector` | `Control` の検査順序（偽の injector が呼ばれない／呼ばれることを確認）、`ReleaseAll` が中断で呼ばれること | `SendInput` の座標精度（縮小 → 物理の往復）、日本語の `type`、修飾キー、管理者権限ウィンドウで `input_blocked`、`Ctrl+Alt+Del` の拒否 |
 | `WindowManager` | `InputGuard`（偽の `At` / `Foreground` で `Own` / `Elevated` を網羅） | 実ウィンドウの `Elevated` / `Own` / `Minimized` の取得 |
-| `UIAutomation` | ツリーの切り詰め（`max_depth` / `max_nodes`）、パスワード欄の伏せ字（偽のノード） | 実アプリ（メモ帳・ブラウザ）のツリー、パスワード欄 |
+| `UIAutomation` | ツリーの切り詰め（`max_depth` / `max_nodes`）、パスワード欄の伏せ字（偽のノード）。`Snapshot` の契約テスト（値を返さないこと、`Truncated`、同じ画面で同じ `Hash`） | 実アプリ（メモ帳・ブラウザ）のツリー、パスワード欄、`Snapshot` の要素（ControlType・画面外・矩形・祖先パス）と `Hash` の安定性 |
 | `Clipboard` | サイズ上限、テキスト以外の扱い | 実クリップボードの往復（日本語） |
-| `SecretStore` | `Agent` が API キーを要求する経路、キーがログ・エラーに出ないこと（偽の store、ログを検査） | 資格情報マネージャーへの保存・削除、別ユーザーから読めないこと |
+| `SecretStore` | `Agent` が OpenAI キー、`typesafe` が TypeSafe キーを要求する経路、キーがログ・エラーに出ないこと（偽の store、ログを検査） | 資格情報マネージャーへの保存・削除（`puppet-remo/openai`、`puppet-remo/typesafe`）、別ユーザーから読めないこと |
 | `Hotkey` / `Overlay` / `Windows` | キルスイッチの手順（`Trigger` を直接呼ぶ）、`Bus` イベント → ウィンドウ操作の呼び出し（偽の `Windows`） | グローバルホットキーの発動、オーバーレイの表示・クリック透過・キャプチャへの非表示（スクリーンショットにも Web のライブにも写らない）、承認ダイアログが AI の入力を受けない |
 | `tailnet.Watcher` / `WhoIs` / `Listener` | キャッシュ TTL、WhoIs 失敗で fail closed、IP 変化での Listen の張り直し（偽の LocalAPI） | 実際の tailscaled（ログアウト・再ログイン・ネットワーク切替で 10 秒以内に復旧） |
-| `openai.Model` | `computer_call` の連鎖、`pending_safety_checks`、未知アクション、タイムアウト、401、上限（ステップ・時間）、中断（偽の Model） | 実 API での `computer` ツールのループ（小さなタスクで 1 回。費用が発生する） |
+| `openai.Model` / `History` | `computer_call` の連鎖、`pending_safety_checks`、未知アクション、タイムアウト、401、上限（ステップ・時間）、中断（偽の Model）。`History`: すべての要求が `store: false` で `previous_response_id` を持たないこと、出力アイテムが原文のまま返ること、直近 N 枚だけ画像が残り古いものはプレースホルダになること（表駆動） | 実 API での `computer` ツールのループ（小さなタスクで 1 回。費用が発生する）。ステートレス継続の要求形式（`include`、プレースホルダの受理） |
+| `typesafe.Chooser` | `httptest` のサーバーで、要求の形式（`Authorization`、モデル、Choice / Noul の質問、本文 256 KiB 以下）、要求に値・スクリーンショット・キーが入らないこと、5 秒のタイムアウト、再試行しないこと、401 → `ErrUnauthorized`、5xx / 429 / 超過 → `ErrUnavailable`、不正な応答 → `ErrBadResponse`、キーがログに出ないこと | 実 API で 1 回の問い合わせ（キー登録後。小さな費用が発生する）、応答の形式（`confidence`、Noul の確率） |
+| `domain.CandidateTable` | UIA 要素のフィクスチャ（メモ帳・ダイアログ・メニュー・ブラウザを想定した偽の `UISnapshot`）から表を作る表駆動テスト: 役割クラスの対応、無効・画面外・空ラベル・ウィンドウ枠・名前＝値の除外、`excluded_labels`（日本語・英語・大文字小文字）、24 件の上限と `Dropped`、ID の決定性と添字非依存、ID 衝突の除去、`Validate`（未知・空・重複・古い ID・`reobserve` / `abstain`）。プロパティテスト: 表に無い文字列は受理されない | — |
+| `FastPath`（偽の `Chooser`・偽の `UIAutomation`・偽の `Control`） | 引き継ぎの表駆動テスト: 8 種の理由それぞれが想定どおりの入力で発生し、検証の優先順（`invalid_choice` → `goal_maybe_done` → `abstain` → `low_confidence`）、`reobserve` は連続 3 回目で `abstain`、進捗なし 3 回で `no_progress`、`max_steps` で `fast_step_limit`。縮退: タイムアウト・5xx・429 → `chooser_unavailable` で引き継ぎタスクは失敗しない、401 → 設定が `false` に戻り通知、`Control` の拒否 → タスク終了で `handoff_reason` が NULL、キャンセルで HTTP 中断と `ReleaseAll`。1 ステップ 1 アクション、`type` / `key` / `scroll` を実行しないこと、Jev が返した ID 以外（座標・ツール名）を実行しないこと。完了は OpenAI だけが宣言すること。無効・キー無し・同意無しで `Chooser` が呼ばれないこと。監査に入力文字列・要素の値が出ないこと | 実アプリで固定のタスク集合を測定（M4 の受け入れ: 性能の主張を仕様に書かない）、1 ステップの時間（NFR-P09）、`Hash` による進捗の判定 |
 | `repository` | すべて（一時ファイルの SQLite。マイグレーション、制約、部分 UNIQUE、`ON DELETE`、削除の順序） | — |
-| `mcp` / `ws` / `web` | プロトコルの符号化、エラー変換、ミドルウェア連鎖（偽の `Authz`）、problem+json、HTMX の分岐、`Host` / `Origin` 検証 | 実ブラウザでのビューア（描画・入力・再接続）、実 MCP クライアントからの `run_task` |
+| `mcp` / `ws` / `web` | プロトコルの符号化、エラー変換、ミドルウェア連鎖（偽の `Authz`）、problem+json、HTMX の分岐、`Host` / `Origin` 検証、CSP ヘッダー（全 HTML 応答）、`wheel` のノッチ → `Wheel` への写像（小数、符号）、MCP の `Session` タイムアウト（30 分）と本文上限（1 MiB） | 実ブラウザでのビューア（描画・入力・再接続・ホイールの換算）、実 MCP クライアントからの `run_task` |
 
 **契約テスト**: `platform` のインターフェースごとに「実装が満たすべき振る舞い」の共通テストを書き、偽の実装（CI で走る）と Windows 実装（実機のスモークで走る。ビルドタグ `smoke`）の両方に同じテストを流す。
 
@@ -597,26 +802,51 @@ CI（`windows-latest`）には**対話デスクトップがない**ため、DXGI
 | FR-A（接続・認証・認可） | `tailnet.*`、`Authz`、`web/middleware` |
 | FR-L（リース） | `LeaseManager`、`Approval`、`Control` |
 | FR-M（MCP ツール） | `mcp`、`Control`、`Capturer`、`InputInjector`、`WindowManager`、`UIAutomation`、`Clipboard` |
-| FR-G（内蔵エージェント） | `Agent`、`openai.Model`、`Judge`、`Control`、`Approval`、`SecretStore` |
+| FR-G（内蔵エージェント・高速パス） | `Agent`、`FastPath`、`openai.Model`、`typesafe.Chooser`、`domain.CandidateTable`、`UIAutomation.Snapshot`、`Judge`、`Control`、`Approval`、`SecretStore` |
 | FR-W（Web UI） | `web/handler`、`ws`、`Streamer`、`<remo-screen-viewer>` |
 | FR-H（ホスト GUI） | `app`、`web/handler`（GUI ルーター）、`Bus` |
 | FR-AU（監査） | `Audit`、`Control`、`ThumbStore`、`Maintenance` |
 | FR-S（設定） | `Settings`（service）、`repository.Settings` |
 | NFR-S06（自己保護） | `InputGuard`、`WindowManager.Own`、`app`（キャプチャ除外） |
-| NFR-S14（API キー） | `SecretStore`、`openai.Model` |
+| NFR-S14（API キー） | `SecretStore`、`openai.Model`、`typesafe.Chooser` |
+| NFR-S17 / S18（高速パスの防御・TypeSafe 呼び出し） | `domain.CandidateTable`（ID の検証）、`FastPath`、`Control`、`Judge`、`typesafe.Chooser` |
 
-## 12. 未決・実装時の確認事項
+## 12. 決定事項と実装時の検証事項
 
-| 項目 | 内容 |
+### 12.1 決定事項（設計として確定。実装時に再検討しない）
+
+| 項目 | 決定 |
 |------|------|
-| COM / UI Automation の Go ライブラリ | `go-ole` 系を候補とするが、メンテナンス状況とスレッドモデルを実装前に確認する。純 Go（cgo なし）で成立しない場合は、方針の見直しを Issue で相談する |
-| DXGI の Go 実装 | 既存ライブラリ（例: `kirides/go-d3d`）の採否、自前の `syscall` 実装かは実装時に決める（cgo なし・メンテナンス状況・ライセンスを確認） |
-| Wails v3 の beta | 複数ウィンドウ・`IgnoreMouseEvents`・`ContentProtectionEnabled`・トレイ・単一インスタンスは v3.0.0 のソースで確認済み。実機でオーバーレイのクリック透過とキャプチャ除外の挙動を確認する |
-| OpenAI の会話継続 | `previous_response_id` を使うか全履歴を再送するか、`store` の扱いは、OpenAI の最新仕様とデータ保持（NFR 未決事項）を確認して確定する |
-| 判定補助モデル（Jev 等） | `Judge` の外部実装は未決。決まったら本書 §5.5 と [非機能要件](../requirements/non-functional.md) を更新する |
+| COM / UI Automation | `github.com/go-ole/go-ole` v1.3.0（MIT）で COM を扱い、`IUIAutomation` の vtable バインディングは自前で書く（cgo なし） |
+| DXGI のキャプチャ | `github.com/kirides/go-d3d` v1.0.1（MIT、cgo なし）を第一候補とし、GDI `BitBlt` をフォールバックにする。M2 のキャプチャのスパイクで採否を確認し、成立しなければ自前の `syscall` 実装にする |
+| 資格情報 | `github.com/zalando/go-keyring` v0.2.8（MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go）。ターゲット名は `puppet-remo/openai`、`puppet-remo/typesafe` |
+| WebSocket / ID / OpenAI / MCP | `github.com/coder/websocket` v1.8.15、`github.com/oklog/ulid/v2` v2.1.2、`github.com/openai/openai-go/v3` v3.90.0、`github.com/modelcontextprotocol/go-sdk` v1.8.0 |
+| MCP SDK の設定 | `DisableLocalhostProtection` は loopback 経由の要求にしか効かず tailnet IP では無関係なので、自前の Host / Origin ミドルウェア（NFR-S02）で守る。非推奨の `CrossOriginProtection` は使わない。`SessionTimeout` は 0 だと閉じないため 30 分アイドルに明示（リースのアイドル 5 分とは独立）。`EventStore` は v1 では使わない（ストリームの再開なし。クライアントは再初期化する）。`MaxRequestBodyBytes` は 1 MiB（NFR-S09）、`Stateless=false`（セッションに紐づくリース保持者）、`JSONResponse` は既定 |
+| OpenAI の会話継続 | `store: false` 固定、`previous_response_id` は使わず、履歴を毎回再送する。スクリーンショットは直近 `agent.keep_screenshots`（既定 3）枚だけ残す（§4.3、FR-G24） |
+| 高速パス（Jev） | §4.4・§5.6.1 のとおり。Jev は Judge ではなく、外部モデルの Judge は作らない（Judge は RuleJudge） |
+| ホイールの単位 | `input.mouse` の `wheel` の `dx` / `dy` はノッチ（小数可。MCP `scroll.amount` と同じ）。サーバー（`InputInjector.Wheel`）が × 120 を丸めて端数を繰り越す。ブラウザ側の換算は `<remo-screen-viewer>`（§8） |
+| Wails の開発時 | `wails3 dev` は `FRONTEND_DEVSERVER_URL` を常に出し、`WAILS_VITE_PORT`（既定 9245）の待ち受けを待つ。カスタム `AssetOptions.Handler`（Gin）には転送されない。そのため `dev:frontend` は esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（監視つき）を起動する（待ち受けの代役とライブ再ビルド。画面は Gin から出る）。詳細は [フロントエンド設計](../architecture/frontend.md) |
+| フロントエンドのファイル | `lib/ws.ts` と `lib/logger.ts` のみ（`lib/api.ts` は作らない）。静的ファイルは `Cache-Control: no-cache` + `ETag`（ビルド ID） |
+| トークンのコピー（GUI） | クリックで `navigator.clipboard.writeText`。使えないときは全選択して Ctrl+C を促す |
+| テストの実行環境 | Playwright の E2E は ubuntu の別ジョブ（偽の platform・tailnet で OS 非依存）。Windows のジョブは build / vet / lint / go test と Lit のテスト。実機スモークは手動 |
+| 配布 | v1 は Authenticode で署名しない（個人利用）。更新の完全性は Ed25519（NFR-S10） |
+| 意図的に設定しないもの | メモリ・帯域の目標は実装後の測定まで設定しない。日程は設定しない。4K 以上の WebSocket は縮小配信せず物理解像度のまま（`config` に後から `scale` を足せる） |
+| OpenAPI の範囲 | Huma は `/api/v1` の JSON API だけを公開する。MCP ツールは `tools/list` が定義 |
+
+### 12.2 実装時に実機・実 API で検証する事項（設計は確定済み。検証の結果で変えるのは値・実装の詳細だけ）
+
+| 項目 | 検証内容 |
+|------|---------|
+| Wails v3（beta） | 複数ウィンドウ・`IgnoreMouseEvents`・`ContentProtectionEnabled`・トレイ・単一インスタンスは v3.0.0 のソースで確認済み。実機で、オーバーレイのクリック透過とキャプチャ除外の挙動、ホスト GUI の origin（開発時は WebView の URL のポートが開発用ポートになる）、Wails が inline script を差し込まないこと（CSP）、`runtime.js` が同一 origin であること |
+| DXGI のキャプチャ | M2 のスパイクで `go-d3d` の安定性（`ACCESS_LOST`、マルチモニター、DPI）と GDI へのフォールバックを確認する |
+| OpenAI のステートレス継続 | スモークで、`include`（推論の暗号化コンテンツなど）が要るか、出力アイテムを原文のまま返す形式、古い `computer_call_output` の画像をプレースホルダのテキストに置き換えた要求が受理されるか、`detail: "original"` と最初のユーザーメッセージへの画像の添付が受理されるか |
+| 高速パス（TypeSafe） | 実 API で、Choice / Noul の応答の形式、`confidence` の意味、1 ステップの時間（NFR-P09 の暫定 2 秒以下）。固定のタスク集合で OpenAI のみの場合と成功率・時間を測定する（M4 の受け入れ。測定前に性能を主張しない） |
+| UI Automation の `Hash` | 進捗の判定に使うハッシュ（トグル・選択状態を含み、テキスト値を含まない）が、実アプリで実際の変化に追従し、揺らぎで偽の進捗を出さないこと |
+| ホイールとクリップボード | 実ブラウザでの `deltaMode` ごとの換算の体感、WebView2 での `navigator.clipboard.writeText`（`*.localhost` を安全なコンテキストとして扱う前提） |
 
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
 |---|------|---------|---------|
 | 1.0 | 2026-10-29 | 初版作成 | — |
+| 1.1 | 2026-10-29 | 未決事項の決定を反映: `typesafe`（`Chooser`）、`domain.Candidate` / `CandidateTable`・`UISnapshot`・`HandoffReason`、`FastPath`（状態機械・引き継ぎ・縮退）、`UIAutomation.Snapshot`、`InputInjector.Wheel`、`SecretStore` のキー名を追加。`openai.Model` を `store: false` のステートレス継続（`History`・スクリーンショットの間引き）に変更。Judge から外部 Jev の記述を削除。テスト方針・トレース・起動終了の記述を追従。§12 を決定事項と実機・実 API の検証事項に再編 | 未決事項の決定 |

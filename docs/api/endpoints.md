@@ -25,6 +25,8 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | 状態を変更するリクエスト（リモート） | ヘッダー `X-Puppet-Remo: 1` 必須（NFR-S03）。Web UI のルートは HTMX のフォーム（`Content-Type: application/x-www-form-urlencoded`）のみ受け付ける。`/api/v1` は参照専用（GET のみ）で、状態を変更する JSON リクエストは存在しない。MCP は Bearer 必須のため対象外 |
 | 応答の種類 | **ページルート・アクションルート（Web UI、GUI）は常に HTML**（`HX-Request` の有無で JSON に切り替えない。ページルートは `HX-Request` でフルページとフラグメントを出し分け、アクションルートは常にフラグメント）。JSON を返すのは `/api/v1/*` と MCP のみ。詳細は [フロントエンド設計](../architecture/frontend.md) |
 | サイズ上限 | HTTP ボディ ≤ 1 MiB、WebSocket のクライアント→サーバーのメッセージ ≤ 64 KiB（NFR-S09） |
+| HTML 応答のヘッダー | **両ルーター**のすべての HTML 応答（ページ・フラグメント・エラーページ）に、ミドルウェアが `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を付ける（`<meta>` では出さない。NFR-S19）。インラインのスクリプト・スタイル・イベントハンドラ属性は使わない。`connect-src 'self'` は同一オリジンの WebSocket も含む。詳細は [フロントエンド設計](../architecture/frontend.md) |
+| 静的ファイルのキャッシュ | `/static/*`（および GUI の静的アセット）は `Cache-Control: no-cache` + `ETag`（ビルド ID）。`If-None-Match` が一致すれば 304 |
 
 ### リモートルーターのミドルウェア連鎖
 
@@ -89,7 +91,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `task_not_found` | 404 | `get_task` / `cancel_task` | 対象が無い、または他クライアントのタスク |
 | `internal` | 500 | 共通 | 想定外のエラー。詳細はアプリのログにだけ残し、`detail` には出さない |
 
-エージェントの失敗理由（`judge_denied`、`safety_check_denied`、`unsupported_action`、`openai_error`）はタスクの `error_code` として `get_task` に載るもので、HTTP のエラーにはならない。
+エージェントの失敗理由（`judge_denied`、`safety_check_denied`、`unsupported_action`、`openai_error`）はタスクの `error_code` として `get_task` に載るもので、HTTP のエラーにはならない。高速パス（FR-G16〜G23）の TypeSafe 呼び出しの失敗・拒否・タイムアウトはタスクを失敗させず、OpenAI への引き継ぎとして `handoff_reason`（§3.3 `get_task`）に記録される。高速パスは内部機構であり、エラーコード・API・MCP ツールを増やさない。
 
 ## 3. MCP（`/mcp`）
 
@@ -100,12 +102,12 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | プロトコル | MCP の Streamable HTTP。実装は公式 Go SDK（`NewStreamableHTTPHandler`） |
 | メソッド | `POST /mcp`（JSON-RPC リクエスト）、`GET /mcp`（サーバー→クライアントの SSE ストリーム）、`DELETE /mcp`（セッション終了） |
 | 認証 | `Authorization: Bearer <token>`（§1 の連鎖。トークンは GUI で発行し、一度だけ表示される。FR-A08） |
-| セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する（NFR-A04: keepalive 15 秒、タイムアウト 45 秒） |
+| セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する（NFR-A04: keepalive 15 秒、タイムアウト 45 秒）。アイドル 30 分でセッションを閉じる（SDK の `SessionTimeout`。リースのアイドル解放 5 分とは独立。§8） |
 | サーバー情報 | `name: puppet-remo`、`version`: アプリの版 |
 | `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`run_task` が非同期であることを記す |
 | 同時セッション | 最大 5（NFR-C02） |
 
-SDK の localhost 向け保護には依存せず、自前の Host / Origin 検証を先に通す（[アーキテクチャ設計](../architecture/overview.md)）。
+SDK の localhost 向け保護には依存せず、自前の Host / Origin 検証を先に通す（[アーキテクチャ設計](../architecture/overview.md)）。SDK のオプションの設定値は §8 のとおり。
 
 ### 3.2 座標とモニター
 
@@ -175,7 +177,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `mouse_move` | `x`\*, `y`\*, `monitor` |
 | `left_click` / `right_click` / `middle_click` / `double_click` / `triple_click` | `x`, `y`（省略時は現在のカーソル位置）, `modifiers`, `monitor` |
 | `left_click_drag` | `from`\* `{x,y}`, `to`\* `{x,y}`, `modifiers`, `monitor`（`from` で左ボタンを押し、`to` まで移動して離す） |
-| `scroll` | `x`\*, `y`\*, `direction`\*（`up` / `down` / `left` / `right`）, `amount`\*（ホイールのノッチ数、1〜50）, `monitor` |
+| `scroll` | `x`\*, `y`\*, `direction`\*（`up` / `down` / `left` / `right`）, `amount`\*（ホイールの**ノッチ数**、1〜50。WebSocket の `input.mouse` の `wheel` と同じ単位。§5.3）, `monitor` |
 | `key` | `keys`\*（下記） |
 | `type` | `text`\*（Unicode 全般、10,000 文字まで。NFR-S09） |
 | `wait` | `ms`\*（0〜10,000。リース不要） |
@@ -234,12 +236,15 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 出力（即時）: `{ "task_id": "01J…", "status": "pending_approval" | "running" }`。長時間実行になるため、完了は `get_task` で確認する（1 回の MCP 呼び出しは 1 秒以内に返る。NFR-P08）。エージェント無効なら `agent_disabled`、他者がリースを保持していれば `lease_held_by_other`、キルスイッチ中は `kill_switch_active`。
 
+**高速パス（FR-G16）は `run_task` から透過**: 引数も出力も増えず、呼び出し側は使う・使わないを指定できない。使うかどうかはホストの設定 `agent.fastpath.enabled`（既定 off。GUI のみで変更。FR-S14）だけで決まり、キー未登録・同意なし・無効のときは黙ってスキップして OpenAI のみで実行する。タスクの完了は常に OpenAI が確認用スクリーンショットを見て宣言する（FR-G20）。どちらの経路で実行したかは `get_task` の `fast_steps` / `openai_steps` / `handoff_reason` で分かる。
+
 **`get_task`**: `task_id`\*。出力:
 
 ```json
 {
   "task_id": "01J…", "status": "running",
-  "step_count": 7, "max_steps": 50,
+  "step_count": 7, "fast_steps": 4, "openai_steps": 3, "handoff_reason": "no_progress",
+  "max_steps": 50,
   "input_tokens": 41230, "output_tokens": 912,
   "created_at": "2026-10-29T03:12:00Z", "started_at": "2026-10-29T03:12:02Z", "finished_at": null,
   "result_text": null, "error_code": null, "note": null
@@ -249,6 +254,8 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 - `status` は FR-G03 の状態。終了状態では `finished_at` が入る
 - `result_text` は最終回答（`completed` のみ。10,000 文字で切り詰め）。`note` には `completed` がモデルの申告であり成否の検証は呼び出し側の責任であることを記す（FR-G13）
 - `error_code`: `failed` のときの理由（`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` など）
+- `fast_steps` / `openai_steps`: 高速パス（Jev が候補表から選んだ手）と OpenAI のコンピューター操作ループで実行したステップ数（FR-G23）。`step_count = fast_steps + openai_steps`（高速ステップも `max_steps` に数える）。高速パスを使わなかったタスクは `fast_steps = 0`
+- `handoff_reason`: 高速パスから OpenAI へ引き継いだ理由。`abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable` のいずれか。引き継ぎが無かった（高速パス無効、または高速パスの間にキャンセル・失敗で終了した）場合は `null`。引き継ぎ後はタスクが終了するまで OpenAI で続行する（v1 では高速パスに戻らない）。失敗理由ではなく、`error_code` とは別に扱う
 
 **`cancel_task`**: `task_id`\*。出力: `{ "ok": true, "status": "cancelled" }`。すでに終了していれば現在の状態をそのまま返す。1 秒以内に実行中の OpenAI 呼び出しを取り消し、リースを解放する（FR-G10）。
 
@@ -296,7 +303,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | POST | `/viewer/clipboard/fetch` | ホストのクリップボードを取得して表示 | 要操作権。200 フラグメント（`<textarea readonly>`。利用者が手動でコピーする） |
 | POST | `/viewer/keys/send` | ブラウザが先取りするショートカットの送信メニュー（FR-W06） | フォーム `keys`（§3.3 の書式）。要操作権。`ctrl+alt+delete` は 409 `input_blocked`。200 フラグメント |
 | GET | `/ws/screen` | WebSocket（§5） | 101 |
-| GET | `/static/*` | 静的アセット（`go:embed` した `dist/`） | 200 |
+| GET | `/static/*` | 静的アセット（`go:embed` した `dist/`） | 200（`Cache-Control: no-cache` + `ETag`。`If-None-Match` 一致で 304） |
 
 ブラウザが未登録デバイスのとき、すべてのルートは 403 `device_not_registered` となり、`Accept: text/html` には待機ページ（「接続要求を送信しました。ホストの許可を待っています」）を返す。許可後に再読み込みするとビューアが開く。拒否・失効（24 時間）のときはその旨のページ。
 
@@ -339,12 +346,18 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | type | 内容 |
 |------|------|
 | `config` | `{ "monitor": 0, "quality": 70, "fps": 10 }`（任意の項目のみ。範囲外は 4400） |
-| `input.mouse` | `{ "action": "move" \| "down" \| "up" \| "wheel", "x": 100, "y": 200, "button": "left" \| "right" \| "middle", "dx": 0, "dy": 120 }`。`x` / `y` は**ストリームの座標**（モニターの物理ピクセル。MCP の縮小座標ではない）。`wheel` は `dx` / `dy` を使う |
+| `input.mouse` | `{ "action": "move" \| "down" \| "up" \| "wheel", "x": 100, "y": 200, "button": "left" \| "right" \| "middle", "dx": 0, "dy": 1 }`。`x` / `y` は**ストリームの座標**（モニターの物理ピクセル。MCP の縮小座標ではない）。`wheel` は `dx` / `dy` を使い、**単位はノッチ**（数値。小数可。MCP `scroll` の `amount` と同じ単位。下記） |
 | `input.key` | `{ "action": "down" \| "up", "code": "KeyA", "key": "a", "modifiers": ["ctrl"] }`。`code` はブラウザの `KeyboardEvent.code` で、サーバーがスキャンコードに変換する |
 | `input.text` | `{ "text": "こんにちは" }`。IME で確定した文字列を Unicode で送る |
 | `ping` | `{ "type": "ping" }` → サーバーが `pong` を返す |
 
 入力メッセージはリース（保持者が自身の `viewer_id`）が必要で、InputGuard を通る。拒否は `error` で返し、入力は破棄する。
+
+**`wheel` の単位と変換**（FR-M07 / FR-W）:
+
+- `dx` / `dy` はホイールの**ノッチ数**。符号は MCP `scroll` の方向に合わせ、`dy > 0` が下、`dx > 0` が右。1 メッセージの絶対値は 50 まで（超過は 4400）
+- サーバーは `ノッチ × 120`（Win32 の `WHEEL_DELTA`）を丸めて入力に変換し、丸めの端数は次の `wheel` に繰り越す（小数のノッチを失わない）。Win32 の縦ホイールは正が上向きなので、`dy` の符号は反転して送る
+- ブラウザ側（`<remo-screen-viewer>`）は `WheelEvent.deltaMode` で換算してからノッチを送る: `DOM_DELTA_PIXEL` は `delta / 100`、`DOM_DELTA_LINE` は `delta / 3`、`DOM_DELTA_PAGE` は `delta × 10`
 
 ### 5.4 画面フレーム（バイナリフレーム）
 
@@ -380,7 +393,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 ## 7. GUI ルーター（プロセス内）
 
-ホスト GUI。Wails の WebView からのみ到達でき、TCP のソケットを開かない。Templ + HTMX で描画し、HTML フラグメントを返す。リモートの `X-Puppet-Remo` は不要（ネットワークから到達できないため）。WebView は外部 URL へ遷移させない。
+ホスト GUI。Wails の WebView からのみ到達でき、TCP のソケットを開かない。Templ + HTMX で描画し、HTML フラグメントを返す。リモートの `X-Puppet-Remo` は不要（ネットワークから到達できないため）。WebView は外部 URL へ遷移させない。HTML 応答には §1 の CSP ヘッダーを付ける。高速パスの設定（§7.3）は**このルーターにだけ**あり、リモートルーターに同名の経路は作らない。
 
 GUI は AI が操作できないよう、自ウィンドウをキャプチャから除外し、InputGuard が入力を拒否する（NFR-S06）。以下はすべて**ホスト所有者の操作**として監査ログに `actor_type = host` で記録する（閲覧のみの `GET` を除く）。
 
@@ -395,8 +408,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/audit` | 監査ログ一覧。`/audit/{id}`: 詳細（引数、サムネイル）。FR-AU05 | M3 |
 | `/settings` | 設定。FR-S | M1〜 |
 | `/update` | 更新の確認・適用。FR-H09 | M3 |
-| `/tasks` | タスク一覧。`/tasks/{id}`: 詳細（ステップ、使用トークン、最終回答）。FR-H10 | M4 |
-| `/agent` | エージェント設定（有効化と同意、API キー、モデル、上限、Judge のリスト）。FR-H11 | M4 |
+| `/tasks` | タスク一覧。`/tasks/{id}`: 詳細（ステップ、使用トークン、最終回答。ステップごとの経路 `route`（`fast` / `openai`）と、高速パスから OpenAI へ引き継いだ理由 `handoff_reason`、`fast_steps` / `openai_steps`）。FR-H10 | M4 |
+| `/agent` | エージェント設定（有効化と同意、OpenAI API キー、モデル、上限、`keep_screenshots`、Judge のリスト、**高速パス**: 有効化と同意、TypeSafe API キー、モデル、最小確信度、最大ステップ、除外ラベル）。FR-H11 | M4 |
 | `/events` | SSE（§7.4） | M1 |
 
 ### 7.2 接続要求とクライアント
@@ -422,9 +435,12 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | POST | `/approvals/{id}/deny` | なし | 同上（拒否） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクのフラグメント。終了済みなら現在の状態を返す |
 | PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`update.apply_mode`、`log.level`、`autostart`（OS のスタートアップ登録） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
-| PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック）、`model`、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。API キー未登録で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
+| PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック）、`model`、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`keep_screenshots`（1〜10。FR-S19）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。API キー未登録で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
 | PUT | `/agent/api-key` | `api_key`（伏せ字の入力） | 200 「登録済み」のフラグメント。**値は応答・ログ・監査に出さない**。資格情報マネージャーに保存し、保存に失敗したら 500 `internal` |
 | DELETE | `/agent/api-key` | なし | 200（資格情報を削除し、エージェントを無効にする。実行中のタスクは中断） |
+| PUT | `/agent/fastpath` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック。エージェントの `consent` とは別）、`model`（既定 `jev-1.13`。FR-S15）、`min_confidence`（0〜1、既定 0.7。FR-S16）、`max_steps`（1〜500、既定 15。FR-S17）、`excluded_labels`（改行区切り。FR-S18） | 200 フラグメント。TypeSafe API キー未登録で `enabled` にしようとすると 409 `conflict`、同意なしは 422（項目別メッセージ）。on にしたとき `agent.fastpath.consent_at`（UTC ミリ秒）を記録し、off にしたとき削除する。どちらも高速パス用の別の監査イベントを残す（FR-G22）。エージェント自体の有効・無効とは独立 |
+| PUT | `/agent/fastpath/api-key` | `api_key`（伏せ字の入力） | 200 「登録済み」のフラグメント。**値は応答・ログ・監査に出さず、登録後は表示しない**。資格情報マネージャーの `puppet-remo/typesafe` に保存し、保存に失敗したら 500 `internal`。登録だけでは高速パスは有効にならない（`enabled` と同意が別に要る） |
+| DELETE | `/agent/fastpath/api-key` | なし | 200（資格情報を削除し、`agent.fastpath.enabled` を off、`consent_at` を削除する。実行中のタスクは失敗させず、以後の高速ステップを行わず OpenAI で続行する） |
 | GET | `/audit` | クエリ: `from`, `to`（RFC 3339）、`client_id`, `kind`, `result`, `q`（イベント名の部分一致）、`cursor`, `limit`（既定 50、最大 200） | 200 一覧フラグメント（`ts` 降順。`cursor` は最後の `id`） |
 | GET | `/audit/{id}/thumbnail` | なし | 200 `image/jpeg`（`audit_thumbnails.rel_path` を `thumbs/` 配下に限定して配信。パスの走査を拒否）。無ければ 404 |
 | POST | `/update/check` | なし | 200 フラグメント（新版の有無） |
@@ -441,20 +457,31 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `lease` | リース保持者のフラグメント（種別付き。強制剥奪ボタンを含む） | ダッシュボード |
 | `connection-requests` | 接続要求の一覧と件数バッジ | 接続要求、トレイ通知 |
 | `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く | （ウィンドウ生成） |
-| `tasks` | 実行中タスクのフラグメント（ステップ数・状態） | ダッシュボード、タスク |
+| `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由） | ダッシュボード、タスク |
 | `killswitch` | キルスイッチ状態のフラグメント | 全画面のヘッダー |
-| `toast` | 通知メッセージ（更新の通知、DB 破損の隔離など） | 全画面 |
+| `toast` | 通知メッセージ（更新の通知、DB 破損の隔離、TypeSafe が 401 を返して高速パスを無効にした通知など） | 全画面 |
 
 承認ダイアログに表示する内容は `kind` による。`lease`: クライアント名・種別・（`agent` なら指示の要約）。`safety_check`: OpenAI の `pending_safety_checks` の内容。`judge_action`: アクションの内容、対象ウィンドウ（タイトル・プロセス名）、判定の理由。いずれも 60 秒で失効し拒否扱い。
 
-## 8. 未決・実装時の確認事項
+## 8. 決定事項と実装時の検証事項
 
-| 項目 | 内容 |
+### 8.1 決定事項
+
+| 項目 | 決定 |
 |------|------|
-| MCP Go SDK の挙動 | `StreamableHTTPOptions` の localhost 保護、`SessionTimeout`、イベントストア（再接続時の再送）の挙動を実装時に確認する。リースのアイドル解放（FR-S04）とは独立に設定する |
-| OpenAPI の範囲 | Huma が公開するのは §6 の JSON API のみ。MCP のツール定義は MCP の `tools/list` が正とする |
-| WebSocket の高解像度 | 4K 以上のモニターで物理解像度のまま配信すると帯域・CPU が増える。縮小配信（`scale`）の追加は、実測後に判断する |
-| 判定補助モデル（Jev 等） | Judge の外部実装を足す場合の入出力・通信先は [非機能要件](../requirements/non-functional.md) の未決事項に従う（本書では扱わない） |
+| MCP Go SDK（v1.8.0）の設定 | `DisableLocalhostProtection` は loopback で届くリクエストにしか効かず、tailnet IP への接続には無関係。保護は自前の Host / Origin ミドルウェア（NFR-S02）が担う。`CrossOriginProtection` は非推奨のため使わない。`SessionTimeout` は既定（0）だと閉じないため**アイドル 30 分**に明示する（リースのアイドル 5 分とは独立）。`EventStore` は v1 では使わず、ストリームの再開は無い（切断後はクライアントが再初期化する）。`MaxRequestBodyBytes` は **1 MiB** に明示する（NFR-S09）。`Stateless = false`（リース保持者はセッションに束縛）。応答は既定の `JSONResponse` |
+| OpenAPI の範囲 | Huma が公開するのは §6 の JSON API（`/api/v1`）のみ。MCP のツール定義は MCP の `tools/list` が正とする。高速パスは内部機構で API ではなく、OpenAPI にも MCP のツールにも現れない |
+| WebSocket の高解像度 | v1 では 4K 以上でも縮小配信せず、物理解像度のまま配信する。`ready` / `config` に後から `scale` を足せる形にしてあるが、v1 では送らない |
+| ホイールの単位 | §5.3 のとおり、WebSocket の `wheel` の `dx` / `dy` と MCP `scroll` の `amount` はノッチ数。サーバーが `×120` に変換する |
+| 静的ファイルのキャッシュ | `Cache-Control: no-cache` + `ETag`（ビルド ID）（§1） |
+
+### 8.2 実機・実 API で検証する事項
+
+設計は決定済みで、実装時に実機で確かめるもの。
+
+| 項目 | 確認内容 |
+|------|---------|
+| GUI ルーターの CSP | Wails の WebView のオリジン（開発時は WebView の URL のポートが開発用ポートになる）で §1 の CSP のまま動作すること、Wails がインラインスクリプトを注入しないこと（runtime.js は同一オリジン） |
 
 ## 改訂履歴
 
@@ -462,3 +489,4 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 |---|------|---------|---------|
 | 1.0 | 2026-10-29 | 初版作成 | — |
 | 1.1 | 2026-10-29 | ページ・アクションルートは常に HTML、JSON は `/api/v1` と MCP のみとし、エラー形式を経路別に整理。`/api/v1` を参照専用に | HALT の規約（[フロントエンド設計](../architecture/frontend.md)）との整合 |
+| 1.2 | 2026-10-29 | MCP `get_task` に `fast_steps` / `openai_steps` / `handoff_reason` を追加し、`run_task` で高速パスが透過であることを明記。WebSocket `wheel` と MCP `scroll` の単位をノッチに統一（変換規則を追記）。共通規約に CSP ヘッダーと静的ファイルのキャッシュ（`no-cache` + ETag）を追加。GUI ルーターに高速パスの設定ルート（`/agent/fastpath`、`/agent/fastpath/api-key`）と `keep_screenshots` を追加し、タスク詳細・SSE にステップの経路と引き継ぎ理由を追加。§8 を決定事項と実機検証事項に改め、MCP SDK の設定値・OpenAPI の範囲・高解像度の扱いを決定。Jev による外部 Judge の項は削除（高速パスは内部機構） | 未決事項の決定 |

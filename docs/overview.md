@@ -22,7 +22,8 @@ AI による操作（内蔵エージェント、MCP 直接）は、ホスト側�
 
 - Wails アプリ（Go バックエンド + Web フロントエンド）のホスト常駐。トレイ常駐とホスト用 GUI（承認、設定、監査ログ、クライアント管理、API キー設定、実行中タスクの確認・中断）
 - MCP サーバー（Streamable HTTP）。低レベルツール（screenshot / mouse / keyboard / ウィンドウ / クリップボード / UI ツリー / 操作リース）と、高レベルの `run_task`（非同期のタスク実行・状態取得・中断）
-- ホスト内蔵エージェント: OpenAI Responses API の `computer` ツールで画面を見て操作する。すべての入力は MCP 直接・Web UI と同じ入力層（InputGuard・リース・監査）を通す
+- ホスト内蔵エージェント: OpenAI Responses API の `computer` ツールで画面を見て操作する（`store: false`、履歴は毎回再送）。すべての入力は MCP 直接・Web UI と同じ入力層（InputGuard・リース・Judge・監査）を通す
+- 高速パス（既定は無効・別途同意）: UI Automation から作った候補表（最大 24 件）から TypeSafe の Jev が 1 手ずつ ID を選んで進め、迷ったときだけ OpenAI へエスカレーションする。完了の宣言は必ず OpenAI がスクリーンショット 1 枚で確認して行う。Jev にスクリーンショットは送らない
 - Web UI（HTTP + WebSocket）。ライブ画面（JPEG 差分フレーム）と手動操作
 - 認証・認可: tailnet ACL（第 1 層）、WhoIs 許可リスト、MCP 用 Bearer トークン、クライアント単位のエージェント利用許可
 - 排他リースによる操作権管理（閲覧は複数可、操作権は常に 1 セッション。保持者は MCP 直接・Web UI・内蔵エージェントのいずれか）
@@ -36,7 +37,7 @@ AI による操作（内蔵エージェント、MCP 直接）は、ホスト側�
 - Wails アプリを「操作する側のクライアント」として使う機能（操作側は MCP クライアントとブラウザのみ。Web UI からタスクを入力する画面も初版では作らない）
 - tailnet 外（インターネット公開、Tailscale Funnel）からのアクセス
 - tsnet 埋め込み（ホストの tailscaled を利用する）
-- OpenAI 以外の AI プロバイダの切り替え（内蔵エージェントの接続先は OpenAI Responses API のみ）。判定補助モデル（Jev 等）の組み込みは未決で、仕様上は `Judge` インターフェースだけを置く（[アーキテクチャ設計](architecture/overview.md)）
+- OpenAI 以外の AI プロバイダへの切り替え（内蔵エージェントの接続先は OpenAI Responses API のみ）。Jev は高速パスの候補選択だけに使い、実行前の判定（Judge）には使わない（Judge は決定論的なルールベース）
 - WebRTC / 動画エンコード配信
 - 複数ユーザー向けのロール管理（owner / operator / viewer の分離）
 - 音声、ファイル転送、双方向の自動クリップボード同期（テキストの手動送受信と MCP ツールは含む。[機能要件](requirements/functional.md) FR-W07 / FR-M13）
@@ -93,8 +94,8 @@ graph TD
 | ドキュメント | パス | 概要 |
 |------------|------|------|
 | 機能要件 | [`docs/requirements/functional.md`](requirements/functional.md) | ユースケースと機能要件（接続・認可、操作リース、MCP ツール、内蔵エージェント、Web UI、ホスト GUI、監査、設定） |
-| 非機能要件 | [`docs/requirements/non-functional.md`](requirements/non-functional.md) | 脅威モデル、性能・セキュリティ（自己保護、API キー、プロンプトインジェクション対策）、可用性、プライバシー、未決事項 |
-| アーキテクチャ設計 | [`docs/architecture/overview.md`](architecture/overview.md) | 技術選定、構成図、レイヤー、GUI／リモートのルーター分離、主要フロー、画面配信、Judge、ディレクトリ構成 |
+| 非機能要件 | [`docs/requirements/non-functional.md`](requirements/non-functional.md) | 脅威モデル、性能・セキュリティ（自己保護、API キー、プロンプトインジェクション対策、CSP）、可用性、プライバシー、決定事項・意図的な未設定・検証事項 |
+| アーキテクチャ設計 | [`docs/architecture/overview.md`](architecture/overview.md) | 技術選定、構成図、レイヤー、GUI／リモートのルーター分離、主要フロー（高速パス含む）、画面配信、Judge、ディレクトリ構成 |
 | フロントエンド設計（HALT） | [`docs/architecture/frontend.md`](architecture/frontend.md) | HTMX + Atomic Design + Lit + Templ の規約、2 つの UI（ホスト GUI / Web UI）、HTMX パターン、`<remo-screen-viewer>`、ビルド、開発ワークフロー、テスト戦略 |
 | ER / データモデル | [`docs/architecture/er.md`](architecture/er.md) | SQLite のテーブル定義（clients、client_tokens、connection_requests、settings、agent_tasks、audit_logs、audit_thumbnails）と保守処理 |
 | API 仕様 | [`docs/api/endpoints.md`](api/endpoints.md) | MCP ツール、Web UI のルート、WebSocket のプロトコル、JSON API、ホスト GUI のルートと SSE、エラー形式 |
@@ -107,7 +108,7 @@ graph TD
 - M1: Windows + MCP 低レベル最小ツール（screenshot / mouse / keyboard）、tailscaled 連携（WhoIs 許可リスト + Bearer）、キルスイッチ
 - M2: Web UI（ライブ画面・手動操作）、排他リース
 - M3: 承認モード、操作中オーバーレイ、監査ログ（縮小スクリーンショット付き）の強化
-- M4: ホスト内蔵エージェント（`run_task`、OpenAI `computer` ツール、API キー管理、タスク上限・中断）。承認・オーバーレイ・監査（M3）を前提にするため M3 の後に置く
+- M4: ホスト内蔵エージェント（`run_task`、OpenAI `computer` ツール、API キー管理、タスク上限・中断）と、高速パス（TypeSafe Jev による候補選択。UI Automation の候補表、エスカレーション）。承認・オーバーレイ・監査（M3）を前提にするため M3 の後に置く。高速パスの品質は、固定のタスク集合で実測して確認する
 - 将来: macOS / Linux 対応（スコープ外。別途検討）
 
 ## 用語集
@@ -127,6 +128,9 @@ graph TD
 | 承認モード | 操作を許可する条件（常時承認 / 初回のみ承認 / 自動許可）をクライアント単位で設定する仕組み |
 | オーバーレイ | AI 操作中であることをホスト画面に明示する表示 |
 | 内蔵エージェント | ホスト内で動き、OpenAI Responses API の `computer` ツールで画面を見ながら入力を実行するループ。`run_task` で起動する |
+| 高速パス | 内蔵エージェントの 1 手ごとの処理方式の 1 つ。アプリが UI Automation から作る候補表から、Jev が ID を 1 つ選んで進める。迷ったときは OpenAI へエスカレーションし、完了は必ず OpenAI が確認する |
+| 候補表 | 高速パスで Jev に選ばせる、アプリが作る不変のアクション一覧（最大 24 件 + `reobserve` + `abstain`）。Jev は表にない操作・座標・引数を作れない |
+| エスカレーション | 高速パスから OpenAI の `computer` ツールのループへ引き継ぐこと。理由は `abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable` |
 | タスク（run） | 内蔵エージェントへの 1 回の指示の実行単位。排他リースを開始から終了まで保持する。状態・ステップ数・使用トークンを記録する |
 | Judge | 実行前のアクションに対し「許可 / 承認へ回す / 拒否」を助言する判定インターフェース。既定はルールベース。承認を省略する方向には作用させない |
 
@@ -139,3 +143,4 @@ graph TD
 | 1.2 | 2026-10-29 | ホスト内蔵エージェント（OpenAI `computer` ツール）を主役に追加、MCP は低レベルツールと `run_task` を併存、M4 を追加 | 「ホストが AI と直接通信し、指示を受けて実行する」という要件の確認 |
 | 1.3 | 2026-10-29 | ドキュメントマップを確定（全 6 文書のリンクと要約） | 仕様書の完成 |
 | 1.4 | 2026-10-29 | ドキュメントマップに `docs/architecture/frontend.md` を追加（全 7 文書） | HALT の規約を新規文書に分離 |
+| 1.5 | 2026-10-29 | 高速パス（Jev による候補選択）をスコープ・マイルストーン M4・用語集に追加。Jev を Judge に使わない旨を明記。OpenAI は `store: false` | 未決事項の決定 |
