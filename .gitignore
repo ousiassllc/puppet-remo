@@ -2,3 +2,6 @@
 /puppet-remo.exe
 /bin/
 /coverage.out
+/static/node_modules/
+/static/dist/
+/.task/

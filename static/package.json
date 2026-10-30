@@ -1,0 +1,32 @@
+{
+  "name": "puppet-remo-static",
+  "version": "0.0.0",
+  "private": true,
+  "description": "puppet-remo のホスト GUI のフロントエンド（HTMX + Tailwind。docs/architecture/frontend.md §8）",
+  "type": "module",
+  "scripts": {
+    "build": "npm run clean && npm run build:css && npm run build:js && npm run copy:htmx",
+    "clean": "node scripts/clean.mjs",
+    "build:js": "node esbuild.config.mjs",
+    "build:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
+    "copy:htmx": "node scripts/copy-htmx.mjs",
+    "dev": "concurrently \"npm run dev:css\" \"npm run dev:js\"",
+    "dev:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
+    "dev:js": "node esbuild.config.mjs --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "concurrently": "10.0.6",
+    "esbuild": "0.28.2",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "htmx-ext-response-targets": "2.0.4",
+    "htmx-ext-sse": "2.2.4",
+    "htmx.org": "2.0.11"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

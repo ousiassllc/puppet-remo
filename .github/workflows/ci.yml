@@ -12,8 +12,8 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Go の検査（M1/S1）。templ 生成の差分チェック・フロントエンドのビルド・Lit のテスト・
-# Playwright の E2E は後続のスコープ（S10）で足す。
+# Go の検査（M1/S1）と、templ 生成の差分チェック・フロントエンドのビルド（M1/S10。frontend ジョブ）。
+# Lit のテスト・Playwright の E2E は M2（Web UI）で足す。
 jobs:
   go:
     name: go (${{ matrix.os }})
@@ -70,6 +70,61 @@ jobs:
 
       - name: go test
         run: go test -race ./...
+
+  # フロントエンド（HALT。docs/architecture/frontend.md §8・§9）: templ 生成物の差分チェック → フロントエンドのビルド →
+  # 型検査 → 本番ビルド（static/dist を go:embed）と同梱物のテスト。ビルド成果物は OS に依存しないため ubuntu で足りる。
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: static/package-lock.json
+
+      - name: templ を導入（go.mod の版）
+        run: go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ)
+
+      - name: templ generate の差分チェック
+        run: |
+          templ generate
+          if [ -n "$(git status --porcelain -- '*_templ.go')" ]; then
+            echo "_templ.go が .templ と一致していない。templ generate を実行してコミットすること:"
+            git status --short -- '*_templ.go'
+            git diff -- '*_templ.go' | head -100
+            exit 1
+          fi
+
+      - name: 依存の導入（package-lock.json のとおり）
+        working-directory: static
+        run: npm ci
+
+      - name: フロントエンドのビルド（esbuild・Tailwind・htmx の同梱）
+        working-directory: static
+        run: npm run build
+
+      - name: TypeScript の型検査
+        working-directory: static
+        run: npx tsc -p .
+
+      - name: go build (production。dist を go:embed)
+        run: go build -tags production ./...
+
+      - name: go build (production, GOOS=windows)
+        run: go build -tags production ./...
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
+      - name: 同梱した dist のテスト (production)
+        run: go test -tags production ./static/...
 
   lint:
     name: lint
