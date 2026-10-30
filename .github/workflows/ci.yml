@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, "sweep/**"]
+    branches: [main, develop]
   pull_request:
 
 permissions:
@@ -12,6 +12,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# push では main と develop だけ、作業ブランチは pull_request でだけ走らせる（同じコミットで二重に走らない）。
 # すべてのジョブはセルフホストの Linux ランナー（[self-hosted, Linux, X64]）で走らせる。
 # Windows 向けの検査は GOOS=windows のクロスコンパイル（build と vet）だけで、Windows の実機は使わない。
 # ツール（Go・Node・golangci-lint・templ）はランナーに入っている前提にせず、setup アクションで導入する。
