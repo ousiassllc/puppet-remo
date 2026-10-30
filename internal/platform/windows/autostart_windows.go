@@ -28,7 +28,7 @@ func (registryRunKey) Get(name string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	defer k.Close()
+	defer func() { _ = k.Close() }()
 	v, _, err := k.GetStringValue(name)
 	if errors.Is(err, registry.ErrNotExist) {
 		return "", false, nil
@@ -44,7 +44,7 @@ func (registryRunKey) Set(name, value string) error {
 	if err != nil {
 		return err
 	}
-	defer k.Close()
+	defer func() { _ = k.Close() }()
 	if err := k.SetStringValue(name, value); err != nil {
 		return fmt.Errorf("write autostart value: %w", err)
 	}
@@ -56,7 +56,7 @@ func (registryRunKey) Delete(name string) error {
 	if err != nil {
 		return err
 	}
-	defer k.Close()
+	defer func() { _ = k.Close() }()
 	if err := k.DeleteValue(name); err != nil && !errors.Is(err, registry.ErrNotExist) {
 		return fmt.Errorf("delete autostart value: %w", err)
 	}

@@ -121,7 +121,7 @@ func TestHotkeyTriggersKillSwitchRevokesLeasesAndClosesMCPSessions(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status after the kill switch = %d, want 503", resp.StatusCode)
 	}

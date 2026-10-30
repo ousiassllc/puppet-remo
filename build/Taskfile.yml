@@ -1,0 +1,21 @@
+version: '3'
+
+# wails3 の共通タスク（アイコンの生成）。ビルド・パッケージは windows/Taskfile.yml。
+# ルートの Taskfile.yml が `common:` として取り込む。フロントエンドのビルドはルートの `frontend:build`（static/）。
+
+tasks:
+  generate:icons:
+    summary: build/appicon.png から Windows のアイコン（.ico）を作る（トレイのアイコン internal/app/tray.png は 64px に縮小して置く）
+    dir: build
+    sources:
+      - appicon.png
+    generates:
+      - windows/icon.ico
+    cmds:
+      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico -macfilename darwin/icons.icns
+
+  update:build-assets:
+    summary: config.yml の info から windows/ の資産（info.json・manifest・wails_tools.nsh）を作り直す（project.nsi は手で調整済み。差分を確認すること）
+    dir: build
+    cmds:
+      - wails3 update build-assets -name puppet-remo -binaryname puppet-remo -config config.yml -dir .
