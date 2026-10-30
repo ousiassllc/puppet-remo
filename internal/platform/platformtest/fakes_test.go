@@ -318,3 +318,65 @@ func TestFakeUIAutomationDefaultsAndPruning(t *testing.T) {
 		t.Errorf("pruned tree = %+v", pruned)
 	}
 }
+
+func TestFakeAppLauncherContract(t *testing.T) {
+	const (
+		exe      = `C:\Apps\Tool\tool.exe`
+		denied   = `C:\Apps\Denied\denied.exe`
+		elevated = `C:\Apps\Admin\admin.exe`
+		dir      = `C:\Apps\Tool`
+	)
+	platformtest.RunAppLauncherContract(t, func(*testing.T) platform.AppLauncher {
+		l := platformtest.NewFakeAppLauncher()
+		l.AddExecutable(exe)
+		l.AddExecutable(denied)
+		l.DenyAccess(denied)
+		l.AddExecutable(elevated)
+		l.RequireElevation(elevated)
+		l.AddDir(dir)
+		return l
+	}, platformtest.AppLauncherFixture{
+		ExePath: exe, Dir: dir, MissingPath: `C:\Apps\Gone\gone.exe`, MissingDir: `C:\Apps\Gone`,
+		DeniedPath: denied, ElevatedPath: elevated,
+	})
+}
+
+func TestFakeFilePickerContract(t *testing.T) {
+	platformtest.RunFilePickerContract(t, func(*testing.T) (platform.FilePicker, platformtest.FilePickerDriver) {
+		f := platformtest.NewFakeFilePicker()
+		return f, f
+	})
+}
+
+func TestFakeAppLauncherRecordsLaunchesAndInjectsErrors(t *testing.T) {
+	l := platformtest.NewFakeAppLauncher()
+	l.AddExecutable(`C:\a.exe`)
+	ctx := context.Background()
+	spec := platform.LaunchSpec{ExePath: `C:\a.exe`, Args: []string{"x"}}
+
+	if _, err := l.Launch(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	l.SetError("Launch", boom)
+	if _, err := l.Launch(ctx, spec); !errors.Is(err, boom) {
+		t.Fatalf("Launch error = %v, want the injected error", err)
+	}
+	if got := l.CallsTo("Launch"); len(got) != 2 || !reflect.DeepEqual(got[0].Args, []any{spec}) {
+		t.Errorf("CallsTo(Launch) = %+v, want 2 calls with the spec", got)
+	}
+}
+
+func TestFakeFilePickerDoesNotOpenForCanceledContext(t *testing.T) {
+	f := platformtest.NewFakeFilePicker()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := f.PickExecutable(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("PickExecutable error = %v, want context.Canceled", err)
+	}
+	waitCtx, waitCancel := context.WithCancel(context.Background())
+	waitCancel()
+	if err := f.WaitOpen(waitCtx); !errors.Is(err, context.Canceled) {
+		t.Errorf("WaitOpen = %v, want no dialog to have opened", err)
+	}
+}

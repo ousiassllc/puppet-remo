@@ -2,8 +2,9 @@ package platform
 
 import "errors"
 
-// ErrNotFound は SecretStore に名前が登録されていないことを表す。errors.Is で判定する。
-var ErrNotFound = errors.New("platform: secret not found")
+// ErrNotFound は対象が無いことを表す（SecretStore に名前が登録されていない、AppLauncher.Inspect のファイル・
+// ディレクトリが無い）。errors.Is で判定する。メッセージには名前・パスを含めない。
+var ErrNotFound = errors.New("platform: not found")
 
 // SecretStore は資格情報マネージャー（go-keyring）。name は下記の定数。M1 では使わない。
 // 空の name は ErrInvalidArgument。
