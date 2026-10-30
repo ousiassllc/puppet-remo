@@ -191,6 +191,8 @@ type env struct {
 	power     *platformtest.FakePower
 	input     *platformtest.FakeInput
 	autostart *platformtest.FakeAutostart
+	launcher  *platformtest.FakeAppLauncher
+	picker    *platformtest.FakeFilePicker
 	closers   *closeLog
 }
 
@@ -253,12 +255,14 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 		whois:   &fakeWhoIs{id: tailnet.Identity{LoginName: "alice@example.com", StableNodeID: "nodeA", NodeName: "alice-laptop"}},
 		listens: &listenLog{}, hotkey: platformtest.NewFakeHotkey(), power: platformtest.NewFakePower(), input: platformtest.NewFakeInput(),
 		autostart: platformtest.NewFakeAutostart(), closers: &closeLog{},
+		launcher: platformtest.NewFakeAppLauncher(), picker: platformtest.NewFakeFilePicker(),
 	}
 	cfg := Config{
 		Repo: db,
 		Platform: Platform{
 			Capturer: platformtest.NewFakeCapturer(), Input: e.input, Windows: windows,
 			Clipboard: platformtest.NewFakeClipboard(), UI: platformtest.NewFakeUIAutomation(windows),
+			Launcher: e.launcher, FilePicker: e.picker,
 			Hotkey: e.hotkey, Power: e.power, Autostart: e.autostart,
 		},
 		Watcher:     e.watcher,
@@ -359,11 +363,15 @@ func (e *env) dialMCP(token string) *mcpsdk.ClientSession {
 	return cs
 }
 
-func callTool(t *testing.T, cs *mcpsdk.ClientSession, name string) *mcpsdk.CallToolResult {
+func callTool(t *testing.T, cs *mcpsdk.ClientSession, name string, args ...map[string]any) *mcpsdk.CallToolResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), waitLimit)
 	defer cancel()
-	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: name})
+	params := &mcpsdk.CallToolParams{Name: name}
+	if len(args) > 0 {
+		params.Arguments = args[0]
+	}
+	res, err := cs.CallTool(ctx, params)
 	if err != nil {
 		t.Fatalf("call %s: %v", name, err)
 	}

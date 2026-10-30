@@ -251,7 +251,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |------|----|------|------|
 | `app_id` | string | はい | `list_launchable_apps` の `id` |
 
-追加の引数（`args`・`cwd`・`path` など）は受け付けない（スキーマに無い引数は MCP SDK が `invalid params` で拒否する）。出力: `{ "ok": true, "app_id": "01JA…", "pid": 4120 }`。`pid` は `CreateProcess` が返したプロセスの ID。プロセスの作成に成功した時点で返し、ウィンドウの表示は待たない（確認は `list_windows`）。
+追加の引数（`args`・`cwd`・`path` など）は受け付けない（スキーマに無い引数・`app_id` の欠落・型違いは、MCP SDK の引数検査が拒否し、起動しない。§3.4）。出力: `{ "ok": true, "app_id": "01JA…", "pid": 4120 }`。`pid` は `CreateProcess` が返したプロセスの ID。プロセスの作成に成功した時点で返し、ウィンドウの表示は待たない（確認は `list_windows`）。
 
 - 検査の順序は、キルスイッチ（ミドルウェア連鎖の 3）→ 操作リース → 許可リスト。リース未保持なら暗黙に取得する（FR-L04）。リースの承認は M1.5 には無い（M3 から）
 - エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
@@ -305,7 +305,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 }
 ```
 
-コードは §2 の表のとおり。引数のスキーマ違反は MCP SDK が JSON-RPC の `invalid params` で返す。
+コードは §2 の表のとおり。引数のスキーマ違反（スキーマに無い引数・必須の欠落・型違い）は、ハンドラの手前で MCP SDK が拒否する。SDK（go-sdk）はこれを JSON-RPC エラーではなく、`isError` のツール結果（本文は `validating "arguments": …`。`structuredContent` は無く、`code` は付かない）で返す。
 
 ## 4. Web UI（リモートルーター）
 
@@ -597,3 +597,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.9 | 2026-10-30 | §7.5「M1 実装での差分」を新設（M1 のリモートルーターは `/mcp` だけ、M1 の GUI ルートと `PUT /settings` の 5 項目、`/poll`・SSE の扱い、GUI の `not_found` と 422、接続要求の許可（期限切れは許可不可・再許可での置き換えと `client.replace`・5 秒以内は DB に書かない）、`client_id` の NULL、MCP ツールの監査、`http.Server` の `IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB・WhoIs の 5 秒）。§1 に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.10 | 2026-10-30 | 起動許可リストと MCP の `launch_app` / `list_launchable_apps` を追加（M1.5）: §1 の GUI ルーターの提供物と隔離の対象、§2 のエラー（`app_not_found` 404・`launch_failed` 409）、§3.1 の `instructions`、§3.3 のツール表と「アプリ起動」節、§7.1 の `/apps`、§7.2 の「起動許可アプリ」（`POST /apps`・`PUT` / `DELETE /apps/{id}`・削除の確認・`POST /apps/pick-file`）、§8.2 の実機検証事項 | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.11 | 2026-10-30 | §7.2 の起動許可アプリに注意書きの表示を追記 | #16 のレビュー指摘（FR-H12・NFR-S20 との整合） |
+| 1.12 | 2026-10-30 | §3.4 の引数のスキーマ違反を、実装（go-sdk）の挙動に合わせて訂正（JSON-RPC の `invalid params` ではなく `isError` のツール結果）。§3.3 の `launch_app` の引数検査の記述も同様に揃えた | #22（`launch_app` の入力検査の実測との食い違い） |

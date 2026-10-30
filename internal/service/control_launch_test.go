@@ -1,0 +1,483 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/platform"
+	"github.com/ousiassllc/puppet-remo/internal/platform/platformtest"
+	"github.com/ousiassllc/puppet-remo/internal/repository"
+)
+
+// registerNotepad は notepadInput を許可リストに登録して返す。
+func registerNotepad(t *testing.T, e *ctlEnv) domain.LaunchableApp {
+	t.Helper()
+	a, err := e.apps.Create(context.Background(), notepadInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.audit.entries = nil // 登録の監査は、起動の監査と混ぜない
+	return a
+}
+
+// lastLaunchEntry は直近の監査エントリが tool.launch_app であることを確かめて返す。
+func lastLaunchEntry(t *testing.T, e *ctlEnv) repository.AuditEntry {
+	t.Helper()
+	entries := e.audit.Entries()
+	if len(entries) == 0 {
+		t.Fatal("no audit entry")
+	}
+	en := entries[len(entries)-1]
+	if en.Kind != "tool" || en.Event != "tool.launch_app" || en.Tool != "launch_app" {
+		t.Fatalf("entry = %+v, want tool.launch_app", en)
+	}
+	return en
+}
+
+// assertNoSecrets は監査の detail とエラーに、パス・引数・作業ディレクトリが現れないことを確かめる。
+func assertNoSecrets(t *testing.T, en repository.AuditEntry, err error) {
+	t.Helper()
+	for _, secret := range []string{appNotepad, `notepad.exe`, appArgMark, appWorkMark} {
+		if strings.Contains(string(en.DetailJSON), secret) {
+			t.Errorf("audit detail leaks %q: %s", secret, en.DetailJSON)
+		}
+		if err == nil {
+			continue
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("error leaks %q: %v", secret, err)
+		}
+		var de *domain.Error
+		if errors.As(err, &de) {
+			for k, v := range de.Detail {
+				if s, ok := v.(string); ok && strings.Contains(s, secret) {
+					t.Errorf("error detail %s leaks %q", k, secret)
+				}
+			}
+		}
+	}
+}
+
+func TestControlLaunchStartsTheRegisteredApp(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	ctx := context.Background()
+
+	res, err := e.control.Launch(ctx, ctlAlice, app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.AppID != app.ID || res.PID == 0 {
+		t.Errorf("result = %+v", res)
+	}
+
+	calls := e.launcher.CallsTo("Launch")
+	if len(calls) != 1 {
+		t.Fatalf("Launch calls = %+v", calls)
+	}
+	spec, _ := calls[0].Args[0].(platform.LaunchSpec)
+	if spec.ExePath != appNotepad || !slices.Equal(spec.Args, []string{appArgMark}) || spec.WorkingDir != appWorkMark {
+		t.Errorf("spec = %+v, want the registered values only", spec)
+	}
+
+	// 未保持の mcp はリースを暗黙に取得する（FR-L04）。
+	h, ok := e.leases.Holder()
+	if !ok || !h.Actor.SameSession(ctlAlice) {
+		t.Fatalf("holder = %+v, %v; want alice", h, ok)
+	}
+
+	en := lastLaunchEntry(t, e)
+	if en.Result != "ok" || en.ActorType != domain.ActorMCP || en.ClientID != ctlAlice.ClientID || en.SessionID != ctlAlice.SessionID ||
+		en.LeaseID != h.LeaseID || en.ErrorCode != "" || en.DurationMS == nil {
+		t.Errorf("entry = %+v", en)
+	}
+	d := auditDetail(t, en)
+	if len(d) != 3 || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["pid"] != float64(res.PID) {
+		t.Errorf("detail = %v, want exactly app_id, label and pid", d)
+	}
+	assertNoSecrets(t, en, nil)
+}
+
+// 同じアプリが起動中でも、毎回新しいプロセスを起動する。起動はリースの idle を延ばさず、入力のセマフォも使わない。
+func TestControlLaunchStartsANewProcessEveryTime(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	first, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.PID == second.PID {
+		t.Errorf("both launches returned pid %d", first.PID)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 2 {
+		t.Errorf("Launch calls = %d, want 2", n)
+	}
+}
+
+func TestControlLaunchKillSwitchIsCheckedFirst(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	// 他者がリースを保持し、ID も未登録でも、最初に見るのはキルスイッチ。
+	if _, err := e.leases.Acquire(context.Background(), ctlBob); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.kill.Trigger("test"); err != nil {
+		t.Fatal(err)
+	}
+	e.audit.entries = nil
+
+	for _, id := range []string{app.ID, "unknown"} {
+		_, err := e.control.Launch(context.Background(), ctlAlice, id)
+		if !errors.Is(err, domain.ErrKillSwitchActive) {
+			t.Fatalf("err = %v, want kill_switch_active", err)
+		}
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times during the kill switch", n)
+	}
+	en := lastLaunchEntry(t, e)
+	if en.Result != "denied" || en.ErrorCode != "kill_switch_active" {
+		t.Errorf("entry = %+v", en)
+	}
+	if d := auditDetail(t, en); d["label"] != nil || d["pid"] != nil || d["reason"] != nil {
+		t.Errorf("detail = %v, want only app_id", d)
+	}
+}
+
+func TestControlLaunchLeaseHeldByOtherIsDeniedBeforeTheListIsRead(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	if _, err := e.leases.Acquire(context.Background(), ctlBob); err != nil {
+		t.Fatal(err)
+	}
+	e.audit.entries = nil
+
+	// 未登録の ID でも lease_held_by_other（app_not_found で存在を探らせない）。
+	for _, id := range []string{app.ID, "unknown"} {
+		_, err := e.control.Launch(context.Background(), ctlAlice, id)
+		if !errors.Is(err, domain.ErrLeaseHeldByOther) {
+			t.Fatalf("id %q: err = %v, want lease_held_by_other", id, err)
+		}
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times without the lease", n)
+	}
+	en := lastLaunchEntry(t, e)
+	if en.Result != "denied" || en.ErrorCode != "lease_held_by_other" {
+		t.Errorf("entry = %+v", en)
+	}
+	if h, _ := e.leases.Holder(); !h.Actor.SameSession(ctlBob) {
+		t.Errorf("the holder changed: %+v", h)
+	}
+}
+
+// mcp 以外は暗黙にリースを取らない。
+func TestControlLaunchNeedsTheLeaseForNonMCPActors(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	web := domain.Actor{Kind: domain.ActorWeb, ClientID: "client-w", Label: "web", SessionID: "viewer-1"}
+	_, err := e.control.Launch(context.Background(), web, app.ID)
+	if !errors.Is(err, domain.ErrLeaseRequired) {
+		t.Fatalf("err = %v, want lease_required", err)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times without the lease", n)
+	}
+	if _, ok := e.leases.Holder(); ok {
+		t.Error("a non-MCP actor must not acquire the lease implicitly")
+	}
+}
+
+func TestControlLaunchUnknownAppIsDenied(t *testing.T) {
+	e := newAppEnv(t)
+	registerNotepad(t, e)
+	long := strings.Repeat("あ", 100)
+
+	_, err := e.control.Launch(context.Background(), ctlAlice, long)
+	if !errors.Is(err, domain.ErrAppNotFound) {
+		t.Fatalf("err = %v, want app_not_found", err)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times", n)
+	}
+	// ②のリースの確認は③より前なので、未登録の ID でもリースは取得済み。
+	if h, ok := e.leases.Holder(); !ok || !h.Actor.SameSession(ctlAlice) {
+		t.Errorf("holder = %+v, %v", h, ok)
+	}
+	en := lastLaunchEntry(t, e)
+	if en.Result != "denied" || en.ErrorCode != "app_not_found" {
+		t.Errorf("entry = %+v", en)
+	}
+	d := auditDetail(t, en)
+	if len(d) != 1 || d["app_id"] != strings.Repeat("あ", 64) {
+		t.Errorf("detail = %v, want only the app_id cut to 64 characters", d)
+	}
+}
+
+// 保存済みの行が登録時の規則を満たさなくなっていたら（DB を手で書き換えたなど）、起動しない（fail closed。NFR-S20 (3)）。
+func TestControlLaunchRechecksTheStoredRow(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*domain.LaunchableApp)
+	}{
+		{"relative exe path", func(a *domain.LaunchableApp) { a.ExePath = `notepad.exe` }},
+		{"UNC exe path", func(a *domain.LaunchableApp) { a.ExePath = `\\host\share\notepad.exe` }},
+		{"not an exe", func(a *domain.LaunchableApp) { a.ExePath = `C:\Tools\notepad.bat` }},
+		{"empty argument", func(a *domain.LaunchableApp) { a.Args = []string{""} }},
+		{"relative working dir", func(a *domain.LaunchableApp) { a.WorkingDir = `work` }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newAppEnv(t)
+			app := registerNotepad(t, e)
+			// AppRegistry を通さずに、保存済みの行だけを書き換える。
+			bad := app
+			tt.mutate(&bad)
+			if err := e.appStore.Update(context.Background(), bad); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+			if !errors.Is(err, domain.ErrAppNotFound) {
+				t.Fatalf("err = %v, want app_not_found", err)
+			}
+			if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+				t.Errorf("launched a row that fails CheckLaunchTarget (%d calls)", n)
+			}
+			en := lastLaunchEntry(t, e)
+			if en.Result != "denied" || en.ErrorCode != "app_not_found" {
+				t.Errorf("entry = %+v", en)
+			}
+			assertNoSecrets(t, en, err)
+		})
+	}
+}
+
+func TestControlLaunchFailureReasons(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func(*ctlEnv)
+		reason domain.LaunchFailure
+	}{
+		// 登録のあとで実行ファイルが消えた（登録時の存在確認は起動を保証しない）: 偽の launcher に実行ファイルが無い状態。
+		{"file missing", func(e *ctlEnv) { e.launcher = platformtest.NewFakeAppLauncher(); e.rebuildControl(t) }, domain.LaunchFileMissing},
+		{"access denied", func(e *ctlEnv) { e.launcher.DenyAccess(appNotepad) }, domain.LaunchAccessDenied},
+		{"elevation required", func(e *ctlEnv) { e.launcher.RequireElevation(appNotepad) }, domain.LaunchElevationRequired},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newAppEnv(t)
+			app := registerNotepad(t, e)
+			tt.setup(e)
+
+			_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+			if !errors.Is(err, domain.ErrLaunchFailed) {
+				t.Fatalf("err = %v, want launch_failed", err)
+			}
+			var de *domain.Error
+			if !errors.As(err, &de) || de.Detail["reason"] != tt.reason || len(de.Detail) != 1 {
+				t.Fatalf("err = %v, want only reason=%s", err, tt.reason)
+			}
+			en := lastLaunchEntry(t, e)
+			if en.Result != "error" || en.ErrorCode != "launch_failed" {
+				t.Errorf("entry = %+v", en)
+			}
+			d := auditDetail(t, en)
+			if len(d) != 3 || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["reason"] != string(tt.reason) {
+				t.Errorf("detail = %v, want app_id, label and reason", d)
+			}
+			assertNoSecrets(t, en, err)
+		})
+	}
+}
+
+// rebuildControl は e.launcher を差し替えたあとに、Control（と許可リストの AppRegistry）を作り直す。許可リストの行は残る。
+func (e *ctlEnv) rebuildControl(t *testing.T) {
+	t.Helper()
+	apps, err := NewAppRegistry(AppRegistryConfig{
+		Apps: e.appStore, Launcher: e.launcher, Picker: e.picker, Audit: e.audit, Clock: e.clock, IDs: &ctlIDs{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.apps = apps
+	e.control, err = NewControl(ControlConfig{
+		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
+		Launcher: e.launcher, Apps: e.apps, Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// launcher のその他の失敗: 組めない値（ErrInvalidArgument）は launch_failed(other)、想定外のエラーはそのまま（mcp が internal にする）。
+func TestControlLaunchOtherLauncherFailures(t *testing.T) {
+	t.Run("invalid argument becomes launch_failed other", func(t *testing.T) {
+		e := newAppEnv(t)
+		app := registerNotepad(t, e)
+		e.launcher.SetError("Launch", domain.ErrInvalidArgument.WithMsg(`bad command line for `+appNotepad))
+		_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+		var de *domain.Error
+		if !errors.As(err, &de) || de.Code != domain.CodeLaunchFailed || de.Detail["reason"] != domain.LaunchOther {
+			t.Fatalf("err = %v, want launch_failed(other)", err)
+		}
+		assertNoSecrets(t, lastLaunchEntry(t, e), err)
+	})
+	t.Run("a LaunchError with an unknown reason is other", func(t *testing.T) {
+		e := newAppEnv(t)
+		app := registerNotepad(t, e)
+		e.launcher.SetError("Launch", &platform.LaunchError{Reason: domain.LaunchFailure(appNotepad), Err: errors.New("os")})
+		_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+		var de *domain.Error
+		if !errors.As(err, &de) || de.Detail["reason"] != domain.LaunchOther {
+			t.Fatalf("err = %v, want reason other", err)
+		}
+		assertNoSecrets(t, lastLaunchEntry(t, e), err)
+	})
+	t.Run("an unexpected error passes through and is audited as an error", func(t *testing.T) {
+		e := newAppEnv(t)
+		app := registerNotepad(t, e)
+		boom := errors.New("boom")
+		e.launcher.SetError("Launch", boom)
+		_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+		if !errors.Is(err, boom) {
+			t.Fatalf("err = %v", err)
+		}
+		en := lastLaunchEntry(t, e)
+		if en.Result != "error" || en.ErrorCode != "internal" {
+			t.Errorf("entry = %+v", en)
+		}
+		if d := auditDetail(t, en); d["reason"] != nil {
+			t.Errorf("detail = %v, want no reason", d)
+		}
+	})
+}
+
+// 取得済みのリースの検査のあとにキルスイッチが発動しても、起動しない。
+func TestControlLaunchRechecksTheKillSwitchBeforeStarting(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	// 許可リストの読み取りの最中に発動したことにする。
+	triggering := &triggerOnGetApps{AppRegistry: e.apps, trigger: func() { _ = e.kill.Trigger("test") }}
+	ctl, err := NewControl(ControlConfig{
+		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
+		Launcher: e.launcher, Apps: triggering, Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ctl.Launch(context.Background(), ctlAlice, app.ID)
+	if !errors.Is(err, domain.ErrKillSwitchActive) {
+		t.Fatalf("err = %v, want kill_switch_active", err)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times after the kill switch fired", n)
+	}
+	if en := lastLaunchEntry(t, e); en.Result != "denied" || en.ErrorCode != "kill_switch_active" {
+		t.Errorf("entry = %+v", en)
+	}
+}
+
+type triggerOnGetApps struct {
+	AppRegistry
+	trigger func()
+}
+
+func (a *triggerOnGetApps) Get(ctx context.Context, id string) (domain.LaunchableApp, error) {
+	app, err := a.AppRegistry.Get(ctx, id)
+	a.trigger()
+	return app, err
+}
+
+func TestControlLaunchableApps(t *testing.T) {
+	e := newAppEnv(t)
+	ctx := context.Background()
+
+	empty, err := e.control.LaunchableApps(ctx)
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("empty list = %#v, %v; want a non-nil empty slice", empty, err)
+	}
+
+	var ids = map[string]string{}
+	for _, in := range []domain.AppInput{
+		{Label: "b-app", ExePath: appCalc, Args: []string{appArgMark}},
+		{Label: "A-app", ExePath: appNotepad, WorkingDir: appWorkMark},
+	} {
+		a, err := e.apps.Create(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[in.Label] = a.ID
+	}
+	e.audit.entries = nil
+
+	got, err := e.control.LaunchableApps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []domain.AppSummary{{ID: ids["A-app"], Label: "A-app"}, {ID: ids["b-app"], Label: "b-app"}}
+	if !slices.Equal(got, want) {
+		t.Errorf("apps = %+v, want %+v", got, want)
+	}
+	// リース不要で、リースを取らない。監査は mcp 層が tool.list_launchable_apps として記録する（Control は記録しない）。
+	if _, ok := e.leases.Holder(); ok {
+		t.Error("listing must not acquire the lease")
+	}
+	if n := len(e.audit.Entries()); n != 0 {
+		t.Errorf("Control recorded %d audit entries for the listing", n)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("listing launched %d times", n)
+	}
+}
+
+func TestControlLaunchableAppsListingWorksWhileAnotherSessionHoldsTheLease(t *testing.T) {
+	e := newAppEnv(t)
+	registerNotepad(t, e)
+	if _, err := e.leases.Acquire(context.Background(), ctlBob); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := e.control.LaunchableApps(context.Background()); err != nil || len(got) != 1 {
+		t.Errorf("apps = %+v, %v", got, err)
+	}
+}
+
+func TestControlLaunchableAppsKillSwitch(t *testing.T) {
+	e := newAppEnv(t)
+	registerNotepad(t, e)
+	if err := e.kill.Trigger("test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.control.LaunchableApps(context.Background()); !errors.Is(err, domain.ErrKillSwitchActive) {
+		t.Errorf("err = %v, want kill_switch_active", err)
+	}
+}
+
+func TestNewControlRequiresLauncherAndApps(t *testing.T) {
+	e := newCtlEnv(t)
+	base := ControlConfig{
+		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
+		Launcher: e.launcher, Apps: e.apps, Leases: e.leases, Kill: e.kill, Clock: e.clock,
+	}
+	if _, err := NewControl(base); err != nil {
+		t.Fatal(err)
+	}
+	for name, clear := range map[string]func(*ControlConfig){
+		"Launcher": func(c *ControlConfig) { c.Launcher = nil },
+		"Apps":     func(c *ControlConfig) { c.Apps = nil },
+	} {
+		cfg := base
+		clear(&cfg)
+		if _, err := NewControl(cfg); !errors.Is(err, domain.ErrInvalidArgument) {
+			t.Errorf("NewControl without %s: err = %v", name, err)
+		}
+	}
+}

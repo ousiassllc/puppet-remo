@@ -134,6 +134,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		Platform: app.Platform{
 			Capturer: windows.NewCapturer(), Input: input, Windows: wm, Clipboard: windows.NewClipboard(),
 			UI: ui, Hotkey: hotkey, Power: power, Autostart: autostart,
+			// 親ウィンドウ（Wails のメインウィンドウの HWND）の結線はホスト GUI の /apps（#23）が行う。それまでは親なしで開く。
+			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(nil),
 		},
 		Watcher: tailnet.NewWatcher(tailnet.WatcherConfig{API: api}),
 		WhoIs:   tailnet.NewWhoIs(tailnet.WhoIsConfig{API: api}),

@@ -227,7 +227,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | A3 | 表示名 `メモ帳`・パス・引数なしで保存 | 一覧に行が追加される。同じ表示名（大文字小文字違いを含む）・存在しないパス・相対パス・UNC パス・`.exe` 以外・`..` を含むパスは、項目別のエラーで入力値が残る（422） |
 | A4 | MCP クライアントから `list_launchable_apps` | `{ "apps": [ { "id", "label": "メモ帳" } ] }` だけ。パス・引数は出ない |
 | A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid }` が返る。同じ呼び出しを繰り返すと、毎回新しいメモ帳が増える |
-| A6 | 未登録の `app_id`、パスや引数を含む追加の引数（`args`・`path`）を渡す | 未登録は `app_not_found`。追加の引数はスキーマ違反（`invalid params`）で拒否される。いずれも何も起動しない |
+| A6 | 未登録の `app_id`、パスや引数を含む追加の引数（`args`・`path`）を渡す | 未登録は `app_not_found`。追加の引数は引数検査（スキーマ違反。`isError` のツール結果で、`code` は付かない）で拒否される。いずれも何も起動しない |
 | A7 | 別のセッションがリースを保持している状態で `launch_app` | `lease_held_by_other`。起動しない |
 | A8 | キルスイッチ発動中に `launch_app` / `list_launchable_apps` | `kill_switch_active`（HTTP 503）。解除後は起動できる。キルスイッチは起動済みのメモ帳を終了しない |
 | A9 | 登録した実行ファイルを削除・移動してから `launch_app` | `launch_failed`（`reason: file_missing`）。メッセージにパスが出ない。GUI の一覧の行は残る |
@@ -251,3 +251,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-10-30 | 起動許可リストと `launch_app` / `list_launchable_apps`（M1.5）の実機確認項目を追加: §3.8（`AppLauncher`・`FilePicker` の契約テストと手動確認 L1〜L9）、§4.8（ホスト GUI の登録と MCP の起動 A1〜A12。未確認）、タイトル | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_PICKER` を追加、§5 に `launch_app` が起動したプロセスを終了しない旨を追記 | #16 のレビュー指摘 |
 | — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` / `PUPPET_REMO_SMOKE_LAUNCH_DENIED` を追加、§3.8 の L1・L2（`TestSmokeAppLauncherArgs` で自動化）・L9 と、テストの構成（`TestSmokeAppLauncherPid`、親なしの `TestSmokeFilePicker`）を実装に合わせた | #21 の実装 |
+| — | 2026-10-30 | §4.8 の A6 を、スキーマ違反が JSON-RPC の `invalid params` ではなく `isError` のツール結果で返る実装に合わせて訂正 | #22 の実装（go-sdk の挙動の実測） |

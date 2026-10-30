@@ -18,6 +18,7 @@ type errorBody struct {
 	Message string         `json:"message"`
 	Detail  map[string]any `json:"detail,omitempty"`
 	Holder  *holderBody    `json:"holder,omitempty"` // lease_held_by_other のとき
+	Reason  string         `json:"reason,omitempty"` // launch_failed のとき（file_missing / access_denied / elevation_required / other）
 }
 
 // toolError はツールの失敗を isError の結果にする。ツールの失敗は JSON-RPC エラーではなくツール結果で返す（§3.4）。
@@ -33,6 +34,9 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 			body.Message = string(de.Code)
 		}
 		body.Detail = de.Detail
+		if de.Code == domain.CodeLaunchFailed {
+			body.Detail, body.Reason = nil, launchReason(de)
+		}
 	case errors.Is(err, context.DeadlineExceeded):
 		body.Code = domain.CodeInternal
 		body.Message = "the tool call timed out"
@@ -52,6 +56,15 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 		Content:           []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("%s: %s", body.Code, body.Message)}},
 		StructuredContent: body,
 	}
+}
+
+// launchReason は launch_failed の reason を返す。定められた 4 値以外（パスや引数になりうる値）は other にする。
+func launchReason(de *domain.Error) string {
+	reason, _ := de.Detail["reason"].(domain.LaunchFailure)
+	if !reason.Valid() {
+		reason = domain.LaunchOther
+	}
+	return string(reason)
 }
 
 // writeSessionLimit は同時セッションの上限を超えた新規セッションを problem+json（API 仕様 §2）で断る。
