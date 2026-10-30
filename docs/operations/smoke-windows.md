@@ -22,6 +22,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | `PUPPET_REMO_SMOKE_INPUT` | 未設定 | `1` のときだけ入力のテスト（`TestSmokeInput`）を走らせる。カーソルを動かし、クリック・ホイール・キー・文字入力を前面へ送る |
 | `PUPPET_REMO_SMOKE_X` / `PUPPET_REMO_SMOKE_Y` | プライマリモニターの中央 | 入力のテストがクリックしてよい座標（仮想デスクトップ上の物理座標）。害のない場所を指定する |
 | `PUPPET_REMO_SMOKE_CLIPBOARD` | 未設定 | `1` のときだけクリップボードのテスト（`TestSmokeClipboard`）を走らせる。終了時にテキストを元に戻すが、テキスト以外の内容は失われる |
+| `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` | 未設定 | `requireAdministrator` のマニフェストを持つ実行ファイルのパス。設定すると `TestSmokeAppLauncher` が `elevation_required` を確かめる（§3.8 L4）。未設定なら飛ばす |
+| `PUPPET_REMO_SMOKE_LAUNCH_DENIED` | 未設定 | 起動を OS に拒否される実行ファイルのパス（ACL で実行を拒否したファイルなど）。設定すると `TestSmokeAppLauncher` が `access_denied` を確かめる（§3.8 L5）。未設定なら飛ばす |
 | `PUPPET_REMO_SMOKE_PICKER` | 未設定 | `1` のときだけファイル選択のテスト（`TestSmokeFilePicker`。§3.8 L9）を走らせる。ダイアログが開くため、手動で選択・キャンセルの操作が要る |
 
 ```powershell
@@ -123,19 +125,19 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 ### 3.8 AppLauncher・FilePicker（`CreateProcess`・ファイル選択。FR-M19・FR-H12。M1.5）
 
-契約テスト（§2）に `AppLauncher` / `FilePicker` を加える。`smoke` タグの `TestSmokeAppLauncher` は、害のない実行ファイル（`%SystemRoot%\System32\notepad.exe`）を起動し、確認後に **テスト自身が起動したプロセスだけを終了する**。
+契約テスト（§2）に `AppLauncher` / `FilePicker` を加える。`smoke` タグの `TestSmokeAppLauncher` は、害のない実行ファイル（`%SystemRoot%\System32\notepad.exe`）を起動し、確認後に **テスト自身が起動したプロセスだけを（`Launch` が返した pid で）終了する**。Windows 11 のメモ帳は起動後に別のプロセスへ引き継いで終わることがあり、その場合に残ったウィンドウは手で閉じる。`TestSmokeAppLauncherPid` は `Launch` が返した `pid` が実在することを確かめる（L7 の前半）。`TestSmokeFilePicker` は親ウィンドウなし（`NewFilePicker(nil)`）で開く。メインウィンドウを親にした動作は、ホスト GUI の結線後に §4.8 で確かめる。
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
-| L1 | `go test -tags smoke -run TestSmokeAppLauncher -v ./internal/platform/windows/` | `PASS`。`SKIP` / `FAIL` にならない |
-| L2 | 空白・日本語を含むパスの実行ファイルと、空白・引用符・バックスラッシュ・日本語を含む引数を `Launch` する（引数を表示するテスト用の小さな実行ファイルを用意する） | 登録どおりの引数がそのまま渡る（`CommandLineToArgvW` の規則で往復する）。シェルを経由しない（`cmd.exe` の特殊文字 `&`・`%` を含む引数がシェルに解釈されない） |
+| L1 | `go test -tags smoke -run 'TestSmokeAppLauncher' -v ./internal/platform/windows/` | `PASS`。契約テストのうち L4・L5 の環境変数が未設定のサブテストだけ `SKIP`、ほかは `FAIL` にならない |
+| L2 | `go test -tags smoke -run TestSmokeAppLauncherArgs -v ./internal/platform/windows/`（テストのバイナリを空白・日本語を含むパスへコピーし、空白・引用符・バックスラッシュ・日本語・`&`・`%`・`\|` などを含む引数を `Launch` して、子プロセスが受け取った引数を照合する） | `PASS`。登録どおりの引数がそのまま渡る（`CommandLineToArgvW` の規則で往復する）。シェルを経由しない（`cmd.exe` の特殊文字 `&`・`%` がシェルに解釈されない） |
 | L3 | 存在しない実行ファイルを `Launch` | `LaunchError{Reason: file_missing}`。メッセージにパス・引数が入らない |
 | L4 | `requireAdministrator` のマニフェストを持つ実行ファイルを `Launch`（標準権限のアプリから） | `LaunchError{Reason: elevation_required}`。UAC のダイアログが出ない |
 | L5 | 実行権限の無い場所・拒否された実行ファイルを `Launch` | `LaunchError{Reason: access_denied}` |
 | L6 | 作業ディレクトリを指定 / 空にして `Launch` | 指定した場所で起動する。空なら実行ファイルのあるディレクトリ。存在しない作業ディレクトリは `Inspect` が `ErrNotFound` を返す |
 | L7 | 起動後のプロセスと本アプリの関係 | `Launch` が返した `pid` が実在する。本アプリを終了・キルスイッチ発動しても、起動したプロセスは終了しない。ハンドルがリークしない（`Launch` を 200 回呼んでもハンドル数が増え続けない） |
 | L8 | 標準権限のまま起動する | 起動したプロセスのトークンが本アプリと同じ整合性レベル（昇格していない） |
-| L9 | `FilePicker.PickExecutable`（`PUPPET_REMO_SMOKE_PICKER=1` のときだけ走る。手動操作が要る） | `.exe` のフィルターのダイアログが開き、選択でパスが返る。キャンセルで `ok=false`。`ctx` の取り消しでダイアログが閉じる |
+| L9 | `FilePicker.PickExecutable`（`go test -tags smoke -run TestSmokeFilePicker -v ./internal/platform/windows/`。`PUPPET_REMO_SMOKE_PICKER=1` のときだけ走る。手動操作が要る） | `.exe` のフィルターのダイアログが開き、選択でパスが返る。キャンセルで `ok=false`。3 秒後の `ctx` の取り消し（操作しない）でダイアログが閉じ `context.DeadlineExceeded` が返る |
 
 ## 4. Wails のシェルと結線（S11。実機のみ）
 
@@ -248,3 +250,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-10-30 | 冒頭の CI の説明を、`windows-latest` から、セルフホストの Linux ランナーと `GOOS=windows` のクロスコンパイルに更新 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
 | — | 2026-10-30 | 起動許可リストと `launch_app` / `list_launchable_apps`（M1.5）の実機確認項目を追加: §3.8（`AppLauncher`・`FilePicker` の契約テストと手動確認 L1〜L9）、§4.8（ホスト GUI の登録と MCP の起動 A1〜A12。未確認）、タイトル | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_PICKER` を追加、§5 に `launch_app` が起動したプロセスを終了しない旨を追記 | #16 のレビュー指摘 |
+| — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` / `PUPPET_REMO_SMOKE_LAUNCH_DENIED` を追加、§3.8 の L1・L2（`TestSmokeAppLauncherArgs` で自動化）・L9 と、テストの構成（`TestSmokeAppLauncherPid`、親なしの `TestSmokeFilePicker`）を実装に合わせた | #21 の実装 |
