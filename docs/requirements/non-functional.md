@@ -12,6 +12,7 @@
 | tailnet 内の他デバイス・他ユーザー | WhoIs による許可リスト + MCP は Bearer（FR-A03〜A05） |
 | 許可済みデバイスのブラウザ上の悪性ページ（CSRF / DNS リバインディング） | Host / Origin 検証、カスタムヘッダー必須（NFR-S02, S03） |
 | AI（MCP クライアント・内蔵エージェント）の暴走 | キルスイッチ、承認、オーバーレイ、監査ログ、**自己保護**（NFR-S06）、タスクの上限（FR-G09） |
+| 許可していないプログラムの起動（任意コマンドの実行） | `launch_app` は、ホスト所有者がホスト GUI で登録した許可リストのアプリだけを `app_id` で起動する。パス・引数は登録時に固定し、クライアントが指定できない（NFR-S20）。許可リストは MCP・Web UI から書き換えられない |
 | プロンプトインジェクション（画面上の文面でエージェントが乗っ取られる） | **決定論的な多層防御**を主体とする: すべてのアクションを InputGuard・リース・キルスイッチ・ルールベースの Judge（`RuleJudge`）に通し、API の安全チェックと個別操作はホスト承認に回し、上限と中断で被害を限る（NFR-S15）。エージェントへのプロンプト指示は補助にとどめる。高速パスの Jev は自由文を出力せず、アプリが作った不変の候補表から ID を選ぶだけで、承認を緩める方向には一切働かない（NFR-S17）。Jev のプロンプトインジェクション検知には依存しない |
 | OpenAI API キー・TypeSafe API キーの漏えい | Windows 資格情報マネージャーに保管し、ホスト GUI でのみ登録・削除する（NFR-S14） |
 | ホストから OpenAI へのデータ送信 | エージェントは既定で無効。有効化時にスクリーンショット送信への同意を記録する。常に `store: false` で送る（FR-G14、FR-G24、NFR-PR03） |
@@ -62,6 +63,7 @@
 | NFR-S17 | **高速パスの防御**: Jev は、アプリが生成して**不変**とした候補表から ID を 1 つ選ぶだけで、ツール名・座標・引数を一切生成しない（自由文の出力を持たない）。選択結果は候補表に存在する ID のみ受理する（[FR-G18](functional.md)）。すべてのアクションは共通の入力層（キルスイッチ → リース → InputGuard → RuleJudge → 制御 → 監査）を通り、Jev は承認を減らす方向に作用しない（判定器ではない）。`type`・`key`・`scroll` は高速パスに載せず常に OpenAI にエスカレーションする。ステップ数の上限（`agent.fastpath.max_steps`、全体の `agent.max_steps` / `agent.max_duration_sec` にも算入）と無進捗検知で被害を限る。タスクの完了は常に OpenAI が 1 枚の確認スクリーンショットを見て宣言する。本設計は Jev のプロンプトインジェクション検知に依存しない |
 | NFR-S18 | **TypeSafe 呼び出し規則**: 送信先は `api.typesafe.ai` の HTTPS のみ。1 回あたり 5 秒でタイムアウトし、自動再試行は行わない。リクエストボディは 256 KiB 以下。キー（`Authorization` ヘッダー）をログ・監査ログに出さない。送信内容は NFR-PR04 に限る。失敗時の縮退は [FR-G21](functional.md)（タイムアウト・通信エラー・5xx・429 はそのステップを OpenAI へエスカレーション。401 は GUI に通知して高速パスを無効化。いずれもタスクを失敗にしない） |
 | NFR-S19 | **CSP**: すべての HTML レスポンスに、ミドルウェアから HTTP ヘッダー（`<meta>` ではない）で次を付与する。共有テンプレートのため 2 つのルーター（ホスト GUI・ネットワーク向け）の双方に適用され、主たる理由はホスト GUI の保護である。<br>`Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`<br>インラインのスクリプト・スタイル・イベントハンドラ属性は使わない。htmx の設定はバンドルする JS ファイル内で `htmx.config` に設定する（`allowEval=false`、`includeIndicatorStyles=false`（既定ではインラインスタイルが注入されるため））。`hx-on` と、`js:` 接頭辞の `hx-vals` / `hx-headers` は使わない（`hx-headers` の JSON 属性値はデータであり可）。Lit は Constructable Stylesheets（Shadow DOM の `css`）を使う。`connect-src 'self'` は同一オリジンの WebSocket もカバーする。Wails GUI のオリジンは実機で検証する（検証事項を参照） |
+| NFR-S20 | **アプリ起動の制約**（M1.5。FR-M18・M19・H12）: (1) 起動できるのは許可リスト（`launchable_apps`）の行だけで、呼び出し側が渡せる入力は `app_id` だけ（パス・引数・作業ディレクトリ・環境変数・動詞は渡せない）。(2) 許可リストの登録・変更・削除はホスト GUI（GUI ルーター）だけで、リモートルーターに同名の経路を作らない。GUI は NFR-S06 により AI の入力を受けない。(3) 登録できる実行ファイルは、絶対パスのローカルの `.exe`（UNC・デバイスパス（`\\?\`・`\\.\`）・相対パス・`..` を含むパスは不可）。この規則は登録・更新時と**起動のたびに**検査し、満たさなければ `app_not_found` で拒否する（fail closed）。(4) 起動は `CreateProcess` で、登録された絶対パスを `lpApplicationName` に明示して実行し、`PATH` や作業ディレクトリによる探索に任せない。シェル（`cmd.exe`・`ShellExecute`・`start`）を経由しない。標準権限のまま起動し、昇格しない（NFR-S08）。(5) パス・引数・作業ディレクトリを、MCP の応答・エラー・運用ログ・監査の `launch_app` の記録に出さない（FR-AU06。NFR-S13）。(6) 同一アプリの多重起動は制限しない（リースを持つ 1 セッションだけが呼べる）。**残存リスク**: 許可リストに、任意のコードを実行できるプログラム（`cmd.exe`・`powershell.exe`・`wscript.exe`・`mshta.exe`・シェルや拡張機能を持つエディターなど）を登録すると、実質的に任意コードの実行を許すことになる。登録画面にこの旨の注意を表示し、README に記載する。ブロックリストによる拒否は行わない（所有者の判断に委ねる）。起動したプロセスのその後の動作は、本アプリの管理外（終了・監視しない） |
 
 ## 可用性・信頼性（NFR-A）
 
@@ -87,6 +89,7 @@
 | NFR-C03 | 同時 Web 閲覧者 | 5（NFR-P07） |
 | NFR-C04 | 監査ログ | 保持期間 30 日・サムネイル 1 GiB（FR-AU04）。件数上限は設けない |
 | NFR-C05 | 同時実行のタスク | 1（排他リース。[FR-L08](functional.md)） |
+| NFR-C06 | 起動許可アプリの登録数 | 50（FR-H12） |
 
 ## 互換性・動作環境（NFR-CP）
 
@@ -108,7 +111,7 @@
 |----|------|
 | NFR-O01 | アプリ運用ログ（slog、JSON）を `%LOCALAPPDATA%\puppet-remo\logs\` にローテーション（10 MiB × 5 世代）で出力する。監査ログ（業務記録）とは別物。レベルは設定可 |
 | NFR-O02 | 配布は GitHub Releases の NSIS インストーラ（Wails 標準）。更新はアプリ内自動更新（NFR-S10）。更新の適用はホスト GUI の確認後を既定とし、リース保持中・接続中は適用しない |
-| NFR-O03 | OS 依存部（画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・オーバーレイ）はインターフェースの背後に置き、コアロジックは OS 非依存でテスト可能にする（将来の他 OS 対応のため） |
+| NFR-O03 | OS 依存部（画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・オーバーレイ・アプリ起動（`CreateProcess`。M1.5）・ファイル選択ダイアログ（M1.5））はインターフェースの背後に置き、コアロジックは OS 非依存でテスト可能にする（将来の他 OS 対応のため） |
 | NFR-O04 | CI は GitHub Actions で実行し、すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動かす。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査する。Lit のテストと Playwright E2E（偽の platform・偽の tailnet により OS 非依存。[フロントエンド設計](../architecture/frontend.md) §9）は Web UI を作る M2 で足す。OS アダプタの実機スモークテストは手動とし、手順を `docs` に記載する |
 | NFR-O05 | データベースのスキーマ変更はバージョン付きマイグレーションで管理する |
 | NFR-O06 | OpenAI API と TypeSafe API はインターフェースの背後に置き（`Chooser` など）、CI のテストでは実 API を呼ばない（OpenAI はモックで `computer_call` の連鎖・安全チェック・上限・中断を、TypeSafe はモックで候補選択の受理・拒否・エスカレーション・縮退を検証する）。候補表の生成は UI Automation のフィクスチャ（スナップショット）で検証する。実 API を使うスモークテスト手順は `docs` に記載する |
@@ -175,3 +178,4 @@
 | 1.4 | 2026-10-30 | NFR-O04 の CI の実行環境の記述を、`windows-latest` と ubuntu の別ジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新（NFR-O04 の趣旨は変えない） | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
 | 1.5 | 2026-10-30 | NFR-A04 を、MCP の keepalive を既定で無効にする実装に合わせて改め、MCP の切断検知を「セッションの DELETE・トランスポートの切断、`SessionTimeout`（30 分）、リースのアイドル解放（5 分）」とした。WebSocket（M2）の keepalive（15 秒 / 45 秒）は維持。keepalive の実装は追加しない | MCP の keepalive を既定で無効にした実装との整合（オーナー決定） |
 | 1.6 | 2026-10-30 | M1 の実装に合わせて、NFR-P05 に `Trigger` が最大 2 × 期限かかりうる既知の制限、NFR-S05 に WhoIs の 5 秒のタイムアウト、NFR-S09 に HTTP ヘッダー 64 KiB・アイドル接続 120 秒を追記 | M1 の実装との差分の文書化（オーナー決定） |
+| 1.7 | 2026-10-30 | 起動許可リスト（M1.5）に対応: 脅威モデルに「許可していないプログラムの起動」の行、NFR-S20（アプリ起動の制約・残存リスク）、NFR-C06（登録数 50）を追加 | M1.5 の仕様追記（#16。オーナー決定 8 件） |

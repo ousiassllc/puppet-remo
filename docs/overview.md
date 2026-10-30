@@ -20,15 +20,16 @@ AI による操作（内蔵エージェント、MCP 直接）は、ホスト側�
 
 ### 含むもの
 
-- Wails アプリ（Go バックエンド + Web フロントエンド）のホスト常駐。トレイ常駐とホスト用 GUI（承認、設定、監査ログ、クライアント管理、API キー設定、実行中タスクの確認・中断。段階: M1 はダッシュボード・接続要求・クライアント管理まで、承認・設定・監査ログの閲覧は M3、API キー設定・実行中タスクの確認・中断は M4）
-- MCP サーバー（Streamable HTTP）。低レベルツール（screenshot / mouse / keyboard / ウィンドウ / クリップボード / UI ツリー / 操作リース。M1）と、高レベルの `run_task`（非同期のタスク実行・状態取得・中断。M4）
+- Wails アプリ（Go バックエンド + Web フロントエンド）のホスト常駐。トレイ常駐とホスト用 GUI（承認、設定、監査ログ、クライアント管理、起動許可アプリの登録、API キー設定、実行中タスクの確認・中断。段階: M1 はダッシュボード・接続要求・クライアント管理まで、M1.5 は起動許可アプリの登録・編集・削除、承認・設定・監査ログの閲覧は M3、API キー設定・実行中タスクの確認・中断は M4）
+- MCP サーバー（Streamable HTTP）。低レベルツール（screenshot / mouse / keyboard / ウィンドウ / クリップボード / UI ツリー / 操作リース。M1）と、ホスト GUI で登録した許可リストのアプリだけを起動する `launch_app` / `list_launchable_apps`（M1.5）と、高レベルの `run_task`（非同期のタスク実行・状態取得・中断。M4）
 - ホスト内蔵エージェント: OpenAI Responses API の `computer` ツールで画面を見て操作する（`store: false`、履歴は毎回再送）。すべての入力は MCP 直接・Web UI と同じ入力層（InputGuard・リース・Judge・監査）を通す
 - 高速パス（既定は無効・別途同意）: UI Automation から作った候補表（最大 24 件）から TypeSafe の Jev が 1 手ずつ ID を選んで進め、迷ったときだけ OpenAI へエスカレーションする。完了の宣言は必ず OpenAI がスクリーンショット 1 枚で確認して行う。Jev にスクリーンショットは送らない
 - Web UI（HTTP + WebSocket）。ライブ画面（JPEG 差分フレーム）と手動操作
 - 認証・認可: tailnet ACL（第 1 層）、WhoIs 許可リスト、MCP 用 Bearer トークン、クライアント単位のエージェント利用許可（`agent_enabled`。M1 から GUI・API で保存・編集できるが、効果は `run_task` が入る M4 から）
 - 排他リースによる操作権管理（閲覧は複数可、操作権は常に 1 セッション。保持者は MCP 直接・Web UI・内蔵エージェントのいずれか。段階: M1 は `mcp` のみ・承認なし、M2 で `web` と強制剥奪、M3 で承認モード、M4 で `agent`）
 - キルスイッチ（ホストでの即時切断・実行中タスクの中断・グローバルホットキー）、操作中オーバーレイ、操作承認モード、監査ログ（段階: M1 は認証失敗・リース・ツール実行の DB への追記まで。閲覧 UI と縮小スクリーンショットは M3）
-- ローカル永続化（SQLite）: 設定、クライアント、トークン、タスク、監査ログ。OpenAI API キーは Windows 資格情報マネージャーに保管
+- ローカル永続化（SQLite）: 設定、クライアント、トークン、タスク、起動許可アプリ、監査ログ。OpenAI API キーは Windows 資格情報マネージャーに保管
+- 起動許可リスト（M1.5）: ホスト所有者がホスト GUI で登録した実行ファイル（引数・作業ディレクトリは登録時に固定）だけを、MCP の `launch_app` で起動できる。起動は `CreateProcess`（シェルを経由しない）で、キルスイッチ・操作リース・監査の下に置く。MCP が受け取る入力は `app_id` だけで、応答は `id` と表示名だけ（実行ファイルのパス・引数は出さない）。許可リストの登録・変更・削除はホスト GUI だけ
 - 対象 OS: **Windows のみ**（初期スコープ）
 
 ### 含まないもの
@@ -42,6 +43,8 @@ AI による操作（内蔵エージェント、MCP 直接）は、ホスト側�
 - 複数ユーザー向けのロール管理（owner / operator / viewer の分離）
 - 音声、ファイル転送、双方向の自動クリップボード同期（テキストの手動送受信と MCP ツールは含む。[機能要件](requirements/functional.md) FR-W07 / FR-M13）
 - ロック画面・UAC セキュアデスクトップ・Session 0 の操作（Windows の制約として対象外）
+- 任意のパス・コマンドラインの起動、起動引数の呼び出し側指定、MCP / Web UI からの許可リストの登録・変更、起動済みプロセスの終了・監視（`launch_app` は起動だけ。M1.5）
+- 許可リストの自動発見・インストーラ連動、Store アプリ専用 ID・`.lnk`・URL・ドキュメントの関連付けによる起動（M1.5 は実行ファイル `.exe` の `CreateProcess` のみ）
 
 ## ステークホルダー / 想定ユーザー
 
@@ -97,7 +100,7 @@ graph TD
 | 非機能要件 | [`docs/requirements/non-functional.md`](requirements/non-functional.md) | 脅威モデル、性能・セキュリティ（自己保護、API キー、プロンプトインジェクション対策、CSP）、可用性、プライバシー、決定事項・意図的な未設定・検証事項 |
 | アーキテクチャ設計 | [`docs/architecture/overview.md`](architecture/overview.md) | 技術選定、構成図、レイヤー、GUI／リモートのルーター分離、主要フロー（高速パス含む）、画面配信、Judge、ディレクトリ構成 |
 | フロントエンド設計（HALT） | [`docs/architecture/frontend.md`](architecture/frontend.md) | HTMX + Atomic Design + Lit + Templ の規約、2 つの UI（ホスト GUI / Web UI）、HTMX パターン、`<remo-screen-viewer>`、ビルド、開発ワークフロー、テスト戦略 |
-| ER / データモデル | [`docs/architecture/er.md`](architecture/er.md) | SQLite のテーブル定義（clients、client_tokens、connection_requests、settings、agent_tasks、audit_logs、audit_thumbnails）と保守処理 |
+| ER / データモデル | [`docs/architecture/er.md`](architecture/er.md) | SQLite のテーブル定義（clients、client_tokens、connection_requests、settings、launchable_apps、agent_tasks、audit_logs、audit_thumbnails）と保守処理 |
 | API 仕様 | [`docs/api/endpoints.md`](api/endpoints.md) | MCP ツール、Web UI のルート、WebSocket のプロトコル、JSON API、ホスト GUI のルートと更新の配信（`/poll`・SSE）、エラー形式 |
 | コンポーネント設計 | [`docs/components/overview.md`](components/overview.md) | パッケージの責務・依存、Go インターフェース、goroutine と状態の所有者、起動・終了順序、テスト方針（モックと実機スモーク） |
 
@@ -106,6 +109,7 @@ graph TD
 目安時期は未定。対象 OS は Windows のみ。
 
 - M1: Windows + MCP 低レベルツール（スクリーンショット・マウス・キーボード・ウィンドウ一覧とフォーカス・クリップボード・UI ツリー・操作リース。FR-M01〜M17）、tailscaled 連携（WhoIs 許可リスト + Bearer）、排他リース（保持者は MCP 直接の `mcp` のみ。承認なしで取得）、キルスイッチ、ホスト GUI の基本（ダッシュボード、接続要求、クライアント管理。クライアント別のエージェント利用可否 `agent_enabled` は保存・編集のみで効果なし。効果は M4）、監査の追記（認証失敗・リース・ツール実行）
+- M1.5: 起動許可リストと MCP の `launch_app` / `list_launchable_apps`（FR-M18・M19）、ホスト GUI の起動許可アプリの登録・編集・削除（FR-H12）。起動は操作リース必須（未保持なら暗黙に取得）・キルスイッチ・監査の下に置き、承認は無い（M3 で承認モードの対象に加える）。OS の起動は `platform` の背後の `CreateProcess`
 - M2: Web UI（ライブ画面・手動操作）、リースの強制剥奪（保持者種別 `web` の追加）
 - M3: 承認モード（リースの `pending_approval`、承認ダイアログ）、操作中オーバーレイ、監査ログの閲覧 UI と縮小スクリーンショット
 - M4: ホスト内蔵エージェント（`run_task`、OpenAI `computer` ツール、API キー管理、タスク上限・中断。リースの保持者種別 `agent` の追加）と、高速パス（TypeSafe Jev による候補選択。UI Automation の候補表、エスカレーション）。承認・オーバーレイ・監査（M3）を前提にするため M3 の後に置く。高速パスの品質は、固定のタスク集合で実測して確認する
@@ -133,6 +137,7 @@ graph TD
 | エスカレーション | 高速パスから OpenAI の `computer` ツールのループへ引き継ぐこと。理由は `abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable` |
 | タスク（run） | 内蔵エージェントへの 1 回の指示の実行単位。排他リースを開始から終了まで保持する。状態・ステップ数・使用トークンを記録する |
 | Judge | 実行前のアクションに対し「許可 / 承認へ回す / 拒否」を助言する判定インターフェース。既定はルールベース。承認を省略する方向には作用させない |
+| 起動許可リスト | ホスト所有者がホスト GUI で登録した、`launch_app` で起動できるアプリの一覧（表示名・実行ファイルのパス・固定の引数・作業ディレクトリ。`launchable_apps` 表）。MCP へは `id`（`app_id`）と表示名だけを返す |
 
 ## 改訂履歴
 
@@ -149,3 +154,4 @@ graph TD
 | 1.8 | 2026-10-29 | スコープの「ホスト用 GUI」「MCP サーバー」に段階（M1 / M3 / M4）を追記 | PR #2 のレビュー対応（方針 2・4・8） |
 | 1.9 | 2026-10-30 | ドキュメントマップの API 仕様の概要を、ホスト GUI の更新の配信（`/poll`・SSE）に合わせて更新 | ホスト GUI の更新をポーリングに変更したため（#12） |
 | 1.10 | 2026-10-30 | スコープの認証・認可と M1 の範囲に、`agent_enabled` が M1 では保存・編集のみで効果は M4 からであることを追記 | M1 の実装と FR-A09 の食い違いの解消（オーナー決定） |
+| 1.11 | 2026-10-30 | 起動許可リストと MCP の `launch_app` / `list_launchable_apps`（M1.5）を追加: スコープ（含む・含まない）、マイルストーン M1.5、用語集、ドキュメントマップの ER の表 | M1.5 の仕様追記（#16。オーナー決定 8 件） |

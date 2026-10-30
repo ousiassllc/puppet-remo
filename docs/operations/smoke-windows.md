@@ -1,4 +1,4 @@
-# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル）
+# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8）
 
 CI はセルフホストの Linux ランナーで動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。DXGI・オーバーレイは M2 以降の手順で確認する。
 
@@ -120,6 +120,22 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | G2 | `GOOS=windows go build ./...` と `go vet` | 通る（実機のビルドでも同じ） |
 | G3 | `go test -race -tags smoke` | データ競合なし（`Input` の専用スレッド、`Capturer` / `WindowManager` の列挙） |
 
+### 3.8 AppLauncher・FilePicker（`CreateProcess`・ファイル選択。FR-M19・FR-H12。M1.5）
+
+契約テスト（§2）に `AppLauncher` / `FilePicker` を加える。`smoke` タグの `TestSmokeAppLauncher` は、害のない実行ファイル（`%SystemRoot%\System32\notepad.exe`）を起動し、確認後に **テスト自身が起動したプロセスだけを終了する**。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| L1 | `go test -tags smoke -run TestSmokeAppLauncher -v ./internal/platform/windows/` | `PASS`。`SKIP` / `FAIL` にならない |
+| L2 | 空白・日本語を含むパスの実行ファイルと、空白・引用符・バックスラッシュ・日本語を含む引数を `Launch` する（引数を表示するテスト用の小さな実行ファイルを用意する） | 登録どおりの引数がそのまま渡る（`CommandLineToArgvW` の規則で往復する）。シェルを経由しない（`cmd.exe` の特殊文字 `&`・`%` を含む引数がシェルに解釈されない） |
+| L3 | 存在しない実行ファイルを `Launch` | `LaunchError{Reason: file_missing}`。メッセージにパス・引数が入らない |
+| L4 | `requireAdministrator` のマニフェストを持つ実行ファイルを `Launch`（標準権限のアプリから） | `LaunchError{Reason: elevation_required}`。UAC のダイアログが出ない |
+| L5 | 実行権限の無い場所・拒否された実行ファイルを `Launch` | `LaunchError{Reason: access_denied}` |
+| L6 | 作業ディレクトリを指定 / 空にして `Launch` | 指定した場所で起動する。空なら実行ファイルのあるディレクトリ。存在しない作業ディレクトリは `Inspect` が `ErrNotFound` を返す |
+| L7 | 起動後のプロセスと本アプリの関係 | `Launch` が返した `pid` が実在する。本アプリを終了・キルスイッチ発動しても、起動したプロセスは終了しない。ハンドルがリークしない（`Launch` を 200 回呼んでもハンドル数が増え続けない） |
+| L8 | 標準権限のまま起動する | 起動したプロセスのトークンが本アプリと同じ整合性レベル（昇格していない） |
+| L9 | `FilePicker.PickExecutable`（`PUPPET_REMO_SMOKE_PICKER=1` のときだけ走る。手動操作が要る） | `.exe` のフィルターのダイアログが開き、選択でパスが返る。キャンセルで `ok=false`。`ctx` の取り消しでダイアログが閉じる |
+
 ## 4. Wails のシェルと結線（S11。実機のみ）
 
 `task windows:build`（または Windows で `go build -tags production -ldflags "-H windowsgui" ./cmd/puppet-remo`）で作った `puppet-remo.exe` を、**tailscaled が動いていて tailnet にログイン済み**の対話デスクトップで実行する。WebView2 ランタイムが要る（インストーラが導入する）。通信相手になる tailnet 上の別端末（MCP クライアント）を 1 台用意する。
@@ -197,6 +213,25 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | P1 | `task windows:build`（Linux からのクロスビルドでも可） | `bin/puppet-remo.exe`（GUI サブシステム）ができる。エクスプローラーのプロパティにバージョン情報があり、マニフェストが Per-Monitor DPI Aware V2 |
 | P2 | `task package`（`makensis` が必要） | `bin/puppet-remo-amd64-installer.exe` ができる。インストール → スタートメニューにショートカット → 起動できる。WebView2 ランタイムが無い環境で導入される。署名はしない（初回に SmartScreen の警告が出る。NFR-O07） |
 
+### 4.8 起動許可アプリ（`launch_app`・ホスト GUI。M1.5。FR-M18・M19・H12）
+
+ホスト GUI の `/apps` で `notepad.exe` などを登録し、tailnet 上の別端末の MCP クライアントから呼ぶ。**これらは未確認**（実機での確認は #15 様式の別 Issue で行う）。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| A1 | ホスト GUI のサイドバーから「起動許可アプリ」を開く | 一覧が空で表示され、`cmd.exe`・`powershell.exe` の登録は任意コードの実行を許す旨の注意が常に見える |
+| A2 | 「参照…」でファイル選択ダイアログを開き、`notepad.exe` を選ぶ（ダイアログを 1 分以上開いたままにしても確認する） | 入力欄に選んだパスが入り、手で編集できる。ダイアログを開いている間も WebView が応答待ちのままタイムアウトしない。キャンセルでは入力欄が変わらない |
+| A3 | 表示名 `メモ帳`・パス・引数なしで保存 | 一覧に行が追加される。同じ表示名（大文字小文字違いを含む）・存在しないパス・相対パス・UNC パス・`.exe` 以外・`..` を含むパスは、項目別のエラーで入力値が残る（422） |
+| A4 | MCP クライアントから `list_launchable_apps` | `{ "apps": [ { "id", "label": "メモ帳" } ] }` だけ。パス・引数は出ない |
+| A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid }` が返る。同じ呼び出しを繰り返すと、毎回新しいメモ帳が増える |
+| A6 | 未登録の `app_id`、パスや引数を含む追加の引数（`args`・`path`）を渡す | 未登録は `app_not_found`。追加の引数はスキーマ違反（`invalid params`）で拒否される。いずれも何も起動しない |
+| A7 | 別のセッションがリースを保持している状態で `launch_app` | `lease_held_by_other`。起動しない |
+| A8 | キルスイッチ発動中に `launch_app` / `list_launchable_apps` | `kill_switch_active`（HTTP 503）。解除後は起動できる。キルスイッチは起動済みのメモ帳を終了しない |
+| A9 | 登録した実行ファイルを削除・移動してから `launch_app` | `launch_failed`（`reason: file_missing`）。メッセージにパスが出ない。GUI の一覧の行は残る |
+| A10 | `/apps` で行を編集（実行ファイルを別のものに）・削除してから、同じ `app_id` で `launch_app` | 編集後は新しい実行ファイルが起動し `id` は変わらない。削除後は `app_not_found` |
+| A11 | 監査（DB の `audit_logs`。閲覧 UI は M3） | `tool.launch_app`（`ok` / `denied` / `error`）、`tool.list_launchable_apps`、`settings.launchable_app.create` / `.update` / `.delete`（`actor_type = host`）が追記される。`launch_app` の記録にパス・引数・作業ディレクトリが無く、登録系にも引数・作業ディレクトリが無い（引数の件数だけ） |
+| A12 | 起動したメモ帳（本アプリの子プロセスではあるがジョブに入れていない）を残したまま、本アプリを終了する | メモ帳は終了しない |
+
 ## 5. 既知の制約（M1）
 
 - キャプチャは GDI `BitBlt` のみ。DXGI（Desktop Duplication）と継続キャプチャ（`Watch`）は M2。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
@@ -209,3 +244,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | 版 | 日付 | 変更内容 | 変更理由 |
 |---|------|---------|---------|
 | — | 2026-10-30 | 冒頭の CI の説明を、`windows-latest` から、セルフホストの Linux ランナーと `GOOS=windows` のクロスコンパイルに更新 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
+| — | 2026-10-30 | 起動許可リストと `launch_app` / `list_launchable_apps`（M1.5）の実機確認項目を追加: §3.8（`AppLauncher`・`FilePicker` の契約テストと手動確認 L1〜L9）、§4.8（ホスト GUI の登録と MCP の起動 A1〜A12。未確認）、タイトル | M1.5 の仕様追記（#16。オーナー決定 8 件） |

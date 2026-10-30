@@ -10,7 +10,7 @@
 graph TD
     app["app<br/>(Wails・トレイ・オーバーレイ・ホットキー)"]
     router["router / web / mcp / ws<br/>(プロトコル入口)"]
-    svc["service<br/>(Authz・Lease・Approval・Control・Agent・Judge・Streamer・Audit・KillSwitch・Updater・Bus)"]
+    svc["service<br/>(Authz・Lease・Approval・Control・AppRegistry・Agent・Judge・Streamer・Audit・KillSwitch・Updater・Bus)"]
     repo["repository<br/>(SQLite・ThumbStore)"]
     plat["platform<br/>(interface + windows)"]
     tn["tailnet"]
@@ -39,7 +39,7 @@ graph TD
 |-----------|------------|---------------|
 | `domain` | 純粋なモデルとルール（リース状態機械、座標変換、承認モード、判定、エラー型、高速パスの候補表 `Candidate` / `CandidateTable`） | FR-L、FR-M16/M17、FR-G03、FR-G17 |
 | `repository` | SQLite と `thumbs/` へのアクセス、マイグレーション | ER、NFR-A06/O05 |
-| `platform` | OS 依存のインターフェースと Windows 実装 | FR-M、NFR-S06/S14/O03 |
+| `platform` | OS 依存のインターフェースと Windows 実装（画面・入力・ウィンドウ・UI Automation・クリップボード・資格情報・アプリ起動 `AppLauncher`・ファイル選択 `FilePicker`） | FR-M、FR-M19、FR-H12、NFR-S06/S14/S20/O03 |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs、Listener） | FR-A01〜A03、NFR-S05/A03 |
 | `openai` | Responses API の `computer` ツール呼び出し。`store: false` 固定のステートレス継続（履歴の再送とスクリーンショットの間引き） | FR-G04〜G06、FR-G24、NFR-S16 |
 | `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`。高速パスが有効なときだけ呼ばれる | FR-G18、FR-G21、NFR-S18 |
@@ -194,6 +194,34 @@ func (r HandoffReason) Valid() bool
 4. ID が衝突する候補は、決定的にするため**すべて**表から落とす（`Dropped` に数える）
 5. 先頭から `Max`（24）件で切り、超過分を `Dropped` に数える
 
+**起動許可アプリ（M1.5。FR-M18・M19・H12）**。外部 I/O を持たない値と検証だけ。
+
+```go
+type LaunchableApp struct {
+    ID, Label, ExePath, WorkingDir string // ID は ULID（MCP の app_id）。WorkingDir が空なら実行ファイルのディレクトリ
+    Args                           []string // 登録時に固定
+    CreatedAt, UpdatedAt           time.Time
+}
+// MCP に出せるのはこれだけ。パス・引数・作業ディレクトリは型に無い（Control が返す型として使い、漏れを型で防ぐ）。
+type AppSummary struct{ ID, Label string }
+func (a LaunchableApp) Summary() AppSummary
+
+// GUI のフォームの入力（ID・時刻は service が付ける）。
+type AppInput struct{ Label, ExePath, WorkingDir string; Args []string }
+const MaxLaunchableApps = 50 // NFR-C06
+
+// 形の検証（純粋。ファイルの存在は見ない）。項目名 → メッセージ。空なら有効。
+//  Label: 前後の空白を除いて 1〜64 文字。ExePath: 絶対パスのローカルの .exe（ドライブ文字で始まる。UNC・\\?\ ・\\.\ ・相対パス・".." の要素を含むパスは不可）。
+//  Args: 32 個以内・合計 8,192 文字以内（NUL を含まない）。WorkingDir: 空、または絶対パスのローカルのパス（ExePath と同じ形の規則。".." を含まない）。
+func ValidateAppInput(in AppInput) map[string]string
+func ParseArgsLines(s string) []string // フォームの改行区切り（CRLF 可）を分割する。空行は捨てる（空文字の引数は登録できない）
+// 起動のたびの再検査（NFR-S20 (3)）。ValidateAppInput と同じ形の規則を、保存済みの行に当てる。満たさなければ ErrAppNotFound。
+func CheckLaunchTarget(a LaunchableApp) error
+
+type LaunchFailure string // "file_missing" | "access_denied" | "elevation_required" | "other"（API 仕様 §2 `launch_failed` の reason。FR-AU06）
+// ErrAppNotFound（code app_not_found）と ErrLaunchFailed（code launch_failed。Detail["reason"] に LaunchFailure）を §2 のエラー型に加える。
+```
+
 **不変条件**: `domain` は他の内部パッケージを import しない。`Monitor.ScaledToPhysical` と `PhysicalToScaled` は丸めの誤差が 1 px を超えない（プロパティテスト）。`CandidateID` は同じ入力に同じ出力を返し、要素の並び・添字・実行時 ID に依存しない。`CandidateTable.Validate` は表に無い文字列を一切受理しない（プロパティテスト）。
 
 ## 3. platform（OS 依存）
@@ -257,6 +285,23 @@ const (
     SecretOpenAI   = "puppet-remo/openai"
     SecretTypeSafe = "puppet-remo/typesafe" // 高速パス。値は登録後に表示しない（FR-G22）
 )
+// アプリ起動（M1.5。FR-M19）。service.Control が唯一の呼び出し元。goroutine を持たず、呼び出し元の goroutine で同期的に動く。
+type AppLauncher interface {
+    // CreateProcess。spec.ExePath を lpApplicationName に明示し、コマンドラインは「引用した ExePath + Args」を Windows の引数規則（CommandLineToArgvW の逆）で組み立てる。
+    // シェルを経由せず、標準権限のまま起動し、環境変数は本アプリのものを引き継ぐ。プロセスの作成に成功した時点で返す（ウィンドウは待たない）。
+    // 失敗は *LaunchError（Reason は file_missing / access_denied / elevation_required / other。パス・引数をメッセージに含めない）。
+    Launch(ctx context.Context, spec LaunchSpec) (pid uint32, err error)
+    // 登録・更新時の存在確認: exePath が存在する通常ファイルか、workingDir（空でなければ）が存在するディレクトリか。
+    Inspect(ctx context.Context, exePath, workingDir string) error // 無ければ ErrNotFound
+}
+type LaunchSpec struct{ ExePath string; Args []string; WorkingDir string } // WorkingDir が空なら ExePath のディレクトリ
+type LaunchError struct{ Reason domain.LaunchFailure; Err error }
+
+// ネイティブのファイル選択ダイアログ（M1.5。FR-H12）。`.exe` のフィルターで、ホスト GUI のメインウィンドウを親にしたモーダル。
+// ダイアログは自プロセスのウィンドウなので、InputGuard の自己保護（NFR-S06）が AI の入力を拒む。ctx の取り消しでダイアログを閉じる。
+type FilePicker interface {
+    PickExecutable(ctx context.Context) (path string, ok bool, err error) // ok=false はキャンセル
+}
 type Hotkey interface { // グローバルホットキー
     Register(spec string, fn func()) (unregister func(), err error)
 }
@@ -307,6 +352,15 @@ type Settings interface {
     Get(ctx, key string) (json.RawMessage, bool, error)
     Set(ctx, key string, value json.RawMessage) error
     All(ctx) (map[string]json.RawMessage, error)
+}
+// M1.5。起動許可リスト（FR-H12）。書き込みは service.AppRegistry だけ。
+type LaunchableApps interface {
+    Get(ctx, id string) (domain.LaunchableApp, error)  // 無ければ ErrNotFound
+    List(ctx) ([]domain.LaunchableApp, error)          // label の昇順（NOCASE）
+    // 件数の確認と挿入を同じトランザクションで行う。max に達していれば ErrLimitReached、label の重複は ErrConflict。
+    Create(ctx, a domain.LaunchableApp, max int) error
+    Update(ctx, a domain.LaunchableApp) error          // 無ければ ErrNotFound、label の重複は ErrConflict
+    Delete(ctx, id string) error                       // 無ければ ErrNotFound
 }
 type Audit interface {
     Append(ctx, e AuditEntry) (id int64, err error)
@@ -439,6 +493,7 @@ func New(key func(ctx context.Context) (string, error), cfg Config) Chooser
 | `Approval` | 承認待ちの要求（id → チャネル） | なし（要求ごとの待機は呼び出し側の goroutine） | `sync.Mutex` |
 | `Control` | なし（ステートレス。検査の順序を定義する） | なし | — |
 | `Judge` | なし（設定のスナップショットは都度読む） | なし | — |
+| `AppRegistry` | なし（ステートレス。許可リストの正は `repository.LaunchableApps`） | なし | — |
 | `Agent` | 実行中タスクの `*run`（高々 1 つ。ステップ数・`History`・高速パスのカウンタを含む） | タスクごとに 1 本（ループ。高速パスもこの goroutine で動く） | `sync.Mutex`（`run` の参照の差し替え）。`run` の内部状態は goroutine 1 本だけが触る |
 | `FastPath` | なし（`Agent` の内部部品。タスクごとの状態は `run` が持つ） | なし（`run` の goroutine で同期的に動く） | 不要（候補表は不変の値） |
 | `Streamer` | 閲覧者の一覧、(モニター, 品質, FPS) ごとのプロファイルとエンコード結果 | モニターごとにキャプチャ受信 1 本 + エンコード、閲覧者ごとに送信 1 本 | `sync.RWMutex` |
@@ -514,6 +569,10 @@ type Control interface {
     // M1 で mcp が使う読み取り（リース不要）。CursorPosition は縮小座標とモニター、MaxDimension は設定 `screenshot.max_dimension`（縮小率の算出に使う）。
     CursorPosition(ctx context.Context) (Cursor, error)
     MaxDimension(ctx context.Context) (int, error)
+    // M1.5（FR-M18）。リース不要。許可リストの id と表示名だけを返す（label の昇順）。
+    LaunchableApps(ctx context.Context) ([]domain.AppSummary, error)
+    // M1.5（FR-M19）。許可リストのアプリを起動する。呼び出し側が渡せるのは app_id だけ。検査の順序は §5.4.1。
+    Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
 }
 ```
 
@@ -533,6 +592,38 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 ```
 
 座標を持つ `op` は、物理座標へ変換した位置の `WindowManager.At` を、座標を持たない `op`（`key` / `type`）は `Foreground()` を調べる。`Own` なら拒否、`Elevated` なら拒否。**判定ルール自体は `domain` に置き、表形式のテストで網羅する**。
+
+### 5.4.1 AppRegistry と Launch（M1.5。FR-M18・M19・H12）
+
+```go
+// 許可リストの管理。GUI ルーター（web/handler/gui）と Control が使う。書き込みは GUI だけが呼ぶ（mcp・ws は AppRegistry を持たない）。
+type AppRegistry interface {
+    List(ctx context.Context) ([]domain.LaunchableApp, error)              // 一覧（パス・引数を含む。GUI 用）
+    Get(ctx context.Context, id string) (domain.LaunchableApp, error)     // 無ければ ErrNotFound
+    // 検証（domain.ValidateAppInput + platform.AppLauncher.Inspect で存在確認）→ 保存 → 監査（settings.launchable_app.*、actor host）。
+    // 検証エラーは AppFieldErrors（項目名 → メッセージ。GUI が 422 で再描画）、50 件到達は domain.CodeConflict、label の重複は AppFieldErrors{"label": …}。
+    Create(ctx context.Context, in domain.AppInput) (domain.LaunchableApp, error)
+    Update(ctx context.Context, id string, in domain.AppInput) (domain.LaunchableApp, error) // id・CreatedAt は変えない。無ければ ErrNotFound
+    Delete(ctx context.Context, id string) error                                        // 無ければ ErrNotFound
+    // ネイティブのファイル選択ダイアログを開く（platform.FilePicker の委譲。web/handler は platform を import できないため）。キャンセルは ok=false。
+    PickExecutable(ctx context.Context) (path string, ok bool, err error)
+}
+type LaunchResult struct{ AppID string; PID uint32 }
+```
+
+`Control.Launch` の検査の順序（1 つでも失敗したら起動しない。`Do` の 1・2 と同じ前段を共有し、3 以降が異なる）:
+
+1. `KillSwitch.Active()` → `ErrKillSwitchActive`
+2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04）
+3. `AppRegistry.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさなければ `ErrAppNotFound`（fail closed）
+4. `platform.AppLauncher.Launch` → 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す
+5. `Audit.Record`（成功 `ok`・1〜3 の拒否 `denied`・4 の失敗 `error`。`tool.launch_app`。FR-AU06）
+
+- **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 で承認モードを適用する場合は、2 と 3 の間に入れる
+- 起動の直列化はしない（`Do` の入力セマフォを使わない。プロセスの作成は入力の順序に影響しない）。同じアプリの多重起動を禁止しない（毎回新しいプロセス）
+- `Control` だけが `platform.AppLauncher` を呼べる（`InputInjector` と同じ。パッケージの可視性で保証する）。**M4 の `Agent` がアプリを起動するときも、`Control.Launch`（`who.Kind = agent`）と同じ `AppRegistry` を使い**、別の許可リスト・別の起動経路は作らない（決定事項）。`agent` のときの Judge・承認の適用は M4 の設計で定める
+- `LaunchableApps` は `AppRegistry.List` を `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
+- 起動後のプロセスは管理しない。`platform` は `CreateProcess` が返したハンドル（プロセス・スレッド）をすぐ閉じる（リークしない）。ジョブオブジェクトに入れない（本アプリの終了・キルスイッチで子プロセスは終了しない）
 
 ### 5.5 Judge
 
@@ -721,8 +812,8 @@ Bearer トークンは `prm_` + base64url（パディングなし）の 32 バ�
 |-----------|------|---------------|
 | `router` | GUI ルーターとリモートルーターの組み立て、ミドルウェア連鎖（API 仕様 §1） | `service`、`domain` |
 | `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`killswitch`、`whois`、`allowlist`、`bearer`（API 仕様 §1 の連鎖の順） | `service`（`Authenticator`・`Identity`・`ResolveIdentity`）、`domain`。`tailnet` は import しない（§13.1） |
-| `web/handler` | 機能別の HTTP ハンドラ（viewer、clients、tasks、settings、audit …）。Templ で描画 | `service`、`domain` |
-| `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換 | `service`、`domain` |
+| `web/handler` | 機能別の HTTP ハンドラ（viewer、clients、apps（M1.5）、tasks、settings、audit …）。Templ で描画 | `service`、`domain` |
+| `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換。M1.5: `list_launchable_apps`（`Control.LaunchableApps` の `AppSummary` だけを返す）と `launch_app`（引数は `app_id` のみ。`Control.Launch`）。`mcp` は `AppRegistry` を持たない（許可リストを書く経路が無い）。`list_launchable_apps` の監査は `addAuditedTool` が `tool.list_launchable_apps` で記録し、`launch_app` は `Control.Launch` が記録する | `service`、`domain` |
 | `ws` | WebSocket のプロトコル（JSON とバイナリフレームの符号化・復号）。入力メッセージを `domain.Op` に変換して `Control` へ | `service`、`domain` |
 
 **goroutine**: WebSocket 接続ごとに「受信ループ」と「送信ループ（`Viewer.Frames` を書く）」の 2 本。どちらかが終了したら `context` を取り消して双方を終了し、`web` リースを `Release` する。MCP のセッションは SDK が管理する。
@@ -790,6 +881,7 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | `WindowManager` | `InputGuard`（偽の `At` / `Foreground` で `Own` / `Elevated` を網羅） | 実ウィンドウの `Elevated` / `Own` / `Minimized` の取得 |
 | `UIAutomation` | ツリーの切り詰め（`max_depth` / `max_nodes`）、パスワード欄の伏せ字（偽のノード）。`Snapshot` の契約テスト（値を返さないこと、`Truncated`、同じ画面で同じ `Hash`） | 実アプリ（メモ帳・ブラウザ）のツリー、パスワード欄、`Snapshot` の要素（ControlType・画面外・矩形・祖先パス）と `Hash` の安定性 |
 | `Clipboard` | サイズ上限、テキスト以外の扱い | 実クリップボードの往復（日本語） |
+| `AppLauncher` / `FilePicker`（M1.5） | `AppLauncher`: 契約テスト（`platformtest`。偽の実装）で、`Launch` が `pid` を返すこと、存在しない実行ファイル → `file_missing`、拒否 → `access_denied`、昇格が必要 → `elevation_required`、メッセージにパス・引数が入らないこと、`Inspect` の存在確認（ファイル・ディレクトリ）。引数のコマンドライン組み立ては純粋関数として、空白・引用符・バックスラッシュ・日本語を含む表駆動テスト（Linux でも走る）。`FilePicker`: 偽の実装で選択・キャンセル（`ok=false`）・`ctx` の取り消し。`domain` の `ValidateAppInput` / `CheckLaunchTarget` は表駆動（絶対・相対・UNC・`\\?\`・`..`・拡張子・長さ・引数の数と合計長・重複する `label` の大文字小文字）。`AppRegistry`（偽の `repository` と `AppLauncher`）: 検証エラー・存在しない実行ファイル・50 件の上限・`label` の重複・更新で `id` が変わらないこと・監査が `settings.launchable_app.*` で `args` と作業ディレクトリを含まないこと。`Control.Launch`（偽の `KillSwitch`・`LeaseManager`・`AppRegistry`・`AppLauncher`）: 検査の順序（キルスイッチ中・他者のリース・許可リスト外・規則を満たさない行では `AppLauncher` が呼ばれない）、リースの暗黙取得、`pid` を返すこと、毎回 `Launch` が呼ばれること（冪等でない）、`launch_failed` の理由、監査の結果（`ok` / `denied` / `error`）と `detail_json` にパス・引数が出ないこと。`mcp`: `launch_app` のスキーマに `app_id` 以外が無いこと、`list_launchable_apps` の応答に `id` と `label` 以外が出ないこと、エラーの `structuredContent` にパス・引数が出ないこと。`web/handler/gui`: `/apps` の各ルートの 422・409・404・204、一覧・編集のフラグメント、リモートルーターに `/apps` が存在しないこと（404） | 実 `CreateProcess`（`smoke`）: 空白・日本語・引用符を含むパスと引数が登録どおりに渡ること、シェルを経由しないこと、標準権限で起動すること、`requireAdministrator` が `elevation_required` になること、ネイティブのファイル選択ダイアログの選択・キャンセルと、表示中に WebView の応答待ちがタイムアウトしないこと |
 | `SecretStore` | `Agent` が OpenAI キー、`typesafe` が TypeSafe キーを要求する経路、キーがログ・エラーに出ないこと（偽の store、ログを検査） | 資格情報マネージャーへの保存・削除（`puppet-remo/openai`、`puppet-remo/typesafe`）、別ユーザーから読めないこと |
 | `Hotkey` / `Overlay` / `Windows` | キルスイッチの手順（`Trigger` を直接呼ぶ）、`Bus` イベント → ウィンドウ操作の呼び出し（偽の `Windows`） | グローバルホットキーの発動、オーバーレイの表示・クリック透過・キャプチャへの非表示（スクリーンショットにも Web のライブにも写らない）、承認ダイアログが AI の入力を受けない |
 | `tailnet.Watcher` / `WhoIs` / `Listener` | キャッシュ TTL、WhoIs 失敗で fail closed、IP 変化での Listen の張り直し（偽の LocalAPI） | 実際の tailscaled（ログアウト・再ログイン・ネットワーク切替で 10 秒以内に復旧） |
@@ -809,12 +901,14 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | FR-A（接続・認証・認可） | `tailnet.*`、`Authz`、`web/middleware` |
 | FR-L（リース） | `LeaseManager`、`Approval`、`Control` |
 | FR-M（MCP ツール） | `mcp`、`Control`、`Capturer`、`InputInjector`、`WindowManager`、`UIAutomation`、`Clipboard` |
+| FR-M18・M19・H12・AU06（アプリ起動と許可リスト） | `mcp`、`Control`（`Launch` / `LaunchableApps`）、`AppRegistry`、`repository.LaunchableApps`、`domain.LaunchableApp`、`platform.AppLauncher`、`platform.FilePicker`、`web/handler`（`/apps`）、`Audit` |
 | FR-G（内蔵エージェント・高速パス） | `Agent`、`FastPath`、`openai.Model`、`typesafe.Chooser`、`domain.CandidateTable`、`UIAutomation.Snapshot`、`Judge`、`Control`、`Approval`、`SecretStore` |
 | FR-W（Web UI） | `web/handler`、`ws`、`Streamer`、`<remo-screen-viewer>` |
 | FR-H（ホスト GUI） | `app`、`web/handler`（GUI ルーター）、`Bus` |
 | FR-AU（監査） | `Audit`、`Control`、`ThumbStore`、`Maintenance` |
 | FR-S（設定） | `Settings`（service）、`repository.Settings` |
 | NFR-S06（自己保護） | `InputGuard`、`WindowManager.Own`、`app`（キャプチャ除外） |
+| NFR-S20（アプリ起動の制約） | `domain.ValidateAppInput` / `CheckLaunchTarget`、`Control.Launch`（検査の順序）、`platform.AppLauncher`（`lpApplicationName` の明示・シェル非経由）、`router`（GUI ルーターだけに `/apps`）、`mcp`（入力は `app_id` のみ・出力は `AppSummary` のみ） |
 | NFR-S14（API キー） | `SecretStore`、`openai.Model`、`typesafe.Chooser` |
 | NFR-S17 / S18（高速パスの防御・TypeSafe 呼び出し） | `domain.CandidateTable`（ID の検証）、`FastPath`、`Control`、`Judge`、`typesafe.Chooser` |
 
@@ -839,6 +933,7 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | 配布 | v1 は Authenticode で署名しない（個人利用）。更新の完全性は Ed25519（NFR-S10） |
 | 意図的に設定しないもの | メモリ・帯域の目標は実装後の測定まで設定しない。日程は設定しない。4K 以上の WebSocket は縮小配信せず物理解像度のまま（`config` に後から `scale` を足せる） |
 | OpenAPI の範囲 | Huma は `/api/v1` の JSON API だけを公開する。MCP ツールは `tools/list` が定義 |
+| 起動許可リスト（M1.5） | 起動は許可リストのアプリだけ・入力は `app_id` だけ・応答は `id` と表示名だけ。`Control.Launch` は `Do` の前段（キルスイッチ → リース）を共有し InputGuard と承認は通らない（M3 で承認を足す）。毎回新しいプロセスで、起動後は管理しない。`Agent`（M4）も同じ `AppRegistry` を使う。ファイル選択は `platform.FilePicker`（ホスト GUI の `POST /apps/pick-file` が `AppRegistry.PickExecutable` 経由で呼ぶ） |
 
 ### 12.2 実装時に実機・実 API で検証する事項（設計は確定済み。検証の結果で変えるのは値・実装の詳細だけ）
 
@@ -938,3 +1033,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.5 | 2026-10-30 | テスト方針（§10）と実行環境の記述を、`windows-latest` から、セルフホストの Linux ランナーと `GOOS=windows` のクロスコンパイル（build / vet）に更新。Playwright・Lit は M2 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
 | 1.6 | 2026-10-30 | §12.1 の MCP SDK の設定に `KeepAlive`（既定の 0）を追記 | MCP の keepalive を既定で無効にした実装との整合（オーナー決定。NFR-A04） |
 | 1.7 | 2026-10-30 | §13「M1 実装での差分」を新設（依存規則と型の置き場所、domain・platform・repository・tailnet・service・入口とアプリの差分、未実装の範囲、`KillSwitch.Trigger` が最大 2 × `Timeout` かかりうる既知の制限）。§1 の依存規則、§3 のスレッドの制約（UI Automation のワーカーの `ctx`）、§4.2 の `WhoIs` のキャッシュ（`sync.Map` ではなく mutex + map、5 秒のタイムアウト）、§6 の `web/middleware` の依存先を実装に合わせて訂正 | M1 の実装との差分の文書化（オーナー決定） |
+| 1.8 | 2026-10-30 | 起動許可リスト（M1.5）を追加: §1 の構成、§2 の `domain.LaunchableApp` と検証、§3 の `platform.AppLauncher` / `FilePicker`、§4.1 の `repository.LaunchableApps`、§5.1 の `AppRegistry`、§5.4 の `Control.LaunchableApps` / `Launch` と §5.4.1（検査の順序・M4 のエージェントとの共有）、§6 の `mcp` / `web/handler`、§10 のテスト方針、§11 のトレース、§12.1 の決定事項 | M1.5 の仕様追記（#16。オーナー決定 8 件） |

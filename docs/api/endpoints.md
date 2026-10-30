@@ -9,9 +9,9 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | ルーター | 到達性 | 提供するもの |
 |---------|--------|-------------|
 | **リモートルーター** | tailnet IP の TCP ポート（既定 8765。FR-S01）。HTTP のみ | MCP（`/mcp`）、Web UI（`/viewer`）、WebSocket（`/ws/screen`）、JSON API（`/api/v1`） |
-| **GUI ルーター** | プロセス内のみ（Wails `AssetOptions.Handler`）。ソケットを開かない | ホスト GUI（ダッシュボード、接続要求、クライアント管理、承認、タスク、エージェント設定、監査ログ、設定、更新）と SSE |
+| **GUI ルーター** | プロセス内のみ（Wails `AssetOptions.Handler`）。ソケットを開かない | ホスト GUI（ダッシュボード、接続要求、クライアント管理、起動許可アプリ、承認、タスク、エージェント設定、監査ログ、設定、更新）と SSE |
 
-ホスト専用の操作（承認、トークン発行、API キー登録、キルスイッチ解除など）は GUI ルーターにだけ存在し、リモートルーターには**同名の経路も作らない**（構造で隔離する）。M1 の実装が本書と異なる点（M1 で提供するルート、`/poll`、エラーの形、許可の挙動など）は [§7.5](#75-m1-実装での差分) にまとめる。
+ホスト専用の操作（承認、トークン発行、API キー登録、キルスイッチ解除、**起動許可アプリの登録・変更・削除**など）は GUI ルーターにだけ存在し、リモートルーターには**同名の経路も作らない**（構造で隔離する）。M1 の実装が本書と異なる点（M1 で提供するルート、`/poll`、エラーの形、許可の挙動など）は [§7.5](#75-m1-実装での差分) にまとめる。
 
 ### 共通規約
 
@@ -85,7 +85,9 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `invalid_argument` | 400 | 共通 | 引数が不正（`viewer_id` が別のクライアントに束縛されている場合を含む） |
 | `conflict` | 409 | GUI | 現在の状態では実行できない（要求が `pending` でない、更新を適用できない状態など） |
 | `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
+| `app_not_found` | 404 | `launch_app` | `app_id` が起動許可リストに無い（FR-M19。M1.5） |
 | `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI） |
+| `launch_failed` | 409 | `launch_app` | 許可リストのアプリだが OS がプロセスを作成できなかった（FR-M19。M1.5）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
 | `agent_disabled` | 403 | `run_task` | エージェント無効、API キー未登録、またはクライアントに利用許可が無い |
 | `task_not_found` | 404 | `get_task` / `cancel_task` | 対象が無い、または他クライアントのタスク |
@@ -104,7 +106,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | 認証 | `Authorization: Bearer <token>`（§1 の連鎖。トークンは GUI で発行し、一度だけ表示される。FR-A08） |
 | セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する。SDK の keepalive の ping は standalone の GET SSE ストリームにしか流れず、GET を張らない（POST だけの）クライアントは応答できずセッションとリースを失う（3 回連続の失敗、15 秒間隔で 45 秒）ため、**MCP の keepalive は既定で無効**にする（NFR-A04。WebSocket の 15 秒 / 45 秒の keepalive は §5.1）。MCP の切断は、セッションの明示的な終了（`DELETE`）・トランスポートの切断、アイドル 30 分のセッション閉鎖（SDK の `SessionTimeout`）、リースのアイドル解放 5 分（独立。FR-S04。§8）で拾う |
 | サーバー情報 | `name: puppet-remo`、`version`: アプリの版 |
-| `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`run_task` が非同期であることを記す |
+| `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`launch_app` で起動できるのはホストが許可したアプリ（`list_launchable_apps` で確認）だけであること、`run_task` が非同期であることを記す |
 | 同時セッション | 最大 5（NFR-C02） |
 
 SDK の localhost 向け保護には依存せず、自前の Host / Origin 検証を先に通す（[アーキテクチャ設計](../architecture/overview.md)）。SDK のオプションの設定値は §8 のとおり。
@@ -137,6 +139,8 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `clipboard_write` | FR-M13 | 必要 | |
 | `get_ui_tree` | FR-M14 | 必要 | ro |
 | `acquire_control` / `release_control` / `get_control_status` | FR-M15 | 不要 | `get_control_status` は ro |
+| `list_launchable_apps` | FR-M18 | 不要 | ro |
+| `launch_app` | FR-M19 | 必要 | |
 | `run_task` / `get_task` / `cancel_task` | FR-G02 | 不要（`run_task` が内部でリースを取る） | `get_task` は ro |
 
 #### 画面情報
@@ -223,6 +227,36 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `acquire_control` | `get_control_status` と同じ。M1 は承認なしで取得できる（`idle → held`）。承認が必要な場合（承認モード。M3 から）は承認を待つ（最大 60 秒） |
 | `release_control` | `{ "ok": true }`。保持者でなければ何もしない |
 | `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M1 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` のみ。`pending_approval` は M3、`web` は M2、`agent`（と `task_id`）は M4 から |
+
+#### アプリ起動（M1.5）
+
+起動できるのは、ホスト所有者がホスト GUI で登録した許可リストのアプリだけ（FR-H12）。クライアントが渡せるのは `app_id` だけで、実行ファイルのパス・引数・作業ディレクトリは**入力にも出力にもエラーにも現れない**。
+
+**`list_launchable_apps`**（FR-M18）: 入力なし。出力:
+
+```json
+{
+  "apps": [
+    { "id": "01JA…", "label": "メモ帳" },
+    { "id": "01JB…", "label": "電卓" }
+  ]
+}
+```
+
+`id` は ULID（登録時に採番。編集しても変わらず、削除すると無効になり再利用されない）。`apps` は `label` の昇順（大文字小文字を区別しない）で、許可リストが空なら空配列。リース不要。キルスイッチ中はミドルウェア連鎖（§1）が 503 で拒否する。
+
+**`launch_app`**（FR-M19）
+
+| 引数 | 型 | 必須 | 説明 |
+|------|----|------|------|
+| `app_id` | string | はい | `list_launchable_apps` の `id` |
+
+追加の引数（`args`・`cwd`・`path` など）は受け付けない（スキーマに無い引数は MCP SDK が `invalid params` で拒否する）。出力: `{ "ok": true, "app_id": "01JA…", "pid": 4120 }`。`pid` は `CreateProcess` が返したプロセスの ID。プロセスの作成に成功した時点で返し、ウィンドウの表示は待たない（確認は `list_windows`）。
+
+- 検査の順序は、キルスイッチ（ミドルウェア連鎖の 3）→ 操作リース → 許可リスト。リース未保持なら暗黙に取得する（FR-L04）。リースの承認は M1.5 には無い（M3 から）
+- エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
+- 同じアプリが起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない。フォーカス切り替えはしない）。起動済みのプロセスは、リースの解放・セッションの切断・キルスイッチ・許可リストからの削除では終了しない
+- すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。`list_launchable_apps` も `tool.list_launchable_apps` として追記する
 
 #### 内蔵エージェント
 
@@ -404,6 +438,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（表示のみ）、キルスイッチ、接続要求・クライアント管理への導線。リース強制剥奪ボタンは M2（FR-L06）、実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1 |
 | `/requests` | 接続要求の一覧（許可 / 拒否）。FR-H03 | M1 |
 | `/clients` | クライアント一覧。`/clients/{id}`: 詳細（有効化・承認モード・トークン）。FR-H04 | M1 |
+| `/apps` | 起動許可アプリの一覧・追加フォーム。`/apps/new`: 追加フォーム、`/apps/{id}/edit`: 編集フォーム（いずれも `HX-Request` ならフラグメント）。FR-H12 | M1.5 |
 | `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウ）。FR-H05 | M3 |
 | `/audit` | 監査ログ一覧。`/audit/{id}`: 詳細（引数、サムネイル）。FR-AU05 | M3 |
 | `/settings` | 設定。FR-S | M1〜 |
@@ -424,6 +459,23 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | DELETE | `/clients/{id}` | なし | 200（許可リストから除外。トークンは `CASCADE` で削除、セッション・タスクは切断・中断） |
 | POST | `/clients/{id}/tokens` | `label`\*、`expires_in_days`（既定 90、`never` で無期限） | 200 **トークン平文を一度だけ表示するフラグメント**。`Cache-Control: no-store`。ラベル重複は 409。以後は `token_prefix` のみ表示 |
 | DELETE | `/clients/{id}/tokens/{token_id}` | なし | 200 トークン一覧のフラグメント（`revoked_at` を設定。当該トークンの MCP セッションは切断） |
+
+#### 起動許可アプリ（M1.5。FR-H12）
+
+登録・変更・削除は GUI ルーターだけ。リモートルーター・MCP には対応する経路を作らない。フォームの値は `application/x-www-form-urlencoded`。検証の規則は FR-H12（表示名 1〜64 文字・重複不可、実行ファイルは絶対パスのローカル `.exe` で存在すること、引数は 1 行 1 引数で 32 個・合計 8,192 文字まで、作業ディレクトリは絶対パスの既存ディレクトリ）。
+
+| メソッド | パス | リクエスト（フォーム） | 応答 |
+|---------|------|-----------------------|------|
+| POST | `/apps` | `label`\*、`exe_path`\*、`args`（改行区切り）、`working_dir` | 200 一覧のフラグメント（追加した行を含む）。検証エラーは 422（フォームを入力値と項目別のメッセージで再描画）。登録が 50 件に達していれば 409 `conflict`（NFR-C06） |
+| PUT | `/apps/{id}` | 同上（全項目を置き換える） | 200 行のフラグメント。422 は同上。対象が無ければ 404（`data-error-code="not_found"`）。実行ファイルを変えても `id` は変わらない |
+| GET | `/apps/{id}/delete/confirm` | なし | 200 確認モーダル（フラグメント）。対象が無ければ 404 |
+| DELETE | `/apps/{id}` | なし | 200 一覧のフラグメント。対象が無ければ 404。起動済みのプロセスには影響しない |
+| POST | `/apps/pick-file` | なし | ネイティブのファイル選択ダイアログ（`.exe` のフィルター。メインウィンドウに対してモーダル）を開き、**選ばれたパスを入れた `exe_path` の入力欄**のフラグメントを 200 で返す（利用者は手入力と同じように編集できる）。キャンセルは 204（差し替えない）。ダイアログが閉じるまで応答を返さない。選択だけでは何も登録せず、保存は `POST /apps` / `PUT /apps/{id}` |
+
+- 一覧・編集の HTML は、ホスト所有者だけが見るため実行ファイルのパス・引数・作業ディレクトリを表示する（リモートには出さない）
+- 追加・変更・削除はすべて `actor_type = host`、`kind = settings` で監査する（`settings.launchable_app.create` / `.update` / `.delete`。FR-AU06）。選択ダイアログの操作は監査しない（登録されたときに記録する）
+- 許可リストはホスト所有者だけが変えるため、`GET /poll` の対象に追加しない（一覧の更新は操作の応答のフラグメントで行う）
+- キルスイッチ中も登録・編集・削除はできる（止めるのはリモートからの起動。FR-H06）
 
 ### 7.3 リース・キルスイッチ・承認・タスク・設定・監査・更新
 
@@ -525,6 +577,8 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 項目 | 確認内容 |
 |------|---------|
 | GUI ルーターの CSP | Wails の WebView のオリジン（開発時は WebView の URL のポートが開発用ポートになる）で §1 の CSP のまま動作すること、Wails がインラインスクリプトを注入しないこと（runtime.js は同一オリジン） |
+| 実機の `CreateProcess` による起動（M1.5） | 登録した `.exe`（引数・作業ディレクトリ付き）が、シェルを経由せず標準権限で起動し、`pid` が返ること。パスや引数に空白・日本語・引用符を含むときに、登録どおりに渡ること。`requireAdministrator` のアプリが `launch_failed`（`elevation_required`）になること |
+| ファイル選択ダイアログ（M1.5） | `POST /apps/pick-file` が、ダイアログを開いている間（長時間を含む）WebView で応答待ちのままタイムアウトせず、選択後に入力欄へパスが入ること。キャンセルで 204 になること。ダイアログが MCP の入力（`key` / `type`）を受けないこと（NFR-S06） |
 
 ## 改訂履歴
 
@@ -540,3 +594,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.7 | 2026-10-30 | §3.1 のセッションの行に NFR-A04 との対応（MCP の keepalive は既定で無効、WebSocket は 15 秒 / 45 秒）と、切断の検知手段（DELETE・トランスポートの切断・`SessionTimeout`・リースのアイドル解放）を明記し、§8.1 の SDK 設定に `KeepAlive` を既定の 0 とする行を追加した | MCP の keepalive を既定で無効にした実装との整合（オーナー決定） |
 | 1.8 | 2026-10-30 | §7.2 の `agent_enabled` を、M1 でも許可フォームと `PATCH /clients/{id}` で保存・編集できるが効果は M4 から、と明記。PATCH の応答説明を Web / MCP の無効化でセッションを切断すると正した | M1 の実装と FR-A09 の食い違いの解消（オーナー決定） |
 | 1.9 | 2026-10-30 | §7.5「M1 実装での差分」を新設（M1 のリモートルーターは `/mcp` だけ、M1 の GUI ルートと `PUT /settings` の 5 項目、`/poll`・SSE の扱い、GUI の `not_found` と 422、接続要求の許可（期限切れは許可不可・再許可での置き換えと `client.replace`・5 秒以内は DB に書かない）、`client_id` の NULL、MCP ツールの監査、`http.Server` の `IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB・WhoIs の 5 秒）。§1 に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |
+| 1.10 | 2026-10-30 | 起動許可リストと MCP の `launch_app` / `list_launchable_apps` を追加（M1.5）: §1 の GUI ルーターの提供物と隔離の対象、§2 のエラー（`app_not_found` 404・`launch_failed` 409）、§3.1 の `instructions`、§3.3 のツール表と「アプリ起動」節、§7.1 の `/apps`、§7.2 の「起動許可アプリ」（`POST /apps`・`PUT` / `DELETE /apps/{id}`・削除の確認・`POST /apps/pick-file`）、§8.2 の実機検証事項 | M1.5 の仕様追記（#16。オーナー決定 8 件） |
