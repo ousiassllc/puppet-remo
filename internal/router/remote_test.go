@@ -116,17 +116,23 @@ func TestRemoteExposesNothingButMCP(t *testing.T) {
 	paths := []string{
 		"/", "/viewer", "/ws/screen", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
 		"/mcp/", "/mcp/extra", "/static/js/app.js",
-		"/apps", "/apps/new", "/apps/pick", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
+		"/apps", "/apps/new", "/apps/pick", "/apps/pick-file", "/apps/a1/edit", "/apps/a1/delete/confirm", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
 	}
 	for _, p := range paths {
 		if rec := k.do(http.MethodGet, p); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", p, rec.Code)
 		}
 	}
-	for _, p := range []string{"/killswitch/trigger", "/killswitch/release", "/clients/c1", "/requests/r1/approve", "/apps", "/apps/a1", "/apps/pick"} {
+	for _, p := range []string{"/killswitch/trigger", "/killswitch/release", "/clients/c1", "/requests/r1/approve", "/apps", "/apps/a1", "/apps/pick", "/apps/pick-file"} {
 		rec := k.do(http.MethodPost, p, func(r *http.Request) { r.Header.Set(middleware.CSRFHeader, "1") })
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("POST %s = %d, want 404 (host-only operations must not be reachable remotely)", p, rec.Code)
+		}
+	}
+	for _, tc := range []struct{ method, path string }{{http.MethodPut, "/apps/a1"}, {http.MethodDelete, "/apps/a1"}} {
+		rec := k.do(tc.method, tc.path, func(r *http.Request) { r.Header.Set(middleware.CSRFHeader, "1") })
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s = %d, want 404 (host-only operations must not be reachable remotely)", tc.method, tc.path, rec.Code)
 		}
 	}
 	if k.mcpHits != 0 {
