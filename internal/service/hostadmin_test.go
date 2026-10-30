@@ -293,6 +293,93 @@ func (failingDecide) Decide(context.Context, string, string, *string) error {
 	return errors.New("db down")
 }
 
+// blockingSessions は CloseClient が release されるまで戻らない SessionCloser（進行中のツール呼び出しを待つ切断の模擬）。
+type blockingSessions struct {
+	closedSessions
+	entered     chan struct{}
+	enteredOnce sync.Once
+	release     chan struct{}
+}
+
+func (b *blockingSessions) CloseClient(id string, kind domain.ActorKind) {
+	b.enteredOnce.Do(func() { close(b.entered) })
+	<-b.release
+	b.closedSessions.CloseClient(id, kind)
+}
+
+// 置き換えた古いクライアントの切断（セッションの終了待ち）で止まっている間も、別の接続要求の許可は進む。
+// approveMu を持ったまま切断すると、2 つ目の許可は切断が終わるまで待たされる。
+func TestHostAdminApproveDoesNotHoldLockWhileDisconnecting(t *testing.T) {
+	const wait = 5 * time.Second
+	e := newAdminEnv(t)
+	old := e.approve(t, "nodeA", "first", ApproveInput{MCPEnabled: true})
+	blocker := &blockingSessions{entered: make(chan struct{}), release: make(chan struct{})}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(blocker.release) }) }
+	t.Cleanup(release)
+	var err error
+	e.admin, err = NewHostAdmin(HostAdminConfig{
+		Clients: e.db.Clients(), Tokens: e.db.Tokens(), ConnRequests: e.db.ConnRequests(), Authz: e.authz,
+		Leases: e.leases, Sessions: blocker, Audit: e.audit, Bus: e.bus, Clock: e.clock, IDs: &seqIDs{n: 100},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 同じ node でログイン名が違う要求。許可すると nodeA の古いクライアントを置き換えて切断する。
+	replace, _, err := e.db.ConnRequests().UpsertPending(e.ctx, repository.ConnRequest{
+		ID: "req-again", StableNodeID: "nodeA", LoginName: "carol@example.com", DisplayName: "again",
+		ExpiresAt: e.clock.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := e.request(t, "nodeB", "other")
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := e.admin.ApproveRequest(e.ctx, replace.ID, ApproveInput{})
+		firstDone <- err
+	}()
+	select {
+	case <-blocker.entered: // 1 つ目は切断の中で止まっている
+	case <-time.After(wait):
+		t.Fatal("the replaced client was never disconnected")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := e.admin.ApproveRequest(e.ctx, other.ID, ApproveInput{})
+		secondDone <- err
+	}()
+	select {
+	case err := <-secondDone:
+		if err != nil {
+			t.Errorf("second approve: %v", err)
+		}
+	case <-time.After(wait):
+		release()
+		t.Fatal("second approve is blocked while the first one is disconnecting")
+	}
+	select {
+	case err := <-firstDone:
+		t.Fatalf("first approve returned before its disconnect finished: %v", err)
+	default:
+	}
+
+	release()
+	select {
+	case err := <-firstDone:
+		if err != nil {
+			t.Errorf("first approve: %v", err)
+		}
+	case <-time.After(wait):
+		t.Fatal("first approve did not finish after the disconnect was released")
+	}
+	if want := []string{old.ID + "/mcp", old.ID + "/web"}; !equalStrings(blocker.clients, want) {
+		t.Errorf("closed = %v", blocker.clients)
+	}
+}
+
 // 期限切れの pending は一覧に出ず、許可もできない。
 func TestHostAdminExpiredRequestIsNotListedNorApprovable(t *testing.T) {
 	e := newAdminEnv(t)

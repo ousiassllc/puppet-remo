@@ -133,6 +133,16 @@ func (h *hostAdmin) PendingRequests(ctx context.Context) ([]ConnRequest, error) 
 }
 
 func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in ApproveInput) (domain.Client, error) {
+	// 置き換えた古いクライアントの切断は approveMu の外で行う。CloseClient は進行中のツール呼び出し（最長でツールの
+	// タイムアウト）を待つので、ロックを持ったままだと他の許可や GUI の操作が止まる。defer は後入れ先出しなので、
+	// Unlock のあとに走る。置き換えは済んでいる（トークンは消えている）ので、確定に失敗しても切断は行う。
+	var replacedID string
+	defer func() {
+		if replacedID != "" {
+			h.disconnect(replacedID, domain.ActorMCP)
+			h.disconnect(replacedID, domain.ActorWeb)
+		}
+	}()
 	h.approveMu.Lock()
 	defer h.approveMu.Unlock()
 	req, err := h.pending(ctx, requestID)
@@ -161,8 +171,7 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 		if err := h.cfg.Clients.Replace(ctx, old.ID, c); err != nil {
 			return domain.Client{}, mapRepoErr(err, "client")
 		}
-		h.disconnect(old.ID, domain.ActorMCP)
-		h.disconnect(old.ID, domain.ActorWeb)
+		replacedID = old.ID
 	case errors.Is(err, repository.ErrNotFound):
 		if err := h.cfg.Clients.Create(ctx, c); err != nil {
 			return domain.Client{}, mapRepoErr(err, "client")
