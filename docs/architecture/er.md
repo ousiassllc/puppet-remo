@@ -89,7 +89,7 @@ erDiagram
 | `display_name` | TEXT | NO | — | デバイス名。GUI の表示用 |
 | `web_enabled` | INTEGER | NO | 1 | Web UI の利用可否 |
 | `mcp_enabled` | INTEGER | NO | 1 | MCP の利用可否 |
-| `agent_enabled` | INTEGER | NO | 0 | 内蔵エージェント（`run_task`）の利用可否。**既定は無効**（FR-A09） |
+| `agent_enabled` | INTEGER | NO | 0 | 内蔵エージェント（`run_task`）の利用可否。**既定は無効**（FR-A09）。M1 でも GUI・API から保存・編集できるが、M1 では参照せず効果はない（`run_task` は M4 から） |
 | `approval_mode` | TEXT | NO | `'always'` | `always` / `first_time` / `auto`（FR-L07）。M1 は承認なしでリースを取得するため参照せず、既定値 `always` で保存するだけ。承認モードの適用・選択・設定は M3 |
 | `approved_at` | INTEGER | YES | NULL | `first_time` で一度承認された時刻。NULL なら未承認（承認の取り消しは NULL に戻す）。`approval_mode` を変更したときも NULL に戻す。M3 から使う |
 | `created_at` | INTEGER | NO | — | 登録時刻 |
@@ -137,7 +137,7 @@ erDiagram
 | `last_used_at` | INTEGER | YES | NULL | 最終使用時刻 |
 | `created_at` | INTEGER | NO | — | 発行時刻 |
 
-制約: `UNIQUE (token_hash)`、`UNIQUE (client_id, label)`。
+制約: `UNIQUE (token_hash)`、`UNIQUE (client_id, label)`、`CHECK (length(token_hash) = 32)`（SHA-256 の 32 バイトであること。M1 の実装で追加）。
 
 有効なトークンの条件: `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now) AND clients.mcp_enabled = 1`、かつ要求元の `stable_node_id` がトークンの `client_id` のクライアントと一致すること（FR-A05）。
 
@@ -194,6 +194,8 @@ erDiagram
 | `ix_connreq_status_expires` | `(status, expires_at)` | 通常 | 失効処理、`denied` の再要求抑止の判定 |
 
 保守: `last_seen_at` から 7 日を過ぎた行を定期削除する。`pending` で `expires_at` を過ぎた行は `expired` に更新する。レート制限（FR-A07）は件数カウントをメモリで行うため、DB には持たない。
+
+M1 の実装の補足: 期限切れの `pending` は、保守で `expired` にする前でも一覧（`ListPending`）に含めず、許可もできない（許可は conflict）。同じデバイスの `pending` を 5 秒以内に更新済みなら、`last_seen_at` と `request_count` を DB に書かない（連続リクエストによる書き込みの抑止）。同じデバイスの期限切れの `pending` は、新しい要求を作る前に `expired` にする。
 
 ### settings
 
@@ -457,3 +459,5 @@ erDiagram
 | 1.3 | 2026-10-29 | PR #2 のレビュー対応: `client_tokens.token_hash` を「接頭辞 `prm_` を含むトークン文字列（UTF-8）の SHA-256」に明記し、形式・照合の定義を NFR-S04 の参照に統一。`audit_logs` の M1（追記のみ）/ M3（閲覧・サムネイル）の段階を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
 | 1.4 | 2026-10-29 | `clients.approval_mode` / `approved_at` は M1 では参照せず、M3 から使うと明記 | PR #2 のレビュー対応（方針 5） |
 | 1.5 | 2026-10-30 | ログイン名変更後の再許可（既存クライアントの置き換え）と、削除済みクライアントの監査（`client_id` を NULL で保存）を明記 | M1 統合レビューの指摘（再許可が UNIQUE で失敗する・監査が FK で落ちる） |
+| 1.6 | 2026-10-30 | `clients.agent_enabled` が M1 でも保存・編集できるが、効果は M4 から（M1 では参照しない）と明記 | M1 の実装と FR-A09 の食い違いの解消（オーナー決定） |
+| 1.7 | 2026-10-30 | M1 の実装に合わせて、`client_tokens.token_hash` の `CHECK (length(token_hash) = 32)` と、接続要求の期限切れ・5 秒以内の更新を DB に書かない扱いを追記 | M1 の実装との差分の文書化（オーナー決定） |

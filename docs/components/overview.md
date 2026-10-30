@@ -1,6 +1,6 @@
 # コンポーネント設計
 
-要件は [機能要件](../requirements/functional.md) / [非機能要件](../requirements/non-functional.md)、構成とレイヤーは [アーキテクチャ設計](../architecture/overview.md)、永続化は [ER](../architecture/er.md)、入口の仕様は [API 仕様](../api/endpoints.md) を参照。
+要件は [機能要件](../requirements/functional.md) / [非機能要件](../requirements/non-functional.md)、構成とレイヤーは [アーキテクチャ設計](../architecture/overview.md)、永続化は [ER](../architecture/er.md)、入口の仕様は [API 仕様](../api/endpoints.md) を参照。**M1 の実装が本書と異なる点、本書にあって M1 では未実装の点は §13 に集約する**（本文と §13 が食い違うときは、M1 の実装については §13 が事実）。
 
 本書は `internal/` 配下の各パッケージの責務、依存、Go インターフェース、goroutine と状態の所有者を定める。シグネチャは設計上の契約であり、実装で引数を足す場合も、依存の向きと「誰が状態を持つか」は変えない。
 
@@ -49,7 +49,7 @@ graph TD
 
 **依存の規則**
 
-- 矢印の逆向きの import は禁止。`mcp` / `web` / `ws` は `repository` と `platform` を import しない（CI で `go list -deps` により検査する）
+- 矢印の逆向きの import は禁止。`mcp` / `web` / `ws` は `repository`・`platform`・`tailnet` を import しない（`scripts/check-imports.sh` が `go list` で検査する。実際の許可は §13.1）
 - インターフェースの置き場所は、OS・外部サービスの境界（`platform`、`tailnet`、`openai`、`typesafe`）では**境界側のパッケージ**に置き、`service` のテストはそれを偽の実装に差し替える。`service` 内のコンポーネント（`LeaseManager`、`Judge`、`FastPath` など）は `service` に置く。いずれも、利用側が具象型ではなくインターフェースに依存する
 - 時刻と乱数は `domain.Clock` / `domain.IDGen` を注入する（テストの決定性のため）
 - すべての長時間処理は `context.Context` を第 1 引数に取り、キャンセルで確実に終了する
@@ -267,7 +267,7 @@ type Power interface { // スリープ抑止
 
 **所有する goroutine**: `Capturer.Watch` が 1 モニターにつき 1 本のキャプチャ goroutine を持つ（`ctx` で停止。呼び出し側が閲覧者ゼロで取り消す）。`Hotkey.Register` が Win32 のメッセージループ用に 1 本の専用 OS スレッド（`runtime.LockOSThread`）を持つ。それ以外のインターフェースは goroutine を内部に持たず、呼び出し元のそれで同期的に動く。
 
-**スレッドの制約**: Win32 の入力注入・UI Automation（COM）は、スレッドアフィニティを持つ。`InputInjector` と `UIAutomation`（`Tree` / `Snapshot`）の実装は、専用の goroutine（OS スレッドに固定）へ呼び出しを直列化して渡す（呼び出し側から見るとスレッドセーフな同期呼び出し）。`Snapshot` はこのスレッドで 1 回のキャッシュ要求（`CacheRequest`）にまとめ、COM の往復を減らす。`InputInjector` のホイールの端数の持ち越しも、この専用スレッドが所有する（排他不要。`ReleaseAll` で破棄）。
+**スレッドの制約**: Win32 の入力注入・UI Automation（COM）は、スレッドアフィニティを持つ。`InputInjector` と `UIAutomation`（`Tree` / `Snapshot`）の実装は、専用の goroutine（OS スレッドに固定）へ呼び出しを直列化して渡す（呼び出し側から見るとスレッドセーフな同期呼び出し）。UI Automation のワーカーへの呼び出しは `ctx` を受け、`ctx` が取り消されたら、専用スレッドの処理の終了を待たずに `ctx.Err()` を返す（ワーカーに積まれた処理が長引いても、呼び出し側の待ちが縛られない。§13.3）。`Snapshot` はこのスレッドで 1 回のキャッシュ要求（`CacheRequest`）にまとめ、COM の往復を減らす。`InputInjector` のホイールの端数の持ち越しも、この専用スレッドが所有する（排他不要。`ReleaseAll` で破棄）。
 
 ### InputGuard は platform ではなく service にある
 
@@ -356,7 +356,7 @@ type Listener interface { // tailnet アドレスだけで Listen する
 }
 ```
 
-**所有する goroutine**: `Watcher` が 1 本（`WatchIPNBus` の読み取り）、`Listener` が Listen 用にアドレスごとに 1 本（最大 IPv4・IPv6 の 2 本）と接続ごとの標準の `http.Server` の goroutine。`WhoIs` は goroutine を持たず、キャッシュは `sync.Map` + 有効期限（TTL 10 秒）。Listener の再起動は 10 秒以内に完了する（NFR-A03）。`0.0.0.0`・`127.0.0.1`・tailnet 以外のアドレスでは Listen しない（FR-A01、NFR-S01。ビルドタグ `e2e` のテスト専用の `Listener` だけがループバックで Listen する）。
+**所有する goroutine**: `Watcher` が 1 本（`WatchIPNBus` の読み取り）、`Listener` が Listen 用にアドレスごとに 1 本（最大 IPv4・IPv6 の 2 本）と接続ごとの標準の `http.Server` の goroutine。`WhoIs` は goroutine を持たず、キャッシュは `sync.Mutex` で守る `map` + 有効期限（TTL 10 秒。期限切れの掃除をするため `sync.Map` ではない）で、LocalAPI の 1 回の呼び出しは 5 秒で打ち切る（超えたら `ErrWhoIsFailed`。fail closed）。Listener の再起動は 10 秒以内に完了する（NFR-A03）。`0.0.0.0`・`127.0.0.1`・tailnet 以外のアドレスでは Listen しない（FR-A01、NFR-S01）。ビルドタグ `e2e` のテスト専用の `Listener` は M2 で足す（M1 には無い）。`http.Server` の設定は §13.4。
 
 ### 4.3 openai
 
@@ -720,7 +720,7 @@ Bearer トークンは `prm_` + base64url（パディングなし）の 32 バ�
 | パッケージ | 責務 | 依存してよい先 |
 |-----------|------|---------------|
 | `router` | GUI ルーターとリモートルーターの組み立て、ミドルウェア連鎖（API 仕様 §1） | `service`、`domain` |
-| `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`killswitch`、`whois`、`allowlist`、`bearer`（API 仕様 §1 の連鎖の順） | `service.Authz`、`tailnet.WhoIs` |
+| `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`killswitch`、`whois`、`allowlist`、`bearer`（API 仕様 §1 の連鎖の順） | `service`（`Authenticator`・`Identity`・`ResolveIdentity`）、`domain`。`tailnet` は import しない（§13.1） |
 | `web/handler` | 機能別の HTTP ハンドラ（viewer、clients、tasks、settings、audit …）。Templ で描画 | `service`、`domain` |
 | `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換 | `service`、`domain` |
 | `ws` | WebSocket のプロトコル（JSON とバイナリフレームの符号化・復号）。入力メッセージを `domain.Op` に変換して `Control` へ | `service`、`domain` |
@@ -828,7 +828,7 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | DXGI のキャプチャ | `github.com/kirides/go-d3d` v1.0.1（MIT、cgo なし）を第一候補とし、GDI `BitBlt` をフォールバックにする。M2 のキャプチャのスパイクで採否を確認し、成立しなければ自前の `syscall` 実装にする |
 | 資格情報 | `github.com/zalando/go-keyring` v0.2.8（MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go）。ターゲット名は `puppet-remo/openai`、`puppet-remo/typesafe` |
 | WebSocket / ID / OpenAI / MCP | `github.com/coder/websocket` v1.8.15、`github.com/oklog/ulid/v2` v2.1.2、`github.com/openai/openai-go/v3` v3.90.0、`github.com/modelcontextprotocol/go-sdk` v1.8.0 |
-| MCP SDK の設定 | `DisableLocalhostProtection` は loopback 経由の要求にしか効かず tailnet IP では無関係なので、自前の Host / Origin ミドルウェア（NFR-S02）で守る。非推奨の `CrossOriginProtection` は使わない。`SessionTimeout` は 0 だと閉じないため 30 分アイドルに明示（リースのアイドル 5 分とは独立）。`EventStore` は v1 では使わない（ストリームの再開なし。クライアントは再初期化する）。`MaxRequestBodyBytes` は 1 MiB（NFR-S09）、`Stateless=false`（セッションに紐づくリース保持者）、`JSONResponse` は既定 |
+| MCP SDK の設定 | `DisableLocalhostProtection` は loopback 経由の要求にしか効かず tailnet IP では無関係なので、自前の Host / Origin ミドルウェア（NFR-S02）で守る。非推奨の `CrossOriginProtection` は使わない。`SessionTimeout` は 0 だと閉じないため 30 分アイドルに明示（リースのアイドル 5 分とは独立）。`KeepAlive` は既定の 0（ping しない。POST だけのクライアントは ping に応えられないため。NFR-A04）。`EventStore` は v1 では使わない（ストリームの再開なし。クライアントは再初期化する）。`MaxRequestBodyBytes` は 1 MiB（NFR-S09）、`Stateless=false`（セッションに紐づくリース保持者）、`JSONResponse` は既定 |
 | OpenAI の会話継続 | `store: false` 固定、`previous_response_id` は使わず、履歴を毎回再送する。スクリーンショットは直近 `agent.keep_screenshots`（既定 3）枚だけ残す（§4.3、FR-G24） |
 | 高速パス（Jev） | §4.4・§5.6.1 のとおり。Jev は Judge ではなく、外部モデルの Judge は作らない（Judge は RuleJudge） |
 | ホイールの単位 | `input.mouse` の `wheel` の `dx` / `dy` はノッチ（小数可。MCP `scroll.amount` と同じ）。サーバー（`InputInjector.Wheel`）が × 120 を丸めて端数を繰り越す。ブラウザ側の換算は `<remo-screen-viewer>`（§8） |
@@ -851,6 +851,81 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | UI Automation の `Hash` | 進捗の判定に使うハッシュ（トグル・選択状態を含み、テキスト値を含まない）が、実アプリで実際の変化に追従し、揺らぎで偽の進捗を出さないこと |
 | ホイールとクリップボード | 実ブラウザでの `deltaMode` ごとの換算の体感、WebView2 での `navigator.clipboard.writeText`（`*.localhost` を安全なコンテキストとして扱う前提） |
 
+## 13. M1 実装での差分
+
+M1 の実装が本書の他の節と異なる点と、本書が定めていて M1 では実装していない点をまとめる。本書のシグネチャは設計上の契約であり、依存の向きと「誰が状態を持つか」は変えていない。実装で型・引数・規則を足した箇所と、実装時に仕様が定めていなかった点の選択を記す。
+
+### 13.1 依存規則と型の置き場所（§1・§6）
+
+| 項目 | 設計 | M1 の実装 |
+|------|------|----------|
+| `mcp` / `web` / `ws` の import | `repository` と `platform` を import しない | `tailnet` も import しない。許可は `scripts/check-imports.sh` の規則のとおり: `repository`・`platform`・`tailnet`・`openai`・`typesafe` は `domain` だけ、`service` は `domain`・`repository`・`platform`・`tailnet`・`openai`・`typesafe`、`mcp`・`ws`・`web` は `domain`・`service`、`router` は `domain`・`service`・`web`・`mcp`・`ws`、`app` は `domain`・`repository`・`service`・`router`・`web`・`mcp`・`ws`・`platform`・`tailnet`。`openai`・`typesafe`・`ws` はまだ存在しない |
+| `web/middleware` の依存先（§6） | `service.Authz`、`tailnet.WhoIs` | `service.Authenticator`（`Identify`・`CheckAllowlist`・`VerifyBearer`）、`service.Identity`（`tailnet.Identity` の別名）、`service.ResolveIdentity`。`tailnet` は import しない |
+| repository の型を入口が使う | — | `service.ConnRequest`、`service.TokenRecord`、`service.AuditEntry` は `repository` の型の別名（`type X = repository.X`）。`web`・`mcp` は `repository` を import せずにこれらを使う |
+| `ErrNotFound` / `ErrConflict` の置き場所（§4.1） | 置き場所の記述なし | `repository.ErrNotFound`・`repository.ErrConflict`（`repository` パッケージ）。`service` は `HostAdmin` の対象なしを `service.ErrNotFound` に、衝突を `domain.CodeConflict` の `*domain.Error` に写す。`platform.ErrNotFound` は `SecretStore` の未登録 |
+
+### 13.2 domain（§2）
+
+| 項目 | M1 の実装 |
+|------|----------|
+| 追加した値型 | `Rect`、`WindowInfo`、`Button`、`Modifier`、`Direction`、`KeyAction`、`KeyCombo`（`ParseKeyCombo`・`String`・`Validate`）、`KeyEvent`、`UINode`、`UIElement`、`UISnapshot`。`platform` の署名（§3）が参照する型で、`UIElement` / `UISnapshot` は高速パス（M4）の入力として M1 で先に入れた。`ValidKeyName`・`CheckInputTarget`・`CheckObserveTarget`・`CheckKeyCombo`（InputGuard の判定規則。§5.4）も `domain` にある |
+| `WindowInfo` の置き場所 | §3 のコード片に `type WindowInfo` があるが、実体は `domain.WindowInfo`（フィールドは同じ）。`platform.WindowManager` が返す |
+| `Client` / `ApprovalMode` | §2 のとおり。`ApprovalMode.Valid` を足した。`ApprovedAt` は M3 から使う（M1 は参照しない） |
+| `Monitor` | `Name`（`get_screen_info` の `name`）を追加。`ScaledSize`・`DPIScale`・`ContainsPhysical`・`MonitorAt` を足した。`Op` の `Monitor` は `int` で、`domain.MonitorPrimary`（-1）が「省略（プライマリ）」 |
+| エラー（§2 の `Error`） | `Code` 型（`string` の別名。`domain.CodeXxx`）を導入し、`Error.Code` は `Code`。`Error.Is` は `Code` の一致で判定する（`Msg`・`Detail` は比較しない）。`NewError`・`WithMsg`・`WithDetail`・`CodeOf`・`Code.HTTPStatus`・`Code.Valid` を足した。§2 の `ErrXxx` は `NewError(CodeXxx, …)` で作った `*Error`。`conflict` は `CodeConflict` だけでエラー値は持たない |
+| リース | `LeaseMachine`（`NewLeaseMachine`。I/O もタイマーも持たない idle → held → idle の状態機械）、`Lease`、`LeaseEvent`、`LeaseState`、`ReleaseReason`、`DefaultLeaseIdleTimeout`、`ActorKind.CanHoldLease`、`Actor.SameSession`、`Clock`、`IDGen` を足した |
+| 未実装（M2〜M4） | `Wheel`（M2）。`Action`・`Verdict`・`Stricter`・`TaskStatus`・`ErrJudgeDenied`・`ErrUnsupportedAction`、高速パスの `RoleClass`・`Candidate`・`CandidateTable`・`HandoffReason`・`ErrInvalidChoice` とその関数（M4） |
+
+### 13.3 platform（§3）
+
+| 項目 | M1 の実装 |
+|------|----------|
+| `Capturer` | M1 は GDI BitBlt だけ（DXGI は M2）。`Watch` と `Frame` は宣言だけで、M1 では呼ばない。Windows 実装の `Capturer.Watch` はスタブで、常に `windows: Capturer.Watch is not available in M1` のエラーを返す |
+| `SecretStore`・`SecretOpenAI`・`SecretTypeSafe`・`platform.ErrNotFound` | 宣言と偽実装・契約テスト（`platformtest`）だけ。M1 には Windows 実装も呼び出しもない（API キー管理は M4） |
+| `Power` | `app.Config` の `Platform.Power` は**必須**（nil なら起動に失敗する）。リース保持中のスリープ・画面オフの抑止（NFR-A05）に使う |
+| UI Automation のワーカー | 専用スレッドへの呼び出し（`Do(ctx, fn)`）は、`ctx` が取り消し済みなら `fn` を実行せず `ctx.Err()` を返し、実行中に `ctx` が終わったら `fn` の終了を待たずに `ctx.Err()` を返す |
+| 追加 | 偽実装と共通の契約テストを `internal/platform/platformtest` に置く（Windows 実装は `windows && smoke` のビルドタグで同じ契約を実機で流す）。ログオン時の自動起動（FR-S08）は `service.Autostart` の実装を `internal/platform/windows` に置く（HKCU の Run キー） |
+
+### 13.4 repository・tailnet（§4）
+
+| 項目 | M1 の実装 |
+|------|----------|
+| `repository.Clients` | `Replace(ctx, oldID, c)`（既存クライアントを削除して新しい行を同一トランザクションで作る。再許可用）を追加。`Create` は `stable_node_id` の重複で `ErrConflict` |
+| `repository.Audit` | `Append` だけ（M1）。`Query`・`AttachThumb`・`PurgeBefore`・`PurgeThumbsOver` と `Tasks`・`ThumbStore` は M3・M4 で足す。`AuditEntry.ClientID` が空、またはクライアントの行がすでに無いときは `client_id` を NULL で保存する（`client_label` は残る。ER） |
+| 接続要求の扱い | 期限切れの `pending` は `ListPending` に含めず、許可もできない（Expire の前でも）。`UpsertPending` は ON CONFLICT による 1 文の集約。`client_tokens.token_hash` に `length = 32` の `CHECK` を足した。同じデバイスの `pending` を 5 秒以内に更新済みなら DB に書かない（`service` の `connRequestTouchInterval`） |
+| SQLite の接続 | 接続は 1 本（`SetMaxOpenConns(1)`）で、書き込みを直列化する。壊れた DB は `.corrupt-<ms>` にリネームして空 DB で起動する |
+| `tailnet.WhoIs` | キャッシュは `sync.Mutex` + `map`（§4.2）。LocalAPI の 1 回の呼び出しは 5 秒で打ち切り、`ErrWhoIsFailed`（`context.DeadlineExceeded` を包む）で拒否する |
+| `tailnet.Listener` | tailnet IP は `BackendState` が Running のときだけ採用し（Starting・Stopped では Listen しない）、Listen する対象を `100.64.0.0/10` と `fd7a:115c:a1e0::/48` に絞る（防御的な二重の絞り込み）。Listen・受け付けの失敗は 1 秒間隔で再試行する。`Watcher` も切断時に 1 秒間隔で再接続する |
+| `http.Server` | `ReadHeaderTimeout` 10 秒、`IdleTimeout` **120 秒**、`MaxHeaderBytes` **64 KiB**。`WriteTimeout` は付けない（長い応答があるため） |
+| ビルドタグ `e2e` の `Listener` | M2 で足す（M1 には無い） |
+
+### 13.5 service（§5）
+
+| 項目 | 設計 | M1 の実装 |
+|------|------|----------|
+| `Authz`（§5.9） | `Authorize`・`IssueToken`・`RecordConnectionRequest` | 拡張: `Authenticator`（`Identify`・`CheckAllowlist`・`VerifyBearer` を 1 段ずつ提供し、ミドルウェア連鎖の 4〜6 を各ミドルウェアが呼ぶ。`Authorize` はこの 3 段を順に呼ぶ）、`RevokeToken(ctx, tokenID)`、`Feature`（`FeatureWeb` / `FeatureMCP`）、`Request`、`Principal`、`Identity`、`ErrDeviceNotRegistered`・`ErrClientDisabled`・`ErrUnauthorized`・`ErrWhoIsFailed`、`RetryAfter`・`DetailRetryAfterSec` |
+| `HostAdmin`（新規） | なし | ホスト所有者の GUI 操作（接続要求の許可・拒否、クライアントの更新・削除、トークンの発行・失効）を担う（FR-H03・H04）。`SessionCloser`（MCP のセッション表が実装）で、無効化・削除・トークン失効のときにセッションを切断し、リースを解放する。すべて操作主体 `host` で監査する。`ApproveRequest` は、同じ `stable_node_id` の登録済みクライアントがあれば（ログイン名の変更後の再許可）置き換え、古いクライアントのトークンを CASCADE で消し、セッションを切断し、リースを解放して `client.replace` を監査する。古いクライアントの切断は `approveMu` の外で行う（切断はツール呼び出しの完了を待つため、ロック中に行うと他の許可を止める） |
+| 新規の型 | なし | `HostSettingsService`（`Load`・`Save`・`AutostartAvailable`。§5.10 の `Settings` の `Get[T]` / `Set` の代わり。M1 のキーは `server.port`・`killswitch.hotkey`・`screenshot.max_dimension`・`lease.idle_timeout_sec`。自動起動は OS が真実の源で DB に持たない）、`ServerStatus`・`StatusTracker`・`TailscaledState`（ダッシュボードのサーバー状態）、`SessionSource`・`SessionInfo`（接続中セッション一覧）、`Autostart`、`Toast`、`Maintenance`（M1 は接続要求の失効だけ）、`NewNotifyingConnRequests`・`NewNotifyingKillSwitch`・`BridgeLeaseEvents`（状態の変化を `Bus` へ流す）|
+| `Audit`（§5.10） | `Record(ctx, e domain.AuditEvent)` | `Record(ctx, e repository.AuditEntry)`（`domain.AuditEvent` は作っていない。`service.AuditEntry` は `repository.AuditEntry` の別名）。消費側のインターフェースは `AuditRecorder`（`LeaseManager`・`KillSwitch`・`Control` 用）と `AuditSink`（`Authz` 用）。書き込み goroutine 1 本、キューは既定 256。満杯・Close 後の記録は捨てて数える（`Dropped`）。`Flush`・`Close` を持つ |
+| MCP ツールの監査 | `Control` が記録する（§5.4） | `Control.Do` を通る入力系・`focus_window`・クリップボード・UI ツリー・`wait` は `Control` が監査する。`Do` を通らない `get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status` は、`mcp` のツール登録（`addAuditedTool`）が `service.ToolAuditEntry` で記録する。拒否（リース・InputGuard・キルスイッチ）は `denied`、それ以外の失敗は `error` |
+| `Control` の直列化（§5.4） | ステートレス | 入力の実行（マウス・キーボード）は 1 度に 1 つへ直列化する（容量 1 のセマフォ。「移動してからクリック」の間に別の入力を割り込ませない）。検査の順序は設計のとおり（キルスイッチ → リース → 引数検査・縮小座標の変換 → InputGuard → platform → 監査。`Judge` は M4）。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000（既定 5・500）で、超えると `invalid_argument` |
+| `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke` は M2。`LeaseConfig.Power` でスリープ・画面オフを抑止する |
+| `KillSwitch`（§5.8） | `Trigger` は (1) 永続化 → (2) リース剥奪 → … → (7) 監査の順で、1 秒以内（NFR-P05） | 実装は、メモリ上の状態を先に `active` にして（以後のリクエストは 503）、(1) `settings` に永続化 → (2) `LeaseManager.ReleaseAll` → (3) 登録済みのクローザーを**並行**に実行（MCP セッションの切断、押下中の入力の解放）→ 監査の順。`Agent`（M4）・WebSocket（M2）・オーバーレイ（M3）はまだ無い。永続化とクローザーはそれぞれ自分の期限（`KillSwitchConfig.Timeout`。既定 1 秒）を持つ。**既知の制限**: 永続化が遅い（遅いディスクなど）と、永続化が最大 1 期限、クローザーが最大 1 期限を使い、`Trigger` が戻るまで最大 2 × `Timeout`（既定で 2 秒）かかり、NFR-P05 の 1 秒を超えうる。メモリ上の状態は先頭で `active` になるので受付停止は直ちに効くが、全セッションの切断・入力の解放の完了は遅れうる。この点は未解決で、1 秒を保証していない |
+| 未実装（M2〜M4） | `Approval`（M3）、`Judge`・`Agent`・`FastPath`（M4）、`Streamer`（M2）、`Updater`（M3） | — |
+
+### 13.6 入口とアプリ（§6・§7・§9）
+
+| 項目 | M1 の実装 |
+|------|----------|
+| リモートルーター | M1 は `/mcp` だけを提供する（`/` などは 404）。`/viewer`・`/ws/screen`・`/api/v1`・静的ファイルは M2 以降 |
+| `web/handler` | `handler/gui` だけ（`remote` は M2）。`organisms` / `pages` は `gui/` のサブディレクトリに分けず、平らに置く。GUI のエラー応答は、`not_found`（対象なし。API 仕様 §2 のコード表に無い GUI 内のコード）を 404 で、`invalid_argument` を 422 で返す |
+| ホスト GUI の更新 | SSE ではなく `GET /poll`（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。トースト（`Bus` の `toast`）は `gui.Handler` が購読して待ち行列にし、`/poll` が取り出す）。SSE の `GET /events` は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが、M1 の GUI は読み込まない（未使用） |
+| `app` | `Windows` インターフェース（承認ダイアログ・オーバーレイ。§7）は M3 のため無い。M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Platform.Power` は必須。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
+| `cmd/puppet-remo` | Windows 以外では `puppet-remo: Windows only` を出して非ゼロで終了するスタブ（`main_other.go`）。`go build ./...` を Linux の CI で通すため |
+| 開発・補助 | 開発タスクは `frontend:dev`（`dev:frontend` ではない）。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service、loopback）がある。スクリーンショットは `docs/screenshots/m1/`、実機スモークの手順は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) |
+
+**M1 では実装していない `Approval`・`Judge`・`Agent`・`FastPath`・`Streamer`・`Updater`、`openai`・`typesafe`・`ws` パッケージ、WebSocket、Web UI、`/api/v1` は、本書の設計が M2〜M4 の予定である。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`、`Capturer.Watch` / `Frame`（§13.3）。
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -861,3 +936,5 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | 1.3 | 2026-10-30 | `Bus` の購読者と HTMX 拡張の記述を、ホスト GUI の `GET /poll` のポーリング（トーストは `gui.Handler` が `Bus` を購読して待ち行列にする）に合わせて更新 | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |
 | 1.4 | 2026-10-30 | 開発タスク名を実在する `frontend:dev` に訂正（`dev:frontend` は誤り） | レビュー指摘（Taskfile.yml のタスク名との不一致）の反映 |
 | 1.5 | 2026-10-30 | テスト方針（§10）と実行環境の記述を、`windows-latest` から、セルフホストの Linux ランナーと `GOOS=windows` のクロスコンパイル（build / vet）に更新。Playwright・Lit は M2 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
+| 1.6 | 2026-10-30 | §12.1 の MCP SDK の設定に `KeepAlive`（既定の 0）を追記 | MCP の keepalive を既定で無効にした実装との整合（オーナー決定。NFR-A04） |
+| 1.7 | 2026-10-30 | §13「M1 実装での差分」を新設（依存規則と型の置き場所、domain・platform・repository・tailnet・service・入口とアプリの差分、未実装の範囲、`KillSwitch.Trigger` が最大 2 × `Timeout` かかりうる既知の制限）。§1 の依存規則、§3 のスレッドの制約（UI Automation のワーカーの `ctx`）、§4.2 の `WhoIs` のキャッシュ（`sync.Map` ではなく mutex + map、5 秒のタイムアウト）、§6 の `web/middleware` の依存先を実装に合わせて訂正 | M1 の実装との差分の文書化（オーナー決定） |

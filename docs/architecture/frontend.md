@@ -114,7 +114,7 @@ static/
 ```
 
 - `atoms` / `molecules` は 2 つの UI で**共有**し、`organisms` / `pages` は UI ごとに分ける。共有側は UI 固有の URL を持たない（URL は props で受ける）
-- `handler/gui` と `handler/remote` は互いを import しない。ハンドラが使えるのは `service` と `domain`（`repository` / `platform` は不可。[コンポーネント設計](../components/overview.md) §6）
+- `handler/gui` と `handler/remote` は互いを import しない。ハンドラが使えるのは `service` と `domain`（`repository` / `platform` / `tailnet` は不可。`scripts/check-imports.sh` が検査する。[コンポーネント設計](../components/overview.md) §6・§13.1）
 - `view` は Templ 用の表示モデル（例: `LeasePanelView`、`ClientRowView`）。Templ は `domain` / `service` を import せず、`view` だけを受け取る
 - `go:embed` は `static/dist` を対象にする。開発ビルド（`!production`）はディスクから読む（§8.3）
 
@@ -519,6 +519,20 @@ graph LR
 | ブラウザでの WebSocket と CSP（§7.1） | `connect-src 'self'` が、利用するブラウザ（Chromium 系、Firefox、Safari）で同一オリジンの `ws://<tailnet IP>:<port>/ws/screen` を許可すること（Web UI は `ws:`。tailnet の通信は WireGuard で暗号化されるため `wss:` は使わない） |
 | GUI の `GET /poll`（§5.3）の WebView での更新 | ダッシュボード・接続要求のページを開いたまま、tailnet 側から接続要求を作る・キルスイッチを発動する・セッションを張る操作を行い、約 3 秒以内に一覧・バッジ・ヘッダー・パネルが再読み込みなしで更新されること。入力中の許可フォーム（表示名・チェックボックス）がポーリングで消えないこと。**決定済み**: Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファし、`http.Flusher` を持たないため（`internal/assetserver/webview/responsewriter_windows.go` で確認）、SSE（`GET /events`）は WebView に届かない。ポーリングを採用した（`docs/operations/smoke-windows.md` §4.3 W3） |
 
+## 12. M1 実装での差分
+
+M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1 に無い・異なる点は次のとおり。
+
+| 項目 | 設計 | M1 の実装 |
+|------|------|----------|
+| リモートの UI（§1.3・§3・§6） | Web UI（`/viewer`）、Lit の `<remo-screen-viewer>`、`lib/ws.ts`、`handler/remote`、`organisms/remote`・`pages/remote` | M2 まで無い。M1 のリモートルーターは `/mcp` だけ（API 仕様 §7.5）。Lit・`lib/ws.ts`・`lib/logger.ts`・`src/components/`・`e2e/`（Playwright）・Lit のテスト・`web-test-runner` は作らない |
+| `internal/web` の構成（§3） | `organisms/{gui,remote}/`・`pages/{gui,remote}/`、`handler/{gui,remote}/` | `organisms/`・`pages/` は平ら（`gui/` のサブディレクトリを作らない）。`handler/gui/` だけ。`layout/` は `gui.templ` だけ。`webtest/`（ハンドラのテスト補助）と `handler/gui/guitest/`（偽の service）を追加した。`view/` は設計どおり。アトムは `badge`・`button`・`checkbox`・`input`・`select`・`spinner`・`toast`、モレキュールは `card`・`form_field`・`lease_badge`・`modal`・`status_pill`・`token_reveal` |
+| GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。承認・タスク・エージェント・監査・更新は M3・M4 |
+| ホスト GUI の更新（§5.3） | `GET /poll`（本書のとおり） | 同じ。`GET /events`（SSE）は残すが GUI は購読しない。`htmx-ext-sse` は `static/package.json` に入れて `dist/js/sse.min.js` へコピーするが、レイアウトは読み込まない（未使用。ビルドの対象としては残る） |
+| `static/package.json`（§8.2） | `lit`・`htmx-ext-*`・`@open-wc/testing`・`@web/test-runner`、`test` スクリプト | M1 は `htmx.org`・`htmx-ext-response-targets`・`htmx-ext-sse`、開発依存は `tailwindcss`・`@tailwindcss/cli`・`esbuild`・`typescript`・`concurrently`。スクリプトに `clean` を足し（`build` の先頭で `dist` を消す）、`test` は無い。esbuild のエントリーは `src/app/` の 2 ファイル |
+| 開発タスク名（§8.3） | `frontend:dev` | 同じ。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service を loopback で配信）を足した。スクリーンショットは `docs/screenshots/m1/` |
+| ビルドと CI（§8・§9） | Playwright の E2E・Lit のテスト | M1 の CI は Go のビルド・vet・lint・test・import 規則・templ 生成の差分・フロントエンドのビルド。E2E と Lit のテストは M2。Windows 実機の確認は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) の手動手順 |
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -530,3 +544,4 @@ graph LR
 | 1.4 | 2026-10-30 | ホスト GUI の状態の更新を SSE から `GET /poll` のポーリング（3 秒ごと・OOB・版の隠し入力）に変更し、`sse` 拡張をレイアウトから外した（§1・§2・§5.3・§5.5・§11）。`GET /events` は残す | Wails v3.0.0 の Windows の AssetServer が `AssetOptions.Handler` の応答をバッファし、SSE が WebView に届かないため（#12） |
 | 1.5 | 2026-10-30 | 開発タスク名を実在する `frontend:dev` に訂正（`dev:frontend` は誤り）。`hx-boost` のリンクの `hx-target-error` と、トークン表示の `hx-history="false"` を追記（§5.5・§7） | 実装のレビュー指摘（エラーページが表示されない・トークンの平文が履歴に残る）の反映 |
 | 1.6 | 2026-10-30 | §9 の CI の記述を、`windows-latest` と Windows のジョブ・ubuntu のジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新。Lit のテストと Playwright は M2 と明記 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
+| 1.7 | 2026-10-30 | §12「M1 実装での差分」を新設（リモートの UI・Lit・E2E が M2、`internal/web` の構成、GUI のページ、`htmx-ext-sse` の同梱と未使用、`static/package.json`、`gui:demo`・スクリーンショット・スモーク手順）。§3 のハンドラの依存規則に `tailnet` を追記 | M1 の実装との差分の文書化（オーナー決定） |
