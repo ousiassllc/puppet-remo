@@ -392,3 +392,25 @@ func TestLeaseSetIdleTimeout(t *testing.T) {
 		}
 	})
 }
+
+// キルスイッチ中の取得の拒否も、他者保持中の拒否と同じく監査に残る（kind = lease、result = denied）。
+func TestLeaseAcquireRefusedByKillSwitchIsAudited(t *testing.T) {
+	e := newCtlEnv(t)
+	if err := e.kill.Trigger("test"); err != nil {
+		t.Fatal(err)
+	}
+	before := len(e.audit.Entries())
+
+	if _, err := e.leases.Acquire(context.Background(), ctlAlice); !errors.Is(err, domain.ErrKillSwitchActive) {
+		t.Fatalf("Acquire = %v, want ErrKillSwitchActive", err)
+	}
+	got := e.audit.Entries()[before:]
+	if len(got) != 1 {
+		t.Fatalf("new audit entries = %+v, want exactly one", got)
+	}
+	en := got[0]
+	if en.Kind != "lease" || en.Event != "lease.acquire" || en.Result != "denied" || en.ErrorCode != "kill_switch_active" ||
+		en.ClientID != ctlAlice.ClientID || en.SessionID != ctlAlice.SessionID {
+		t.Errorf("entry = %+v", en)
+	}
+}

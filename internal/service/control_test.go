@@ -141,6 +141,8 @@ func TestControlDoRejections(t *testing.T) {
 		{name: "自ウィンドウを前面にできない", op: domain.FocusWindow{ID: "2"}, wantErr: domain.ErrInputBlocked},
 		{name: "クリップボードは 1 MiB まで", op: domain.ClipboardWrite{Text: strings.Repeat("a", 1<<20+1)}, wantErr: domain.ErrInvalidArgument},
 		{name: "UI ツリーの上限が負", op: domain.GetUITree{MaxDepth: -1}, wantErr: domain.ErrInvalidArgument},
+		{name: "UI ツリーの深さが上限超え", op: domain.GetUITree{MaxDepth: 21}, wantErr: domain.ErrInvalidArgument},
+		{name: "UI ツリーのノード数が上限超え", op: domain.GetUITree{MaxNodes: 5001}, wantErr: domain.ErrInvalidArgument},
 		{name: "自ウィンドウの UI ツリー", op: domain.GetUITree{WindowID: "2"}, wantErr: domain.ErrInputBlocked},
 		{name: "未対応の op", op: nil, wantErr: domain.ErrInvalidArgument},
 	}

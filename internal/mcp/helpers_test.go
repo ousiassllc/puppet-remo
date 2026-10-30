@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -68,6 +69,12 @@ type fakeControl struct {
 	err error
 	// blockUntilDone が true なら、CursorPosition は ctx が終わるまで返らない（ツールのタイムアウトの検査用）。
 	blockUntilDone bool
+	// cursorEntered が非 nil なら、CursorPosition は入るたびにここへ通知する（ブロックの開始を待つテスト用）。
+	cursorEntered chan struct{}
+	// cursorRelease が非 nil なら、CursorPosition は ctx を無視して、これが閉じるまで返らない（遅い platform 呼び出しの再現）。
+	cursorRelease chan struct{}
+	// cursorCtxErr が非 nil なら、blockUntilDone の CursorPosition は ctx の終了理由をここへ送る。
+	cursorCtxErr chan error
 	// screenshotArgs は直近の Screenshot の引数。
 	screenshotMonitor int
 	screenshotFormat  string
@@ -161,8 +168,18 @@ func (f *fakeControl) Windows(context.Context) ([]domain.WindowInfo, error) {
 }
 
 func (f *fakeControl) CursorPosition(ctx context.Context) (service.Cursor, error) {
+	if f.cursorEntered != nil {
+		f.cursorEntered <- struct{}{}
+	}
+	if f.cursorRelease != nil {
+		<-f.cursorRelease
+		return f.cursor, nil
+	}
 	if f.blockUntilDone {
 		<-ctx.Done()
+		if f.cursorCtxErr != nil {
+			f.cursorCtxErr <- ctx.Err()
+		}
 		return service.Cursor{}, ctx.Err()
 	}
 	if err := f.viewErr(); err != nil {
@@ -212,6 +229,24 @@ func newEnv(t *testing.T, mutate ...func(*Config)) *env {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return &env{t: t, srv: srv, http: ts, ctl: ctl, leases: leases, kill: kill, events: leases.Subscribe()}
+}
+
+// auditLog は mcp が記録した監査エントリを溜める service.AuditRecorder の偽物。
+type auditLog struct {
+	mu      sync.Mutex
+	entries []service.AuditEntry
+}
+
+func (a *auditLog) Record(_ context.Context, e service.AuditEntry) {
+	a.mu.Lock()
+	a.entries = append(a.entries, e)
+	a.mu.Unlock()
+}
+
+func (a *auditLog) all() []service.AuditEntry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.entries)
 }
 
 // testPrincipal はヘッダー X-Test-Client のクライアント ID を主体にする。ヘッダーが無ければ認証なし。

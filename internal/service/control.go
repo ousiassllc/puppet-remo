@@ -95,6 +95,8 @@ const (
 	maxClickCount      = 3
 	defaultUITreeDepth = 5
 	defaultUITreeNodes = 500
+	maxUITreeDepth     = 20
+	maxUITreeNodes     = 5000
 )
 
 type control struct {
@@ -110,6 +112,8 @@ type control struct {
 	audit     AuditRecorder
 	clock     domain.Clock
 	sleep     func(ctx context.Context, d time.Duration) error
+	// inputSem は入力の実行を直列化する（容量 1。lockInput）。
+	inputSem chan struct{}
 }
 
 // NewControl は Control を返し、キルスイッチの発動時に入力を解放するクローザーを登録する。
@@ -131,6 +135,7 @@ func NewControl(cfg ControlConfig) (Control, error) {
 		audit:     cfg.Audit,
 		clock:     cfg.Clock,
 		sleep:     cfg.Sleep,
+		inputSem:  make(chan struct{}, 1),
 	}
 	if c.sleep == nil {
 		c.sleep = sleepContext

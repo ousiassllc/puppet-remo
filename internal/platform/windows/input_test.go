@@ -463,6 +463,28 @@ func TestTextSendsUnicodeInChunksWithoutSplittingCharacters(t *testing.T) {
 	}
 }
 
+// 先頭の 1 文字（2 件）の後に BMP 外の文字が続くと、2*textChunk 件の境界が上位サロゲートの解放の直後に来る。
+// そこで切ると、サロゲートペアが別々の SendInput に分かれる。
+func TestTextNeverSplitsASurrogatePairAcrossSendInputCalls(t *testing.T) {
+	in, d := newTestInput(t)
+	text := "a"
+	for range textChunk + 10 {
+		text += "😀"
+	}
+	if err := in.Text(context.Background(), text); err != nil {
+		t.Fatal(err)
+	}
+	calls := d.sent()
+	if len(calls) < 2 {
+		t.Fatalf("expected the text to be split, got %d call(s)", len(calls))
+	}
+	for i, c := range calls {
+		if !endsCharacter(c[len(c)-1]) {
+			t.Errorf("chunk %d ends in the middle of a character: %+v", i, c[len(c)-1])
+		}
+	}
+}
+
 func TestTextStopsWhenSendFailsAndReportsError(t *testing.T) {
 	in, d := newTestInput(t)
 	d.failOn, d.failErr = 1, domain.ErrDesktopUnavailable

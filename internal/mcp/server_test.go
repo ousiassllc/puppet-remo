@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 )
@@ -272,4 +275,92 @@ func TestToolCallTimeout(t *testing.T) {
 	if !strings.Contains(res.text(), "timed out") {
 		t.Errorf("text = %q", res.text())
 	}
+}
+
+// callToolAsync は cursor_position を別 goroutine で呼び、結果（エラー）を返すチャネルを返す。
+func callToolAsync(cs *mcpsdk.ClientSession, name string) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), waitLimit)
+		defer cancel()
+		_, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: name})
+		done <- err
+	}()
+	return done
+}
+
+// キルスイッチのクローザー（CloseSessions）は、実行中のツール呼び出しの ctx を取り消して中断させ、
+// 全セッションを時間内に閉じる。ツールを待つ間に ctx を食いつぶさない。
+func TestCloseSessionsAbortsInFlightToolCalls(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.blockUntilDone = true
+	e.ctl.cursorEntered = make(chan struct{}, 1)
+	e.ctl.cursorCtxErr = make(chan error, 1)
+	busy := e.connect("busy")
+	e.connect("idle")
+	eventually(t, "idle session", func() bool { return len(e.srv.Sessions()) == 2 })
+
+	call := callToolAsync(busy, "cursor_position")
+	select {
+	case <-e.ctl.cursorEntered:
+	case <-time.After(waitLimit):
+		t.Fatal("the tool call never started")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), waitLimit)
+	defer cancel()
+	if err := e.srv.CloseSessions(ctx); err != nil {
+		t.Fatalf("CloseSessions: %v", err)
+	}
+	select {
+	case err := <-e.ctl.cursorCtxErr:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("tool ctx error = %v, want context.Canceled", err)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("the in-flight tool's ctx was not cancelled")
+	}
+	<-call
+	eventually(t, "all sessions to leave the table", func() bool { return len(e.srv.Sessions()) == 0 })
+
+	// 取り消しは実行中の呼び出しだけに効く。新しく張ったセッションのツールは取り消されない。
+	e.ctl.blockUntilDone = false
+	e.ctl.cursorEntered = nil
+	cs := e.connect("again")
+	if res := callTool(t, cs, "cursor_position", nil); res.IsError {
+		t.Errorf("a call after CloseSessions failed: %s", res.text())
+	}
+}
+
+// ctx を無視して返らない platform 呼び出しがあっても、CloseSessions は ctx の期限で返る
+// （キルスイッチの 1 秒の上限を守る）。
+func TestCloseSessionsReturnsWhenContextEndsWhileAToolIsStuck(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.cursorEntered = make(chan struct{}, 1)
+	e.ctl.cursorRelease = make(chan struct{})
+	busy := e.connect("busy")
+	e.connect("idle")
+	eventually(t, "both sessions", func() bool { return len(e.srv.Sessions()) == 2 })
+
+	call := callToolAsync(busy, "cursor_position")
+	select {
+	case <-e.ctl.cursorEntered:
+	case <-time.After(waitLimit):
+		t.Fatal("the tool call never started")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := e.srv.CloseSessions(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("CloseSessions error = %v, want deadline exceeded", err)
+	}
+	if took := time.Since(start); took > waitLimit/2 {
+		t.Errorf("CloseSessions took %v, want about the 100ms the context allowed", took)
+	}
+	// 止まっていた呼び出しを解放すると、閉じ切れなかったセッションも閉じる。
+	close(e.ctl.cursorRelease)
+	<-call
+	eventually(t, "all sessions to leave the table", func() bool { return len(e.srv.Sessions()) == 0 })
 }

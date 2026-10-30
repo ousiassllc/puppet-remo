@@ -161,19 +161,22 @@ func (k *KillSwitchManager) Trigger(source string) error {
 	closers := slices.Clone(k.closers)
 	k.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), k.timeout)
-	defer cancel()
-
+	// 永続化とクローザーはそれぞれ自分の期限（k.timeout）を持つ。永続化（遅いディスクなど）が期限を使い切っても、
+	// クローザー（セッション切断・入力の解放）は期限切れの ctx で呼ばれない。
 	var errs []error
-	if err := k.persist(ctx, st); err != nil {
+	persistCtx, cancelPersist := context.WithTimeout(context.Background(), k.timeout)
+	if err := k.persist(persistCtx, st); err != nil {
 		errs = append(errs, err)
 	}
+	cancelPersist()
 	if leases == nil {
 		errs = append(errs, errors.New("kill switch: no lease manager is bound"))
 	} else {
 		leases.ReleaseAll(string(domain.ReleaseKillSwitch))
 	}
-	errs = append(errs, runClosers(ctx, closers)...)
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), k.timeout)
+	defer cancelClose()
+	errs = append(errs, runClosers(closeCtx, closers)...)
 
 	err := errors.Join(errs...)
 	if err != nil {

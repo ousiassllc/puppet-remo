@@ -243,3 +243,55 @@ func TestNewHostSettingsValidatesConfig(t *testing.T) {
 		t.Error("Audit without Clock must fail")
 	}
 }
+
+// failKeySettings は failKey の書き込みだけが失敗する設定ストア。
+type failKeySettings struct {
+	*ctlSettings
+	failKey string
+	err     error
+}
+
+func (s failKeySettings) Set(ctx context.Context, key string, value json.RawMessage) error {
+	if key == s.failKey {
+		return s.err
+	}
+	return s.ctlSettings.Set(ctx, key, value)
+}
+
+// 書き込みの途中（3 つ目）で失敗したら、書き込めた分（ポート・ホットキー）だけを OnChange と監査へ渡す。
+// 書けなかった項目まで通知すると、動いているコンポーネントが保存済みの値とずれる。
+func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("disk full")
+	store := failKeySettings{ctlSettings: newCtlSettings(), failKey: settingScreenshotMaxDim, err: boom}
+	audit := &recordingAudit{}
+	var changes [][2]HostSettings
+	svc, err := NewHostSettings(HostSettingsConfig{
+		Settings: store, Audit: audit, Clock: newFakeClock(),
+		OnChange: func(old, updated HostSettings) { changes = append(changes, [2]HostSettings{old, updated}) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120}
+
+	if _, err := svc.Save(ctx, want); !errors.Is(err, boom) {
+		t.Fatalf("Save = %v, want %v", err, boom)
+	}
+	applied := defaultHostSettings
+	applied.Port, applied.KillSwitchHotkey = 9000, "Ctrl+Shift+Q"
+	if len(changes) != 1 || changes[0][0] != defaultHostSettings || changes[0][1] != applied {
+		t.Errorf("changes = %+v, want one change to %+v", changes, applied)
+	}
+	got, err := svc.Load(ctx)
+	if err != nil || got != applied {
+		t.Errorf("Load after the failed save = %+v, %v; want %+v", got, err, applied)
+	}
+	if len(audit.entries) != 1 {
+		t.Fatalf("audit = %+v", audit.entries)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(audit.entries[0].DetailJSON, &detail); err != nil || len(detail) != 2 || detail["server.port"] != float64(9000) {
+		t.Errorf("audit detail = %s (%v)", audit.entries[0].DetailJSON, err)
+	}
+}

@@ -5,6 +5,7 @@ package windows
 import (
 	"context"
 	"os"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -113,6 +114,9 @@ func (wm *WindowManager) blockedByUIPI(w domain.WindowInfo) bool {
 // bringToForeground は hwnd を前面にする。前面ウィンドウのスレッドに入力を結びつけて、SetForegroundWindow の制限を避ける。
 // 成功したか（呼び出し直後に hwnd が前面になったか）を返す。
 func bringToForeground(hwnd uintptr) bool {
+	// AttachThreadInput は呼び出しスレッドに対する操作なので、解除までの間 goroutine を同じ OS スレッドに固定する。
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	var fgTID, selfTID uintptr
 	if fg, _, _ := w32GetForegroundWindow.Call(); fg != 0 && fg != hwnd {
 		fgTID, _, _ = w32GetWindowThreadProcess.Call(fg, 0)

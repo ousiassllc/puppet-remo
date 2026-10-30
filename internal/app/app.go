@@ -197,7 +197,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.mcp, err = mcp.New(mcp.Config{
-		Control: control, Leases: a.leases, Version: cfg.Version, Logger: a.log,
+		Control: control, Leases: a.leases, Audit: audit, Version: cfg.Version, Logger: a.log,
 		// 連鎖（web/middleware）が認証した主体を MCP サーバーへ渡す。mcp は web を import できない。
 		Principal:        func(r *http.Request) (service.Principal, bool) { return middleware.PrincipalFrom(r.Context()) },
 		OnSessionsChange: func() { a.bus.Publish(service.Event{Topic: service.TopicSessions}) },

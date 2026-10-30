@@ -39,13 +39,10 @@ const (
 	DefaultSessionTimeout = 30 * time.Minute
 	// DefaultToolTimeout は同期のツール呼び出しのタイムアウト（NFR-S09）。
 	DefaultToolTimeout = 30 * time.Second
-	// DefaultKeepAlive は keepalive の ping 間隔（NFR-A04）。
-	DefaultKeepAlive = 15 * time.Second
 	// DefaultMaxSessions は同時セッションの上限（NFR-C02）。
 	DefaultMaxSessions = 5
 
-	// keepAliveFailureThreshold は連続した ping の失敗でセッションを閉じる回数。
-	// 15 秒間隔 × 3 回 = 45 秒でタイムアウトとする（NFR-A04）。
+	// keepAliveFailureThreshold は連続した ping の失敗でセッションを閉じる回数（KeepAlive が有効なとき）。
 	keepAliveFailureThreshold = 3
 )
 
@@ -71,6 +68,9 @@ type Config struct {
 	Control   service.Control
 	Leases    service.LeaseManager
 	Principal PrincipalFunc
+	// Audit は閲覧系・リースのツール呼び出し（Control.Do を通らず Control が記録しないもの）の監査先。nil なら記録しない。
+	// 入力系のツールは Control.Do が記録するため、ここでは記録しない（二重記録を避ける。FR-AU01）。
+	Audit service.AuditRecorder
 	// Version は initialize で返すアプリの版。
 	Version string
 	Logger  *slog.Logger // nil なら slog.Default()
@@ -81,8 +81,13 @@ type Config struct {
 	// 以下は 0 なら既定値。テストが短くする。
 	SessionTimeout time.Duration
 	ToolTimeout    time.Duration
-	KeepAlive      time.Duration
-	MaxSessions    int
+	// KeepAlive は SDK の keepalive の ping 間隔。0（既定）なら ping しない。
+	// SDK はサーバーからの ping を standalone の GET SSE ストリームにしか流さないため、GET ストリームを張らない
+	// （POST だけの）クライアントは ping に応えられず、有効にすると 3 回の失敗でセッションとリースを失う。
+	// MCP の仕様は GET ストリームを任意としているので、既定では無効にし、セッションの切断は
+	// SessionTimeout（アイドル 30 分）とリースのアイドル解放で拾う（docs/api/endpoints.md §3.1）。
+	KeepAlive   time.Duration
+	MaxSessions int
 }
 
 // Server は MCP サーバー。
@@ -92,6 +97,7 @@ type Server struct {
 	principal  PrincipalFunc
 	log        *slog.Logger
 	onSessions func()
+	audit      service.AuditRecorder
 
 	toolTimeout time.Duration
 	maxSessions int
@@ -104,6 +110,10 @@ type Server struct {
 	watched map[string]struct{} // 切断を見張っているセッション ID
 	// sessions は接続中のセッション（sessions.go）。セッション ID をキーにする。
 	sessions map[string]*sessionRecord
+	// toolsCtx が取り消されると、実行中のツール呼び出しの ctx も取り消される（CloseSessions が cancelTools を呼ぶ）。
+	// 取り消した後は次の呼び出しのために作り直す。
+	toolsCtx    context.Context
+	cancelTools context.CancelFunc
 }
 
 // New は MCP サーバーを作り、全ツールを登録する。
@@ -121,6 +131,7 @@ func New(cfg Config) (*Server, error) {
 		leases:      cfg.Leases,
 		principal:   cfg.Principal,
 		onSessions:  cfg.OnSessionsChange,
+		audit:       cfg.Audit,
 		log:         cfg.Logger,
 		toolTimeout: cmp.Or(cfg.ToolTimeout, DefaultToolTimeout),
 		maxSessions: cmp.Or(cfg.MaxSessions, DefaultMaxSessions),
@@ -130,13 +141,14 @@ func New(cfg Config) (*Server, error) {
 	if s.log == nil {
 		s.log = slog.Default()
 	}
+	s.toolsCtx, s.cancelTools = context.WithCancel(context.Background())
 	s.sdk = mcpsdk.NewServer(
 		&mcpsdk.Implementation{Name: ServerName, Version: cfg.Version},
 		&mcpsdk.ServerOptions{
 			Instructions: Instructions,
 			Logger:       s.log,
-			// keepalive の ping が連続して失敗したら、そのセッションを閉じてリースを解放する（NFR-A04）。
-			KeepAlive:                 cmp.Or(cfg.KeepAlive, DefaultKeepAlive),
+			// 既定は無効（Config.KeepAlive を参照）。有効なら、ping が連続して失敗したセッションを閉じてリースを解放する。
+			KeepAlive:                 cfg.KeepAlive,
 			KeepAliveFailureThreshold: keepAliveFailureThreshold,
 		},
 	)
@@ -168,17 +180,49 @@ func (s *Server) Handler() http.Handler { return s.handler }
 
 // CloseSessions は全 MCP セッションを閉じる。キルスイッチのクローザー（service.CloserFunc）として登録する。
 // 各セッションのリースは切断の検知で解放される。
+//
+// 実行中のツール呼び出しの ctx を先に取り消し、セッションは並行して閉じる。セッションの Close は実行中の
+// ツール呼び出しの終了を待つため、順に閉じると 1 つの遅いツール（wait・スクリーンショットなど）が
+// キルスイッチの時間制限（1 秒）を食いつぶす。ctx が先に終わったら、閉じ終わっていないセッションを残して返す
+// （Close は裏で続く）。
 func (s *Server) CloseSessions(ctx context.Context) error {
+	s.abortInFlightTools()
+	sessions := slices.Collect(s.sdk.Sessions())
+	closed := make(chan error, len(sessions))
+	for _, ss := range sessions {
+		go func() { closed <- ss.Close() }()
+	}
 	var errs []error
-	for ss := range s.sdk.Sessions() {
-		if err := ctx.Err(); err != nil {
-			return errors.Join(append(errs, err)...)
-		}
-		if err := ss.Close(); err != nil {
-			errs = append(errs, err)
+	for range sessions {
+		select {
+		case err := <-closed:
+			if err != nil {
+				errs = append(errs, err)
+			}
+		case <-ctx.Done():
+			return errors.Join(append(errs, ctx.Err())...)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// abortInFlightTools は実行中のツール呼び出しの ctx を取り消し、以後の呼び出しのために作り直す。
+func (s *Server) abortInFlightTools() {
+	s.mu.Lock()
+	abort := s.cancelTools
+	s.toolsCtx, s.cancelTools = context.WithCancel(context.Background())
+	s.mu.Unlock()
+	abort()
+}
+
+// toolContext はツール 1 回の ctx を返す: タイムアウトつきで、CloseSessions の取り消しにも従う。
+func (s *Server) toolContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	s.mu.Lock()
+	aborted := s.toolsCtx
+	s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, s.toolTimeout)
+	stop := context.AfterFunc(aborted, cancel)
+	return ctx, func() { stop(); cancel() }
 }
 
 // principalKey は TokenInfo.Extra に主体を入れるキー。

@@ -358,8 +358,36 @@ func TestErrorMapping(t *testing.T) {
 	}
 }
 
-// keepalive の ping に応答できないセッション（サーバーからの ping を受ける GET ストリームが無い）は閉じられ、
-// リースが解放される（NFR-A04）。
+// 既定では keepalive の ping を送らない。GET ストリームを張らない（POST だけの）クライアントは ping に応えられず、
+// 有効にすると、ツールを呼べている生きたセッションとリースを 3 回の ping の失敗（45 秒）で失う。
+func TestPostOnlyClientKeepsItsSessionAndLeaseByDefault(t *testing.T) {
+	e := newEnv(t)
+	a := e.connect("a") // DisableStandaloneSSE: POST のみ
+	if res := callTool(t, a, "acquire_control", nil); res.IsError {
+		t.Fatal(res.text())
+	}
+	// keepalive を 20ms にした下のテストなら、これだけの間に 3 回の失敗でリースが解放される。
+	quiet := time.After(300 * time.Millisecond)
+wait:
+	for {
+		select {
+		case ev := <-e.events:
+			if isRelease(ev) {
+				t.Fatalf("the lease was released (%s) although no ping is sent", ev.Reason)
+			}
+		case <-quiet:
+			break wait
+		}
+	}
+	if res := callTool(t, a, "get_control_status", nil); res.IsError {
+		t.Fatalf("the session was closed: %s", res.text())
+	}
+	if _, held := e.leases.Holder(); !held {
+		t.Error("the lease was released")
+	}
+}
+
+// KeepAlive を有効にした場合、ping に応答できないセッションは閉じられ、リースが解放される。
 func TestKeepAliveFailureReleasesTheLease(t *testing.T) {
 	e := newEnv(t, func(c *Config) { c.KeepAlive = 20 * time.Millisecond })
 	a := e.connect("a")

@@ -11,6 +11,10 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
+// AuditEntry は監査エントリ（repository.AuditEntry の別名）。repository を import できない層（mcp など）が
+// AuditRecorder を実装・利用するときの名前。
+type AuditEntry = repository.AuditEntry
+
 // AuditRecorder は監査ログへ追記する側の最小の窓口。LeaseManager・KillSwitch・Control が使う。
 // Record は呼び出しを遅らせず、失敗を返さない（Audit が非同期のキューへ入れる）。
 type AuditRecorder interface {

@@ -123,6 +123,7 @@ func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, er
 	// 取得が ReleaseAll の後に成功することはない。
 	if m.kill != nil && m.kill.Active() {
 		m.mu.Unlock()
+		m.record(ctx, leaseDeniedAuditEntry(who, m.clock.Now(), domain.ErrKillSwitchActive))
 		return Lease{}, domain.ErrKillSwitchActive
 	}
 	l, events, err := m.machine.Acquire(who)

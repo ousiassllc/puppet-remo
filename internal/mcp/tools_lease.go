@@ -29,25 +29,25 @@ type statusBody struct {
 
 // addLeaseTools はリースのツールを登録する: FR-M15。いずれもリースは不要。
 func (s *Server) addLeaseTools() {
-	addTool(s, "acquire_control",
+	addAuditedTool(s, "acquire_control",
 		"Acquire the control lease explicitly and return the control status. "+
 			"Fails with lease_held_by_other when another session holds it.",
-		false, func(ctx context.Context, who domain.Actor, _ noArgs) (toolResult, error) {
+		false, noArgsSummary, func(ctx context.Context, who domain.Actor, _ noArgs) (toolResult, error) {
 			if _, err := s.leases.Acquire(ctx, who); err != nil {
 				return toolResult{}, err
 			}
 			return toolResult{Structured: s.status(who)}, nil
 		})
 
-	addTool(s, "release_control", "Release the control lease. Does nothing when this session does not hold it.",
-		false, func(_ context.Context, who domain.Actor, _ noArgs) (toolResult, error) {
+	addAuditedTool(s, "release_control", "Release the control lease. Does nothing when this session does not hold it.",
+		false, noArgsSummary, func(_ context.Context, who domain.Actor, _ noArgs) (toolResult, error) {
 			s.leases.Release(who)
 			return okResult, nil
 		})
 
-	addTool(s, "get_control_status",
+	addAuditedTool(s, "get_control_status",
 		"Get the control lease state: idle or held, who holds it, whether this session holds it, and the idle time left.",
-		true, func(_ context.Context, who domain.Actor, _ noArgs) (toolResult, error) {
+		true, noArgsSummary, func(_ context.Context, who domain.Actor, _ noArgs) (toolResult, error) {
 			return toolResult{Structured: s.status(who)}, nil
 		})
 }
