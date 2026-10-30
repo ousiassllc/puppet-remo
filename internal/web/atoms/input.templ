@@ -1,0 +1,45 @@
+package atoms
+
+// InputProps は入力欄の引数。
+type InputProps struct {
+	ID          string
+	Name        string
+	Type        string // text | number | password など。空なら text
+	Value       string
+	Placeholder string
+	Required    bool
+	Readonly    bool
+	Invalid     bool
+	Attrs       Attrs
+}
+
+func inputType(t string) string {
+	if t == "" {
+		return "text"
+	}
+	return t
+}
+
+func inputClass(invalid bool) string {
+	base := "block w-full rounded-md border bg-white px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 read-only:bg-slate-50 "
+	if invalid {
+		return base + "border-red-400 focus:ring-red-400"
+	}
+	return base + "border-slate-300 focus:ring-indigo-400"
+}
+
+// Input は 1 行の入力欄。
+templ Input(p InputProps) {
+	<input
+		id={ p.ID }
+		name={ p.Name }
+		type={ inputType(p.Type) }
+		value={ p.Value }
+		placeholder={ p.Placeholder }
+		class={ inputClass(p.Invalid) }
+		required?={ p.Required }
+		readonly?={ p.Readonly }
+		aria-invalid?={ p.Invalid }
+		{ p.Attrs... }
+	/>
+}

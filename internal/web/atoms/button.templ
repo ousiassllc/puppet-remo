@@ -1,0 +1,42 @@
+package atoms
+
+// ButtonVariant はボタンの見た目の種類。
+type ButtonVariant string
+
+const (
+	ButtonPrimary   ButtonVariant = "primary"
+	ButtonSecondary ButtonVariant = "secondary"
+	ButtonDanger    ButtonVariant = "danger"
+)
+
+// ButtonProps はボタンの引数。Type が空なら "button"（フォーム送信は "submit" を明示する）。
+type ButtonProps struct {
+	Label   string
+	Variant ButtonVariant
+	Type    string
+	Attrs   Attrs
+}
+
+func buttonType(t string) string {
+	if t == "submit" {
+		return "submit"
+	}
+	return "button"
+}
+
+func buttonClass(v ButtonVariant) string {
+	base := "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 "
+	switch v {
+	case ButtonDanger:
+		return base + "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500"
+	case ButtonSecondary:
+		return base + "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-400"
+	default:
+		return base + "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-indigo-500"
+	}
+}
+
+// Button は操作ボタン。hx-* は Attrs で渡す。
+templ Button(p ButtonProps) {
+	<button type={ buttonType(p.Type) } class={ buttonClass(p.Variant) } { p.Attrs... }>{ p.Label }</button>
+}

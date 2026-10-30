@@ -1,0 +1,49 @@
+package organisms
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+func numberAttrs(min, max string) atoms.Attrs {
+	return atoms.Attrs{"min": min, "max": max, "step": "1", "inputmode": "numeric"}
+}
+
+// SettingsForm は M1 の設定（FR-S01〜S04、FR-S08）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
+// 自動起動のチェックは、OS の登録手段があるときだけ描画する。
+templ SettingsForm(f view.SettingsForm) {
+	<form
+		id="settings-form"
+		class="space-y-5"
+		hx-put="/settings"
+		hx-target="this"
+		hx-swap="outerHTML"
+		hx-target-422="this"
+		hx-disabled-elt="find button[type=submit]"
+		hx-indicator="#settings-spinner"
+	>
+		@molecules.FormField("set-port", "待ち受けポート", "1024〜65535。保存すると新しいポートで待ち受け直します。", f.Errors.Port) {
+			@atoms.Input(atoms.InputProps{ID: "set-port", Name: "server.port", Type: "number", Value: f.Values.Port, Required: true, Invalid: f.Errors.Port != "", Attrs: numberAttrs("1024", "65535")})
+		}
+		@molecules.FormField("set-hotkey", "キルスイッチのホットキー", "`Ctrl+Alt+Shift+K` の書式。", f.Errors.Hotkey) {
+			@atoms.Input(atoms.InputProps{ID: "set-hotkey", Name: "killswitch.hotkey", Value: f.Values.Hotkey, Required: true, Invalid: f.Errors.Hotkey != "", Attrs: atoms.Attrs{"autocomplete": "off"}})
+		}
+		@molecules.FormField("set-maxdim", "スクリーンショットの最大辺（px）", "256〜4096。AI へ渡す画像の長辺の上限です。", f.Errors.ScreenshotMaxDim) {
+			@atoms.Input(atoms.InputProps{ID: "set-maxdim", Name: "screenshot.max_dimension", Type: "number", Value: f.Values.ScreenshotMaxDim, Required: true, Invalid: f.Errors.ScreenshotMaxDim != "", Attrs: numberAttrs("256", "4096")})
+		}
+		@molecules.FormField("set-idle", "リースのアイドルタイムアウト（秒）", "30〜3600。操作がないまま経過すると操作権を解放します。", f.Errors.LeaseIdleSec) {
+			@atoms.Input(atoms.InputProps{ID: "set-idle", Name: "lease.idle_timeout_sec", Type: "number", Value: f.Values.LeaseIdleSec, Required: true, Invalid: f.Errors.LeaseIdleSec != "", Attrs: numberAttrs("30", "3600")})
+		}
+		if f.CanSetAutostart {
+			<label class="flex items-center gap-2 text-sm text-slate-700">
+				@atoms.Checkbox("set-autostart", "autostart", f.Values.Autostart)
+				ログオン時に自動で起動する
+			</label>
+		}
+		<div class="flex items-center gap-3">
+			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
+			@atoms.Spinner("settings-spinner")
+		</div>
+	</form>
+}
