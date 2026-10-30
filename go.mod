@@ -2,7 +2,10 @@ module github.com/ousiassllc/puppet-remo
 
 go 1.26.5
 
-require tailscale.com v1.102.0
+require (
+	github.com/go-ole/go-ole v1.3.0
+	tailscale.com v1.102.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
