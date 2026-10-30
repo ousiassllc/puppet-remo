@@ -1,0 +1,53 @@
+package layout
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+// GUI はホスト GUI の全ページの外枠。
+//
+// スクリプトは外部ファイルだけ（インラインのスクリプト・スタイル・on* 属性は書かない。CSP: NFR-S19）。
+// 読み込み順は htmx → htmx-config（classic）→ 拡張 → app（module）。設定は htmx の初期化より前に適用する（§7.1）。
+// SSE（/events）の接続はウィンドウごとに 1 本で、body に張る。
+templ GUI(title string, c view.Chrome) {
+	<!DOCTYPE html>
+	<html lang="ja">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } - puppet-remo</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+			<script src="/static/js/htmx.min.js"></script>
+			<script src="/static/js/htmx-config.js"></script>
+			<script src="/static/js/response-targets.min.js"></script>
+			<script src="/static/js/sse.min.js"></script>
+			<script type="module" src="/static/js/app.js"></script>
+		</head>
+		<body
+			class="min-h-screen bg-slate-100 text-slate-900 antialiased"
+			hx-ext="sse,response-targets"
+			sse-connect="/events"
+			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
+		>
+			<div class="flex min-h-screen">
+				@organisms.Sidebar(c, false)
+				<div class="flex min-w-0 flex-1 flex-col">
+					@organisms.Header(c.Header)
+					<main id="main" class="flex-1 p-6">
+						{ children... }
+					</main>
+				</div>
+			</div>
+			@organisms.ToastRoot()
+			@organisms.ModalRoot()
+		</body>
+	</html>
+}
+
+// Boosted はサイドバーの hx-boost による遷移の応答。#main の中身（title を含む）に、サイドバーの強調を OOB で添える。
+templ Boosted(title string, c view.Chrome) {
+	<title>{ title } - puppet-remo</title>
+	@organisms.Sidebar(c, true)
+	{ children... }
+}

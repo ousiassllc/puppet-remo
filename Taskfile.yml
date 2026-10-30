@@ -1,7 +1,7 @@
 version: "3"
 
-# M1/S1 の範囲: Go のビルド・検査・テスト。
-# templ 生成・フロントエンドのビルド・wails3 のタスクは後続のスコープ（S10 / S11）で足す。
+# Go のビルド・検査・テスト（S1）、templ 生成とフロントエンドのビルド（S10）。wails3 のタスクは S11 で足す。
+# フロントエンド（HALT）の規約は docs/architecture/frontend.md §8。
 
 tasks:
   default:
@@ -72,6 +72,82 @@ tasks:
     cmds:
       - ./scripts/check-imports.sh
 
+  tools:templ:
+    desc: go.mod の版に固定した templ を導入する（生成物の差分チェックと CI で同じ版を使う）
+    cmds:
+      - cmd: go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{"{{"}}.Version{{"}}"}}' github.com/a-h/templ)
+
+  templ:generate:
+    desc: .templ から _templ.go を生成する（生成物はコミットする）
+    cmds:
+      - templ generate
+
+  templ:watch:
+    desc: .templ の変更で _templ.go を再生成し続ける（開発用）
+    cmds:
+      - templ generate --watch
+
+  templ:check:
+    desc: _templ.go が .templ と一致していること（生成して差分が出ないこと）を確認する
+    cmds:
+      - templ generate
+      - cmd: |
+          if [ -n "$(git status --porcelain -- '*_templ.go')" ]; then
+            echo "_templ.go が古い。task templ:generate を実行してコミットすること:"
+            git status --short -- '*_templ.go'
+            exit 1
+          fi
+
+  frontend:install:
+    desc: フロントエンドの依存を package-lock.json のとおりに導入する
+    dir: static
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+    cmds:
+      - npm ci
+
+  frontend:build:
+    desc: esbuild と Tailwind CLI で static/dist を作る（htmx と拡張を同梱。毎回作り直す）
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - npm run build
+
+  frontend:typecheck:
+    desc: TypeScript の型検査
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - npx tsc -p .
+
+  frontend:dev:
+    desc: esbuild と Tailwind のウォッチ（WAILS_VITE_PORT で serve。wails3 dev が呼ぶ）
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - npm run dev
+
+  gui:demo:
+    desc: GUI ルーターを偽の service で loopback に起動する（スクリーンショット・見た目の確認用。本番のバイナリには入らない）
+    deps: [frontend:build]
+    cmds:
+      - go run ./internal/router/internal/guidemo -addr 127.0.0.1:8899
+
+  build:production:
+    desc: 本番ビルド（static/dist を go:embed する。先に frontend:build が要る）
+    deps: [frontend:build]
+    cmds:
+      - go build -tags production ./...
+
+  test:production:
+    desc: 同梱した dist の契約テスト（-tags production。先に frontend:build が要る）
+    deps: [frontend:build]
+    cmds:
+      - go test -tags production ./static/...
+
   tidy:
     desc: go.mod / go.sum を整理する
     cmds:
@@ -81,6 +157,11 @@ tasks:
     desc: CI と同じ検査を一通り実行する
     cmds:
       - task: fmt:check
+      - task: templ:check
+      - task: frontend:build
+      - task: frontend:typecheck
+      - task: build:production
+      - task: test:production
       - task: build
       - task: vet
       - task: build:windows

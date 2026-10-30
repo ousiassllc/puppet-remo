@@ -1,0 +1,30 @@
+package atoms
+
+// BadgeTone はバッジの色の種類。
+type BadgeTone string
+
+const (
+	BadgeNeutral BadgeTone = "neutral"
+	BadgeOK      BadgeTone = "ok"
+	BadgeWarn    BadgeTone = "warn"
+	BadgeDanger  BadgeTone = "danger"
+)
+
+func badgeClass(t BadgeTone) string {
+	base := "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium "
+	switch t {
+	case BadgeOK:
+		return base + "bg-emerald-100 text-emerald-800"
+	case BadgeWarn:
+		return base + "bg-amber-100 text-amber-800"
+	case BadgeDanger:
+		return base + "bg-red-100 text-red-800"
+	default:
+		return base + "bg-slate-100 text-slate-700"
+	}
+}
+
+// Badge は状態を示す小さなラベル。
+templ Badge(tone BadgeTone, text string) {
+	<span class={ badgeClass(tone) }>{ text }</span>
+}

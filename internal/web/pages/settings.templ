@@ -1,0 +1,33 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const settingsTitle = "設定"
+
+templ settingsBody(v view.Settings) {
+	<div class="max-w-xl space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">設定</h1>
+		@molecules.Card("") {
+			@organisms.SettingsForm(v.Form)
+		}
+	</div>
+}
+
+// Settings は設定のフルページ（FR-S01〜S04、FR-S08）。
+templ Settings(v view.Settings) {
+	@layout.GUI(settingsTitle, v.Chrome) {
+		@settingsBody(v)
+	}
+}
+
+// SettingsBoosted は hx-boost の遷移への応答。
+templ SettingsBoosted(v view.Settings) {
+	@layout.Boosted(settingsTitle, v.Chrome) {
+		@settingsBody(v)
+	}
+}

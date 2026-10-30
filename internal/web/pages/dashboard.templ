@@ -1,0 +1,39 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const dashboardTitle = "ダッシュボード"
+
+templ dashboardBody(v view.Dashboard) {
+	<div class="space-y-6">
+		<h1 class="text-xl font-semibold text-slate-900">ダッシュボード</h1>
+		<div class="grid gap-4 lg:grid-cols-2">
+			@organisms.ServerStatusPanel(v.Status)
+			@organisms.KillSwitchPanel(v.KillSwitch)
+			@organisms.LeasePanel(v.Lease)
+			@organisms.SessionList(v.Sessions)
+		</div>
+		<div class="flex flex-wrap gap-3 text-sm">
+			<a href="/requests" class="font-medium text-indigo-700 hover:underline" hx-boost="true" hx-target="#main" hx-swap="innerHTML">接続要求を確認する →</a>
+			<a href="/clients" class="font-medium text-indigo-700 hover:underline" hx-boost="true" hx-target="#main" hx-swap="innerHTML">クライアントを管理する →</a>
+		</div>
+	</div>
+}
+
+// Dashboard はダッシュボードのフルページ（FR-H02）。
+templ Dashboard(v view.Dashboard) {
+	@layout.GUI(dashboardTitle, v.Chrome) {
+		@dashboardBody(v)
+	}
+}
+
+// DashboardBoosted は hx-boost の遷移への応答。
+templ DashboardBoosted(v view.Dashboard) {
+	@layout.Boosted(dashboardTitle, v.Chrome) {
+		@dashboardBody(v)
+	}
+}

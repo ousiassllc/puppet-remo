@@ -1,0 +1,11 @@
+package molecules
+
+import "github.com/ousiassllc/puppet-remo/internal/web/atoms"
+
+// StatusPill は「項目名: 状態」の表示。
+templ StatusPill(name string, tone atoms.BadgeTone, state string) {
+	<span class="inline-flex items-center gap-2 text-sm text-slate-600">
+		<span>{ name }</span>
+		@atoms.Badge(tone, state)
+	</span>
+}

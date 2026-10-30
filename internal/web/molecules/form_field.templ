@@ -1,0 +1,16 @@
+package molecules
+
+// FormField はラベル・入力・ヒント・エラーの組。入力は children で受ける。
+// Error があるときだけ描画する（role=alert。クライアント側の検証 JS は持たない）。
+templ FormField(id, label, hint, errMsg string) {
+	<div class="space-y-1">
+		<label for={ id } class="block text-sm font-medium text-slate-700">{ label }</label>
+		{ children... }
+		if hint != "" {
+			<p class="text-xs text-slate-500">{ hint }</p>
+		}
+		if errMsg != "" {
+			<p class="text-xs text-red-700" role="alert" data-field-error={ id }>{ errMsg }</p>
+		}
+	</div>
+}
