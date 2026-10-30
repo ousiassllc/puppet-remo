@@ -195,9 +195,15 @@ func TestRemoteRouterDoesNotListenUntilTailscaledHasAnAddress(t *testing.T) {
 	}
 
 	e.watcher.Set(runningStatus(testTailnetIP))
-	e.waitListening(1)
-	if st := e.app.ServerStatus(t.Context()); !st.Listening || st.Tailscaled != service.TailscaledRunning {
-		t.Errorf("status = %+v, want listening and running", st)
+	// ServerStatus は StatusTracker（tailscaled の状態）と Listener（待ち受けの状態）の二つの別々の購読をまとめたもの。
+	// Listener が先に待ち受けを始めても、StatusTracker がまだ新しい状態を受け取っていないことがある。
+	// そのため、最終的な状態（待ち受け中かつ running）そのものを待つ。
+	eventually(t, "the status to be listening and running", func() bool {
+		st := e.app.ServerStatus(t.Context())
+		return st.Listening && st.Tailscaled == service.TailscaledRunning
+	})
+	if got := e.app.ServerStatus(t.Context()).ListenAddrs; !slices.Equal(got, []string{"100.64.0.1:8765"}) {
+		t.Errorf("listen addrs = %v, want only the tailnet address", got)
 	}
 }
 
