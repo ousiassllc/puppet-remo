@@ -98,6 +98,8 @@ type Server struct {
 	mu      sync.Mutex
 	opening int                 // セッションを作っている最中のリクエスト数（上限の判定に数える）
 	watched map[string]struct{} // 切断を見張っているセッション ID
+	// sessions は接続中のセッション（sessions.go）。セッション ID をキーにする。
+	sessions map[string]*sessionRecord
 }
 
 // New は MCP サーバーを作り、全ツールを登録する。
@@ -118,6 +120,7 @@ func New(cfg Config) (*Server, error) {
 		toolTimeout: cmp.Or(cfg.ToolTimeout, DefaultToolTimeout),
 		maxSessions: cmp.Or(cfg.MaxSessions, DefaultMaxSessions),
 		watched:     make(map[string]struct{}),
+		sessions:    make(map[string]*sessionRecord),
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -132,6 +135,7 @@ func New(cfg Config) (*Server, error) {
 			KeepAliveFailureThreshold: keepAliveFailureThreshold,
 		},
 	)
+	s.sdk.AddReceivingMiddleware(s.trackSessions)
 	s.addTools()
 
 	// SDK の設定は API 仕様 §8.1 のとおり: Stateless=false（リース保持者はセッションに束縛）、
