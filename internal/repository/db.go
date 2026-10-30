@@ -48,9 +48,6 @@ type options struct {
 // WithClock は更新時刻などの供給元を差し替える（既定はシステム時計）。
 func WithClock(c domain.Clock) Option { return func(o *options) { o.clock = c } }
 
-// withMigrations はマイグレーションの供給元を差し替える（テスト用）。
-func withMigrations(fsys fs.FS) Option { return func(o *options) { o.migrations = fsys } }
-
 type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now() }

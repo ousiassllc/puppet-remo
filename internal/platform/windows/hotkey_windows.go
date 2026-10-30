@@ -98,7 +98,7 @@ func (l *hotkeyWinLoop) run(ready chan<- error) {
 	l.threadID = uint32(tid)
 	// PostThreadMessage はメッセージキューのあるスレッドにしか届かない。空の PeekMessage でキューを作る。
 	var msg hotkeyMsg
-	hotkeyProcPeekMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, hotkeyWMUser, hotkeyWMUser, hotkeyPMNoRemove)
+	_, _, _ = hotkeyProcPeekMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, hotkeyWMUser, hotkeyWMUser, hotkeyPMNoRemove)
 	ready <- nil
 
 	defer func() {
@@ -184,7 +184,7 @@ func (l *hotkeyWinLoop) Unregister(id int32) {
 	if _, ok := l.registered[id]; !ok {
 		return
 	}
-	hotkeyProcUnregisterHotKey.Call(0, uintptr(id))
+	_, _, _ = hotkeyProcUnregisterHotKey.Call(0, uintptr(id))
 	delete(l.registered, id)
 }
 
@@ -194,7 +194,7 @@ func (l *hotkeyWinLoop) Close() {
 	l.closed = true
 	l.mu.Unlock()
 	if first {
-		hotkeyProcPostThreadMessage.Call(uintptr(l.threadID), hotkeyWMQuit, 0, 0)
+		_, _, _ = hotkeyProcPostThreadMessage.Call(uintptr(l.threadID), hotkeyWMQuit, 0, 0)
 	}
 	<-l.done
 }

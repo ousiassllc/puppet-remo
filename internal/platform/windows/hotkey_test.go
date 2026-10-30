@@ -67,7 +67,6 @@ type fakeHotkeyLoop struct {
 	taken    map[hotkeyChord]bool  // 他のアプリが握っている組み合わせ
 	closed   bool
 	registry []int32 // Register された ID の履歴
-	fire     func(id int32)
 }
 
 func newFakeHotkeyLoop() *fakeHotkeyLoop {

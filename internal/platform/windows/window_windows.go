@@ -6,7 +6,6 @@ import (
 	"context"
 	"os"
 	"sync"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -120,7 +119,7 @@ func bringToForeground(hwnd uintptr) bool {
 		selfTID = uintptr(windows.GetCurrentThreadId())
 		if fgTID != 0 && fgTID != selfTID {
 			if r, _, _ := w32AttachThreadInput.Call(selfTID, fgTID, 1); r != 0 {
-				defer w32AttachThreadInput.Call(selfTID, fgTID, 0)
+				defer func() { _, _, _ = w32AttachThreadInput.Call(selfTID, fgTID, 0) }()
 			}
 		}
 	}
@@ -249,9 +248,9 @@ func queryProcess(pid uint32) processInfo {
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
-		return processInfo{elevated: err == syscall.Errno(windows.ERROR_ACCESS_DENIED)}
+		return processInfo{elevated: err == windows.ERROR_ACCESS_DENIED}
 	}
-	defer windows.CloseHandle(h)
+	defer func() { _ = windows.CloseHandle(h) }()
 
 	var info processInfo
 	buf := make([]uint16, windows.MAX_LONG_PATH)
@@ -262,10 +261,10 @@ func queryProcess(pid uint32) processInfo {
 	var token windows.Token
 	if err := windows.OpenProcessToken(h, windows.TOKEN_QUERY, &token); err != nil {
 		// 昇格したプロセスのトークンは、昇格していない呼び出し元からは開けない。
-		info.elevated = err == syscall.Errno(windows.ERROR_ACCESS_DENIED)
+		info.elevated = err == windows.ERROR_ACCESS_DENIED
 		return info
 	}
-	defer token.Close()
+	defer func() { _ = token.Close() }()
 	info.elevated = token.IsElevated()
 	return info
 }

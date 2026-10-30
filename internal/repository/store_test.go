@@ -498,7 +498,7 @@ func TestConnRequestsExpire(t *testing.T) {
 		}
 		statuses[id] = st
 	}
-	rows.Close()
+	_ = rows.Close()
 	if !reflect.DeepEqual(statuses, map[string]string{"short": ConnExpired, "long": ConnPending}) {
 		t.Errorf("statuses = %v", statuses)
 	}

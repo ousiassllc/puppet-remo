@@ -163,7 +163,7 @@ func (s connRequestStore) ListPending(ctx context.Context) ([]ConnRequest, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []ConnRequest
 	for rows.Next() {
 		r, err := scanConnRequest(rows)

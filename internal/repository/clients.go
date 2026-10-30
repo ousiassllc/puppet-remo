@@ -77,7 +77,7 @@ func (s clientStore) List(ctx context.Context) ([]domain.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.Client
 	for rows.Next() {
 		c, err := scanClient(rows)

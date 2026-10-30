@@ -276,13 +276,13 @@ func (n *uiaCOMNode) Props() uiaProps {
 		if v.VT == ole.VT_I4 {
 			p.ToggleState = int(int32(v.Val))
 		}
-		v.Clear()
+		_ = v.Clear()
 	}
 	if v, ok := n.variantProp(uiaPropSelectionIsSel); ok {
 		if v.VT == ole.VT_BOOL {
 			p.Selected = v.Val&0xFFFF != 0
 		}
-		v.Clear()
+		_ = v.Clear()
 	}
 	return p
 }
@@ -293,7 +293,7 @@ func (n *uiaCOMNode) runtimeID() []int32 {
 	if !ok {
 		return nil
 	}
-	defer v.Clear()
+	defer func() { _ = v.Clear() }()
 	if v.VT != ole.VT_ARRAY|ole.VT_I4 {
 		return nil
 	}
@@ -353,6 +353,6 @@ func (n *uiaCOMNode) valueProp() string {
 	if !ok {
 		return ""
 	}
-	defer v.Clear()
+	defer func() { _ = v.Clear() }()
 	return v.ToString()
 }

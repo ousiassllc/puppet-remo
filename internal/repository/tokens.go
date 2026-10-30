@@ -101,7 +101,7 @@ func (s tokenStore) ListByClient(ctx context.Context, clientID string) ([]TokenR
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []TokenRecord
 	for rows.Next() {
 		t, err := scanToken(rows)

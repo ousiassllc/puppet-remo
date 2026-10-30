@@ -193,13 +193,13 @@ func TestAuditWritesToRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var logs bytes.Buffer
 	a, err := NewAudit(AuditConfig{Store: db.Audit(), Clock: clock, Logger: slog.New(slog.NewTextHandler(&logs, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close(ctx)
+	defer func() { _ = a.Close(ctx) }()
 
 	// clients 表への外部キーがあるため、未登録のクライアント ID は付けない（登録は S7 の領分）。
 	anon := domain.Actor{Kind: domain.ActorMCP, Label: "anon", SessionID: "s"}

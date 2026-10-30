@@ -62,13 +62,13 @@ func grabRegion(m domain.Monitor) (*image.RGBA, error) {
 	if screenDC == 0 {
 		return nil, captureFailed("GetDC", err)
 	}
-	defer w32ReleaseDC.Call(0, screenDC)
+	defer func() { _, _, _ = w32ReleaseDC.Call(0, screenDC) }()
 
 	memDC, _, err := w32CreateCompatibleDC.Call(screenDC)
 	if memDC == 0 {
 		return nil, captureFailed("CreateCompatibleDC", err)
 	}
-	defer w32DeleteDC.Call(memDC)
+	defer func() { _, _, _ = w32DeleteDC.Call(memDC) }()
 
 	header := w32BitmapInfoHeader{
 		Size:     uint32(unsafe.Sizeof(w32BitmapInfoHeader{})),
@@ -82,10 +82,10 @@ func grabRegion(m domain.Monitor) (*image.RGBA, error) {
 	if bitmap == 0 || bits == nil {
 		return nil, captureFailed("CreateDIBSection", err)
 	}
-	defer w32DeleteObject.Call(bitmap)
+	defer func() { _, _, _ = w32DeleteObject.Call(bitmap) }()
 
 	old, _, _ := w32SelectObject.Call(memDC, bitmap)
-	defer w32SelectObject.Call(memDC, old)
+	defer func() { _, _, _ = w32SelectObject.Call(memDC, old) }()
 
 	ok, _, err := w32BitBlt.Call(memDC, 0, 0, uintptr(w), uintptr(h), screenDC, uintptr(int32(m.Origin.X)), uintptr(int32(m.Origin.Y)), srccopy|captureblt)
 	if ok == 0 {
