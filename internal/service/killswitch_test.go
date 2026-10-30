@@ -324,3 +324,40 @@ func TestKillSwitchRacesWithAcquire(t *testing.T) {
 		t.Fatal("no lease may remain after the kill switch")
 	}
 }
+
+// slowSettings は Set が ctx の期限まで返らない設定ストア（遅いディスク）。
+type slowSettings struct{ *ctlSettings }
+
+func (s slowSettings) Set(ctx context.Context, _ string, _ json.RawMessage) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// 状態の永続化が遅くても、クローザーは自分の期限を持って走る（期限切れの ctx で呼ばれない）。
+func TestKillSwitchSlowPersistDoesNotStarveClosers(t *testing.T) {
+	k, err := NewKillSwitch(context.Background(), KillSwitchConfig{
+		Settings: slowSettings{newCtlSettings()}, Clock: newCtlClock(), Timeout: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.BindLeases(mustLeaseManager(t, newCtlClock(), k))
+	var ctxErr error
+	ran := false
+	k.RegisterCloser("sessions", func(ctx context.Context) error { ran, ctxErr = true, ctx.Err(); return nil })
+
+	start := time.Now()
+	err = k.Trigger("test")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Trigger = %v, want the persist deadline error", err)
+	}
+	if !ran || ctxErr != nil {
+		t.Fatalf("closer ran=%v, ctx error at start=%v; want it to run with a live context", ran, ctxErr)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("Trigger took %s, want within 1s (NFR-P05)", took)
+	}
+	if !k.Active() {
+		t.Fatal("must be active")
+	}
+}

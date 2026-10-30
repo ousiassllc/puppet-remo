@@ -87,6 +87,9 @@ func (c *control) plan(ctx context.Context, op domain.Op) (plan, error) {
 		if o.MaxDepth < 0 || o.MaxNodes < 0 {
 			return plan{}, domain.ErrInvalidArgument.WithMsg("max_depth and max_nodes must not be negative")
 		}
+		if o.MaxDepth > maxUITreeDepth || o.MaxNodes > maxUITreeNodes {
+			return plan{}, domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("max_depth is limited to %d and max_nodes to %d", maxUITreeDepth, maxUITreeNodes))
+		}
 		if o.MaxDepth == 0 {
 			o.MaxDepth = defaultUITreeDepth
 		}
@@ -160,8 +163,34 @@ func validateMods(mods []domain.Modifier) error {
 	return nil
 }
 
+// lockInput は入力の実行（マウス・キーボード）を 1 度に 1 つへ直列化する。Click の「移動してからクリック」のように
+// platform を複数回呼ぶ操作が、別の呼び出しの入力と混ざらないようにする。キルスイッチのクローザー
+// （InputInjector.ReleaseAll）はこれを取らないため、実行中の入力があっても解放できる。
+// 待っている間に ctx が終わるか、キルスイッチが発動したら、実行せずに返す。
+func (c *control) lockInput(ctx context.Context) (unlock func(), err error) {
+	select {
+	case c.inputSem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	unlock = func() { <-c.inputSem }
+	if c.kill.Active() {
+		unlock()
+		return nil, domain.ErrKillSwitchActive
+	}
+	return unlock, nil
+}
+
 // execute は検査済みの計画を platform で実行する。
 func (c *control) execute(ctx context.Context, p plan) (Result, error) {
+	switch p.op.(type) {
+	case domain.MouseMove, domain.Click, domain.Drag, domain.Scroll, domain.KeyPress, domain.TypeText:
+		unlock, err := c.lockInput(ctx)
+		if err != nil {
+			return Result{}, err
+		}
+		defer unlock()
+	}
 	switch o := p.op.(type) {
 	case domain.MouseMove:
 		return Result{}, c.input.MoveTo(ctx, o.At)

@@ -182,35 +182,50 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		// 保存済みの値が壊れていても、検証済みの入力で上書きして復旧できるようにする。
 		old = HostSettings{}
 	}
+	// 書き込みは項目ごとで、途中で失敗しうる。実際に反映できた分（applied）だけを OnChange・監査へ渡し、
+	// 保存済みの項目と動いているコンポーネントがずれないようにする。
+	applied := old
+	fail := func(err error) (HostSettings, error) {
+		h.committed(ctx, old, applied)
+		return HostSettings{}, err
+	}
 	for _, kv := range []struct {
-		key string
-		val any
+		key   string
+		val   any
+		apply func(*HostSettings)
 	}{
-		{settingServerPort, s.Port},
-		{settingKillHotkey, s.KillSwitchHotkey},
-		{settingScreenshotMaxDim, s.ScreenshotMaxDimension},
-		{settingLeaseIdleTimeoutSec, s.LeaseIdleTimeoutSec},
+		{settingServerPort, s.Port, func(a *HostSettings) { a.Port = s.Port }},
+		{settingKillHotkey, s.KillSwitchHotkey, func(a *HostSettings) { a.KillSwitchHotkey = s.KillSwitchHotkey }},
+		{settingScreenshotMaxDim, s.ScreenshotMaxDimension, func(a *HostSettings) { a.ScreenshotMaxDimension = s.ScreenshotMaxDimension }},
+		{settingLeaseIdleTimeoutSec, s.LeaseIdleTimeoutSec, func(a *HostSettings) { a.LeaseIdleTimeoutSec = s.LeaseIdleTimeoutSec }},
 	} {
 		raw, err := json.Marshal(kv.val)
 		if err != nil {
-			return HostSettings{}, err
+			return fail(err)
 		}
 		if err := h.cfg.Settings.Set(ctx, kv.key, raw); err != nil {
-			return HostSettings{}, fmt.Errorf("save setting %s: %w", kv.key, err)
+			return fail(fmt.Errorf("save setting %s: %w", kv.key, err))
 		}
+		kv.apply(&applied)
 	}
 	if h.cfg.Autostart != nil {
 		if err := h.cfg.Autostart.Set(ctx, s.Autostart); err != nil {
-			return HostSettings{}, fmt.Errorf("save autostart: %w", err)
+			return fail(fmt.Errorf("save autostart: %w", err))
 		}
+		applied.Autostart = s.Autostart
 	} else {
 		s.Autostart = false
 	}
-	h.audit(ctx, old, s)
-	if h.cfg.OnChange != nil && old != s {
-		h.cfg.OnChange(old, s)
-	}
+	h.committed(ctx, old, s)
 	return s, nil
+}
+
+// committed は old から updated へ実際に変わった内容を、監査と OnChange（ポートの再 Listen、ホットキーの再登録など）へ渡す。
+func (h *hostSettings) committed(ctx context.Context, old, updated HostSettings) {
+	h.audit(ctx, old, updated)
+	if h.cfg.OnChange != nil && old != updated {
+		h.cfg.OnChange(old, updated)
+	}
 }
 
 // audit は変更した項目の名前だけを記録する（値は設定の範囲内の数値・ホットキーで秘密ではないが、差分の事実だけで足りる）。
