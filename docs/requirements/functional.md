@@ -122,7 +122,7 @@ M1・M2 は承認が不要なので `idle → held` に直接入る（`pending_a
 | FR-M11 | `list_windows` | なし | ウィンドウ一覧（id、タイトル、プロセス名、PID、矩形、モニター、前面か、最小化か、管理者権限か） | 不要 | M1 |
 | FR-M12 | `focus_window` | `id` | OK | 必要 | M1 |
 | FR-M13 | `clipboard_read` / `clipboard_write` | `text`（書き込み時） | テキスト（読み取り時） | 必要 | M1 |
-| FR-M14 | `get_ui_tree` | `window_id?`, `max_depth?`（既定 5）, `max_nodes?`（既定 500） | UI Automation ツリー（role、name、value、矩形、有効状態、ノード id）。パスワード欄の値は含めない | 必要 | M1 |
+| FR-M14 | `get_ui_tree` | `window_id?`, `max_depth?`（既定 5、最大 20）, `max_nodes?`（既定 500、最大 5000）。上限を超える指定は `invalid_argument` | UI Automation ツリー（role、name、value、矩形、有効状態、ノード id）。パスワード欄の値は含めない | 必要 | M1 |
 | FR-M15 | `acquire_control` / `release_control` / `get_control_status` | なし | リース状態（保持者、残りアイドル時間など） | 不要（取得自体が対象） | M1 |
 
 FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 に含める。M1 のツールは上表の全件で、`get_ui_tree`・`clipboard_*`・`list_windows`・`focus_window` を含む。
@@ -317,3 +317,4 @@ stateDiagram-v2
 | 1.7 | 2026-10-29 | M1 の範囲を確定（PR #2 のレビュー対応）: 排他リース（FR-L01〜L05）は M1、M2 は Web UI と強制剥奪（FR-L06）に修正。FR-M 表に優先度列を追加（M1 は FR-M01〜M17 全件）。FR-L01・L03〜L05 の M1 部分を保持者種別 `mcp` のみ・承認なしの `idle → held` に限定し、`agent`・`run_task` のリース文言を FR-L08・FR-G03 へ移動。FR-L06 / FR-L07 / FR-H03 / FR-H04 に承認モード・`pending_approval` は M3 と明記。FR-H02 のダッシュボードを M1 は状態表示・キルスイッチ・接続要求・クライアント管理までとし、強制剥奪ボタンは M2、実行中タスクと中断ボタンは M4 と明記。FR-A01 に `127.0.0.1` 等で Listen しない旨と IPv4・IPv6 それぞれへの bind を明記。FR-A06 / FR-H06 にキルスイッチ中は接続要求を作らない旨を追加。FR-A08 に Bearer の形式の参照を追加。FR-AU01 / FR-AU03 に M1 の監査範囲（追記のみ）を明記。FR-M17 に発生段階、FR-W08 に `agent` は M4 の注記を追加 | M1 の実装者が迷わない仕様にするためのブロッカー・重要指摘の解消 |
 | 1.8 | 2026-10-29 | FR-A09 のエージェント（`run_task`）に関する部分を M4 と明記し、M1 は Web / MCP の利用可否と削除に限定 | PR #2 のレビュー対応（方針 4: `agent` と `run_task` の文言を M4 側へ） |
 | 1.9 | 2026-10-30 | FR-A09・FR-H03・FR-H04 を実装に合わせ、`agent_enabled`（既定は無効）は M1 の GUI（接続要求の許可フォーム・クライアントのカード）と `PATCH /clients/:id` で保存・編集できるが、M1 では効果がなく `run_task` の可否への効果は M4 からと明記 | M1 の実装と FR-A09（M4）・FR-H04（M1）の食い違いの解消（オーナー決定） |
+| 1.10 | 2026-10-30 | FR-M14 に `max_depth` ≤ 20・`max_nodes` ≤ 5000 の上限（超えると `invalid_argument`）を明記 | M1 の実装との差分の文書化（オーナー決定） |
