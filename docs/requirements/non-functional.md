@@ -109,7 +109,7 @@
 | NFR-O01 | アプリ運用ログ（slog、JSON）を `%LOCALAPPDATA%\puppet-remo\logs\` にローテーション（10 MiB × 5 世代）で出力する。監査ログ（業務記録）とは別物。レベルは設定可 |
 | NFR-O02 | 配布は GitHub Releases の NSIS インストーラ（Wails 標準）。更新はアプリ内自動更新（NFR-S10）。更新の適用はホスト GUI の確認後を既定とし、リース保持中・接続中は適用しない |
 | NFR-O03 | OS 依存部（画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・オーバーレイ）はインターフェースの背後に置き、コアロジックは OS 非依存でテスト可能にする（将来の他 OS 対応のため） |
-| NFR-O04 | CI は GitHub Actions で実行する。`windows-latest` のジョブでは templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / test、Lit のテストを行い、別の `ubuntu-latest` のジョブで Playwright E2E（偽の platform・偽の tailnet により OS 非依存。[フロントエンド設計](../architecture/frontend.md) §9）を行う。OS アダプタの実機スモークテストは手動とし、手順を `docs` に記載する |
+| NFR-O04 | CI は GitHub Actions で実行し、すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動かす。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査する。Lit のテストと Playwright E2E（偽の platform・偽の tailnet により OS 非依存。[フロントエンド設計](../architecture/frontend.md) §9）は Web UI を作る M2 で足す。OS アダプタの実機スモークテストは手動とし、手順を `docs` に記載する |
 | NFR-O05 | データベースのスキーマ変更はバージョン付きマイグレーションで管理する |
 | NFR-O06 | OpenAI API と TypeSafe API はインターフェースの背後に置き（`Chooser` など）、CI のテストでは実 API を呼ばない（OpenAI はモックで `computer_call` の連鎖・安全チェック・上限・中断を、TypeSafe はモックで候補選択の受理・拒否・エスカレーション・縮退を検証する）。候補表の生成は UI Automation のフィクスチャ（スナップショット）で検証する。実 API を使うスモークテスト手順は `docs` に記載する |
 | NFR-O07 | **配布は Authenticode 署名を行わない**（初版・個人利用）。そのため初回実行時に SmartScreen の警告が出る。回避手順（「詳細情報」→「実行」）を README に記載する。更新の完全性は Ed25519 署名（NFR-S10）で検証する |
@@ -172,3 +172,4 @@
 | 1.1 | 2026-10-29 | 内蔵エージェント向けに脅威モデル（プロンプトインジェクション、API キー、OpenAI への送信）、NFR-P08、NFR-S06・S09・S11 の更新、NFR-S14〜S16、NFR-A08、NFR-C05、NFR-CP07・CP08、NFR-O06、NFR-PR01・PR03、未決事項を追加・更新 | 内蔵エージェント（OpenAI `computer` ツール）の採用 |
 | 1.2 | 2026-10-29 | 脅威モデルのプロンプトインジェクション行を更新し TypeSafe へのデータ送信行を追加。NFR-P09、NFR-S09（MCP の `MaxRequestBodyBytes` 1 MiB・セッションタイムアウト 30 分）、NFR-S14（TypeSafe キー）、NFR-S15 の更新、NFR-S17〜S19（高速パスの防御・TypeSafe 呼び出し規則・CSP）、NFR-CP07・CP09、NFR-O04（Playwright は ubuntu ジョブ）・O06・O07（署名なし配布）、NFR-PR03 の更新と NFR-PR04 を追加。未決事項を決定事項・意図的な未設定・実機/実 API で検証する事項に整理し、Jev 利用のリスクを明記 | 未決事項の決定 |
 | 1.3 | 2026-10-29 | PR #2 のレビュー対応: NFR-S01 に `127.0.0.1` 等で Listen しない旨と IPv4・IPv6 それぞれへの bind・取得できないときの停止を明記（`e2e` ビルドの例外も明記）。NFR-S04 を Bearer の形式（`prm_` + base64url の 32 バイト乱数）・保存（接頭辞を含む文字列の SHA-256）・照合（ハッシュの定数時間比較）の唯一の定義にし、監査は M1 は DB への追記、閲覧 UI は M3 と明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
+| 1.4 | 2026-10-30 | NFR-O04 の CI の実行環境の記述を、`windows-latest` と ubuntu の別ジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新（NFR-O04 の趣旨は変えない） | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
