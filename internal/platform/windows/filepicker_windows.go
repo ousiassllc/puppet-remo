@@ -34,7 +34,7 @@ const (
 	ofnExplorer       = 0x00080000
 	wmInitDialog      = 0x0110
 	wmClose           = 0x0010
-	pickerBufferChars = 32768 // 長いパス（32767 文字）まで受け取る
+	pickerBufferChars = 32768 // 長いパス（終端の NUL を含めて 32,767 ユニット）まで受け取る
 )
 
 // openFileName は OPENFILENAMEW。
@@ -74,7 +74,7 @@ type FilePicker struct {
 }
 
 // NewFilePicker はファイル選択の実装を作る。owner は親にするメインウィンドウの HWND を返す関数で（Wails のメインウィンドウの
-// NativeWindow()。結線は app が行う）、nil、または 0・無効なハンドルを返すときは親なしで開く。
+// NativeWindow()。関数は internal/app の WailsHost.MainWindowHandle で、cmd/puppet-remo/main.go が渡す）、nil、または 0・無効なハンドルを返すときは親なしで開く。
 // 親ウィンドウは別のスレッド（Wails の UI スレッド）のものでよい。
 func NewFilePicker(owner func() uintptr) *FilePicker { return &FilePicker{owner: owner} }
 

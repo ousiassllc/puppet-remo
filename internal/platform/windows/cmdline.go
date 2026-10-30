@@ -6,8 +6,9 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 )
 
-// maxCommandLineUnits は lpCommandLine の上限（UTF-16 のコードユニット数）。
-const maxCommandLineUnits = 32767
+// maxCommandLineUnits は lpCommandLine の上限（UTF-16 のコードユニット数）。Windows の上限 32,767 は終端の NUL を
+// 含むので、文字列は 32,766 ユニットまで。
+const maxCommandLineUnits = 32766
 
 // buildCommandLine は CreateProcess の lpCommandLine を組み立てる: 引用した exePath の後に、args を Windows の引数規則
 // （CommandLineToArgvW の逆）で並べる。
@@ -17,8 +18,8 @@ const maxCommandLineUnits = 32767
 // 二重引用符を円記号でエスケープし、閉じる引用符の直前の円記号は 2 倍にする。& や % などシェルの特殊文字は
 // CreateProcess がシェルを経由しないので、そのまま渡す。
 //
-// exePath が空・二重引用符を含む、exePath や args に NUL を含むもの、組み立てた全体（引用後）が 32,767 UTF-16 ユニットを
-// 超えるものは、コマンドラインにできないので domain.ErrInvalidArgument（値はメッセージに含めない）。
+// exePath が空・二重引用符を含む、exePath や args に NUL を含むもの、組み立てた全体（引用後）が 32,766 UTF-16 ユニット
+// （終端の NUL を含めて 32,767）を超えるものは、コマンドラインにできないので domain.ErrInvalidArgument（値はメッセージに含めない）。
 func buildCommandLine(exePath string, args []string) (string, error) {
 	if exePath == "" || strings.ContainsAny(exePath, "\"\x00") {
 		return "", domain.ErrInvalidArgument.WithMsg("executable path cannot be put in a command line")
@@ -46,7 +47,8 @@ func buildCommandLine(exePath string, args []string) (string, error) {
 	return line, nil
 }
 
-// utf16Len は s を UTF-16 にしたときのコードユニット数を返す。
+// utf16Len は s を UTF-16 にしたときのコードユニット数を返す。domain にも同名の非公開関数があるが、platform は
+// domain の非公開関数を使えず、数行のために公開 API や共有の util パッケージを増やさないので、重複のままにしている。
 func utf16Len(s string) int {
 	n := 0
 	for _, r := range s {

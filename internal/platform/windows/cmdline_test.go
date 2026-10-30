@@ -108,7 +108,7 @@ func TestBuildCommandLineRejectsValuesThatCannotBeQuoted(t *testing.T) {
 	}
 }
 
-// 引用符・引数を含めた全体が 32,767 UTF-16 ユニットまで。超えれば ErrInvalidArgument（値はメッセージに含めない）。
+// 引用符・引数を含めた全体が 32,766 UTF-16 ユニット（終端の NUL を含めて 32,767）まで。超えれば ErrInvalidArgument（値はメッセージに含めない）。
 func TestBuildCommandLineLengthLimit(t *testing.T) {
 	exeOf := func(units int) string { // 引用符 2 つを含めて units ユニットになる exePath
 		return `C:\` + strings.Repeat("e", units-2-len(`C:\`)-len(".exe")) + ".exe"
@@ -119,13 +119,13 @@ func TestBuildCommandLineLengthLimit(t *testing.T) {
 		args []string
 		ok   bool
 	}{
-		{"exe fills the limit", exeOf(32767), nil, true},
-		{"exe one unit over", exeOf(32768), nil, false},
-		{"args fill the limit", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `))}, true},
-		{"args one unit over", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `)+1)}, false},
-		{"quoting counts toward the limit", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `)-3) + " "}, true},
-		{"quoting pushes it over", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `)-2) + " "}, false},
-		{"astral characters count as two units", `C:\x.exe`, []string{strings.Repeat("😀", (32767-len(`"C:\x.exe" `))/2+1)}, false},
+		{"exe fills the limit", exeOf(32766), nil, true},
+		{"exe one unit over", exeOf(32767), nil, false},
+		{"args fill the limit", `C:\x.exe`, []string{strings.Repeat("z", 32766-len(`"C:\x.exe" `))}, true},
+		{"args one unit over", `C:\x.exe`, []string{strings.Repeat("z", 32766-len(`"C:\x.exe" `)+1)}, false},
+		{"quoting counts toward the limit", `C:\x.exe`, []string{strings.Repeat("z", 32766-len(`"C:\x.exe" `)-3) + " "}, true},
+		{"quoting pushes it over", `C:\x.exe`, []string{strings.Repeat("z", 32766-len(`"C:\x.exe" `)-2) + " "}, false},
+		{"astral characters count as two units", `C:\x.exe`, []string{strings.Repeat("😀", (32766-len(`"C:\x.exe" `))/2+1)}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestBuildCommandLineLengthLimit(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error = %v, want nil", err)
 				}
-				if n := utf16Len(line); n > 32767 {
+				if n := utf16Len(line); n > 32766 {
 					t.Errorf("command line is %d units", n)
 				}
 				return
