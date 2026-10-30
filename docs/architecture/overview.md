@@ -210,6 +210,7 @@ sequenceDiagram
 | `DisableLocalhostProtection` | SDK の保護に依存しない | ループバックのアドレスで届いたリクエストにだけ働く。tailnet IP で Listen する本アプリでは無関係で、保護は自前の Host / Origin ミドルウェア（NFR-S02）が担う |
 | `CrossOriginProtection` | 使わない | 非推奨のため |
 | `SessionTimeout` | 30 分（アイドル）を明示 | 既定の 0 は「セッションを閉じない」。リースのアイドル解放（FR-S04、既定 5 分）とは独立に設定する |
+| `KeepAlive` | 設定しない（既定の 0 = ping しない） | SDK のサーバーからの ping は standalone の GET SSE ストリームにしか流れず、GET を張らない（POST だけの）クライアントは応答できない。有効にすると、生きたセッションとリースを 3 回の失敗（45 秒）で失う。切断は `DELETE`・トランスポートの切断・`SessionTimeout`・リースのアイドル解放（FR-S04）で拾う（[NFR-A04](../requirements/non-functional.md)）。WebSocket（M2）は 15 秒 / 45 秒の keepalive を持つ |
 | `EventStore` | v1 では使わない | ストリームの再開は提供せず、クライアントは再 initialize する |
 | `MaxRequestBodyBytes` | 1 MiB を明示 | [NFR-S09](../requirements/non-functional.md) |
 | `Stateless` | `false` | リース保持者をセッションに束縛するため |
@@ -520,3 +521,4 @@ puppet-remo/
 | 1.5 | 2026-10-30 | ホスト GUI の状態の更新を SSE から `GET /poll` のポーリングに変更（HTMX 拡張は `response-targets` のみ。GUI ルーターの提供物に `/poll` を追加） | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |
 | 1.6 | 2026-10-30 | 開発タスク名を実在する `frontend:dev` に訂正（`dev:frontend` は誤り） | レビュー指摘（Taskfile.yml のタスク名との不一致）の反映 |
 | 1.7 | 2026-10-30 | CI の記述を、`windows-latest` と ubuntu の別ジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新。Lit と Playwright は M2 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
+| 1.8 | 2026-10-30 | MCP SDK のオプション表に `KeepAlive`（既定の 0 のまま）を追加 | MCP の keepalive を既定で無効にした実装との整合（オーナー決定。NFR-A04） |
