@@ -201,6 +201,7 @@ type LaunchableApp struct {
     ID, Label, ExePath, WorkingDir string // ID は ULID（MCP の app_id）。WorkingDir が空なら実行ファイルのディレクトリ
     Args                           []string // 登録時に固定
     CreatedAt, UpdatedAt           time.Time
+    Corrupt                        bool // DB には無い。args_json が文字列の配列として読めない行（手で書き換えられた）。Args は空。起動は CheckLaunchTarget が拒否する
 }
 // MCP に出せるのはこれだけ。パス・引数・作業ディレクトリは型に無い（Control が返す型として使い、漏れを型で防ぐ）。
 type AppSummary struct{ ID, Label string }
@@ -213,10 +214,12 @@ const MaxLaunchableApps = 50 // NFR-C06
 // 形の検証（純粋。ファイルの存在は見ない）。項目名 → メッセージ。空なら有効。
 //  Label: 前後の空白を除いて 1〜64 文字。ExePath: 絶対パスのローカルの .exe（ドライブ文字で始まる。UNC・\\?\ ・\\.\ ・相対パス・".." の要素を含むパスは不可）。
 //  Args: 32 個以内・合計 8,192 文字以内（NUL を含まない）。WorkingDir: 空、または絶対パスのローカルのパス（ExePath と同じ形の規則。".." を含まない）。
+//  ExePath・WorkingDir 共通のパスの規則（isAbsoluteLocalPath）: 各 32,767 文字（UTF-16）以内。ドライブ指定（2 文字目）以外の ":"（代替データストリーム）、<>"|?*、C0 制御文字と DEL を含まない。
+//  予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9）の要素を含まない（大文字小文字を区別せず、末尾のドット・空白を落とした後の、最初の "." より前で判定。拡張子付き・ディレクトリの要素でも不可）。
 //  戻り値のキーは定数 AppFieldLabel / AppFieldExePath / AppFieldArgs / AppFieldWorkingDir（"label" / "exe_path" / "args" / "working_dir"）。メッセージに入力値（パス・引数）は含めない。
 func ValidateAppInput(in AppInput) map[string]string
 func ParseArgsLines(s string) []string // フォームの改行区切り（CRLF 可）を分割する。空行は捨てる（空文字の引数は登録できない）
-// 起動のたびの再検査（NFR-S20 (3)）。ValidateAppInput と同じ形の規則を、保存済みの行に当てる。満たさなければ ErrAppNotFound。
+// 起動のたびの再検査（NFR-S20 (3)）。ValidateAppInput と同じ形の規則を、保存済みの行に当てる。満たさない行・読めない行（Corrupt）は ErrAppNotFound。
 func CheckLaunchTarget(a LaunchableApp) error
 
 type LaunchFailure string // "file_missing" | "access_denied" | "elevation_required" | "other"（API 仕様 §2 `launch_failed` の reason。FR-AU06）
@@ -293,10 +296,11 @@ type AppLauncher interface {
     // CreateProcess。spec.ExePath を lpApplicationName に明示し、コマンドラインは「引用した ExePath + Args」を Windows の引数規則（CommandLineToArgvW の逆）で組み立てる。
     // シェルを経由せず、標準権限のまま起動し、環境変数は本アプリのものを引き継ぐ。プロセスの作成に成功した時点で返す（ウィンドウは待たない）。
     // 失敗は *LaunchError（Reason は file_missing / access_denied / elevation_required / other。パス・引数をメッセージに含めない）。
-    // 空の ExePath・絶対パスでない ExePath（Windows 実装）・コマンドラインに組めない値（NUL など）は domain.ErrInvalidArgument。
+    // 空の ExePath・絶対パスでない ExePath（Windows 実装）・コマンドラインに組めない値（NUL など。引用後の全体が 32,767 UTF-16 ユニットを超えるものを含む）は domain.ErrInvalidArgument。
     Launch(ctx context.Context, spec LaunchSpec) (pid uint32, err error)
     // 登録・更新時の存在確認: exePath が存在する通常ファイルか、workingDir（空でなければ）が存在するディレクトリか。
-    Inspect(ctx context.Context, exePath, workingDir string) error // 無ければ platform.ErrNotFound（SecretStore と共通。パスをメッセージに含めない）
+    // 無ければ platform.ErrNotFound（SecretStore と共通。パスをメッセージに含めない）。ERROR_INVALID_NAME（123）・ERROR_BAD_PATHNAME（161）も「無い」として写す（Windows 実装）。
+    Inspect(ctx context.Context, exePath, workingDir string) error
 }
 type LaunchSpec struct{ ExePath string; Args []string; WorkingDir string } // WorkingDir が空なら ExePath のディレクトリ
 type LaunchError struct{ Reason domain.LaunchFailure; Err error } // Error() は理由だけ（パス・引数を含めない）。Err は Win32 のエラーコードだけを持つ（errors.Is / As 用）
@@ -600,10 +604,16 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 ### 5.4.1 AppRegistry と Launch（M1.5。FR-M18・M19・H12）
 
 ```go
-// 許可リストの管理。GUI ルーター（web/handler/gui）と Control が使う。書き込みは GUI だけが呼ぶ（mcp・ws は AppRegistry を持たない）。
-type AppRegistry interface {
+// 許可リストの読み取り専用の面。Control はこれだけを受け取る（ControlConfig.Apps）。AppRegistry が満たす。
+// 読めない行（args_json が壊れている）は Corrupt を立てて返し、エラーにしない（List が全体失敗しない。GUI が 500 にならず、所有者が削除できる）。
+type AppReader interface {
     List(ctx context.Context) ([]domain.LaunchableApp, error)              // 一覧（パス・引数を含む。GUI 用）
     Get(ctx context.Context, id string) (domain.LaunchableApp, error)     // 無ければ ErrNotFound
+}
+
+// 許可リストの管理。GUI ルーター（web/handler/gui）が使う。書き込みは GUI だけが呼ぶ（mcp・ws は AppRegistry を持たない）。Control には AppReader だけを渡す。
+type AppRegistry interface {
+    AppReader
     // 検証（domain.ValidateAppInput + platform.AppLauncher.Inspect で存在確認）→ 保存 → 監査（settings.launchable_app.*、actor host）。
     // 検証エラーは AppFieldErrors（項目名 → メッセージ。GUI が 422 で再描画）、50 件到達は domain.CodeConflict、label の重複は AppFieldErrors{"label": …}。
     Create(ctx context.Context, in domain.AppInput) (domain.LaunchableApp, error)
@@ -619,9 +629,10 @@ type LaunchResult struct{ AppID string; PID uint32 }
 
 1. `KillSwitch.Active()` → `ErrKillSwitchActive`
 2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04）
-3. `AppRegistry.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさなければ `ErrAppNotFound`（fail closed）。続けて `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）
-4. `platform.AppLauncher.Launch` → 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
-5. `Audit.Record`（成功 `ok`・1〜3 の拒否 `denied`・4 の失敗 `error`。`tool.launch_app`。FR-AU06）
+3. `AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。
+4. `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）→ `ErrKillSwitchActive`
+5. `platform.AppLauncher.Launch` → 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
+6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・5 の失敗 `error`。`tool.launch_app`。FR-AU06）
 
 - 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。`detail` は `{app_id, label（許可リストを引けたときだけ）, pid（成功のみ）, reason（launch_failed のみ）}`。パス・引数・作業ディレクトリは入れない
 - **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 で承認モードを適用する場合は、2 と 3 の間に入れる
@@ -629,6 +640,8 @@ type LaunchResult struct{ AppID string; PID uint32 }
 - `Control` だけが `platform.AppLauncher` を呼べる（`InputInjector` と同じ。パッケージの可視性で保証する）。**M4 の `Agent` がアプリを起動するときも、`Control.Launch`（`who.Kind = agent`）と同じ `AppRegistry` を使い**、別の許可リスト・別の起動経路は作らない（決定事項）。`agent` のときの Judge・承認の適用は M4 の設計で定める
 - `LaunchableApps` は `AppRegistry.List` を `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
 - 起動後のプロセスは管理しない。`platform` は `CreateProcess` が返したハンドル（プロセス・スレッド）をすぐ閉じる（リークしない）。ジョブオブジェクトに入れない（本アプリの終了・キルスイッチで子プロセスは終了しない）
+- `Control` の `AppReader` が「無い」以外のエラーを返したときは、起動せず、そのエラーを返す（監査は `error` / `internal`。メッセージにパスを含めない）
+- リースの保持者は M1 では `mcp` だけ（`domain.ActorKind.CanHoldLease`）。`agent` は暗黙の取得もできず、保持者になれる M4 まで `lease_required` で拒否される（監査の `actor_type` は `agent`）
 
 `AppRegistry` の実装（`NewAppRegistry`）は `repository.LaunchableApps`・`platform.AppLauncher`（`Inspect` だけ。`Launch` は `Control` だけが呼ぶ）・`platform.FilePicker` を受け取る。`Create` / `Update` は表示名の前後の空白を除いて検証し、実行ファイルの存在 → 作業ディレクトリの存在の順に `Inspect` する（`Inspect` はどちらが無いかを区別しないため、作業ディレクトリは実行ファイルがあるときだけ確かめる。形が不正な項目のパスは渡さない）。`Inspect` 自体の失敗（`ErrNotFound` 以外）は項目エラーにせずそのまま返す。`Update` の監査の `changed` は変わった項目だけを `label`・`exe_path`・`args`・`working_dir` の順に並べる。
 
@@ -1048,3 +1061,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.11 | 2026-10-30 | §3 の `AppLauncher` / `FilePicker` を実装に合わせて追記: `Launch` の `ErrInvalidArgument`（空・絶対パスでない・NUL）、`Inspect` の `ErrNotFound` は `SecretStore` と共通の `platform.ErrNotFound`、`LaunchError` の `Error()` は理由だけで `Err` は Win32 のエラーコードだけ、`FilePicker` の監視 goroutine | #21 の実装（`platform` の `AppLauncher` / `FilePicker`） |
 | 1.12 | 2026-10-30 | §5.4.1 に `Control.Launch` の実装上の確定事項を追記（起動直前のキルスイッチの再確認、監査の `result` と `detail`、`ErrInvalidArgument` の写し方）と `AppRegistry` の実装（`Inspect` の順序）、§13.5 の MCP ツールの監査・§13.6 の `app`（`Platform.Launcher`・`FilePicker` を必須に）を追記 | #22 の実装との整合 |
 | 1.13 | 2026-10-30 | §13 の `app` に、`AppRegistry` を `web/handler/gui` の `Deps.Apps` にも渡すことと、`FilePicker` の親ウィンドウを `WailsHost.MainWindowHandle` で結線したことを反映 | #23 の実装 |
+| 1.14 | 2026-10-30 | §2 の起動許可アプリに、パスの規則（代替データストリーム・使えない文字・制御文字・予約デバイス名・32,767 文字）と `LaunchableApp.Corrupt`、§3 の `AppLauncher` に、コマンドライン全体の上限と `Inspect` の `ERROR_INVALID_NAME`・`ERROR_BAD_PATHNAME` の写し方、§5.4.1 に読み取り専用の `AppReader`（`ControlConfig.Apps`）と検査の順序の訂正（キルスイッチの再確認を独立した段階に）、読めない行・`AppReader` の失敗・`agent` の扱いを追記 | #16 の独立レビュー指摘 |
