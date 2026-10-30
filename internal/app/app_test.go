@@ -26,6 +26,7 @@ func TestNewRequiresDependencies(t *testing.T) {
 		"Clipboard": func(c *Config) { c.Platform.Clipboard = nil },
 		"UI":        func(c *Config) { c.Platform.UI = nil },
 		"Hotkey":    func(c *Config) { c.Platform.Hotkey = nil },
+		"Power":     func(c *Config) { c.Platform.Power = nil },
 		"Watcher":   func(c *Config) { c.Watcher = nil },
 		"WhoIs":     func(c *Config) { c.WhoIs = nil },
 		"Static":    func(c *Config) { c.Static = nil },
@@ -90,6 +91,9 @@ func TestHotkeyTriggersKillSwitchRevokesLeasesAndClosesMCPSessions(t *testing.T)
 	if _, held := e.holder(); !held {
 		t.Fatal("the lease was not acquired")
 	}
+	if !e.power.Awake() {
+		t.Error("the host is not kept awake while the lease is held (NFR-A05)")
+	}
 	eventually(t, "the session to be listed", func() bool { return len(e.app.mcp.Sessions()) == 1 })
 
 	events, cancel := e.app.Bus().Subscribe(service.TopicKillSwitch)
@@ -104,6 +108,9 @@ func TestHotkeyTriggersKillSwitchRevokesLeasesAndClosesMCPSessions(t *testing.T)
 	}
 	if _, held := e.holder(); held {
 		t.Error("the lease was not revoked")
+	}
+	if e.power.Awake() {
+		t.Error("the host is still kept awake after the kill switch")
 	}
 	eventually(t, "the MCP session to close", func() bool { return len(e.app.mcp.Sessions()) == 0 })
 	select {

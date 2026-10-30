@@ -5,6 +5,7 @@
 //   - Input（platform.InputInjector）: SendInput。呼び出しは専用の OS スレッドへ直列化する。
 //   - WindowManager: ウィンドウの列挙・前面・フォーカス（昇格ウィンドウへの入力は UIPI のため input_blocked）。
 //   - Clipboard: CF_UNICODETEXT の読み書き。
+//   - Power: SetThreadExecutionState によるスリープ・画面オフの抑止（NFR-A05）。スレッドごとの状態なので専用の OS スレッドで設定・解除する。
 //
 // Win32 を呼ぶコードは *_windows.go（//go:build windows）に置く。キー名・修飾キーの変換表、座標の正規化、
 // ホイールの端数の持ち越し、入力の組み立て（Input の本体）、ピクセルの変換などの純粋なロジックは

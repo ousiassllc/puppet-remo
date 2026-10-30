@@ -199,6 +199,7 @@ type ctlEnv struct {
 	clipboard *platformtest.FakeClipboard
 	ui        *platformtest.FakeUIAutomation
 	kill      *KillSwitchManager
+	power     *platformtest.FakePower
 	leases    LeaseManager
 	control   Control
 	slept     []time.Duration
@@ -228,6 +229,7 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 		input:     platformtest.NewFakeInput(),
 		windows:   platformtest.NewFakeWindows(ctlDefaultWindows()...),
 		clipboard: platformtest.NewFakeClipboard(),
+		power:     platformtest.NewFakePower(),
 	}
 	e.ui = platformtest.NewFakeUIAutomation(e.windows)
 	kill, err := NewKillSwitch(context.Background(), KillSwitchConfig{Settings: e.settings, Clock: e.clock, Audit: e.audit})
@@ -237,7 +239,7 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 	e.kill = kill
 	e.leases, err = NewLeaseManager(LeaseConfig{
 		Clock: e.clock, IDs: &ctlIDs{}, IdleTimeout: domain.DefaultLeaseIdleTimeout,
-		Audit: e.audit, Kill: kill, AfterFunc: e.timers.AfterFunc,
+		Audit: e.audit, Kill: kill, AfterFunc: e.timers.AfterFunc, Power: e.power,
 	})
 	if err != nil {
 		t.Fatal(err)
