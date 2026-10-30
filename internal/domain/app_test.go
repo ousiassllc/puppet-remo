@@ -96,18 +96,29 @@ func TestExePathShape(t *testing.T) {
 		{"reserved name as directory with extension", `C:\Tools\aux.d\a.exe`, false},
 		{"reserved name as directory with trailing dot", `C:\Tools\COM3.\a.exe`, false},
 		{"reserved name directory with forward slash", `C:/PRN/a.exe`, false},
+		{"COM superscript one", `C:\Tools\COM¹.exe`, false},
+		{"COM superscript two", `C:\Tools\com².exe`, false},
+		{"LPT superscript three", `C:\Tools\LPT³.exe`, false},
+		{"superscript reserved name as directory", `C:\Tools\lpt¹\a.exe`, false},
 		{"COM0 is not reserved", `C:\Tools\COM0.exe`, true},
 		{"COM10 is not reserved", `C:\Tools\COM10.exe`, true},
 		{"LPT0 is not reserved", `C:\Tools\LPT0.exe`, true},
+		{"COM with two superscripts is not reserved", `C:\Tools\COM¹².exe`, true},
 		{"name only starting with a reserved name", `C:\Tools\console.exe`, true},
 		{"name ending with a reserved name", `C:\Tools\mycon.exe`, true},
 		{"reserved name after the first dot only", `C:\Tools\a.con.exe`, true},
+		{"conf is not reserved", `C:\Tools\conf.exe`, true},
+		{"com alone is not reserved", `C:\Tools\com.exe`, true},
 
-		// 長さ（UTF-16 のコードユニットで 32,767 まで）
-		{"longest path", exeOfUnits(32767), true},
-		{"one unit too long", exeOfUnits(32768), false},
-		{"astral characters count as two units", `C:\` + strings.Repeat("😀", 16382) + ".exe", false}, // 3 + 32764 + 4 = 32771
-		{"astral characters within the limit", `C:\` + strings.Repeat("😀", 16380) + ".exe", true},    // 3 + 32760 + 4 = 32767
+		// 通常の名前（空白・括弧・記号）
+		{"program files with spaces and parentheses", `C:\Program Files (x86)\a b\c.exe`, true},
+		{"punctuation in the file name", `C:\Tools\&%!';[]$~=@.exe`, true},
+
+		// 長さ（UTF-16 のコードユニットで 32,766 まで。終端の NUL を含めて 32,767）
+		{"longest path", exeOfUnits(32766), true},
+		{"one unit too long", exeOfUnits(32767), false},
+		{"astral characters count as two units", `C:\` + strings.Repeat("😀", 16380) + ".exe", false}, // 3 + 32760 + 4 = 32767
+		{"astral characters within the limit", `C:\` + strings.Repeat("😀", 16379) + "a.exe", true},   // 3 + 32758 + 1 + 4 = 32766
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -176,9 +187,16 @@ func TestWorkingDirShape(t *testing.T) {
 		{"reserved nul with extension", `C:\Work\nul.txt`, false},
 		{"reserved COM1 with trailing dot", `C:\Work\COM1.`, false},
 		{"reserved LPT9 in the middle", `C:\LPT9\Work`, false},
+		{"reserved COM superscript", `C:\Work\COM²`, false},
+		{"reserved lpt superscript", `C:\Work\lpt³`, false},
 		{"COM0 is not reserved", `C:\Work\COM0`, true},
-		{"longest", dirOfUnits(32767), true},
-		{"one unit too long", dirOfUnits(32768), false},
+		{"lpt0 is not reserved", `C:\Work\lpt0`, true},
+		{"COM10 is not reserved", `C:\Work\COM10`, true},
+		{"conf is not reserved", `C:\Work\conf`, true},
+		{"spaces and parentheses", `C:\Program Files (x86)\a b`, true},
+		{"punctuation in the name", `C:\Work\&%!';[]$~=@`, true},
+		{"longest", dirOfUnits(32766), true},
+		{"one unit too long", dirOfUnits(32767), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

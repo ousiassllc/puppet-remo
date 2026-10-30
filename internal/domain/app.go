@@ -16,8 +16,9 @@ const (
 	maxAppArgs       = 32
 	maxAppArgsChars  = 8192
 
-	// maxPathUnits は ExePath・WorkingDir の長さの上限（UTF-16 のコードユニット数。Windows のパス・コマンドラインの上限）。
-	maxPathUnits = 32767
+	// maxPathUnits は ExePath・WorkingDir の長さの上限（UTF-16 のコードユニット数）。Windows の上限 32,767 は
+	// 終端の NUL を含むので、文字列は 32,766 ユニットまで。
+	maxPathUnits = 32766
 )
 
 // ValidateAppInput の戻り値のキー（項目名）。service.AppRegistry の変更項目（`changed`）と同じ名前。
@@ -65,9 +66,9 @@ type AppInput struct {
 // メッセージに入力値（パス・引数）は含めない。
 //
 //   - Label: 前後の空白を除いて 1〜64 文字
-//   - ExePath: 絶対パスのローカルの .exe（isAbsoluteLocalPath の規則）。32,767 文字（UTF-16）以内
+//   - ExePath: 絶対パスのローカルの .exe（isAbsoluteLocalPath の規則）。32,766 文字（UTF-16）以内
 //   - Args: 32 個以内、空文字・NUL を含まず、合計 8,192 文字以内
-//   - WorkingDir: 空、または絶対パスのローカルのパス（ExePath と同じ形の規則）。32,767 文字（UTF-16）以内
+//   - WorkingDir: 空、または絶対パスのローカルのパス（ExePath と同じ形の規則）。32,766 文字（UTF-16）以内
 func ValidateAppInput(in AppInput) map[string]string {
 	errs := map[string]string{}
 	if n := utf8.RuneCountInString(strings.TrimSpace(in.Label)); n < 1 || n > maxAppLabelChars {
@@ -96,13 +97,13 @@ func CheckLaunchTarget(a LaunchableApp) error {
 func launchFormErrors(exePath string, args []string, workingDir string) map[string]string {
 	errs := map[string]string{}
 	if !isAbsoluteLocalPath(exePath) || !hasExeSuffix(exePath) {
-		errs[AppFieldExePath] = "実行ファイルは、ドライブ文字で始まる絶対パスの .exe を指定してください（UNC・デバイスパス・相対パス・\"..\"・ドライブ指定以外の「:」・「<>\"|?*」・制御文字・予約デバイス名（CON など）・32,767 文字を超えるパスは不可）"
+		errs[AppFieldExePath] = "実行ファイルは、ドライブ文字で始まる絶対パスの .exe を指定してください（UNC・デバイスパス・相対パス・\"..\"・ドライブ指定以外の「:」・「<>\"|?*」・制御文字・予約デバイス名（CON など）・32,766 文字を超えるパスは不可）"
 	}
 	if msg := checkArgs(args); msg != "" {
 		errs[AppFieldArgs] = msg
 	}
 	if workingDir != "" && !isAbsoluteLocalPath(workingDir) {
-		errs[AppFieldWorkingDir] = "作業ディレクトリは空か、ドライブ文字で始まる絶対パスを指定してください（UNC・デバイスパス・相対パス・\"..\"・ドライブ指定以外の「:」・「<>\"|?*」・制御文字・予約デバイス名（CON など）・32,767 文字を超えるパスは不可）"
+		errs[AppFieldWorkingDir] = "作業ディレクトリは空か、ドライブ文字で始まる絶対パスを指定してください（UNC・デバイスパス・相対パス・\"..\"・ドライブ指定以外の「:」・「<>\"|?*」・制御文字・予約デバイス名（CON など）・32,766 文字を超えるパスは不可）"
 	}
 	return errs
 }
@@ -120,12 +121,12 @@ func hasExeSuffix(p string) bool {
 // isAbsoluteLocalPath は p が、ドライブ文字と区切り（`C:\` または `C:/`）で始まるローカルの絶対パスかを返す。
 // 次のパスは偽（純粋な文字列の検査で、実行 OS には依らない）:
 //   - UNC（`\\host\...`）・デバイスパス（`\\?\`・`\\.\`）・相対パス
-//   - 32,767 文字（UTF-16 のコードユニット）を超えるパス
+//   - 32,766 文字（UTF-16 のコードユニット。終端の NUL を含めて 32,767 に収める）を超えるパス
 //   - ドライブ指定（2 文字目）以外の ":"（代替データストリーム `a.exe:x`・`a.exe::$DATA`）、`<>"|?*`、
 //     C0 制御文字（NUL を含む）と DEL
 //   - ".." の要素（末尾の空白・ドットを除くと空になる要素。Windows はそれらを取り除くため "..." や ".. " を含む）
-//   - 予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9）の要素。大文字小文字を区別せず、末尾のドット・空白を
-//     落とした後の、最初の "." より前（"con.txt"・"NUL .x" も該当）で判定する。ディレクトリの要素にも効く
+//   - 予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9、および上付き数字の COM¹²³・LPT¹²³）の要素。大文字小文字を
+//     区別せず、末尾のドット・空白を落とした後の、最初の "." より前（"con.txt"・"NUL .x" も該当）で判定する。ディレクトリの要素にも効く
 func isAbsoluteLocalPath(p string) bool {
 	if len(p) < 3 || !isASCIILetter(p[0]) || p[1] != ':' || !isSeparator(p[2]) {
 		return false
@@ -155,9 +156,13 @@ func isReservedDeviceName(elem string) bool {
 	case "CON", "PRN", "AUX", "NUL":
 		return true
 	}
-	if len(base) == 4 && '1' <= base[3] && base[3] <= '9' {
+	// COM1〜9・LPT1〜9 と、上付き数字の COM¹²³・LPT¹²³（Windows はこれらも予約名として扱う）。
+	if len(base) > 3 {
 		prefix := strings.ToUpper(base[:3])
-		return prefix == "COM" || prefix == "LPT"
+		suffix := base[3:]
+		if (prefix == "COM" || prefix == "LPT") && utf8.RuneCountInString(suffix) == 1 && strings.Contains("123456789¹²³", suffix) {
+			return true
+		}
 	}
 	return false
 }

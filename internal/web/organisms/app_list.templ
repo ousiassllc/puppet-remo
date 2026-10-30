@@ -12,13 +12,16 @@ import (
 templ AppCard(a view.AppRow) {
 	<article id={ appCardID(a) } class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-app={ a.ID }>
 		<h3 class="text-sm font-semibold text-slate-800">{ a.Label }</h3>
+		if a.Unlaunchable {
+			<p class="mt-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert" data-app-unlaunchable>この設定のままでは起動できません（MCP のクライアントにも表示されません）。削除するか、編集して保存し直してください。</p>
+		}
 		<dl class="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
 			<dt class="text-slate-500">実行ファイル</dt>
 			<dd class="min-w-0 break-all"><code class="rounded bg-slate-100 px-1 py-0.5 text-xs" data-app-exe>{ a.ExePath }</code></dd>
 			<dt class="text-slate-500">引数</dt>
 			<dd class="min-w-0">
 				if a.Corrupt {
-					<span class="text-sm text-red-700" data-app-corrupt>保存された引数を読めません。このアプリは起動できません。削除するか、編集して保存し直してください。</span>
+					<span class="text-sm text-red-700" data-app-corrupt>保存された引数を読めません。</span>
 				} else if len(a.Args) == 0 {
 					<span class="text-slate-500">なし</span>
 				} else {

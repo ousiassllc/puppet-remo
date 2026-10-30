@@ -279,7 +279,9 @@ type AppRow struct {
 	WorkingDir string // 空なら「実行ファイルのあるディレクトリ」と表示する
 	// Corrupt は保存済みの引数が読めない行（domain.LaunchableApp.Corrupt）。引数の代わりに警告を出す。起動はされない。
 	Corrupt bool
-	EditURL string
+	// Unlaunchable は起動できない行（Corrupt、または domain.CheckLaunchTarget が拒否する手書きの値）。警告を出す。
+	Unlaunchable bool
+	EditURL      string
 	// DeleteConfirm は削除の確認モーダルの URL。
 	DeleteConfirm string
 	Form          *AppForm
@@ -321,6 +323,8 @@ type AppForm struct {
 	// PickURL はファイル選択の POST 先。CancelURL は編集のキャンセル（一覧の取り直し）。
 	PickURL   string
 	CancelURL string
+	// Corrupt は編集する行の保存済みの引数が読めなかったこと（引数欄は空）。引数を入れ直すよう案内を出す。
+	Corrupt bool
 }
 
 // Apps は起動許可アプリのページ（一覧と追加フォーム）。
