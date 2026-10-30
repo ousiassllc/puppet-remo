@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -510,6 +511,63 @@ func TestControlLaunchCorruptRowIsDeniedButListedAndDeletable(t *testing.T) {
 	}
 }
 
+// 読めない行（args_json が壊れている）を、有効な入力で更新すると直る: Corrupt が外れ、引数は入力どおりになり、
+// 起動できる。監査の changed には、壊れていた引数が破棄されたことを示す args が必ず入る（引数・作業ディレクトリは載せない）。
+func TestAppRegistryUpdateRepairsACorruptRow(t *testing.T) {
+	ctx := context.Background()
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	corruptArgsJSON(t, e.appDB, app.ID, `[1]`)
+	if got, err := e.apps.Get(ctx, app.ID); err != nil || !got.Corrupt {
+		t.Fatalf("Get = %+v, %v; want a Corrupt row", got, err)
+	}
+	e.audit.entries = nil
+
+	// 表示名・実行ファイル・作業ディレクトリは変えず、引数だけ入れ直す。
+	in := notepadInput() // Args は appArgMark のまま（壊す前と同じ値を入れ直す）
+	upd, err := e.apps.Update(ctx, app.ID, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd.Corrupt {
+		t.Error("Update returned a Corrupt row")
+	}
+	got, err := e.apps.Get(ctx, app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Corrupt || !slices.Equal(got.Args, in.Args) {
+		t.Errorf("stored = Corrupt %v, Args %q; want not Corrupt with Args %q", got.Corrupt, got.Args, in.Args)
+	}
+	if err := domain.CheckLaunchTarget(got); err != nil {
+		t.Errorf("CheckLaunchTarget = %v, want nil", err)
+	}
+	if _, err := e.control.Launch(ctx, ctlAlice, app.ID); err != nil {
+		t.Errorf("Launch after the repair = %v", err)
+	}
+
+	// 監査: 変わったのは args だけ（表示名などは同じ）だが、壊れていた引数の破棄として args を必ず記録する。
+	var en repository.AuditEntry
+	for _, x := range e.audit.Entries() {
+		if x.Event == "settings.launchable_app.update" {
+			en = x
+		}
+	}
+	if en.Event == "" {
+		t.Fatal("no settings.launchable_app.update entry")
+	}
+	d := auditDetail(t, en)
+	if d["app_id"] != app.ID || d["label"] != in.Label || d["exe_path"] != in.ExePath || d["arg_count"] != float64(1) {
+		t.Errorf("detail = %v", d)
+	}
+	if changed, _ := d["changed"].([]any); fmt.Sprint(changed) != "[args]" {
+		t.Errorf("changed = %v, want [args]", changed)
+	}
+	if s := string(en.DetailJSON); strings.Contains(s, appArgMark) || strings.Contains(s, appWorkMark) {
+		t.Errorf("arguments or the working directory leaked into the audit detail: %s", s)
+	}
+}
+
 // corruptArgsJSON は DB ファイルの行の args_json を AppRegistry を通さずに書き換える（手で書き換えられた状態を作る）。
 func corruptArgsJSON(t *testing.T, dbPath, id, argsJSON string) {
 	t.Helper()
@@ -566,6 +624,26 @@ func TestControlLaunchableApps(t *testing.T) {
 	}
 	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
 		t.Errorf("listing launched %d times", n)
+	}
+}
+
+// 起動できない行（読めない Corrupt の行）は、MCP に見せる一覧に載せない。
+func TestControlLaunchableAppsOmitsRowsThatCannotLaunch(t *testing.T) {
+	ctx := context.Background()
+	e := newAppEnv(t)
+	bad := registerNotepad(t, e)
+	good, err := e.apps.Create(ctx, domain.AppInput{Label: "電卓", ExePath: appCalc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	corruptArgsJSON(t, e.appDB, bad.ID, `[1]`)
+
+	got, err := e.control.LaunchableApps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []domain.AppSummary{{ID: good.ID, Label: "電卓"}}; !slices.Equal(got, want) {
+		t.Errorf("apps = %+v, want %+v", got, want)
 	}
 }
 

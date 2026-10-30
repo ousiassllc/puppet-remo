@@ -212,6 +212,7 @@ func mapAppWriteErr(err error) error {
 }
 
 // changedAppFields は before から after で変わった項目名を、固定の順（label・exe_path・args・working_dir）で返す。
+// before が読めない行（Corrupt）のときは、壊れていた引数が入力で破棄されたことを監査に残すため、args を必ず含める。
 func changedAppFields(before, after domain.LaunchableApp) []string {
 	changed := []string{}
 	if before.Label != after.Label {
@@ -220,7 +221,7 @@ func changedAppFields(before, after domain.LaunchableApp) []string {
 	if before.ExePath != after.ExePath {
 		changed = append(changed, domain.AppFieldExePath)
 	}
-	if !slices.Equal(before.Args, after.Args) {
+	if before.Corrupt || !slices.Equal(before.Args, after.Args) {
 		changed = append(changed, domain.AppFieldArgs)
 	}
 	if before.WorkingDir != after.WorkingDir {

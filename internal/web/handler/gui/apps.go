@@ -43,10 +43,11 @@ func (h *Handler) newAppForm(v view.AppFormValues, errs view.AppFormErrors) view
 	return view.AppForm{DOMID: newAppFormID, ActionURL: appsURL, Values: v, Errors: errs, PickURL: appPickURL}
 }
 
-func (h *Handler) editAppForm(id string, v view.AppFormValues, errs view.AppFormErrors) view.AppForm {
+// editAppForm は行 id の編集フォーム。corrupt は保存済みの引数が読めなかった行（引数を入れ直す案内を出す）。
+func (h *Handler) editAppForm(id string, v view.AppFormValues, errs view.AppFormErrors, corrupt bool) view.AppForm {
 	return view.AppForm{
 		ID: id, DOMID: editFormIDBase + id, ActionURL: appItemURL(id), Values: v, Errors: errs,
-		PickURL: appPickURL, CancelURL: appsURL,
+		PickURL: appPickURL, CancelURL: appsURL, Corrupt: corrupt,
 	}
 }
 
@@ -57,7 +58,8 @@ func appFormValues(a domain.LaunchableApp) view.AppFormValues {
 func (h *Handler) appRow(a domain.LaunchableApp) view.AppRow {
 	return view.AppRow{
 		ID: a.ID, Label: a.Label, ExePath: a.ExePath, Args: a.Args, WorkingDir: a.WorkingDir, Corrupt: a.Corrupt,
-		EditURL: appEditURL(a.ID), DeleteConfirm: appDeleteURL(a.ID),
+		Unlaunchable: a.Corrupt || domain.CheckLaunchTarget(a) != nil,
+		EditURL:      appEditURL(a.ID), DeleteConfirm: appDeleteURL(a.ID),
 	}
 }
 
@@ -122,7 +124,7 @@ func (h *Handler) AppEdit(c *gin.Context) {
 		h.pageFail(c, err)
 		return
 	}
-	form := h.editAppForm(app.ID, appFormValues(app), view.AppFormErrors{})
+	form := h.editAppForm(app.ID, appFormValues(app), view.AppFormErrors{}, app.Corrupt)
 	if fragmentRequest(c) && !boostedRequest(c) {
 		h.render(c, http.StatusOK, organisms.AppForm(form, false))
 		return
@@ -191,9 +193,14 @@ func (h *Handler) CreateApp(c *gin.Context) {
 func (h *Handler) UpdateApp(c *gin.Context) {
 	id := c.Param("id")
 	values, in := readAppForm(c)
-	app, err := h.d.Apps.Update(c.Request.Context(), id, in)
+	ctx := c.Request.Context()
+	app, err := h.d.Apps.Update(ctx, id, in)
 	if err != nil {
-		h.saveFailed(c, err, func(e view.AppFormErrors) view.AppForm { return h.editAppForm(id, values, e) })
+		h.saveFailed(c, err, func(e view.AppFormErrors) view.AppForm {
+			// 検証に失敗したフォームにも、読めなかった行への案内を残す（行が取れなければ案内なし）。
+			prev, getErr := h.d.Apps.Get(ctx, id)
+			return h.editAppForm(id, values, e, getErr == nil && prev.Corrupt)
+		})
 		return
 	}
 	h.render(c, http.StatusOK,

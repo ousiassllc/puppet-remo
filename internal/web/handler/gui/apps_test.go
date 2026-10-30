@@ -257,9 +257,12 @@ func TestAppsPageShowsCorruptRowAndAllowsDeleting(t *testing.T) {
 	})
 	res := r.get("/apps")
 	status(t, res, http.StatusOK)
-	contains(t, res, `data-app="bad"`, "壊れた行", `data-app-corrupt`, `hx-get="/apps/bad/delete/confirm"`, `data-app="ok"`)
+	contains(t, res, `data-app="bad"`, "壊れた行", `data-app-corrupt`, `data-app-unlaunchable`, `hx-get="/apps/bad/delete/confirm"`, `data-app="ok"`)
 	if n := strings.Count(res.Body, "data-app-corrupt"); n != 1 {
 		t.Errorf("corrupt warnings = %d, want 1", n)
+	}
+	if n := strings.Count(res.Body, "data-app-unlaunchable"); n != 1 {
+		t.Errorf("unlaunchable warnings = %d, want 1", n)
 	}
 
 	res = r.do(http.MethodDelete, "/apps/bad", nil, hx...)
@@ -268,6 +271,46 @@ func TestAppsPageShowsCorruptRowAndAllowsDeleting(t *testing.T) {
 	if !slices.Equal(r.f.Apps.Deleted, []string{"bad"}) {
 		t.Errorf("deleted = %v", r.f.Apps.Deleted)
 	}
+}
+
+// 読めない行の編集フォームには、引数を入れ直す案内を出す（開いたときも、検証に失敗して再描画したときも）。
+func TestAppEditFormOfACorruptRowAsksToReenterArgs(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		f.Apps.Rows = []domain.LaunchableApp{
+			{ID: "bad", Label: "壊れた行", ExePath: notepad, Args: []string{}, Corrupt: true},
+			{ID: "ok", Label: "電卓", ExePath: calc},
+		}
+	})
+	const notice = "保存された設定を読めませんでした。引数を入れ直してください"
+	res := r.get("/apps/bad/edit", hx...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `data-app-form="edit"`, `data-app-form-corrupt`, notice)
+
+	res = r.do(http.MethodPut, "/apps/bad", appForm("壊れた行", "bad.exe", "", ""), hx...)
+	status(t, res, http.StatusUnprocessableEntity)
+	contains(t, res, `data-app-form-corrupt`, notice)
+
+	// 壊れていない行の編集フォームには出さない。
+	res = r.get("/apps/ok/edit", hx...)
+	status(t, res, http.StatusOK)
+	lacks(t, res, "data-app-form-corrupt", notice)
+}
+
+// 手で書き換えられて起動できない行（Corrupt でなくても CheckLaunchTarget が拒否する）にも警告を出す。起動できる行には出さない。
+func TestAppsPageWarnsAboutRowsThatCannotLaunch(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		f.Apps.Rows = []domain.LaunchableApp{
+			{ID: "rel", Label: "相対パス", ExePath: "notepad.exe"},
+			{ID: "ok", Label: "電卓", ExePath: calc},
+		}
+	})
+	res := r.get("/apps")
+	status(t, res, http.StatusOK)
+	contains(t, res, `data-app="rel"`, `data-app-unlaunchable`)
+	if n := strings.Count(res.Body, "data-app-unlaunchable"); n != 1 {
+		t.Errorf("unlaunchable warnings = %d, want 1", n)
+	}
+	lacks(t, res, "data-app-corrupt")
 }
 
 func TestDeleteApp(t *testing.T) {

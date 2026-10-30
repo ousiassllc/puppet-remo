@@ -21,6 +21,10 @@ func (c *control) LaunchableApps(ctx context.Context) ([]domain.AppSummary, erro
 	}
 	out := make([]domain.AppSummary, 0, len(apps))
 	for _, a := range apps {
+		// 起動できない行（読めない Corrupt の行を含む）は MCP に見せない。
+		if domain.CheckLaunchTarget(a) != nil {
+			continue
+		}
 		out = append(out, a.Summary())
 	}
 	return out, nil

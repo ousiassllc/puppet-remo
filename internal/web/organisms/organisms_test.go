@@ -177,6 +177,23 @@ func TestAppCardCorruptRowShowsWarning(t *testing.T) {
 	hasNot(t, card, "data-app-args", ">なし<")
 }
 
+// 起動できない行は警告を出し、起動できる行には出さない。
+func TestAppCardUnlaunchableRowShowsWarning(t *testing.T) {
+	bad := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a6", Label: "x", ExePath: "c.exe", Unlaunchable: true}))
+	has(t, bad, "data-app-unlaunchable", "起動できません")
+	hasNot(t, bad, "data-app-corrupt")
+	good := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a7", Label: "x", ExePath: `C:\c.exe`}))
+	hasNot(t, good, "data-app-unlaunchable")
+}
+
+// 読めない行の編集フォームは、引数を入れ直す案内を出す。
+func TestAppFormCorruptNotice(t *testing.T) {
+	form := view.AppForm{ID: "a8", DOMID: "app-form-a8", ActionURL: "/apps/a8", Corrupt: true}
+	has(t, webtest.Render(t, organisms.AppForm(form, false)), "data-app-form-corrupt", "保存された設定を読めませんでした。引数を入れ直してください")
+	form.Corrupt = false
+	hasNot(t, webtest.Render(t, organisms.AppForm(form, false)), "data-app-form-corrupt")
+}
+
 func TestSidebarHasTheAppsEntry(t *testing.T) {
 	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}, false))
 	has(t, out, `href="/apps"`, "起動許可アプリ")
