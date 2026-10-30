@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -198,6 +199,10 @@ type ctlEnv struct {
 	windows   *platformtest.FakeWindows
 	clipboard *platformtest.FakeClipboard
 	ui        *platformtest.FakeUIAutomation
+	launcher  *platformtest.FakeAppLauncher
+	picker    *platformtest.FakeFilePicker
+	appStore  repository.LaunchableApps
+	apps      AppRegistry
 	kill      *KillSwitchManager
 	power     *platformtest.FakePower
 	leases    LeaseManager
@@ -230,8 +235,18 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 		windows:   platformtest.NewFakeWindows(ctlDefaultWindows()...),
 		clipboard: platformtest.NewFakeClipboard(),
 		power:     platformtest.NewFakePower(),
+		launcher:  platformtest.NewFakeAppLauncher(),
+		picker:    platformtest.NewFakeFilePicker(),
 	}
 	e.ui = platformtest.NewFakeUIAutomation(e.windows)
+	e.appStore = openAppStore(t)
+	apps, err := NewAppRegistry(AppRegistryConfig{
+		Apps: e.appStore, Launcher: e.launcher, Picker: e.picker, Audit: e.audit, Clock: e.clock, IDs: &ctlIDs{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.apps = apps
 	kill, err := NewKillSwitch(context.Background(), KillSwitchConfig{Settings: e.settings, Clock: e.clock, Audit: e.audit})
 	if err != nil {
 		t.Fatal(err)
@@ -247,6 +262,7 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 	kill.BindLeases(e.leases)
 	e.control, err = NewControl(ControlConfig{
 		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
+		Launcher: e.launcher, Apps: e.apps,
 		Leases: e.leases, Kill: kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
 		Sleep: func(_ context.Context, d time.Duration) error { e.slept = append(e.slept, d); return nil },
 	})
@@ -254,4 +270,15 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 		t.Fatal(err)
 	}
 	return e
+}
+
+// openAppStore は一時ファイルの SQLite の起動許可リストを返す（label の一意性・50 件の上限は本物の repository で確かめる）。
+func openAppStore(t *testing.T) repository.LaunchableApps {
+	t.Helper()
+	db, err := repository.Open(context.Background(), filepath.Join(t.TempDir(), "puppet-remo.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db.LaunchableApps()
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,9 +14,10 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
-// API 仕様 §3.3 のツール一覧（M1）。run_task / get_task / cancel_task（M4）は含まない。
+// API 仕様 §3.3 のツール一覧（M1・M1.5）。run_task / get_task / cancel_task（M4）は含まない。
 var wantTools = map[string]bool{ // 値は readOnlyHint
 	"get_screen_info":    true,
 	"screenshot":         true,
@@ -39,6 +41,9 @@ var wantTools = map[string]bool{ // 値は readOnlyHint
 	"acquire_control":    false,
 	"release_control":    false,
 	"get_control_status": true,
+	// M1.5
+	"list_launchable_apps": true,
+	"launch_app":           false,
 }
 
 func TestInitializeAndToolList(t *testing.T) {
@@ -49,7 +54,7 @@ func TestInitializeAndToolList(t *testing.T) {
 	if init.ServerInfo.Name != "puppet-remo" || init.ServerInfo.Version != "9.9.9-test" {
 		t.Errorf("ServerInfo = %+v", init.ServerInfo)
 	}
-	for _, want := range []string{"scaled", "lease", "acquired implicitly"} {
+	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}
@@ -90,9 +95,21 @@ func TestInitializeAndToolList(t *testing.T) {
 			t.Errorf("unexpected tool %s", name)
 		}
 	}
-	for _, m4 := range []string{"run_task", "get_task", "cancel_task", "launch_app", "list_launchable_apps"} {
+	for _, m4 := range []string{"run_task", "get_task", "cancel_task"} {
 		if _, ok := got[m4]; ok {
-			t.Errorf("%s must not be registered in M1", m4)
+			t.Errorf("%s must not be registered before M4", m4)
+		}
+	}
+}
+
+// mcp は起動許可リストを書く経路（service.AppRegistry）を持たない。受け取るのは読み取りだけの Control（NFR-S20）。
+func TestMCPHasNoAppRegistry(t *testing.T) {
+	registry := reflect.TypeFor[service.AppRegistry]()
+	for _, typ := range []reflect.Type{reflect.TypeFor[Config](), reflect.TypeFor[Server]()} {
+		for f := range typ.Fields() {
+			if f.Type == registry || f.Type.Implements(registry) {
+				t.Errorf("%s.%s (%s) can write the allow list", typ, f.Name, f.Type)
+			}
 		}
 	}
 }

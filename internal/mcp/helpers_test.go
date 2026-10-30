@@ -65,6 +65,13 @@ type fakeControl struct {
 	clipboard string
 	tree      *domain.UINode
 
+	// apps は LaunchableApps が返す許可リスト（id と表示名だけ）。launchPID は Launch が返すプロセス ID。
+	apps      []domain.AppSummary
+	launchPID uint32
+	// launches は Launch が受けた app_id の記録。launchErr が非 nil なら、検査（キルスイッチ・リース・許可リスト）の後に Launch がこれを返す。
+	launches  []string
+	launchErr error
+
 	// err が非 nil なら、Do・Screenshot・Monitors・Windows・CursorPosition がこれを返す（リースの確認の後）。
 	err error
 	// blockUntilDone が true なら、CursorPosition は ctx が終わるまで返らない（ツールのタイムアウトの検査用）。
@@ -134,6 +141,45 @@ func (f *fakeControl) Do(ctx context.Context, who domain.Actor, op domain.Op) (s
 		return service.Result{Tree: f.tree}, nil
 	}
 	return service.Result{}, nil
+}
+
+func (f *fakeControl) LaunchableApps(context.Context) ([]domain.AppSummary, error) {
+	if err := f.viewErr(); err != nil {
+		return nil, err
+	}
+	return f.apps, nil
+}
+
+// Launch は Control.Launch と同じ順序（キルスイッチ → リース → 許可リスト）で検査する。監査は本物の Control の責務なので記録しない。
+func (f *fakeControl) Launch(ctx context.Context, who domain.Actor, appID string) (service.LaunchResult, error) {
+	f.mu.Lock()
+	f.launches = append(f.launches, appID)
+	f.mu.Unlock()
+
+	if f.kill.Active() {
+		return service.LaunchResult{}, domain.ErrKillSwitchActive
+	}
+	err := f.leases.Check(who)
+	if errors.Is(err, domain.ErrLeaseRequired) && who.Kind == domain.ActorMCP {
+		_, err = f.leases.Acquire(ctx, who)
+	}
+	if err != nil {
+		return service.LaunchResult{}, err
+	}
+	if !slices.ContainsFunc(f.apps, func(a domain.AppSummary) bool { return a.ID == appID }) {
+		return service.LaunchResult{}, domain.ErrAppNotFound
+	}
+	if f.launchErr != nil {
+		return service.LaunchResult{}, f.launchErr
+	}
+	return service.LaunchResult{AppID: appID, PID: f.launchPID}, nil
+}
+
+// launchRequests は Launch が受けた app_id を順に返す。
+func (f *fakeControl) launchRequests() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.launches)
 }
 
 func (f *fakeControl) viewErr() error {

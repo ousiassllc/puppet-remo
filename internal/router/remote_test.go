@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -115,13 +116,14 @@ func TestRemoteExposesNothingButMCP(t *testing.T) {
 	paths := []string{
 		"/", "/viewer", "/ws/screen", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
 		"/mcp/", "/mcp/extra", "/static/js/app.js",
+		"/apps", "/apps/new", "/apps/pick", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
 	}
 	for _, p := range paths {
 		if rec := k.do(http.MethodGet, p); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", p, rec.Code)
 		}
 	}
-	for _, p := range []string{"/killswitch/trigger", "/killswitch/release", "/clients/c1", "/requests/r1/approve"} {
+	for _, p := range []string{"/killswitch/trigger", "/killswitch/release", "/clients/c1", "/requests/r1/approve", "/apps", "/apps/a1", "/apps/pick"} {
 		rec := k.do(http.MethodPost, p, func(r *http.Request) { r.Header.Set(middleware.CSRFHeader, "1") })
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("POST %s = %d, want 404 (host-only operations must not be reachable remotely)", p, rec.Code)
@@ -129,6 +131,18 @@ func TestRemoteExposesNothingButMCP(t *testing.T) {
 	}
 	if k.mcpHits != 0 {
 		t.Errorf("the MCP handler was reached %d times by non-/mcp paths", k.mcpHits)
+	}
+}
+
+// 起動許可リストを書く service.AppRegistry は、リモートルーターの依存に含まれない（型の上で届かない。NFR-S20）。
+func TestRemoteConfigHasNoAppRegistry(t *testing.T) {
+	registry := reflect.TypeFor[service.AppRegistry]()
+	for _, typ := range []reflect.Type{reflect.TypeFor[router.RemoteConfig](), reflect.TypeFor[middleware.RemoteConfig]()} {
+		for f := range typ.Fields() {
+			if f.Type.Implements(registry) || f.Type == registry {
+				t.Errorf("%s.%s (%s) can write the allow list", typ, f.Name, f.Type)
+			}
+		}
 	}
 }
 

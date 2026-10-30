@@ -51,7 +51,7 @@ func TestControlDoSerializesClickMoveAndClick(t *testing.T) {
 	in := &gatedInput{FakeInput: e.input, entered: make(chan struct{}), gate: make(chan struct{})}
 	ctl, err := NewControl(ControlConfig{
 		Capturer: e.capturer, Input: in, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
-		Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
+		Launcher: e.launcher, Apps: e.apps, Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestKillSwitchReleasesInputWhileAnInputIsRunning(t *testing.T) {
 	in := &gatedInput{FakeInput: e.input, entered: make(chan struct{}), gate: make(chan struct{})}
 	ctl, err := NewControl(ControlConfig{
 		Capturer: e.capturer, Input: in, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
-		Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
+		Launcher: e.launcher, Apps: e.apps, Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
 	})
 	if err != nil {
 		t.Fatal(err)

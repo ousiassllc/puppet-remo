@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -13,9 +14,11 @@ import (
 )
 
 // toolResult はツール 1 回の成功結果。Content が nil なら、Structured の JSON をテキストにする。
+// AuditDetail は addAuditedTool の監査の detail（引数の要約）に足す、結果から決まる値（例: 件数）。
 type toolResult struct {
-	Structured any
-	Content    []mcpsdk.Content
+	Structured  any
+	Content     []mcpsdk.Content
+	AuditDetail map[string]any
 }
 
 // okBody は入力系ツールの成功時の出力（API 仕様 §3.3）。
@@ -67,7 +70,15 @@ func registerTool[In any](s *Server, name, description string, readOnly bool, au
 		start := time.Now()
 		res, err := fn(ctx, who, in)
 		if auditArgs != nil && s.audit != nil {
-			s.audit.Record(ctx, service.ToolAuditEntry(who, name, auditArgs(in), "", err, time.Since(start)))
+			detail := auditArgs(in)
+			if len(res.AuditDetail) > 0 {
+				detail = maps.Clone(detail)
+				if detail == nil {
+					detail = map[string]any{}
+				}
+				maps.Copy(detail, res.AuditDetail)
+			}
+			s.audit.Record(ctx, service.ToolAuditEntry(who, name, detail, "", err, time.Since(start)))
 		}
 		if err != nil {
 			return s.toolError(name, err), nil, nil
@@ -114,10 +125,11 @@ func (s *Server) actor(req *mcpsdk.CallToolRequest) (domain.Actor, error) {
 	}, nil
 }
 
-// addTools は FR-M01〜M15 の全ツールを登録する。run_task / get_task / cancel_task は M4 のため登録しない。
+// addTools は FR-M01〜M15・M18・M19 の全ツールを登録する。run_task / get_task / cancel_task は M4 のため登録しない。
 func (s *Server) addTools() {
 	s.addViewTools()
 	s.addInputTools()
 	s.addWindowTools()
 	s.addLeaseTools()
+	s.addAppTools()
 }

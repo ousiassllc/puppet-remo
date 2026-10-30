@@ -19,17 +19,19 @@ const defaultHotkey = "Ctrl+Alt+Shift+K" // FR-S02 の既定
 func TestNewRequiresDependencies(t *testing.T) {
 	full := newEnv(t)
 	cases := map[string]func(*Config){
-		"Repo":      func(c *Config) { c.Repo = nil },
-		"Capturer":  func(c *Config) { c.Platform.Capturer = nil },
-		"Input":     func(c *Config) { c.Platform.Input = nil },
-		"Windows":   func(c *Config) { c.Platform.Windows = nil },
-		"Clipboard": func(c *Config) { c.Platform.Clipboard = nil },
-		"UI":        func(c *Config) { c.Platform.UI = nil },
-		"Hotkey":    func(c *Config) { c.Platform.Hotkey = nil },
-		"Power":     func(c *Config) { c.Platform.Power = nil },
-		"Watcher":   func(c *Config) { c.Watcher = nil },
-		"WhoIs":     func(c *Config) { c.WhoIs = nil },
-		"Static":    func(c *Config) { c.Static = nil },
+		"Repo":       func(c *Config) { c.Repo = nil },
+		"Capturer":   func(c *Config) { c.Platform.Capturer = nil },
+		"Input":      func(c *Config) { c.Platform.Input = nil },
+		"Windows":    func(c *Config) { c.Platform.Windows = nil },
+		"Clipboard":  func(c *Config) { c.Platform.Clipboard = nil },
+		"UI":         func(c *Config) { c.Platform.UI = nil },
+		"Launcher":   func(c *Config) { c.Platform.Launcher = nil },
+		"FilePicker": func(c *Config) { c.Platform.FilePicker = nil },
+		"Hotkey":     func(c *Config) { c.Platform.Hotkey = nil },
+		"Power":      func(c *Config) { c.Platform.Power = nil },
+		"Watcher":    func(c *Config) { c.Watcher = nil },
+		"WhoIs":      func(c *Config) { c.WhoIs = nil },
+		"Static":     func(c *Config) { c.Static = nil },
 	}
 	for name, clear := range cases {
 		t.Run(name, func(t *testing.T) {
