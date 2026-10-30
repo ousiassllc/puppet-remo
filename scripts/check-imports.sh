@@ -27,7 +27,7 @@ rules=(
   "ws:domain service"
   "web:domain service"
   "router:domain service web mcp ws"
-  "app:domain service router web mcp ws platform"
+  "app:domain repository service router web mcp ws platform tailnet"
 )
 
 status=0
