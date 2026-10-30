@@ -189,3 +189,25 @@ func TestSidebarHighlightsCurrentPage(t *testing.T) {
 		}
 	}
 }
+
+// hx-boost の遷移が 4xx/5xx を返すと、htmx は既定では差し替えない。response-targets の hx-target-error で
+// 境界のリンクごとに #main を指定し、エラーページを表示する。
+func TestBoostedLinksTargetMainForErrorPages(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) { seedClient(f, "c1", "alice-desktop", true, true, false) })
+	for _, path := range []string{"/", "/clients"} {
+		res := r.get(path)
+		contains(t, res, `hx-ext="response-targets"`)
+		nav := between(t, res.Body, `id="sidebar-nav"`, `</nav>`)
+		if got, want := strings.Count(nav, `hx-target-error="#main"`), strings.Count(nav, `hx-boost="true"`); got != want || got == 0 {
+			t.Errorf("%s: sidebar links with hx-target-error = %d, boosted links = %d", path, got, want)
+		}
+	}
+	// ページ内の boost のリンク（ダッシュボードの導線・クライアント一覧・詳細の戻り）にも付く。
+	for _, path := range []string{"/", "/clients", "/clients/c1"} {
+		body := r.get(path).Body
+		main := body[strings.Index(body, `<main`):]
+		if got, want := strings.Count(main, `hx-target-error="#main"`), strings.Count(main, `hx-boost="true"`); got != want {
+			t.Errorf("%s: main links with hx-target-error = %d, boosted links = %d", path, got, want)
+		}
+	}
+}

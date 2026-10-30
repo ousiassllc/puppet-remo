@@ -51,6 +51,28 @@ func TestServesWithNoCacheAndETag(t *testing.T) {
 	}
 }
 
+// Windows では Go の mime がレジストリから型を読むので、拡張子ごとの型はハンドラが固定する。
+func TestContentTypeIsFixedPerExtension(t *testing.T) {
+	fsys := fstest.MapFS{}
+	want := map[string]string{
+		"a.js":     "text/javascript; charset=utf-8",
+		"a.css":    "text/css; charset=utf-8",
+		"a.js.map": "application/json",
+		"a.svg":    "image/svg+xml",
+		"a.woff2":  "font/woff2",
+		"A.JS":     "text/javascript; charset=utf-8",
+	}
+	for name := range want {
+		fsys[name] = &fstest.MapFile{Data: []byte("x")}
+	}
+	h := static.NewHandler(fsys, true)
+	for name, ct := range want {
+		if got := get(h, http.MethodGet, "/"+name).Header().Get("Content-Type"); got != ct {
+			t.Errorf("%s: Content-Type = %q, want %q", name, got, ct)
+		}
+	}
+}
+
 func TestIfNoneMatchReturns304(t *testing.T) {
 	h := static.NewHandler(newFS(), true)
 	etag := get(h, http.MethodGet, "/css/app.css").Header().Get("ETag")

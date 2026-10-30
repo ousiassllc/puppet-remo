@@ -184,7 +184,7 @@ func clientDetailBody(v view.ClientDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" class=\"text-sm font-medium text-indigo-700 hover:underline\" hx-boost=\"true\" hx-target=\"#main\" hx-swap=\"innerHTML\">← クライアント一覧</a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" class=\"text-sm font-medium text-indigo-700 hover:underline\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">← クライアント一覧</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

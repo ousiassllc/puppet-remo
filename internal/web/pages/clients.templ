@@ -33,7 +33,7 @@ templ ClientsBoosted(v view.Clients) {
 
 templ clientDetailBody(v view.ClientDetail) {
 	<div class="space-y-4">
-		<a href={ templ.SafeURL(v.BackURL) } class="text-sm font-medium text-indigo-700 hover:underline" hx-boost="true" hx-target="#main" hx-swap="innerHTML">← クライアント一覧</a>
+		<a href={ templ.SafeURL(v.BackURL) } class="text-sm font-medium text-indigo-700 hover:underline" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">← クライアント一覧</a>
 		@organisms.ClientCard(v.Client)
 		@molecules.Card("Bearer トークン") {
 			<div class="space-y-4">

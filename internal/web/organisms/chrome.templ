@@ -94,6 +94,7 @@ templ Sidebar(c view.Chrome, oob bool) {
 				class={ navLinkClass(it.Nav == c.Active) }
 				hx-boost="true"
 				hx-target="#main"
+				hx-target-error="#main"
 				hx-swap="innerHTML"
 				{ navLinkAttrs(it.Nav == c.Active)... }
 			>

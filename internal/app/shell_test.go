@@ -11,8 +11,21 @@ import (
 )
 
 type fakeWindow struct {
-	mu    sync.Mutex
-	calls []string
+	mu      sync.Mutex
+	calls   []string
+	visible bool
+}
+
+func (w *fakeWindow) Visible() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.visible
+}
+
+func (w *fakeWindow) setVisible(v bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.visible = v
 }
 
 func (w *fakeWindow) Show(path string) { w.add("show " + path) }
@@ -157,6 +170,41 @@ func TestTrayAndSecondInstanceOpenTheWindow(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("call %d = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// すでに表示されているウィンドウは、トレイ・メニューからでもページを移動しない（入力中のフォーム・発行直後のトークンを守る）。
+func TestOpeningAVisibleWindowDoesNotNavigate(t *testing.T) {
+	k := newShellKit()
+	k.win.setVisible(true)
+	k.shell.OpenDashboard()
+	k.shell.OpenRequests()
+	want := []string{"show ", "show "}
+	got := k.win.Calls()
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("window calls = %v, want %v (bring to front without a path)", got, want)
+	}
+}
+
+// Wails はイベントループの開始前に UI スレッドへの呼び出しを受けないので、開始通知まで Watch を始めない。
+func TestWatchOnStartDefersWatchUntilStarted(t *testing.T) {
+	k := newShellKit()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	start := k.shell.WatchOnStart(ctx)
+
+	select {
+	case st := <-k.tray.states:
+		t.Fatalf("tray refreshed before the app started: %+v", st)
+	default:
+	}
+
+	start()
+	recvState(t, k.tray) // 開始通知の後に、最初の反映が来る
+	k.app.set(func(a *fakeShellApp) { a.active = true })
+	k.app.bus.Publish(service.Event{Topic: service.TopicKillSwitch})
+	if st := recvState(t, k.tray); st.KillSwitchEnabled {
+		t.Errorf("the started Watch did not follow the kill switch: %+v", st)
 	}
 }
 

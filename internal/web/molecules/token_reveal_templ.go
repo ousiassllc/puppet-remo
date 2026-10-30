@@ -16,6 +16,8 @@ import (
 // TokenReveal は発行したトークンの平文を表示する。平文を見られるのはこの 1 回だけ（応答は Cache-Control: no-store）。
 // 読み取り専用の入力欄に入れ、コピーは app.ts が data-copy-target で行う。クリップボードに書けなければ、
 // 全選択して Ctrl+C を案内する（data-fallback の文言）。
+// hx-history="false" は、htmx の履歴スナップショット（sessionStorage）に平文が残り、戻る操作で再表示されるのを防ぐ
+// （htmx は文書内にこの属性があるあいだ、そのページのスナップショットを保存しない）。
 func TokenReveal(v view.TokenReveal) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -37,14 +39,14 @@ func TokenReveal(v view.TokenReveal) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"rounded-md border border-amber-300 bg-amber-50 p-4\" data-token-reveal><p class=\"text-sm font-semibold text-amber-900\">「")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"rounded-md border border-amber-300 bg-amber-50 p-4\" data-token-reveal hx-history=\"false\"><p class=\"text-sm font-semibold text-amber-900\">「")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(v.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/token_reveal.templ`, Line: 13, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/token_reveal.templ`, Line: 15, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -57,7 +59,7 @@ func TokenReveal(v view.TokenReveal) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.ExpiresAt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/token_reveal.templ`, Line: 14, Col: 218}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/token_reveal.templ`, Line: 16, Col: 218}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
