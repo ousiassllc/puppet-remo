@@ -12,6 +12,8 @@ import (
 //   - 拒否してから 24 時間は同デバイスから新しい要求を作らない（nil を返す）。
 //   - 新しい要求の作成は全体で 1 分あたり 10 件まで。超過分は要求を作らず（GUI に出さず）、
 //     窓ごとに 1 回だけ監査に記録して nil を返す。既存の pending への集約は数えない。
+//   - 期限切れの pending は無いものとして扱い、新しい要求を作る。
+//   - 同じデバイスの pending を connRequestTouchInterval 以内に更新済みなら、DB に書かない。
 //
 // キルスイッチ中は呼び出し側（ミドルウェア）が先に 503 を返すので、ここには来ない。
 func (a *authz) RecordConnectionRequest(ctx context.Context, id Identity, ip string) error {
@@ -24,7 +26,12 @@ func (a *authz) RecordConnectionRequest(ctx context.Context, id Identity, ip str
 	if err != nil {
 		return err
 	}
-	if !hasPending(pending, id.StableNodeID) {
+	if existing := findPending(pending, id.StableNodeID); existing != nil {
+		// 直前に更新した pending への集約は書き込まない（同じデバイスの連続アクセスによる書き込み増幅を避ける）。
+		if now.Sub(existing.LastSeenAt) < connRequestTouchInterval {
+			return nil
+		}
+	} else {
 		if ok, first, _ := a.connRequests.check("", now, true); !ok {
 			if first {
 				a.audit(ctx, repository.AuditEntry{
@@ -47,11 +54,11 @@ func (a *authz) RecordConnectionRequest(ctx context.Context, id Identity, ip str
 	return err
 }
 
-func hasPending(pending []repository.ConnRequest, stableNodeID string) bool {
-	for _, r := range pending {
-		if r.StableNodeID == stableNodeID {
-			return true
+func findPending(pending []repository.ConnRequest, stableNodeID string) *repository.ConnRequest {
+	for i := range pending {
+		if pending[i].StableNodeID == stableNodeID {
+			return &pending[i]
 		}
 	}
-	return false
+	return nil
 }

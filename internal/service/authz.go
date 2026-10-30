@@ -136,6 +136,8 @@ const (
 	connRequestLimit      = 10
 	rateLimitWindow       = time.Minute
 	connRequestPendingTTL = 24 * time.Hour // 保留の有効期限（FR-A06）
+	// 同じデバイスの pending を更新し直す最短間隔。これより短い再要求は DB に書かない。
+	connRequestTouchInterval = 5 * time.Second
 )
 
 // NewAuthz は Authz を作る。

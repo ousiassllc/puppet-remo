@@ -35,6 +35,7 @@ func (c *closedSessions) CloseToken(id string) {
 type adminEnv struct {
 	ctx      context.Context
 	admin    HostAdmin
+	authz    Authz
 	db       *repository.DB
 	clock    *fakeClock
 	audit    *recordingAudit
@@ -66,6 +67,7 @@ func newAdminEnv(t *testing.T) *adminEnv {
 		t.Fatal(err)
 	}
 	e.leases = mustLeaseManager(t, clock, nil)
+	e.authz = authz
 	e.admin, err = NewHostAdmin(HostAdminConfig{
 		Clients: db.Clients(), Tokens: db.Tokens(), ConnRequests: NewNotifyingConnRequests(db.ConnRequests(), e.bus), Authz: authz,
 		Leases: e.leases, Sessions: e.sessions, Audit: e.audit, Bus: e.bus, Clock: clock, IDs: ids,
@@ -191,25 +193,165 @@ func TestHostAdminApproveAndDenyRequireAPendingRequest(t *testing.T) {
 	}
 }
 
-// 既に同じデバイスのクライアントがあるときの許可は conflict で、要求は pending のまま残る。
-func TestHostAdminApproveRollsBackOnConflict(t *testing.T) {
+// ログイン名が変わった登録済みデバイスの再許可は、古いクライアントを（トークン・セッション・リースごと）置き換える。
+func TestHostAdminApproveReplacesClientWhenLoginNameChanged(t *testing.T) {
 	e := newAdminEnv(t)
-	e.approve(t, "nodeA", "first", ApproveInput{})
-	// 同じ node の 2 つ目の pending（先の要求は approved なので作れる）。
+	old := e.approve(t, "nodeA", "first", ApproveInput{MCPEnabled: true})
+	plaintext, err := e.admin.IssueToken(e.ctx, old.ID, "t1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.leases.Acquire(e.ctx, domain.Actor{Kind: domain.ActorMCP, ClientID: old.ID, SessionID: "s1"}); err != nil {
+		t.Fatal(err)
+	}
+	// 同じ node の新しい pending（ログイン名が違う）。先の要求は approved なので作れる。
 	r2, _, err := e.db.ConnRequests().UpsertPending(e.ctx, repository.ConnRequest{
-		ID: "req-again", StableNodeID: "nodeA", LoginName: "x@example.com", DisplayName: "again", ExpiresAt: e.clock.Now().Add(time.Hour),
+		ID: "req-again", StableNodeID: "nodeA", LoginName: "carol@example.com", DisplayName: "again",
+		ExpiresAt: e.clock.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.admin.ApproveRequest(e.ctx, r2.ID, ApproveInput{}); domain.CodeOf(err) != domain.CodeConflict {
-		t.Fatalf("duplicate client: %v", err)
+
+	c, err := e.admin.ApproveRequest(e.ctx, r2.ID, ApproveInput{WebEnabled: true})
+	if err != nil {
+		t.Fatalf("approve after login name change: %v", err)
+	}
+	if c.ID == old.ID || c.LoginName != "carol@example.com" || c.MCPEnabled || !c.WebEnabled {
+		t.Errorf("replacement = %+v (old %+v)", c, old)
+	}
+	if cs, _ := e.admin.Clients(e.ctx); len(cs) != 1 || cs[0].ID != c.ID {
+		t.Errorf("clients = %+v", cs)
+	}
+	if got, err := e.db.Clients().ByNode(e.ctx, "nodeA"); err != nil || got.ID != c.ID {
+		t.Errorf("ByNode = %+v, %v", got, err)
+	}
+	if pending, _ := e.admin.PendingRequests(e.ctx); len(pending) != 0 {
+		t.Errorf("pending = %+v", pending)
+	}
+	// 古いトークンは消え、新しいクライアントでも使えない。
+	if toks, _ := e.db.Tokens().ListByClient(e.ctx, old.ID); len(toks) != 0 {
+		t.Errorf("old tokens must be removed: %+v", toks)
+	}
+	p := Principal{Client: c, Identity: Identity{LoginName: c.LoginName, StableNodeID: c.StableNodeID}}
+	if _, err := e.authz.VerifyBearer(e.ctx, "100.64.0.9:1", p, "Bearer "+plaintext); !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("old token must be rejected: %v", err)
+	}
+	// 古いクライアントのセッションは切断し、リースは解放する。
+	if _, held := e.leases.Holder(); held {
+		t.Error("lease of the replaced client must be released")
+	}
+	if want := []string{old.ID + "/mcp", old.ID + "/web"}; !equalStrings(e.sessions.clients, want) {
+		t.Errorf("closed = %v", e.sessions.clients)
+	}
+	// 置き換えと許可を監査する。
+	rep := e.auditEntry("client.replace")
+	if rep == nil || rep.ActorType != domain.ActorHost || rep.ClientID != c.ID {
+		t.Fatalf("replace audit = %+v", rep)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(rep.DetailJSON, &detail); err != nil || detail["old_client_id"] != old.ID ||
+		detail["old_login_name"] != old.LoginName || detail["login_name"] != "carol@example.com" {
+		t.Errorf("detail = %s (%v)", rep.DetailJSON, err)
+	}
+	if strings.Contains(string(rep.DetailJSON), plaintext) {
+		t.Error("audit must not contain the token")
+	}
+	approved := false
+	e.audit.mu.Lock()
+	for _, a := range e.audit.entries {
+		approved = approved || (a.Event == "auth.connreq_approve" && a.ClientID == c.ID)
+	}
+	e.audit.mu.Unlock()
+	if !approved {
+		t.Error("approve of the replacement must be audited")
+	}
+}
+
+// 許可の確定に失敗したら、新しいクライアントは残さず、要求は pending のまま残る（置き換えた古いものは戻らない）。
+func TestHostAdminApproveRollsBackNewClientWhenDecideFails(t *testing.T) {
+	e := newAdminEnv(t)
+	r := e.request(t, "nodeA", "pc")
+	e.admin, _ = NewHostAdmin(HostAdminConfig{
+		Clients: e.db.Clients(), Tokens: e.db.Tokens(), ConnRequests: failingDecide{e.db.ConnRequests()}, Authz: e.authz,
+		Clock: e.clock, IDs: &seqIDs{},
+	})
+	if _, err := e.admin.ApproveRequest(e.ctx, r.ID, ApproveInput{}); err == nil {
+		t.Fatal("approve must fail when the decision cannot be stored")
+	}
+	if cs, _ := e.admin.Clients(e.ctx); len(cs) != 0 {
+		t.Errorf("clients = %+v", cs)
 	}
 	if pending, _ := e.admin.PendingRequests(e.ctx); len(pending) != 1 {
 		t.Errorf("request must stay pending: %+v", pending)
 	}
-	if cs, _ := e.admin.Clients(e.ctx); len(cs) != 1 {
+}
+
+type failingDecide struct{ repository.ConnRequests }
+
+func (failingDecide) Decide(context.Context, string, string, *string) error {
+	return errors.New("db down")
+}
+
+// 期限切れの pending は一覧に出ず、許可もできない。
+func TestHostAdminExpiredRequestIsNotListedNorApprovable(t *testing.T) {
+	e := newAdminEnv(t)
+	r := e.request(t, "nodeA", "pc") // 期限は 1 時間後
+	e.clock.Advance(time.Hour)
+	if pending, err := e.admin.PendingRequests(e.ctx); err != nil || len(pending) != 0 {
+		t.Errorf("pending = %+v, %v", pending, err)
+	}
+	if _, err := e.admin.ApproveRequest(e.ctx, r.ID, ApproveInput{}); domain.CodeOf(err) != domain.CodeConflict {
+		t.Errorf("approve expired request: %v", err)
+	}
+	if err := e.admin.DenyRequest(e.ctx, r.ID); domain.CodeOf(err) != domain.CodeConflict {
+		t.Errorf("deny expired request: %v", err)
+	}
+	if cs, _ := e.admin.Clients(e.ctx); len(cs) != 0 {
 		t.Errorf("clients = %+v", cs)
+	}
+}
+
+// 同じデバイスの pending を 5 秒以内に更新済みなら DB に書かない。期限切れ後の再要求は新しい要求になる。
+func TestRecordConnectionRequestSkipsRecentTouchAndRenewsExpired(t *testing.T) {
+	e := newAdminEnv(t)
+	id := Identity{LoginName: "alice@example.com", StableNodeID: "nodeA", NodeName: "pc"}
+	record := func() {
+		t.Helper()
+		if err := e.authz.RecordConnectionRequest(e.ctx, id, "100.64.0.9"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	only := func() repository.ConnRequest {
+		t.Helper()
+		rs, err := e.db.ConnRequests().ListPending(e.ctx)
+		if err != nil || len(rs) != 1 {
+			t.Fatalf("pending = %+v, %v", rs, err)
+		}
+		return rs[0]
+	}
+
+	record()
+	first := only()
+	e.clock.Advance(connRequestTouchInterval - time.Millisecond)
+	record()
+	if got := only(); got.RequestCount != 1 || !got.LastSeenAt.Equal(first.LastSeenAt) {
+		t.Errorf("a request within %v must not write: %+v", connRequestTouchInterval, got)
+	}
+	e.clock.Advance(time.Millisecond)
+	record()
+	if got := only(); got.RequestCount != 2 || !got.LastSeenAt.Equal(e.clock.Now()) {
+		t.Errorf("a request after %v must be recorded: %+v", connRequestTouchInterval, got)
+	}
+
+	// 期限（最初の要求から 24 時間）を過ぎたら、新しい要求を作る。
+	e.clock.Advance(connRequestPendingTTL)
+	if rs, _ := e.db.ConnRequests().ListPending(e.ctx); len(rs) != 0 {
+		t.Fatalf("expired request is listed: %+v", rs)
+	}
+	record()
+	if got := only(); got.ID == first.ID || got.RequestCount != 1 || !got.ExpiresAt.Equal(e.clock.Now().Add(connRequestPendingTTL)) {
+		t.Errorf("renewed request = %+v (first %s)", got, first.ID)
 	}
 }
 

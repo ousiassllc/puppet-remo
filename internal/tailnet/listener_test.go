@@ -524,3 +524,13 @@ func TestListenerWithWatcherEndToEnd(t *testing.T) {
 	clock.Advance(defaultRetryInterval)
 	wait(addrsAre(v4a, v6a))
 }
+
+func TestNewHTTPServerBoundsIdleConnectionsAndHeaders(t *testing.T) {
+	srv := newHTTPServer(context.Background(), http.NotFoundHandler())
+	if srv.ReadHeaderTimeout != 10*time.Second || srv.IdleTimeout != 120*time.Second || srv.MaxHeaderBytes != 64<<10 {
+		t.Errorf("timeouts = %v / %v / %d", srv.ReadHeaderTimeout, srv.IdleTimeout, srv.MaxHeaderBytes)
+	}
+	if srv.WriteTimeout != 0 {
+		t.Errorf("WriteTimeout = %v, must stay unset for long-lived responses", srv.WriteTimeout)
+	}
+}

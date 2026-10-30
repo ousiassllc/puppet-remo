@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -55,7 +56,8 @@ type SessionCloser interface {
 // domain.CodeConflict、入力の不備は domain.CodeInvalidArgument で返す。
 type HostAdmin interface {
 	PendingRequests(ctx context.Context) ([]ConnRequest, error)
-	// ApproveRequest は要求を許可してクライアントを登録する。
+	// ApproveRequest は要求を許可してクライアントを登録する。同じデバイスの登録済みクライアント
+	// （ログイン名の変更など）があれば、そのトークン・セッション・リースごと置き換える。
 	ApproveRequest(ctx context.Context, requestID string, in ApproveInput) (domain.Client, error)
 	// DenyRequest は要求を拒否する（24 時間は同デバイスの再要求を作らない）。
 	DenyRequest(ctx context.Context, requestID string) error
@@ -89,7 +91,11 @@ type HostAdminConfig struct {
 	Logger       *slog.Logger // nil なら slog.Default()
 }
 
-type hostAdmin struct{ cfg HostAdminConfig }
+type hostAdmin struct {
+	cfg HostAdminConfig
+	// approveMu は ApproveRequest を直列にする（既存クライアントの置き換えと要求の確定を並行させない）。
+	approveMu sync.Mutex
+}
 
 // NewHostAdmin は HostAdmin を作る。
 func NewHostAdmin(cfg HostAdminConfig) (HostAdmin, error) {
@@ -127,6 +133,8 @@ func (h *hostAdmin) PendingRequests(ctx context.Context) ([]ConnRequest, error) 
 }
 
 func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in ApproveInput) (domain.Client, error) {
+	h.approveMu.Lock()
+	defer h.approveMu.Unlock()
 	req, err := h.pending(ctx, requestID)
 	if err != nil {
 		return domain.Client{}, err
@@ -145,15 +153,36 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 		AgentEnabled: in.AgentEnabled,
 		ApprovalMode: domain.ApprovalAlways,
 	}
-	if err := h.cfg.Clients.Create(ctx, c); err != nil {
-		return domain.Client{}, mapRepoErr(err, "client")
+	// 同じデバイス（stable_node_id）の登録済みクライアントがあれば置き換える（ログイン名の変更後の再許可。FR-A06）。
+	// 古いクライアントのトークンは CASCADE で消え、セッションとリースは切断・解放するので、権限は引き継がない。
+	old, err := h.cfg.Clients.ByNode(ctx, req.StableNodeID)
+	switch {
+	case err == nil:
+		if err := h.cfg.Clients.Replace(ctx, old.ID, c); err != nil {
+			return domain.Client{}, mapRepoErr(err, "client")
+		}
+		h.disconnect(old.ID, domain.ActorMCP)
+		h.disconnect(old.ID, domain.ActorWeb)
+	case errors.Is(err, repository.ErrNotFound):
+		if err := h.cfg.Clients.Create(ctx, c); err != nil {
+			return domain.Client{}, mapRepoErr(err, "client")
+		}
+	default:
+		return domain.Client{}, err
 	}
 	if err := h.cfg.ConnRequests.Decide(ctx, requestID, repository.ConnApproved, &c.ID); err != nil {
 		// 登録だけが残らないように戻す。戻せなかったら許可リストに残るのでログに出す。
+		// 置き換えた古いクライアントは戻さない（要求は pending のままなので、許可し直せる）。
 		if derr := h.cfg.Clients.Delete(ctx, c.ID); derr != nil {
 			h.cfg.Logger.Error("roll back client after failed approval", "client_id", c.ID, "error", derr)
 		}
 		return domain.Client{}, mapRepoErr(err, "connection request")
+	}
+	if old.ID != "" {
+		h.audit(ctx, "client", "client.replace", c, map[string]any{
+			"request_id": requestID, "stable_node_id": c.StableNodeID,
+			"old_client_id": old.ID, "old_login_name": old.LoginName, "login_name": c.LoginName,
+		})
 	}
 	h.audit(ctx, "auth", "auth.connreq_approve", c, map[string]any{
 		"request_id": requestID, "stable_node_id": c.StableNodeID, "login_name": c.LoginName,

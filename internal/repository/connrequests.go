@@ -43,9 +43,10 @@ type ConnRequest struct {
 
 // ConnRequests は connection_requests 表のストア。
 type ConnRequests interface {
-	// 1 デバイス 1 件に集約する。同じ stable_node_id の pending があれば、その行の
+	// 1 デバイス 1 件に集約する。同じ stable_node_id の有効な pending（expires_at > LastSeenAt）があれば、その行の
 	// login_name・display_name・remote_ip・last_seen_at を更新して request_count を 1 増やし
 	// （id・first_seen_at・expires_at は保つ）、created = false で返す。なければ r を pending で作る。
+	// 同じデバイスの期限切れの pending は、先に expired にしてから新しく作る。
 	// FirstSeenAt / LastSeenAt がゼロなら現在時刻を使う。
 	UpsertPending(ctx context.Context, r ConnRequest) (req ConnRequest, created bool, err error)
 	// pending の要求を approved / denied にする。decided_at を現在時刻にし、denied は
@@ -53,6 +54,7 @@ type ConnRequests interface {
 	Decide(ctx context.Context, id string, status string, clientID *string) error
 	// stable_node_id に、まだ有効（expires_at > now）な denied があるか。
 	DeniedActive(ctx context.Context, stableNodeID string, now time.Time) (bool, error)
+	// 期限内（expires_at > 現在時刻）の pending を first_seen_at 順に返す。期限切れは Expire 前でも含めない。
 	ListPending(ctx context.Context) ([]ConnRequest, error)
 	// expires_at を過ぎた pending を expired にし、last_seen_at から ConnRequestRetention を
 	// 過ぎた行を削除する。
@@ -83,7 +85,7 @@ func scanConnRequest(row interface{ Scan(...any) error }) (ConnRequest, error) {
 	return r, nil
 }
 
-func (s connRequestStore) UpsertPending(ctx context.Context, r ConnRequest) (ConnRequest, bool, error) {
+func (s connRequestStore) UpsertPending(ctx context.Context, r ConnRequest) (_ ConnRequest, _ bool, err error) {
 	first := r.FirstSeenAt
 	if first.IsZero() {
 		first = s.db.clock.Now()
@@ -92,8 +94,24 @@ func (s connRequestStore) UpsertPending(ctx context.Context, r ConnRequest) (Con
 	if last.IsZero() {
 		last = first
 	}
+	tx, err := s.db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return ConnRequest{}, false, err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, tx.Rollback())
+		}
+	}()
+	// 期限切れの pending が残っていると、新しい要求がそれに集約されて一覧に出ない。先に expired にする。
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE connection_requests SET status = 'expired'
+		WHERE stable_node_id = ? AND status = 'pending' AND expires_at <= ?`,
+		r.StableNodeID, toMS(last)); err != nil {
+		return ConnRequest{}, false, err
+	}
 	// 部分 UNIQUE インデックス ux_connreq_pending_node との衝突を 1 文で集約に変える（競合しない）。
-	got, err := scanConnRequest(s.db.sql.QueryRowContext(ctx,
+	got, err := scanConnRequest(tx.QueryRowContext(ctx,
 		`INSERT INTO connection_requests (id, stable_node_id, login_name, display_name, remote_ip,
 			status, request_count, first_seen_at, last_seen_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?)
@@ -108,6 +126,9 @@ func (s connRequestStore) UpsertPending(ctx context.Context, r ConnRequest) (Con
 		toMS(first), toMS(last), toMS(r.ExpiresAt)))
 	if err != nil {
 		return ConnRequest{}, false, mapErr(err)
+	}
+	if err = tx.Commit(); err != nil {
+		return ConnRequest{}, false, err
 	}
 	return got, got.ID == r.ID, nil
 }
@@ -159,7 +180,7 @@ func (s connRequestStore) DeniedActive(ctx context.Context, stableNodeID string,
 func (s connRequestStore) ListPending(ctx context.Context) ([]ConnRequest, error) {
 	rows, err := s.db.sql.QueryContext(ctx,
 		`SELECT `+connRequestColumns+` FROM connection_requests
-		WHERE status = 'pending' ORDER BY first_seen_at, id`)
+		WHERE status = 'pending' AND expires_at > ? ORDER BY first_seen_at, id`, toMS(s.db.clock.Now()))
 	if err != nil {
 		return nil, err
 	}

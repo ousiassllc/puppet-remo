@@ -13,6 +13,9 @@ import (
 // MaxWhoIsTTL は WhoIs 結果のキャッシュ期間の上限（NFR-S05）。
 const MaxWhoIsTTL = 10 * time.Second
 
+// whoIsTimeout は LocalAPI の WhoIs 1 回の上限。超えたら ErrWhoIsFailed（fail closed）にする。
+const whoIsTimeout = 5 * time.Second
+
 // WhoIs は接続元 IP → ユーザー・デバイスの解決（IP 単位に最大 10 秒キャッシュ）。
 type WhoIs interface {
 	// Lookup は remoteAddr（IP または IP:port）を解決する。失敗は ErrWhoIsFailed（fail closed）。
@@ -37,6 +40,8 @@ type whoIsCache struct {
 	api   LocalAPI
 	clock domain.Clock
 	ttl   time.Duration
+	// timeout は LocalAPI 1 回の上限（既定 whoIsTimeout。テストで短くする）。
+	timeout time.Duration
 
 	mu        sync.Mutex
 	entries   map[netip.Addr]whoIsEntry
@@ -50,6 +55,7 @@ func NewWhoIs(cfg WhoIsConfig) WhoIs {
 		api:     cfg.API,
 		clock:   cfg.Clock,
 		ttl:     cfg.TTL,
+		timeout: whoIsTimeout,
 		entries: make(map[netip.Addr]whoIsEntry),
 	}
 	if c.clock == nil {
@@ -69,6 +75,8 @@ func (c *whoIsCache) Lookup(ctx context.Context, remoteAddr string) (Identity, e
 	if id, ok := c.cached(ip); ok {
 		return id, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	id, err := c.api.WhoIs(ctx, ip.String())
 	if err != nil {
 		return Identity{}, fmt.Errorf("%w: %w", ErrWhoIsFailed, err)
