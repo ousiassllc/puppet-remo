@@ -20,6 +20,7 @@ func numberAttrs(min, max string) atoms.Attrs {
 
 // SettingsForm は M1 の設定（FR-S01〜S04、FR-S08）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
 // 自動起動のチェックは、OS の登録手段があるときだけ描画する。
+// ブラウザの入力検証は novalidate で止める（検証はサーバーが行い、422 でメッセージ付きに再描画する。frontend.md §5.6）。
 func SettingsForm(f view.SettingsForm) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -41,7 +42,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form id=\"settings-form\" class=\"space-y-5\" hx-put=\"/settings\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-disabled-elt=\"find button[type=submit]\" hx-indicator=\"#settings-spinner\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form id=\"settings-form\" class=\"space-y-5\" novalidate hx-put=\"/settings\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-disabled-elt=\"find button[type=submit]\" hx-indicator=\"#settings-spinner\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -85,7 +86,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = molecules.FormField("set-hotkey", "キルスイッチのホットキー", "`Ctrl+Alt+Shift+K` の書式。", f.Errors.Hotkey).Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = molecules.FormField("set-hotkey", "キルスイッチのホットキー", "Ctrl+Alt+Shift+K の書式。", f.Errors.Hotkey).Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

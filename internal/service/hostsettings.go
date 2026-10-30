@@ -83,7 +83,7 @@ func (s HostSettings) Validate() error {
 
 // validateHotkey はホットキーの書式（修飾キー 1 つ以上 + キー 1 つ）を検査し、不備なら利用者向けのメッセージを返す。
 func validateHotkey(spec string) string {
-	const format = "`Ctrl+Alt+Shift+K` の書式で、修飾キーを 1 つ以上含めて指定してください。"
+	const format = "Ctrl+Alt+Shift+K の書式で、修飾キーを 1 つ以上含めて指定してください。"
 	if spec != strings.TrimSpace(spec) || spec == "" || len(spec) > maxHotkeyLength {
 		return format
 	}

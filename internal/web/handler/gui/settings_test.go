@@ -20,7 +20,8 @@ func TestSettingsPage(t *testing.T) {
 	r := newRig(t)
 	res := r.get("/settings")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", `hx-put="/settings"`, `hx-target-422="this"`,
+	// ブラウザの入力検証でサーバーの 422 を迂回させない。
+	contains(t, res, "<html", ` novalidate`, `hx-put="/settings"`, `hx-target-422="this"`,
 		`name="server.port"`, `value="8765"`, `name="killswitch.hotkey"`, `value="Ctrl+Alt+Shift+K"`,
 		`name="screenshot.max_dimension"`, `value="1568"`, `name="lease.idle_timeout_sec"`, `value="300"`, `name="autostart"`)
 	lacks(t, res, "data-field-error", "checked")

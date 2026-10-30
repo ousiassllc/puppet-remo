@@ -430,7 +430,10 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 |---------|------|-----------|------|
 | POST | `/lease/revoke` | なし | 200 リースのフラグメント（保持者を剥奪。`agent` ならタスクを中断）。**M2 から**（M1 のダッシュボードに強制剥奪ボタンは無い。FR-H02）。`agent` の剥奪は M4 |
 | POST | `/killswitch/trigger` | なし | 200 ダッシュボードのフラグメント（FR-H06 の手順。1 秒以内） |
-| POST | `/killswitch/release` | なし | 200（解除。受付を再開） |
+| POST | `/killswitch/release` | なし | 200（解除。受付を再開）。ダッシュボードのキルスイッチのパネルを返し、ヘッダーのバッジの更新・確認モーダルを閉じる・トーストを OOB で添える |
+| GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント（SSE の `killswitch` で再取得する）。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む |
+| GET | `/killswitch/release/confirm` | なし | 200 解除の確認モーダル（フラグメント）。発動中でなければ 409 `conflict` |
+| GET | `/clients/{id}/delete/confirm`、`/clients/{id}/tokens/{token_id}/revoke/confirm` | なし | 200 確認モーダル（破壊的な操作は、サーバーが描画したモーダルの確定ボタンだけが実際の `DELETE` を送る。frontend.md §5.4）。対象が無ければ 404 |
 | POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`）。`id` が失効（60 秒）・解決済みなら 410 `approval_timeout` |
 | POST | `/approvals/{id}/deny` | なし | 同上（拒否） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクのフラグメント。終了済みなら現在の状態を返す |
@@ -455,10 +458,10 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `server-status` | サーバー状態のフラグメント（tailnet IP・ポート・tailscaled 状態） | ダッシュボード |
 | `sessions` | 接続中セッション一覧のフラグメント | ダッシュボード |
 | `lease` | リース保持者のフラグメント（種別付き。M2 から強制剥奪ボタンを含む） | ダッシュボード |
-| `connection-requests` | 接続要求の一覧と件数バッジ | 接続要求、トレイ通知 |
+| `connection-requests` | サイドバーの件数バッジのフラグメント。接続要求の一覧は、`hx-trigger="sse:connection-requests"` で `GET /requests` を再取得して更新する（同じイベントを複数の要素が受けると同じ HTML が差し込まれるため、一覧とバッジは別の経路にする） | 接続要求、トレイ通知 |
 | `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く | （ウィンドウ生成） |
 | `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由。M4） | ダッシュボード、タスク |
-| `killswitch` | キルスイッチ状態のフラグメント | 全画面のヘッダー |
+| `killswitch` | ヘッダーのキルスイッチ状態バッジのフラグメント。ダッシュボードのパネルは `hx-trigger="sse:killswitch"` で `GET /killswitch` を再取得して更新する | 全画面のヘッダー、ダッシュボード |
 | `toast` | 通知メッセージ（更新の通知、DB 破損の隔離、TypeSafe が 401 を返して高速パスを無効にした通知など） | 全画面 |
 
 承認ダイアログに表示する内容は `kind` による。`lease`: クライアント名・種別・（`agent` なら指示の要約）。`safety_check`: OpenAI の `pending_safety_checks` の内容。`judge_action`: アクションの内容、対象ウィンドウ（タイトル・プロセス名）、判定の理由。いずれも 60 秒で失効し拒否扱い。
@@ -491,3 +494,4 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | 1.1 | 2026-10-29 | ページ・アクションルートは常に HTML、JSON は `/api/v1` と MCP のみとし、エラー形式を経路別に整理。`/api/v1` を参照専用に | HALT の規約（[フロントエンド設計](../architecture/frontend.md)）との整合 |
 | 1.2 | 2026-10-29 | MCP `get_task` に `fast_steps` / `openai_steps` / `handoff_reason` を追加し、`run_task` で高速パスが透過であることを明記。WebSocket `wheel` と MCP `scroll` の単位をノッチに統一（変換規則を追記）。共通規約に CSP ヘッダーと静的ファイルのキャッシュ（`no-cache` + ETag）を追加。GUI ルーターに高速パスの設定ルート（`/agent/fastpath`、`/agent/fastpath/api-key`）と `keep_screenshots` を追加し、タスク詳細・SSE にステップの経路と引き継ぎ理由を追加。§8 を決定事項と実機検証事項に改め、MCP SDK の設定値・OpenAPI の範囲・高解像度の扱いを決定。Jev による外部 Judge の項は削除（高速パスは内部機構） | 未決事項の決定 |
 | 1.3 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチ（3）を WhoIs・許可リスト・接続要求の作成より前に移動（キルスイッチ中は接続要求を作らない）。Bearer の参照先を NFR-S04 に統一。M1 のリース（`state` は `idle` / `held`、`holder.kind` は `mcp` のみ、承認なし）と、ダッシュボードの段階（強制剥奪ボタンは M2、実行中タスクと中断ボタンは M4）を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
+| 1.4 | 2026-10-30 | GUI の実装（#12）に合わせて §7.3 に `GET /killswitch` と確認モーダルのルートを追加し、§7.4 の `connection-requests` / `killswitch` の data を「バッジ・ヘッダーのフラグメント + 一覧・パネルは `sse:` トリガーで再取得」に具体化 | SSE の 1 イベントを複数の要素が受けると同じ HTML が差し込まれる htmx の仕様への対応 |

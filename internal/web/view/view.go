@@ -214,8 +214,6 @@ type TokenReveal struct {
 	Label     string
 	Plaintext string
 	ExpiresAt string
-	// ClientID は一覧を OOB で更新するときの対象。
-	ClientID string
 }
 
 // ConfirmModal は破壊的な操作の確認モーダル（サーバーが描画し、確定のボタンだけが実際の操作を送る）。

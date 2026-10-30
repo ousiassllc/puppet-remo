@@ -178,7 +178,10 @@ func (h *Handler) IssueToken(c *gin.Context) {
 	} else if *ttl > 0 {
 		expires = h.formatTime(h.d.Clock.Now().Add(*ttl))
 	}
-	comps := []templ.Component{molecules.TokenReveal(view.TokenReveal{Label: label, Plaintext: plaintext, ExpiresAt: expires, ClientID: id})}
+	comps := []templ.Component{
+		molecules.TokenReveal(view.TokenReveal{Label: label, Plaintext: plaintext, ExpiresAt: expires}),
+		organisms.TokenForm(tokenFormView(id, "", ""), true), // 古いエラーと入力したラベルを残さない
+	}
 	if err == nil {
 		comps = append(comps, organisms.TokenList(h.tokenListView(id, tokens), true))
 	}

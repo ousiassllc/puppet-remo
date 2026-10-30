@@ -29,7 +29,7 @@ func inputType(t string) string {
 }
 
 func inputClass(invalid bool) string {
-	base := "block w-full rounded-md border bg-white px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 read-only:bg-slate-50 "
+	base := "block w-full min-w-0 rounded-md border bg-white px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 read-only:bg-slate-50 "
 	if invalid {
 		return base + "border-red-400 focus:ring-red-400"
 	}

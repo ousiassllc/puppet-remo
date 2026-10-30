@@ -37,7 +37,7 @@ templ clientDetailBody(v view.ClientDetail) {
 		@organisms.ClientCard(v.Client)
 		@molecules.Card("Bearer トークン") {
 			<div class="space-y-4">
-				@organisms.TokenForm(v.Form)
+				@organisms.TokenForm(v.Form, false)
 				<div id="token-result" aria-live="polite"></div>
 				@organisms.TokenList(v.Tokens, false)
 			</div>
