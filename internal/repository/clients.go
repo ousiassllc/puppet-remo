@@ -19,6 +19,9 @@ type Clients interface {
 	Create(ctx context.Context, c domain.Client) error              // stable_node_id の重複は ErrConflict
 	Update(ctx context.Context, id string, patch ClientPatch) error // approval_mode 変更時は approved_at を NULL に戻す
 	Delete(ctx context.Context, id string) error                    // client_tokens は CASCADE
+	// Replace は oldID のクライアントを消して c を登録する（同一トランザクション）。stable_node_id が同じ
+	// ログイン名変更後の再許可に使う。oldID が無ければ ErrNotFound。失敗したら oldID は残る。
+	Replace(ctx context.Context, oldID string, c domain.Client) error
 	TouchSeen(ctx context.Context, id string, at time.Time) error
 }
 
@@ -89,7 +92,16 @@ func (s clientStore) List(ctx context.Context) ([]domain.Client, error) {
 	return out, rows.Err()
 }
 
+// execer は *sql.DB と *sql.Tx に共通の ExecContext。
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (s clientStore) Create(ctx context.Context, c domain.Client) error {
+	return s.create(ctx, s.db.sql, c)
+}
+
+func (s clientStore) create(ctx context.Context, x execer, c domain.Client) error {
 	mode := c.ApprovalMode
 	if mode == "" {
 		mode = domain.ApprovalAlways
@@ -98,7 +110,7 @@ func (s clientStore) Create(ctx context.Context, c domain.Client) error {
 		return fmt.Errorf("%w: approval_mode %q", domain.ErrInvalidArgument, mode)
 	}
 	now := toMS(s.db.clock.Now())
-	_, err := s.db.sql.ExecContext(ctx,
+	_, err := x.ExecContext(ctx,
 		`INSERT INTO clients (id, stable_node_id, login_name, display_name,
 			web_enabled, mcp_enabled, agent_enabled, approval_mode, approved_at,
 			created_at, updated_at)
@@ -147,6 +159,25 @@ func (s clientStore) Update(ctx context.Context, id string, p ClientPatch) error
 
 func (s clientStore) Delete(ctx context.Context, id string) error {
 	return requireOne(s.db.sql.ExecContext(ctx, `DELETE FROM clients WHERE id = ?`, id))
+}
+
+func (s clientStore) Replace(ctx context.Context, oldID string, c domain.Client) (err error) {
+	tx, err := s.db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, tx.Rollback())
+		}
+	}()
+	if err = requireOne(tx.ExecContext(ctx, `DELETE FROM clients WHERE id = ?`, oldID)); err != nil {
+		return err
+	}
+	if err = s.create(ctx, tx, c); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s clientStore) TouchSeen(ctx context.Context, id string, at time.Time) error {

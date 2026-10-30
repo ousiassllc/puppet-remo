@@ -257,6 +257,17 @@ func (s *serveLoop) desired() ([]netip.AddrPort, string) {
 	return aps, ""
 }
 
+// newHTTPServer は tailnet 向けの http.Server を作る。WriteTimeout は付けない（SSE などの長い応答があるため）。
+func newHTTPServer(ctx context.Context, h http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
+	}
+}
+
 func (s *serveLoop) bind(ap netip.AddrPort) (*bound, error) {
 	network := "tcp6"
 	if ap.Addr().Is4() {
@@ -267,12 +278,8 @@ func (s *serveLoop) bind(ap netip.AddrPort) (*bound, error) {
 		return nil, err
 	}
 	b := &bound{
-		ap: ap,
-		srv: &http.Server{
-			Handler:           s.h,
-			ReadHeaderTimeout: 10 * time.Second,
-			BaseContext:       func(net.Listener) context.Context { return s.ctx },
-		},
+		ap:     ap,
+		srv:    newHTTPServer(s.ctx, s.h),
 		closed: make(chan struct{}),
 		done:   make(chan struct{}),
 	}

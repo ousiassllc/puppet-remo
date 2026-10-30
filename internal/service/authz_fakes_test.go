@@ -116,6 +116,9 @@ func (m *memClients) set(c domain.Client) {
 
 func (*memClients) List(context.Context) ([]domain.Client, error) { return nil, errors.New("unused") }
 func (*memClients) Create(context.Context, domain.Client) error   { return errors.New("unused") }
+func (*memClients) Replace(context.Context, string, domain.Client) error {
+	return errors.New("unused")
+}
 func (*memClients) Update(context.Context, string, repository.ClientPatch) error {
 	return errors.New("unused")
 }

@@ -17,7 +17,7 @@ type AuditEntry struct {
 	Kind        string    // auth / client / token / lease / tool / input / agent / killswitch / settings / update
 	Event       string    // 例: lease.acquire, tool.left_click
 	ActorType   domain.ActorKind
-	ClientID    string // 未登録・host・system は空（NULL）
+	ClientID    string // 未登録・host・system は空（NULL）。削除済みのクライアントも NULL（ラベルは残る）
 	ClientLabel string // 表示名のスナップショット
 	SessionID   string
 	LeaseID     string
@@ -53,7 +53,7 @@ func (s auditStore) Append(ctx context.Context, e AuditEntry) (int64, error) {
 	res, err := s.db.sql.ExecContext(ctx,
 		`INSERT INTO audit_logs (ts, kind, event, actor_type, client_id, client_label, session_id,
 			lease_id, task_id, step_no, tool, result, error_code, duration_ms, detail_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, (SELECT id FROM clients WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		toMS(ts), e.Kind, e.Event, string(e.ActorType), nullStr(e.ClientID), e.ClientLabel,
 		nullStr(e.SessionID), nullStr(e.LeaseID), nullStr(e.TaskID), e.StepNo,
 		nullStr(e.Tool), e.Result, nullStr(e.ErrorCode), e.DurationMS, detail)

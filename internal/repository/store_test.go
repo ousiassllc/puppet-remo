@@ -646,7 +646,6 @@ func TestAuditAppend(t *testing.T) {
 		{"result", func(e *AuditEntry) { e.Result = "maybe" }, nil},
 		{"actor", func(e *AuditEntry) { e.ActorType = "robot" }, nil},
 		{"detail", func(e *AuditEntry) { e.DetailJSON = json.RawMessage(`{oops`) }, domain.ErrInvalidArgument},
-		{"unknown client", func(e *AuditEntry) { e.ClientID = "ghost" }, nil},
 	}
 	for _, tt := range bad {
 		e := AuditEntry{Kind: "lease", Event: "lease.acquire", ActorType: domain.ActorMCP, ClientLabel: "d", Result: "ok"}
@@ -666,5 +665,106 @@ func TestAuditAppend(t *testing.T) {
 	}
 	if r := read(id1); r.clientID.Valid || r.label != "dev-c1" {
 		t.Errorf("after client delete: %+v", r)
+	}
+}
+
+// 削除済み（または未登録）のクライアント ID でも監査は捨てず、client_id を NULL にしてラベルを残す。
+func TestAuditAppendForDeletedClientKeepsRowWithNullClientID(t *testing.T) {
+	ctx := context.Background()
+	db, _ := openTestDB(t)
+	if err := db.Clients().Create(ctx, newClient("c1", "node1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Clients().Delete(ctx, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, clientID := range []string{"c1", "never-existed"} {
+		id, err := db.Audit().Append(ctx, AuditEntry{
+			Kind: "client", Event: "client.delete", ActorType: domain.ActorHost,
+			ClientID: clientID, ClientLabel: "dev-c1", Result: "ok",
+		})
+		if err != nil {
+			t.Fatalf("Append(client_id=%q): %v", clientID, err)
+		}
+		var cid sql.NullString
+		var label string
+		if err := db.sql.QueryRow(`SELECT client_id, client_label FROM audit_logs WHERE id = ?`, id).Scan(&cid, &label); err != nil {
+			t.Fatal(err)
+		}
+		if cid.Valid || label != "dev-c1" {
+			t.Errorf("client_id=%q: row = %+v, %q; want NULL client_id and the label kept", clientID, cid, label)
+		}
+	}
+}
+
+func TestClientsReplace(t *testing.T) {
+	ctx := context.Background()
+	db, _ := openTestDB(t)
+	cs := db.Clients()
+	if err := cs.Create(ctx, newClient("c1", "node1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.Create(ctx, newClient("c2", "node2")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cs.Replace(ctx, "c1", newClient("c3", "node1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cs.Get(ctx, "c1"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("old client: err = %v, want ErrNotFound", err)
+	}
+	if got, err := cs.ByNode(ctx, "node1"); err != nil || got.ID != "c3" {
+		t.Errorf("ByNode = %+v, %v", got, err)
+	}
+
+	// 失敗したら古いクライアントは残る（衝突・対象なし）。
+	if err := cs.Replace(ctx, "c3", newClient("c4", "node2")); !errors.Is(err, ErrConflict) {
+		t.Errorf("conflicting replace: err = %v, want ErrConflict", err)
+	}
+	if got, err := cs.Get(ctx, "c3"); err != nil || got.StableNodeID != "node1" {
+		t.Errorf("old client must survive a failed replace: %+v, %v", got, err)
+	}
+	if err := cs.Replace(ctx, "missing", newClient("c5", "node5")); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing old client: err = %v, want ErrNotFound", err)
+	}
+	if _, err := cs.Get(ctx, "c5"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("c5 must not be created: %v", err)
+	}
+}
+
+// 期限切れの pending は一覧に出ず、同じデバイスの新しい要求は新しい行になる（Expire を待たない）。
+func TestConnRequestsExpiredPendingIsHiddenAndReplaced(t *testing.T) {
+	ctx := context.Background()
+	db, clock := openTestDB(t)
+	rs := db.ConnRequests()
+	req := func(id string) ConnRequest {
+		return ConnRequest{
+			ID: id, StableNodeID: "node1", LoginName: "alice@example.com", DisplayName: "dev",
+			RemoteIP: "100.64.0.1", ExpiresAt: clock.Now().Add(time.Hour),
+		}
+	}
+	if _, _, err := rs.UpsertPending(ctx, req("r1")); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(time.Hour - time.Millisecond)
+	if pending, err := rs.ListPending(ctx); err != nil || len(pending) != 1 {
+		t.Fatalf("before expiry: %+v, %v", pending, err)
+	}
+	clock.Advance(time.Millisecond)
+	if pending, err := rs.ListPending(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("at expiry: %+v, %v; want none", pending, err)
+	}
+
+	got, created, err := rs.UpsertPending(ctx, req("r2"))
+	if err != nil || !created || got.ID != "r2" || got.RequestCount != 1 {
+		t.Fatalf("upsert after expiry = %+v, created=%v, err=%v", got, created, err)
+	}
+	var status string
+	if err := db.sql.QueryRow(`SELECT status FROM connection_requests WHERE id = 'r1'`).Scan(&status); err != nil || status != ConnExpired {
+		t.Errorf("old row status = %q, %v; want expired", status, err)
+	}
+	if pending, err := rs.ListPending(ctx); err != nil || len(pending) != 1 || pending[0].ID != "r2" {
+		t.Errorf("ListPending = %+v, %v", pending, err)
 	}
 }

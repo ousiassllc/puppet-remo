@@ -207,3 +207,33 @@ func TestWhoIsSweepsExpiredEntries(t *testing.T) {
 		t.Errorf("cache entries = %d, want 1 (expired ones swept)", n)
 	}
 }
+
+// blockingWhoIsAPI は WhoIs が ctx の終了まで返らない LocalAPI（tailscaled が応答しない状況）。
+type blockingWhoIsAPI struct{ *fakeAPI }
+
+func (blockingWhoIsAPI) WhoIs(ctx context.Context, _ string) (Identity, error) {
+	<-ctx.Done()
+	return Identity{}, ctx.Err()
+}
+
+func TestWhoIsTimesOutWhenLocalAPIHangs(t *testing.T) {
+	w := NewWhoIs(WhoIsConfig{API: blockingWhoIsAPI{newFakeAPI()}, Clock: newFakeClock()}).(*whoIsCache)
+	if w.timeout != whoIsTimeout || whoIsTimeout != 5*time.Second {
+		t.Fatalf("timeout = %v, want 5s", w.timeout)
+	}
+	w.timeout = 10 * time.Millisecond
+
+	errc := make(chan error, 1)
+	go func() {
+		_, err := w.Lookup(context.Background(), "100.64.0.5")
+		errc <- err
+	}()
+	select {
+	case err := <-errc:
+		if !errors.Is(err, ErrWhoIsFailed) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err = %v, want ErrWhoIsFailed wrapping DeadlineExceeded", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Lookup did not return after the timeout")
+	}
+}

@@ -104,6 +104,7 @@ func TestRecordConnectionRequestRateLimit(t *testing.T) {
 	}
 
 	// 既存の pending への集約は数えず、上限後も更新される。
+	e.clock.Advance(connRequestTouchInterval)
 	if err := e.authz.RecordConnectionRequest(ctx, ident(node(0)), "100.64.9.9"); err != nil {
 		t.Fatal(err)
 	}

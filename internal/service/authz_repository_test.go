@@ -75,9 +75,10 @@ func TestAuthorizeWithRepository(t *testing.T) {
 	// 未登録: device_not_registered + 接続要求（再試行は 1 件に集約）。
 	for range 3 {
 		expect("unregistered", authorize("100.64.0.9", FeatureWeb, ""), domain.CodeDeviceNotRegistered)
+		clock.Advance(connRequestTouchInterval)
 	}
 	if rs := pending(); len(rs) != 1 || rs[0].RequestCount != 3 || rs[0].StableNodeID != "nodeA" ||
-		rs[0].RemoteIP != "100.64.0.9" || !rs[0].ExpiresAt.Equal(clock.Now().Add(connRequestPendingTTL)) {
+		rs[0].RemoteIP != "100.64.0.9" || !rs[0].ExpiresAt.Equal(clock.Now().Add(-3*connRequestTouchInterval).Add(connRequestPendingTTL)) {
 		t.Fatalf("pending = %+v", rs)
 	}
 
