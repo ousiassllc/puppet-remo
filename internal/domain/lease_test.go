@@ -412,3 +412,46 @@ func TestActorKindCanHoldLease(t *testing.T) {
 		}
 	}
 }
+
+func TestSetIdleTimeout(t *testing.T) {
+	alice := mcpActor("alice")
+
+	t.Run("0 以下は ErrInvalidArgument で値を変えない", func(t *testing.T) {
+		m, clk := newMachine(t, time.Minute)
+		mustAcquire(t, m, alice)
+		for _, d := range []time.Duration{0, -time.Second} {
+			if err := m.SetIdleTimeout(d); !errors.Is(err, domain.ErrInvalidArgument) {
+				t.Errorf("SetIdleTimeout(%s) = %v, want ErrInvalidArgument", d, err)
+			}
+		}
+		if dl, _ := m.IdleDeadline(); !dl.Equal(clk.Now().Add(time.Minute)) {
+			t.Errorf("deadline = %v, want unchanged (+1m)", dl)
+		}
+	})
+
+	t.Run("保持中のリースの期限は最後の活動から新しい値で数え直す", func(t *testing.T) {
+		m, clk := newMachine(t, time.Minute)
+		mustAcquire(t, m, alice)
+		clk.Advance(30 * time.Second)
+		if err := m.SetIdleTimeout(10 * time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		if dl, _ := m.IdleDeadline(); !dl.Equal(clk.Now().Add(10*time.Minute - 30*time.Second)) {
+			t.Errorf("deadline = %v, want acquire time + 10m", dl)
+		}
+		clk.Advance(2 * time.Minute) // 旧タイムアウトなら期限切れだった
+		if m.State() != domain.LeaseHeld {
+			t.Errorf("state = %s, want held under the longer timeout", m.State())
+		}
+	})
+
+	t.Run("短くして期限を過ぎたら次の Expire で解放される", func(t *testing.T) {
+		m, clk := newMachine(t, 10*time.Minute)
+		mustAcquire(t, m, alice)
+		clk.Advance(2 * time.Minute)
+		if err := m.SetIdleTimeout(time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		assertEvents(t, m.Expire(), wantEvent{from: domain.LeaseHeld, to: domain.LeaseIdle, reason: domain.ReleaseIdleTimeout, holder: "alice"})
+	})
+}

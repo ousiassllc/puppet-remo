@@ -166,7 +166,7 @@ func TestKillSwitchPersistsAcrossRestart(t *testing.T) {
 
 	// 解除も永続化される。
 	db, k = open()
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if k.Active() {
 		t.Fatal("kill switch must stay released after restart")
 	}

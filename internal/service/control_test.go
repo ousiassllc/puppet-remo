@@ -299,7 +299,7 @@ func TestControlDoWaitNeedsNoLease(t *testing.T) {
 			t.Fatalf("wait %s: want ErrInvalidArgument, got %v", d, err)
 		}
 	}
-	e.kill.Trigger("test")
+	_ = e.kill.Trigger("test")
 	if _, err := e.control.Do(context.Background(), ctlAlice, domain.Wait{Duration: time.Second}); !errors.Is(err, domain.ErrKillSwitchActive) {
 		t.Fatalf("wait during kill switch: %v", err)
 	}

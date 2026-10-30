@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0"
+	},
+	"info": {
+		"0409": {
+			"ProductVersion": "0.1.0",
+			"CompanyName": "ousiassllc",
+			"FileDescription": "tailnet 経由でこの PC を操作させる常駐アプリ",
+			"LegalCopyright": "(c) 2026, ousiassllc",
+			"ProductName": "puppet-remo",
+			"Comments": "puppet-remo"
+		}
+	}
+}

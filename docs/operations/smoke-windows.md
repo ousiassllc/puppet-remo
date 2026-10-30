@@ -1,6 +1,6 @@
-# Windows 実機スモーク手順（platform: キャプチャ・入力・ウィンドウ・クリップボード）
+# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル）
 
-CI（`windows-latest`）には対話デスクトップがないため、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボードは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は `internal/platform/windows` を**実機で**確かめる手順で、各 platform の機能ごとに確認する項目を並べる。M1 の範囲（FR-M01〜M13）だけを扱う。DXGI・UI Automation・ホットキー・オーバーレイは別の手順で確認する。
+CI（`windows-latest`）には対話デスクトップがないため、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。DXGI・オーバーレイは M2 以降の手順で確認する。
 
 ## 1. 準備
 
@@ -91,7 +91,31 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | B5 | `ctx` の取り消し | 待ちの途中でも `context.Canceled` を返す |
 | B6 | サイズ上限（1 MiB。NFR-S09） | platform は上限を持たない。上限は `service` / `mcp` の責務なので、ここでは確認しない |
 
-### 3.5 全体
+### 3.5 UI Automation（`get_ui_tree`。FR-M14）
+
+契約テスト（§2 の `TestSmokeUIAutomation`）は、前面にメモ帳など 3 ノード以上のウィンドウがあることを前提にする。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| U1 | `go test -tags smoke -run TestSmokeUIAutomation -v ./internal/platform/windows/`（メモ帳を前面に） | `PASS`。`SKIP` / `FAIL` にならない |
+| U2 | メモ帳・エクスプローラー・ブラウザの `Tree`（深さ 5・500 ノード） | 役割・名前・外接矩形（物理座標）が得られる。ノード数・深さの上限で打ち切られ、打ち切りが分かる |
+| U3 | パスワード入力欄を含む画面（ブラウザのログインフォーム） | パスワード欄の `Value` が空（値を読まない） |
+| U4 | UIA を呼んでいる最中に対象アプリが固まっている | 呼び出しがタイムアウトして戻る（`get_ui_tree` が 30 秒で打ち切られる。アプリ全体が固まらない） |
+| U5 | 管理者権限のウィンドウが前面 | 失敗が `input_blocked` ではなく読み取りの失敗として返る（ツリーを返せない場合は原因つきのエラー） |
+
+### 3.6 グローバルホットキー（FR-H06・FR-S02）
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| K1 | `go test -tags smoke -run TestSmokeHotkey -v ./internal/platform/windows/` | `PASS`（契約テストが登録・重複・解除を確認する） |
+| K2 | アプリ起動後に既定の `Ctrl+Alt+Shift+K` を押す（§4.5） | キルスイッチが発動する |
+| K3 | 他のアプリが同じキーを登録済みの状態でアプリを起動 | アプリは起動し、ログ（`%LOCALAPPDATA%\puppet-remo\logs\`）にホットキー登録の失敗が残る。ダッシュボード・トレイからは発動できる |
+| K4 | 設定画面でホットキーを別のキーに変更して保存 | 新しいキーで発動し、古いキーでは発動しない。登録できないキーを保存したときは、古い登録が残る |
+
+### 3.7 全体
+ 
+ | # | 確認項目 | 期待 |
+ |---|---------|------|
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
@@ -99,8 +123,72 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | G2 | `GOOS=windows go build ./...` と `go vet` | 通る（実機のビルドでも同じ） |
 | G3 | `go test -race -tags smoke` | データ競合なし（`Input` の専用スレッド、`Capturer` / `WindowManager` の列挙） |
 
-## 4. 既知の制約（M1）
+## 4. Wails のシェルと結線（S11。実機のみ）
+
+`task windows:build`（または Windows で `go build -tags production -ldflags "-H windowsgui" ./cmd/puppet-remo`）で作った `puppet-remo.exe` を、**tailscaled が動いていて tailnet にログイン済み**の対話デスクトップで実行する。WebView2 ランタイムが要る（インストーラが導入する）。通信相手になる tailnet 上の別端末（MCP クライアント）を 1 台用意する。
+
+### 4.1 ウィンドウ・トレイ・単一インスタンス（FR-H01）
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| S1 | 起動 | メインウィンドウにダッシュボードが表示され、トレイにアイコンが出る。リッスン用のソケットは GUI のために開かない（`netstat -ano` に GUI 用のポートがない。開くのは tailnet IP の設定ポートだけ） |
+| S2 | ウィンドウの閉じるボタン | ウィンドウが隠れるだけでプロセスは終了しない（タスクマネージャーで確認）。トレイから開き直せる |
+| S3 | トレイメニュー | 「ダッシュボードを開く」「キルスイッチを発動」「終了」がある。接続要求が保留中のときだけ「接続要求を確認」が出て、押すと該当画面が開く。発動中は「キルスイッチ」の項目が押せない |
+| S4 | トレイアイコンのクリック | ダッシュボードが前面に出る |
+| S5 | トレイの「終了」 | プロセスが終わり、tailnet IP のポートが閉じ、トレイのアイコンが消える。MCP セッションが切れる |
+| S6 | 2 つ目を起動 | 2 つ目は終了し、1 つ目のウィンドウが前面に出る（最小化・非表示からも復帰）。`puppet-remo.exe` のプロセスが 1 つのまま |
+| S7 | 管理者として起動した 2 つ目 | 同様に単一インスタンスになる（確認結果を残す） |
+
+### 4.2 ログオン時の自動起動（FR-S08）
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| A1 | 設定画面で自動起動を有効にして保存 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` に `puppet-remo` の値ができる。値は `"<exe のパス>" --background` |
+| A2 | サインアウト → サインイン | アプリが起動し、ウィンドウは開かずトレイだけに常駐する（`--background`）。トレイから開ける |
+| A3 | 設定画面で無効にして保存 | Run キーの値が消える。設定画面を開き直すと無効と表示される |
+| A4 | exe を別の場所へ移した後の設定画面 | 古いパスを指す登録は「無効」と表示され、有効にし直すと上書きされる |
+| A5 | アンインストール | データ（`%LOCALAPPDATA%\puppet-remo`）は残る。自動起動を有効にしたまま消すと Run キーが残るため、先に無効にする（インストーラは Run キーを触らない） |
+
+### 4.3 WebView2 での表示（フロントエンド設計 §11）
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| W1 | ダッシュボード・接続要求・クライアント・設定の各画面 | 表示され、操作できる。DevTools（本番ビルドでは無効）が使える開発ビルドのコンソールに **CSP 違反が出ない**。Wails が HTML にインラインのスクリプト・スタイルを注入しない。`/wails/runtime.js` が同一オリジンで読み込まれる |
+| W2 | `wails3 dev`（`task dev`） | `FRONTEND_DEVSERVER_URL` の待ち受け確認（esbuild の serve）を通過し、GUI が表示される。CSP の `'self'` が開発サーバーのオリジンで効く |
+| W3 | **SSE（`/events`）** | **Wails v3.0.0 の Windows の AssetServer は応答をストリーミングしない**（`responsewriter_windows.go` は本文を `Finish` まで溜める）。ダッシュボードの自動更新（セッション・リース・接続要求のバッジ）がウィンドウ内で届くか確認し、届かなければページの再読み込み・操作で更新される範囲を記録する（既知の逸脱。下の §5） |
+| W4 | トークンのクリップボードコピー | 発行直後の「コピー」ボタンでクリップボードにトークンが入る（WebView2 の `navigator.clipboard` が使える）。コピー後、他のアプリへ貼り付けて確認する |
+| W5 | ウィンドウのキャプチャ除外 | メイン GUI は `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）で、トークン発行画面を出した状態で MCP の `screenshot` を呼んでも、ウィンドウの内容が写らない。また `Own` ウィンドウとして `InputGuard` が入力を拒否する（§3.3 W5） |
+
+### 4.4 リモートルーターと tailnet（FR-A01〜A02、NFR-S01・A03）
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| R1 | 起動後の `netstat -ano \| findstr 8765` | tailnet の IPv4（`100.x`）・IPv6（`fd7a:`）だけで LISTENING。`127.0.0.1`・`0.0.0.0`・`::` では待ち受けない |
+| R2 | tailnet 上の別端末から `curl http://<tailnet-ip>:8765/mcp` | 未登録なら 403（接続要求が作られ、トレイ・ダッシュボードに出る）。`/viewer`・`/api/v1` は 404（M1 にない） |
+| R3 | 接続要求を許可 → トークン発行 → MCP クライアントで接続 | `initialize` と `tools/list` が通り、ダッシュボードの「接続中セッション」に出る。切断すると消える |
+| R4 | tailscaled を停止・再起動 | 待ち受けが止まり（理由がダッシュボードに出る）、再起動後 10 秒以内に復旧する |
+| R5 | 設定画面でポートを変更して保存 | 新しいポートで待ち受け直し、古いポートは閉じる |
+| R6 | リースのアイドル時間を設定画面で変更 | 保持中のリースにも新しい値が適用される |
+
+### 4.5 キルスイッチ（FR-H06）
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| X1 | MCP クライアントで操作リースを取った状態で `Ctrl+Alt+Shift+K` | 1 秒以内にリースが解放され、MCP セッションが切断され、以降の要求が 503 `kill_switch_active`。ダッシュボードに発動中と出る |
+| X2 | トレイメニューの「キルスイッチ」・ダッシュボードのボタン | 同じ結果 |
+| X3 | 発動中にアプリを再起動 | 発動状態のまま起動する（解除はダッシュボードの確認操作だけ） |
+| X4 | 発動中に未登録デバイスからリクエスト | 503 で、接続要求は作られない |
+
+### 4.6 ビルドとインストーラ
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| P1 | `task windows:build`（Linux からのクロスビルドでも可） | `bin/puppet-remo.exe`（GUI サブシステム）ができる。エクスプローラーのプロパティにバージョン情報があり、マニフェストが Per-Monitor DPI Aware V2 |
+| P2 | `task package`（`makensis` が必要） | `bin/puppet-remo-amd64-installer.exe` ができる。インストール → スタートメニューにショートカット → 起動できる。WebView2 ランタイムが無い環境で導入される。署名はしない（初回に SmartScreen の警告が出る。NFR-O07） |
+
+## 5. 既知の制約（M1）
 
 - キャプチャは GDI `BitBlt` のみ。DXGI（Desktop Duplication）と継続キャプチャ（`Watch`）は M2。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
 - UIPI: 管理者権限のウィンドウへは標準権限のプロセスから入力できない。`SendInput` は UIPI に捨てられても成功を返すことがあるため、`WindowInfo.Elevated` を `service.InputGuard` が先に見て `input_blocked` にする。
 - `Key` の記号キーは現在のキーボード配列に依存する（`VkKeyScanEx`）。Ctrl / Alt（AltGr）が要る文字は `invalid_argument`。文字そのものを入力したいときは `Text` を使う。
+- **GUI の SSE（`/events`）**: Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファするため、`text/event-stream` の逐次配信が WebView 内では届かない（`internal/assetserver/webview/responsewriter_windows.go`）。ページ・HTMX のアクションは動く。自動更新の代替（定期ポーリング、または Bus から Wails のイベントへの橋渡し）は S10 のテンプレートの変更が要るため、実機での確認結果を見て決める。

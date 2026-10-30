@@ -1,7 +1,17 @@
 version: "3"
 
-# Go のビルド・検査・テスト（S1）、templ 生成とフロントエンドのビルド（S10）。wails3 のタスクは S11 で足す。
+# Go のビルド・検査・テスト（S1）、templ 生成とフロントエンドのビルド（S10）、Wails のアプリのビルドとパッケージ（S11）。
 # フロントエンド（HALT）の規約は docs/architecture/frontend.md §8。
+# `windows:` はアプリ（cmd/puppet-remo）の本番ビルドとインストーラ（build/windows/Taskfile.yml）、
+# `common:` は wails3 の共通タスク（build/Taskfile.yml）。`wails3 package` が呼ぶ `package`、`wails3 dev` は build/config.yml。
+
+includes:
+  common:
+    taskfile: ./build/Taskfile.yml
+    dir: .
+  windows:
+    taskfile: ./build/windows/Taskfile.yml
+    dir: .
 
 tasks:
   default:
@@ -147,6 +157,16 @@ tasks:
     deps: [frontend:build]
     cmds:
       - go test -tags production ./static/...
+
+  package:
+    desc: NSIS インストーラを作る（wails3 package もこのタスクを呼ぶ）
+    cmds:
+      - task: windows:package
+
+  dev:
+    desc: wails3 dev で開発する（Windows。templ generate --watch は別ターミナルで task templ:watch）
+    cmds:
+      - wails3 dev -config ./build/config.yml
 
   tidy:
     desc: go.mod / go.sum を整理する

@@ -42,7 +42,7 @@ func (*Clipboard) ReadText(ctx context.Context) (string, error) {
 		if p == 0 {
 			return clipboardFailed("GlobalLock", err)
 		}
-		defer w32GlobalUnlock.Call(h)
+		defer func() { _, _, _ = w32GlobalUnlock.Call(h) }()
 		text = decodeClipboardText(unsafe.Slice((*uint16)(fromUintptr(p)), size/2))
 		return nil
 	})
@@ -59,18 +59,18 @@ func (*Clipboard) WriteText(ctx context.Context, s string) error {
 		}
 		p, _, err := w32GlobalLock.Call(mem)
 		if p == 0 {
-			w32GlobalFree.Call(mem)
+			_, _, _ = w32GlobalFree.Call(mem)
 			return clipboardFailed("GlobalLock", err)
 		}
 		copy(unsafe.Slice((*uint16)(fromUintptr(p)), len(data)), data)
-		w32GlobalUnlock.Call(mem)
+		_, _, _ = w32GlobalUnlock.Call(mem)
 
 		if r, _, err := w32EmptyClipboard.Call(); r == 0 {
-			w32GlobalFree.Call(mem)
+			_, _, _ = w32GlobalFree.Call(mem)
 			return clipboardFailed("EmptyClipboard", err)
 		}
 		if r, _, err := w32SetClipboardData.Call(cfUnicodeText, mem); r == 0 {
-			w32GlobalFree.Call(mem)
+			_, _, _ = w32GlobalFree.Call(mem)
 			return clipboardFailed("SetClipboardData", err)
 		}
 		return nil // 成功したらメモリの所有権はシステムに移る
@@ -89,7 +89,7 @@ func withClipboard(ctx context.Context, fn func() error) error {
 		}
 		r, _, err := w32OpenClipboard.Call(0)
 		if r != 0 {
-			defer w32CloseClipboard.Call()
+			defer func() { _, _, _ = w32CloseClipboard.Call() }()
 			return fn()
 		}
 		lastErr = err

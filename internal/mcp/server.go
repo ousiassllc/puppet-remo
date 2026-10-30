@@ -74,6 +74,9 @@ type Config struct {
 	// Version は initialize で返すアプリの版。
 	Version string
 	Logger  *slog.Logger // nil なら slog.Default()
+	// OnSessionsChange は接続中のセッションの一覧が変わるたび（接続・切断）に呼ぶ。nil なら呼ばない。
+	// GUI の sessions 通知に使う。ロックを持たずに呼ぶが、重い処理はしない。
+	OnSessionsChange func()
 
 	// 以下は 0 なら既定値。テストが短くする。
 	SessionTimeout time.Duration
@@ -84,10 +87,11 @@ type Config struct {
 
 // Server は MCP サーバー。
 type Server struct {
-	control   service.Control
-	leases    service.LeaseManager
-	principal PrincipalFunc
-	log       *slog.Logger
+	control    service.Control
+	leases     service.LeaseManager
+	principal  PrincipalFunc
+	log        *slog.Logger
+	onSessions func()
 
 	toolTimeout time.Duration
 	maxSessions int
@@ -98,6 +102,8 @@ type Server struct {
 	mu      sync.Mutex
 	opening int                 // セッションを作っている最中のリクエスト数（上限の判定に数える）
 	watched map[string]struct{} // 切断を見張っているセッション ID
+	// sessions は接続中のセッション（sessions.go）。セッション ID をキーにする。
+	sessions map[string]*sessionRecord
 }
 
 // New は MCP サーバーを作り、全ツールを登録する。
@@ -114,10 +120,12 @@ func New(cfg Config) (*Server, error) {
 		control:     cfg.Control,
 		leases:      cfg.Leases,
 		principal:   cfg.Principal,
+		onSessions:  cfg.OnSessionsChange,
 		log:         cfg.Logger,
 		toolTimeout: cmp.Or(cfg.ToolTimeout, DefaultToolTimeout),
 		maxSessions: cmp.Or(cfg.MaxSessions, DefaultMaxSessions),
 		watched:     make(map[string]struct{}),
+		sessions:    make(map[string]*sessionRecord),
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -132,6 +140,7 @@ func New(cfg Config) (*Server, error) {
 			KeepAliveFailureThreshold: keepAliveFailureThreshold,
 		},
 	)
+	s.sdk.AddReceivingMiddleware(s.trackSessions)
 	s.addTools()
 
 	// SDK の設定は API 仕様 §8.1 のとおり: Stateless=false（リース保持者はセッションに束縛）、

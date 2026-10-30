@@ -50,7 +50,7 @@ func (s settingStore) All(ctx context.Context) (map[string]json.RawMessage, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[string]json.RawMessage{}
 	for rows.Next() {
 		var k, v string

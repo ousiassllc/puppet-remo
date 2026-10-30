@@ -1,0 +1,50 @@
+# wails3 のビルド設定（docs/architecture/overview.md「ビルドと配布」）。
+# `info` を変えたら `wails3 update build-assets -config build/config.yml -dir build` で windows/ の資産を作り直す
+# （project.nsi は手で調整済みのため上書きされる。差分を確認してから取り込む）。
+version: '3'
+
+info:
+  companyName: "ousiassllc"
+  productName: "puppet-remo"
+  productIdentifier: "io.github.ousiassllc.puppet-remo"
+  description: "tailnet 経由でこの PC を操作させる常駐アプリ"
+  copyright: "(c) 2026, ousiassllc"
+  comments: "puppet-remo"
+  version: "0.1.0"
+
+# `wails3 dev -config ./build/config.yml` の設定（docs/architecture/frontend.md §8.3）。
+# wails3 dev は FRONTEND_DEVSERVER_URL を常に設定し、WAILS_VITE_PORT（既定 9245）の待ち受けを待つ。
+# 待ち受けは `task frontend:dev`（esbuild の serve + ウォッチ、Tailwind のウォッチ）が担う。GUI のページは GUI ルーターが配信する。
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - bin
+      - static
+      - docs
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+      - "*.templ"
+    git_ignore: true
+  executes:
+    - cmd: task windows:build:dev
+      type: blocking
+    - cmd: task frontend:dev
+      type: background
+    - cmd: task windows:run
+      type: primary
+      exit_policy: shutdown
+
+fileAssociations:
+
+other:
+  - name: puppet-remo

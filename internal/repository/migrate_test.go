@@ -77,7 +77,7 @@ func TestOpenIsIdempotentAndKeepsData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 1 {
 		t.Errorf("schema_migrations rows = %d, want 1 (reopen must not re-apply)", n)
 	}
@@ -102,7 +102,7 @@ func TestOpenQuarantinesCorruptDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	q := db.QuarantinedPath()
 	if !strings.HasPrefix(q, path+".corrupt-") {
@@ -142,7 +142,7 @@ func appliedVersions(t *testing.T, conn *sql.DB) []int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []int
 	for rows.Next() {
 		var v int
