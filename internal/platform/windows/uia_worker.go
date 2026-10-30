@@ -56,7 +56,8 @@ func (w *uiaWorker) run(init func() (func(), error), ready chan<- error) {
 }
 
 // Do は fn を専用スレッドの上で実行し、終わるまで待つ。fn は ctx を見て早く終えること。
-// ctx が取り消し済みなら fn を実行せずに ctx.Err() を返す。閉じた後は errUIAClosed。
+// ctx が取り消し済みなら fn を実行せずに ctx.Err() を返す。実行中に ctx が終わったら、fn の終了を待たずに ctx.Err() を返す。
+// 閉じた後は errUIAClosed。
 func (w *uiaWorker) Do(ctx context.Context, fn func() error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -64,7 +65,14 @@ func (w *uiaWorker) Do(ctx context.Context, fn func() error) error {
 	res := make(chan error, 1)
 	select {
 	case w.jobs <- func() { res <- fn() }:
-		return <-res
+		// fn は ctx を見て早く終えるはずだが、見ない呼び出しに呼び出し側を縛られないよう ctx でも待ちを切る
+		// （res は容量 1 なので、後から終わった fn の結果は捨てられる）。
+		select {
+		case err := <-res:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	case <-w.done:
 		return errUIAClosed
 	case <-ctx.Done():

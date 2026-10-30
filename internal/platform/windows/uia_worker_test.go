@@ -152,3 +152,30 @@ func TestUIAWorkerDoAfterClose(t *testing.T) {
 		t.Errorf("error = %v, want errUIAClosed", err)
 	}
 }
+
+// 実行中の fn が ctx を見なくても、ctx が終わったら Do は fn の終了を待たずに返る。
+func TestUIAWorkerDoReturnsWhenContextEndsWhileJobRuns(t *testing.T) {
+	w, err := startUIAWorker(func() (func(), error) { return nil, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	defer func() { close(release); w.Close() }()
+
+	started := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		result <- w.Do(ctx, func() error { close(started); <-release; return nil })
+	}()
+	<-started
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Do = %v, want context.Canceled", err)
+		}
+	case <-time.After(uiaTestWait):
+		t.Fatal("Do did not return after its context ended")
+	}
+}

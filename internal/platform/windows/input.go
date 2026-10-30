@@ -218,11 +218,7 @@ func (in *Input) Text(ctx context.Context, s string) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			n := min(len(steps), 2*textChunk)
-			// 1 文字（down + up、サロゲートペアは 4 件）を分割しないよう、解放で終わる位置まで進める。
-			for n < len(steps) && !steps[n-1].up {
-				n++
-			}
+			n := textChunkLen(steps, 2*textChunk)
 			if err := in.sendBalanced(steps[:n]); err != nil {
 				return err
 			}
@@ -230,6 +226,23 @@ func (in *Input) Text(ctx context.Context, s string) error {
 		}
 		return nil
 	})
+}
+
+// textChunkLen は steps の先頭から 1 回の SendInput で送る件数を返す。limit 件を目安に、1 文字を分割しない位置まで進める。
+// 1 文字は down + up（サロゲートペアは上位 → 下位の 4 件）で、切れるのは文字の最後の解放の直後だけ。
+// 上位サロゲートの解放の直後で切ると、ペアが別々の SendInput に分かれて文字化けする。
+func textChunkLen(steps []inputStep, limit int) int {
+	n := min(len(steps), limit)
+	for n < len(steps) && !endsCharacter(steps[n-1]) {
+		n++
+	}
+	return n
+}
+
+// endsCharacter は s が 1 文字の最後の入力か（解放で、かつ上位サロゲートの解放ではない）。
+func endsCharacter(s inputStep) bool {
+	isHighSurrogate := s.kind == stepRune && s.unit >= 0xD800 && s.unit < 0xDC00
+	return s.up && !isHighSurrogate
 }
 
 // ReleaseAll は KeyEvent で押下中のキーを解放し、ホイールの端数を捨てる。
