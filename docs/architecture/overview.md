@@ -120,7 +120,7 @@ graph TD
     TOOLS --> UIA
     TOOLS --> CLIP
     TOOLS --> LAUNCH
-    TOOLS --> APPS
+    TOOLS -- "Launch: Get(app_id) を参照" --> APPS
     GR --> APPS
     APPS --> PICK
     APPS --> DB

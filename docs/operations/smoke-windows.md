@@ -22,6 +22,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | `PUPPET_REMO_SMOKE_INPUT` | 未設定 | `1` のときだけ入力のテスト（`TestSmokeInput`）を走らせる。カーソルを動かし、クリック・ホイール・キー・文字入力を前面へ送る |
 | `PUPPET_REMO_SMOKE_X` / `PUPPET_REMO_SMOKE_Y` | プライマリモニターの中央 | 入力のテストがクリックしてよい座標（仮想デスクトップ上の物理座標）。害のない場所を指定する |
 | `PUPPET_REMO_SMOKE_CLIPBOARD` | 未設定 | `1` のときだけクリップボードのテスト（`TestSmokeClipboard`）を走らせる。終了時にテキストを元に戻すが、テキスト以外の内容は失われる |
+| `PUPPET_REMO_SMOKE_PICKER` | 未設定 | `1` のときだけファイル選択のテスト（`TestSmokeFilePicker`。§3.8 L9）を走らせる。ダイアログが開くため、手動で選択・キャンセルの操作が要る |
 
 ```powershell
 $env:PUPPET_REMO_SMOKE_INPUT = "1"; $env:PUPPET_REMO_SMOKE_CLIPBOARD = "1"
@@ -237,6 +238,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 - キャプチャは GDI `BitBlt` のみ。DXGI（Desktop Duplication）と継続キャプチャ（`Watch`）は M2。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
 - UIPI: 管理者権限のウィンドウへは標準権限のプロセスから入力できない。`SendInput` は UIPI に捨てられても成功を返すことがあるため、`WindowInfo.Elevated` を `service.InputGuard` が先に見て `input_blocked` にする。
 - `Key` の記号キーは現在のキーボード配列に依存する（`VkKeyScanEx`）。Ctrl / Alt（AltGr）が要る文字は `invalid_argument`。文字そのものを入力したいときは `Text` を使う。
+- **アプリ起動（M1.5）**: `launch_app` は起動したプロセスを終了・監視しない。キルスイッチ・リースの解放・セッションの切断・本アプリの終了でも、起動済みのプロセスは残る（FR-M19）。
 - **GUI の自動更新は SSE ではなくポーリング**: Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファするため、`text/event-stream` の逐次配信が WebView 内では届かない（`internal/assetserver/webview/responsewriter_windows.go`）。ホスト GUI のレイアウトは SSE（`/events`）を購読せず、`GET /poll`（3 秒ごと）の OOB で更新する（frontend.md §5.3）。画面が隠れている間もポーリングは続く。
 
 ## 改訂履歴
@@ -245,3 +247,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 |---|------|---------|---------|
 | — | 2026-10-30 | 冒頭の CI の説明を、`windows-latest` から、セルフホストの Linux ランナーと `GOOS=windows` のクロスコンパイルに更新 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
 | — | 2026-10-30 | 起動許可リストと `launch_app` / `list_launchable_apps`（M1.5）の実機確認項目を追加: §3.8（`AppLauncher`・`FilePicker` の契約テストと手動確認 L1〜L9）、§4.8（ホスト GUI の登録と MCP の起動 A1〜A12。未確認）、タイトル | M1.5 の仕様追記（#16。オーナー決定 8 件） |
+| — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_PICKER` を追加、§5 に `launch_app` が起動したプロセスを終了しない旨を追記 | #16 のレビュー指摘 |
