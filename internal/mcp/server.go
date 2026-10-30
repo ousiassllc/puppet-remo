@@ -51,12 +51,14 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"All coordinates are in the scaled screenshot coordinate system: the origin is the top-left of each monitor " +
 	"and one unit is one pixel of the screenshot returned by the screenshot tool, not a physical pixel. " +
 	"Call get_screen_info for the monitors and their scale; pass monitor to address a monitor other than the primary. " +
-	"Viewing tools (get_screen_info, screenshot, cursor_position, wait, list_windows, get_control_status) " +
+	"Viewing tools (get_screen_info, screenshot, cursor_position, wait, list_windows, get_control_status, list_launchable_apps) " +
 	"do not need the control lease. " +
 	"Every tool that sends input or reads the clipboard or the UI tree needs the control lease; " +
 	"it is acquired implicitly on first use (acquire_control and release_control do it explicitly) " +
 	"and is released when you release it, when the session ends, after an idle period, or when the host stops all control. " +
 	"Only one session holds the lease at a time; others get lease_held_by_other. " +
+	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
+	"you can pass only an app_id, never a path or arguments, and it needs the lease like input tools. " +
 	"Tool failures are returned with isError and structuredContent {code, message}."
 
 // PrincipalFunc は連鎖（web/middleware）を通ったリクエストの主体を返す。
@@ -69,7 +71,7 @@ type Config struct {
 	Leases    service.LeaseManager
 	Principal PrincipalFunc
 	// Audit は閲覧系・リースのツール呼び出し（Control.Do を通らず Control が記録しないもの）の監査先。nil なら記録しない。
-	// 入力系のツールは Control.Do が記録するため、ここでは記録しない（二重記録を避ける。FR-AU01）。
+	// 入力系のツールは Control.Do が、launch_app は Control.Launch が記録するため、ここでは記録しない（二重記録を避ける。FR-AU01）。
 	Audit service.AuditRecorder
 	// Version は initialize で返すアプリの版。
 	Version string

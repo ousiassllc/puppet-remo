@@ -3,12 +3,15 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/ousiassllc/puppet-remo/internal/domain"
 )
 
 func TestOpenCreatesFullSchema(t *testing.T) {
@@ -16,7 +19,7 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 
 	for _, table := range []string{
 		"clients", "client_tokens", "connection_requests", "settings",
-		"agent_tasks", "audit_logs", "audit_thumbnails", "schema_migrations",
+		"agent_tasks", "audit_logs", "audit_thumbnails", "launchable_apps", "schema_migrations",
 	} {
 		if n := count(t, db, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table); n != 1 {
 			t.Errorf("table %s: got %d, want 1", table, n)
@@ -32,8 +35,8 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 			t.Errorf("index %s: got %d, want 1", index, n)
 		}
 	}
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 1 {
-		t.Errorf("schema version = %d, want 1", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 2 {
+		t.Errorf("schema version = %d, want 2", v)
 	}
 }
 
@@ -78,8 +81,8 @@ func TestOpenIsIdempotentAndKeepsData(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 1 {
-		t.Errorf("schema_migrations rows = %d, want 1 (reopen must not re-apply)", n)
+	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 2 {
+		t.Errorf("schema_migrations rows = %d, want 2 (reopen must not re-apply)", n)
 	}
 	if v, ok, err := db.Settings().Get(ctx, "server.port"); err != nil || !ok || string(v) != "8765" {
 		t.Errorf("setting after reopen = %q, %v, %v", v, ok, err)
@@ -252,5 +255,55 @@ func TestOpenRecordsMigrationTime(t *testing.T) {
 	}
 	if !time.UnixMilli(at).Equal(clock.Now()) {
 		t.Errorf("applied_at = %v, want %v", time.UnixMilli(at), clock.Now())
+	}
+}
+
+// M1 の DB（v1 だけ適用済み）を Open すると v2（launchable_apps）が足され、既存の行は残る。
+func TestOpenUpgradesM1Database(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "puppet-remo.db")
+
+	full, err := fs.Sub(embeddedMigrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1Body, err := fs.ReadFile(full, "0001_init.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetMaxOpenConns(1)
+	if err := migrate(ctx, conn, migrationsFS(map[string]string{"0001_init.sql": string(v1Body)}), newFakeClock().Now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO clients (id, stable_node_id, login_name, display_name, created_at, updated_at)
+		VALUES ('c1', 'node1', 'a@example.com', 'dev', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'launchable_apps'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("the M1 database already has launchable_apps: n=%d err=%v", n, err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open M1 database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 2 {
+		t.Errorf("schema version = %d, want 2", v)
+	}
+	if got, err := db.Clients().Get(ctx, "c1"); err != nil || got.StableNodeID != "node1" {
+		t.Errorf("existing client after upgrade = %+v, %v", got, err)
+	}
+	app := domain.LaunchableApp{ID: "a1", Label: "メモ帳", ExePath: `C:\Windows\notepad.exe`}
+	if err := db.LaunchableApps().Create(ctx, app, domain.MaxLaunchableApps); err != nil {
+		t.Errorf("Create on upgraded database: %v", err)
 	}
 }

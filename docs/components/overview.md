@@ -201,6 +201,7 @@ type LaunchableApp struct {
     ID, Label, ExePath, WorkingDir string // ID は ULID（MCP の app_id）。WorkingDir が空なら実行ファイルのディレクトリ
     Args                           []string // 登録時に固定
     CreatedAt, UpdatedAt           time.Time
+    Corrupt                        bool // DB には無い。args_json が文字列の配列として読めない行（手で書き換えられた）。Args は空。起動は CheckLaunchTarget が拒否する
 }
 // MCP に出せるのはこれだけ。パス・引数・作業ディレクトリは型に無い（Control が返す型として使い、漏れを型で防ぐ）。
 type AppSummary struct{ ID, Label string }
@@ -213,13 +214,18 @@ const MaxLaunchableApps = 50 // NFR-C06
 // 形の検証（純粋。ファイルの存在は見ない）。項目名 → メッセージ。空なら有効。
 //  Label: 前後の空白を除いて 1〜64 文字。ExePath: 絶対パスのローカルの .exe（ドライブ文字で始まる。UNC・\\?\ ・\\.\ ・相対パス・".." の要素を含むパスは不可）。
 //  Args: 32 個以内・合計 8,192 文字以内（NUL を含まない）。WorkingDir: 空、または絶対パスのローカルのパス（ExePath と同じ形の規則。".." を含まない）。
+//  ExePath・WorkingDir 共通のパスの規則（isAbsoluteLocalPath）: 各 32,766 文字（UTF-16。終端の NUL を含めて 32,767）以内。ドライブ指定（2 文字目）以外の ":"（代替データストリーム）、<>"|?*、C0 制御文字と DEL を含まない。
+//  予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9、上付き数字の COM¹²³・LPT¹²³）の要素を含まない（大文字小文字を区別せず、末尾のドット・空白を落とした後の、最初の "." より前で判定。拡張子付き・ディレクトリの要素でも不可）。
+//  戻り値のキーは定数 AppFieldLabel / AppFieldExePath / AppFieldArgs / AppFieldWorkingDir（"label" / "exe_path" / "args" / "working_dir"）。メッセージに入力値（パス・引数）は含めない。
 func ValidateAppInput(in AppInput) map[string]string
 func ParseArgsLines(s string) []string // フォームの改行区切り（CRLF 可）を分割する。空行は捨てる（空文字の引数は登録できない）
-// 起動のたびの再検査（NFR-S20 (3)）。ValidateAppInput と同じ形の規則を、保存済みの行に当てる。満たさなければ ErrAppNotFound。
+// 起動のたびの再検査（NFR-S20 (3)）。ValidateAppInput と同じ形の規則を、保存済みの行に当てる。満たさない行・読めない行（Corrupt）は ErrAppNotFound。
 func CheckLaunchTarget(a LaunchableApp) error
 
 type LaunchFailure string // "file_missing" | "access_denied" | "elevation_required" | "other"（API 仕様 §2 `launch_failed` の reason。FR-AU06）
+// 定数: LaunchFileMissing / LaunchAccessDenied / LaunchElevationRequired / LaunchOther。
 // ErrAppNotFound（code app_not_found）と ErrLaunchFailed（code launch_failed。Detail["reason"] に LaunchFailure）を §2 のエラー型に加える。
+// reason つきの ErrLaunchFailed は NewLaunchFailed(reason) で作る（未知の reason は LaunchOther に丸め、Detail に任意の文字列が入らないようにする）。
 ```
 
 **不変条件**: `domain` は他の内部パッケージを import しない。`Monitor.ScaledToPhysical` と `PhysicalToScaled` は丸めの誤差が 1 px を超えない（プロパティテスト）。`CandidateID` は同じ入力に同じ出力を返し、要素の並び・添字・実行時 ID に依存しない。`CandidateTable.Validate` は表に無い文字列を一切受理しない（プロパティテスト）。
@@ -290,12 +296,14 @@ type AppLauncher interface {
     // CreateProcess。spec.ExePath を lpApplicationName に明示し、コマンドラインは「引用した ExePath + Args」を Windows の引数規則（CommandLineToArgvW の逆）で組み立てる。
     // シェルを経由せず、標準権限のまま起動し、環境変数は本アプリのものを引き継ぐ。プロセスの作成に成功した時点で返す（ウィンドウは待たない）。
     // 失敗は *LaunchError（Reason は file_missing / access_denied / elevation_required / other。パス・引数をメッセージに含めない）。
+    // 空の ExePath・絶対パスでない ExePath（Windows 実装）・コマンドラインに組めない値（NUL など。引用後の全体が 32,766 UTF-16 ユニット（終端の NUL を含めて 32,767）を超えるものを含む）は domain.ErrInvalidArgument。
     Launch(ctx context.Context, spec LaunchSpec) (pid uint32, err error)
     // 登録・更新時の存在確認: exePath が存在する通常ファイルか、workingDir（空でなければ）が存在するディレクトリか。
-    Inspect(ctx context.Context, exePath, workingDir string) error // 無ければ ErrNotFound
+    // 無ければ platform.ErrNotFound（SecretStore と共通。パスをメッセージに含めない）。ERROR_INVALID_NAME（123）・ERROR_BAD_PATHNAME（161）も「無い」として写す（Windows 実装）。
+    Inspect(ctx context.Context, exePath, workingDir string) error
 }
 type LaunchSpec struct{ ExePath string; Args []string; WorkingDir string } // WorkingDir が空なら ExePath のディレクトリ
-type LaunchError struct{ Reason domain.LaunchFailure; Err error }
+type LaunchError struct{ Reason domain.LaunchFailure; Err error } // Error() は理由だけ（パス・引数を含めない）。Err は Win32 のエラーコードだけを持つ（errors.Is / As 用）
 
 // ネイティブのファイル選択ダイアログ（M1.5。FR-H12）。`.exe` のフィルターで、ホスト GUI のメインウィンドウを親にしたモーダル。
 // ダイアログは自プロセスのウィンドウなので、InputGuard の自己保護（NFR-S06）が AI の入力を拒む。ctx の取り消しでダイアログを閉じる。
@@ -310,7 +318,7 @@ type Power interface { // スリープ抑止
 }
 ```
 
-**所有する goroutine**: `Capturer.Watch` が 1 モニターにつき 1 本のキャプチャ goroutine を持つ（`ctx` で停止。呼び出し側が閲覧者ゼロで取り消す）。`Hotkey.Register` が Win32 のメッセージループ用に 1 本の専用 OS スレッド（`runtime.LockOSThread`）を持つ。それ以外のインターフェースは goroutine を内部に持たず、呼び出し元のそれで同期的に動く。
+**所有する goroutine**: `Capturer.Watch` が 1 モニターにつき 1 本のキャプチャ goroutine を持つ（`ctx` で停止。呼び出し側が閲覧者ゼロで取り消す）。`Hotkey.Register` が Win32 のメッセージループ用に 1 本の専用 OS スレッド（`runtime.LockOSThread`）を持つ。`FilePicker.PickExecutable` は、ダイアログを開いている間だけ `ctx` の取り消しを監視する goroutine を 1 本持つ（ダイアログ自体は呼び出し元の goroutine を OS スレッドに固定して開き、閉じるまで戻らない。同時に開くのは 1 つ）。それ以外のインターフェースは goroutine を内部に持たず、呼び出し元のそれで同期的に動く。
 
 **スレッドの制約**: Win32 の入力注入・UI Automation（COM）は、スレッドアフィニティを持つ。`InputInjector` と `UIAutomation`（`Tree` / `Snapshot`）の実装は、専用の goroutine（OS スレッドに固定）へ呼び出しを直列化して渡す（呼び出し側から見るとスレッドセーフな同期呼び出し）。UI Automation のワーカーへの呼び出しは `ctx` を受け、`ctx` が取り消されたら、専用スレッドの処理の終了を待たずに `ctx.Err()` を返す（ワーカーに積まれた処理が長引いても、呼び出し側の待ちが縛られない。§13.3）。`Snapshot` はこのスレッドで 1 回のキャッシュ要求（`CacheRequest`）にまとめ、COM の往復を減らす。`InputInjector` のホイールの端数の持ち越しも、この専用スレッドが所有する（排他不要。`ReleaseAll` で破棄）。
 
@@ -357,8 +365,8 @@ type Settings interface {
 type LaunchableApps interface {
     Get(ctx, id string) (domain.LaunchableApp, error)  // 無ければ ErrNotFound
     List(ctx) ([]domain.LaunchableApp, error)          // label の昇順（NOCASE）
-    // 件数の確認と挿入を同じトランザクションで行う。max に達していれば ErrLimitReached、label の重複は ErrConflict。
-    Create(ctx, a domain.LaunchableApp, max int) error
+    // 件数の確認と挿入を同じトランザクションで行う。limit 件に達していれば ErrLimitReached、label の重複は ErrConflict。
+    Create(ctx, a domain.LaunchableApp, limit int) error
     Update(ctx, a domain.LaunchableApp) error          // 無ければ ErrNotFound、label の重複は ErrConflict
     Delete(ctx, id string) error                       // 無ければ ErrNotFound
 }
@@ -596,10 +604,16 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 ### 5.4.1 AppRegistry と Launch（M1.5。FR-M18・M19・H12）
 
 ```go
-// 許可リストの管理。GUI ルーター（web/handler/gui）と Control が使う。書き込みは GUI だけが呼ぶ（mcp・ws は AppRegistry を持たない）。
-type AppRegistry interface {
+// 許可リストの読み取り専用の面。Control はこれだけを受け取る（ControlConfig.Apps）。AppRegistry が満たす。
+// 読めない行（args_json が壊れている）は Corrupt を立てて返し、エラーにしない（List が全体失敗しない。GUI が 500 にならず、所有者が削除できる）。
+type AppReader interface {
     List(ctx context.Context) ([]domain.LaunchableApp, error)              // 一覧（パス・引数を含む。GUI 用）
     Get(ctx context.Context, id string) (domain.LaunchableApp, error)     // 無ければ ErrNotFound
+}
+
+// 許可リストの管理。GUI ルーター（web/handler/gui）が使う。書き込みは GUI だけが呼ぶ（mcp・ws は AppRegistry を持たない）。Control には AppReader だけを渡す。
+type AppRegistry interface {
+    AppReader
     // 検証（domain.ValidateAppInput + platform.AppLauncher.Inspect で存在確認）→ 保存 → 監査（settings.launchable_app.*、actor host）。
     // 検証エラーは AppFieldErrors（項目名 → メッセージ。GUI が 422 で再描画）、50 件到達は domain.CodeConflict、label の重複は AppFieldErrors{"label": …}。
     Create(ctx context.Context, in domain.AppInput) (domain.LaunchableApp, error)
@@ -615,15 +629,21 @@ type LaunchResult struct{ AppID string; PID uint32 }
 
 1. `KillSwitch.Active()` → `ErrKillSwitchActive`
 2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04）
-3. `AppRegistry.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさなければ `ErrAppNotFound`（fail closed）
-4. `platform.AppLauncher.Launch` → 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す
-5. `Audit.Record`（成功 `ok`・1〜3 の拒否 `denied`・4 の失敗 `error`。`tool.launch_app`。FR-AU06）
+3. `AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。
+4. `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）→ `ErrKillSwitchActive`
+5. `platform.AppLauncher.Launch` → 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
+6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・5 の失敗 `error`。`tool.launch_app`。FR-AU06）
 
+- 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。`detail` は `{app_id, label（許可リストを引けたときだけ）, pid（成功のみ）, reason（launch_failed のみ）}`。パス・引数・作業ディレクトリは入れない
 - **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 で承認モードを適用する場合は、2 と 3 の間に入れる
 - 起動の直列化はしない（`Do` の入力セマフォを使わない。プロセスの作成は入力の順序に影響しない）。同じアプリの多重起動を禁止しない（毎回新しいプロセス）
 - `Control` だけが `platform.AppLauncher` を呼べる（`InputInjector` と同じ。パッケージの可視性で保証する）。**M4 の `Agent` がアプリを起動するときも、`Control.Launch`（`who.Kind = agent`）と同じ `AppRegistry` を使い**、別の許可リスト・別の起動経路は作らない（決定事項）。`agent` のときの Judge・承認の適用は M4 の設計で定める
-- `LaunchableApps` は `AppRegistry.List` を `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
+- `LaunchableApps` は `AppRegistry.List` のうち、起動できない行（`domain.CheckLaunchTarget` が拒否する行。読めない `Corrupt` の行を含む）を除いて `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
 - 起動後のプロセスは管理しない。`platform` は `CreateProcess` が返したハンドル（プロセス・スレッド）をすぐ閉じる（リークしない）。ジョブオブジェクトに入れない（本アプリの終了・キルスイッチで子プロセスは終了しない）
+- `Control` の `AppReader` が「無い」以外のエラーを返したときは、起動せず、そのエラーを返す（監査は `error` / `internal`。メッセージにパスを含めない）
+- リースの保持者は M1 では `mcp` だけ（`domain.ActorKind.CanHoldLease`）。`agent` は暗黙の取得もできず、保持者になれる M4 まで `lease_required` で拒否される（監査の `actor_type` は `agent`）
+
+`AppRegistry` の実装（`NewAppRegistry`）は `repository.LaunchableApps`・`platform.AppLauncher`（`Inspect` だけ。`Launch` は `Control` だけが呼ぶ）・`platform.FilePicker` を受け取る。`Create` / `Update` は表示名の前後の空白を除いて検証し、実行ファイルの存在 → 作業ディレクトリの存在の順に `Inspect` する（`Inspect` はどちらが無いかを区別しないため、作業ディレクトリは実行ファイルがあるときだけ確かめる。形が不正な項目のパスは渡さない）。`Inspect` 自体の失敗（`ErrNotFound` 以外）は項目エラーにせずそのまま返す。`Update` の監査の `changed` は変わった項目だけを `label`・`exe_path`・`args`・`working_dir` の順に並べる。
 
 `AppRegistry` を `HostAdmin`（§13.5）に統合せず分けるのは、`Control` が読み取り（`Get` / `List`）に使い、`HostAdmin` の責務（クライアント・接続要求・トークンの操作と `SessionCloser` による切断）と依存が重ならないため。ホスト所有者の操作として `actor_type = host` で監査する点と、書き込みを GUI ルーターだけに渡す点（ルーター組み立てのテストで `mcp` / リモート側に `AppRegistry` を渡さないことを検査する）は `HostAdmin` と同じ。
 
@@ -1004,7 +1024,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `HostAdmin`（新規） | なし | ホスト所有者の GUI 操作（接続要求の許可・拒否、クライアントの更新・削除、トークンの発行・失効）を担う（FR-H03・H04）。`SessionCloser`（MCP のセッション表が実装）で、無効化・削除・トークン失効のときにセッションを切断し、リースを解放する。すべて操作主体 `host` で監査する。`ApproveRequest` は、同じ `stable_node_id` の登録済みクライアントがあれば（ログイン名の変更後の再許可）置き換え、古いクライアントのトークンを CASCADE で消し、セッションを切断し、リースを解放して `client.replace` を監査する。古いクライアントの切断は `approveMu` の外で行う（切断はツール呼び出しの完了を待つため、ロック中に行うと他の許可を止める） |
 | 新規の型 | なし | `HostSettingsService`（`Load`・`Save`・`AutostartAvailable`。§5.10 の `Settings` の `Get[T]` / `Set` の代わり。M1 のキーは `server.port`・`killswitch.hotkey`・`screenshot.max_dimension`・`lease.idle_timeout_sec`。自動起動は OS が真実の源で DB に持たない）、`ServerStatus`・`StatusTracker`・`TailscaledState`（ダッシュボードのサーバー状態）、`SessionSource`・`SessionInfo`（接続中セッション一覧）、`Autostart`、`Toast`、`Maintenance`（M1 は接続要求の失効だけ）、`NewNotifyingConnRequests`・`NewNotifyingKillSwitch`・`BridgeLeaseEvents`（状態の変化を `Bus` へ流す）|
 | `Audit`（§5.10） | `Record(ctx, e domain.AuditEvent)` | `Record(ctx, e repository.AuditEntry)`（`domain.AuditEvent` は作っていない。`service.AuditEntry` は `repository.AuditEntry` の別名）。消費側のインターフェースは `AuditRecorder`（`LeaseManager`・`KillSwitch`・`Control` 用）と `AuditSink`（`Authz` 用）。書き込み goroutine 1 本、キューは既定 256。満杯・Close 後の記録は捨てて数える（`Dropped`）。`Flush`・`Close` を持つ |
-| MCP ツールの監査 | `Control` が記録する（§5.4） | `Control.Do` を通る入力系・`focus_window`・クリップボード・UI ツリー・`wait` は `Control` が監査する。`Do` を通らない `get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status` は、`mcp` のツール登録（`addAuditedTool`）が `service.ToolAuditEntry` で記録する。拒否（リース・InputGuard・キルスイッチ）は `denied`、それ以外の失敗は `error` |
+| MCP ツールの監査 | `Control` が記録する（§5.4） | `Control.Do` を通る入力系・`focus_window`・クリップボード・UI ツリー・`wait` と、`Control.Launch` を通る `launch_app`（M1.5）は `Control` が監査する。`list_launchable_apps` は `mcp` のツール登録（`addAuditedTool`）が `{count}` で記録する（件数は結果から決まるため、`toolResult.AuditDetail` で足す）。`Do` を通らない `get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status` は、`mcp` のツール登録（`addAuditedTool`）が `service.ToolAuditEntry` で記録する。拒否（リース・InputGuard・キルスイッチ）は `denied`、それ以外の失敗は `error` |
 | `Control` の直列化（§5.4） | ステートレス | 入力の実行（マウス・キーボード）は 1 度に 1 つへ直列化する（容量 1 のセマフォ。「移動してからクリック」の間に別の入力を割り込ませない）。検査の順序は設計のとおり（キルスイッチ → リース → 引数検査・縮小座標の変換 → InputGuard → platform → 監査。`Judge` は M4）。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000（既定 5・500）で、超えると `invalid_argument` |
 | `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke` は M2。`LeaseConfig.Power` でスリープ・画面オフを抑止する |
 | `KillSwitch`（§5.8） | `Trigger` は (1) 永続化 → (2) リース剥奪 → … → (7) 監査の順で、1 秒以内（NFR-P05） | 実装は、メモリ上の状態を先に `active` にして（以後のリクエストは 503）、(1) `settings` に永続化 → (2) `LeaseManager.ReleaseAll` → (3) 登録済みのクローザーを**並行**に実行（MCP セッションの切断、押下中の入力の解放）→ 監査の順。`Agent`（M4）・WebSocket（M2）・オーバーレイ（M3）はまだ無い。永続化とクローザーはそれぞれ自分の期限（`KillSwitchConfig.Timeout`。既定 1 秒）を持つ。**既知の制限**: 永続化が遅い（遅いディスクなど）と、永続化が最大 1 期限、クローザーが最大 1 期限を使い、`Trigger` が戻るまで最大 2 × `Timeout`（既定で 2 秒）かかり、NFR-P05 の 1 秒を超えうる。メモリ上の状態は先頭で `active` になるので受付停止は直ちに効くが、全セッションの切断・入力の解放の完了は遅れうる。この点は未解決で、1 秒を保証していない |
@@ -1017,7 +1037,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | リモートルーター | M1 は `/mcp` だけを提供する（`/` などは 404）。`/viewer`・`/ws/screen`・`/api/v1`・静的ファイルは M2 以降 |
 | `web/handler` | `handler/gui` だけ（`remote` は M2）。`organisms` / `pages` は `gui/` のサブディレクトリに分けず、平らに置く。GUI のエラー応答は、`not_found`（対象なし。API 仕様 §2 のコード表に無い GUI 内のコード）を 404 で、`invalid_argument` を 422 で返す |
 | ホスト GUI の更新 | SSE ではなく `GET /poll`（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。トースト（`Bus` の `toast`）は `gui.Handler` が購読して待ち行列にし、`/poll` が取り出す）。SSE の `GET /events` は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが、M1 の GUI は読み込まない（未使用） |
-| `app` | `Windows` インターフェース（承認ダイアログ・オーバーレイ。§7）は M3 のため無い。M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Platform.Power` は必須。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
+| `app` | `Windows` インターフェース（承認ダイアログ・オーバーレイ。§7）は M3 のため無い。M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Platform.Power` は必須。M1.5 で `Platform.Launcher`・`Platform.FilePicker` も必須にし、`AppRegistry` を組み立てて `Control`（読み取りと起動）と、ホスト GUI の `web/handler/gui`（`Deps.Apps`。登録・編集・削除とファイル選択。`/apps`）へ渡す（`mcp` と、`router` の設定には渡さない）。`cmd/puppet-remo` は `FilePicker` を `NewFilePicker(host.MainWindowHandle)` で作る（`WailsHost.MainWindowHandle` が Wails のメインウィンドウの HWND を返し、ウィンドウが無い間は 0 = 親なし）。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
 | `cmd/puppet-remo` | Windows 以外では `puppet-remo: Windows only` を出して非ゼロで終了するスタブ（`main_other.go`）。`go build ./...` を Linux の CI で通すため |
 | 開発・補助 | 開発タスクは `frontend:dev`（`dev:frontend` ではない）。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service、loopback）がある。スクリーンショットは `docs/screenshots/m1/`、実機スモークの手順は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) |
 
@@ -1037,3 +1057,9 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.7 | 2026-10-30 | §13「M1 実装での差分」を新設（依存規則と型の置き場所、domain・platform・repository・tailnet・service・入口とアプリの差分、未実装の範囲、`KillSwitch.Trigger` が最大 2 × `Timeout` かかりうる既知の制限）。§1 の依存規則、§3 のスレッドの制約（UI Automation のワーカーの `ctx`）、§4.2 の `WhoIs` のキャッシュ（`sync.Map` ではなく mutex + map、5 秒のタイムアウト）、§6 の `web/middleware` の依存先を実装に合わせて訂正 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.8 | 2026-10-30 | 起動許可リスト（M1.5）を追加: §1 の構成、§2 の `domain.LaunchableApp` と検証、§3 の `platform.AppLauncher` / `FilePicker`、§4.1 の `repository.LaunchableApps`、§5.1 の `AppRegistry`、§5.4 の `Control.LaunchableApps` / `Launch` と §5.4.1（検査の順序・M4 のエージェントとの共有）、§6 の `mcp` / `web/handler`、§10 のテスト方針、§11 のトレース、§12.1 の決定事項 | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.9 | 2026-10-30 | §5.4.1 に `AppRegistry` を `HostAdmin` に統合しない理由を追記 | #16 のレビュー指摘 |
+| 1.10 | 2026-10-30 | §2 の起動許可アプリに、検証結果の項目名の定数・`LaunchFailure` の定数・`NewLaunchFailed` を追記し、§4.1 の `LaunchableApps.Create` の引数名を `max` から `limit` に変更（組み込みの `max` との衝突を避ける） | #20 の実装（domain・repository） |
+| 1.11 | 2026-10-30 | §3 の `AppLauncher` / `FilePicker` を実装に合わせて追記: `Launch` の `ErrInvalidArgument`（空・絶対パスでない・NUL）、`Inspect` の `ErrNotFound` は `SecretStore` と共通の `platform.ErrNotFound`、`LaunchError` の `Error()` は理由だけで `Err` は Win32 のエラーコードだけ、`FilePicker` の監視 goroutine | #21 の実装（`platform` の `AppLauncher` / `FilePicker`） |
+| 1.12 | 2026-10-30 | §5.4.1 に `Control.Launch` の実装上の確定事項を追記（起動直前のキルスイッチの再確認、監査の `result` と `detail`、`ErrInvalidArgument` の写し方）と `AppRegistry` の実装（`Inspect` の順序）、§13.5 の MCP ツールの監査・§13.6 の `app`（`Platform.Launcher`・`FilePicker` を必須に）を追記 | #22 の実装との整合 |
+| 1.13 | 2026-10-30 | §13 の `app` に、`AppRegistry` を `web/handler/gui` の `Deps.Apps` にも渡すことと、`FilePicker` の親ウィンドウを `WailsHost.MainWindowHandle` で結線したことを反映 | #23 の実装 |
+| 1.14 | 2026-10-30 | §2 の起動許可アプリに、パスの規則（代替データストリーム・使えない文字・制御文字・予約デバイス名・32,767 文字）と `LaunchableApp.Corrupt`、§3 の `AppLauncher` に、コマンドライン全体の上限と `Inspect` の `ERROR_INVALID_NAME`・`ERROR_BAD_PATHNAME` の写し方、§5.4.1 に読み取り専用の `AppReader`（`ControlConfig.Apps`）と検査の順序の訂正（キルスイッチの再確認を独立した段階に）、読めない行・`AppReader` の失敗・`agent` の扱いを追記 | #16 の独立レビュー指摘 |
+| 1.15 | 2026-10-30 | §2 のパスの規則に上付き数字の予約名と 32,766 文字（終端の NUL を含めて 32,767）、§3 のコマンドラインの上限、§5.4.1 の `LaunchableApps` が起動できない行を除くことを反映 | #16 の再レビュー指摘 |

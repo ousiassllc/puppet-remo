@@ -243,7 +243,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 }
 ```
 
-`id` は ULID（登録時に採番。編集しても変わらず、削除すると無効になり再利用されない）。`apps` は `label` の昇順（大文字小文字を区別しない）で、許可リストが空なら空配列。リース不要。キルスイッチ中はミドルウェア連鎖（§1）が 503 で拒否する。
+`id` は ULID（登録時に採番。編集しても変わらず、削除すると無効になり再利用されない）。`apps` は `label` の昇順（大文字小文字を区別しない）で、許可リストが空なら空配列。起動できない行（読めない行を含め、起動のたびの再検査を満たさない行）は返さない。リース不要。キルスイッチ中はミドルウェア連鎖（§1）が 503 で拒否する。
 
 **`launch_app`**（FR-M19）
 
@@ -251,7 +251,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |------|----|------|------|
 | `app_id` | string | はい | `list_launchable_apps` の `id` |
 
-追加の引数（`args`・`cwd`・`path` など）は受け付けない（スキーマに無い引数は MCP SDK が `invalid params` で拒否する）。出力: `{ "ok": true, "app_id": "01JA…", "pid": 4120 }`。`pid` は `CreateProcess` が返したプロセスの ID。プロセスの作成に成功した時点で返し、ウィンドウの表示は待たない（確認は `list_windows`）。
+追加の引数（`args`・`cwd`・`path` など）は受け付けない（スキーマに無い引数・`app_id` の欠落・型違いは、MCP SDK の引数検査が拒否し、起動しない。§3.4）。出力: `{ "ok": true, "app_id": "01JA…", "pid": 4120 }`。`pid` は `CreateProcess` が返したプロセスの ID。プロセスの作成に成功した時点で返し、ウィンドウの表示は待たない（確認は `list_windows`）。
 
 - 検査の順序は、キルスイッチ（ミドルウェア連鎖の 3）→ 操作リース → 許可リスト。リース未保持なら暗黙に取得する（FR-L04）。リースの承認は M1.5 には無い（M3 から）
 - エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
@@ -305,7 +305,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 }
 ```
 
-コードは §2 の表のとおり。引数のスキーマ違反は MCP SDK が JSON-RPC の `invalid params` で返す。
+コードは §2 の表のとおり。引数のスキーマ違反（スキーマに無い引数・必須の欠落・型違い）は、ハンドラの手前で MCP SDK が拒否する。SDK（go-sdk）はこれを JSON-RPC エラーではなく、`isError` のツール結果（本文は `validating "arguments": …`。`structuredContent` は無く、`code` は付かない）で返す。
 
 ## 4. Web UI（リモートルーター）
 
@@ -438,7 +438,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（表示のみ）、キルスイッチ、接続要求・クライアント管理への導線。リース強制剥奪ボタンは M2（FR-L06）、実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1 |
 | `/requests` | 接続要求の一覧（許可 / 拒否）。FR-H03 | M1 |
 | `/clients` | クライアント一覧。`/clients/{id}`: 詳細（有効化・承認モード・トークン）。FR-H04 | M1 |
-| `/apps` | 起動許可アプリの一覧・追加フォーム。`/apps/new`: 追加フォーム、`/apps/{id}/edit`: 編集フォーム（いずれも `HX-Request` ならフラグメント）。FR-H12 | M1.5 |
+| `/apps` | 起動許可アプリの一覧・追加フォーム（`HX-Request` なら一覧のフラグメント）。`/apps/new`: 追加フォーム、`/apps/{id}/edit`: 編集フォーム（`HX-Request` ならフォームのフラグメント。フルページは一覧の該当行が編集フォーム。対象が無ければ 404）。FR-H12 | M1.5 |
 | `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウ）。FR-H05 | M3 |
 | `/audit` | 監査ログ一覧。`/audit/{id}`: 詳細（引数、サムネイル）。FR-AU05 | M3 |
 | `/settings` | 設定。FR-S | M1〜 |
@@ -466,11 +466,11 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト（フォーム） | 応答 |
 |---------|------|-----------------------|------|
-| POST | `/apps` | `label`\*、`exe_path`\*、`args`（改行区切り）、`working_dir` | 200 一覧のフラグメント（追加した行を含む）。検証エラーは 422（フォームを入力値と項目別のメッセージで再描画）。登録が 50 件に達していれば 409 `conflict`（NFR-C06） |
-| PUT | `/apps/{id}` | 同上（全項目を置き換える） | 200 行のフラグメント。422 は同上。対象が無ければ 404（`data-error-code="not_found"`）。実行ファイルを変えても `id` は変わらない |
+| POST | `/apps` | `label`\*、`exe_path`\*、`args`（改行区切り。LF・CRLF どちらも可、空行は無視）、`working_dir` | 200 一覧のフラグメント（追加した行を含む。追加フォームを空に戻す OOB とトーストを添える）。検証エラーは 422（フォーム自身を入力値と項目別のメッセージで再描画）。登録が 50 件に達していれば 409 `conflict`（NFR-C06） |
+| PUT | `/apps/{id}` | 同上（全項目を置き換える） | 200 行のフラグメント（トーストを添える）。422 は同上（編集フォームを再描画）。対象が無ければ 404（`data-error-code="not_found"`）。実行ファイルを変えても `id` は変わらない |
 | GET | `/apps/{id}/delete/confirm` | なし | 200 確認モーダル（フラグメント）。対象が無ければ 404 |
-| DELETE | `/apps/{id}` | なし | 200 一覧のフラグメント。対象が無ければ 404。起動済みのプロセスには影響しない |
-| POST | `/apps/pick-file` | なし | ネイティブのファイル選択ダイアログ（`.exe` のフィルター。メインウィンドウに対してモーダル）を開き、**選ばれたパスを入れた `exe_path` の入力欄**のフラグメントを 200 で返す（利用者は手入力と同じように編集できる）。キャンセルは 204（差し替えない）。ダイアログが閉じるまで応答を返さない。選択だけでは何も登録せず、保存は `POST /apps` / `PUT /apps/{id}` |
+| DELETE | `/apps/{id}` | なし | 200 一覧のフラグメント（モーダルを閉じる OOB とトーストを添える）。対象が無ければ 404。起動済みのプロセスには影響しない |
+| POST | `/apps/pick-file` | `form_id`（入力欄の `id` の元。`app-form-` で始まる値だけ受け付け、それ以外は `app-form-new` にする。HTMX が送る） | ネイティブのファイル選択ダイアログ（`.exe` のフィルター。メインウィンドウに対してモーダル）を開き、**選ばれたパスを入れた `exe_path` の入力欄**のフラグメントを 200 で返す（利用者は手入力と同じように編集できる）。キャンセルは 204（差し替えない）。ダイアログが閉じるまで応答を返さない。選択だけでは何も登録せず、保存は `POST /apps` / `PUT /apps/{id}` |
 
 - 一覧・編集の HTML は、ホスト所有者だけが見るため実行ファイルのパス・引数・作業ディレクトリを表示する（リモートには出さない）
 - 追加・変更・削除はすべて `actor_type = host`、`kind = settings` で監査する（`settings.launchable_app.create` / `.update` / `.delete`。FR-AU06）。選択ダイアログの操作は監査しない（登録されたときに記録する）
@@ -549,10 +549,10 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
 | リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp` だけ**。それ以外のパス（`/` を含む）は 404。`/viewer`・`/ws/screen`・静的ファイル・`/api/v1`（Huma）は M2 以降 |
-| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
+| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
 | `PUT /settings` の項目（§7.3） | 13 項目 | M1 は `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目だけ。他は各段階で足す |
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
-| GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
+| GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン・起動許可アプリ）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
 | 接続要求の許可（§7.2） | `pending` なら登録して `approved` | 期限切れの `pending` は一覧に出ず、許可もできない（409 `conflict`）。同じ `stable_node_id` の登録済みクライアントがあるとき（ログイン名の変更後の再許可）は、古いクライアントを置き換える（トークンは CASCADE で削除、セッションは切断、リースは解放）。このとき監査に `client.replace` を記録する。古いクライアントの切断（ツール呼び出しの完了待ち）は、他の許可・GUI の操作を止めないよう、許可の直列化のロックの外で行う。同じデバイスの `pending` を 5 秒以内に更新済みなら、DB に書かない |
 | 監査（§7 の冒頭） | ホスト操作は `actor_type = host` | `client_id` は、クライアントの行がすでに無いとき（`client.delete` の直後など）NULL で記録する（`client_label` は残る） |
 | MCP ツールの監査（§3.3） | — | `Control` を通らないツール（`get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status`）の呼び出しは、`mcp` のツール登録で `kind = tool` として監査する。入力系などは `Control` が記録する |
@@ -597,3 +597,6 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.9 | 2026-10-30 | §7.5「M1 実装での差分」を新設（M1 のリモートルーターは `/mcp` だけ、M1 の GUI ルートと `PUT /settings` の 5 項目、`/poll`・SSE の扱い、GUI の `not_found` と 422、接続要求の許可（期限切れは許可不可・再許可での置き換えと `client.replace`・5 秒以内は DB に書かない）、`client_id` の NULL、MCP ツールの監査、`http.Server` の `IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB・WhoIs の 5 秒）。§1 に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.10 | 2026-10-30 | 起動許可リストと MCP の `launch_app` / `list_launchable_apps` を追加（M1.5）: §1 の GUI ルーターの提供物と隔離の対象、§2 のエラー（`app_not_found` 404・`launch_failed` 409）、§3.1 の `instructions`、§3.3 のツール表と「アプリ起動」節、§7.1 の `/apps`、§7.2 の「起動許可アプリ」（`POST /apps`・`PUT` / `DELETE /apps/{id}`・削除の確認・`POST /apps/pick-file`）、§8.2 の実機検証事項 | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.11 | 2026-10-30 | §7.2 の起動許可アプリに注意書きの表示を追記 | #16 のレビュー指摘（FR-H12・NFR-S20 との整合） |
+| 1.12 | 2026-10-30 | §3.4 の引数のスキーマ違反を、実装（go-sdk）の挙動に合わせて訂正（JSON-RPC の `invalid params` ではなく `isError` のツール結果）。§3.3 の `launch_app` の引数検査の記述も同様に揃えた | #22（`launch_app` の入力検査の実測との食い違い） |
+| 1.13 | 2026-10-30 | §7.1・§7.2 の起動許可アプリを実装（#23）に合わせて具体化（各ルートのフラグメントと OOB、`pick-file` の `form_id`、`args` の改行）。§7.5 の GUI ルートに `/apps` 系を追加 | #23 の実装との整合 |
+| 1.14 | 2026-10-30 | §3.3 の `list_launchable_apps` が起動できない行を返さないことを追記 | #16 の再レビュー指摘 |

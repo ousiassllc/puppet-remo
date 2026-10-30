@@ -301,7 +301,7 @@ sequenceDiagram
     end
 ```
 
-許可リストの登録・変更・削除は GUI ルーターだけ（`AppRegistry` を持つのは GUI ルーターと `Control`。`mcp` は持たない）。ファイル選択は `AppRegistry.PickExecutable` が `platform.FilePicker` に委ねる。内蔵エージェント（M4）がアプリを起動するときも、同じ `AppRegistry` と `Control.Launch` を使う。
+許可リストの登録・変更・削除は GUI ルーターだけ（書き込みを持つ `AppRegistry` を受け取るのは GUI ルーターだけで、`Control` は読み取り専用の `AppReader` だけを受け取る。`mcp` は持たない）。ファイル選択は `AppRegistry.PickExecutable` が `platform.FilePicker` に委ねる。内蔵エージェント（M4）がアプリを起動するときも、同じ許可リストと `Control.Launch` を使う。
 
 ### 内蔵エージェントのタスク実行
 
@@ -633,3 +633,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.8 | 2026-10-30 | MCP SDK のオプション表に `KeepAlive`（既定の 0 のまま）を追加 | MCP の keepalive を既定で無効にした実装との整合（オーナー決定。NFR-A04） |
 | 1.9 | 2026-10-30 | 「M1 実装での差分」を新設（依存ライブラリ・ディレクトリ構成・依存の向き・キルスイッチ（`Trigger` が最大 2 × 期限かかりうる既知の制限を含む）・受付と入力の実装値）。ディレクトリ構成の冒頭に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.10 | 2026-10-30 | 起動許可リスト（M1.5）を追加: 構成図（`AppLauncher`・`FilePicker`・許可リスト）、レイヤー表の `platform`、GUI ルーターの提供物、主要フロー「アプリ起動」、ディレクトリ構成（`launcher`・`filepicker`） | M1.5 の仕様追記（#16。オーナー決定 8 件） |
+| 1.11 | 2026-10-30 | 許可リストの読み取りを `AppReader` に分け、`Control` には読み取り専用の面だけを渡すことを反映 | #16 の独立レビュー指摘 |

@@ -36,6 +36,7 @@ type Fakes struct {
 	KillSwitch *KillSwitch
 	Admin      *Admin
 	Settings   *Settings
+	Apps       *Apps
 }
 
 // New は空の状態の Fakes を返す。時計は 2026-10-30 12:00 UTC。
@@ -50,6 +51,7 @@ func New() *Fakes {
 		Leases:     &Leases{},
 		KillSwitch: &KillSwitch{bus: bus},
 		Admin:      &Admin{clock: clock, bus: bus},
+		Apps:       &Apps{},
 		Settings:   &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300}, CanAutostart: true},
 	}
 }
@@ -58,7 +60,7 @@ func New() *Fakes {
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
 		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin,
-		Settings: f.Settings, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
+		Settings: f.Settings, Apps: f.Apps, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
 

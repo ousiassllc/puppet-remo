@@ -1,0 +1,104 @@
+package organisms
+
+import (
+	"encoding/json"
+
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+// appFormAttrs は追加・編集フォームの hx-* 属性。追加は成功すると一覧（#app-list）を、編集は行（このフォーム）を差し替える。
+// 検証エラー（422）はどちらもフォーム自身を、入力値とメッセージ付きで再描画する（hx-target-422）。
+func appFormAttrs(f view.AppForm, oob bool) atoms.Attrs {
+	a := atoms.Attrs{
+		"hx-target-422":   "this",
+		"hx-swap":         "outerHTML",
+		"hx-disabled-elt": "find button[type=submit]",
+		"hx-indicator":    "#" + f.DOMID + "-spinner",
+	}
+	if f.ID == "" {
+		a["hx-post"] = f.ActionURL
+		a["hx-target"] = "#app-list"
+	} else {
+		a["hx-put"] = f.ActionURL
+		a["hx-target"] = "this"
+	}
+	if oob {
+		a["hx-swap-oob"] = "true"
+	}
+	return a
+}
+
+// pickAttrs は「参照…」ボタンの hx-* 属性。ネイティブのダイアログが閉じるまで応答を待ち、選ばれたパスを入れた
+// 実行ファイルの入力欄（data-field="exe_path"）だけを差し替える（キャンセルは 204 で何も変えない）。
+// フォームの hx-target・hx-swap・hx-target-422 は子要素へ継承されるため、ここで上書きする。
+func pickAttrs(f view.AppExePathField) atoms.Attrs {
+	vals, err := json.Marshal(map[string]string{"form_id": f.FormID})
+	if err != nil { // map[string]string は常に変換できる
+		panic(err)
+	}
+	return atoms.Attrs{
+		"hx-post":         f.PickURL,
+		"hx-vals":         string(vals),
+		"hx-target":       "closest [data-field=exe_path]",
+		"hx-swap":         "outerHTML",
+		"hx-disabled-elt": "this",
+		"hx-indicator":    "#" + f.FormID + "-pick-spinner",
+	}
+}
+
+// AppExePathField は実行ファイルの入力欄（手入力と「参照…」のダイアログの両対応。FR-H12）。
+// POST /apps/pick-file の応答もこのフラグメントを返す。
+templ AppExePathField(f view.AppExePathField) {
+	<div data-field="exe_path">
+		@molecules.FormField(f.FormID+"-exe-path", "実行ファイル", "ドライブ文字で始まる絶対パスの .exe。「参照…」で選ぶか、直接入力できます。", f.Error) {
+			<div class="flex items-center gap-2">
+				@atoms.Input(atoms.InputProps{ID: f.FormID + "-exe-path", Name: "exe_path", Value: f.Value, Required: true, Invalid: f.Error != "", Placeholder: `C:\Windows\System32\notepad.exe`, Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
+				@atoms.Button(atoms.ButtonProps{Label: "参照…", Variant: atoms.ButtonSecondary, Attrs: pickAttrs(f)})
+				@atoms.Spinner(f.FormID + "-pick-spinner")
+			</div>
+		}
+	</div>
+}
+
+// AppForm は起動許可アプリの追加・編集フォーム（FR-H12）。引数は 1 行 1 引数の textarea。
+// コマンドインタープリタ・スクリプトホストの登録が任意コードの実行を許す旨の注意書きは、常に出す（NFR-S20）。
+// ブラウザの入力検証は novalidate で止め、検証はサーバーが行って 422 でメッセージ付きに再描画する（frontend.md §5.6）。
+// oob = true は、追加の成功の応答に添えて、フォームを空の状態に戻すとき。
+templ AppForm(f view.AppForm, oob bool) {
+	<form
+		id={ f.DOMID }
+		novalidate
+		class="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+		data-app-form={ appFormMode(f) }
+		{ appFormAttrs(f, oob)... }
+	>
+		<h3 class="text-sm font-semibold text-slate-800">{ appFormTitle(f) }</h3>
+		<p class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="note" data-notice="interpreter">
+			cmd.exe・powershell.exe などのコマンドインタープリタやスクリプトホストを登録すると、リモートの AI に任意のコードの実行を許すことになります。信頼できる、目的の決まったアプリだけを登録してください。
+		</p>
+		if f.Corrupt {
+			<p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800" role="alert" data-app-form-corrupt>保存された設定を読めませんでした。引数を入れ直してください。</p>
+		}
+		@AppExePathField(view.AppExePathField{FormID: f.DOMID, Value: f.Values.ExePath, Error: f.Errors.ExePath, PickURL: f.PickURL})
+		@molecules.FormField(f.DOMID+"-label", "表示名", "1〜64 文字。MCP のクライアントにはこの名前が見えます（大文字小文字違いを含む重複は登録できません）。", f.Errors.Label) {
+			@atoms.Input(atoms.InputProps{ID: f.DOMID + "-label", Name: "label", Value: f.Values.Label, Required: true, Invalid: f.Errors.Label != "", Attrs: atoms.Attrs{"maxlength": "64", "autocomplete": "off"}})
+		}
+		@molecules.FormField(f.DOMID+"-args", "引数", "1 行に 1 つ。空行は無視します（32 個・合計 8,192 文字まで）。登録時に固定され、MCP のクライアントは変えられません。", f.Errors.Args) {
+			@atoms.Textarea(atoms.TextareaProps{ID: f.DOMID + "-args", Name: "args", Value: f.Values.Args, Rows: 3, Invalid: f.Errors.Args != "", Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
+		}
+		@molecules.FormField(f.DOMID+"-working-dir", "作業ディレクトリ", "省略すると実行ファイルのあるディレクトリで起動します。絶対パスの既存のディレクトリを指定します。", f.Errors.WorkingDir) {
+			@atoms.Input(atoms.InputProps{ID: f.DOMID + "-working-dir", Name: "working_dir", Value: f.Values.WorkingDir, Invalid: f.Errors.WorkingDir != "", Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
+		}
+		<div class="flex items-center gap-3">
+			@atoms.Button(atoms.ButtonProps{Label: appFormSubmitLabel(f), Variant: atoms.ButtonPrimary, Type: "submit"})
+			if f.ID != "" {
+				@atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+					"hx-get": f.CancelURL, "hx-target": "#app-list", "hx-swap": "outerHTML",
+				}})
+			}
+			@atoms.Spinner(f.DOMID + "-spinner")
+		</div>
+	</form>
+}

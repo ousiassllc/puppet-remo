@@ -5,6 +5,10 @@
 //   - Input（platform.InputInjector）: SendInput。呼び出しは専用の OS スレッドへ直列化する。
 //   - WindowManager: ウィンドウの列挙・前面・フォーカス（昇格ウィンドウへの入力は UIPI のため input_blocked）。
 //   - Clipboard: CF_UNICODETEXT の読み書き。
+//   - Launcher（platform.AppLauncher）: CreateProcess（lpApplicationName に ExePath を明示・シェル非経由・標準権限・ハンドルを閉じる）。
+//     コマンドラインの組み立て（buildCommandLine）と失敗の分類（classifyLaunchError）、存在確認（inspectApp）は純粋なロジックで、Linux でもテストする。
+//   - FilePicker（platform.FilePicker）: GetOpenFileNameW（`.exe` のフィルター、親はメインウィンドウ、ctx の取り消しで WM_CLOSE）。
+//     親の HWND は NewFilePicker に関数で渡す（Wails のメインウィンドウの NativeWindow()。関数は internal/app の WailsHost.MainWindowHandle で、cmd/puppet-remo/main.go が渡す）。
 //   - Power: SetThreadExecutionState によるスリープ・画面オフの抑止（NFR-A05）。スレッドごとの状態なので専用の OS スレッドで設定・解除する。
 //
 // Win32 を呼ぶコードは *_windows.go（//go:build windows）に置く。キー名・修飾キーの変換表、座標の正規化、
