@@ -1,0 +1,90 @@
+version: "3"
+
+# M1/S1 の範囲: Go のビルド・検査・テスト。
+# templ 生成・フロントエンドのビルド・wails3 のタスクは後続のスコープ（S10 / S11）で足す。
+
+tasks:
+  default:
+    desc: 利用できるタスクを一覧する
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Go のビルド（ホスト OS）
+    cmds:
+      - go build ./...
+
+  build:windows:
+    desc: Windows 向けのビルド（Linux / macOS からのクロスビルド確認を含む）
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - go build ./...
+
+  vet:
+    desc: go vet（ホスト OS）
+    cmds:
+      - go vet ./...
+
+  vet:windows:
+    desc: Windows 向けの go vet
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Go のテスト
+    cmds:
+      - go test ./...
+
+  test:race:
+    desc: Go のテスト（データ競合検出。cgo が必要）
+    cmds:
+      - go test -race ./...
+
+  fmt:
+    desc: gofmt で整形する
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: gofmt の差分がないことを確認する
+    cmds:
+      - cmd: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt が必要なファイル:"; echo "$out"; exit 1; fi
+
+  lint:
+    desc: golangci-lint（ホスト OS と Windows の両方）
+    cmds:
+      - golangci-lint run ./...
+      - cmd: golangci-lint run ./...
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
+  check:imports:
+    desc: レイヤー間の import 規則を検査する（domain は他の内部パッケージを import しない）
+    cmds:
+      - ./scripts/check-imports.sh
+
+  tidy:
+    desc: go.mod / go.sum を整理する
+    cmds:
+      - go mod tidy
+
+  ci:
+    desc: CI と同じ検査を一通り実行する
+    cmds:
+      - task: fmt:check
+      - task: build
+      - task: vet
+      - task: build:windows
+      - task: vet:windows
+      - task: check:imports
+      - task: lint
+      - task: test
