@@ -179,7 +179,21 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | X3 | 発動中にアプリを再起動 | 発動状態のまま起動する（解除はダッシュボードの確認操作だけ） |
 | X4 | 発動中に未登録デバイスからリクエスト | 503 で、接続要求は作られない |
 
-### 4.6 ビルドとインストーラ
+### 4.6 スリープ抑止（NFR-A05）
+
+管理者権限の PowerShell（`powercfg /requests` は管理者権限が要る）を並べて使う。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| W1 | リースを取っていない状態で `powercfg /requests` | `DISPLAY:` と `SYSTEM:` に `puppet-remo.exe` が出ない |
+| W2 | MCP クライアントで操作リースを取り、`powercfg /requests` | `DISPLAY:` と `SYSTEM:` の両方に `puppet-remo.exe` が出る |
+| W3 | 保持中に何も操作せず、電源設定の画面オフ・スリープの時間を過ぎるまで待つ | 画面が消えず、スリープに入らない（リースのアイドル時間より長い設定で確認する） |
+| W4 | `release_control` でリースを解放し、`powercfg /requests` | `puppet-remo.exe` が `DISPLAY:` と `SYSTEM:` から消える（以降は電源設定どおりに画面オフ・スリープする） |
+| W5 | リースを取り直して `powercfg /requests` | W2 と同じように再び出る |
+| W6 | 保持中に、アイドル満了・MCP セッションの切断・キルスイッチ（`Ctrl+Alt+Shift+K`）のそれぞれでリースを失わせ、`powercfg /requests` | どれでも `puppet-remo.exe` が消える |
+| W7 | リースを保持したままアプリを終了（トレイの終了）し、`powercfg /requests` | `puppet-remo.exe` が消える（`Power.Close` が解除し、プロセスの終了でも失効する） |
+
+### 4.7 ビルドとインストーラ
 
 | # | 確認項目 | 期待 |
 |---|---------|------|

@@ -113,6 +113,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		return fail(fmt.Errorf("hotkey: %w", err))
 	}
 	closers = append(closers, closerFunc(func() error { hotkey.Close(); return nil }))
+	power := windows.NewPower()
+	closers = append(closers, power)
 	autostart, err := windows.NewAutostart()
 	if err != nil {
 		return fail(fmt.Errorf("autostart: %w", err))
@@ -131,7 +133,7 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		Repo: db,
 		Platform: app.Platform{
 			Capturer: windows.NewCapturer(), Input: input, Windows: wm, Clipboard: windows.NewClipboard(),
-			UI: ui, Hotkey: hotkey, Autostart: autostart,
+			UI: ui, Hotkey: hotkey, Power: power, Autostart: autostart,
 		},
 		Watcher: tailnet.NewWatcher(tailnet.WatcherConfig{API: api}),
 		WhoIs:   tailnet.NewWhoIs(tailnet.WhoIsConfig{API: api}),

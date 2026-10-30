@@ -48,6 +48,8 @@ type Platform struct {
 	Clipboard platform.Clipboard
 	UI        platform.UIAutomation
 	Hotkey    platform.Hotkey
+	// Power はリース保持中のスリープ・画面オフの抑止（NFR-A05）。
+	Power platform.Power
 	// Autostart はログオン時の自動起動の登録（FR-S08）。nil なら設定画面に項目を出さない。
 	Autostart service.Autostart
 }
@@ -140,8 +142,8 @@ func (c Config) validate() error {
 	switch {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
-	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Hotkey == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI and Hotkey")
+	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Hotkey == nil, p.Power == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Hotkey and Power")
 	case c.Watcher == nil, c.WhoIs == nil:
 		return errors.New("app: Watcher and WhoIs are required")
 	case c.Static == nil:
@@ -171,7 +173,7 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lease idle timeout: %w", err)
 	}
-	a.leases, err = service.NewLeaseManager(service.LeaseConfig{Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr})
+	a.leases, err = service.NewLeaseManager(service.LeaseConfig{Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power})
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
 	}

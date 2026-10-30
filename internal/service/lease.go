@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/platform"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
@@ -13,6 +14,7 @@ import (
 //
 // M1 の範囲: 保持者種別は mcp のみ、承認なしで idle → held、アイドルタイマーとキルスイッチと明示解放・切断で解放。
 // 強制剥奪（Revoke。M2）と pending_approval（M3）は持たない。
+// 保持中は LeaseConfig.Power でスリープと画面オフを抑止する（NFR-A05）。どの解放の経路でも保持が終われば解除する。
 type LeaseManager interface {
 	// Acquire は idle → held（承認なし）。他者が保持中は ErrLeaseHeldByOther。同じ保持者の再取得は活動として数える。
 	// キルスイッチの発動中は ErrKillSwitchActive。
@@ -68,6 +70,8 @@ type LeaseConfig struct {
 	Audit       AuditRecorder   // nil なら記録しない
 	Kill        KillSwitchState // nil なら常に非発動
 	AfterFunc   AfterFunc       // nil なら time.AfterFunc
+	// Power は保持中だけスリープと画面オフを抑止する（NFR-A05）。nil なら抑止しない。
+	Power platform.Power
 }
 
 const leaseSubscriberBuffer = 16
@@ -77,6 +81,7 @@ type leaseManager struct {
 	after AfterFunc
 	kill  KillSwitchState
 	audit AuditRecorder
+	power platform.Power
 
 	// mu は全遷移（machine・timer・pending）を直列化する。ロックを持ったまま Audit・購読者を呼ばない。
 	mu       sync.Mutex
@@ -87,6 +92,7 @@ type leaseManager struct {
 
 	// emitMu は pending の配信（監査・購読者）を直列化し、遷移の順序どおりに届ける。
 	emitMu sync.Mutex
+	awake  bool // power へ最後に伝えた値。emitMu を持って読み書きする
 	subMu  sync.Mutex
 	subs   []chan domain.LeaseEvent
 }
@@ -102,6 +108,7 @@ func NewLeaseManager(cfg LeaseConfig) (LeaseManager, error) {
 		after:   cfg.AfterFunc,
 		kill:    cfg.Kill,
 		audit:   cfg.Audit,
+		power:   cfg.Power,
 		machine: machine,
 	}
 	if m.after == nil {
@@ -247,11 +254,23 @@ func (m *leaseManager) flush() {
 	m.mu.Lock()
 	events := m.pending
 	m.pending = nil
+	_, held := m.machine.IdleDeadline()
 	m.mu.Unlock()
+	m.keepAwake(held)
 	for _, ev := range events {
 		m.record(context.Background(), leaseAuditEntry(ev))
 		m.publish(ev)
 	}
+}
+
+// keepAwake は保持の有無に合わせてスリープ抑止を切り替える（NFR-A05）。変わったときだけ power を呼ぶので、二重に入れない。
+// 取得・解放・アイドル満了・キルスイッチ・切断のどれも flush を通るため、ここ 1 か所で足りる。emitMu を持って呼ぶ。
+func (m *leaseManager) keepAwake(on bool) {
+	if m.power == nil || m.awake == on {
+		return
+	}
+	m.awake = on
+	m.power.KeepAwake(on)
 }
 
 func (m *leaseManager) publish(ev domain.LeaseEvent) {
