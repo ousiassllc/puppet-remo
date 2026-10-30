@@ -508,6 +508,7 @@ graph LR
 | `wails3 dev` の起動（§8.3） | `dev:frontend` の esbuild `serve` が、`FRONTEND_DEVSERVER_URL` のホスト・ポートで待ち受け、preRun の確認（500 ms × 10 回）を通過すること。その状態で WebView が GUI ルーター（Gin）のページを表示すること |
 | GUI の WebView でのクリップボード（§7） | トークンのコピーボタンで `navigator.clipboard.writeText` がクリック内で成功すること。失敗したときにフォールバック（全選択 + Ctrl+C の案内）が表示されること |
 | ブラウザでの WebSocket と CSP（§7.1） | `connect-src 'self'` が、利用するブラウザ（Chromium 系、Firefox、Safari）で同一オリジンの `ws://<tailnet IP>:<port>/ws/screen` を許可すること（Web UI は `ws:`。tailnet の通信は WireGuard で暗号化されるため `wss:` は使わない） |
+| GUI の SSE（`/events`。§5）の WebView での配信 | **Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファし、`http.Flusher` を持たない**（`internal/assetserver/webview/responsewriter_windows.go` で確認）。このため `text/event-stream` の逐次配信が WebView 内に届かない可能性が高い（ページ・HTMX のアクションは動く）。実機で届かなければ、定期ポーリング（`hx-trigger="every Ns"`）または Bus → Wails イベントの橋渡しへ設計を改訂する（S11 では未対応。`docs/operations/smoke-windows.md` §4.3 W3） |
 
 ## 改訂履歴
 
