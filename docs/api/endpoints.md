@@ -410,7 +410,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/update` | 更新の確認・適用。FR-H09 | M3 |
 | `/tasks` | タスク一覧。`/tasks/{id}`: 詳細（ステップ、使用トークン、最終回答。ステップごとの経路 `route`（`fast` / `openai`）と、高速パスから OpenAI へ引き継いだ理由 `handoff_reason`、`fast_steps` / `openai_steps`）。FR-H10 | M4 |
 | `/agent` | エージェント設定（有効化と同意、OpenAI API キー、モデル、上限、`keep_screenshots`、Judge のリスト、**高速パス**: 有効化と同意、TypeSafe API キー、モデル、最小確信度、最大ステップ、除外ラベル）。FR-H11 | M4 |
-| `/events` | SSE（§7.4） | M1 |
+| `/poll` | ホスト GUI の更新（OOB のフラグメント。§7.4） | M1 |
+| `/events` | SSE（§7.4）。ホスト GUI のレイアウトは購読しない | M1 |
 
 ### 7.2 接続要求とクライアント
 
@@ -431,7 +432,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | POST | `/lease/revoke` | なし | 200 リースのフラグメント（保持者を剥奪。`agent` ならタスクを中断）。**M2 から**（M1 のダッシュボードに強制剥奪ボタンは無い。FR-H02）。`agent` の剥奪は M4 |
 | POST | `/killswitch/trigger` | なし | 200 ダッシュボードのフラグメント（FR-H06 の手順。1 秒以内） |
 | POST | `/killswitch/release` | なし | 200（解除。受付を再開）。ダッシュボードのキルスイッチのパネルを返し、ヘッダーのバッジの更新・確認モーダルを閉じる・トーストを OOB で添える |
-| GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント（SSE の `killswitch` で再取得する）。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む |
+| GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む。画面の更新は `GET /poll`（§7.4）が OOB で差し替える |
 | GET | `/killswitch/release/confirm` | なし | 200 解除の確認モーダル（フラグメント）。発動中でなければ 409 `conflict` |
 | GET | `/clients/{id}/delete/confirm`、`/clients/{id}/tokens/{token_id}/revoke/confirm` | なし | 200 確認モーダル（破壊的な操作は、サーバーが描画したモーダルの確定ボタンだけが実際の `DELETE` を送る。frontend.md §5.4）。対象が無ければ 404 |
 | POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`）。`id` が失効（60 秒）・解決済みなら 410 `approval_timeout` |
@@ -449,19 +450,41 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | POST | `/update/check` | なし | 200 フラグメント（新版の有無） |
 | POST | `/update/apply` | なし | 200（署名検証に成功した更新を適用して再起動。リース保持中・接続中・タスク実行中は 409 `conflict`） |
 
-### 7.4 SSE（`GET /events`）
+### 7.4 GUI の更新の配信（`GET /poll`・`GET /events`）
 
-ホスト GUI の各画面が `hx-ext="sse"` で購読する。接続は GUI のウィンドウごとに 1 本。
+**ホスト GUI のレイアウトは `GET /poll` を 3 秒ごとに呼んで更新する。SSE（`GET /events`）は購読しない。** Wails v3.0.0 の Windows の AssetServer は `AssetOptions.Handler` の応答をハンドラが返るまでバッファし、`http.Flusher` を持たないため、開いたままの SSE の応答が WebView に届かない（frontend.md §5.3）。`GET /events` は、ストリームを流せる経路で GUI を配信するとき・テストのために残す。
+
+#### `GET /poll`
+
+| 項目 | 内容 |
+|------|------|
+| リクエスト | クエリ `rev_killswitch`（ダッシュボードを表示中の画面が送る。キルスイッチのパネルが持つ版）、`rev_requests`（接続要求の一覧を表示中の画面が送る。一覧が持つ版）。どちらも省略できる。`HX-Request` は不要 |
+| 応答 | 200 HTML。`hx-swap-oob` のフラグメントだけを並べた 1 つの応答（フルページではない）。`Cache-Control: no-store`。CSP ヘッダーは §1 のとおり |
+
+| OOB の差し込み先 | 内容 | 返す条件 |
+|-----------------|------|---------|
+| `#header-killswitch`（innerHTML） | ヘッダーのキルスイッチ状態バッジ | 常に |
+| `#nav-requests-badge`（innerHTML） | サイドバーの接続要求の件数バッジ | 常に |
+| `#server-status`・`#sessions`・`#lease`（innerHTML） | サーバー状態・接続中セッション・リース保持者（M2 から強制剥奪ボタンを含む） | `rev_killswitch` があるとき（ダッシュボード） |
+| `#killswitch-panel`（outerHTML） | キルスイッチのパネル（状態駆動: 発動中は解除だけ） | `rev_killswitch` があり、現在の版と違うとき |
+| `#request-list`（outerHTML） | 接続要求の一覧 | `rev_requests` があり、現在の版と違うとき |
+| `#toast-root`（beforeend） | 前回の呼び出し以降に溜まった `toast`（取り出した分は次の応答に出ない） | あるとき |
+
+版（`rev_*`）は、描画した表示モデルのハッシュで、一覧・パネルの隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）が持つ。レイアウトの `#live-poll` が `hx-include="[data-poll-rev]"` で送り返す。版が同じ領域は差し替えない（入力中の許可フォームを、ポーリングで消さないため）。応答に秘密（トークンなど）は含めない。`approval` と `tasks`（M3・M4）は、この経路の対象外または後続の領域として追加する。
+
+#### `GET /events`（SSE）
+
+接続は 1 本で、`data` は `GET /poll` と同じボディのコンポーネントで描画した HTML フラグメント。
 
 | event | 内容（`data`） | 更新される画面 |
 |-------|---------------|---------------|
 | `server-status` | サーバー状態のフラグメント（tailnet IP・ポート・tailscaled 状態） | ダッシュボード |
 | `sessions` | 接続中セッション一覧のフラグメント | ダッシュボード |
 | `lease` | リース保持者のフラグメント（種別付き。M2 から強制剥奪ボタンを含む） | ダッシュボード |
-| `connection-requests` | サイドバーの件数バッジのフラグメント。接続要求の一覧は、`hx-trigger="sse:connection-requests"` で `GET /requests` を再取得して更新する（同じイベントを複数の要素が受けると同じ HTML が差し込まれるため、一覧とバッジは別の経路にする） | 接続要求、トレイ通知 |
+| `connection-requests` | サイドバーの件数バッジのフラグメント | 接続要求、トレイ通知 |
 | `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く | （ウィンドウ生成） |
 | `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由。M4） | ダッシュボード、タスク |
-| `killswitch` | ヘッダーのキルスイッチ状態バッジのフラグメント。ダッシュボードのパネルは `hx-trigger="sse:killswitch"` で `GET /killswitch` を再取得して更新する | 全画面のヘッダー、ダッシュボード |
+| `killswitch` | ヘッダーのキルスイッチ状態バッジのフラグメント | 全画面のヘッダー |
 | `toast` | 通知メッセージ（更新の通知、DB 破損の隔離、TypeSafe が 401 を返して高速パスを無効にした通知など） | 全画面 |
 
 承認ダイアログに表示する内容は `kind` による。`lease`: クライアント名・種別・（`agent` なら指示の要約）。`safety_check`: OpenAI の `pending_safety_checks` の内容。`judge_action`: アクションの内容、対象ウィンドウ（タイトル・プロセス名）、判定の理由。いずれも 60 秒で失効し拒否扱い。
@@ -495,3 +518,4 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | 1.2 | 2026-10-29 | MCP `get_task` に `fast_steps` / `openai_steps` / `handoff_reason` を追加し、`run_task` で高速パスが透過であることを明記。WebSocket `wheel` と MCP `scroll` の単位をノッチに統一（変換規則を追記）。共通規約に CSP ヘッダーと静的ファイルのキャッシュ（`no-cache` + ETag）を追加。GUI ルーターに高速パスの設定ルート（`/agent/fastpath`、`/agent/fastpath/api-key`）と `keep_screenshots` を追加し、タスク詳細・SSE にステップの経路と引き継ぎ理由を追加。§8 を決定事項と実機検証事項に改め、MCP SDK の設定値・OpenAPI の範囲・高解像度の扱いを決定。Jev による外部 Judge の項は削除（高速パスは内部機構） | 未決事項の決定 |
 | 1.3 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチ（3）を WhoIs・許可リスト・接続要求の作成より前に移動（キルスイッチ中は接続要求を作らない）。Bearer の参照先を NFR-S04 に統一。M1 のリース（`state` は `idle` / `held`、`holder.kind` は `mcp` のみ、承認なし）と、ダッシュボードの段階（強制剥奪ボタンは M2、実行中タスクと中断ボタンは M4）を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
 | 1.4 | 2026-10-30 | GUI の実装（#12）に合わせて §7.3 に `GET /killswitch` と確認モーダルのルートを追加し、§7.4 の `connection-requests` / `killswitch` の data を「バッジ・ヘッダーのフラグメント + 一覧・パネルは `sse:` トリガーで再取得」に具体化 | SSE の 1 イベントを複数の要素が受けると同じ HTML が差し込まれる htmx の仕様への対応 |
+| 1.5 | 2026-10-30 | §7.1・§7.4 に `GET /poll`（OOB のフラグメントを返すホスト GUI のポーリング）を追加し、ホスト GUI のレイアウトは SSE を購読しないことを明記。`GET /events` は残し、`connection-requests` / `killswitch` の data を「バッジ・ヘッダーのフラグメント」に戻した（一覧・パネルの再取得は `/poll` が担う）。§7.3 の `GET /killswitch` から SSE の記述を削除 | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |

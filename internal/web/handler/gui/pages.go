@@ -23,7 +23,7 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	h.render(c, http.StatusOK, pages.Dashboard(v))
 }
 
-// Requests は GET /requests。HTMX の部分更新（SSE の再取得）は一覧のフラグメント。
+// Requests は GET /requests。HTMX の部分更新は一覧のフラグメント。
 func (h *Handler) Requests(c *gin.Context) {
 	ctx := c.Request.Context()
 	reqs, err := h.d.Admin.PendingRequests(ctx)
@@ -105,7 +105,7 @@ func (h *Handler) Settings(c *gin.Context) {
 	h.render(c, http.StatusOK, pages.Settings(v))
 }
 
-// KillSwitchPanel は GET /killswitch（SSE の killswitch イベントでの再取得。常にフラグメント）。
+// KillSwitchPanel は GET /killswitch（キルスイッチのパネルのフラグメント。常にフラグメント）。
 func (h *Handler) KillSwitchPanel(c *gin.Context) {
 	h.render(c, http.StatusOK, organisms.KillSwitchPanel(h.killSwitchView()))
 }

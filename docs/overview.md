@@ -98,7 +98,7 @@ graph TD
 | アーキテクチャ設計 | [`docs/architecture/overview.md`](architecture/overview.md) | 技術選定、構成図、レイヤー、GUI／リモートのルーター分離、主要フロー（高速パス含む）、画面配信、Judge、ディレクトリ構成 |
 | フロントエンド設計（HALT） | [`docs/architecture/frontend.md`](architecture/frontend.md) | HTMX + Atomic Design + Lit + Templ の規約、2 つの UI（ホスト GUI / Web UI）、HTMX パターン、`<remo-screen-viewer>`、ビルド、開発ワークフロー、テスト戦略 |
 | ER / データモデル | [`docs/architecture/er.md`](architecture/er.md) | SQLite のテーブル定義（clients、client_tokens、connection_requests、settings、agent_tasks、audit_logs、audit_thumbnails）と保守処理 |
-| API 仕様 | [`docs/api/endpoints.md`](api/endpoints.md) | MCP ツール、Web UI のルート、WebSocket のプロトコル、JSON API、ホスト GUI のルートと SSE、エラー形式 |
+| API 仕様 | [`docs/api/endpoints.md`](api/endpoints.md) | MCP ツール、Web UI のルート、WebSocket のプロトコル、JSON API、ホスト GUI のルートと更新の配信（`/poll`・SSE）、エラー形式 |
 | コンポーネント設計 | [`docs/components/overview.md`](components/overview.md) | パッケージの責務・依存、Go インターフェース、goroutine と状態の所有者、起動・終了順序、テスト方針（モックと実機スモーク） |
 
 ## マイルストーン / リリース計画
@@ -147,3 +147,4 @@ graph TD
 | 1.6 | 2026-10-29 | マイルストーンを修正（PR #2 のレビュー対応）: 排他リース（FR-L01〜L05）を M1 に、M2 を Web UI と強制剥奪（FR-L06）に変更。M1 のツール範囲を FR-M01〜M17 全件（`get_ui_tree`・`clipboard_*`・`list_windows`・`focus_window` を含む）に変更。承認モード・オーバーレイ・監査の閲覧 UI と縮小スクリーンショットは M3、`agent` のリースは M4 と明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
 | 1.7 | 2026-10-29 | スコープの「排他リース」「監査ログ」に段階（M1〜M4）を追記 | PR #2 のレビュー対応（方針 4・8） |
 | 1.8 | 2026-10-29 | スコープの「ホスト用 GUI」「MCP サーバー」に段階（M1 / M3 / M4）を追記 | PR #2 のレビュー対応（方針 2・4・8） |
+| 1.9 | 2026-10-30 | ドキュメントマップの API 仕様の概要を、ホスト GUI の更新の配信（`/poll`・SSE）に合わせて更新 | ホスト GUI の更新をポーリングに変更したため（#12） |

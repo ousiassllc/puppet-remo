@@ -25,10 +25,12 @@ func TestDashboardShowsServerState(t *testing.T) {
 	contains(t, res,
 		"<!doctype html>", "<html", "稼働中", "100.64.0.1", "fd7a:115c:a1e0::1", "host.tail1234.ts.net", ">8765<", "100.64.0.1:8765",
 		"claude-desktop", "MCP", "保持中", "4分30秒",
-		// 全 HTMX リクエストに付くヘッダーと SSE の購読（ウィンドウごとに 1 本）。
-		`sse-connect="/events"`, `hx-ext="sse,response-targets"`, `X-Puppet-Remo`,
-		`sse-swap="server-status"`, `sse-swap="sessions"`, `sse-swap="lease"`, `sse-swap="killswitch"`,
+		// 全 HTMX リクエストに付くヘッダーと、GET /poll のポーリング（SSE は購読しない。Wails の応答バッファのため）。
+		`hx-ext="response-targets"`, `X-Puppet-Remo`,
+		`id="live-poll"`, `hx-get="/poll"`, `hx-trigger="every 3s"`, `hx-swap="none"`, `hx-include="[data-poll-rev]"`,
+		`id="server-status"`, `id="sessions"`, `id="lease"`, `id="header-killswitch"`, `name="rev_killswitch"`,
 	)
+	lacks(t, res, "sse-connect", "sse-swap", "sse:", "sse.min.js", "/events")
 	// M1 のダッシュボードには強制剥奪も実行中タスクも無い。
 	lacks(t, res, "/lease/revoke", "強制剥奪", "タスク", "/tasks")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" && got != "" {
@@ -95,7 +97,7 @@ func TestKillSwitchPanelRoute(t *testing.T) {
 	r := newRig(t)
 	res := r.get("/killswitch", hx...)
 	status(t, res, http.StatusOK)
-	contains(t, res, `id="killswitch-panel"`, `hx-trigger="sse:killswitch"`)
+	contains(t, res, `id="killswitch-panel"`, `name="rev_killswitch"`)
 	lacks(t, res, "<html")
 }
 
