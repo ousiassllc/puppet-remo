@@ -1,6 +1,6 @@
 module github.com/ousiassllc/puppet-remo
 
-go 1.26.5
+go 1.26.10
 
 require (
 	github.com/a-h/templ v0.3.1001
@@ -41,7 +41,7 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
