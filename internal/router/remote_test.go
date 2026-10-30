@@ -113,7 +113,7 @@ func TestRemoteServesMCPBehindTheChain(t *testing.T) {
 func TestRemoteExposesNothingButMCP(t *testing.T) {
 	k := newRemote(t)
 	paths := []string{
-		"/", "/viewer", "/ws/screen", "/api/v1/clients", "/events", "/settings", "/killswitch", "/clients", "/requests",
+		"/", "/viewer", "/ws/screen", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
 		"/mcp/", "/mcp/extra", "/static/js/app.js",
 	}
 	for _, p := range paths {

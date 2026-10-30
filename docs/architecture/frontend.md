@@ -22,7 +22,7 @@
 | サーバー | Go + Gin | ルーティングと SSR |
 | JSON API | Huma | `/api/v1` の OpenAPI 3.1 生成と入出力検証（読み取り専用の小さな API のみ） |
 | テンプレート | Templ | 型安全な Go の HTML テンプレート |
-| インタラクション | HTMX 2.x + 拡張 `response-targets`（両 UI）、`sse`（ホスト GUI のみ） | サーバー駆動の DOM 更新 |
+| インタラクション | HTMX 2.x + 拡張 `response-targets`（両 UI）。ホスト GUI の状態の更新は `GET /poll` のポーリング（§5.3） | サーバー駆動の DOM 更新 |
 | リッチ UI | Lit（Web Components） | ライブ画面ビューア `<remo-screen-viewer>` のみ |
 | スタイル | Tailwind CSS | Templ にはユーティリティクラス、Lit には Shadow DOM 内の `css` |
 | ビルド | esbuild（TypeScript）、Tailwind CLI | 成果物を `static/dist/` に出力し、本番は `go:embed` で同梱 |
@@ -34,14 +34,14 @@
 
 | UI | 利用者 | 配信経路 | 認可 | HTMX 拡張 |
 |----|-------|---------|------|-----------|
-| **ホスト GUI** | ホスト所有者（ホスト PC の Wails WebView） | GUI ルーター（プロセス内。ソケットなし） | プロセス内到達のみ | `response-targets`、`sse` |
+| **ホスト GUI** | ホスト所有者（ホスト PC の Wails WebView） | GUI ルーター（プロセス内。ソケットなし） | プロセス内到達のみ | `response-targets` |
 | **Web UI（ビューア）** | tailnet 上の別端末のブラウザ | リモートルーター（tailnet IP） | WhoIs + 許可リスト（API 仕様 §1） | `response-targets` |
 
 ```mermaid
 graph TD
     subgraph GUI["ホスト GUI (Wails WebView)"]
         GP["Templ ページ + HTMX"]
-        SSE["SSE 拡張 /events<br/>(状態更新を push)"]
+        SSE["ポーリング GET /poll<br/>(3 秒ごと。OOB で状態を更新)"]
     end
     subgraph WEB["Web UI (ブラウザ)"]
         WP["Templ ページ + HTMX"]
@@ -67,7 +67,7 @@ graph TD
 |-----------|--------------|------|
 | Cookie セッション + CSRF トークン（meta タグ） | **Cookie を使わない**。識別は WhoIs、CSRF 対策は Host / Origin 検証 + カスタムヘッダー `X-Puppet-Remo: 1`（`<body hx-headers>` で全 HTMX リクエストに付与） | tailnet 上の ID が真実の源で、Cookie の認証が無い（NFR-S03） |
 | 単一の HTTP サーバー | **GUI ルーター（プロセス内）とリモートルーター（tailnet）に分離** | ホスト専用の操作を構造でネットワークから隔離する |
-| HTMX 拡張は最小限 | ホスト GUI のみ `sse` を追加 | 承認要求・リース・接続要求を GUI へほぼリアルタイムに反映する（NFR-P06）。Web UI は WebSocket で足りる |
+| HTMX 拡張は最小限 | ホスト GUI は拡張を `response-targets` だけにし、状態の更新は `GET /poll` のポーリング（`hx-trigger="every 3s"` + OOB）にする。`sse` 拡張は読み込まない | 承認要求・リース・接続要求を GUI へ反映する（NFR-P06）。Wails v3.0.0 の Windows の AssetServer は応答をバッファして SSE が届かないため（§5.3）。Web UI は WebSocket で足りる |
 | Lit は編集系のリッチ UI | ライブ画面ビューア 1 つのみ | 要件が 1 画面に限られる |
 | Huma で JSON API（アクションも含む） | `/api/v1/*` は読み取り専用（状態・モニター・リース）のみ。**アクションはすべて HTML を返す HTMX のルート**。MCP と WebSocket は Huma の対象外 | 状態を変更する操作の利用者は HTMX だけ。JSON の変更 API は不要 |
 | 静的ファイルは Gin の `Static`、本番は `max-age=31536000` | `go:embed` した `dist/` を両ルーターで配信し、**`Cache-Control: no-cache` + `ETag`（ビルド ID）**。開発は `!production` ビルドでディスクから配信（**ユーザー承認済み**） | 単一バイナリ配布。ファイル名にハッシュを付けないため、アプリの更新後に利用者のブラウザが古い JS を長期保持する事故を避ける |
@@ -83,7 +83,7 @@ internal/web/
 ├── view/                     # Templ に渡す表示用モデル（domain から handler が組み立てる）
 ├── handler/
 │   ├── gui/                  # GUI ルーター用: dashboard, requests, clients, tokens, approvals,
-│   │                         #   tasks, agent, audit, settings, update, events(SSE)
+│   │                         #   tasks, agent, audit, settings, update, poll(OOB), events(SSE)
 │   └── remote/               # リモートルーター用: viewer, lease, clipboard, keys
 ├── middleware/               # csp, hostcheck, csrfheader, whois, allowlist, bearer, killswitch
 ├── atoms/                    # 共有: button, input, textarea, select, checkbox, badge, spinner, toast, icon, kbd
@@ -210,22 +210,30 @@ func (h *Handler) Clients(c *gin.Context) {
 | キルスイッチを発動・解除（GUI） | ダッシュボード | ヘッダーの状態バッジ |
 | 設定を保存（GUI） | フォーム | トースト |
 
-### 5.3 SSE（ホスト GUI のみ）
+### 5.3 状態の更新: ポーリング `GET /poll`（ホスト GUI のみ）
 
-ホスト GUI は `hx-ext="sse"` で `GET /events` を購読する。接続は GUI のウィンドウごとに 1 本。
+**決定**: ホスト GUI の状態（サーバー状態・セッション・リース・キルスイッチ・接続要求の件数と一覧・トースト）は、レイアウトが `GET /poll` を 3 秒ごとに呼び、応答の OOB（`hx-swap-oob`）で差し替える。SSE（`GET /events`）は GUI のレイアウトから購読しない。
+
+理由: Wails v3.0.0 の Windows の AssetServer は、`AssetOptions.Handler` の応答をハンドラが返るまでバッファし、`http.Flusher` を持たない（`internal/assetserver/webview/responsewriter_windows.go`）。ホスト GUI は `AssetOptions.Handler` でしか配信しないため、開いたままの SSE の応答は WebView に届かない。
 
 ```html
-<body hx-ext="sse,response-targets" sse-connect="/events" hx-headers=...>
-  <section id="server-status" sse-swap="server-status" hx-swap="innerHTML"></section>
-  <section id="sessions"      sse-swap="sessions"      hx-swap="innerHTML"></section>
-  <section id="lease"         sse-swap="lease"         hx-swap="innerHTML"></section>
+<body hx-ext="response-targets" hx-headers=...>
+  <section id="server-status">…</section>
+  <section id="sessions">…</section>
+  <section id="lease">…</section>
   ...
+  <div id="live-poll" hx-get="/poll" hx-trigger="every 3s" hx-swap="none" hx-include="[data-poll-rev]"></div>
 </body>
 ```
 
-- イベントと更新先の対応は API 仕様 §7.4。`data` は描画済みの HTML フラグメント
-- `approval` のイベントは JSON で、DOM を更新しない。承認ダイアログのウィンドウは Go 側（`app` が `Bus` から購読）が開く
-- 接続が切れたら HTMX の SSE 拡張が再接続する。再接続した時点で最新の状態を再取得するため、サーバーは接続直後に各イベントの現在値を 1 回送る
+- `GET /poll` は 1 回の応答に、いま更新すべき領域の OOB のフラグメントを並べる。API 仕様 §7.4 の対応表と同じ領域・同じ描画（`ServerStatusBody` など、SSE の `data` と共通のコンポーネント）を使い、描画のロジックを二重に持たない
+- `hx-swap="none"` でも OOB の差し替えは行われる。`#live-poll` は `#main` の外にあるため、ページ遷移（`hx-boost`）で消えない
+- **表示中の領域だけを更新する**: 一覧・パネルのように作り直す領域（接続要求の一覧、キルスイッチのパネル）は、描画した状態の版を隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）に持つ。`hx-include="[data-poll-rev]"` がそれを `/poll` のクエリで送り返し、サーバーは**版が変わった領域だけ**を差し替える。そのページに無い領域は版が送られないため、差し込み先の無い OOB を返さない。入力中の許可フォームなどを、ポーリングで消さないための仕組み
+- ヘッダーのキルスイッチのバッジとサイドバーの件数バッジは、軽い差し替え（中身だけ）で常に返す
+- トーストは、`Bus` の `toast` を `gui.Handler` が `New` で購読して溜めておき、`GET /poll` が取り出して `#toast-root` に追加する OOB にする（取り出したものは次の応答に出ない。バッファは `Bus` の購読者ごとの上限 16 件で、超えた分は古いものから捨てる）
+- `approval` のイベントは DOM を更新しない。承認ダイアログのウィンドウは Go 側（`app` が `Bus` から購読）が開く（ポーリングの対象外）
+- `GET /events`（SSE）は仕様のまま残す。ストリームを流せる経路で GUI を配信するとき・テストのために使える。`sse` 拡張の JS（`dist/js/sse.min.js`）も配信物に残すが、レイアウトは読み込まない
+- ポーリングの間隔は 3 秒。画面が隠れている間の停止は行わない（`hx-trigger` のフィルターは eval が要るため CSP の都合で使えない。§7）
 
 ### 5.4 ローディングと遷移
 
@@ -243,7 +251,7 @@ func (h *Handler) Clients(c *gin.Context) {
 | 拡張 | 採否 | 理由 |
 |------|------|------|
 | `response-targets` | 採用（両 UI） | エラーの表示先をステータス別に分ける |
-| `sse` | 採用（ホスト GUI のみ） | §5.3 |
+| `sse` | **読み込まない**（`GET /events` はサーバーに残す） | Wails の AssetServer がストリームをバッファするため。状態の更新は `GET /poll`（§5.3） |
 | `hx-boost` | ホスト GUI のサイドバーのみ | §5.4 |
 | `preload` | 不使用 | 不要なリクエストを増やす |
 | `loading-states` | 不使用 | `hx-indicator` で足りる |
@@ -394,7 +402,7 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 ```
 
 - **配置**: GUI ルーター・リモートルーターの両方で、ミドルウェア連鎖の**最初**に置く（`hostcheck` などが返すエラーページ、キルスイッチの 503 ページにも付くようにする）。HTML 以外（JSON、静的ファイル）に付いても害は無いため、HTML かどうかの判定はしない
-- `img-src ... data: blob:` はビューアの `canvas`（`createImageBitmap`）と小さなアイコンのため。`connect-src 'self'` は同一オリジンの `fetch`（HTMX）・SSE・WebSocket（`ws:`）を許可する
+- `img-src ... data: blob:` はビューアの `canvas`（`createImageBitmap`）と小さなアイコンのため。`connect-src 'self'` は同一オリジンの `fetch`（HTMX・ポーリング）・WebSocket（`ws:`）を許可する
 
 **規約（CSP の帰結）**
 
@@ -491,7 +499,7 @@ graph LR
 | 要件 | 担当 |
 |------|------|
 | FR-W01〜W09（Web UI） | `pages/remote`、`organisms/remote`、`<remo-screen-viewer>`、`handler/remote` |
-| FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`、SSE。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。`lease_panel`（GUI）の強制剥奪ボタンは M2、`task_panel` と中断ボタンは M4（FR-H02） |
+| FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`（`GET /poll`）。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。`lease_panel`（GUI）の強制剥奪ボタンは M2、`task_panel` と中断ボタンは M4（FR-H02） |
 | FR-L06（強制剥奪。M2） | `lease_panel`（リモート・GUI）の状態駆動レンダリング。M1 の GUI の `lease_panel` は保持者の表示のみで、`CanRevoke` のボタンは描画しない |
 | NFR-S02・S03（Host / Origin、カスタムヘッダー） | `middleware`、`layout` の `hx-headers` |
 | NFR-S06（自己保護） | ビューアに自ウィンドウが写らない（キャプチャ除外）。GUI に AI の入力が届かない（InputGuard） |
@@ -508,7 +516,7 @@ graph LR
 | `wails3 dev` の起動（§8.3） | `dev:frontend` の esbuild `serve` が、`FRONTEND_DEVSERVER_URL` のホスト・ポートで待ち受け、preRun の確認（500 ms × 10 回）を通過すること。その状態で WebView が GUI ルーター（Gin）のページを表示すること |
 | GUI の WebView でのクリップボード（§7） | トークンのコピーボタンで `navigator.clipboard.writeText` がクリック内で成功すること。失敗したときにフォールバック（全選択 + Ctrl+C の案内）が表示されること |
 | ブラウザでの WebSocket と CSP（§7.1） | `connect-src 'self'` が、利用するブラウザ（Chromium 系、Firefox、Safari）で同一オリジンの `ws://<tailnet IP>:<port>/ws/screen` を許可すること（Web UI は `ws:`。tailnet の通信は WireGuard で暗号化されるため `wss:` は使わない） |
-| GUI の SSE（`/events`。§5）の WebView での配信 | **Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファし、`http.Flusher` を持たない**（`internal/assetserver/webview/responsewriter_windows.go` で確認）。このため `text/event-stream` の逐次配信が WebView 内に届かない可能性が高い（ページ・HTMX のアクションは動く）。実機で届かなければ、定期ポーリング（`hx-trigger="every Ns"`）または Bus → Wails イベントの橋渡しへ設計を改訂する（S11 では未対応。`docs/operations/smoke-windows.md` §4.3 W3） |
+| GUI の `GET /poll`（§5.3）の WebView での更新 | ダッシュボード・接続要求のページを開いたまま、tailnet 側から接続要求を作る・キルスイッチを発動する・セッションを張る操作を行い、約 3 秒以内に一覧・バッジ・ヘッダー・パネルが再読み込みなしで更新されること。入力中の許可フォーム（表示名・チェックボックス）がポーリングで消えないこと。**決定済み**: Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファし、`http.Flusher` を持たないため（`internal/assetserver/webview/responsewriter_windows.go` で確認）、SSE（`GET /events`）は WebView に届かない。ポーリングを採用した（`docs/operations/smoke-windows.md` §4.3 W3） |
 
 ## 改訂履歴
 
@@ -518,3 +526,4 @@ graph LR
 | 1.1 | 2026-10-29 | CSP（§7.1）を新設。ホイールの単位をノッチに確定（§6.2）。トークンのコピーの方式を確定（§7）。`wails3 dev` の `FRONTEND_DEVSERVER_URL` に関する記述を、ソースで確認した事実（`WAILS_VITE_PORT` での待ち受けが必須、カスタム Handler は転送されない）に訂正し、`dev:frontend` を esbuild の `serve` に確定（§8.3）。Playwright を ubuntu の別ジョブに確定（§9）。静的ファイルのキャッシュ・`lib/api.ts` を作らないことをユーザー承認済みとして確定（§2）。htmx の版の固定手順を明記（§8.1）。§11 を実機で検証する事項だけに改めた | 未決事項の決定 |
 | 1.2 | 2026-10-29 | PR #2 のレビュー対応: §10 のトレースに、M1 のダッシュボードの範囲（強制剥奪ボタンは M2、`task_panel` と中断ボタンは M4）を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
 | 1.3 | 2026-10-30 | GUI の実装（#12）に合わせて §8.3 に開発ビルドの `dist` の探し方とビルド ID の算出を追記 | 実装で確定した事項の反映 |
+| 1.4 | 2026-10-30 | ホスト GUI の状態の更新を SSE から `GET /poll` のポーリング（3 秒ごと・OOB・版の隠し入力）に変更し、`sse` 拡張をレイアウトから外した（§1・§2・§5.3・§5.5・§11）。`GET /events` は残す | Wails v3.0.0 の Windows の AssetServer が `AssetOptions.Handler` の応答をバッファし、SSE が WebView に届かないため（#12） |

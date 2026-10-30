@@ -8,6 +8,7 @@ import (
 )
 
 // HeaderKillSwitch はヘッダーのキルスイッチ状態バッジ（SSE の killswitch イベントと OOB の差し込み先 #header-killswitch の中身）。
+// 画面の更新は GET /poll の OOB（HeaderKillSwitchOOB）が行う。
 templ HeaderKillSwitch(active bool) {
 	if active {
 		@atoms.Badge(atoms.BadgeDanger, "キルスイッチ発動中")
@@ -20,13 +21,13 @@ templ HeaderKillSwitch(active bool) {
 templ Header(h view.Header) {
 	<header class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
 		<span class="text-sm font-semibold text-slate-800">puppet-remo ホスト</span>
-		<div id="header-killswitch" sse-swap="killswitch" hx-target="this" hx-swap="innerHTML">
+		<div id="header-killswitch">
 			@HeaderKillSwitch(h.KillSwitchActive)
 		</div>
 	</header>
 }
 
-// HeaderKillSwitchOOB はアクションの応答に添えて、ヘッダーのバッジを更新する（OOB）。
+// HeaderKillSwitchOOB はアクションの応答・GET /poll の応答に添えて、ヘッダーのバッジを更新する（OOB）。
 templ HeaderKillSwitchOOB(active bool) {
 	<div id="header-killswitch" hx-swap-oob="innerHTML">
 		@HeaderKillSwitch(active)
@@ -40,7 +41,7 @@ templ RequestsBadge(n int) {
 	}
 }
 
-// RequestsBadgeOOB はアクションの応答に添えて、件数バッジを更新する（OOB）。
+// RequestsBadgeOOB はアクションの応答・GET /poll の応答に添えて、件数バッジを更新する（OOB）。
 templ RequestsBadgeOOB(n int) {
 	<span id="nav-requests-badge" class="ml-auto" hx-swap-oob="innerHTML">
 		@RequestsBadge(n)
@@ -75,7 +76,7 @@ func navLinkAttrs(active bool) atoms.Attrs {
 	return nil
 }
 
-func navAttrs(oob bool) atoms.Attrs {
+func oobAttrs(oob bool) atoms.Attrs {
 	if oob {
 		return atoms.Attrs{"hx-swap-oob": "true"}
 	}
@@ -85,7 +86,7 @@ func navAttrs(oob bool) atoms.Attrs {
 // Sidebar はホスト GUI のナビゲーション。ページ遷移は hx-boost で #main だけを差し替える（§5.4）。
 // ブートされた遷移の応答は oob = true で添えて、現在のページの強調を更新する。
 templ Sidebar(c view.Chrome, oob bool) {
-	<nav id="sidebar-nav" class="w-56 shrink-0 space-y-1 bg-slate-900 p-3" aria-label="メイン" { navAttrs(oob)... }>
+	<nav id="sidebar-nav" class="w-56 shrink-0 space-y-1 bg-slate-900 p-3" aria-label="メイン" { oobAttrs(oob)... }>
 		<p class="px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">メニュー</p>
 		for _, it := range navItems {
 			<a
@@ -98,7 +99,7 @@ templ Sidebar(c view.Chrome, oob bool) {
 			>
 				<span>{ it.Label }</span>
 				if it.Nav == view.NavRequests {
-					<span id="nav-requests-badge" class="ml-auto" sse-swap="connection-requests" hx-target="this" hx-swap="innerHTML">
+					<span id="nav-requests-badge" class="ml-auto">
 						@RequestsBadge(c.Header.PendingRequests)
 					</span>
 				}
@@ -107,12 +108,19 @@ templ Sidebar(c view.Chrome, oob bool) {
 	</nav>
 }
 
-// ToastRoot はトーストの置き場。SSE の toast イベントと、エラー・完了の応答（HX-Retarget / OOB）がここへ追加する。
+// ToastRoot はトーストの置き場。エラー・完了の応答（HX-Retarget / OOB）と GET /poll の応答（OOB）がここへ追加する。
 templ ToastRoot() {
-	<div id="toast-root" class="pointer-events-none fixed bottom-4 right-4 z-50 flex max-w-sm flex-col gap-2" sse-swap="toast" hx-target="this" hx-swap="beforeend"></div>
+	<div id="toast-root" class="pointer-events-none fixed bottom-4 right-4 z-50 flex max-w-sm flex-col gap-2"></div>
 }
 
-// ToastOOB はアクションの応答に添えて、トーストを追加する（OOB）。
+// LivePoller は最新の状態を取りに行く。GET /poll を 3 秒ごとに呼び、応答の OOB のフラグメントで各領域を差し替える（swap は none）。
+// hx-include は、いま表示している領域の隠し入力（data-poll-rev。描画した状態の版）を送り返す。サーバーは版が変わった領域だけを
+// 差し替え、表示していない領域は送らない。
+templ LivePoller() {
+	<div id="live-poll" aria-hidden="true" hx-get="/poll" hx-trigger="every 3s" hx-swap="none" hx-include="[data-poll-rev]"></div>
+}
+
+// ToastOOB はアクションの応答・GET /poll の応答に添えて、トーストを追加する（OOB）。
 templ ToastOOB(t view.Toast) {
 	<div hx-swap-oob="beforeend:#toast-root">
 		@atoms.Toast(t)

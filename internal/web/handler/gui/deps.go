@@ -59,7 +59,7 @@ type Settings interface {
 	AutostartAvailable() bool
 }
 
-// Events は状態の変化の購読（SSE の元）。
+// Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
 }
@@ -93,6 +93,8 @@ type Handler struct {
 	log *slog.Logger
 	loc *time.Location
 	hb  time.Duration
+	// toasts は GET /poll が取り出すトーストの待ち行列（Bus の購読。New から Handler の寿命まで購読し続ける）。
+	toasts <-chan service.Event
 }
 
 // New は Handler を作る。
@@ -103,6 +105,7 @@ func New(d Deps) (*Handler, error) {
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}
+	h.toasts, _ = d.Events.Subscribe(service.TopicToast)
 	if h.log == nil {
 		h.log = slog.Default()
 	}

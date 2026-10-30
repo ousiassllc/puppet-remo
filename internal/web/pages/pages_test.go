@@ -16,7 +16,7 @@ func TestLayoutLoadsOnlyLocalExternalScriptsInOrder(t *testing.T) {
 	// htmx → htmx-config（classic）→ 拡張 → app（module）の順（frontend.md §7.1）。
 	order := []string{
 		`src="/static/js/htmx.min.js"`, `src="/static/js/htmx-config.js"`, `src="/static/js/response-targets.min.js"`,
-		`src="/static/js/sse.min.js"`, `<script type="module" src="/static/js/app.js">`,
+		`<script type="module" src="/static/js/app.js">`,
 	}
 	prev := -1
 	for _, s := range order {
@@ -29,14 +29,15 @@ func TestLayoutLoadsOnlyLocalExternalScriptsInOrder(t *testing.T) {
 		}
 		prev = i
 	}
-	for _, want := range []string{`<link rel="stylesheet" href="/static/css/app.css"`, `hx-ext="sse,response-targets"`, `sse-connect="/events"`, `X-Puppet-Remo`,
+	for _, want := range []string{`<link rel="stylesheet" href="/static/css/app.css"`, `hx-ext="response-targets"`, `X-Puppet-Remo`,
+		`id="live-poll"`, `hx-get="/poll"`, `hx-trigger="every 3s"`, `hx-swap="none"`,
 		`id="toast-root"`, `id="modal-root"`, `id="main"`, `<html lang="ja">`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("layout lacks %q", want)
 		}
 	}
 	// 外部 URL を読み込まない。Lit・Web Component は M2。
-	for _, bad := range []string{"http://", "https://", "//cdn", "remo-screen-viewer", "lit"} {
+	for _, bad := range []string{"http://", "https://", "//cdn", "remo-screen-viewer", "lit", "sse-connect", "sse.min.js", "sse-swap"} {
 		if strings.Contains(out, bad) {
 			t.Errorf("layout must not contain %q", bad)
 		}

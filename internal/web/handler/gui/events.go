@@ -27,11 +27,14 @@ var sseTopics = []string{
 
 // Events は GET /events（SSE）。data は描画済みの HTML フラグメント。
 //
+// Wails v3.0.0 の Windows の AssetServer は応答をバッファするため、Wails のウィンドウでは届かない。ホスト GUI のレイアウトは
+// このストリームを購読せず、GET /poll（poll.go）で更新する。ストリームを流せる経路で GUI を配信するとき・テストのために残している。
+//
 //	server-status         → #server-status の中身
 //	sessions              → #sessions の中身
 //	lease                 → #lease の中身
-//	connection-requests   → サイドバーの件数バッジ（一覧は hx-trigger="sse:connection-requests" で再取得する）
-//	killswitch            → ヘッダーの状態バッジ（ダッシュボードのパネルは hx-trigger="sse:killswitch" で再取得する）
+//	connection-requests   → サイドバーの件数バッジ
+//	killswitch            → ヘッダーの状態バッジ
 //	toast                 → #toast-root に追加するトースト
 //
 // 接続が切れても HTMX の SSE 拡張が再接続するため、接続直後に各イベントの現在値を 1 回送る（toast を除く）。
@@ -109,17 +112,26 @@ func (h *Handler) topicComponent(ctx context.Context, topic string, data any) te
 	case service.TopicKillSwitch:
 		return organisms.HeaderKillSwitch(h.d.KillSwitch.Active())
 	case service.TopicToast:
-		t, ok := data.(service.Toast)
+		t, ok := toastView(data)
 		if !ok {
 			return nil
 		}
-		level := view.ToastInfo
-		if t.Level == "error" {
-			level = view.ToastError
-		}
-		return atoms.Toast(view.Toast{Level: level, Message: t.Message})
+		return atoms.Toast(t)
 	}
 	return nil
+}
+
+// toastView は toast イベントの Data（service.Toast）を表示用のトーストにする。SSE と GET /poll で共通。
+func toastView(data any) (view.Toast, bool) {
+	t, ok := data.(service.Toast)
+	if !ok {
+		return view.Toast{}, false
+	}
+	level := view.ToastInfo
+	if t.Level == "error" {
+		level = view.ToastError
+	}
+	return view.Toast{Level: level, Message: t.Message}, true
 }
 
 // writeSSE は 1 イベントを書く。HTML の改行は data: 行に分ける（受信側が改行で連結し直す）。

@@ -278,7 +278,7 @@ func TestHostOnlyRoutesAreNotReachableRemotely(t *testing.T) {
 
 	client := &http.Client{Transport: remoteTransport{e: e, token: token}}
 	for _, tc := range []struct{ method, path string }{
-		{http.MethodGet, "/"}, {http.MethodGet, "/settings"}, {http.MethodGet, "/events"}, {http.MethodGet, "/clients"},
+		{http.MethodGet, "/"}, {http.MethodGet, "/settings"}, {http.MethodGet, "/events"}, {http.MethodGet, "/poll"}, {http.MethodGet, "/clients"},
 		{http.MethodPost, "/killswitch/trigger"}, {http.MethodPost, "/killswitch/release"},
 		{http.MethodPut, "/settings"}, {http.MethodPost, "/clients/client-1/tokens"},
 	} {

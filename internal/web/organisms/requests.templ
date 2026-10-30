@@ -17,9 +17,21 @@ func approvalOptions(opts []view.ApprovalModeOption) []atoms.SelectOption {
 }
 
 // ConnectionRequestList は接続要求の一覧（許可 / 拒否。FR-H03）。
-// 承認モードは M1 では「常時承認」だけを選択肢に出す。SSE の connection-requests イベントで再取得する。
+// 承認モードは M1 では「常時承認」だけを選択肢に出す。許可・拒否の応答と GET /poll の応答（ConnectionRequestListOOB）で差し替える。
 templ ConnectionRequestList(v view.RequestList) {
-	<div id="request-list" class="space-y-4" hx-get="/requests" hx-trigger="sse:connection-requests" hx-target="this" hx-swap="outerHTML">
+	@connectionRequestList(v, false)
+}
+
+// ConnectionRequestListOOB は GET /poll の応答に添えて、接続要求の一覧を差し替える（OOB）。
+templ ConnectionRequestListOOB(v view.RequestList) {
+	@connectionRequestList(v, true)
+}
+
+// connectionRequestList の隠し入力（data-poll-rev）は、描画した一覧の版。ポーリングが送り返し、変わっていなければサーバーは差し替えない
+// （入力中のフォームをポーリングで消さないため）。
+templ connectionRequestList(v view.RequestList, oob bool) {
+	<div id="request-list" class="space-y-4" { oobAttrs(oob)... }>
+		<input type="hidden" name="rev_requests" value={ v.Rev } data-poll-rev/>
 		if len(v.Rows) == 0 {
 			<p class="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500" data-empty="requests">
 				未処理の接続要求はありません。未登録のデバイスが接続しようとすると、ここに表示されます。

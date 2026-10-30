@@ -2,6 +2,8 @@ package gui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -147,6 +149,7 @@ func (h *Handler) killSwitchView() view.KillSwitch {
 	if st.Active {
 		v.Since, v.Source = h.formatTime(st.TriggeredAt), sourceLabel(st.Source)
 	}
+	v.Rev = revision(v)
 	return v
 }
 
@@ -182,7 +185,14 @@ func (h *Handler) requestListView(reqs []service.ConnRequest) view.RequestList {
 			ApproveURL: "/requests/" + id + "/approve", DenyURL: "/requests/" + id + "/deny", Modes: approvalModes(),
 		})
 	}
+	v.Rev = revision(v)
 	return v
+}
+
+// revision は表示モデル v の版（内容が同じなら同じ文字列）。v は文字列・数値・それらの slice / struct だけでできている。
+func revision(v any) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%+v", v))
+	return hex.EncodeToString(sum[:8])
 }
 
 func (h *Handler) clientView(c domain.Client, inList bool) view.Client {

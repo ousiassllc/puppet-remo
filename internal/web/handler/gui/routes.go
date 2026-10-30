@@ -20,6 +20,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
 	r.GET("/events", h.Events)
+	r.GET("/poll", h.Poll)
 	r.GET("/killswitch", h.KillSwitchPanel)
 
 	// 接続要求・クライアント・トークン

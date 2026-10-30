@@ -155,7 +155,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 |---|---------|------|
 | W1 | ダッシュボード・接続要求・クライアント・設定の各画面 | 表示され、操作できる。DevTools（本番ビルドでは無効）が使える開発ビルドのコンソールに **CSP 違反が出ない**。Wails が HTML にインラインのスクリプト・スタイルを注入しない。`/wails/runtime.js` が同一オリジンで読み込まれる |
 | W2 | `wails3 dev`（`task dev`） | `FRONTEND_DEVSERVER_URL` の待ち受け確認（esbuild の serve）を通過し、GUI が表示される。CSP の `'self'` が開発サーバーのオリジンで効く |
-| W3 | **SSE（`/events`）** | **Wails v3.0.0 の Windows の AssetServer は応答をストリーミングしない**（`responsewriter_windows.go` は本文を `Finish` まで溜める）。ダッシュボードの自動更新（セッション・リース・接続要求のバッジ）がウィンドウ内で届くか確認し、届かなければページの再読み込み・操作で更新される範囲を記録する（既知の逸脱。下の §5） |
+| W3 | **GUI の自動更新（`GET /poll`）** | Wails v3.0.0 の Windows の AssetServer は応答をストリーミングしない（`responsewriter_windows.go` は本文を `Finish` まで溜める）ため、GUI は SSE（`/events`）ではなく 3 秒ごとのポーリング（`GET /poll`）で更新する。ダッシュボードを開いたまま、tailnet 側のセッション・接続要求・キルスイッチの変化が約 3 秒以内に、再読み込みなしでウィンドウ内に反映される（セッション・リース・サーバー状態・ヘッダーの状態バッジ・接続要求のバッジと一覧・キルスイッチのパネル）。接続要求のページで許可フォームに入力している間、ポーリングで入力が消えない |
 | W4 | トークンのクリップボードコピー | 発行直後の「コピー」ボタンでクリップボードにトークンが入る（WebView2 の `navigator.clipboard` が使える）。コピー後、他のアプリへ貼り付けて確認する |
 | W5 | ウィンドウのキャプチャ除外 | メイン GUI は `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）で、トークン発行画面を出した状態で MCP の `screenshot` を呼んでも、ウィンドウの内容が写らない。また `Own` ウィンドウとして `InputGuard` が入力を拒否する（§3.3 W5） |
 
@@ -191,4 +191,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 - キャプチャは GDI `BitBlt` のみ。DXGI（Desktop Duplication）と継続キャプチャ（`Watch`）は M2。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
 - UIPI: 管理者権限のウィンドウへは標準権限のプロセスから入力できない。`SendInput` は UIPI に捨てられても成功を返すことがあるため、`WindowInfo.Elevated` を `service.InputGuard` が先に見て `input_blocked` にする。
 - `Key` の記号キーは現在のキーボード配列に依存する（`VkKeyScanEx`）。Ctrl / Alt（AltGr）が要る文字は `invalid_argument`。文字そのものを入力したいときは `Text` を使う。
-- **GUI の SSE（`/events`）**: Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファするため、`text/event-stream` の逐次配信が WebView 内では届かない（`internal/assetserver/webview/responsewriter_windows.go`）。ページ・HTMX のアクションは動く。自動更新の代替（定期ポーリング、または Bus から Wails のイベントへの橋渡し）は S10 のテンプレートの変更が要るため、実機での確認結果を見て決める。
+- **GUI の自動更新は SSE ではなくポーリング**: Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファするため、`text/event-stream` の逐次配信が WebView 内では届かない（`internal/assetserver/webview/responsewriter_windows.go`）。ホスト GUI のレイアウトは SSE（`/events`）を購読せず、`GET /poll`（3 秒ごと）の OOB で更新する（frontend.md §5.3）。画面が隠れている間もポーリングは続く。

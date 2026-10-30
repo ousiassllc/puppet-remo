@@ -10,7 +10,7 @@ import (
 
 func tone(t view.BadgeTone) atoms.BadgeTone { return atoms.BadgeTone(t) }
 
-// ServerStatusBody はサーバー状態の中身（SSE の server-status イベントの data）。
+// ServerStatusBody はサーバー状態の中身（SSE の server-status イベントの data と、GET /poll の OOB の中身）。
 templ ServerStatusBody(v view.ServerStatus) {
 	<dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm">
 		<dt class="text-slate-500">tailscaled</dt>
@@ -46,13 +46,13 @@ templ ServerStatusBody(v view.ServerStatus) {
 // ServerStatusPanel はダッシュボードのサーバー状態（FR-H02）。
 templ ServerStatusPanel(v view.ServerStatus) {
 	@molecules.Card("サーバー状態") {
-		<div id="server-status" sse-swap="server-status" hx-target="this" hx-swap="innerHTML">
+		<div id="server-status">
 			@ServerStatusBody(v)
 		</div>
 	}
 }
 
-// SessionListBody は接続中セッション一覧の中身（SSE の sessions イベントの data）。
+// SessionListBody は接続中セッション一覧の中身（SSE の sessions イベントの data と、GET /poll の OOB の中身）。
 templ SessionListBody(v view.Sessions) {
 	if len(v.Items) == 0 {
 		<p class="text-sm text-slate-500">接続中のセッションはありません。</p>
@@ -74,13 +74,13 @@ templ SessionListBody(v view.Sessions) {
 // SessionList は接続中セッションの一覧。
 templ SessionList(v view.Sessions) {
 	@molecules.Card("接続中のセッション") {
-		<div id="sessions" sse-swap="sessions" hx-target="this" hx-swap="innerHTML">
+		<div id="sessions">
 			@SessionListBody(v)
 		</div>
 	}
 }
 
-// LeasePanelBody はリース保持者の中身（SSE の lease イベントの data）。M1 は表示のみで、強制剥奪の操作は描画しない。
+// LeasePanelBody はリース保持者の中身（SSE の lease イベントの data と、GET /poll の OOB の中身）。M1 は表示のみで、強制剥奪の操作は描画しない。
 templ LeasePanelBody(v view.Lease) {
 	@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
 	if v.Held {
@@ -91,23 +91,52 @@ templ LeasePanelBody(v view.Lease) {
 // LeasePanel はリース保持者（種別付き）。
 templ LeasePanel(v view.Lease) {
 	@molecules.Card("操作権（リース）") {
-		<div id="lease" sse-swap="lease" hx-target="this" hx-swap="innerHTML">
+		<div id="lease">
 			@LeasePanelBody(v)
 		</div>
 	}
 }
 
+// ServerStatusOOB は GET /poll の応答に添えて、#server-status の中身を更新する（OOB）。
+templ ServerStatusOOB(v view.ServerStatus) {
+	<div id="server-status" hx-swap-oob="innerHTML">
+		@ServerStatusBody(v)
+	</div>
+}
+
+// SessionListOOB は GET /poll の応答に添えて、#sessions の中身を更新する（OOB）。
+templ SessionListOOB(v view.Sessions) {
+	<div id="sessions" hx-swap-oob="innerHTML">
+		@SessionListBody(v)
+	</div>
+}
+
+// LeasePanelOOB は GET /poll の応答に添えて、#lease の中身を更新する（OOB）。
+templ LeasePanelOOB(v view.Lease) {
+	<div id="lease" hx-swap-oob="innerHTML">
+		@LeasePanelBody(v)
+	</div>
+}
+
 // KillSwitchPanel はキルスイッチ。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを描画する（状態駆動）。
-// 発動の応答・SSE の killswitch イベントで再取得する（GET /killswitch）。
+// 発動・解除の応答（差し替え）と GET /poll の応答（KillSwitchPanelOOB）で更新する。
 templ KillSwitchPanel(v view.KillSwitch) {
+	@killSwitchPanel(v, false)
+}
+
+// KillSwitchPanelOOB は GET /poll の応答に添えて、キルスイッチのパネルを差し替える（OOB）。
+templ KillSwitchPanelOOB(v view.KillSwitch) {
+	@killSwitchPanel(v, true)
+}
+
+// killSwitchPanel の隠し入力（data-poll-rev）は、描画した状態の版。ポーリングが送り返し、変わっていなければサーバーは差し替えない。
+templ killSwitchPanel(v view.KillSwitch, oob bool) {
 	<section
 		id="killswitch-panel"
 		class="rounded-lg border border-slate-200 bg-white shadow-sm"
-		hx-get="/killswitch"
-		hx-trigger="sse:killswitch"
-		hx-target="this"
-		hx-swap="outerHTML"
+		{ oobAttrs(oob)... }
 	>
+		<input type="hidden" name="rev_killswitch" value={ v.Rev } data-poll-rev/>
 		<h2 class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">キルスイッチ</h2>
 		<div class="space-y-3 p-4">
 			if v.Active {

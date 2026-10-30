@@ -18,7 +18,7 @@ func TestRequestsPage(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, "<html", "bob-laptop", "carol-phone", "bob@example.com", "100.64.0.9", "3 回の要求",
 		`hx-post="/requests/req-1/approve"`, `hx-post="/requests/req-1/deny"`, `hx-post="/requests/req-2/approve"`,
-		`hx-trigger="sse:connection-requests"`,
+		`name="rev_requests"`,
 		// サイドバーの件数バッジ。
 		`data-pending-count="2"`)
 	// 承認モードの既定は「常時承認」だけ（初回のみ承認・自動許可は選択肢に出さない。M3）。

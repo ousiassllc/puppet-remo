@@ -87,6 +87,7 @@ type KillSwitch struct {
 	CanTrigger   bool
 	CanRelease   bool
 	ConfirmRoute string // 解除の確認モーダルの URL
+	Rev          string // 表示の版（ポーリングが送り返す。変わっていなければ差し替えない）
 }
 
 // Dashboard はダッシュボード。
@@ -123,6 +124,7 @@ type RequestRow struct {
 // RequestList は接続要求の一覧。
 type RequestList struct {
 	Rows []RequestRow
+	Rev  string // 一覧の版（ポーリングが送り返す。変わっていなければ差し替えない。入力中のフォームを消さないため）
 }
 
 // Requests は接続要求のページ。
