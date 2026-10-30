@@ -102,7 +102,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | プロトコル | MCP の Streamable HTTP。実装は公式 Go SDK（`NewStreamableHTTPHandler`） |
 | メソッド | `POST /mcp`（JSON-RPC リクエスト）、`GET /mcp`（サーバー→クライアントの SSE ストリーム）、`DELETE /mcp`（セッション終了） |
 | 認証 | `Authorization: Bearer <token>`（§1 の連鎖。トークンは GUI で発行し、一度だけ表示される。FR-A08） |
-| セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する（NFR-A04: keepalive 15 秒、タイムアウト 45 秒）。アイドル 30 分でセッションを閉じる（SDK の `SessionTimeout`。リースのアイドル解放 5 分とは独立。§8） |
+| セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する。SDK の keepalive の ping は standalone の GET SSE ストリームにしか流れず、GET を張らない（POST だけの）クライアントは応答できずセッションとリースを失うため、M1 は ping を無効にする（NFR-A04 の 15 秒 / 45 秒の検知は MCP では行わない）。切断は DELETE、アイドル 30 分のセッション閉鎖（SDK の `SessionTimeout`）、リースのアイドル解放 5 分（独立。§8）で拾う |
 | サーバー情報 | `name: puppet-remo`、`version`: アプリの版 |
 | `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`run_task` が非同期であることを記す |
 | 同時セッション | 最大 5（NFR-C02） |
@@ -211,8 +211,8 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | 引数 | 型 | 説明 |
 |------|----|------|
 | `window_id` | string | 対象ウィンドウ（省略時は前面のウィンドウ） |
-| `max_depth` | integer | 既定 5 |
-| `max_nodes` | integer | 既定 500 |
+| `max_depth` | integer | 既定 5、最大 20（超えると `invalid_argument`） |
+| `max_nodes` | integer | 既定 500、最大 5000（超えると `invalid_argument`） |
 
 出力: `{ "window_id": "…", "truncated": false, "root": { "id": "…", "role": "Window", "name": "…", "value": "…", "rect": {…}, "enabled": true, "children": [ … ] } }`。`rect` は縮小座標。パスワード欄は `value` を含めず `"value_redacted": true` にする。`id` は UI Automation の RuntimeId から作る参照用の文字列で、他のツールの引数には使わない。
 
@@ -519,3 +519,4 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | 1.3 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチ（3）を WhoIs・許可リスト・接続要求の作成より前に移動（キルスイッチ中は接続要求を作らない）。Bearer の参照先を NFR-S04 に統一。M1 のリース（`state` は `idle` / `held`、`holder.kind` は `mcp` のみ、承認なし）と、ダッシュボードの段階（強制剥奪ボタンは M2、実行中タスクと中断ボタンは M4）を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
 | 1.4 | 2026-10-30 | GUI の実装（#12）に合わせて §7.3 に `GET /killswitch` と確認モーダルのルートを追加し、§7.4 の `connection-requests` / `killswitch` の data を「バッジ・ヘッダーのフラグメント + 一覧・パネルは `sse:` トリガーで再取得」に具体化 | SSE の 1 イベントを複数の要素が受けると同じ HTML が差し込まれる htmx の仕様への対応 |
 | 1.5 | 2026-10-30 | §7.1・§7.4 に `GET /poll`（OOB のフラグメントを返すホスト GUI のポーリング）を追加し、ホスト GUI のレイアウトは SSE を購読しないことを明記。`GET /events` は残し、`connection-requests` / `killswitch` の data を「バッジ・ヘッダーのフラグメント」に戻した（一覧・パネルの再取得は `/poll` が担う）。§7.3 の `GET /killswitch` から SSE の記述を削除 | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |
+| 1.6 | 2026-10-30 | §3.1 のセッションの行を、MCP の keepalive ping を無効にする（POST だけのクライアントが ping に応えられずセッションを失うため）内容に改め、§3.3 `get_ui_tree` に `max_depth` ≤ 20・`max_nodes` ≤ 5000 の上限を追記した | SDK v1.8.0 は server→client の ping を standalone の GET ストリームにしか流さない |

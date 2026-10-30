@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -30,7 +31,25 @@ type toolFunc[In any] func(ctx context.Context, who domain.Actor, in In) (toolRe
 // addTool は共通の前処理（主体の解決・セッションの見張り・タイムアウト）と後処理（結果・エラーの変換）つきでツールを登録する。
 // 出力の型は any にして SDK の出力スキーマ検査を使わず、structuredContent を自分で組み立てる
 // （失敗時の structuredContent が {code, message} になるため）。
+// 監査は Control.Do が記録する入力系・クリップボード・UI ツリー・wait・focus_window 用。Do を通らないツールは addAuditedTool を使う。
 func addTool[In any](s *Server, name, description string, readOnly bool, fn toolFunc[In]) {
+	registerTool(s, name, description, readOnly, nil, fn)
+}
+
+// argsFunc は監査に残す引数の要約を返す。本文・トークンなど機微な値を入れてはならない（FR-AU03、NFR-S13）。
+type argsFunc[In any] func(in In) map[string]any
+
+// noArgsSummary は引数のないツールの監査用の要約（なし）。
+func noArgsSummary(noArgs) map[string]any { return nil }
+
+// addAuditedTool は addTool に、ツール呼び出しの監査（kind = tool。ツール名・引数の要約・結果・所要時間。FR-AU01）を足す。
+// Control.Do を通らない閲覧系・リースのツール用。Do を通るツールに使うと二重に記録される。
+func addAuditedTool[In any](s *Server, name, description string, readOnly bool, args argsFunc[In], fn toolFunc[In]) {
+	registerTool(s, name, description, readOnly, args, fn)
+}
+
+// registerTool は addTool・addAuditedTool の実体。auditArgs が nil なら、この層では監査しない。
+func registerTool[In any](s *Server, name, description string, readOnly bool, auditArgs argsFunc[In], fn toolFunc[In]) {
 	tool := &mcpsdk.Tool{
 		Name:        name,
 		Description: description,
@@ -43,9 +62,13 @@ func addTool[In any](s *Server, name, description string, readOnly bool, fn tool
 		}
 		s.watch(req.Session, who)
 
-		ctx, cancel := context.WithTimeout(ctx, s.toolTimeout)
+		ctx, cancel := s.toolContext(ctx)
 		defer cancel()
+		start := time.Now()
 		res, err := fn(ctx, who, in)
+		if auditArgs != nil && s.audit != nil {
+			s.audit.Record(ctx, service.ToolAuditEntry(who, name, auditArgs(in), "", err, time.Since(start)))
+		}
 		if err != nil {
 			return s.toolError(name, err), nil, nil
 		}

@@ -67,12 +67,24 @@ type screenshotIn struct {
 	Format  string `json:"format,omitempty" jsonschema:"image format: png (default) or jpeg"`
 }
 
+// screenshotArgs は screenshot の監査用の引数の要約。
+func screenshotArgs(in screenshotIn) map[string]any {
+	args := map[string]any{}
+	if in.Monitor != nil {
+		args["monitor"] = *in.Monitor
+	}
+	if in.Format != "" {
+		args["format"] = in.Format
+	}
+	return args
+}
+
 // addViewTools は閲覧系のツール（リース不要）を登録する: FR-M01〜M03。
 func (s *Server) addViewTools() {
-	addTool(s, "get_screen_info",
+	addAuditedTool(s, "get_screen_info",
 		"List the monitors: index, name, whether it is primary, origin and physical size, DPI scale, "+
 			"and the screenshot scale and scaled size. All coordinates in other tools are in the scaled size.",
-		true, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
+		true, noArgsSummary, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
 			mons, err := s.control.Monitors(ctx)
 			if err != nil {
 				return toolResult{}, err
@@ -97,10 +109,10 @@ func (s *Server) addViewTools() {
 			return toolResult{Structured: out}, nil
 		})
 
-	addTool(s, "screenshot",
+	addAuditedTool(s, "screenshot",
 		"Take a screenshot of a monitor. The image is scaled down so that its long side fits the configured maximum; "+
 			"coordinates for the other tools are pixels of this scaled image.",
-		true, func(ctx context.Context, _ domain.Actor, in screenshotIn) (toolResult, error) {
+		true, screenshotArgs, func(ctx context.Context, _ domain.Actor, in screenshotIn) (toolResult, error) {
 			monitor, err := monitorArg(in.Monitor)
 			if err != nil {
 				return toolResult{}, err
@@ -128,9 +140,9 @@ func (s *Server) addViewTools() {
 			}, nil
 		})
 
-	addTool(s, "cursor_position",
+	addAuditedTool(s, "cursor_position",
 		"Get the mouse cursor position in the scaled coordinates of the monitor it is on.",
-		true, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
+		true, noArgsSummary, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
 			c, err := s.control.CursorPosition(ctx)
 			if err != nil {
 				return toolResult{}, err

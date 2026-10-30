@@ -37,8 +37,8 @@ type clipboardBody struct {
 
 type uiTreeIn struct {
 	WindowID string `json:"window_id,omitempty" jsonschema:"window id from list_windows (default: the foreground window)"`
-	MaxDepth int    `json:"max_depth,omitempty" jsonschema:"maximum tree depth (default 5)"`
-	MaxNodes int    `json:"max_nodes,omitempty" jsonschema:"maximum number of nodes (default 500)"`
+	MaxDepth int    `json:"max_depth,omitempty" jsonschema:"maximum tree depth (default 5, at most 20)"`
+	MaxNodes int    `json:"max_nodes,omitempty" jsonschema:"maximum number of nodes (default 500, at most 5000)"`
 }
 
 type uiNodeBody struct {
@@ -60,10 +60,10 @@ type uiTreeBody struct {
 
 // addWindowTools はウィンドウ・クリップボード・UI ツリーのツールを登録する: FR-M11〜M14。
 func (s *Server) addWindowTools() {
-	addTool(s, "list_windows",
+	addAuditedTool(s, "list_windows",
 		"List the top-level windows. rect is in the scaled coordinates of the monitor the window overlaps most, "+
 			"clipped to that monitor. Input into elevated windows is not possible.",
-		true, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
+		true, noArgsSummary, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
 			wins, err := s.control.Windows(ctx)
 			if err != nil {
 				return toolResult{}, err
