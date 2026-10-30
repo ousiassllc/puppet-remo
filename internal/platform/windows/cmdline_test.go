@@ -108,6 +108,50 @@ func TestBuildCommandLineRejectsValuesThatCannotBeQuoted(t *testing.T) {
 	}
 }
 
+// 引用符・引数を含めた全体が 32,767 UTF-16 ユニットまで。超えれば ErrInvalidArgument（値はメッセージに含めない）。
+func TestBuildCommandLineLengthLimit(t *testing.T) {
+	exeOf := func(units int) string { // 引用符 2 つを含めて units ユニットになる exePath
+		return `C:\` + strings.Repeat("e", units-2-len(`C:\`)-len(".exe")) + ".exe"
+	}
+	tests := []struct {
+		name string
+		exe  string
+		args []string
+		ok   bool
+	}{
+		{"exe fills the limit", exeOf(32767), nil, true},
+		{"exe one unit over", exeOf(32768), nil, false},
+		{"args fill the limit", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `))}, true},
+		{"args one unit over", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `)+1)}, false},
+		{"quoting counts toward the limit", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `)-3) + " "}, true},
+		{"quoting pushes it over", `C:\x.exe`, []string{strings.Repeat("z", 32767-len(`"C:\x.exe" `)-2) + " "}, false},
+		{"astral characters count as two units", `C:\x.exe`, []string{strings.Repeat("😀", (32767-len(`"C:\x.exe" `))/2+1)}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			line, err := buildCommandLine(tc.exe, tc.args)
+			if tc.ok {
+				if err != nil {
+					t.Fatalf("error = %v, want nil", err)
+				}
+				if n := utf16Len(line); n > 32767 {
+					t.Errorf("command line is %d units", n)
+				}
+				return
+			}
+			if !errors.Is(err, domain.ErrInvalidArgument) {
+				t.Fatalf("error = %v, want ErrInvalidArgument", err)
+			}
+			if line != "" {
+				t.Errorf("command line = %q, want empty on error", line)
+			}
+			if strings.Contains(err.Error(), "zz") || strings.Contains(err.Error(), "ee") || strings.Contains(err.Error(), "😀") {
+				t.Errorf("error %q contains the path or an argument", err)
+			}
+		})
+	}
+}
+
 // splitCommandLine は CommandLineToArgvW（2008 以降の規則）の再実装。buildCommandLine の結果が元の値に戻ることの検査に使う。
 // 先頭のトークンだけは、円記号をエスケープとして扱わず、先頭が二重引用符ならその次の二重引用符までを 1 つのトークンにする。
 func splitCommandLine(line string) []string {
