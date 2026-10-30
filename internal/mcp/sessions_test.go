@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
-	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
@@ -14,7 +13,7 @@ import (
 func tokenPrincipal(r *http.Request) (service.Principal, bool) {
 	p, ok := testPrincipal(r)
 	if ok {
-		p.Token = &repository.TokenRecord{ID: "tok-" + p.Client.ID}
+		p.Token = &service.TokenRecord{ID: "tok-" + p.Client.ID}
 	}
 	return p, ok
 }
@@ -130,4 +129,29 @@ func TestCloseSessionsClearsTheTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the table to empty", func() bool { return len(e.srv.Sessions()) == 0 })
+}
+
+func TestOnSessionsChangeFiresOnConnectAndDisconnect(t *testing.T) {
+	changes := make(chan struct{}, 8)
+	e := newEnv(t, func(c *Config) {
+		c.Principal = tokenPrincipal
+		c.OnSessionsChange = func() { changes <- struct{}{} }
+	})
+	cs := e.connect("c1")
+	select {
+	case <-changes:
+	case <-time.After(waitLimit):
+		t.Fatal("no change notification for the new session")
+	}
+	if err := cs.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changes:
+	case <-time.After(waitLimit):
+		t.Fatal("no change notification for the closed session")
+	}
+	if got := e.srv.Sessions(); len(got) != 0 {
+		t.Errorf("sessions after the notification = %+v, want none", got)
+	}
 }

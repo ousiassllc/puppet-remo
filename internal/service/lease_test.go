@@ -329,3 +329,66 @@ func drain(ch <-chan domain.LeaseEvent) []domain.LeaseEvent {
 		}
 	}
 }
+
+func TestLeaseSetIdleTimeout(t *testing.T) {
+	t.Run("不正な値はエラーで、タイマーも期限も変えない", func(t *testing.T) {
+		e := newCtlEnv(t)
+		mustAcquire(t, e, ctlAlice)
+		if err := e.leases.SetIdleTimeout(0); !errors.Is(err, domain.ErrInvalidArgument) {
+			t.Fatalf("SetIdleTimeout(0) = %v, want ErrInvalidArgument", err)
+		}
+		if e.timers.Active() != 1 || e.timers.Last() != 5*time.Minute {
+			t.Fatalf("timer changed: active=%d last=%s", e.timers.Active(), e.timers.Last())
+		}
+	})
+
+	t.Run("保持中に変えると、タイマーを新しい期限で張り直す", func(t *testing.T) {
+		e := newCtlEnv(t)
+		mustAcquire(t, e, ctlAlice)
+		e.clock.Advance(time.Minute)
+		if err := e.leases.SetIdleTimeout(10 * time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		if e.timers.Active() != 1 || e.timers.Last() != 9*time.Minute {
+			t.Fatalf("timer: active=%d last=%s, want 1 and 9m (10m - 1m idle)", e.timers.Active(), e.timers.Last())
+		}
+		h, _ := e.leases.Holder()
+		if h.IdleRemaining != 9*time.Minute {
+			t.Fatalf("IdleRemaining = %s, want 9m", h.IdleRemaining)
+		}
+	})
+
+	t.Run("短くして既に期限を過ぎていれば、すぐ idle_timeout で解放する", func(t *testing.T) {
+		e := newCtlEnv(t)
+		sub := e.leases.Subscribe()
+		mustAcquire(t, e, ctlAlice)
+		e.clock.Advance(2 * time.Minute)
+		if err := e.leases.SetIdleTimeout(time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := e.leases.Holder(); ok {
+			t.Fatal("the lease must be released immediately")
+		}
+		got := drain(sub)
+		if len(got) != 2 || got[1].To != domain.LeaseIdle || got[1].Reason != domain.ReleaseIdleTimeout {
+			t.Fatalf("events = %+v, want acquire then an idle_timeout release", got)
+		}
+		if e.timers.Active() != 0 {
+			t.Fatalf("no timer should remain, got %d", e.timers.Active())
+		}
+	})
+
+	t.Run("保持していなければタイマーを張らない", func(t *testing.T) {
+		e := newCtlEnv(t)
+		if err := e.leases.SetIdleTimeout(time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		if e.timers.Active() != 0 {
+			t.Fatalf("active timers = %d, want 0", e.timers.Active())
+		}
+		mustAcquire(t, e, ctlAlice)
+		if e.timers.Last() != time.Minute {
+			t.Fatalf("the next lease must use the new timeout, timer = %s", e.timers.Last())
+		}
+	})
+}

@@ -68,13 +68,21 @@ func (s *Server) track(req mcpsdk.Request) {
 	}
 	s.sessions[id] = rec
 	s.mu.Unlock()
+	s.sessionsChanged()
 
 	go func() {
 		_ = ss.Wait()
 		s.mu.Lock()
 		delete(s.sessions, id)
 		s.mu.Unlock()
+		s.sessionsChanged()
 	}()
+}
+
+func (s *Server) sessionsChanged() {
+	if s.onSessions != nil {
+		s.onSessions()
+	}
 }
 
 // Sessions は接続中のセッションを、接続の古い順に返す。

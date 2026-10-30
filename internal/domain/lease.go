@@ -66,6 +66,17 @@ func NewLeaseMachine(clock Clock, ids IDGen, idleTimeout time.Duration) (*LeaseM
 	return &LeaseMachine{clock: clock, ids: ids, idleTimeout: idleTimeout}, nil
 }
 
+// SetIdleTimeout はアイドルタイムアウトを変える（設定 lease.idle_timeout_sec の変更）。timeout は正でなければならない。
+// 保持中のリースの期限は、最後の活動時刻から新しい値で数え直す。新しい値で既に期限を過ぎていれば、次の
+// Acquire / Check / Expire で解放される。
+func (m *LeaseMachine) SetIdleTimeout(timeout time.Duration) error {
+	if timeout <= 0 {
+		return ErrInvalidArgument.WithMsg(fmt.Sprintf("idle timeout must be positive, got %s", timeout))
+	}
+	m.idleTimeout = timeout
+	return nil
+}
+
 // State は現在の状態を返す。期限切れのリースは（まだ解放が記録されていなくても）idle とみなす。
 func (m *LeaseMachine) State() LeaseState {
 	if _, ok := m.Holder(); ok {

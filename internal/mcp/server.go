@@ -74,6 +74,9 @@ type Config struct {
 	// Version は initialize で返すアプリの版。
 	Version string
 	Logger  *slog.Logger // nil なら slog.Default()
+	// OnSessionsChange は接続中のセッションの一覧が変わるたび（接続・切断）に呼ぶ。nil なら呼ばない。
+	// GUI の sessions 通知に使う。ロックを持たずに呼ぶが、重い処理はしない。
+	OnSessionsChange func()
 
 	// 以下は 0 なら既定値。テストが短くする。
 	SessionTimeout time.Duration
@@ -84,10 +87,11 @@ type Config struct {
 
 // Server は MCP サーバー。
 type Server struct {
-	control   service.Control
-	leases    service.LeaseManager
-	principal PrincipalFunc
-	log       *slog.Logger
+	control    service.Control
+	leases     service.LeaseManager
+	principal  PrincipalFunc
+	log        *slog.Logger
+	onSessions func()
 
 	toolTimeout time.Duration
 	maxSessions int
@@ -116,6 +120,7 @@ func New(cfg Config) (*Server, error) {
 		control:     cfg.Control,
 		leases:      cfg.Leases,
 		principal:   cfg.Principal,
+		onSessions:  cfg.OnSessionsChange,
 		log:         cfg.Logger,
 		toolTimeout: cmp.Or(cfg.ToolTimeout, DefaultToolTimeout),
 		maxSessions: cmp.Or(cfg.MaxSessions, DefaultMaxSessions),

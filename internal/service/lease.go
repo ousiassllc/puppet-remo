@@ -28,6 +28,10 @@ type LeaseManager interface {
 	Holder() (Holder, bool)
 	// ReleaseAll はキルスイッチ・シャットダウン用。reason は domain.ReleaseReason の値（監査に残る）。
 	ReleaseAll(reason string)
+	// SetIdleTimeout はアイドルタイムアウトを変える（設定 lease.idle_timeout_sec の保存時）。timeout は正であること
+	// （そうでなければ ErrInvalidArgument で何も変えない）。保持中のリースは新しい値で数え直し、既に期限を過ぎていれば
+	// すぐ idle_timeout で解放する。
+	SetIdleTimeout(timeout time.Duration) error
 	// Subscribe はリースの変化（取得・解放）を受け取るチャネルを返す。容量は小さく、遅い購読者には捨てる。
 	// 購読の解除はない（購読者はプロセスの寿命と同じ GUI だけ）。
 	Subscribe() <-chan domain.LeaseEvent
@@ -141,6 +145,20 @@ func (m *leaseManager) ReleaseAll(reason string) {
 	m.settleLocked(m.machine.ReleaseAll(domain.ReleaseReason(reason)))
 	m.mu.Unlock()
 	m.flush()
+}
+
+func (m *leaseManager) SetIdleTimeout(timeout time.Duration) error {
+	m.mu.Lock()
+	if err := m.machine.SetIdleTimeout(timeout); err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	// 張ってあるタイマーは古い期限のままなので取り消し、新しい期限で張り直す。
+	m.stopTimerLocked()
+	m.settleLocked(m.machine.Expire())
+	m.mu.Unlock()
+	m.flush()
+	return nil
 }
 
 func (m *leaseManager) Check(who domain.Actor) error {
