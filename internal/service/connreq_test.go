@@ -17,7 +17,7 @@ func ident(node string) Identity {
 func TestRecordConnectionRequestAggregates(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := e.authz.RecordConnectionRequest(ctx, ident(testNodeA), "100.64.0.5"); err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +86,7 @@ func TestRecordConnectionRequestRateLimit(t *testing.T) {
 	ctx := context.Background()
 	node := func(i int) string { return "node-" + string(rune('a'+i)) }
 
-	for i := 0; i < connRequestLimit+5; i++ {
+	for i := range connRequestLimit + 5 {
 		if err := e.authz.RecordConnectionRequest(ctx, ident(node(i)), "100.64.1.1"); err != nil {
 			t.Fatal(err)
 		}

@@ -14,9 +14,16 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/tailnet"
 )
 
-// Identity は WhoIs で解決した接続元（tailnet.Identity の別名）。
-// web 層は tailnet を import できないため、service 経由で同じ型を参照する。
-type Identity = tailnet.Identity
+// web 層は tailnet・repository を import できない（scripts/check-imports.sh）ため、
+// 連鎖が使う型は service の別名として公開する。
+type (
+	// Identity は WhoIs で解決した接続元。
+	Identity = tailnet.Identity
+	// WhoIs は接続元 IP の解決（接続元ごとに最大 10 秒キャッシュ。NFR-S05）。
+	WhoIs = tailnet.WhoIs
+	// TokenRecord は client_tokens の 1 行（ハッシュのみ。平文は持たない）。
+	TokenRecord = repository.TokenRecord
+)
 
 // Feature は、リクエストが使うクライアント機能。許可リストの有効・無効の判定に使う。
 type Feature int
@@ -47,6 +54,8 @@ var (
 	ErrDeviceNotRegistered = domain.NewError(domain.CodeDeviceNotRegistered, "the device is not registered", nil)
 	ErrClientDisabled      = domain.NewError(domain.CodeClientDisabled, "the client feature is disabled", nil)
 	ErrUnauthorized        = domain.NewError(domain.CodeUnauthorized, "missing or invalid bearer token", nil)
+	// ErrWhoIsFailed は WhoIs の失敗（whois_failed。fail closed）。
+	ErrWhoIsFailed = tailnet.ErrWhoIsFailed
 )
 
 // DetailRetryAfterSec は rate_limited の *domain.Error.Detail に入れる、再試行までの秒数（int）のキー。
@@ -81,7 +90,7 @@ type Authenticator interface {
 	CheckAllowlist(ctx context.Context, remoteAddr string, id Identity, f Feature) (domain.Client, error)
 	// VerifyBearer は /mcp の Bearer トークンを検証する（6）。authorization は Authorization ヘッダーの値。
 	// 失敗は unauthorized、同一デバイスの失敗が 1 分 10 回を超えたら rate_limited。
-	VerifyBearer(ctx context.Context, remoteAddr string, p Principal, authorization string) (*repository.TokenRecord, error)
+	VerifyBearer(ctx context.Context, remoteAddr string, p Principal, authorization string) (*TokenRecord, error)
 }
 
 // Authz は認証・認可（FR-A03〜A09、NFR-S04/S05）。
@@ -180,7 +189,13 @@ func (a *authz) Authorize(ctx context.Context, r Request) (Principal, error) {
 }
 
 func (a *authz) Identify(ctx context.Context, remoteAddr string) (Identity, error) {
-	id, err := a.cfg.WhoIs.Lookup(ctx, remoteAddr)
+	return ResolveIdentity(ctx, a.cfg.WhoIs, remoteAddr)
+}
+
+// ResolveIdentity は remoteAddr を WhoIs で解決する（連鎖の 4。NFR-S05）。
+// 失敗、または node ID・ログイン名が欠けた不完全な結果は whois_failed（fail closed）。
+func ResolveIdentity(ctx context.Context, whois tailnet.WhoIs, remoteAddr string) (Identity, error) {
+	id, err := whois.Lookup(ctx, remoteAddr)
 	if err != nil {
 		if errors.Is(err, tailnet.ErrWhoIsFailed) {
 			return Identity{}, err

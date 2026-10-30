@@ -34,7 +34,7 @@ const (
 	reasonWrongDevice = "wrong_device"
 )
 
-func (a *authz) VerifyBearer(ctx context.Context, remoteAddr string, p Principal, authorization string) (*repository.TokenRecord, error) {
+func (a *authz) VerifyBearer(ctx context.Context, remoteAddr string, p Principal, authorization string) (*TokenRecord, error) {
 	device := p.Identity.StableNodeID
 	now := a.cfg.Clock.Now()
 	if ok, first, retry := a.bearerFailures.check(device, now, false); !ok {
@@ -64,7 +64,7 @@ func (a *authz) VerifyBearer(ctx context.Context, remoteAddr string, p Principal
 }
 
 // lookupToken はトークンを検証する。失敗の理由があれば reason に入れる。err は DB 障害など（失敗として数えない）。
-func (a *authz) lookupToken(ctx context.Context, p Principal, authorization string, now time.Time) (rec repository.TokenRecord, reason string, err error) {
+func (a *authz) lookupToken(ctx context.Context, p Principal, authorization string, now time.Time) (rec TokenRecord, reason string, err error) {
 	token, ok := bearerToken(authorization)
 	if !ok {
 		if strings.TrimSpace(authorization) == "" {

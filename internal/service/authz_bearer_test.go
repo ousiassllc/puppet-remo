@@ -110,7 +110,7 @@ func TestVerifyBearerAuditHasNoSecrets(t *testing.T) {
 			t.Fatal("expected a failure")
 		}
 	}
-	for i := 0; i < bearerFailureLimit; i++ { // 429 の監査も含める
+	for range bearerFailureLimit { // 429 の監査も含める
 		_, _ = e.authz.VerifyBearer(ctx, netAddr("100.64.0.5"), p, "Bearer "+tok+"x")
 	}
 	var dump strings.Builder
@@ -135,7 +135,7 @@ func TestVerifyBearerRateLimit(t *testing.T) {
 	good := "Bearer " + tok
 
 	// 成功は数えない。
-	for i := 0; i < 3*bearerFailureLimit; i++ {
+	for i := range 3 * bearerFailureLimit {
 		if _, err := e.authz.VerifyBearer(ctx, addr, p, good); err != nil {
 			t.Fatalf("success %d: %v", i, err)
 		}
@@ -180,7 +180,7 @@ func TestVerifyBearerRateLimit(t *testing.T) {
 func TestVerifyBearerRepositoryFailureIsNotCounted(t *testing.T) {
 	e, tok, p := bearerEnv(t)
 	e.tokens.err = fmt.Errorf("db down")
-	for i := 0; i < 2*bearerFailureLimit; i++ {
+	for range 2 * bearerFailureLimit {
 		_, err := e.authz.VerifyBearer(context.Background(), netAddr("100.64.0.5"), p, "Bearer "+tok)
 		wantCode(t, err, domain.CodeInternal)
 	}

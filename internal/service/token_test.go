@@ -89,7 +89,7 @@ func TestIssueTokenUniqueAndUsesRandomSource(t *testing.T) {
 	e := newEnv(t)
 	e.register("c1", testNodeA, testUser)
 	seen := map[string]bool{}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		tok, err := e.authz.IssueToken(context.Background(), "c1", string(rune('a'+i)), nil)
 		if err != nil || seen[tok] {
 			t.Fatalf("token %d: %v (dup=%v)", i, err, seen[tok])
