@@ -1,0 +1,33 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const appsTitle = "起動許可アプリ"
+
+templ appsBody(v view.Apps) {
+	<div class="max-w-3xl space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">起動許可アプリ</h1>
+		<p class="text-sm text-slate-600">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリの一覧です。ここに登録したものだけが起動できます。登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>
+		@organisms.AppList(v.List)
+		@organisms.AppForm(v.NewForm, false)
+	</div>
+}
+
+// Apps は起動許可アプリのフルページ（一覧と追加フォーム。FR-H12）。GET /apps/new・GET /apps/{id}/edit のフルページも同じ
+// （編集の対象の行は、一覧の中で編集フォームになる）。
+templ Apps(v view.Apps) {
+	@layout.GUI(appsTitle, v.Chrome) {
+		@appsBody(v)
+	}
+}
+
+// AppsBoosted は hx-boost の遷移への応答。
+templ AppsBoosted(v view.Apps) {
+	@layout.Boosted(appsTitle, v.Chrome) {
+		@appsBody(v)
+	}
+}

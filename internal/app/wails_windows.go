@@ -42,6 +42,8 @@ type WailsHost struct {
 	// ハンドラは Run で差し込む。ウィンドウが作られる前（Run の中）に必ず設定される。
 	gui   atomic.Pointer[http.Handler]
 	shell atomic.Pointer[Shell]
+	// main はメインウィンドウ。ファイル選択ダイアログ（FilePicker）の親にする（MainWindowHandle）。Run が作る。
+	main atomic.Pointer[application.WebviewWindow]
 }
 
 // NewWailsHost は Wails のアプリを作る。すでに別のインスタンスが動いていれば、そのインスタンスのウィンドウを
@@ -85,6 +87,17 @@ func (h *WailsHost) serveGUI(w http.ResponseWriter, r *http.Request) {
 	(*g).ServeHTTP(w, r)
 }
 
+// MainWindowHandle はメインウィンドウの HWND を返す。ウィンドウがまだ無い（Run の前）か、破棄済みなら 0。
+// platform/windows.NewFilePicker の owner に渡し、ファイル選択ダイアログをメインウィンドウに対するモーダルにする（FR-H12）。
+// ダイアログは別のスレッドから開かれるが、親ウィンドウは Wails の UI スレッドのものでよい。
+func (h *WailsHost) MainWindowHandle() uintptr {
+	w := h.main.Load()
+	if w == nil {
+		return 0
+	}
+	return uintptr(w.NativeWindow())
+}
+
 // shutdownTimeout は終了処理（監査の書き切りなど）の上限。
 const shutdownTimeout = 10 * time.Second
 
@@ -107,6 +120,8 @@ func (h *WailsHost) Run(a *App) error {
 		// ホスト GUI（トークンの平文などが映る）は、スクリーンショット・ライブ配信に写さない（WDA_EXCLUDEFROMCAPTURE。NFR-S06）。
 		ContentProtectionEnabled: true,
 	})
+
+	h.main.Store(win)
 
 	tray := newWailsTray(h.wails, h.opts.Icon)
 	shell := NewShell(a, wailsWindow{win}, tray, h.wails.Quit, h.log)

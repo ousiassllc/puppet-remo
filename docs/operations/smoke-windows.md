@@ -223,7 +223,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | # | 確認項目 | 期待 |
 |---|---------|------|
 | A1 | ホスト GUI のサイドバーから「起動許可アプリ」を開く | 一覧が空で表示され、`cmd.exe`・`powershell.exe` の登録は任意コードの実行を許す旨の注意が常に見える |
-| A2 | 「参照…」でファイル選択ダイアログを開き、`notepad.exe` を選ぶ（ダイアログを 1 分以上開いたままにしても確認する） | 入力欄に選んだパスが入り、手で編集できる。ダイアログを開いている間も WebView が応答待ちのままタイムアウトしない。キャンセルでは入力欄が変わらない |
+| A2 | 「参照…」でファイル選択ダイアログを開き、`notepad.exe` を選ぶ（ダイアログを 1 分以上開いたままにしても確認する） | 入力欄に選んだパスが入り、手で編集できる。ダイアログが Wails のメインウィンドウを親にしたモーダルで開く（`WailsHost.MainWindowHandle` の結線。ダイアログの表示中はメインウィンドウを操作できず、前面に出たままになる）。ダイアログを開いている間も WebView が応答待ちのままタイムアウトしない。キャンセルでは入力欄が変わらない（204） |
 | A3 | 表示名 `メモ帳`・パス・引数なしで保存 | 一覧に行が追加される。同じ表示名（大文字小文字違いを含む）・存在しないパス・相対パス・UNC パス・`.exe` 以外・`..` を含むパスは、項目別のエラーで入力値が残る（422） |
 | A4 | MCP クライアントから `list_launchable_apps` | `{ "apps": [ { "id", "label": "メモ帳" } ] }` だけ。パス・引数は出ない |
 | A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid }` が返る。同じ呼び出しを繰り返すと、毎回新しいメモ帳が増える |
@@ -252,3 +252,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_PICKER` を追加、§5 に `launch_app` が起動したプロセスを終了しない旨を追記 | #16 のレビュー指摘 |
 | — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` / `PUPPET_REMO_SMOKE_LAUNCH_DENIED` を追加、§3.8 の L1・L2（`TestSmokeAppLauncherArgs` で自動化）・L9 と、テストの構成（`TestSmokeAppLauncherPid`、親なしの `TestSmokeFilePicker`）を実装に合わせた | #21 の実装 |
 | — | 2026-10-30 | §4.8 の A6 を、スキーマ違反が JSON-RPC の `invalid params` ではなく `isError` のツール結果で返る実装に合わせて訂正 | #22 の実装（go-sdk の挙動の実測） |
+| — | 2026-10-30 | §4.8 の A2 に、ファイル選択ダイアログの親ウィンドウ（Wails のメインウィンドウの結線。`WailsHost.MainWindowHandle`）の確認を追記。§4.8 の確認は未確認のまま | #23 の実装 |

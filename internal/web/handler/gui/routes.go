@@ -19,6 +19,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/clients", h.Clients)
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
+	r.GET("/apps", h.Apps)
+	r.GET("/apps/new", h.AppNew)
+	r.GET("/apps/:id/edit", h.AppEdit)
 	r.GET("/events", h.Events)
 	r.GET("/poll", h.Poll)
 	r.GET("/killswitch", h.KillSwitchPanel)
@@ -35,6 +38,13 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/clients/:id/delete/confirm", h.ConfirmDeleteClient)
 	r.GET("/clients/:id/tokens/:token_id/revoke/confirm", h.ConfirmRevokeToken)
 	r.GET("/killswitch/release/confirm", h.ConfirmReleaseKillSwitch)
+	r.GET("/apps/:id/delete/confirm", h.ConfirmDeleteApp)
+
+	// 起動許可アプリ（M1.5。FR-H12）。許可リストを書き換える経路は、この GUI ルーターだけにある（NFR-S20）
+	r.POST("/apps", h.CreateApp)
+	r.PUT("/apps/:id", h.UpdateApp)
+	r.DELETE("/apps/:id", h.DeleteApp)
+	r.POST("/apps/pick-file", h.PickAppFile)
 
 	// キルスイッチ・設定
 	r.POST("/killswitch/trigger", h.TriggerKillSwitch)
