@@ -68,7 +68,7 @@ func run(args []string) error {
 		Logger:         log,
 	})
 
-	a, err := compose(context.Background(), dataDir, log, logCloser)
+	a, err := compose(context.Background(), dataDir, log, logCloser, host.MainWindowHandle)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,8 @@ func run(args []string) error {
 }
 
 // compose は本物の部品を作って app.New に渡す。作った資源は、成功すれば app.Shutdown が閉じる。
-func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io.Closer) (*app.App, error) {
+// mainWindow はメインウィンドウの HWND を返す（Wails のウィンドウは Run で作られるため、ファイル選択のたびに呼ぶ関数で渡す）。
+func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io.Closer, mainWindow func() uintptr) (*app.App, error) {
 	var closers []io.Closer
 	fail := func(err error) (*app.App, error) {
 		for _, c := range slices.Backward(closers) {
@@ -134,6 +135,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		Platform: app.Platform{
 			Capturer: windows.NewCapturer(), Input: input, Windows: wm, Clipboard: windows.NewClipboard(),
 			UI: ui, Hotkey: hotkey, Power: power, Autostart: autostart,
+			// ファイル選択ダイアログ（ホスト GUI の /apps。FR-H12）は、Wails のメインウィンドウを親にしたモーダルにする。
+			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(mainWindow),
 		},
 		Watcher: tailnet.NewWatcher(tailnet.WatcherConfig{API: api}),
 		WhoIs:   tailnet.NewWhoIs(tailnet.WhoIsConfig{API: api}),

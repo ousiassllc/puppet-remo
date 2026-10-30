@@ -59,6 +59,18 @@ type Settings interface {
 	AutostartAvailable() bool
 }
 
+// Apps は起動許可アプリの一覧・登録・編集・削除とファイル選択（M1.5。FR-H12）。実体は service.AppRegistry。
+// 監査（settings.launchable_app.*）は実体が記録するため、ハンドラは記録しない。
+type Apps interface {
+	List(ctx context.Context) ([]domain.LaunchableApp, error)
+	Get(ctx context.Context, id string) (domain.LaunchableApp, error)
+	Create(ctx context.Context, in domain.AppInput) (domain.LaunchableApp, error)
+	Update(ctx context.Context, id string, in domain.AppInput) (domain.LaunchableApp, error)
+	Delete(ctx context.Context, id string) error
+	// PickExecutable はネイティブのファイル選択ダイアログを開き、閉じるまで戻らない。キャンセルは ok=false。
+	PickExecutable(ctx context.Context) (path string, ok bool, err error)
+}
+
 // Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
@@ -72,6 +84,7 @@ type Deps struct {
 	KillSwitch KillSwitch
 	Admin      Admin
 	Settings   Settings
+	Apps       Apps
 	Events     Events
 	Clock      domain.Clock
 
@@ -101,7 +114,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Settings == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Settings == nil, d.Apps == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

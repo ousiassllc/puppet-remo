@@ -32,6 +32,8 @@ var apiErrorTable = map[string]int{
 	"desktop_unavailable":   503,
 	"agent_disabled":        403,
 	"task_not_found":        404,
+	"app_not_found":         404,
+	"launch_failed":         409,
 	"internal":              500,
 }
 
@@ -42,7 +44,7 @@ func TestCodeTable(t *testing.T) {
 		domain.CodeKillSwitchActive, domain.CodeLeaseRequired, domain.CodeLeaseHeldByOther, domain.CodeLeaseRevoked,
 		domain.CodeApprovalDenied, domain.CodeApprovalTimeout, domain.CodeInvalidCoordinates, domain.CodeInvalidArgument,
 		domain.CodeConflict, domain.CodeWindowNotFound, domain.CodeInputBlocked, domain.CodeDesktopUnavailable,
-		domain.CodeAgentDisabled, domain.CodeTaskNotFound, domain.CodeInternal,
+		domain.CodeAgentDisabled, domain.CodeTaskNotFound, domain.CodeAppNotFound, domain.CodeLaunchFailed, domain.CodeInternal,
 	}
 	if len(codes) != len(apiErrorTable) {
 		t.Fatalf("%d codes, API table has %d", len(codes), len(apiErrorTable))
@@ -87,6 +89,8 @@ func TestSentinelErrors(t *testing.T) {
 		{domain.ErrDesktopUnavailable, domain.CodeDesktopUnavailable},
 		{domain.ErrAgentDisabled, domain.CodeAgentDisabled},
 		{domain.ErrTaskNotFound, domain.CodeTaskNotFound},
+		{domain.ErrAppNotFound, domain.CodeAppNotFound},
+		{domain.ErrLaunchFailed, domain.CodeLaunchFailed},
 	}
 	seen := map[domain.Code]bool{}
 	for _, tt := range tests {

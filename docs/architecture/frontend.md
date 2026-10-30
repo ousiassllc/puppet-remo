@@ -83,7 +83,7 @@ internal/web/
 ├── view/                     # Templ に渡す表示用モデル（domain から handler が組み立てる）
 ├── handler/
 │   ├── gui/                  # GUI ルーター用: dashboard, requests, clients, tokens, approvals,
-│   │                         #   tasks, agent, audit, settings, update, poll(OOB), events(SSE)
+│   │                         #   apps, tasks, agent, audit, settings, update, poll(OOB), events(SSE)
 │   └── remote/               # リモートルーター用: viewer, lease, clipboard, keys
 ├── middleware/               # csp, hostcheck, csrfheader, whois, allowlist, bearer, killswitch
 ├── atoms/                    # 共有: button, input, textarea, select, checkbox, badge, spinner, toast, icon, kbd
@@ -92,11 +92,11 @@ internal/web/
 │   ├── gui/                  # server_status_panel, session_list, lease_panel, task_panel,
 │   │                         #   killswitch_button, connection_request_list, client_list, client_detail,
 │   │                         #   token_list, approval_body, audit_table, audit_filter_form, settings_form,
-│   │                         #   agent_settings_form, update_panel, header, sidebar
+│   │                         #   agent_settings_form, update_panel, app_list, app_form, header, sidebar
 │   └── remote/               # viewer_toolbar, lease_panel, clipboard_panel, key_menu
 ├── pages/
 │   ├── gui/                  # dashboard, requests, clients, client_detail, approval, audit, audit_detail,
-│   │                         #   settings, update, tasks, task_detail, agent
+│   │                         #   settings, update, tasks, task_detail, agent, apps
 │   └── remote/               # viewer, pending (接続要求待ち), denied, error
 └── layout/                   # gui, remote（<head>・ヘッダー・`hx-headers`・スクリプトの読み込み）
 
@@ -245,6 +245,13 @@ func (h *Handler) Clients(c *gin.Context) {
 | ページ遷移（ホスト GUI のサイドバーのみ） | `hx-boost` + `#main` への差し替え。グローバルに有効化しない |
 | 二重送信の防止 | `hx-disabled-elt="this"` |
 | 破壊的な操作（クライアント削除、トークン失効、キルスイッチ解除など） | サーバーが描画した確認のモーダル（molecule）を `hx-get` で開き、確定のボタンだけが実際のアクションを送る |
+| ファイル選択（起動許可アプリの実行ファイル。M1.5） | 「参照…」のボタンが `hx-post="/apps/pick-file"`、`hx-target="closest [data-field=exe_path]"`（`exe_path` の入力欄を包む要素。`form_field`）、`hx-swap="outerHTML"` で送る（フォームの `hx-target` などの継承を上書きする）。`hx-vals` の `form_id`（フォームの要素 id。追加は `app-form-new`、編集は `app-form-{id}`）で、応答の入力欄の `id` を追加・編集のフォームごとに重ならない値にする。サーバーは `app-form-` で始まる安全な文字だけの値以外を `app-form-new` に置き換える。サーバーがネイティブのダイアログを開き、選ばれたパスを入れた入力欄を返す（キャンセルは 204 で差し替えない）。入力欄は手入力のままでも使える（ダイアログは補助）。ダイアログの表示中はボタンを `hx-disabled-elt` で無効にし、`hx-indicator` を出す。JS（Wails の `runtime.js` の `Dialogs`）は使わない |
+
+**起動許可アプリ画面（M1.5。`/apps`）**: 一覧（`app_list` organism。表示名・実行ファイル・引数・作業ディレクトリ・編集・削除）と追加・編集のフォーム（`app_form` organism）をホスト GUI のサイドバーに加える。追加・編集のフォームは、実行ファイル・表示名・引数（`textarea`。1 行 1 引数）・作業ディレクトリの項目と、各項目の検証メッセージ（422 のフラグメントが入力値を残して再描画する。`hx-target-422`）を持つ。常時表示の注意書き（`cmd.exe`・`powershell.exe` などの登録は任意コードの実行を許す。NFR-S20）を置く。削除は確認モーダルを経る（上の表）。許可リストの変更はホスト所有者の操作でだけ起きるため `GET /poll` の対象にしない（操作の応答のフラグメントで一覧を更新する）。パスと引数は、ホスト GUI の HTML にだけ出し、リモートの UI（`organisms/remote`・`pages/remote`）と MCP には出さない（M2 の Web UI にも許可リストの画面は作らない）。
+
+- ルートの応答（`handler/gui/apps.go`）: `GET /apps` は `HX-Request` なら一覧（`#app-list`）、`GET /apps/new` は追加フォーム、`GET /apps/{id}/edit` は編集フォームのフラグメント（`HX-Boosted` とそれ以外はフルページ。`/apps/{id}/edit` のフルページは一覧の該当行が編集フォームになる。対象が無ければ 404）。`POST /apps` の 200 は一覧（`#app-list` を差し替え）に、追加フォームを空に戻す OOB（`#app-form-new`）とトーストを添える。`PUT /apps/{id}` の 200 は行のカード（編集フォームを差し替え）とトースト。422 はどちらもフォーム自身（`hx-target-422="this"`）を、入力値（引数は入力どおりの複数行）と項目別のメッセージ付きで再描画する。50 件到達の 409 `conflict` と、想定外のエラーはトーストのフラグメント（`HX-Retarget: #toast-root`）。`DELETE /apps/{id}` の 200 は一覧に、モーダルを閉じる OOB とトーストを添える
+- 引数は、入力欄の文字列をそのまま（LF・CRLF どちらも）`domain.ParseArgsLines` で 1 行 1 引数に分け、空行は捨てる。編集フォームは保存済みの引数を改行でつないで出す
+- 実装は `organisms/app_list.templ`（`AppList`・`AppCard`）・`organisms/app_form.templ`（`AppForm`・`AppExePathField`）・`pages/apps.templ`・アトム `textarea`。ハンドラは `service.AppRegistry` を `gui.Deps.Apps`（利用者側のインターフェース `gui.Apps`）で受け、`platform` を import しない
 
 ### 5.5 HTMX 拡張の採否
 
@@ -501,6 +508,7 @@ graph LR
 |------|------|
 | FR-W01〜W09（Web UI） | `pages/remote`、`organisms/remote`、`<remo-screen-viewer>`、`handler/remote` |
 | FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`（`GET /poll`）。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。`lease_panel`（GUI）の強制剥奪ボタンは M2、`task_panel` と中断ボタンは M4（FR-H02） |
+| FR-H12（起動許可アプリ。M1.5） | `pages`（`apps.templ`。設計の `pages/gui`）、`organisms`（`app_list.templ`・`app_form.templ`。設計の `organisms/gui`）、`handler/gui`（`apps.go`: `/apps`・`/apps/pick-file`）、`atoms`（`textarea`）、`molecules`（`modal`・`form_field`）。リモートの UI には作らない |
 | FR-L06（強制剥奪。M2） | `lease_panel`（リモート・GUI）の状態駆動レンダリング。M1 の GUI の `lease_panel` は保持者の表示のみで、`CanRevoke` のボタンは描画しない |
 | NFR-S02・S03（Host / Origin、カスタムヘッダー） | `middleware`、`layout` の `hx-headers` |
 | NFR-S06（自己保護） | ビューアに自ウィンドウが写らない（キャプチャ除外）。GUI に AI の入力が届かない（InputGuard） |
@@ -526,8 +534,8 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
 | リモートの UI（§1.3・§3・§6） | Web UI（`/viewer`）、Lit の `<remo-screen-viewer>`、`lib/ws.ts`、`handler/remote`、`organisms/remote`・`pages/remote` | M2 まで無い。M1 のリモートルーターは `/mcp` だけ（API 仕様 §7.5）。Lit・`lib/ws.ts`・`lib/logger.ts`・`src/components/`・`e2e/`（Playwright）・Lit のテスト・`web-test-runner` は作らない |
-| `internal/web` の構成（§3） | `organisms/{gui,remote}/`・`pages/{gui,remote}/`、`handler/{gui,remote}/` | `organisms/`・`pages/` は平ら（`gui/` のサブディレクトリを作らない）。`handler/gui/` だけ。`layout/` は `gui.templ` だけ。`webtest/`（ハンドラのテスト補助）と `handler/gui/guitest/`（偽の service）を追加した。`view/` は設計どおり。アトムは `badge`・`button`・`checkbox`・`input`・`select`・`spinner`・`toast`、モレキュールは `card`・`form_field`・`lease_badge`・`modal`・`status_pill`・`token_reveal` |
-| GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。承認・タスク・エージェント・監査・更新は M3・M4 |
+| `internal/web` の構成（§3） | `organisms/{gui,remote}/`・`pages/{gui,remote}/`、`handler/{gui,remote}/` | `organisms/`・`pages/` は平ら（`gui/` のサブディレクトリを作らない）。`handler/gui/` だけ。`layout/` は `gui.templ` だけ。`webtest/`（ハンドラのテスト補助）と `handler/gui/guitest/`（偽の service）を追加した。`view/` は設計どおり。アトムは `badge`・`button`・`checkbox`・`input`・`select`・`spinner`・`textarea`・`toast`、モレキュールは `card`・`form_field`・`lease_badge`・`modal`・`status_pill`・`token_reveal` |
+| GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。M1.5 で apps（起動許可アプリ。`handler/gui/apps.go`）を足した。承認・タスク・エージェント・監査・更新は M3・M4 |
 | ホスト GUI の更新（§5.3） | `GET /poll`（本書のとおり） | 同じ。`GET /events`（SSE）は残すが GUI は購読しない。`htmx-ext-sse` は `static/package.json` に入れて `dist/js/sse.min.js` へコピーするが、レイアウトは読み込まない（未使用。ビルドの対象としては残る） |
 | `static/package.json`（§8.2） | `lit`・`htmx-ext-*`・`@open-wc/testing`・`@web/test-runner`、`test` スクリプト | M1 は `htmx.org`・`htmx-ext-response-targets`・`htmx-ext-sse`、開発依存は `tailwindcss`・`@tailwindcss/cli`・`esbuild`・`typescript`・`concurrently`。スクリプトに `clean` を足し（`build` の先頭で `dist` を消す）、`test` は無い。esbuild のエントリーは `src/app/` の 2 ファイル |
 | 開発タスク名（§8.3） | `frontend:dev` | 同じ。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service を loopback で配信）を足した。スクリーンショットは `docs/screenshots/m1/` |
@@ -545,3 +553,5 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.5 | 2026-10-30 | 開発タスク名を実在する `frontend:dev` に訂正（`dev:frontend` は誤り）。`hx-boost` のリンクの `hx-target-error` と、トークン表示の `hx-history="false"` を追記（§5.5・§7） | 実装のレビュー指摘（エラーページが表示されない・トークンの平文が履歴に残る）の反映 |
 | 1.6 | 2026-10-30 | §9 の CI の記述を、`windows-latest` と Windows のジョブ・ubuntu のジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新。Lit のテストと Playwright は M2 と明記 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
 | 1.7 | 2026-10-30 | §12「M1 実装での差分」を新設（リモートの UI・Lit・E2E が M2、`internal/web` の構成、GUI のページ、`htmx-ext-sse` の同梱と未使用、`static/package.json`、`gui:demo`・スクリーンショット・スモーク手順）。§3 のハンドラの依存規則に `tailnet` を追記 | M1 の実装との差分の文書化（オーナー決定） |
+| 1.8 | 2026-10-30 | 起動許可アプリの画面（M1.5。FR-H12）を追加: §3 のディレクトリ構成（`apps`・`app_list`・`app_form`）、§5.4 のファイル選択のパターン（`hx-post="/apps/pick-file"`）、§5 の画面の方針（フォーム・注意書き・削除の確認・`/poll` の対象外・パスはホスト GUI だけに出す）、§10 のトレース | M1.5 の仕様追記（#16。オーナー決定 8 件） |
+| 1.9 | 2026-10-30 | 起動許可アプリの画面の実装（#23）に合わせて、§5.4 のファイル選択の `hx-target` と `form_id`、§5 の `/apps` の応答（フラグメント・OOB・422・409）と構成、§10 のトレース、§12 のアトム（`textarea`）・ページを追記 | #23 の実装との整合 |

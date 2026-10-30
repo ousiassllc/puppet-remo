@@ -38,6 +38,7 @@ type Repo interface {
 	Tokens() repository.Tokens
 	ConnRequests() repository.ConnRequests
 	Audit() repository.Audit
+	LaunchableApps() repository.LaunchableApps
 }
 
 // Platform は OS 依存部。本番は platform/windows、テストは platformtest の偽物。
@@ -47,7 +48,11 @@ type Platform struct {
 	Windows   platform.WindowManager
 	Clipboard platform.Clipboard
 	UI        platform.UIAutomation
-	Hotkey    platform.Hotkey
+	// Launcher は許可リストのアプリの起動と存在確認、FilePicker はホスト GUI のファイル選択（M1.5。FR-M19・H12）。
+	// Launcher.Launch を呼ぶのは service.Control だけ。
+	Launcher   platform.AppLauncher
+	FilePicker platform.FilePicker
+	Hotkey     platform.Hotkey
 	// Power はリース保持中のスリープ・画面オフの抑止（NFR-A05）。
 	Power platform.Power
 	// Autostart はログオン時の自動起動の登録（FR-S08）。nil なら設定画面に項目を出さない。
@@ -95,6 +100,7 @@ type App struct {
 	authz    service.Authz
 	audit    *service.Audit
 	admin    service.HostAdmin
+	apps     service.AppRegistry
 	mcp      *mcp.Server
 	tracker  *service.StatusTracker
 	maint    *service.Maintenance
@@ -142,8 +148,9 @@ func (c Config) validate() error {
 	switch {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
-	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Hotkey == nil, p.Power == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Hotkey and Power")
+	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
+		p.Hotkey == nil, p.Power == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey and Power")
 	case c.Watcher == nil, c.WhoIs == nil:
 		return errors.New("app: Watcher and WhoIs are required")
 	case c.Static == nil:
@@ -180,8 +187,16 @@ func (a *App) build(ctx context.Context) error {
 	killMgr.BindLeases(a.leases)
 
 	p := cfg.Platform
+	// 許可リストの管理。書き込みは GUI だけが呼ぶ（mcp・リモートルーターには渡さない。NFR-S20）。
+	a.apps, err = service.NewAppRegistry(service.AppRegistryConfig{
+		Apps: cfg.Repo.LaunchableApps(), Launcher: p.Launcher, Picker: p.FilePicker, Audit: audit, Clock: cfg.Clock, IDs: cfg.IDs,
+	})
+	if err != nil {
+		return fmt.Errorf("app registry: %w", err)
+	}
 	control, err := service.NewControl(service.ControlConfig{
 		Capturer: p.Capturer, Input: p.Input, Windows: p.Windows, Clipboard: p.Clipboard, UI: p.UI,
+		Launcher: p.Launcher, Apps: a.apps,
 		Leases: a.leases, Kill: killMgr, Settings: settings, Audit: audit, Clock: cfg.Clock,
 	})
 	if err != nil {
@@ -266,7 +281,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin,
-		Settings: a.settings, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Settings: a.settings, Apps: a.apps, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)

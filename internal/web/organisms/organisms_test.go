@@ -125,6 +125,83 @@ func TestSettingsFormErrorsAndAutostart(t *testing.T) {
 	webtest.AssertCSPCompliantHTML(t, out)
 }
 
+// 起動許可アプリのフォーム: 追加は POST で一覧を差し替え、編集は PUT で自身を差し替える。422 はどちらもフォーム自身に出す。
+// 注意書きは追加・編集のどちらにも常に出る。キャンセルは編集だけ。
+func TestAppFormModesAndNotice(t *testing.T) {
+	add := webtest.Render(t, organisms.AppForm(view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}, false))
+	has(t, add, `data-app-form="new"`, `hx-post="/apps"`, `hx-target="#app-list"`, `hx-target-422="this"`, `data-notice="interpreter"`,
+		`id="app-form-new-exe-path"`, `hx-post="/apps/pick-file"`, `hx-target="closest [data-field=exe_path]"`, `<textarea`, "追加")
+	hasNot(t, add, "hx-put", "キャンセル", "hx-swap-oob", "data-field-error")
+
+	edit := webtest.Render(t, organisms.AppForm(view.AppForm{
+		ID: "a1", DOMID: "app-form-a1", ActionURL: "/apps/a1", PickURL: "/apps/pick-file", CancelURL: "/apps",
+		Values: view.AppFormValues{Label: "メモ帳", ExePath: `C:\x.exe`, Args: "a\nb"},
+		Errors: view.AppFormErrors{ExePath: "見つかりません", Args: "多すぎます"},
+	}, false))
+	has(t, edit, `data-app-form="edit"`, `hx-put="/apps/a1"`, `hx-target="this"`, `data-notice="interpreter"`, "キャンセル", `hx-get="/apps"`,
+		`data-field-error="app-form-a1-exe-path"`, "見つかりません", `data-field-error="app-form-a1-args"`, "多すぎます", "a\nb</textarea>", `value="メモ帳"`)
+	hasNot(t, edit, "hx-post=\"/apps\"", `data-field-error="app-form-a1-label"`)
+	webtest.AssertCSPCompliantHTML(t, add)
+	webtest.AssertCSPCompliantHTML(t, edit)
+
+	oob := webtest.Render(t, organisms.AppForm(view.AppForm{DOMID: "app-form-new", ActionURL: "/apps"}, true))
+	has(t, oob, `id="app-form-new"`, `hx-swap-oob="true"`)
+}
+
+// 一覧: 空のときは案内だけ。行にはパス・引数・作業ディレクトリを出し、Form のある行はカードの代わりに編集フォーム。
+func TestAppListRowsAndEditingRow(t *testing.T) {
+	empty := webtest.Render(t, organisms.AppList(view.AppList{Max: 50}))
+	has(t, empty, `data-empty="apps"`, `data-app-count="0"`)
+	hasNot(t, empty, "<article")
+
+	form := view.AppForm{ID: "a2", DOMID: "app-form-a2", ActionURL: "/apps/a2", PickURL: "/apps/pick-file", CancelURL: "/apps"}
+	out := webtest.Render(t, organisms.AppList(view.AppList{Count: 2, Max: 50, Rows: []view.AppRow{
+		{ID: "a1", Label: "メモ帳", ExePath: `C:\n.exe`, Args: []string{"--x", "y z"}, WorkingDir: `C:\w`, EditURL: "/apps/a1/edit", DeleteConfirm: "/apps/a1/delete/confirm"},
+		{ID: "a2", Label: "電卓", ExePath: `C:\c.exe`, EditURL: "/apps/a2/edit", DeleteConfirm: "/apps/a2/delete/confirm", Form: &form},
+	}}))
+	has(t, out, `id="app-a1"`, "--x", "y z", `C:\w`, `hx-get="/apps/a1/edit"`, `hx-get="/apps/a1/delete/confirm"`, `id="app-form-a2"`, `data-app-count="2"`)
+	hasNot(t, out, `id="app-a2"`, `data-empty`)
+	// 引数も作業ディレクトリも無い行は、その旨を出す。
+	card := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a3", Label: "x", ExePath: `C:\c.exe`}))
+	has(t, card, "なし", "実行ファイルのあるディレクトリ")
+	hasNot(t, card, "data-app-args", "data-app-dir")
+	// ユーザー入力はエスケープされる。
+	evil := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a4", Label: `<script>alert(1)</script>`, ExePath: `"><script>x</script>`, Args: []string{`<script>`}}))
+	hasNot(t, evil, "<script>")
+}
+
+// 読めない行は、引数の代わりに警告を出す（「なし」とは出さない）。
+func TestAppCardCorruptRowShowsWarning(t *testing.T) {
+	card := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: `C:\c.exe`, Corrupt: true}))
+	has(t, card, "data-app-corrupt", "読めません")
+	hasNot(t, card, "data-app-args", ">なし<")
+}
+
+// 起動できない行は警告を出し、起動できる行には出さない。
+func TestAppCardUnlaunchableRowShowsWarning(t *testing.T) {
+	bad := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a6", Label: "x", ExePath: "c.exe", Unlaunchable: true}))
+	has(t, bad, "data-app-unlaunchable", "起動できません")
+	hasNot(t, bad, "data-app-corrupt")
+	good := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a7", Label: "x", ExePath: `C:\c.exe`}))
+	hasNot(t, good, "data-app-unlaunchable")
+}
+
+// 読めない行の編集フォームは、引数を入れ直す案内を出す。
+func TestAppFormCorruptNotice(t *testing.T) {
+	form := view.AppForm{ID: "a8", DOMID: "app-form-a8", ActionURL: "/apps/a8", Corrupt: true}
+	has(t, webtest.Render(t, organisms.AppForm(form, false)), "data-app-form-corrupt", "保存された設定を読めませんでした。引数を入れ直してください")
+	form.Corrupt = false
+	hasNot(t, webtest.Render(t, organisms.AppForm(form, false)), "data-app-form-corrupt")
+}
+
+func TestSidebarHasTheAppsEntry(t *testing.T) {
+	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}, false))
+	has(t, out, `href="/apps"`, "起動許可アプリ")
+	if strings.Count(out, `aria-current="page"`) != 1 || !strings.Contains(out[strings.Index(out, `href="/apps"`):], `aria-current="page"`) {
+		t.Errorf("the apps entry must be the current page:\n%s", out)
+	}
+}
+
 func TestHeaderAndBadges(t *testing.T) {
 	has(t, webtest.Render(t, organisms.HeaderKillSwitch(true)), "キルスイッチ発動中")
 	has(t, webtest.Render(t, organisms.HeaderKillSwitch(false)), "稼働中")

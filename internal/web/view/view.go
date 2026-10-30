@@ -28,6 +28,7 @@ const (
 	NavDashboard Nav = "dashboard"
 	NavRequests  Nav = "requests"
 	NavClients   Nav = "clients"
+	NavApps      Nav = "apps"
 	NavSettings  Nav = "settings"
 )
 
@@ -266,4 +267,78 @@ type ErrorPage struct {
 	Code    string
 	Title   string
 	Message string
+}
+
+// AppRow は起動許可アプリ 1 件の行。実行ファイルのパス・引数・作業ディレクトリは、ホスト所有者だけが見る GUI にだけ出す。
+// Form が nil でなければ、行の代わりに編集フォームを出す（GET /apps/{id}/edit を開いたページ）。
+type AppRow struct {
+	ID         string
+	Label      string
+	ExePath    string
+	Args       []string
+	WorkingDir string // 空なら「実行ファイルのあるディレクトリ」と表示する
+	// Corrupt は保存済みの引数が読めない行（domain.LaunchableApp.Corrupt）。引数の代わりに警告を出す。起動はされない。
+	Corrupt bool
+	// Unlaunchable は起動できない行（Corrupt、または domain.CheckLaunchTarget が拒否する手書きの値）。警告を出す。
+	Unlaunchable bool
+	EditURL      string
+	// DeleteConfirm は削除の確認モーダルの URL。
+	DeleteConfirm string
+	Form          *AppForm
+}
+
+// AppList は起動許可アプリの一覧（登録順ではなく表示名の昇順）。
+type AppList struct {
+	Rows []AppRow
+	// Count / Max は登録数と上限（NFR-C06）。
+	Count, Max int
+	// ListURL は一覧を取り直す URL（編集のキャンセルが使う）。
+	ListURL string
+}
+
+// AppFormValues は追加・編集フォームの入力値（検証エラー時は入力されたままの文字列）。Args は 1 行 1 引数の文字列。
+type AppFormValues struct {
+	Label      string
+	ExePath    string
+	Args       string
+	WorkingDir string
+}
+
+// AppFormErrors は追加・編集フォームの項目別のエラー。
+type AppFormErrors struct {
+	Label      string
+	ExePath    string
+	Args       string
+	WorkingDir string
+}
+
+// AppForm は起動許可アプリの追加・編集フォーム。ID が空なら追加、そうでなければその行の編集。
+// DOMID はフォーム要素の id で、追加と編集（行ごと）が同じページに並んでも重ならない値にする。
+type AppForm struct {
+	ID        string
+	DOMID     string
+	ActionURL string // 追加は POST /apps、編集は PUT /apps/{id}
+	Values    AppFormValues
+	Errors    AppFormErrors
+	// PickURL はファイル選択の POST 先。CancelURL は編集のキャンセル（一覧の取り直し）。
+	PickURL   string
+	CancelURL string
+	// Corrupt は編集する行の保存済みの引数が読めなかったこと（引数欄は空）。引数を入れ直すよう案内を出す。
+	Corrupt bool
+}
+
+// Apps は起動許可アプリのページ（一覧と追加フォーム）。
+type Apps struct {
+	Chrome  Chrome
+	List    AppList
+	NewForm AppForm
+}
+
+// AppExePathField は実行ファイルの入力欄。ファイル選択（POST /apps/pick-file）の応答が、この欄だけを差し替える。
+// FormID は入力欄の id を作る元（フォームの識別子）で、追加と編集のフォームが並んでも id が重ならないようにする。
+type AppExePathField struct {
+	FormID  string
+	Value   string
+	Error   string
+	PickURL string
 }

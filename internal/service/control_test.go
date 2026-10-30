@@ -98,7 +98,7 @@ func TestControlDoSecondMonitorUsesItsOwnOriginAndScale(t *testing.T) {
 	var err error
 	e.control, err = NewControl(ControlConfig{
 		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
-		Leases: e.leases, Kill: e.kill, Settings: e.settings, Clock: e.clock,
+		Launcher: e.launcher, Apps: e.apps, Leases: e.leases, Kill: e.kill, Settings: e.settings, Clock: e.clock,
 	})
 	if err != nil {
 		t.Fatal(err)

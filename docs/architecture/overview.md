@@ -69,6 +69,7 @@ graph TD
             APPR["承認 (Approval)"]
             KILL["キルスイッチ"]
             AUDIT["監査 (Audit)"]
+            APPS["許可リスト (AppRegistry)<br/>起動してよいアプリ (M1.5)"]
             TOOLS["操作ツール (Control)"]
             STREAM["画面配信 (Streamer)"]
             AGENT["内蔵エージェント (Agent)<br/>タスク実行ループ"]
@@ -82,6 +83,8 @@ graph TD
             WNDW["WindowManager"]
             UIA["UIAutomation"]
             CLIP["Clipboard"]
+            LAUNCH["AppLauncher<br/>CreateProcess (M1.5)"]
+            PICK["FilePicker<br/>ファイル選択 (M1.5)"]
             SECRET["SecretStore<br/>(資格情報マネージャー)"]
         end
         DB[("SQLite")]
@@ -116,6 +119,11 @@ graph TD
     TOOLS --> WNDW
     TOOLS --> UIA
     TOOLS --> CLIP
+    TOOLS --> LAUNCH
+    TOOLS -- "Launch: Get(app_id) を参照" --> APPS
+    GR --> APPS
+    APPS --> PICK
+    APPS --> DB
     STREAM --> CAP
     LEASE --> BUS
     BUS --> WIN
@@ -159,7 +167,7 @@ graph TD
 |---------|------|--------------|
 | `domain` | クライアント、リース状態機械、承認モード、座標変換、ツール引数、エラー種別、高速パスの候補（`Candidate` / `CandidateTable`: 役割クラスの対応表、除外、ID 導出、選択の検証）などの純粋なモデルとルール | なし |
 | `repository` | SQLite へのアクセス（クライアント、トークン、設定、接続要求、監査ログ） | `domain` |
-| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree` と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助のインターフェースと Windows 実装 | `domain` |
+| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree` と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助・アプリ起動（`AppLauncher`。M1.5）・ファイル選択（`FilePicker`。M1.5）のインターフェースと Windows 実装 | `domain` |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs + 10 秒キャッシュ、Listener 管理） | `domain` |
 | `openai` | OpenAI Responses API のクライアント（`computer` ツールの要求・応答、`store: false` 固定、タイムアウト、キーの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
 | `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`（`Choose(ctx, ChoiceRequest) (ChoiceResult, error)`）の背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
@@ -171,7 +179,7 @@ graph TD
 
 | ルーター | 配信経路 | 提供するもの | 認可 |
 |---------|---------|-------------|------|
-| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/poll`（GUI の更新。OOB）、`/events`（SSE。GUI は購読しない） | プロセス内到達のみ。ネットワークからは到達不能 |
+| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、起動許可アプリ、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/poll`（GUI の更新。OOB）、`/events`（SSE。GUI は購読しない） | プロセス内到達のみ。ネットワークからは到達不能 |
 | **リモートルーター** | tailnet IP の TCP ポート（FR-S01、既定 8765） | `/mcp`、`/viewer`（Web UI）、`/ws/screen`、`/api/v1/*`、静的ファイル | ミドルウェア連鎖（下図） |
 
 2 つのルーターは `templ` コンポーネント（atoms / molecules）を共有できるが、ハンドラは共有しない（ホスト専用操作がリモートに露出しないことを構造で保証する）。
@@ -248,6 +256,52 @@ sequenceDiagram
         M-->>C: 結果
     end
 ```
+
+### アプリ起動（`launch_app`。M1.5）
+
+起動できるのは、ホスト所有者がホスト GUI で登録した許可リストのアプリだけ。クライアントが渡せるのは `app_id` だけで、パス・引数は登録時に固定されている（FR-M19、NFR-S20）。検査の順序は `Control.Launch`（[コンポーネント設計](../components/overview.md) §5.4.1）。承認は M1.5 には無い。
+
+```mermaid
+sequenceDiagram
+    participant C as MCP クライアント
+    participant M as /mcp (MCP サーバー)
+    participant K as KillSwitch
+    participant L as LeaseManager
+    participant R as AppRegistry
+    participant P as platform.AppLauncher
+    participant AU as Audit
+    C->>M: tools/call launch_app(app_id)
+    M->>K: Active()
+    alt キルスイッチ中
+        M->>AU: 記録 (denied: kill_switch_active)
+        M-->>C: エラー
+    else 受付中
+        M->>L: Check / 暗黙の Acquire
+        alt 他者が保持
+            M->>AU: 記録 (denied: lease_held_by_other)
+            M-->>C: エラー
+        else 取得済み
+            M->>R: Get(app_id) + 形の再検査
+            alt 許可リストに無い / 規則外
+                M->>AU: 記録 (denied: app_not_found)
+                M-->>C: エラー
+            else 許可リストにある
+                M->>P: Launch(絶対パス, 固定の引数, 作業ディレクトリ)
+                alt CreateProcess 成功
+                    P-->>M: pid
+                    M->>AU: 記録 (ok: app_id, label, pid)
+                    M-->>C: { ok, app_id, pid }
+                else 失敗
+                    P-->>M: LaunchError(reason)
+                    M->>AU: 記録 (error: launch_failed, reason)
+                    M-->>C: エラー (パス・引数は含めない)
+                end
+            end
+        end
+    end
+```
+
+許可リストの登録・変更・削除は GUI ルーターだけ（書き込みを持つ `AppRegistry` を受け取るのは GUI ルーターだけで、`Control` は読み取り専用の `AppReader` だけを受け取る。`mcp` は持たない）。ファイル選択は `AppRegistry.PickExecutable` が `platform.FilePicker` に委ねる。内蔵エージェント（M4）がアプリを起動するときも、同じ許可リストと `Control.Launch` を使う。
 
 ### 内蔵エージェントのタスク実行
 
@@ -473,7 +527,7 @@ puppet-remo/
 │   ├── repository/               # SQLite (clients, tokens, settings, ...)
 │   │   └── migrations/           # 埋め込み SQL マイグレーション
 │   ├── platform/                 # interface 定義
-│   │   └── windows/              # capture(DXGI/GDI), input, window, uia, clipboard, secret(資格情報)
+│   │   └── windows/              # capture(DXGI/GDI), input, window, uia, clipboard, secret(資格情報), launcher(CreateProcess), filepicker
 │   ├── tailnet/                  # LocalAPI クライアント、Watcher、Listener 管理
 │   ├── openai/                   # Responses API クライアント (Model インターフェース + 実装、モック)
 │   ├── typesafe/                 # TypeSafe (Jev) HTTP クライアント (Chooser インターフェース + 実装、モック)
@@ -578,3 +632,5 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.7 | 2026-10-30 | CI の記述を、`windows-latest` と ubuntu の別ジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新。Lit と Playwright は M2 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
 | 1.8 | 2026-10-30 | MCP SDK のオプション表に `KeepAlive`（既定の 0 のまま）を追加 | MCP の keepalive を既定で無効にした実装との整合（オーナー決定。NFR-A04） |
 | 1.9 | 2026-10-30 | 「M1 実装での差分」を新設（依存ライブラリ・ディレクトリ構成・依存の向き・キルスイッチ（`Trigger` が最大 2 × 期限かかりうる既知の制限を含む）・受付と入力の実装値）。ディレクトリ構成の冒頭に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |
+| 1.10 | 2026-10-30 | 起動許可リスト（M1.5）を追加: 構成図（`AppLauncher`・`FilePicker`・許可リスト）、レイヤー表の `platform`、GUI ルーターの提供物、主要フロー「アプリ起動」、ディレクトリ構成（`launcher`・`filepicker`） | M1.5 の仕様追記（#16。オーナー決定 8 件） |
+| 1.11 | 2026-10-30 | 許可リストの読み取りを `AppReader` に分け、`Control` には読み取り専用の面だけを渡すことを反映 | #16 の独立レビュー指摘 |

@@ -28,6 +28,7 @@ erDiagram
     agent_tasks |o--o{ audit_logs : "ステップ"
     audit_logs ||--o| audit_thumbnails : "サムネイル"
     settings
+    launchable_apps
 ```
 
 ## テーブル一覧
@@ -39,6 +40,7 @@ erDiagram
 | `connection_requests` | 未登録デバイスからの接続要求 | FR-A06, A07 |
 | `agent_tasks` | 内蔵エージェントのタスク（指示、状態、使用トークン、最終回答、高速パスのステップ数・OpenAI へ引き継いだ理由）。ステップは `audit_logs` に `task_id` で紐づく | FR-G02, G03, G09, G15, G16〜G24, H10 |
 | `settings` | アプリ設定、キルスイッチ状態、エージェント設定（高速パスを含む。キー・値） | FR-S01〜S19, FR-H06, FR-H11 |
+| `launchable_apps` | 起動許可リスト（`launch_app` で起動してよいアプリ。表示名・実行ファイルのパス・固定の引数・作業ディレクトリ）。ホスト GUI だけが書く。他の表への外部キーは無い | FR-M18, M19, H12, AU06 |
 | `audit_logs` | 監査ログ | FR-AU01〜AU05 |
 | `audit_thumbnails` | 監査ログに紐づく縮小スクリーンショットのメタ情報 | FR-AU02, AU04 |
 
@@ -251,6 +253,39 @@ erDiagram
 
 ログオン時の自動起動（FR-S08）の有効・無効は OS（スタートアップ登録）が真実の源であり、DB には持たない。クライアント別の承認モード（FR-S05）は `clients.approval_mode`、エージェント利用許可（FR-A09）は `clients.agent_enabled` に持つ。OpenAI API キーと TypeSafe API キーは `settings` にも置かない（資格情報マネージャーのみ。FR-G22）。高速パスは有効化・キー・同意の 3 つがそろわなければ静かにスキップされ、タスクは OpenAI のみで実行される（`agent.fastpath.enabled` が true でもキーまたは `agent.fastpath.consent_at` が無ければ使わない）。TypeSafe が 401 を返したときはキー無効として `agent.fastpath.enabled` を false に更新する（FR-G21）。
 
+### launchable_apps
+
+MCP の `launch_app` が起動できるアプリの許可リスト（M1.5。[FR-M18・M19・H12](../requirements/functional.md)）。**書き込みはホスト GUI（`service.AppRegistry`）だけ**で、リモートの経路（MCP・Web UI）からは書かない。`id` は MCP の `app_id` として公開する唯一の値で、`exe_path` / `args_json` / `working_dir` は MCP・リモートルーターのどの応答にも出さない（出すのは `id` と `label`）。
+
+```mermaid
+erDiagram
+    launchable_apps {
+        TEXT id PK "ULID (MCP の app_id)"
+        TEXT label UK "表示名 (大文字小文字を区別せず一意)"
+        TEXT exe_path "実行ファイルの絶対パス (.exe)"
+        TEXT args_json "引数の JSON 配列 (固定)"
+        TEXT working_dir "作業ディレクトリ (空 = 実行ファイルのディレクトリ)"
+        INTEGER created_at
+        INTEGER updated_at
+    }
+```
+
+| カラム | 型 | NULL | 既定値 | 説明 |
+|--------|----|------|--------|------|
+| `id` | TEXT | NO | — | PK。ULID（アプリ側で生成）。MCP の `app_id`。編集しても変わらず、削除すると無効になり再利用されない |
+| `label` | TEXT | NO | — | 表示名（1〜64 文字。前後の空白は `domain` が除く）。`COLLATE NOCASE` で UNIQUE。**NOCASE の畳み込みは ASCII のみ**（`A`〜`Z`）で、全角英字・Unicode の大文字小文字は別の値として扱う（正規化列は設けない。重複の判定は ASCII の大文字小文字を無視した一致）。MCP の `list_launchable_apps` が返す |
+| `exe_path` | TEXT | NO | — | 実行ファイルの絶対パス。ローカルドライブの `.exe` で、UNC・デバイスパス（`\\?\`・`\\.\`）・相対パス・`..` を含むパス、ドライブ指定以外の `:`（代替データストリーム）、`<>"\|?*`、制御文字（C0 と DEL）、予約デバイス名（`CON`・`PRN`・`AUX`・`NUL`・`COM1`〜`COM9`・`LPT1`〜`LPT9`、上付き数字の `COM¹`・`COM²`・`COM³`・`LPT¹`・`LPT²`・`LPT³`。拡張子付き・ディレクトリの要素でも）を含むパス、32,766 文字（UTF-16。終端の NUL を含めて 32,767）を超えるパスは保存しない（検証は `domain`、存在確認は登録・更新時に `platform.AppLauncher`。FR-H12）。`CreateProcess` の `lpApplicationName` にそのまま使う |
+| `args_json` | TEXT | NO | `'[]'` | 起動引数。文字列の JSON 配列（最大 32 個・合計 8,192 文字）。引数の連結（Windows のコマンドライン規則に沿った引用）は起動時に `platform` が行い、DB にはコマンドライン文字列を持たない（引用後の全体が 32,766 UTF-16 ユニット（終端の NUL を含めて 32,767）を超えると起動しない）。登録時に固定し、`launch_app` から変更できない。手で書き換えられて「文字列の配列」として読めない行は、読み出し側が `Corrupt`（引数は空）として返し、一覧・削除は成功するが、起動は `app_not_found` で拒否する |
+| `working_dir` | TEXT | NO | `''` | 作業ディレクトリの絶対パス（既存のディレクトリ。`exe_path` と同じパスの規則）。空文字は「実行ファイルのあるディレクトリ」 |
+| `created_at` | INTEGER | NO | — | 登録時刻 |
+| `updated_at` | INTEGER | NO | — | 更新時刻 |
+
+制約: `UNIQUE (label COLLATE NOCASE)`（ASCII のみの大文字小文字無視。上記）、`CHECK (length(label) BETWEEN 1 AND 64)`、`CHECK (length(exe_path) > 0)`、`CHECK (json_valid(args_json) AND json_type(args_json) = 'array')`。登録数の上限 50（NFR-C06）はサービス層が、件数の確認と挿入を同じトランザクションで行って守る（DB の制約にはしない。NFR-C01 と同様）。
+
+インデックス: UNIQUE 制約による `label` のインデックスのみ（行数は最大 50）。
+
+起動時の扱い: `launch_app` は `id` の行を読み、`domain` の検証規則（パスの形・引数の数と長さ）を**起動のたびに**再度確認し、満たさなければ `app_not_found` で拒否する（fail closed。行が手で書き換えられても、規則外のパスは起動しない）。実行ファイルが消えていても行は残り、起動時に `launch_failed`（`file_missing`）になる。クライアントの削除・無効化・トークン失効は許可リストに影響しない（許可リストはホスト全体のもので、クライアント別ではない）。
+
 ### agent_tasks
 
 内蔵エージェントの 1 回の実行（[FR-G02〜G24](../requirements/functional.md)）。ステップ（アクション・Judge の判定・安全チェック・サムネイル・高速パスの選択）は `audit_logs` に `kind = 'agent'`、`task_id`、`step_no` で保存し、ここには集計だけを持つ。
@@ -378,6 +413,18 @@ erDiagram
 
 制約: `CHECK (result IN ('ok','error','denied'))`、`CHECK (actor_type IN ('mcp','web','agent','host','system'))`、`CHECK (detail_json IS NULL OR json_valid(detail_json))`。
 
+M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、既存の `tool` / `settings` をイベント名で区別する。
+
+| event | kind | actor_type | result | `detail_json` |
+|-------|------|------------|--------|---------------|
+| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード |
+| `tool.list_launchable_apps` | `tool` | `mcp` | `ok` | `{ "count" }` |
+| `settings.launchable_app.create` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count" }` |
+| `settings.launchable_app.update` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count", "changed": ["label", "exe_path", "args", "working_dir"] }`。`changed` は変わった項目だけ。更新前の行が読めない行（`Corrupt`）のときは、壊れていた引数が破棄されたことを残すため `args` を必ず含める |
+| `settings.launchable_app.delete` | `settings` | `host` | `ok` | `{ "app_id", "label" }` |
+
+**引数（`args_json`）と作業ディレクトリは、どのイベントにも記録しない**（件数 `arg_count` だけ。FR-AU03・NFR-S13）。`exe_path` は許可を変える登録系イベントにだけ記録し、`tool.launch_app` には記録しない。クライアントが削除済みのときの `client_id` は NULL（既存の規則）。
+
 エージェントのステップ（`event = 'agent.step'`）の `detail_json`（FR-G19、FR-G23）。**入力した本文（`type` のテキスト）と要素の値は、どちらの経路でも記録しない**。
 
 | キー | 経路 | 内容 |
@@ -461,3 +508,7 @@ erDiagram
 | 1.5 | 2026-10-30 | ログイン名変更後の再許可（既存クライアントの置き換え）と、削除済みクライアントの監査（`client_id` を NULL で保存）を明記 | M1 統合レビューの指摘（再許可が UNIQUE で失敗する・監査が FK で落ちる） |
 | 1.6 | 2026-10-30 | `clients.agent_enabled` が M1 でも保存・編集できるが、効果は M4 から（M1 では参照しない）と明記 | M1 の実装と FR-A09 の食い違いの解消（オーナー決定） |
 | 1.7 | 2026-10-30 | M1 の実装に合わせて、`client_tokens.token_hash` の `CHECK (length(token_hash) = 32)` と、接続要求の期限切れ・5 秒以内の更新を DB に書かない扱いを追記 | M1 の実装との差分の文書化（オーナー決定） |
+| 1.8 | 2026-10-30 | 起動許可リスト `launchable_apps`（M1.5）を追加: 全体 ER 図・テーブル一覧・テーブル定義（`UNIQUE (label COLLATE NOCASE)`、`args_json` は JSON 配列、起動のたびに検証規則を再確認）、`audit_logs` のアプリ起動・許可リスト変更のイベント（`tool.launch_app` ほか。引数・作業ディレクトリは記録しない） | M1.5 の仕様追記（#16。オーナー決定 8 件） |
+| 1.9 | 2026-10-30 | `launchable_apps.label` の `COLLATE NOCASE` が ASCII のみの畳み込みであることを明記 | #16 のレビュー指摘 |
+| 1.10 | 2026-10-30 | `launchable_apps` の `exe_path` / `working_dir` のパスの規則（代替データストリーム・使えない文字・制御文字・予約デバイス名・32,767 文字）と、読めない `args_json` の行（`Corrupt`。一覧・削除は成功、起動は拒否）を追記 | #16 の独立レビュー指摘 |
+| 1.11 | 2026-10-30 | `launchable_apps` の予約デバイス名に上付き数字を追加、パスの上限を終端の NUL を含めて 32,767（32,766 文字）に訂正、`settings.launchable_app.update` の `changed` が読めない行の更新で `args` を必ず含むことを追記 | #16 の再レビュー指摘 |

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/router"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
@@ -66,6 +67,11 @@ func TestEveryResponseCarriesCSP(t *testing.T) {
 		{http.MethodGet, "/clients", nil},
 		{http.MethodGet, "/clients/unknown", nil},
 		{http.MethodGet, "/settings", nil},
+		{http.MethodGet, "/apps", nil},
+		{http.MethodGet, "/apps/new", nil},
+		{http.MethodGet, "/apps/unknown/edit", nil},
+		{http.MethodGet, "/apps/unknown/delete/confirm", []string{"HX-Request", "true"}},
+		{http.MethodPost, "/apps/pick-file", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/killswitch", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/poll", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/killswitch/trigger", []string{"HX-Request", "true"}},
@@ -112,7 +118,7 @@ func TestStaticAssetsUseNoCacheAndETag(t *testing.T) {
 // 動的な応答（トークンの平文を含みうる）はキャッシュさせない。
 func TestDynamicResponsesAreNoStore(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/", "/requests", "/clients", "/settings", "/nope"} {
+	for _, p := range []string{"/", "/requests", "/clients", "/settings", "/apps", "/nope"} {
 		if got := do(h, http.MethodGet, p).Header().Get("Cache-Control"); got != "no-store" {
 			t.Errorf("GET %s: Cache-Control = %q, want no-store", p, got)
 		}
@@ -146,5 +152,35 @@ func TestPagesRenderThroughRouter(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
 		t.Errorf("Content-Type = %q", ct)
+	}
+}
+
+// 起動許可アプリの管理（M1.5。FR-H12）は GUI ルーターだけにある。各ルートが登録されている（404 の「経路なし」ではなく、
+// ハンドラが応答する）。リモートルーターに同名の経路が無いことは remote_test.go が固定する。
+func TestGUIRegistersTheAppRoutes(t *testing.T) {
+	h, f := newGUI(t)
+	f.Apps.Rows = append(f.Apps.Rows, domain.LaunchableApp{ID: "app1", Label: "メモ帳", ExePath: `C:\Windows\notepad.exe`})
+	for _, tt := range []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/apps", http.StatusOK},
+		{http.MethodGet, "/apps/new", http.StatusOK},
+		{http.MethodGet, "/apps/app1/edit", http.StatusOK},
+		{http.MethodGet, "/apps/app1/delete/confirm", http.StatusOK},
+		{http.MethodPost, "/apps/pick-file", http.StatusNoContent}, // 既定の偽のダイアログはキャンセルする
+		{http.MethodPut, "/apps/missing", http.StatusNotFound},     // ハンドラが返す not_found（経路なしのページではない）
+		{http.MethodDelete, "/apps/app1", http.StatusOK},
+	} {
+		rec := do(h, tt.method, tt.path, "HX-Request", "true")
+		if rec.Code != tt.want {
+			t.Errorf("%s %s = %d, want %d", tt.method, tt.path, rec.Code, tt.want)
+		}
+	}
+	if len(f.Apps.Deleted) != 1 || f.Apps.Picks != 1 {
+		t.Errorf("deleted=%v picks=%d", f.Apps.Deleted, f.Apps.Picks)
+	}
+	if rec := do(h, http.MethodPut, "/apps/missing", "HX-Request", "true"); !strings.Contains(rec.Body.String(), `data-error-code="not_found"`) {
+		t.Errorf("PUT unknown: %s", rec.Body)
 	}
 }

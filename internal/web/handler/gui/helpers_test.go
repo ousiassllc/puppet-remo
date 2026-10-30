@@ -39,6 +39,8 @@ func newRig(t *testing.T, mutate ...func(*guitest.Fakes)) *rig {
 	return newRigFrom(t, f, 0)
 }
 
+func newHandler(d gui.Deps) (*gui.Handler, error) { return gui.New(d) }
+
 func newRigFrom(t *testing.T, f *guitest.Fakes, heartbeat time.Duration) *rig {
 	t.Helper()
 	d := f.Deps()

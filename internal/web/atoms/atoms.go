@@ -1,7 +1,11 @@
 // Package atoms は共有の最小の UI 要素（docs/architecture/frontend.md §4）。UI 固有の URL は持たず、props で受ける。
 package atoms
 
-import "github.com/a-h/templ"
+import (
+	"strconv"
+
+	"github.com/a-h/templ"
+)
 
 // Attrs は HTML 属性のパススルー（hx-* など）。
 type Attrs = templ.Attributes
@@ -16,3 +20,5 @@ func Merge(sets ...Attrs) Attrs {
 	}
 	return out
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }

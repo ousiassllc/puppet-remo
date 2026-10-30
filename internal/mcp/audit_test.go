@@ -9,11 +9,12 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 )
 
-// controlAudited は Control.Do が自分で監査を記録するツール。mcp 層は記録しない（二重記録を避ける）。
+// controlAudited は Control（Do・Launch）が自分で監査を記録するツール。mcp 層は記録しない（二重記録を避ける）。
 // それ以外の全ツールは、mcp 層が 1 回だけ記録する（FR-AU01）。
 var controlAudited = []string{
 	"mouse_move", "left_click", "right_click", "middle_click", "double_click", "triple_click",
 	"left_click_drag", "scroll", "key", "type", "wait", "focus_window", "clipboard_read", "clipboard_write", "get_ui_tree",
+	"launch_app",
 }
 
 // toolCallArgs は全ツールを成功させる引数。
@@ -33,6 +34,7 @@ var toolCallArgs = map[string]map[string]any{
 	"clipboard_write": {"text": "hunter2"},
 	"get_ui_tree":     {"window_id": "w1"},
 	"screenshot":      {"monitor": 0, "format": "png"},
+	"launch_app":      {"app_id": "app-1"},
 }
 
 func TestMCPLayerAuditsExactlyTheToolsControlDoesNotAudit(t *testing.T) {
@@ -41,6 +43,7 @@ func TestMCPLayerAuditsExactlyTheToolsControlDoesNotAudit(t *testing.T) {
 			a := &auditLog{}
 			e := newEnv(t, func(c *Config) { c.Audit = a })
 			e.ctl.tree = sampleTree()
+			e.ctl.apps = []domain.AppSummary{{ID: "app-1", Label: "Notepad"}}
 			cs := e.connect("c1")
 
 			res := callTool(t, cs, name, toolCallArgs[name])

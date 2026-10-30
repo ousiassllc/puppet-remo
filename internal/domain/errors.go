@@ -32,6 +32,8 @@ const (
 	CodeDesktopUnavailable  Code = "desktop_unavailable"
 	CodeAgentDisabled       Code = "agent_disabled"
 	CodeTaskNotFound        Code = "task_not_found"
+	CodeAppNotFound         Code = "app_not_found"
+	CodeLaunchFailed        Code = "launch_failed"
 	CodeInternal            Code = "internal"
 )
 
@@ -59,6 +61,8 @@ var codeStatus = map[Code]int{
 	CodeDesktopUnavailable:  503,
 	CodeAgentDisabled:       403,
 	CodeTaskNotFound:        404,
+	CodeAppNotFound:         404,
+	CodeLaunchFailed:        409,
 	CodeInternal:            500,
 }
 
@@ -144,4 +148,7 @@ var (
 	ErrDesktopUnavailable = NewError(CodeDesktopUnavailable, "the desktop is unavailable", nil)
 	ErrAgentDisabled      = NewError(CodeAgentDisabled, "the agent is disabled", nil)
 	ErrTaskNotFound       = NewError(CodeTaskNotFound, "task not found", nil)
+	ErrAppNotFound        = NewError(CodeAppNotFound, "app not found", nil)
+	// ErrLaunchFailed の reason は NewLaunchFailed で付ける。メッセージにも Detail にもパス・引数は入れない。
+	ErrLaunchFailed = NewError(CodeLaunchFailed, "the app could not be launched", nil)
 )

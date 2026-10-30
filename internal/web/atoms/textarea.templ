@@ -1,0 +1,32 @@
+package atoms
+
+// TextareaProps は複数行の入力欄の引数。
+type TextareaProps struct {
+	ID          string
+	Name        string
+	Value       string
+	Placeholder string
+	Rows        int // 0 以下なら 3
+	Invalid     bool
+	Attrs       Attrs
+}
+
+func textareaRows(n int) int {
+	if n <= 0 {
+		return 3
+	}
+	return n
+}
+
+// Textarea は複数行の入力欄。Value は本文として描画する（エスケープされる）。
+templ Textarea(p TextareaProps) {
+	<textarea
+		id={ p.ID }
+		name={ p.Name }
+		rows={ itoa(textareaRows(p.Rows)) }
+		placeholder={ p.Placeholder }
+		class={ inputClass(p.Invalid) }
+		aria-invalid?={ p.Invalid }
+		{ p.Attrs... }
+	>{ p.Value }</textarea>
+}

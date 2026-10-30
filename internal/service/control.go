@@ -35,6 +35,24 @@ type Control interface {
 	// MaxDimension は縮小スクリーンショットの最大辺（設定 screenshot.max_dimension。既定 1568）。
 	// get_screen_info の縮小率 domain.Monitor.Scale(maxDim) と、UI ツリー・ウィンドウ矩形の縮小座標への変換に使う。
 	MaxDimension(ctx context.Context) (int, error)
+	// LaunchableApps は許可リストの id と表示名だけを label の昇順で返す（M1.5。FR-M18。リース不要。キルスイッチ中は拒否）。
+	LaunchableApps(ctx context.Context) ([]domain.AppSummary, error)
+	// Launch は許可リストのアプリを新しいプロセスとして起動する（M1.5。FR-M19）。呼び出し側が渡せるのは appID だけ。
+	// 検査の順序は固定で、1 つでも失敗したら起動しない（InputGuard・Judge・承認は通らず、起動を直列化しない）:
+	//
+	//  1. KillSwitch → ErrKillSwitchActive
+	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
+	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
+	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
+	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
+	//  6. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
+	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
+}
+
+// LaunchResult は Launch の結果。
+type LaunchResult struct {
+	AppID string
+	PID   uint32
 }
 
 // Result は Do の結果。入力系は空。
@@ -73,6 +91,9 @@ type ControlConfig struct {
 	Windows   platform.WindowManager
 	Clipboard platform.Clipboard
 	UI        platform.UIAutomation
+	// Launcher は Launch だけが呼ぶ（platform.AppLauncher を呼ぶのは Control だけ）。Apps は許可リストの読み取りに使う。
+	Launcher platform.AppLauncher
+	Apps     AppReader
 
 	Leases LeaseManager
 	Kill   ControlKillSwitch
@@ -105,6 +126,8 @@ type control struct {
 	windows   platform.WindowManager
 	clipboard platform.Clipboard
 	ui        platform.UIAutomation
+	launcher  platform.AppLauncher
+	apps      AppReader
 	leases    LeaseManager
 	kill      KillSwitchState
 	guard     InputGuard
@@ -119,8 +142,8 @@ type control struct {
 // NewControl は Control を返し、キルスイッチの発動時に入力を解放するクローザーを登録する。
 func NewControl(cfg ControlConfig) (Control, error) {
 	if cfg.Capturer == nil || cfg.Input == nil || cfg.Windows == nil || cfg.Clipboard == nil || cfg.UI == nil ||
-		cfg.Leases == nil || cfg.Kill == nil || cfg.Clock == nil {
-		return nil, domain.ErrInvalidArgument.WithMsg("control requires capturer, input, windows, clipboard, ui, leases, kill switch and clock")
+		cfg.Launcher == nil || cfg.Apps == nil || cfg.Leases == nil || cfg.Kill == nil || cfg.Clock == nil {
+		return nil, domain.ErrInvalidArgument.WithMsg("control requires capturer, input, windows, clipboard, ui, launcher, apps, leases, kill switch and clock")
 	}
 	c := &control{
 		capture:   cfg.Capturer,
@@ -128,6 +151,8 @@ func NewControl(cfg ControlConfig) (Control, error) {
 		windows:   cfg.Windows,
 		clipboard: cfg.Clipboard,
 		ui:        cfg.UI,
+		launcher:  cfg.Launcher,
+		apps:      cfg.Apps,
 		leases:    cfg.Leases,
 		kill:      cfg.Kill,
 		guard:     InputGuard{Windows: cfg.Windows},
