@@ -456,7 +456,7 @@ type Judge interface {
 | 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない）。`wails3 dev` が開発サーバーの待受を要求するため、esbuild の `--serve` を待受として起動する |
 | CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
 | 静的ファイル | `Cache-Control: no-cache` + `ETag`（ビルド ID） |
-| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform。Windows ジョブとは別の ubuntu ジョブ） |
+| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform。Lit と Playwright は M2 で CI に足す） |
 
 全項目と理由は [フロントエンド設計](frontend.md) §2 を参照。
 
@@ -505,7 +505,7 @@ puppet-remo/
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
 | 配布・更新 | GitHub Releases。インストーラと署名ファイル（Ed25519）を公開し、アプリが署名検証して適用 |
-| CI | GitHub Actions。`windows-latest` のジョブで templ 生成の差分チェック、フロントエンドビルド、build / vet / lint / go test、Lit のテストを実行する。Playwright の E2E は別の `ubuntu-latest` ジョブで実行する（偽の platform と偽の tailnet により OS に依存せず、Chromium を容易に使えるため。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
+| CI | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は M2 で足す（偽の platform と偽の tailnet により OS に依存しない。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
 
 ## 改訂履歴
@@ -519,3 +519,4 @@ puppet-remo/
 | 1.4 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチを WhoIs・許可リスト・接続要求の作成より前に移動（構成図・シーケンス図）。Bearer の照合を NFR-S04 の参照に統一。承認が必要な分岐と接続要求の許可時の承認モード選択は M3 からと明記（M1 は承認なしの `idle → held`） | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
 | 1.5 | 2026-10-30 | ホスト GUI の状態の更新を SSE から `GET /poll` のポーリングに変更（HTMX 拡張は `response-targets` のみ。GUI ルーターの提供物に `/poll` を追加） | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |
 | 1.6 | 2026-10-30 | 開発タスク名を実在する `frontend:dev` に訂正（`dev:frontend` は誤り） | レビュー指摘（Taskfile.yml のタスク名との不一致）の反映 |
+| 1.7 | 2026-10-30 | CI の記述を、`windows-latest` と ubuntu の別ジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新。Lit と Playwright は M2 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
