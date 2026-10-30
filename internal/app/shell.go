@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -19,6 +20,8 @@ type MainWindow interface {
 	Show(path string)
 	// Hide はウィンドウを隠す。アプリは終了しない。
 	Hide()
+	// Visible はウィンドウが表示されているか（最小化中も含む。隠れている＝トレイだけのとき false）。
+	Visible() bool
 }
 
 // Tray の表示。
@@ -72,10 +75,19 @@ func NewShell(app ShellApp, win MainWindow, view TrayView, quit func(), log *slo
 }
 
 // OpenDashboard はメニュー・トレイのクリックで、ダッシュボードを開く。
-func (s *Shell) OpenDashboard() { s.win.Show("/") }
+func (s *Shell) OpenDashboard() { s.open("/") }
 
 // OpenRequests は接続要求の画面を開く。
-func (s *Shell) OpenRequests() { s.win.Show("/requests") }
+func (s *Shell) OpenRequests() { s.open("/requests") }
+
+// open はウィンドウを前面に出す。すでに表示されているときはページを移動しない
+// （入力中のフォームや、発行直後で 1 度しか見せないトークンを、全面遷移で失わないため）。隠れているときだけ path を開く。
+func (s *Shell) open(path string) {
+	if s.win.Visible() {
+		path = ""
+	}
+	s.win.Show(path)
+}
 
 // SecondInstance は 2 つ目のインスタンスが起動されたときに呼ぶ。1 つ目のウィンドウを前面に出す
 // （バックグラウンド起動で隠れていても表示する）。
@@ -128,6 +140,14 @@ func (s *Shell) State(ctx context.Context) TrayState {
 
 // Refresh はトレイの表示を今の状態に合わせる。
 func (s *Shell) Refresh(ctx context.Context) { s.view.Apply(s.State(ctx)) }
+
+// WatchOnStart は、Watch を 1 度だけ別 goroutine で始める関数を返す。Wails はイベントループの開始
+// （Run の中）までメインスレッドへの呼び出し（トレイ・メニューの更新）を受け付けないので、
+// アプリの開始通知（ApplicationStarted）でこの関数を呼ぶ。2 度目以降の呼び出しは何もしない。
+func (s *Shell) WatchOnStart(ctx context.Context) func() {
+	var once sync.Once
+	return func() { once.Do(func() { go s.Watch(ctx) }) }
+}
 
 // Watch はトレイの表示を、キルスイッチと接続要求の変化に合わせて更新し続ける。ctx の終了で戻る。
 // 最初に 1 度、今の状態を反映する（購読を張ってから反映するので、取りこぼしがない）。

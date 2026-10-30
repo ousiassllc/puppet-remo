@@ -118,10 +118,15 @@ func (h *WailsHost) Run(a *App) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	startWatch := shell.WatchOnStart(ctx)
 	if err := a.Start(ctx); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
-	go shell.Watch(ctx)
+	// トレイの更新はメインスレッドへ回すので、Wails のイベントループが動き出してから始める
+	// （Run より前に始めると、Wails の内部がまだ無く InvokeSync が落ちる）。
+	h.wails.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		startWatch()
+	})
 
 	h.wails.OnShutdown(func() {
 		cancel()
@@ -147,6 +152,8 @@ func (w wailsWindow) Show(path string) {
 }
 
 func (w wailsWindow) Hide() { w.w.Hide() }
+
+func (w wailsWindow) Visible() bool { return w.w.IsVisible() }
 
 // wailsTray はトレイアイコンとそのメニュー。
 type wailsTray struct {

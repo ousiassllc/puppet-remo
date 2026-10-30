@@ -69,16 +69,16 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
-| W1 | `List` の項目 | メモ帳・ブラウザなどで ID（HWND の 10 進）、タイトル、プロセス名（`notepad.exe`）、PID、矩形、`Monitor`、`Foreground` が正しい。タイトルのないウィンドウと、別の仮想デスクトップのウィンドウ（cloaked）は含まれない。前面のウィンドウが先頭付近 |
-| W2 | `Rect` | 影を含まない見た目の枠（DWM の拡張フレーム）。150% / 200% やマルチモニターで、`At` の判定と見た目が合う。最大化したウィンドウの矩形がモニターを覆う |
-| W3 | `Minimized` | 最小化したウィンドウが `Minimized` で、`At` の結果に含まれない |
-| W4 | `Elevated` | 管理者として起動したウィンドウ（管理者のメモ帳、タスクマネージャー）が真。通常のウィンドウは偽 |
-| W5 | `Own` | このアプリ（ホスト GUI）自身のウィンドウが真。ほかは偽 |
-| W6 | `Foreground` | クリックしたウィンドウが `Foreground` になる。デスクトップをクリックした直後などウィンドウがないときは `window_not_found` |
-| W7 | `At` | 重なったウィンドウでは最前面のものを返す。モニターの外は「なし」 |
-| W8 | `Focus` | 背面のウィンドウを前面にする。最小化されたウィンドウを元に戻して前面にする。別のアプリが前面でもフォーカスが移る（フォアグラウンドロックを `AttachThreadInput` で回避） |
-| W9 | `Focus` の失敗 | 存在しない ID・閉じたウィンドウの ID は `window_not_found`。管理者ウィンドウ（こちらは標準権限）は `input_blocked` |
-| W10 | 保護されたプロセス・システムのウィンドウ | `List` が失敗せず、プロセス名が空になることがある。`Elevated` は真（開けないものは入力できない扱い） |
+| WM1 | `List` の項目 | メモ帳・ブラウザなどで ID（HWND の 10 進）、タイトル、プロセス名（`notepad.exe`）、PID、矩形、`Monitor`、`Foreground` が正しい。タイトルのないウィンドウと、別の仮想デスクトップのウィンドウ（cloaked）は含まれない。前面のウィンドウが先頭付近 |
+| WM2 | `Rect` | 影を含まない見た目の枠（DWM の拡張フレーム）。150% / 200% やマルチモニターで、`At` の判定と見た目が合う。最大化したウィンドウの矩形がモニターを覆う |
+| WM3 | `Minimized` | 最小化したウィンドウが `Minimized` で、`At` の結果に含まれない |
+| WM4 | `Elevated` | 管理者として起動したウィンドウ（管理者のメモ帳、タスクマネージャー）が真。通常のウィンドウは偽 |
+| WM5 | `Own` | このアプリ（ホスト GUI）自身のウィンドウが真。ほかは偽 |
+| WM6 | `Foreground` | クリックしたウィンドウが `Foreground` になる。デスクトップをクリックした直後などウィンドウがないときは `window_not_found` |
+| WM7 | `At` | 重なったウィンドウでは最前面のものを返す。モニターの外は「なし」 |
+| WM8 | `Focus` | 背面のウィンドウを前面にする。最小化されたウィンドウを元に戻して前面にする。別のアプリが前面でもフォーカスが移る（フォアグラウンドロックを `AttachThreadInput` で回避） |
+| WM9 | `Focus` の失敗 | 存在しない ID・閉じたウィンドウの ID は `window_not_found`。管理者ウィンドウ（こちらは標準権限）は `input_blocked` |
+| WM10 | 保護されたプロセス・システムのウィンドウ | `List` が失敗せず、プロセス名が空になることがある。`Elevated` は真（開けないものは入力できない扱い） |
 
 ### 3.4 Clipboard（FR-M13）
 
@@ -113,9 +113,6 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | K4 | 設定画面でホットキーを別のキーに変更して保存 | 新しいキーで発動し、古いキーでは発動しない。登録できないキーを保存したときは、古い登録が残る |
 
 ### 3.7 全体
- 
- | # | 確認項目 | 期待 |
- |---|---------|------|
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
@@ -153,11 +150,11 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
-| W1 | ダッシュボード・接続要求・クライアント・設定の各画面 | 表示され、操作できる。DevTools（本番ビルドでは無効）が使える開発ビルドのコンソールに **CSP 違反が出ない**。Wails が HTML にインラインのスクリプト・スタイルを注入しない。`/wails/runtime.js` が同一オリジンで読み込まれる |
-| W2 | `wails3 dev`（`task dev`） | `FRONTEND_DEVSERVER_URL` の待ち受け確認（esbuild の serve）を通過し、GUI が表示される。CSP の `'self'` が開発サーバーのオリジンで効く |
-| W3 | **GUI の自動更新（`GET /poll`）** | Wails v3.0.0 の Windows の AssetServer は応答をストリーミングしない（`responsewriter_windows.go` は本文を `Finish` まで溜める）ため、GUI は SSE（`/events`）ではなく 3 秒ごとのポーリング（`GET /poll`）で更新する。ダッシュボードを開いたまま、tailnet 側のセッション・接続要求・キルスイッチの変化が約 3 秒以内に、再読み込みなしでウィンドウ内に反映される（セッション・リース・サーバー状態・ヘッダーの状態バッジ・接続要求のバッジと一覧・キルスイッチのパネル）。接続要求のページで許可フォームに入力している間、ポーリングで入力が消えない |
-| W4 | トークンのクリップボードコピー | 発行直後の「コピー」ボタンでクリップボードにトークンが入る（WebView2 の `navigator.clipboard` が使える）。コピー後、他のアプリへ貼り付けて確認する |
-| W5 | ウィンドウのキャプチャ除外 | メイン GUI は `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）で、トークン発行画面を出した状態で MCP の `screenshot` を呼んでも、ウィンドウの内容が写らない。また `Own` ウィンドウとして `InputGuard` が入力を拒否する（§3.3 W5） |
+| WV1 | ダッシュボード・接続要求・クライアント・設定の各画面 | 表示され、操作できる。DevTools（本番ビルドでは無効）が使える開発ビルドのコンソールに **CSP 違反が出ない**。Wails が HTML にインラインのスクリプト・スタイルを注入しない。`/wails/runtime.js` が同一オリジンで読み込まれる |
+| WV2 | `wails3 dev`（`task dev`） | `FRONTEND_DEVSERVER_URL` の待ち受け確認（esbuild の serve）を通過し、GUI が表示される。CSP の `'self'` が開発サーバーのオリジンで効く |
+| WV3 | **GUI の自動更新（`GET /poll`）** | Wails v3.0.0 の Windows の AssetServer は応答をストリーミングしない（`responsewriter_windows.go` は本文を `Finish` まで溜める）ため、GUI は SSE（`/events`）ではなく 3 秒ごとのポーリング（`GET /poll`）で更新する。ダッシュボードを開いたまま、tailnet 側のセッション・接続要求・キルスイッチの変化が約 3 秒以内に、再読み込みなしでウィンドウ内に反映される（セッション・リース・サーバー状態・ヘッダーの状態バッジ・接続要求のバッジと一覧・キルスイッチのパネル）。接続要求のページで許可フォームに入力している間、ポーリングで入力が消えない |
+| WV4 | トークンのクリップボードコピー | 発行直後の「コピー」ボタンでクリップボードにトークンが入る（WebView2 の `navigator.clipboard` が使える）。コピー後、他のアプリへ貼り付けて確認する |
+| WV5 | ウィンドウのキャプチャ除外 | メイン GUI は `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）で、トークン発行画面を出した状態で MCP の `screenshot` を呼んでも、ウィンドウの内容が写らない。また `Own` ウィンドウとして `InputGuard` が入力を拒否する（§3.3 WM5） |
 
 ### 4.4 リモートルーターと tailnet（FR-A01〜A02、NFR-S01・A03）
 
@@ -185,13 +182,13 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
-| W1 | リースを取っていない状態で `powercfg /requests` | `DISPLAY:` と `SYSTEM:` に `puppet-remo.exe` が出ない |
-| W2 | MCP クライアントで操作リースを取り、`powercfg /requests` | `DISPLAY:` と `SYSTEM:` の両方に `puppet-remo.exe` が出る |
-| W3 | 保持中に何も操作せず、電源設定の画面オフ・スリープの時間を過ぎるまで待つ | 画面が消えず、スリープに入らない（リースのアイドル時間より長い設定で確認する） |
-| W4 | `release_control` でリースを解放し、`powercfg /requests` | `puppet-remo.exe` が `DISPLAY:` と `SYSTEM:` から消える（以降は電源設定どおりに画面オフ・スリープする） |
-| W5 | リースを取り直して `powercfg /requests` | W2 と同じように再び出る |
-| W6 | 保持中に、アイドル満了・MCP セッションの切断・キルスイッチ（`Ctrl+Alt+Shift+K`）のそれぞれでリースを失わせ、`powercfg /requests` | どれでも `puppet-remo.exe` が消える |
-| W7 | リースを保持したままアプリを終了（トレイの終了）し、`powercfg /requests` | `puppet-remo.exe` が消える（`Power.Close` が解除し、プロセスの終了でも失効する） |
+| SL1 | リースを取っていない状態で `powercfg /requests` | `DISPLAY:` と `SYSTEM:` に `puppet-remo.exe` が出ない |
+| SL2 | MCP クライアントで操作リースを取り、`powercfg /requests` | `DISPLAY:` と `SYSTEM:` の両方に `puppet-remo.exe` が出る |
+| SL3 | 保持中に何も操作せず、電源設定の画面オフ・スリープの時間を過ぎるまで待つ | 画面が消えず、スリープに入らない（リースのアイドル時間より長い設定で確認する） |
+| SL4 | `release_control` でリースを解放し、`powercfg /requests` | `puppet-remo.exe` が `DISPLAY:` と `SYSTEM:` から消える（以降は電源設定どおりに画面オフ・スリープする） |
+| SL5 | リースを取り直して `powercfg /requests` | W2 と同じように再び出る |
+| SL6 | 保持中に、アイドル満了・MCP セッションの切断・キルスイッチ（`Ctrl+Alt+Shift+K`）のそれぞれでリースを失わせ、`powercfg /requests` | どれでも `puppet-remo.exe` が消える |
+| SL7 | リースを保持したままアプリを終了（トレイの終了）し、`powercfg /requests` | `puppet-remo.exe` が消える（`Power.Close` が解除し、プロセスの終了でも失効する） |
 
 ### 4.7 ビルドとインストーラ
 

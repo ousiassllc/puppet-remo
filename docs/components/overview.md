@@ -832,7 +832,7 @@ CI（`windows-latest`）には**対話デスクトップがない**ため、DXGI
 | OpenAI の会話継続 | `store: false` 固定、`previous_response_id` は使わず、履歴を毎回再送する。スクリーンショットは直近 `agent.keep_screenshots`（既定 3）枚だけ残す（§4.3、FR-G24） |
 | 高速パス（Jev） | §4.4・§5.6.1 のとおり。Jev は Judge ではなく、外部モデルの Judge は作らない（Judge は RuleJudge） |
 | ホイールの単位 | `input.mouse` の `wheel` の `dx` / `dy` はノッチ（小数可。MCP `scroll.amount` と同じ）。サーバー（`InputInjector.Wheel`）が × 120 を丸めて端数を繰り越す。ブラウザ側の換算は `<remo-screen-viewer>`（§8） |
-| Wails の開発時 | `wails3 dev` は `FRONTEND_DEVSERVER_URL` を常に出し、`WAILS_VITE_PORT`（既定 9245）の待ち受けを待つ。カスタム `AssetOptions.Handler`（Gin）には転送されない。そのため `dev:frontend` は esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（監視つき）を起動する（待ち受けの代役とライブ再ビルド。画面は Gin から出る）。詳細は [フロントエンド設計](../architecture/frontend.md) |
+| Wails の開発時 | `wails3 dev` は `FRONTEND_DEVSERVER_URL` を常に出し、`WAILS_VITE_PORT`（既定 9245）の待ち受けを待つ。カスタム `AssetOptions.Handler`（Gin）には転送されない。そのため `frontend:dev` は esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（監視つき）を起動する（待ち受けの代役とライブ再ビルド。画面は Gin から出る）。詳細は [フロントエンド設計](../architecture/frontend.md) |
 | フロントエンドのファイル | `lib/ws.ts` と `lib/logger.ts` のみ（`lib/api.ts` は作らない）。静的ファイルは `Cache-Control: no-cache` + `ETag`（ビルド ID） |
 | トークンのコピー（GUI） | クリックで `navigator.clipboard.writeText`。使えないときは全選択して Ctrl+C を促す |
 | テストの実行環境 | Playwright の E2E は ubuntu の別ジョブ（偽の platform・tailnet で OS 非依存）。Windows のジョブは build / vet / lint / go test と Lit のテスト。実機スモークは手動 |
@@ -859,3 +859,4 @@ CI（`windows-latest`）には**対話デスクトップがない**ため、DXGI
 | 1.1 | 2026-10-29 | 未決事項の決定を反映: `typesafe`（`Chooser`）、`domain.Candidate` / `CandidateTable`・`UISnapshot`・`HandoffReason`、`FastPath`（状態機械・引き継ぎ・縮退）、`UIAutomation.Snapshot`、`InputInjector.Wheel`、`SecretStore` のキー名を追加。`openai.Model` を `store: false` のステートレス継続（`History`・スクリーンショットの間引き）に変更。Judge から外部 Jev の記述を削除。テスト方針・トレース・起動終了の記述を追従。§12 を決定事項と実機・実 API の検証事項に再編 | 未決事項の決定 |
 | 1.2 | 2026-10-29 | PR #2 のレビュー対応: `Listener` を tailnet の IPv4・IPv6 のそれぞれに bind し、片方だけでも動作・両方取れなければ停止と明記（`127.0.0.1` 等では Listen しない旨を NFR-S01 と揃える）。Bearer の形式・保存・照合を NFR-S04 に揃える。ミドルウェアの順序でキルスイッチを接続要求の作成より前に移動。`LeaseManager` の状態・取得・剥奪・切断の段階（M1 は承認なしの `idle → held`・`mcp` のみ、`pending_approval` は M3、強制剥奪は M2、`agent` は M4）、`Audit` の M1（追記のみ）/ M3（閲覧・サムネイル）の段階を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
 | 1.3 | 2026-10-30 | `Bus` の購読者と HTMX 拡張の記述を、ホスト GUI の `GET /poll` のポーリング（トーストは `gui.Handler` が `Bus` を購読して待ち行列にする）に合わせて更新 | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |
+| 1.4 | 2026-10-30 | 開発タスク名を実在する `frontend:dev` に訂正（`dev:frontend` は誤り） | レビュー指摘（Taskfile.yml のタスク名との不一致）の反映 |

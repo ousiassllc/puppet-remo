@@ -8,8 +8,10 @@ import (
 // TokenReveal は発行したトークンの平文を表示する。平文を見られるのはこの 1 回だけ（応答は Cache-Control: no-store）。
 // 読み取り専用の入力欄に入れ、コピーは app.ts が data-copy-target で行う。クリップボードに書けなければ、
 // 全選択して Ctrl+C を案内する（data-fallback の文言）。
+// hx-history="false" は、htmx の履歴スナップショット（sessionStorage）に平文が残り、戻る操作で再表示されるのを防ぐ
+// （htmx は文書内にこの属性があるあいだ、そのページのスナップショットを保存しない）。
 templ TokenReveal(v view.TokenReveal) {
-	<div class="rounded-md border border-amber-300 bg-amber-50 p-4" data-token-reveal>
+	<div class="rounded-md border border-amber-300 bg-amber-50 p-4" data-token-reveal hx-history="false">
 		<p class="text-sm font-semibold text-amber-900">「{ v.Label }」のトークンを発行しました</p>
 		<p class="mt-1 text-xs text-amber-800">このトークンは今だけ表示されます。閉じると二度と確認できないので、いま安全な場所に控えてください。（有効期限: { v.ExpiresAt }）</p>
 		<div class="mt-3 flex gap-2">

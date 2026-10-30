@@ -35,6 +35,8 @@ func TestIssueTokenRevealsPlaintextOnce(t *testing.T) {
 	if !strings.Contains(input, " readonly") {
 		t.Errorf("token input is not readonly: %q", input)
 	}
+	// htmx の履歴スナップショット（sessionStorage）に平文を残さない。
+	contains(t, res, `data-token-reveal hx-history="false"`)
 	contains(t, res, ` novalidate`, `data-copy-target="issued-token"`, `data-fallback="`, "今だけ表示されます", "claude-desktop")
 	// 一覧の更新は OOB（接頭辞だけ）で添えられる。
 	contains(t, res, `id="token-list" class="overflow-x-auto" hx-swap-oob="true"`, "claude-desktop")

@@ -57,7 +57,7 @@ func dashboardBody(v view.Dashboard) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div><div class=\"flex flex-wrap gap-3 text-sm\"><a href=\"/requests\" class=\"font-medium text-indigo-700 hover:underline\" hx-boost=\"true\" hx-target=\"#main\" hx-swap=\"innerHTML\">接続要求を確認する →</a> <a href=\"/clients\" class=\"font-medium text-indigo-700 hover:underline\" hx-boost=\"true\" hx-target=\"#main\" hx-swap=\"innerHTML\">クライアントを管理する →</a></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div><div class=\"flex flex-wrap gap-3 text-sm\"><a href=\"/requests\" class=\"font-medium text-indigo-700 hover:underline\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">接続要求を確認する →</a> <a href=\"/clients\" class=\"font-medium text-indigo-700 hover:underline\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">クライアントを管理する →</a></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -43,6 +43,19 @@ func NewHandler(fsys fs.FS, immutable bool) http.Handler {
 	return h
 }
 
+// contentTypes は拡張子ごとの Content-Type。Go の mime パッケージは Windows でレジストリ（HKCR）から拡張子の型を
+// 読むため、環境によって .js が text/plain になるなどして、nosniff の下でスクリプトが実行されない。
+// ホストの設定に左右されないよう、配信物の型を固定する。ここに無い拡張子は ServeContent が決める。
+var contentTypes = map[string]string{
+	".js":    "text/javascript; charset=utf-8",
+	".mjs":   "text/javascript; charset=utf-8",
+	".css":   "text/css; charset=utf-8",
+	".map":   "application/json",
+	".json":  "application/json",
+	".svg":   "image/svg+xml",
+	".woff2": "font/woff2",
+}
+
 type handler struct {
 	fsys    fs.FS
 	buildID func() (string, error)
@@ -81,6 +94,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hd := w.Header()
+	if ct, ok := contentTypes[strings.ToLower(path.Ext(name))]; ok {
+		hd.Set("Content-Type", ct)
+	}
 	hd.Set("Cache-Control", "no-cache")
 	hd.Set("ETag", `"`+id+`"`)
 	hd.Set("X-Content-Type-Options", "nosniff")
