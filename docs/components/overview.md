@@ -459,16 +459,19 @@ type LeaseManager interface {
     Acquire(ctx context.Context, who domain.Actor) (Lease, error)
     // 保持者のみ。保持していなければ何もしない。
     Release(who domain.Actor)
+    // セッション切断（FR-L05）。Release と同じだが、監査の理由が explicit ではなく disconnect になる。
+    ReleaseSession(who domain.Actor)
     // 強制剥奪（Web・ホスト。M2 から）。保持者が agent（M4）ならタスクを中断する（Agent.Cancel を呼ぶ）。
-    Revoke(by domain.Actor) error
+    Revoke(by domain.Actor) error // M2。M1 の実装には持たない
     // 以後の入力操作が許されるかの確認。活動時刻を更新する（アイドル解放の起点）。
     Check(who domain.Actor) error // ErrLeaseRequired / ErrLeaseHeldByOther / ErrLeaseRevoked
     Holder() (Holder, bool)
     // キルスイッチ・セッション切断用。
     ReleaseAll(reason string)
-    Subscribe() <-chan Event // 変化（Bus 経由でも配る）
+    Subscribe() <-chan domain.LeaseEvent // 変化（Bus 経由でも配る）
 }
 type Lease struct{ ID string; Holder domain.Actor; Since time.Time }
+type Holder struct{ LeaseID string; Actor domain.Actor; Since time.Time; IdleRemaining time.Duration }
 ```
 
 - 状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は他者の取得を `ErrLeaseHeldByOther` で断る
@@ -508,6 +511,9 @@ type Control interface {
     Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
     Monitors(ctx context.Context) ([]domain.Monitor, error)
     Windows(ctx context.Context) ([]domain.WindowInfo, error)
+    // M1 で mcp が使う読み取り（リース不要）。CursorPosition は縮小座標とモニター、MaxDimension は設定 `screenshot.max_dimension`（縮小率の算出に使う）。
+    CursorPosition(ctx context.Context) (Cursor, error)
+    MaxDimension(ctx context.Context) (int, error)
 }
 ```
 
