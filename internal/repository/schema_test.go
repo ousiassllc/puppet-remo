@@ -18,6 +18,8 @@ func TestSchemaConstraints(t *testing.T) {
 			first_seen_at, last_seen_at, expires_at) VALUES ('r1', 'nodeX', 'a', 'dev', '100.64.0.1', 1, 1, 2)`
 		task = `INSERT INTO agent_tasks (id, client_label, prompt, model, max_steps, max_duration_sec, created_at)
 			VALUES ('k1', 'dev', 'p', 'm', 50, 600, 1)`
+		app = `INSERT INTO launchable_apps (id, label, exe_path, created_at, updated_at)
+			VALUES ('a1', 'Notepad', 'C:/Windows/notepad.exe', 1, 1)`
 		audit = `INSERT INTO audit_logs (ts, kind, event, actor_type, client_label, result)
 			VALUES (1, 'lease', 'lease.acquire', 'mcp', 'dev', 'ok')`
 	)
@@ -70,6 +72,35 @@ func TestSchemaConstraints(t *testing.T) {
 		{"audit unknown client", nil,
 			`INSERT INTO audit_logs (ts, kind, event, actor_type, client_id, client_label, result)
 			VALUES (1, 'lease', 'e', 'mcp', 'nope', 'dev', 'ok')`, "FOREIGN KEY constraint failed"},
+
+		{"app ok", nil, app, ""},
+		{"app label unique ignoring ASCII case", []string{app},
+			strings.Replace(strings.Replace(app, "'a1'", "'a2'", 1), "'Notepad'", "'NOTEPAD'", 1), "UNIQUE constraint failed"},
+		{"app label differs by full-width letters", []string{app},
+			strings.Replace(strings.Replace(app, "'a1'", "'a2'", 1), "'Notepad'", "'Ｎotepad'", 1), ""},
+		{"app label differs by non-ASCII case", []string{`INSERT INTO launchable_apps (id, label, exe_path, created_at, updated_at)
+			VALUES ('a1', 'ÄBC', 'C:/a.exe', 1, 1)`},
+			`INSERT INTO launchable_apps (id, label, exe_path, created_at, updated_at)
+			VALUES ('a2', 'äbc', 'C:/a.exe', 1, 1)`, ""},
+		{"app duplicate id", []string{app},
+			strings.Replace(app, "'Notepad'", "'Other'", 1), "UNIQUE constraint failed"},
+		{"app empty label", nil, strings.Replace(app, "'Notepad'", "''", 1), "CHECK constraint failed"},
+		{"app label of 65 chars", nil,
+			strings.Replace(app, "'Notepad'", "'"+strings.Repeat("a", 65)+"'", 1), "CHECK constraint failed"},
+		{"app label of 64 chars", nil,
+			strings.Replace(app, "'Notepad'", "'"+strings.Repeat("a", 64)+"'", 1), ""},
+		{"app empty exe_path", nil, strings.Replace(app, "'C:/Windows/notepad.exe'", "''", 1), "CHECK constraint failed"},
+		{"app without optional columns", nil, `INSERT INTO launchable_apps (id, label, exe_path, created_at, updated_at)
+			VALUES ('a1', 'x', 'C:/a.exe', 1, 1)`, ""},
+		{"app invalid args_json", nil,
+			`INSERT INTO launchable_apps (id, label, exe_path, args_json, created_at, updated_at)
+			VALUES ('a1', 'x', 'C:/a.exe', '[oops', 1, 1)`, "CHECK constraint failed"},
+		{"app args_json must be an array", nil,
+			`INSERT INTO launchable_apps (id, label, exe_path, args_json, created_at, updated_at)
+			VALUES ('a1', 'x', 'C:/a.exe', '{"a":1}', 1, 1)`, "CHECK constraint failed"},
+		{"app args_json array", nil,
+			`INSERT INTO launchable_apps (id, label, exe_path, args_json, created_at, updated_at)
+			VALUES ('a1', 'x', 'C:/a.exe', '["a","b"]', 1, 1)`, ""},
 
 		{"task ok", nil, task, ""},
 		{"task unknown status", nil,

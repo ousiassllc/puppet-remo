@@ -2,8 +2,8 @@
 //
 // 1 つの *sql.DB（WAL）を共有し、起動時に Open がマイグレーションと整合性チェックを同期で行う。
 // goroutine は持たない（保守処理のタイマーは service/maintenance が持つ）。
-// スキーマは docs/architecture/er.md の全体を v1 マイグレーションで作るが、
-// M1 で CRUD を持つのは clients / client_tokens / connection_requests / settings / audit_logs のみ。
+// スキーマは docs/architecture/er.md の全体を v1 マイグレーションで作るが（M1.5 の launchable_apps は v2）、
+// CRUD を持つのは clients / client_tokens / connection_requests / settings / audit_logs / launchable_apps のみ。
 package repository
 
 import (
@@ -28,6 +28,8 @@ var (
 	ErrNotFound = errors.New("repository: not found")
 	// ErrConflict は UNIQUE 制約・状態の競合（登録済み、決定済みなど）を表す。
 	ErrConflict = errors.New("repository: conflict")
+	// ErrLimitReached は登録数の上限に達していることを表す（起動許可リストの 50 件。NFR-C06）。
+	ErrLimitReached = errors.New("repository: limit reached")
 )
 
 // DB は repository の接続とその上のストアの入口。
@@ -156,11 +158,12 @@ func (d *DB) QuarantinedPath() string { return d.quarantined }
 func (d *DB) Close() error { return d.sql.Close() }
 
 // 各ストアの入口。
-func (d *DB) Clients() Clients           { return clientStore{d} }
-func (d *DB) Tokens() Tokens             { return tokenStore{d} }
-func (d *DB) ConnRequests() ConnRequests { return connRequestStore{d} }
-func (d *DB) Settings() Settings         { return settingStore{d} }
-func (d *DB) Audit() Audit               { return auditStore{d} }
+func (d *DB) Clients() Clients               { return clientStore{d} }
+func (d *DB) Tokens() Tokens                 { return tokenStore{d} }
+func (d *DB) ConnRequests() ConnRequests     { return connRequestStore{d} }
+func (d *DB) Settings() Settings             { return settingStore{d} }
+func (d *DB) Audit() Audit                   { return auditStore{d} }
+func (d *DB) LaunchableApps() LaunchableApps { return launchableAppStore{d} }
 
 // mapErr は SQLite の UNIQUE 制約違反を ErrConflict に写す。それ以外はそのまま返す。
 func mapErr(err error) error {
