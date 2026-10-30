@@ -12,25 +12,33 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Go の検査（M1/S1）と、templ 生成の差分チェック・フロントエンドのビルド（M1/S10。frontend ジョブ）。
+# すべてのジョブはセルフホストの Linux ランナー（[self-hosted, Linux, X64]）で走らせる。
+# Windows 向けの検査は GOOS=windows のクロスコンパイル（build と vet）だけで、Windows の実機は使わない。
+# ツール（Go・Node・golangci-lint・templ）はランナーに入っている前提にせず、setup アクションで導入する。
+# Go・npm のキャッシュはジョブ専用の一時領域（RUNNER_TEMP）に置き、ランナーのホームや他ジョブへ状態を残さない。
 # Lit のテスト・Playwright の E2E は M2（Web UI）で足す。
 jobs:
   go:
-    name: go (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
+    name: go (linux)
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v7
 
+      - name: Go のキャッシュをジョブ専用の領域にする
+        run: |
+          {
+            echo "GOPATH=$RUNNER_TEMP/go"
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+          } >> "$GITHUB_ENV"
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: gofmt
         run: |
@@ -47,50 +55,80 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: go build (GOOS=windows)
-        run: go build ./...
-        env:
-          GOOS: windows
-          GOARCH: amd64
-
-      - name: go vet (GOOS=windows)
-        run: go vet ./...
-        env:
-          GOOS: windows
-          GOARCH: amd64
-
       - name: import 規則 (domain は他の内部パッケージを import しない)
         run: ./scripts/check-imports.sh
-
-      - name: import 規則 (GOOS=windows)
-        run: ./scripts/check-imports.sh
-        env:
-          GOOS: windows
-          GOARCH: amd64
 
       - name: go test
         run: go test -race ./...
 
-  # フロントエンド（HALT。docs/architecture/frontend.md §8・§9）: templ 生成物の差分チェック → フロントエンドのビルド →
-  # 型検査 → 本番ビルド（static/dist を go:embed）と同梱物のテスト。ビルド成果物は OS に依存しないため ubuntu で足りる。
-  frontend:
-    name: frontend
-    runs-on: ubuntu-latest
+  # Windows 向けのコード（//go:build windows）は、Linux でのクロスコンパイルの build と vet だけで検査する。
+  # 実機の動作確認は docs/operations/smoke-windows.md の手順で行う（CI では行わない）。
+  windows-cross:
+    name: go (GOOS=windows build/vet)
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      GOOS: windows
+      GOARCH: amd64
     steps:
       - uses: actions/checkout@v7
+
+      - name: Go のキャッシュをジョブ専用の領域にする
+        run: |
+          {
+            echo "GOPATH=$RUNNER_TEMP/go"
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
+
+      - name: go build (GOOS=windows)
+        run: go build ./...
+
+      - name: go vet (GOOS=windows)
+        run: go vet ./...
+
+      - name: import 規則 (GOOS=windows)
+        run: ./scripts/check-imports.sh
+
+  # フロントエンド（HALT。docs/architecture/frontend.md §8・§9）: templ 生成物の差分チェック → フロントエンドのビルド →
+  # 型検査 → 本番ビルド（static/dist を go:embed）と同梱物のテスト。ビルド成果物は OS に依存しない。
+  frontend:
+    name: frontend
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Go・npm のキャッシュをジョブ専用の領域にする
+        run: |
+          {
+            echo "GOPATH=$RUNNER_TEMP/go"
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+            echo "npm_config_cache=$RUNNER_TEMP/npm"
+          } >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
 
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: static/package-lock.json
 
       - name: templ を導入（go.mod の版）
-        run: go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ)
+        run: go install "github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ)"
 
       - name: templ generate の差分チェック
         run: |
@@ -128,19 +166,33 @@ jobs:
 
   lint:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
+
+      - name: Go・golangci-lint のキャッシュをジョブ専用の領域にする
+        run: |
+          {
+            echo "GOPATH=$RUNNER_TEMP/go"
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+            echo "GOLANGCI_LINT_CACHE=$RUNNER_TEMP/golangci-lint"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: golangci-lint を導入
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
           install-mode: binary
+          skip-cache: true
           args: ./...
 
       - name: golangci-lint (GOOS=windows)
