@@ -157,7 +157,10 @@ func newHarness(t *testing.T, h http.Handler) *listenerHarness {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-hn.done:
+		case err := <-hn.done:
+			if err != nil {
+				t.Errorf("Serve = %v, want nil on cancel", err)
+			}
 		case <-time.After(waitTimeout):
 			t.Error("Serve did not return after cancel")
 		}
@@ -493,7 +496,9 @@ func TestListenerWithWatcherEndToEnd(t *testing.T) {
 	go func() { done <- l.Serve(ctx, http.NotFoundHandler(), func() int { return 8765 }) }()
 	defer func() {
 		cancel()
-		<-done
+		if err := <-done; err != nil {
+			t.Errorf("Serve = %v, want nil on cancel", err)
+		}
 	}()
 	wait := func(pred func(ListenState) bool) ListenState {
 		t.Helper()

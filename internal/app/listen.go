@@ -65,7 +65,9 @@ func (s *listenSupervisor) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			cancel()
-			<-done
+			if err := <-done; err != nil {
+				s.log.Error("tailnet listener stopped", "err", err)
+			}
 			return nil
 		case err := <-done:
 			cancel()
@@ -76,7 +78,9 @@ func (s *listenSupervisor) Run(ctx context.Context) error {
 		case <-s.reload:
 			s.log.Info("restarting the tailnet listener to apply the new settings")
 			cancel()
-			<-done
+			if err := <-done; err != nil {
+				s.log.Error("tailnet listener stopped", "err", err)
+			}
 		}
 	}
 }

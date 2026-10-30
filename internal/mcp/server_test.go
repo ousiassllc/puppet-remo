@@ -320,7 +320,13 @@ func TestCloseSessionsAbortsInFlightToolCalls(t *testing.T) {
 	case <-time.After(waitLimit):
 		t.Fatal("the in-flight tool's ctx was not cancelled")
 	}
-	<-call
+	// 中断された呼び出しの終わり方（応答なしで終了）は SDK 次第なので中身は問わず、時間内に返ることだけを確かめる。
+	select {
+	case err := <-call:
+		t.Logf("the aborted call ended with: %v", err)
+	case <-time.After(waitLimit):
+		t.Fatal("the aborted call never returned")
+	}
 	eventually(t, "all sessions to leave the table", func() bool { return len(e.srv.Sessions()) == 0 })
 
 	// 取り消しは実行中の呼び出しだけに効く。新しく張ったセッションのツールは取り消されない。
@@ -361,6 +367,11 @@ func TestCloseSessionsReturnsWhenContextEndsWhileAToolIsStuck(t *testing.T) {
 	}
 	// 止まっていた呼び出しを解放すると、閉じ切れなかったセッションも閉じる。
 	close(e.ctl.cursorRelease)
-	<-call
+	select {
+	case err := <-call:
+		t.Logf("the released call ended with: %v", err)
+	case <-time.After(waitLimit):
+		t.Fatal("the released call never returned")
+	}
 	eventually(t, "all sessions to leave the table", func() bool { return len(e.srv.Sessions()) == 0 })
 }
