@@ -1,0 +1,139 @@
+package organisms
+
+import (
+	"strconv"
+
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+// HeaderKillSwitch はヘッダーのキルスイッチ状態バッジ（SSE の killswitch イベントと OOB の差し込み先 #header-killswitch の中身）。
+// 画面の更新は GET /poll の OOB（HeaderKillSwitchOOB）が行う。
+templ HeaderKillSwitch(active bool) {
+	if active {
+		@atoms.Badge(atoms.BadgeDanger, "キルスイッチ発動中")
+	} else {
+		@atoms.Badge(atoms.BadgeOK, "稼働中")
+	}
+}
+
+// Header は全画面共通のヘッダー。
+templ Header(h view.Header) {
+	<header class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
+		<span class="text-sm font-semibold text-slate-800">puppet-remo ホスト</span>
+		<div id="header-killswitch">
+			@HeaderKillSwitch(h.KillSwitchActive)
+		</div>
+	</header>
+}
+
+// HeaderKillSwitchOOB はアクションの応答・GET /poll の応答に添えて、ヘッダーのバッジを更新する（OOB）。
+templ HeaderKillSwitchOOB(active bool) {
+	<div id="header-killswitch" hx-swap-oob="innerHTML">
+		@HeaderKillSwitch(active)
+	</div>
+}
+
+// RequestsBadge はサイドバーの接続要求の件数（0 件なら何も出さない）。
+templ RequestsBadge(n int) {
+	if n > 0 {
+		<span class="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-semibold text-white" data-pending-count={ strconv.Itoa(n) }>{ strconv.Itoa(n) }</span>
+	}
+}
+
+// RequestsBadgeOOB はアクションの応答・GET /poll の応答に添えて、件数バッジを更新する（OOB）。
+templ RequestsBadgeOOB(n int) {
+	<span id="nav-requests-badge" class="ml-auto" hx-swap-oob="innerHTML">
+		@RequestsBadge(n)
+	</span>
+}
+
+type navItem struct {
+	Nav   view.Nav
+	Label string
+	URL   string
+}
+
+var navItems = []navItem{
+	{view.NavDashboard, "ダッシュボード", "/"},
+	{view.NavRequests, "接続要求", "/requests"},
+	{view.NavClients, "クライアント", "/clients"},
+	{view.NavSettings, "設定", "/settings"},
+}
+
+func navLinkClass(active bool) string {
+	base := "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium "
+	if active {
+		return base + "bg-slate-800 text-white"
+	}
+	return base + "text-slate-300 hover:bg-slate-800 hover:text-white"
+}
+
+func navLinkAttrs(active bool) atoms.Attrs {
+	if active {
+		return atoms.Attrs{"aria-current": "page"}
+	}
+	return nil
+}
+
+func oobAttrs(oob bool) atoms.Attrs {
+	if oob {
+		return atoms.Attrs{"hx-swap-oob": "true"}
+	}
+	return nil
+}
+
+// Sidebar はホスト GUI のナビゲーション。ページ遷移は hx-boost で #main だけを差し替える（§5.4）。
+// ブートされた遷移の応答は oob = true で添えて、現在のページの強調を更新する。
+templ Sidebar(c view.Chrome, oob bool) {
+	<nav id="sidebar-nav" class="w-56 shrink-0 space-y-1 bg-slate-900 p-3" aria-label="メイン" { oobAttrs(oob)... }>
+		<p class="px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">メニュー</p>
+		for _, it := range navItems {
+			<a
+				href={ templ.SafeURL(it.URL) }
+				class={ navLinkClass(it.Nav == c.Active) }
+				hx-boost="true"
+				hx-target="#main"
+				hx-target-error="#main"
+				hx-swap="innerHTML"
+				{ navLinkAttrs(it.Nav == c.Active)... }
+			>
+				<span>{ it.Label }</span>
+				if it.Nav == view.NavRequests {
+					<span id="nav-requests-badge" class="ml-auto">
+						@RequestsBadge(c.Header.PendingRequests)
+					</span>
+				}
+			</a>
+		}
+	</nav>
+}
+
+// ToastRoot はトーストの置き場。エラー・完了の応答（HX-Retarget / OOB）と GET /poll の応答（OOB）がここへ追加する。
+templ ToastRoot() {
+	<div id="toast-root" class="pointer-events-none fixed bottom-4 right-4 z-50 flex max-w-sm flex-col gap-2"></div>
+}
+
+// LivePoller は最新の状態を取りに行く。GET /poll を 3 秒ごとに呼び、応答の OOB のフラグメントで各領域を差し替える（swap は none）。
+// hx-include は、いま表示している領域の隠し入力（data-poll-rev。描画した状態の版）を送り返す。サーバーは版が変わった領域だけを
+// 差し替え、表示していない領域は送らない。
+templ LivePoller() {
+	<div id="live-poll" aria-hidden="true" hx-get="/poll" hx-trigger="every 3s" hx-swap="none" hx-include="[data-poll-rev]"></div>
+}
+
+// ToastOOB はアクションの応答・GET /poll の応答に添えて、トーストを追加する（OOB）。
+templ ToastOOB(t view.Toast) {
+	<div hx-swap-oob="beforeend:#toast-root">
+		@atoms.Toast(t)
+	</div>
+}
+
+// ModalRoot は確認モーダルの置き場。
+templ ModalRoot() {
+	<div id="modal-root"></div>
+}
+
+// ModalClear は確定のアクションの応答に添えて、確認モーダルを閉じる（OOB）。
+templ ModalClear() {
+	<div id="modal-root" hx-swap-oob="true"></div>
+}

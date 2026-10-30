@@ -1,0 +1,28 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+templ errorBody(v view.ErrorPage) {
+	<div class="space-y-2" data-error-code={ v.Code }>
+		<h1 class="text-xl font-semibold text-slate-900">{ v.Title }</h1>
+		<p class="text-sm text-slate-600">{ v.Message }</p>
+		<a href="/" class="text-sm font-medium text-indigo-700 hover:underline">ダッシュボードへ戻る</a>
+	</div>
+}
+
+// Error はページルートのエラーページ（404 など）。
+templ Error(v view.ErrorPage) {
+	@layout.GUI(v.Title, v.Chrome) {
+		@errorBody(v)
+	}
+}
+
+// ErrorBoosted は hx-boost の遷移へのエラー応答。
+templ ErrorBoosted(v view.ErrorPage) {
+	@layout.Boosted(v.Title, v.Chrome) {
+		@errorBody(v)
+	}
+}

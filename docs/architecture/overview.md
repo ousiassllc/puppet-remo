@@ -23,9 +23,9 @@
 | HTTP ルーティング / SSR | Gin | HALT 標準 |
 | JSON API | Huma | HALT 標準。Lit アイランドが使う JSON API と OpenAPI を提供 |
 | テンプレート | Templ | 型安全な SSR。Atomic Design（atoms / molecules / organisms / pages / layout）で構成 |
-| インタラクション | HTMX（`response-targets`、ホスト GUI のみ `sse` 拡張） | サーバー駆動の DOM 更新。CSP（`script-src 'self'` 等）下で動かすため、`allowEval=false`・`includeIndicatorStyles=false` を同梱 JS で設定し、`hx-on` と `js:` 接頭辞は使わない（[NFR-S19](../requirements/non-functional.md)、[フロントエンド設計](frontend.md)） |
+| インタラクション | HTMX（`response-targets`。ホスト GUI の状態の更新は `GET /poll` のポーリング） | サーバー駆動の DOM 更新。CSP（`script-src 'self'` 等）下で動かすため、`allowEval=false`・`includeIndicatorStyles=false` を同梱 JS で設定し、`hx-on` と `js:` 接頭辞は使わない（[NFR-S19](../requirements/non-functional.md)、[フロントエンド設計](frontend.md)） |
 | リッチ UI | Lit（Web Components） | ライブ画面ビューア 1 つだけ（`<remo-screen-viewer>`）。Canvas + WebSocket + 入力キャプチャのため |
-| スタイル / ビルド | Tailwind CSS / esbuild | HALT 標準。成果物は `go:embed` で単一バイナリに同梱。`wails3 dev` が開発サーバーの待受を要求するため、`dev:frontend` タスクは esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（ウォッチ付き）を起動する。これは待受の代替とライブ再ビルドのみで、GUI のページは GUI ルーターが配信する。開発時の静的ファイルはディスクから読む |
+| スタイル / ビルド | Tailwind CSS / esbuild | HALT 標準。成果物は `go:embed` で単一バイナリに同梱。`wails3 dev` が開発サーバーの待受を要求するため、`frontend:dev` タスクは esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（ウォッチ付き）を起動する。これは待受の代替とライブ再ビルドのみで、GUI のページは GUI ルーターが配信する。開発時の静的ファイルはディスクから読む |
 | MCP | 公式 Go SDK（`github.com/modelcontextprotocol/go-sdk` v1.8.0） | `NewStreamableHTTPHandler` で Streamable HTTP を提供。オプションの扱い（`SessionTimeout` 30 分、`MaxRequestBodyBytes` 1 MiB、`Stateless=false`、`CrossOriginProtection` 不使用など）は「ルーターの分離とリクエスト処理」を参照 |
 | tailnet 連携 | `tailscale.com/client/local` | LocalAPI の `WhoIs`、`WatchIPNBus`（IP 変化監視）、`StatusWithoutPeers`。Windows では名前付きパイプ経由でライブラリが接続する |
 | WebSocket | `github.com/coder/websocket` v1.8.15（ISC） | context 対応・バイナリフレーム・軽量 |
@@ -171,7 +171,7 @@ graph TD
 
 | ルーター | 配信経路 | 提供するもの | 認可 |
 |---------|---------|-------------|------|
-| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/events`（SSE） | プロセス内到達のみ。ネットワークからは到達不能 |
+| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/poll`（GUI の更新。OOB）、`/events`（SSE。GUI は購読しない） | プロセス内到達のみ。ネットワークからは到達不能 |
 | **リモートルーター** | tailnet IP の TCP ポート（FR-S01、既定 8765） | `/mcp`、`/viewer`（Web UI）、`/ws/screen`、`/api/v1/*`、静的ファイル | ミドルウェア連鎖（下図） |
 
 2 つのルーターは `templ` コンポーネント（atoms / molecules）を共有できるが、ハンドラは共有しない（ホスト専用操作がリモートに露出しないことを構造で保証する）。
@@ -210,6 +210,7 @@ sequenceDiagram
 | `DisableLocalhostProtection` | SDK の保護に依存しない | ループバックのアドレスで届いたリクエストにだけ働く。tailnet IP で Listen する本アプリでは無関係で、保護は自前の Host / Origin ミドルウェア（NFR-S02）が担う |
 | `CrossOriginProtection` | 使わない | 非推奨のため |
 | `SessionTimeout` | 30 分（アイドル）を明示 | 既定の 0 は「セッションを閉じない」。リースのアイドル解放（FR-S04、既定 5 分）とは独立に設定する |
+| `KeepAlive` | 設定しない（既定の 0 = ping しない） | SDK のサーバーからの ping は standalone の GET SSE ストリームにしか流れず、GET を張らない（POST だけの）クライアントは応答できない。有効にすると、生きたセッションとリースを、ping の 3 回連続の失敗（15 秒間隔で 45 秒。`internal/mcp` の `Config.KeepAlive` を有効にしたときの閾値）で失う。切断は `DELETE`・トランスポートの切断・`SessionTimeout`・リースのアイドル解放（FR-S04）で拾う（[NFR-A04](../requirements/non-functional.md)）。WebSocket（M2）は 15 秒 / 45 秒の keepalive を持つ |
 | `EventStore` | v1 では使わない | ストリームの再開は提供せず、クライアントは再 initialize する |
 | `MaxRequestBodyBytes` | 1 MiB を明示 | [NFR-S09](../requirements/non-functional.md) |
 | `Stateless` | `false` | リース保持者をセッションに束縛するため |
@@ -451,16 +452,18 @@ type Judge interface {
 |------|--------------|
 | 認証・CSRF | Cookie を使わない。WhoIs + Host / Origin 検証 + `X-Puppet-Remo` |
 | サーバー | GUI ルーターとリモートルーターに分離 |
-| HTMX 拡張 | `response-targets`（両 UI）、`sse`（ホスト GUI のみ） |
+| HTMX 拡張 | `response-targets`（両 UI）。ホスト GUI の更新は `GET /poll`（Wails の AssetServer が SSE をバッファするため） |
 | JSON API | `/api/v1` は読み取り専用。アクションは HTML を返す HTMX ルート |
 | 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない）。`wails3 dev` が開発サーバーの待受を要求するため、esbuild の `--serve` を待受として起動する |
 | CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
 | 静的ファイル | `Cache-Control: no-cache` + `ETag`（ビルド ID） |
-| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform。Windows ジョブとは別の ubuntu ジョブ） |
+| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform。Lit と Playwright は M2 で CI に足す） |
 
 全項目と理由は [フロントエンド設計](frontend.md) §2 を参照。
 
 ## ディレクトリ構成
+
+最終形（M4 完了時）の構成。M1 で存在するものと差分は「[M1 実装での差分](#m1-実装での差分)」を参照。
 
 ```
 puppet-remo/
@@ -505,8 +508,61 @@ puppet-remo/
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
 | 配布・更新 | GitHub Releases。インストーラと署名ファイル（Ed25519）を公開し、アプリが署名検証して適用 |
-| CI | GitHub Actions。`windows-latest` のジョブで templ 生成の差分チェック、フロントエンドビルド、build / vet / lint / go test、Lit のテストを実行する。Playwright の E2E は別の `ubuntu-latest` ジョブで実行する（偽の platform と偽の tailnet により OS に依存せず、Chromium を容易に使えるため。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
+| CI | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は M2 で足す（偽の platform と偽の tailnet により OS に依存しない。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
+
+## M1 実装での差分
+
+M1 の実装が本書の記述と異なる点、本書にあって M1 では存在しない点。コンポーネントの型・シグネチャの差分は [コンポーネント設計](../components/overview.md) §13、ルート・エラーの形の差分は [API 仕様](../api/endpoints.md) §7.5、フロントエンドの差分は [フロントエンド設計](frontend.md) §12 に置く。
+
+### 技術選定・依存ライブラリ
+
+| 項目 | 設計 | M1 の実装 |
+|------|------|----------|
+| Huma（JSON API） | `/api/v1` を提供 | 使わない（`go.mod` に無い）。`/api/v1` は M2 以降 |
+| WebSocket | `github.com/coder/websocket` v1.8.15 | 直接依存ではない（`go.mod` では v1.8.14 の間接依存。Wails の依存）。直接依存にするのは `ws` を作る M2 |
+| 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | 依存に無い。M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけで、Windows 実装も呼び出しも無い（API キー管理は M4） |
+| DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | 依存に無い。M1 は GDI BitBlt だけで、`Capturer.Watch` は Windows 実装でエラーを返すスタブ |
+| OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | 依存に無く、`internal/openai`・`internal/typesafe` も無い（M4） |
+| MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |
+| ULID | `oklog/ulid/v2` | 同じ（`internal/app` の `ULIDGen`）。`domain.IDGen` として注入する |
+| ホスト GUI の更新 | `GET /poll`（本書の技術選定のとおり） | 同じ。`GET /events`（SSE）と `htmx-ext-sse` の同梱は残すが、M1 の GUI は読み込まない（未使用） |
+| ホスト GUI のウィンドウ | `ContentProtectionEnabled`（キャプチャ除外）を承認ダイアログ・オーバーレイ・ホスト GUI に付ける | M1 はホスト GUI のメインウィンドウだけに `ContentProtectionEnabled` を付ける（承認ダイアログ・オーバーレイは M3） |
+
+### ディレクトリ構成
+
+本書の「ディレクトリ構成」は最終形で、M1 で存在するのは次のとおり（差分）。
+
+| 項目 | M1 の実装 |
+|------|----------|
+| `internal/openai`・`internal/typesafe`・`internal/ws` | 無い（M4・M4・M2 で作る） |
+| `internal/web` | `handler/gui` だけ（`handler/remote` は M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`（偽の service）を持つ |
+| `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ。`windows/` の `secret`（資格情報）は無い |
+| `internal/router` | `gui.go`・`remote.go` と `internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
+| `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`。承認ダイアログとオーバーレイは M3 |
+| `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
+| `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`）と `e2e/` は M2 |
+| 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
+| Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など |
+
+### 依存の向き
+
+`web` と `mcp` は `repository`・`platform`・`tailnet` を import しない（本書は `repository` と `platform` だけを禁じるが、M1 は `tailnet` も禁じる）。`web/middleware` は `service` の `Authenticator`・`Identity`（`tailnet.Identity` の別名）・`ResolveIdentity` を使う。`platform.Power` は `app.Config` の必須項目。詳細と `scripts/check-imports.sh` の許可表はコンポーネント設計 §13.1。
+
+### キルスイッチ（「キルスイッチ」の節）
+
+M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以後のリクエストを 503 にする）から、(1) 永続化、(2) 全リース剥奪、(3) 登録済みクローザーの**並行**実行（MCP セッションの切断・押下中の入力の解放）、監査の順で行う。エージェントの中断・WebSocket の切断・オーバーレイの消去は、それぞれ M4・M2・M3 で足す。永続化とクローザーはそれぞれ自分の期限（既定 1 秒）を持つため、永続化が遅いと `Trigger` が戻るまで最大 2 × 期限かかり、NFR-P05 の 1 秒を超えうる（**既知の制限**。受付停止はメモリ上の状態で直ちに効くが、セッション切断の完了は遅れうる。詳細はコンポーネント設計 §13.5）。
+
+### 受付と入力（「ルーターの分離とリクエスト処理」「入力注入と自己保護」の節）
+
+| 項目 | M1 の実装 |
+|------|----------|
+| リモートルーター | `/mcp` だけ（それ以外は 404）。tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒・`IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB（`WriteTimeout` なし） |
+| WhoIs | LocalAPI の 1 回の呼び出しは 5 秒で打ち切る（失敗は `whois_failed`。fail closed）。結果は IP 単位に最大 10 秒キャッシュ |
+| 接続要求 | 期限切れの `pending` は一覧に出ず、許可もできない。同じデバイスの `pending` を 5 秒以内に更新済みなら DB に書かない。登録済みデバイスのログイン名が変わった要求を許可すると、古いクライアントを置き換える（`client.replace` を監査に記録。トークンは CASCADE で削除、セッションは切断、リースは解放）。古いクライアントの切断は、他の許可を止めないようロックの外で行う |
+| 監査 | クライアントの行がすでに無いときの `client_id` は NULL で保存する（ラベルは残る）。`Control` を通らない MCP ツール（`get_screen_info`・`screenshot` など）は `mcp` のツール登録が記録する |
+| 入力の実行 | `Control` は入力（マウス・キーボード）を 1 度に 1 つへ直列化する。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000 |
+| UI Automation のワーカー | 専用スレッドへの呼び出しは `ctx` を受け、取り消されたらスレッドの処理の終了を待たずに戻る |
 
 ## 改訂履歴
 
@@ -517,3 +573,8 @@ puppet-remo/
 | 1.2 | 2026-10-29 | 「HALT の適用」を [フロントエンド設計](frontend.md) へ分離し、差分の要約とリンクに縮小。ディレクトリ構成を更新（`lib/api.ts` を初版から除外、`e2e/` 追加）、CI にフロントエンドのテストを追加 | HALT の規約を 1 か所に集約 |
 | 1.3 | 2026-10-29 | 未決事項の決定を反映: 外部通信に TypeSafe（高速パス有効時のみ）を追加、高速パス（Jev による候補選択、引き継ぎ理由、縮退）のフローとコンポーネント（`typesafe`、`FastPath`、`domain.Candidate`）を追加、Judge は RuleJudge のまま Jev を Judge にしない旨を明記、OpenAI の会話継続を `store: false` のステートレス方式に確定、技術選定のライブラリ・バージョン・ライセンス確定（go-keyring、go-ole、go-d3d、coder/websocket、ulid、MCP SDK の設定）、Wails dev の待受（esbuild `--serve`）、CSP、CI（Playwright は別の ubuntu ジョブ）、署名なしを追記 | 未決事項の決定 |
 | 1.4 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチを WhoIs・許可リスト・接続要求の作成より前に移動（構成図・シーケンス図）。Bearer の照合を NFR-S04 の参照に統一。承認が必要な分岐と接続要求の許可時の承認モード選択は M3 からと明記（M1 は承認なしの `idle → held`） | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
+| 1.5 | 2026-10-30 | ホスト GUI の状態の更新を SSE から `GET /poll` のポーリングに変更（HTMX 拡張は `response-targets` のみ。GUI ルーターの提供物に `/poll` を追加） | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |
+| 1.6 | 2026-10-30 | 開発タスク名を実在する `frontend:dev` に訂正（`dev:frontend` は誤り） | レビュー指摘（Taskfile.yml のタスク名との不一致）の反映 |
+| 1.7 | 2026-10-30 | CI の記述を、`windows-latest` と ubuntu の別ジョブから、Linux のセルフホストランナーと `GOOS=windows` のクロスコンパイルに更新。Lit と Playwright は M2 | CI をセルフホストの Linux ランナーに統一（オーナー決定） |
+| 1.8 | 2026-10-30 | MCP SDK のオプション表に `KeepAlive`（既定の 0 のまま）を追加 | MCP の keepalive を既定で無効にした実装との整合（オーナー決定。NFR-A04） |
+| 1.9 | 2026-10-30 | 「M1 実装での差分」を新設（依存ライブラリ・ディレクトリ構成・依存の向き・キルスイッチ（`Trigger` が最大 2 × 期限かかりうる既知の制限を含む）・受付と入力の実装値）。ディレクトリ構成の冒頭に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |

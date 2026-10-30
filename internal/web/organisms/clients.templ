@@ -1,0 +1,133 @@
+package organisms
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+func flagActionLabel(f view.ClientFlag) string {
+	if f.Enabled {
+		return "無効にする"
+	}
+	return "有効にする"
+}
+
+func flagBadge(f view.ClientFlag) (atoms.BadgeTone, string) {
+	if f.Enabled {
+		return atoms.BadgeOK, "有効"
+	}
+	return atoms.BadgeNeutral, "無効"
+}
+
+func cardID(c view.Client) string { return "client-" + c.ID }
+
+// ClientCard はクライアント 1 件（有効・無効の切り替え）。PATCH の応答もこのフラグメントを返す（API 仕様 §7.2）。
+// 切り替えは現在の状態の逆だけを描画する。削除と詳細への導線は、一覧のカードだけに出す。
+templ ClientCard(c view.Client) {
+	<article id={ cardID(c) } class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-client={ c.ID }>
+		<div class="flex flex-wrap items-baseline justify-between gap-2">
+			<h3 class="text-sm font-semibold text-slate-800">{ c.DisplayName }</h3>
+			<span class="text-xs text-slate-500">承認モード: { c.Approved }</span>
+		</div>
+		<p class="mt-1 text-xs text-slate-500">
+			ユーザー { c.LoginName } ・ ノード <code class="rounded bg-slate-100 px-1 py-0.5">{ c.NodeID }</code>
+		</p>
+		<ul class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+			for _, f := range c.Flags {
+				<li class="flex items-center gap-2 text-sm" data-flag={ f.Field }>
+					<span class="text-slate-700">{ f.Label }</span>
+					@flagBadgeView(f)
+					@atoms.Button(atoms.ButtonProps{Label: flagActionLabel(f), Variant: atoms.ButtonSecondary, Attrs: flagAttrs(f, cardID(c))})
+				</li>
+			}
+		</ul>
+		if c.CanOpenDetail || c.CanDelete {
+			<div class="mt-3 flex gap-2">
+				if c.CanOpenDetail {
+					<a
+						href={ templ.SafeURL(c.DetailURL) }
+						class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+						hx-boost="true"
+						hx-target="#main"
+						hx-target-error="#main"
+						hx-swap="innerHTML"
+					>トークンと詳細</a>
+				}
+				if c.CanDelete {
+					@atoms.Button(atoms.ButtonProps{Label: "削除", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+						"hx-get": c.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+					}})
+				}
+			</div>
+		}
+	</article>
+}
+
+templ flagBadgeView(f view.ClientFlag) {
+	{{ t, label := flagBadge(f) }}
+	@atoms.Badge(t, label)
+}
+
+// ClientList は許可リスト（FR-H04）。空なら、一覧ではなく案内だけを描画する。
+templ ClientList(v view.ClientList) {
+	<div id="client-list" class="space-y-4">
+		if len(v.Items) == 0 {
+			<p class="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500" data-empty="clients">
+				登録済みのクライアントはありません。接続要求を許可すると、ここに登録されます。
+			</p>
+		}
+		for _, c := range v.Items {
+			@ClientCard(c)
+		}
+	</div>
+}
+
+func tokenListAttrs(oob bool) atoms.Attrs {
+	if oob {
+		return atoms.Attrs{"hx-swap-oob": "true"}
+	}
+	return nil
+}
+
+// TokenList は 1 クライアントのトークン一覧（接頭辞のみ。平文は発行時の 1 回だけ）。失効は有効なトークンだけに出す。
+// oob = true は、アクションの応答に添えて一覧を更新するとき（OOB）。
+templ TokenList(v view.TokenList, oob bool) {
+	<div id="token-list" class="overflow-x-auto" { tokenListAttrs(oob)... }>
+		if len(v.Items) == 0 {
+			<p class="text-sm text-slate-500" data-empty="tokens">発行済みのトークンはありません。</p>
+		} else {
+			<table class="min-w-full text-left text-sm">
+				<thead class="text-xs uppercase text-slate-500">
+					<tr>
+						<th class="py-2 pr-4 font-medium">ラベル</th>
+						<th class="py-2 pr-4 font-medium">接頭辞</th>
+						<th class="py-2 pr-4 font-medium">状態</th>
+						<th class="py-2 pr-4 font-medium">発行</th>
+						<th class="py-2 pr-4 font-medium">有効期限</th>
+						<th class="py-2 pr-4 font-medium">最終使用</th>
+						<th class="py-2 font-medium"></th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-slate-100">
+					for _, t := range v.Items {
+						<tr data-token={ t.ID }>
+							<td class="py-2 pr-4 font-medium text-slate-800">{ t.Label }</td>
+							<td class="py-2 pr-4"><code class="rounded bg-slate-100 px-1 py-0.5 text-xs">{ t.Prefix }…</code></td>
+							<td class="py-2 pr-4">@atoms.Badge(tone(t.StatusTone), t.Status)</td>
+							<td class="py-2 pr-4 text-slate-600">{ t.CreatedAt }</td>
+							<td class="py-2 pr-4 text-slate-600">{ t.ExpiresAt }</td>
+							<td class="py-2 pr-4 text-slate-600">{ t.LastUsedAt }</td>
+							<td class="py-2 text-right">
+								if t.CanRevoke {
+									@atoms.Button(atoms.ButtonProps{Label: "失効", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+										"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+									}})
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}

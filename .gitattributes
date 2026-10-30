@@ -1,0 +1,16 @@
+* text=auto
+# Windows（core.autocrlf=true）のチェックアウトでも LF にそろえる。CI の gofmt -l や、生成物
+# （*_templ.go・static/dist）の差分チェックが、改行の違いで落ちないようにする。
+*.go text eol=lf
+*.templ text eol=lf
+*.sql text eol=lf
+*.ts text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf

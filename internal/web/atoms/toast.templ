@@ -1,0 +1,27 @@
+package atoms
+
+import "github.com/ousiassllc/puppet-remo/internal/web/view"
+
+func toastClass(l view.ToastLevel) string {
+	base := "pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm shadow "
+	if l == view.ToastError {
+		return base + "border-red-300 bg-red-50 text-red-800"
+	}
+	return base + "border-slate-300 bg-white text-slate-800"
+}
+
+func toastAttrs(t view.Toast) Attrs {
+	a := Attrs{"data-toast": true, "data-toast-level": string(t.Level)}
+	if t.ErrorCode != "" {
+		a["data-error-code"] = t.ErrorCode
+	}
+	return a
+}
+
+// Toast は通知 1 件。閉じる操作と自動消去は app.ts が付ける（data-toast / data-toast-dismiss）。
+templ Toast(t view.Toast) {
+	<div class={ toastClass(t.Level) } role="alert" { toastAttrs(t)... }>
+		<span>{ t.Message }</span>
+		<button type="button" class="ml-auto text-slate-500 hover:text-slate-800" aria-label="閉じる" data-toast-dismiss>×</button>
+	</div>
+}

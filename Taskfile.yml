@@ -1,0 +1,191 @@
+version: "3"
+
+# Go のビルド・検査・テスト（S1）、templ 生成とフロントエンドのビルド（S10）、Wails のアプリのビルドとパッケージ（S11）。
+# フロントエンド（HALT）の規約は docs/architecture/frontend.md §8。
+# `windows:` はアプリ（cmd/puppet-remo）の本番ビルドとインストーラ（build/windows/Taskfile.yml）、
+# `common:` は wails3 の共通タスク（build/Taskfile.yml）。`wails3 package` が呼ぶ `package`、`wails3 dev` は build/config.yml。
+
+includes:
+  common:
+    taskfile: ./build/Taskfile.yml
+    dir: .
+  windows:
+    taskfile: ./build/windows/Taskfile.yml
+    dir: .
+
+tasks:
+  default:
+    desc: 利用できるタスクを一覧する
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Go のビルド（ホスト OS）
+    cmds:
+      - go build ./...
+
+  build:windows:
+    desc: Windows 向けのビルド（Linux / macOS からのクロスビルド確認を含む）
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - go build ./...
+
+  vet:
+    desc: go vet（ホスト OS）
+    cmds:
+      - go vet ./...
+
+  vet:windows:
+    desc: Windows 向けの go vet
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Go のテスト
+    cmds:
+      - go test ./...
+
+  test:race:
+    desc: Go のテスト（データ競合検出。cgo が必要）
+    cmds:
+      - go test -race ./...
+
+  fmt:
+    desc: gofmt で整形する
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: gofmt の差分がないことを確認する
+    cmds:
+      - cmd: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt が必要なファイル:"; echo "$out"; exit 1; fi
+
+  lint:
+    desc: golangci-lint（ホスト OS と Windows の両方）
+    cmds:
+      - golangci-lint run ./...
+      - cmd: golangci-lint run ./...
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
+  check:imports:
+    desc: レイヤー間の import 規則を検査する（domain は他の内部パッケージを import しない）
+    cmds:
+      - ./scripts/check-imports.sh
+
+  tools:templ:
+    desc: go.mod の版に固定した templ を導入する（生成物の差分チェックと CI で同じ版を使う）
+    cmds:
+      - cmd: go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{"{{"}}.Version{{"}}"}}' github.com/a-h/templ)
+
+  templ:generate:
+    desc: .templ から _templ.go を生成する（生成物はコミットする）
+    cmds:
+      - templ generate
+
+  templ:watch:
+    desc: .templ の変更で _templ.go を再生成し続ける（開発用）
+    cmds:
+      - templ generate --watch
+
+  templ:check:
+    desc: _templ.go が .templ と一致していること（生成して差分が出ないこと）を確認する
+    cmds:
+      - templ generate
+      - cmd: |
+          if [ -n "$(git status --porcelain -- '*_templ.go')" ]; then
+            echo "_templ.go が古い。task templ:generate を実行してコミットすること:"
+            git status --short -- '*_templ.go'
+            exit 1
+          fi
+
+  frontend:install:
+    desc: フロントエンドの依存を package-lock.json のとおりに導入する
+    dir: static
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+    cmds:
+      - npm ci
+
+  frontend:build:
+    desc: esbuild と Tailwind CLI で static/dist を作る（htmx と拡張を同梱。毎回作り直す）
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - npm run build
+
+  frontend:typecheck:
+    desc: TypeScript の型検査
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - npx tsc -p .
+
+  frontend:dev:
+    desc: esbuild と Tailwind のウォッチ（WAILS_VITE_PORT で serve。wails3 dev が呼ぶ）
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - npm run dev
+
+  gui:demo:
+    desc: GUI ルーターを偽の service で loopback に起動する（スクリーンショット・見た目の確認用。本番のバイナリには入らない）
+    deps: [frontend:build]
+    cmds:
+      - go run ./internal/router/internal/guidemo -addr 127.0.0.1:8899
+
+  build:production:
+    desc: 本番ビルド（static/dist を go:embed する。先に frontend:build が要る）
+    deps: [frontend:build]
+    cmds:
+      - go build -tags production ./...
+
+  test:production:
+    desc: 同梱した dist の契約テスト（-tags production。先に frontend:build が要る）
+    deps: [frontend:build]
+    cmds:
+      - go test -tags production ./static/...
+
+  package:
+    desc: NSIS インストーラを作る（wails3 package もこのタスクを呼ぶ）
+    cmds:
+      - task: windows:package
+
+  dev:
+    desc: wails3 dev で開発する（Windows。templ generate --watch は別ターミナルで task templ:watch）
+    cmds:
+      - wails3 dev -config ./build/config.yml
+
+  tidy:
+    desc: go.mod / go.sum を整理する
+    cmds:
+      - go mod tidy
+
+  ci:
+    desc: CI と同じ検査を一通り実行する
+    cmds:
+      - task: fmt:check
+      - task: templ:check
+      - task: frontend:build
+      - task: frontend:typecheck
+      - task: build:production
+      - task: test:production
+      - task: build
+      - task: vet
+      - task: build:windows
+      - task: vet:windows
+      - task: check:imports
+      - task: lint
+      - task: test

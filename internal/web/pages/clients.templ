@@ -1,0 +1,62 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const clientsTitle = "クライアント管理"
+
+templ clientsBody(v view.Clients) {
+	<div class="space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">クライアント管理</h1>
+		<p class="text-sm text-slate-600">許可リストに登録されたクライアントです。機能ごとの有効化、Bearer トークンの発行・失効、削除ができます。</p>
+		@organisms.ClientList(v.List)
+	</div>
+}
+
+// Clients はクライアント一覧のフルページ（FR-H04）。
+templ Clients(v view.Clients) {
+	@layout.GUI(clientsTitle, v.Chrome) {
+		@clientsBody(v)
+	}
+}
+
+// ClientsBoosted は hx-boost の遷移への応答。
+templ ClientsBoosted(v view.Clients) {
+	@layout.Boosted(clientsTitle, v.Chrome) {
+		@clientsBody(v)
+	}
+}
+
+templ clientDetailBody(v view.ClientDetail) {
+	<div class="space-y-4">
+		<a href={ templ.SafeURL(v.BackURL) } class="text-sm font-medium text-indigo-700 hover:underline" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">← クライアント一覧</a>
+		@organisms.ClientCard(v.Client)
+		@molecules.Card("Bearer トークン") {
+			<div class="space-y-4">
+				@organisms.TokenForm(v.Form, false)
+				<div id="token-result" aria-live="polite"></div>
+				@organisms.TokenList(v.Tokens, false)
+			</div>
+		}
+	</div>
+}
+
+func clientDetailTitle(v view.ClientDetail) string { return v.Client.DisplayName }
+
+// ClientDetail はクライアント詳細のフルページ（有効化・トークン）。
+templ ClientDetail(v view.ClientDetail) {
+	@layout.GUI(clientDetailTitle(v), v.Chrome) {
+		@clientDetailBody(v)
+	}
+}
+
+// ClientDetailBoosted は hx-boost の遷移への応答。
+templ ClientDetailBoosted(v view.ClientDetail) {
+	@layout.Boosted(clientDetailTitle(v), v.Chrome) {
+		@clientDetailBody(v)
+	}
+}

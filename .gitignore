@@ -1,0 +1,9 @@
+/puppet-remo
+/puppet-remo.exe
+/bin/
+/coverage.out
+/static/node_modules/
+/static/dist/
+/.task/
+/cmd/puppet-remo/*.syso
+/build/windows/nsis/MicrosoftEdgeWebview2Setup.exe

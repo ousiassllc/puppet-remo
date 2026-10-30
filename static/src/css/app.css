@@ -1,0 +1,16 @@
+/* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
+ * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
+ * <style> と style= は使わない（CSP。§7.1）。 */
+@import "tailwindcss";
+@source "../../../internal/web/**/*.templ";
+
+/* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
+@layer components {
+  .htmx-indicator {
+    @apply opacity-0 transition-opacity duration-200;
+  }
+  .htmx-request .htmx-indicator,
+  .htmx-request.htmx-indicator {
+    @apply opacity-100;
+  }
+}

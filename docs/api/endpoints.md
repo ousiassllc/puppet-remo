@@ -11,7 +11,7 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | **リモートルーター** | tailnet IP の TCP ポート（既定 8765。FR-S01）。HTTP のみ | MCP（`/mcp`）、Web UI（`/viewer`）、WebSocket（`/ws/screen`）、JSON API（`/api/v1`） |
 | **GUI ルーター** | プロセス内のみ（Wails `AssetOptions.Handler`）。ソケットを開かない | ホスト GUI（ダッシュボード、接続要求、クライアント管理、承認、タスク、エージェント設定、監査ログ、設定、更新）と SSE |
 
-ホスト専用の操作（承認、トークン発行、API キー登録、キルスイッチ解除など）は GUI ルーターにだけ存在し、リモートルーターには**同名の経路も作らない**（構造で隔離する）。
+ホスト専用の操作（承認、トークン発行、API キー登録、キルスイッチ解除など）は GUI ルーターにだけ存在し、リモートルーターには**同名の経路も作らない**（構造で隔離する）。M1 の実装が本書と異なる点（M1 で提供するルート、`/poll`、エラーの形、許可の挙動など）は [§7.5](#75-m1-実装での差分) にまとめる。
 
 ### 共通規約
 
@@ -102,7 +102,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | プロトコル | MCP の Streamable HTTP。実装は公式 Go SDK（`NewStreamableHTTPHandler`） |
 | メソッド | `POST /mcp`（JSON-RPC リクエスト）、`GET /mcp`（サーバー→クライアントの SSE ストリーム）、`DELETE /mcp`（セッション終了） |
 | 認証 | `Authorization: Bearer <token>`（§1 の連鎖。トークンは GUI で発行し、一度だけ表示される。FR-A08） |
-| セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する（NFR-A04: keepalive 15 秒、タイムアウト 45 秒）。アイドル 30 分でセッションを閉じる（SDK の `SessionTimeout`。リースのアイドル解放 5 分とは独立。§8） |
+| セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する。SDK の keepalive の ping は standalone の GET SSE ストリームにしか流れず、GET を張らない（POST だけの）クライアントは応答できずセッションとリースを失う（3 回連続の失敗、15 秒間隔で 45 秒）ため、**MCP の keepalive は既定で無効**にする（NFR-A04。WebSocket の 15 秒 / 45 秒の keepalive は §5.1）。MCP の切断は、セッションの明示的な終了（`DELETE`）・トランスポートの切断、アイドル 30 分のセッション閉鎖（SDK の `SessionTimeout`）、リースのアイドル解放 5 分（独立。FR-S04。§8）で拾う |
 | サーバー情報 | `name: puppet-remo`、`version`: アプリの版 |
 | `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`run_task` が非同期であることを記す |
 | 同時セッション | 最大 5（NFR-C02） |
@@ -211,8 +211,8 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | 引数 | 型 | 説明 |
 |------|----|------|
 | `window_id` | string | 対象ウィンドウ（省略時は前面のウィンドウ） |
-| `max_depth` | integer | 既定 5 |
-| `max_nodes` | integer | 既定 500 |
+| `max_depth` | integer | 既定 5、最大 20（超えると `invalid_argument`） |
+| `max_nodes` | integer | 既定 500、最大 5000（超えると `invalid_argument`） |
 
 出力: `{ "window_id": "…", "truncated": false, "root": { "id": "…", "role": "Window", "name": "…", "value": "…", "rect": {…}, "enabled": true, "children": [ … ] } }`。`rect` は縮小座標。パスワード欄は `value` を含めず `"value_redacted": true` にする。`id` は UI Automation の RuntimeId から作る参照用の文字列で、他のツールの引数には使わない。
 
@@ -410,15 +410,16 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/update` | 更新の確認・適用。FR-H09 | M3 |
 | `/tasks` | タスク一覧。`/tasks/{id}`: 詳細（ステップ、使用トークン、最終回答。ステップごとの経路 `route`（`fast` / `openai`）と、高速パスから OpenAI へ引き継いだ理由 `handoff_reason`、`fast_steps` / `openai_steps`）。FR-H10 | M4 |
 | `/agent` | エージェント設定（有効化と同意、OpenAI API キー、モデル、上限、`keep_screenshots`、Judge のリスト、**高速パス**: 有効化と同意、TypeSafe API キー、モデル、最小確信度、最大ステップ、除外ラベル）。FR-H11 | M4 |
-| `/events` | SSE（§7.4） | M1 |
+| `/poll` | ホスト GUI の更新（OOB のフラグメント。§7.4） | M1 |
+| `/events` | SSE（§7.4）。ホスト GUI のレイアウトは購読しない | M1 |
 
 ### 7.2 接続要求とクライアント
 
 | メソッド | パス | リクエスト（フォーム） | 応答 |
 |---------|------|-----------------------|------|
-| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。**M3 から**。M1 のフォームには出さず、`always` で保存して M3 まで参照しない。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
+| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。**M3 から**。M1 のフォームには出さず、`always` で保存して M3 まで参照しない。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off。M1 のフォームにも出して保存するが、**M1 では効果がなく**、`run_task` の可否に効くのは M4 から。FR-A09）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
 | POST | `/requests/{id}/deny` | なし | 200 一覧フラグメント（`denied`。24 時間は同デバイスの再要求を作らない） |
-| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`、`approval_mode`（M3 から）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻す） | 200 クライアントのフラグメント。無効にしたクライアントのセッション・タスクは即時に切断・中断 |
+| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`（M1 でも受け付けて保存するが、**M1 では効果がない**。`run_task` の可否に効くのは M4 から。FR-A09）、`approval_mode`（M3 から）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻す） | 200 クライアントのフラグメント。Web / MCP を無効にしたクライアントのセッションは即時に切断（タスクの中断は M4 から。`agent_enabled` の変更ではセッションを切断しない） |
 | POST | `/clients/{id}/approval/reset` | なし | 200（`first_time` の承認済みを取り消す） |
 | DELETE | `/clients/{id}` | なし | 200（許可リストから除外。トークンは `CASCADE` で削除、セッション・タスクは切断・中断） |
 | POST | `/clients/{id}/tokens` | `label`\*、`expires_in_days`（既定 90、`never` で無期限） | 200 **トークン平文を一度だけ表示するフラグメント**。`Cache-Control: no-store`。ラベル重複は 409。以後は `token_prefix` のみ表示 |
@@ -430,7 +431,10 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 |---------|------|-----------|------|
 | POST | `/lease/revoke` | なし | 200 リースのフラグメント（保持者を剥奪。`agent` ならタスクを中断）。**M2 から**（M1 のダッシュボードに強制剥奪ボタンは無い。FR-H02）。`agent` の剥奪は M4 |
 | POST | `/killswitch/trigger` | なし | 200 ダッシュボードのフラグメント（FR-H06 の手順。1 秒以内） |
-| POST | `/killswitch/release` | なし | 200（解除。受付を再開） |
+| POST | `/killswitch/release` | なし | 200（解除。受付を再開）。ダッシュボードのキルスイッチのパネルを返し、ヘッダーのバッジの更新・確認モーダルを閉じる・トーストを OOB で添える |
+| GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む。画面の更新は `GET /poll`（§7.4）が OOB で差し替える |
+| GET | `/killswitch/release/confirm` | なし | 200 解除の確認モーダル（フラグメント）。発動中でなければ 409 `conflict` |
+| GET | `/clients/{id}/delete/confirm`、`/clients/{id}/tokens/{token_id}/revoke/confirm` | なし | 200 確認モーダル（破壊的な操作は、サーバーが描画したモーダルの確定ボタンだけが実際の `DELETE` を送る。frontend.md §5.4）。対象が無ければ 404 |
 | POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`）。`id` が失効（60 秒）・解決済みなら 410 `approval_timeout` |
 | POST | `/approvals/{id}/deny` | なし | 同上（拒否） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクのフラグメント。終了済みなら現在の状態を返す |
@@ -446,22 +450,61 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | POST | `/update/check` | なし | 200 フラグメント（新版の有無） |
 | POST | `/update/apply` | なし | 200（署名検証に成功した更新を適用して再起動。リース保持中・接続中・タスク実行中は 409 `conflict`） |
 
-### 7.4 SSE（`GET /events`）
+### 7.4 GUI の更新の配信（`GET /poll`・`GET /events`）
 
-ホスト GUI の各画面が `hx-ext="sse"` で購読する。接続は GUI のウィンドウごとに 1 本。
+**ホスト GUI のレイアウトは `GET /poll` を 3 秒ごとに呼んで更新する。SSE（`GET /events`）は購読しない。** Wails v3.0.0 の Windows の AssetServer は `AssetOptions.Handler` の応答をハンドラが返るまでバッファし、`http.Flusher` を持たないため、開いたままの SSE の応答が WebView に届かない（frontend.md §5.3）。`GET /events` は、ストリームを流せる経路で GUI を配信するとき・テストのために残す。
+
+#### `GET /poll`
+
+| 項目 | 内容 |
+|------|------|
+| リクエスト | クエリ `rev_killswitch`（ダッシュボードを表示中の画面が送る。キルスイッチのパネルが持つ版）、`rev_requests`（接続要求の一覧を表示中の画面が送る。一覧が持つ版）。どちらも省略できる。`HX-Request` は不要 |
+| 応答 | 200 HTML。`hx-swap-oob` のフラグメントだけを並べた 1 つの応答（フルページではない）。`Cache-Control: no-store`。CSP ヘッダーは §1 のとおり |
+
+| OOB の差し込み先 | 内容 | 返す条件 |
+|-----------------|------|---------|
+| `#header-killswitch`（innerHTML） | ヘッダーのキルスイッチ状態バッジ | 常に |
+| `#nav-requests-badge`（innerHTML） | サイドバーの接続要求の件数バッジ | 常に |
+| `#server-status`・`#sessions`・`#lease`（innerHTML） | サーバー状態・接続中セッション・リース保持者（M2 から強制剥奪ボタンを含む） | `rev_killswitch` があるとき（ダッシュボード） |
+| `#killswitch-panel`（outerHTML） | キルスイッチのパネル（状態駆動: 発動中は解除だけ） | `rev_killswitch` があり、現在の版と違うとき |
+| `#request-list`（outerHTML） | 接続要求の一覧 | `rev_requests` があり、現在の版と違うとき |
+| `#toast-root`（beforeend） | 前回の呼び出し以降に溜まった `toast`（取り出した分は次の応答に出ない） | あるとき |
+
+版（`rev_*`）は、描画した表示モデルのハッシュで、一覧・パネルの隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）が持つ。レイアウトの `#live-poll` が `hx-include="[data-poll-rev]"` で送り返す。版が同じ領域は差し替えない（入力中の許可フォームを、ポーリングで消さないため）。応答に秘密（トークンなど）は含めない。`approval` と `tasks`（M3・M4）は、この経路の対象外または後続の領域として追加する。
+
+#### `GET /events`（SSE）
+
+接続は 1 本で、`data` は `GET /poll` と同じボディのコンポーネントで描画した HTML フラグメント。
 
 | event | 内容（`data`） | 更新される画面 |
 |-------|---------------|---------------|
 | `server-status` | サーバー状態のフラグメント（tailnet IP・ポート・tailscaled 状態） | ダッシュボード |
 | `sessions` | 接続中セッション一覧のフラグメント | ダッシュボード |
 | `lease` | リース保持者のフラグメント（種別付き。M2 から強制剥奪ボタンを含む） | ダッシュボード |
-| `connection-requests` | 接続要求の一覧と件数バッジ | 接続要求、トレイ通知 |
+| `connection-requests` | サイドバーの件数バッジのフラグメント | 接続要求、トレイ通知 |
 | `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く | （ウィンドウ生成） |
 | `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由。M4） | ダッシュボード、タスク |
-| `killswitch` | キルスイッチ状態のフラグメント | 全画面のヘッダー |
+| `killswitch` | ヘッダーのキルスイッチ状態バッジのフラグメント | 全画面のヘッダー |
 | `toast` | 通知メッセージ（更新の通知、DB 破損の隔離、TypeSafe が 401 を返して高速パスを無効にした通知など） | 全画面 |
 
 承認ダイアログに表示する内容は `kind` による。`lease`: クライアント名・種別・（`agent` なら指示の要約）。`safety_check`: OpenAI の `pending_safety_checks` の内容。`judge_action`: アクションの内容、対象ウィンドウ（タイトル・プロセス名）、判定の理由。いずれも 60 秒で失効し拒否扱い。
+
+### 7.5 M1 実装での差分
+
+M1 の実装が本書の他の節と異なる点（段階の前倒しではなく、実装の事実）。
+
+| 項目 | 設計 | M1 の実装 |
+|------|------|----------|
+| リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp` だけ**。それ以外のパス（`/` を含む）は 404。`/viewer`・`/ws/screen`・静的ファイル・`/api/v1`（Huma）は M2 以降 |
+| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
+| `PUT /settings` の項目（§7.3） | 13 項目 | M1 は `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目だけ。他は各段階で足す |
+| ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
+| GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
+| 接続要求の許可（§7.2） | `pending` なら登録して `approved` | 期限切れの `pending` は一覧に出ず、許可もできない（409 `conflict`）。同じ `stable_node_id` の登録済みクライアントがあるとき（ログイン名の変更後の再許可）は、古いクライアントを置き換える（トークンは CASCADE で削除、セッションは切断、リースは解放）。このとき監査に `client.replace` を記録する。古いクライアントの切断（ツール呼び出しの完了待ち）は、他の許可・GUI の操作を止めないよう、許可の直列化のロックの外で行う。同じデバイスの `pending` を 5 秒以内に更新済みなら、DB に書かない |
+| 監査（§7 の冒頭） | ホスト操作は `actor_type = host` | `client_id` は、クライアントの行がすでに無いとき（`client.delete` の直後など）NULL で記録する（`client_label` は残る） |
+| MCP ツールの監査（§3.3） | — | `Control` を通らないツール（`get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status`）の呼び出しは、`mcp` のツール登録で `kind = tool` として監査する。入力系などは `Control` が記録する |
+| HTTP サーバー（§1） | — | tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒、`IdleTimeout` 120 秒、`MaxHeaderBytes` 64 KiB。`WriteTimeout` は付けない。WhoIs の LocalAPI 呼び出しは 5 秒で打ち切り、失敗は 403 `whois_failed`（fail closed） |
+| MCP の keepalive（§3.1・NFR-A04） | — | 既定で ping しない（§3.1） |
 
 ## 8. 決定事項と実装時の検証事項
 
@@ -469,7 +512,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | 項目 | 決定 |
 |------|------|
-| MCP Go SDK（v1.8.0）の設定 | `DisableLocalhostProtection` は loopback で届くリクエストにしか効かず、tailnet IP への接続には無関係。保護は自前の Host / Origin ミドルウェア（NFR-S02）が担う。`CrossOriginProtection` は非推奨のため使わない。`SessionTimeout` は既定（0）だと閉じないため**アイドル 30 分**に明示する（リースのアイドル 5 分とは独立）。`EventStore` は v1 では使わず、ストリームの再開は無い（切断後はクライアントが再初期化する）。`MaxRequestBodyBytes` は **1 MiB** に明示する（NFR-S09）。`Stateless = false`（リース保持者はセッションに束縛）。応答は既定の `JSONResponse` |
+| MCP Go SDK（v1.8.0）の設定 | `DisableLocalhostProtection` は loopback で届くリクエストにしか効かず、tailnet IP への接続には無関係。保護は自前の Host / Origin ミドルウェア（NFR-S02）が担う。`CrossOriginProtection` は非推奨のため使わない。`SessionTimeout` は既定（0）だと閉じないため**アイドル 30 分**に明示する（リースのアイドル 5 分とは独立）。`KeepAlive` は**既定の 0（ping しない）**のまま（NFR-A04。理由は §3.1）。`EventStore` は v1 では使わず、ストリームの再開は無い（切断後はクライアントが再初期化する）。`MaxRequestBodyBytes` は **1 MiB** に明示する（NFR-S09）。`Stateless = false`（リース保持者はセッションに束縛）。応答は既定の `JSONResponse` |
 | OpenAPI の範囲 | Huma が公開するのは §6 の JSON API（`/api/v1`）のみ。MCP のツール定義は MCP の `tools/list` が正とする。高速パスは内部機構で API ではなく、OpenAPI にも MCP のツールにも現れない |
 | WebSocket の高解像度 | v1 では 4K 以上でも縮小配信せず、物理解像度のまま配信する。`ready` / `config` に後から `scale` を足せる形にしてあるが、v1 では送らない |
 | ホイールの単位 | §5.3 のとおり、WebSocket の `wheel` の `dx` / `dy` と MCP `scroll` の `amount` はノッチ数。サーバーが `×120` に変換する |
@@ -491,3 +534,9 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | 1.1 | 2026-10-29 | ページ・アクションルートは常に HTML、JSON は `/api/v1` と MCP のみとし、エラー形式を経路別に整理。`/api/v1` を参照専用に | HALT の規約（[フロントエンド設計](../architecture/frontend.md)）との整合 |
 | 1.2 | 2026-10-29 | MCP `get_task` に `fast_steps` / `openai_steps` / `handoff_reason` を追加し、`run_task` で高速パスが透過であることを明記。WebSocket `wheel` と MCP `scroll` の単位をノッチに統一（変換規則を追記）。共通規約に CSP ヘッダーと静的ファイルのキャッシュ（`no-cache` + ETag）を追加。GUI ルーターに高速パスの設定ルート（`/agent/fastpath`、`/agent/fastpath/api-key`）と `keep_screenshots` を追加し、タスク詳細・SSE にステップの経路と引き継ぎ理由を追加。§8 を決定事項と実機検証事項に改め、MCP SDK の設定値・OpenAPI の範囲・高解像度の扱いを決定。Jev による外部 Judge の項は削除（高速パスは内部機構） | 未決事項の決定 |
 | 1.3 | 2026-10-29 | PR #2 のレビュー対応: ミドルウェア連鎖でキルスイッチ（3）を WhoIs・許可リスト・接続要求の作成より前に移動（キルスイッチ中は接続要求を作らない）。Bearer の参照先を NFR-S04 に統一。M1 のリース（`state` は `idle` / `held`、`holder.kind` は `mcp` のみ、承認なし）と、ダッシュボードの段階（強制剥奪ボタンは M2、実行中タスクと中断ボタンは M4）を明記 | M1 の実装者が迷わない仕様にするためのレビュー指摘の解消 |
+| 1.4 | 2026-10-30 | GUI の実装（#12）に合わせて §7.3 に `GET /killswitch` と確認モーダルのルートを追加し、§7.4 の `connection-requests` / `killswitch` の data を「バッジ・ヘッダーのフラグメント + 一覧・パネルは `sse:` トリガーで再取得」に具体化 | SSE の 1 イベントを複数の要素が受けると同じ HTML が差し込まれる htmx の仕様への対応 |
+| 1.5 | 2026-10-30 | §7.1・§7.4 に `GET /poll`（OOB のフラグメントを返すホスト GUI のポーリング）を追加し、ホスト GUI のレイアウトは SSE を購読しないことを明記。`GET /events` は残し、`connection-requests` / `killswitch` の data を「バッジ・ヘッダーのフラグメント」に戻した（一覧・パネルの再取得は `/poll` が担う）。§7.3 の `GET /killswitch` から SSE の記述を削除 | Wails v3.0.0 の Windows の AssetServer が応答をバッファし、SSE が WebView に届かないため（#12） |
+| 1.6 | 2026-10-30 | §3.1 のセッションの行を、MCP の keepalive ping を無効にする（POST だけのクライアントが ping に応えられずセッションを失うため）内容に改め、§3.3 `get_ui_tree` に `max_depth` ≤ 20・`max_nodes` ≤ 5000 の上限を追記した | SDK v1.8.0 は server→client の ping を standalone の GET ストリームにしか流さない |
+| 1.7 | 2026-10-30 | §3.1 のセッションの行に NFR-A04 との対応（MCP の keepalive は既定で無効、WebSocket は 15 秒 / 45 秒）と、切断の検知手段（DELETE・トランスポートの切断・`SessionTimeout`・リースのアイドル解放）を明記し、§8.1 の SDK 設定に `KeepAlive` を既定の 0 とする行を追加した | MCP の keepalive を既定で無効にした実装との整合（オーナー決定） |
+| 1.8 | 2026-10-30 | §7.2 の `agent_enabled` を、M1 でも許可フォームと `PATCH /clients/{id}` で保存・編集できるが効果は M4 から、と明記。PATCH の応答説明を Web / MCP の無効化でセッションを切断すると正した | M1 の実装と FR-A09 の食い違いの解消（オーナー決定） |
+| 1.9 | 2026-10-30 | §7.5「M1 実装での差分」を新設（M1 のリモートルーターは `/mcp` だけ、M1 の GUI ルートと `PUT /settings` の 5 項目、`/poll`・SSE の扱い、GUI の `not_found` と 422、接続要求の許可（期限切れは許可不可・再許可での置き換えと `client.replace`・5 秒以内は DB に書かない）、`client_id` の NULL、MCP ツールの監査、`http.Server` の `IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB・WhoIs の 5 秒）。§1 に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |

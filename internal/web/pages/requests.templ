@@ -1,0 +1,31 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const requestsTitle = "接続要求"
+
+templ requestsBody(v view.Requests) {
+	<div class="space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">接続要求</h1>
+		<p class="text-sm text-slate-600">未登録のデバイスからの接続要求です。許可するとクライアントとして登録され、拒否すると 24 時間は同じデバイスからの要求を受け付けません。</p>
+		@organisms.ConnectionRequestList(v.List)
+	</div>
+}
+
+// Requests は接続要求のフルページ（FR-H03）。
+templ Requests(v view.Requests) {
+	@layout.GUI(requestsTitle, v.Chrome) {
+		@requestsBody(v)
+	}
+}
+
+// RequestsBoosted は hx-boost の遷移への応答。
+templ RequestsBoosted(v view.Requests) {
+	@layout.Boosted(requestsTitle, v.Chrome) {
+		@requestsBody(v)
+	}
+}

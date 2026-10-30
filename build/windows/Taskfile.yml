@@ -1,0 +1,73 @@
+version: '3'
+
+# Windows 向けのビルドとパッケージ。Linux / macOS からのクロスビルドもできる（純 Go・cgo なし）。
+# ルートの Taskfile.yml が `windows:` として取り込む（作業ディレクトリはリポジトリのルート）。
+#   task windows:build       本番ビルド（static/dist を go:embed）→ bin/puppet-remo.exe
+#   task windows:package     NSIS インストーラ → bin/puppet-remo-amd64-installer.exe（Windows か makensis が要る）
+# 署名はしない（NFR-O07）。
+
+vars:
+  APP_NAME: puppet-remo
+  BIN_DIR: bin
+  # -X main.version に入れる版。タグがなければコミットの短縮 ID、git が無ければ dev。
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  SYSO: cmd/puppet-remo/rsrc_windows_amd64.syso
+
+tasks:
+  generate:syso:
+    summary: アイコン・manifest（Per-Monitor DPI Aware V2。NFR-S06・座標の物理ピクセル）・版情報を .syso にして埋め込む
+    internal: true
+    cmds:
+      - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out {{.SYSO}}
+    sources:
+      - build/windows/icon.ico
+      - build/windows/wails.exe.manifest
+      - build/windows/info.json
+    generates:
+      - '{{.SYSO}}'
+
+  build:
+    desc: Windows 向けの本番ビルド（フロントエンドのビルド込み。Linux からのクロスビルドもできる）→ bin/puppet-remo.exe
+    summary: 本番ビルド（go:embed した dist・GUI サブシステム・strip）で bin/puppet-remo.exe を作る
+    deps:
+      - task: :frontend:build
+      - task: generate:syso
+    cmds:
+      - go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}}.exe ./cmd/puppet-remo
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: "0"
+
+  build:dev:
+    summary: 開発ビルド（dist はディスクから読む。wails3 dev が使う）
+    deps:
+      - task: generate:syso
+    cmds:
+      - go build -buildvcs=false -gcflags=all="-l" -o {{.BIN_DIR}}/{{.APP_NAME}}.exe ./cmd/puppet-remo
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: "0"
+
+  run:
+    summary: bin/puppet-remo.exe を起動する（Windows）
+    cmds:
+      - '{{.BIN_DIR}}/{{.APP_NAME}}.exe'
+
+  package:
+    desc: NSIS インストーラを作る（task package と同じ）
+    summary: NSIS インストーラを作る（WebView2 のブートストラップ込み。既定はユーザー単位のインストール）
+    dir: build/windows/nsis
+    deps:
+      - task: :windows:build
+    vars:
+      INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "user"}}'
+      EXE: '{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe'
+    preconditions:
+      - sh: command -v makensis
+        msg: "makensis (NSIS) が見つかりません。Windows: choco install nsis / Linux: apt install nsis"
+    cmds:
+      - wails3 generate webview2bootstrapper -dir "{{.ROOT_DIR}}/build/windows/nsis"
+      - makensis {{if eq .INSTALL_SCOPE "user"}}-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user {{end}}-DARG_WAILS_AMD64_BINARY="{{.EXE}}" project.nsi
