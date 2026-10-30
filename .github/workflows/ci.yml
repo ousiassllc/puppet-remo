@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "sweep/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Go の検査（M1/S1）。templ 生成の差分チェック・フロントエンドのビルド・Lit のテスト・
+# Playwright の E2E は後続のスコープ（S10）で足す。
+jobs:
+  go:
+    name: go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "gofmt が必要なファイル:"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build (GOOS=windows)
+        run: go build ./...
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
+      - name: go vet (GOOS=windows)
+        run: go vet ./...
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
+      - name: import 規則 (domain は他の内部パッケージを import しない)
+        run: ./scripts/check-imports.sh
+
+      - name: import 規則 (GOOS=windows)
+        run: ./scripts/check-imports.sh
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
+      - name: go test
+        run: go test -race ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint を導入
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+          install-mode: binary
+          args: ./...
+
+      - name: golangci-lint (GOOS=windows)
+        run: golangci-lint run ./...
+        env:
+          GOOS: windows
+          GOARCH: amd64
