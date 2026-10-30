@@ -247,6 +247,29 @@ func TestConfirmDeleteAppModal(t *testing.T) {
 	contains(t, res, `data-error-code="not_found"`)
 }
 
+// 読めない行（Corrupt）があっても /apps は 200 で、行に警告を出し、ホスト所有者はその行を削除できる。
+func TestAppsPageShowsCorruptRowAndAllowsDeleting(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		f.Apps.Rows = []domain.LaunchableApp{
+			{ID: "bad", Label: "壊れた行", ExePath: notepad, Args: []string{}, Corrupt: true},
+			{ID: "ok", Label: "電卓", ExePath: calc},
+		}
+	})
+	res := r.get("/apps")
+	status(t, res, http.StatusOK)
+	contains(t, res, `data-app="bad"`, "壊れた行", `data-app-corrupt`, `hx-get="/apps/bad/delete/confirm"`, `data-app="ok"`)
+	if n := strings.Count(res.Body, "data-app-corrupt"); n != 1 {
+		t.Errorf("corrupt warnings = %d, want 1", n)
+	}
+
+	res = r.do(http.MethodDelete, "/apps/bad", nil, hx...)
+	status(t, res, http.StatusOK)
+	lacks(t, res, `data-app="bad"`, "data-app-corrupt")
+	if !slices.Equal(r.f.Apps.Deleted, []string{"bad"}) {
+		t.Errorf("deleted = %v", r.f.Apps.Deleted)
+	}
+}
+
 func TestDeleteApp(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) {
 		seedApp(f, "app1", "メモ帳", notepad)

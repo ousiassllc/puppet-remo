@@ -13,6 +13,15 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
+// AppReader は許可リストの読み取り専用の面。Control はこれだけを受け取る（書き込みは持てない。NFR-S20）。AppRegistry が満たす。
+// 読めない行（args_json が壊れている）は Corrupt を立てて返し、エラーにしない（domain.LaunchableApp.Corrupt）。
+type AppReader interface {
+	// List は許可リストを label の昇順で返す（パス・引数を含む。GUI 用）。
+	List(ctx context.Context) ([]domain.LaunchableApp, error)
+	// Get は id の行を返す。無ければ ErrNotFound。
+	Get(ctx context.Context, id string) (domain.LaunchableApp, error)
+}
+
 // AppRegistry は起動許可リストの管理（M1.5。FR-M18・M19・H12。docs/components/overview.md §5.4.1）。
 // 書き込み（Create / Update / Delete）を呼ぶのはホスト GUI だけで、mcp・リモートルーターには渡さない（NFR-S20）。
 // Control は読み取り（Get / List）に使う。ステートレスで、許可リストの正は repository.LaunchableApps。
@@ -21,10 +30,7 @@ import (
 // 書き込みはホスト所有者の操作として actor_type = host で監査する（settings.launchable_app.create / update / delete）。
 // 引数と作業ディレクトリはどのイベントにも記録しない（arg_count だけ。FR-AU06）。
 type AppRegistry interface {
-	// List は許可リストを label の昇順で返す（パス・引数を含む。GUI 用）。
-	List(ctx context.Context) ([]domain.LaunchableApp, error)
-	// Get は id の行を返す。無ければ ErrNotFound。
-	Get(ctx context.Context, id string) (domain.LaunchableApp, error)
+	AppReader
 	// Create は domain.ValidateAppInput と AppLauncher.Inspect（存在確認）を通った in を保存する。
 	// 入力の不備・存在しないパスは AppFieldErrors、label の重複も AppFieldErrors{"label": …}、
 	// 50 件に達していれば domain.CodeConflict。
@@ -121,6 +127,7 @@ func (r *appRegistry) Update(ctx context.Context, id string, in domain.AppInput)
 	}
 	a := before
 	a.Label, a.ExePath, a.Args, a.WorkingDir = in.Label, in.ExePath, in.Args, in.WorkingDir
+	a.Corrupt = false // 読めなかった args は入力で置き換わる
 	a.UpdatedAt = r.cfg.Clock.Now()
 	if err := r.cfg.Apps.Update(ctx, a); err != nil {
 		return domain.LaunchableApp{}, mapAppWriteErr(err)
