@@ -277,7 +277,9 @@ type AppRow struct {
 	ExePath    string
 	Args       []string
 	WorkingDir string // 空なら「実行ファイルのあるディレクトリ」と表示する
-	EditURL    string
+	// Corrupt は保存済みの引数が読めない行（domain.LaunchableApp.Corrupt）。引数の代わりに警告を出す。起動はされない。
+	Corrupt bool
+	EditURL string
 	// DeleteConfirm は削除の確認モーダルの URL。
 	DeleteConfirm string
 	Form          *AppForm

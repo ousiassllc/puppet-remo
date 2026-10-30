@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 )
@@ -38,9 +37,10 @@ func scanLaunchableApp(row interface{ Scan(...any) error }) (domain.LaunchableAp
 	if err := row.Scan(&a.ID, &a.Label, &a.ExePath, &argsJSON, &a.WorkingDir, &createdAt, &updatedAt); err != nil {
 		return domain.LaunchableApp{}, err
 	}
-	// 手で書き換えられた行（配列だが要素が文字列でない）は読めない。内容（パス・引数）はエラーに含めない。
+	// 手で書き換えられた行（配列だが要素が文字列でない）は読めない。List 全体や GUI を巻き込まないよう、Args を空にして
+	// Corrupt を立てて返す（起動は domain.CheckLaunchTarget が拒否し、所有者は削除できる）。内容（パス・引数）は残さない。
 	if err := json.Unmarshal([]byte(argsJSON), &a.Args); err != nil {
-		return domain.LaunchableApp{}, fmt.Errorf("launchable_apps %s: args_json is not a JSON array of strings", a.ID)
+		a.Args, a.Corrupt = []string{}, true
 	}
 	if a.Args == nil { // JSON null（配列でない行は CHECK が拒む）
 		a.Args = []string{}

@@ -15,6 +15,9 @@ const (
 	maxAppLabelChars = 64
 	maxAppArgs       = 32
 	maxAppArgsChars  = 8192
+
+	// maxPathUnits は ExePath・WorkingDir の長さの上限（UTF-16 のコードユニット数。Windows のパス・コマンドラインの上限）。
+	maxPathUnits = 32767
 )
 
 // ValidateAppInput の戻り値のキー（項目名）。service.AppRegistry の変更項目（`changed`）と同じ名前。
@@ -34,6 +37,9 @@ type LaunchableApp struct {
 	WorkingDir string   // 空なら実行ファイルのあるディレクトリ
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	// Corrupt は保存済みの行が読めない（args_json が文字列の配列でない。手で書き換えられた）ことを表す。DB には無い。
+	// このとき Args は空で、起動は CheckLaunchTarget が拒否する。ホスト所有者は一覧で見て削除・上書きできる。
+	Corrupt bool
 }
 
 // AppSummary は MCP に出せる許可アプリの情報。パス・引数・作業ディレクトリは型に無い（漏れを型で防ぐ）。
@@ -59,9 +65,9 @@ type AppInput struct {
 // メッセージに入力値（パス・引数）は含めない。
 //
 //   - Label: 前後の空白を除いて 1〜64 文字
-//   - ExePath: 絶対パスのローカルの .exe（checkAbsolutePath の規則）
+//   - ExePath: 絶対パスのローカルの .exe（isAbsoluteLocalPath の規則）。32,767 文字（UTF-16）以内
 //   - Args: 32 個以内、空文字・NUL を含まず、合計 8,192 文字以内
-//   - WorkingDir: 空、または絶対パスのローカルのパス（ExePath と同じ形の規則）
+//   - WorkingDir: 空、または絶対パスのローカルのパス（ExePath と同じ形の規則）。32,767 文字（UTF-16）以内
 func ValidateAppInput(in AppInput) map[string]string {
 	errs := map[string]string{}
 	if n := utf8.RuneCountInString(strings.TrimSpace(in.Label)); n < 1 || n > maxAppLabelChars {
@@ -78,9 +84,9 @@ func ValidateAppInput(in AppInput) map[string]string {
 
 // CheckLaunchTarget は起動のたびの再検査（NFR-S20 (3)）。ValidateAppInput と同じ形の規則（実行ファイル・引数・
 // 作業ディレクトリ）を保存済みの行 a に当て、満たさなければ ErrAppNotFound を返す（fail closed）。
-// 表示名は起動の安全に関わらないので見ない。
+// 読めない行（Corrupt）も満たさない。表示名は起動の安全に関わらないので見ない。
 func CheckLaunchTarget(a LaunchableApp) error {
-	if len(launchFormErrors(a.ExePath, a.Args, a.WorkingDir)) > 0 {
+	if a.Corrupt || len(launchFormErrors(a.ExePath, a.Args, a.WorkingDir)) > 0 {
 		return ErrAppNotFound
 	}
 	return nil
@@ -90,13 +96,13 @@ func CheckLaunchTarget(a LaunchableApp) error {
 func launchFormErrors(exePath string, args []string, workingDir string) map[string]string {
 	errs := map[string]string{}
 	if !isAbsoluteLocalPath(exePath) || !hasExeSuffix(exePath) {
-		errs[AppFieldExePath] = "実行ファイルはドライブ文字で始まる絶対パスの .exe を指定してください（UNC・デバイスパス・相対パス・\"..\" は不可）"
+		errs[AppFieldExePath] = "実行ファイルは、ドライブ文字で始まる絶対パスの .exe を指定してください（UNC・デバイスパス・相対パス・\"..\"・ドライブ指定以外の「:」・「<>\"|?*」・制御文字・予約デバイス名（CON など）・32,767 文字を超えるパスは不可）"
 	}
 	if msg := checkArgs(args); msg != "" {
 		errs[AppFieldArgs] = msg
 	}
 	if workingDir != "" && !isAbsoluteLocalPath(workingDir) {
-		errs[AppFieldWorkingDir] = "作業ディレクトリは空か、ドライブ文字で始まる絶対パスを指定してください（UNC・デバイスパス・相対パス・\"..\" は不可）"
+		errs[AppFieldWorkingDir] = "作業ディレクトリは空か、ドライブ文字で始まる絶対パスを指定してください（UNC・デバイスパス・相対パス・\"..\"・ドライブ指定以外の「:」・「<>\"|?*」・制御文字・予約デバイス名（CON など）・32,767 文字を超えるパスは不可）"
 	}
 	return errs
 }
@@ -112,24 +118,60 @@ func hasExeSuffix(p string) bool {
 }
 
 // isAbsoluteLocalPath は p が、ドライブ文字と区切り（`C:\` または `C:/`）で始まるローカルの絶対パスかを返す。
-// UNC（`\\host\...`）・デバイスパス（`\\?\`・`\\.\`）・相対パスは偽。制御文字（NUL を含む）を含むパスと、
-// ".." の要素（末尾の空白・ドットを除くと空になる要素。Windows はそれらを取り除くため "..." や ".. " を含む）を
-// 含むパスも偽。純粋な文字列の検査で、実行 OS には依らない。
+// 次のパスは偽（純粋な文字列の検査で、実行 OS には依らない）:
+//   - UNC（`\\host\...`）・デバイスパス（`\\?\`・`\\.\`）・相対パス
+//   - 32,767 文字（UTF-16 のコードユニット）を超えるパス
+//   - ドライブ指定（2 文字目）以外の ":"（代替データストリーム `a.exe:x`・`a.exe::$DATA`）、`<>"|?*`、
+//     C0 制御文字（NUL を含む）と DEL
+//   - ".." の要素（末尾の空白・ドットを除くと空になる要素。Windows はそれらを取り除くため "..." や ".. " を含む）
+//   - 予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9）の要素。大文字小文字を区別せず、末尾のドット・空白を
+//     落とした後の、最初の "." より前（"con.txt"・"NUL .x" も該当）で判定する。ディレクトリの要素にも効く
 func isAbsoluteLocalPath(p string) bool {
 	if len(p) < 3 || !isASCIILetter(p[0]) || p[1] != ':' || !isSeparator(p[2]) {
 		return false
 	}
-	for i := range len(p) {
-		if p[i] < 0x20 {
+	if utf16Len(p) > maxPathUnits {
+		return false
+	}
+	for _, r := range p[2:] {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(`:<>"|?*`, r) {
 			return false
 		}
 	}
 	for _, elem := range strings.FieldsFunc(p[3:], func(r rune) bool { return r == '\\' || r == '/' }) {
-		if strings.TrimRight(elem, ". ") == "" {
+		elem = strings.TrimRight(elem, ". ")
+		if elem == "" || isReservedDeviceName(elem) {
 			return false
 		}
 	}
 	return true
+}
+
+// isReservedDeviceName は elem（末尾のドット・空白を落とした 1 要素）の、最初の "." より前が予約デバイス名かを返す。
+func isReservedDeviceName(elem string) bool {
+	base, _, _ := strings.Cut(elem, ".")
+	base = strings.TrimRight(base, " ")
+	switch strings.ToUpper(base) {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(base) == 4 && '1' <= base[3] && base[3] <= '9' {
+		prefix := strings.ToUpper(base[:3])
+		return prefix == "COM" || prefix == "LPT"
+	}
+	return false
+}
+
+// utf16Len は s を UTF-16 にしたときのコードユニット数を返す（割り当てなし）。
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		if r >= 0x10000 {
+			n++
+		}
+	}
+	return n
 }
 
 func isASCIILetter(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' }

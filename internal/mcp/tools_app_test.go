@@ -226,27 +226,40 @@ func TestLaunchAppFailureCarriesTheReasonOnly(t *testing.T) {
 	}
 }
 
-// 万一 platform・service が reason に任意の文字列（パスなど）を入れても、API の 4 値以外は other にして、応答に出さない。
+// 万一 platform・service が reason に任意の値（パスなど）を入れても、API の 4 値以外は other にして、応答に出さない。
+// string 型の値と、LaunchFailure 型だが未知の値（launchReason の型アサーションを通り、Valid() で弾かれる）の両方を確かめる。
 func TestLaunchFailedNeverEchoesAnUnexpectedReason(t *testing.T) {
-	e := newEnv(t)
-	e.ctl.apps = sampleApps
-	e.ctl.launchErr = domain.ErrLaunchFailed.WithDetail("reason", leakMark).WithDetail("path", leakMark)
-	res := callTool(t, e.connect("c1"), "launch_app", map[string]any{"app_id": sampleApps[0].ID})
-	if res.errCode(t) != domain.CodeLaunchFailed {
-		t.Fatalf("result = %s", res.text())
+	reasons := map[string]any{
+		"untyped string":                  leakMark,
+		"typed but unknown LaunchFailure": domain.LaunchFailure(leakMark),
+		"typed empty LaunchFailure":       domain.LaunchFailure(""),
+		"not a string":                    42,
 	}
-	raw, _ := json.Marshal(res.CallToolResult)
-	if strings.Contains(string(raw), "sentinel-app") {
-		t.Errorf("the response leaks the injected value: %s", raw)
-	}
-	var body map[string]any
-	res.decode(t, &body)
-	if body["reason"] != "other" {
-		t.Errorf("reason = %v, want other", body["reason"])
+	for name, reason := range reasons {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			e.ctl.apps = sampleApps
+			e.ctl.launchErr = domain.ErrLaunchFailed.WithDetail("reason", reason).WithDetail("path", leakMark)
+			res := callTool(t, e.connect("c1"), "launch_app", map[string]any{"app_id": sampleApps[0].ID})
+			if res.errCode(t) != domain.CodeLaunchFailed {
+				t.Fatalf("result = %s", res.text())
+			}
+			raw, _ := json.Marshal(res.CallToolResult)
+			if strings.Contains(string(raw), "sentinel-app") || strings.Contains(string(raw), `C:\\Secret`) {
+				t.Errorf("the response leaks the injected value: %s", raw)
+			}
+			var body map[string]any
+			res.decode(t, &body)
+			if body["reason"] != "other" {
+				t.Errorf("structuredContent.reason = %v, want other", body["reason"])
+			}
+		})
 	}
 }
 
-// launch_app が受け付けるのは app_id だけ（FR-M19）。追加の引数・型違い・欠落はスキーマ違反（invalid params）で、起動しない。
+// launch_app が受け付けるのは app_id だけ（FR-M19）。追加の引数・型違い・欠落はスキーマ違反で、起動しない。
+// 応答は SDK のスキーマ検証のもの: CallToolResult{IsError: true}（プロトコルのエラーではない）で、本文は
+// `validating "arguments"` で始まり、structuredContent（API 仕様 §2 のエラー本体）は無い。入力値は本文に出さない。
 func TestLaunchAppRejectsSchemaViolations(t *testing.T) {
 	cases := map[string]map[string]any{
 		"extra args":        {"app_id": sampleApps[0].ID, "args": []string{"--evil"}},
@@ -264,11 +277,21 @@ func TestLaunchAppRejectsSchemaViolations(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), waitLimit)
 			defer cancel()
 			res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "launch_app", Arguments: args})
-			if err == nil && (res == nil || !res.IsError) {
+			if err != nil {
+				t.Fatalf("CallTool = %v, want a CallToolResult with IsError", err)
+			}
+			if !res.IsError {
 				t.Fatalf("the call was accepted: %+v", res)
 			}
-			if err != nil && strings.Contains(err.Error(), "sentinel-app") {
-				t.Errorf("the error echoes the path: %v", err)
+			if res.StructuredContent != nil {
+				t.Errorf("StructuredContent = %v, want nil", res.StructuredContent)
+			}
+			text := result{res}.text()
+			if !strings.HasPrefix(text, `validating "arguments"`) {
+				t.Errorf("text = %q, want it to start with validating \"arguments\"", text)
+			}
+			if strings.Contains(text, "sentinel-app") {
+				t.Errorf("the error echoes the path: %q", text)
 			}
 			if ids := e.ctl.launchRequests(); len(ids) != 0 {
 				t.Errorf("Control.Launch was reached with %v", ids)

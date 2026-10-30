@@ -3,9 +3,11 @@ package windows
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/platform"
@@ -56,4 +58,35 @@ func TestInspectAppCanceledContext(t *testing.T) {
 	if err := inspectApp(ctx, "x", ""); !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
 	}
+}
+
+// os.Stat の失敗の分類。名前・パスの構文が正しくない（ERROR_INVALID_NAME・ERROR_BAD_PATHNAME）は「無い」、
+// それ以外（権限など）は OS のエラーコードだけのエラーで、パスを含まない。
+func TestMapStatError(t *testing.T) {
+	const secretPath = `C:\secret-dir\a:b.exe`
+	pathErr := func(errno syscall.Errno) error {
+		return &fs.PathError{Op: "CreateFile", Path: secretPath, Err: errno}
+	}
+	// errno は Win32 の数値（Linux でも同じ値で渡す）。
+	for name, errno := range map[string]syscall.Errno{
+		"ERROR_INVALID_NAME (123)": errInvalidName,
+		"ERROR_BAD_PATHNAME (161)": errBadPathname,
+		"ENOTDIR":                  syscall.ENOTDIR,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := mapStatError(pathErr(errno)); !errors.Is(err, platform.ErrNotFound) {
+				t.Errorf("error = %v, want ErrNotFound", err)
+			}
+		})
+	}
+
+	t.Run("access denied keeps only the code", func(t *testing.T) {
+		err := mapStatError(pathErr(errAccessDenied))
+		if err == nil || errors.Is(err, platform.ErrNotFound) {
+			t.Fatalf("error = %v, want a failure that is not ErrNotFound", err)
+		}
+		if strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), `C:\`) {
+			t.Errorf("error %q contains the path", err)
+		}
+	})
 }

@@ -42,9 +42,10 @@ type Control interface {
 	//
 	//  1. KillSwitch → ErrKillSwitchActive
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
-	//  3. AppRegistry.Get と domain.CheckLaunchTarget（無い・規則外は ErrAppNotFound。fail closed）
-	//  4. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
-	//  5. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
+	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
+	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
+	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
+	//  6. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
 	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
 }
 
@@ -92,7 +93,7 @@ type ControlConfig struct {
 	UI        platform.UIAutomation
 	// Launcher は Launch だけが呼ぶ（platform.AppLauncher を呼ぶのは Control だけ）。Apps は許可リストの読み取りに使う。
 	Launcher platform.AppLauncher
-	Apps     AppRegistry
+	Apps     AppReader
 
 	Leases LeaseManager
 	Kill   ControlKillSwitch
@@ -126,7 +127,7 @@ type control struct {
 	clipboard platform.Clipboard
 	ui        platform.UIAutomation
 	launcher  platform.AppLauncher
-	apps      AppRegistry
+	apps      AppReader
 	leases    LeaseManager
 	kill      KillSwitchState
 	guard     InputGuard

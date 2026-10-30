@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"slices"
 	"strings"
@@ -102,7 +103,8 @@ func TestControlLaunchStartsTheRegisteredApp(t *testing.T) {
 	assertNoSecrets(t, en, nil)
 }
 
-// 同じアプリが起動中でも、毎回新しいプロセスを起動する。起動はリースの idle を延ばさず、入力のセマフォも使わない。
+// 同じアプリが起動中でも、毎回新しいプロセスを起動する。起動は入力のセマフォを使わない（リースの検査は活動として数えるので、
+// アイドルタイマーは延びる）。
 func TestControlLaunchStartsANewProcessEveryTime(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
@@ -366,7 +368,7 @@ func TestControlLaunchRechecksTheKillSwitchBeforeStarting(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
 	// 許可リストの読み取りの最中に発動したことにする。
-	triggering := &triggerOnGetApps{AppRegistry: e.apps, trigger: func() { _ = e.kill.Trigger("test") }}
+	triggering := &triggerOnGetApps{AppReader: e.apps, trigger: func() { _ = e.kill.Trigger("test") }}
 	ctl, err := NewControl(ControlConfig{
 		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
 		Launcher: e.launcher, Apps: triggering, Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
@@ -387,14 +389,142 @@ func TestControlLaunchRechecksTheKillSwitchBeforeStarting(t *testing.T) {
 }
 
 type triggerOnGetApps struct {
-	AppRegistry
+	AppReader
 	trigger func()
 }
 
 func (a *triggerOnGetApps) Get(ctx context.Context, id string) (domain.LaunchableApp, error) {
-	app, err := a.AppRegistry.Get(ctx, id)
+	app, err := a.AppReader.Get(ctx, id)
 	a.trigger()
 	return app, err
+}
+
+// 許可リストの読み取りが「無い」以外のエラーで失敗したら、起動せず、監査は error/internal で、エラーにパスが出ない。
+func TestControlLaunchAppReaderFailureDoesNotLaunch(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	boom := errors.New("db unavailable")
+	ctl, err := NewControl(ControlConfig{
+		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
+		Launcher: e.launcher, Apps: failingAppReader{AppReader: e.apps, err: boom}, Leases: e.leases, Kill: e.kill,
+		Settings: e.settings, Audit: e.audit, Clock: e.clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ctl.Launch(context.Background(), ctlAlice, app.ID)
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want the reader's error", err)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times although the list could not be read", n)
+	}
+	en := lastLaunchEntry(t, e)
+	if en.Result != "error" || en.ErrorCode != "internal" {
+		t.Errorf("entry = %+v, want result=error error_code=internal", en)
+	}
+	if d := auditDetail(t, en); len(d) != 1 || d["app_id"] != app.ID {
+		t.Errorf("detail = %v, want only app_id", d)
+	}
+	assertNoSecrets(t, en, err)
+}
+
+// failingAppReader は Get だけが err で失敗する AppReader。
+type failingAppReader struct {
+	AppReader
+	err error
+}
+
+func (r failingAppReader) Get(context.Context, string) (domain.LaunchableApp, error) {
+	return domain.LaunchableApp{}, r.err
+}
+
+// agent 種別の主体。M1 のリースの保持者は mcp だけ（domain.ActorKind.CanHoldLease。agent は M4）なので、agent は
+// リースを保持できず、暗黙の取得もできない: lease_required で拒否され、起動しない。監査の actor_type は agent になる。
+// agent が保持者になれるようになったら、リース保持中の agent で成功し actor_type=agent になるテストに置き換える。
+func TestControlLaunchAgentWithoutLeaseIsRejectedAndAuditedAsAgent(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", SessionID: "task-1"}
+
+	if _, err := e.leases.Acquire(context.Background(), agent); err == nil {
+		t.Fatal("an agent acquired the lease: replace this test with a successful agent launch")
+	}
+	e.audit.entries = nil
+
+	_, err := e.control.Launch(context.Background(), agent, app.ID)
+	if !errors.Is(err, domain.ErrLeaseRequired) {
+		t.Fatalf("err = %v, want lease_required", err)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times without the lease", n)
+	}
+	if _, ok := e.leases.Holder(); ok {
+		t.Error("an agent must not acquire the lease implicitly")
+	}
+	en := lastLaunchEntry(t, e)
+	if en.Result != "denied" || en.ErrorCode != "lease_required" || en.ActorType != domain.ActorAgent || en.SessionID != agent.SessionID {
+		t.Errorf("entry = %+v", en)
+	}
+}
+
+// 読めない行（args_json が文字列の配列でない）は app_not_found で拒否し（監査 result=denied）、
+// 一覧と削除は成功する（ホスト所有者が GUI で消せる）。
+func TestControlLaunchCorruptRowIsDeniedButListedAndDeletable(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	other, err := e.apps.Create(context.Background(), domain.AppInput{Label: "電卓", ExePath: appCalc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	corruptArgsJSON(t, e.appDB, app.ID, `[1]`)
+	e.audit.entries = nil
+
+	_, err = e.control.Launch(context.Background(), ctlAlice, app.ID)
+	if !errors.Is(err, domain.ErrAppNotFound) {
+		t.Fatalf("err = %v, want app_not_found", err)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched a corrupt row (%d calls)", n)
+	}
+	en := lastLaunchEntry(t, e)
+	if en.Result != "denied" || en.ErrorCode != "app_not_found" {
+		t.Errorf("entry = %+v", en)
+	}
+	assertNoSecrets(t, en, err)
+
+	// 一覧は全体が失敗せず、壊れていない行は起動できる。
+	list, err := e.apps.List(context.Background())
+	if err != nil || len(list) != 2 {
+		t.Fatalf("List = %+v, %v; want both rows", list, err)
+	}
+	if _, err := e.control.Launch(context.Background(), ctlAlice, other.ID); err != nil {
+		t.Errorf("the healthy row failed to launch: %v", err)
+	}
+
+	if err := e.apps.Delete(context.Background(), app.ID); err != nil {
+		t.Fatalf("Delete of a corrupt row = %v", err)
+	}
+	if _, err := e.apps.Get(context.Background(), app.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get after Delete = %v, want ErrNotFound", err)
+	}
+}
+
+// corruptArgsJSON は DB ファイルの行の args_json を AppRegistry を通さずに書き換える（手で書き換えられた状態を作る）。
+func corruptArgsJSON(t *testing.T, dbPath, id, argsJSON string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	res, err := db.Exec(`UPDATE launchable_apps SET args_json = ? WHERE id = ?`, argsJSON, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("rows updated = %d, want 1", n)
+	}
 }
 
 func TestControlLaunchableApps(t *testing.T) {
@@ -479,5 +609,38 @@ func TestNewControlRequiresLauncherAndApps(t *testing.T) {
 		if _, err := NewControl(cfg); !errors.Is(err, domain.ErrInvalidArgument) {
 			t.Errorf("NewControl without %s: err = %v", name, err)
 		}
+	}
+}
+
+// 監査の reason は API の 4 値だけ。型は LaunchFailure でも未知の値（パスが紛れ込みうる）は載せない。
+func TestLaunchAuditDetailOnlyRecordsKnownReasons(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason any
+		want   string // 空なら reason を載せない
+	}{
+		{"known", domain.LaunchAccessDenied, "access_denied"},
+		{"typed but unknown", domain.LaunchFailure(appNotepad), ""},
+		{"typed empty", domain.LaunchFailure(""), ""},
+		{"untyped string", appNotepad, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := domain.ErrLaunchFailed.WithDetail("reason", tt.reason)
+			d := launchAuditDetail("app-1", "メモ帳", LaunchResult{}, err)
+			got, has := d["reason"]
+			if tt.want == "" {
+				if has {
+					t.Errorf("detail = %v, want no reason", d)
+				}
+			} else if got != tt.want {
+				t.Errorf("reason = %v, want %s", got, tt.want)
+			}
+			for _, v := range d {
+				if s, ok := v.(string); ok && strings.Contains(s, `notepad`) {
+					t.Errorf("detail leaks the injected value: %v", d)
+				}
+			}
+		})
 	}
 }

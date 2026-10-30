@@ -351,28 +351,51 @@ func TestLaunchableAppsDelete(t *testing.T) {
 	}
 }
 
-// 手で書き換えられて読めない行は、パス・引数を含まないエラーで失敗する（黙って空の引数で起動させない）。
-func TestLaunchableAppsUnreadableArgsFailsWithoutLeaking(t *testing.T) {
+// 手で書き換えられて読めない行（配列だが要素が文字列でない）は、Get・List を失敗させず、Corrupt を立てて Args を空で返す
+// （パス・引数は残さない）。起動は domain.CheckLaunchTarget が拒否し、ホスト所有者は削除できる。
+func TestLaunchableAppsUnreadableArgsIsMarkedCorrupt(t *testing.T) {
 	ctx := context.Background()
 	db, _ := openTestDB(t)
 	s := db.LaunchableApps()
 
-	if err := s.Create(ctx, testApp("a1", "x"), domain.MaxLaunchableApps); err != nil {
-		t.Fatal(err)
-	}
-	mustExec(t, db, `UPDATE launchable_apps SET args_json = '[1, {"secret": "hunter2"}]' WHERE id = 'a1'`)
-
-	_, err := s.Get(ctx, "a1")
-	if err == nil {
-		t.Fatal("Get succeeded on an unreadable args_json")
-	}
-	for _, leak := range []string{"hunter2", "secret", `C:\`} {
-		if strings.Contains(err.Error(), leak) {
-			t.Errorf("error %q leaks %q", err, leak)
+	for _, id := range []string{"a1", "a2"} {
+		if err := s.Create(ctx, testApp(id, id), domain.MaxLaunchableApps); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if _, err := s.List(ctx); err == nil {
-		t.Error("List succeeded on an unreadable args_json")
+	for _, bad := range []string{`[1]`, `[1, {"secret": "hunter2"}]`, `[["nested"]]`} {
+		mustExec(t, db, `UPDATE launchable_apps SET args_json = '`+strings.ReplaceAll(bad, `'`, `''`)+`' WHERE id = 'a1'`)
+
+		got, err := s.Get(ctx, "a1")
+		if err != nil {
+			t.Fatalf("Get(%s) = %v, want the row marked corrupt", bad, err)
+		}
+		if !got.Corrupt || len(got.Args) != 0 || got.Args == nil {
+			t.Errorf("Get(%s) = Corrupt %v Args %#v, want Corrupt with empty non-nil Args", bad, got.Corrupt, got.Args)
+		}
+		if err := domain.CheckLaunchTarget(got); !errors.Is(err, domain.ErrAppNotFound) {
+			t.Errorf("CheckLaunchTarget(%s) = %v, want ErrAppNotFound", bad, err)
+		}
+
+		list, err := s.List(ctx)
+		if err != nil {
+			t.Fatalf("List(%s) = %v, want success", bad, err)
+		}
+		if len(list) != 2 || !list[0].Corrupt || list[1].Corrupt {
+			t.Errorf("List(%s) = %+v, want [a1 (corrupt), a2]", bad, list)
+		}
+	}
+
+	// 読める行は Corrupt でない。
+	if got, err := s.Get(ctx, "a2"); err != nil || got.Corrupt {
+		t.Errorf("Get(a2) = %+v, %v, want a healthy row", got, err)
+	}
+	// 所有者は壊れた行を削除できる。
+	if err := s.Delete(ctx, "a1"); err != nil {
+		t.Fatalf("Delete of a corrupt row = %v", err)
+	}
+	if _, err := s.Get(ctx, "a1"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get after Delete = %v, want ErrNotFound", err)
 	}
 }
 

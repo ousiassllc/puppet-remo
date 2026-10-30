@@ -59,6 +59,55 @@ func TestExePathShape(t *testing.T) {
 		{"nul in path", "C:\\Tools\\a\x00.exe", false},
 		{"newline in path", "C:\\Tools\\a\n.exe", false},
 		{"non-ascii drive letter", `Ａ:\a.exe`, false},
+
+		// 代替データストリーム・使えない文字・制御文字
+		{"ads on file", `C:\a\f.txt:x.exe`, false},
+		{"colon in directory", `C:\a:b\c.exe`, false},
+		{"colon in file name", `C:\a:b.exe`, false},
+		{"data stream suffix", `C:\a\f.exe::$DATA`, false},
+		{"stream with exe name", `C:\a\f.exe:x.exe`, false},
+		{"second drive colon", `C:\D:\a.exe`, false},
+		{"less-than", `C:\a<b.exe`, false},
+		{"greater-than", `C:\a>b.exe`, false},
+		{"double quote", `C:\a"b.exe`, false},
+		{"pipe", `C:\a|b.exe`, false},
+		{"question mark", `C:\a?b.exe`, false},
+		{"asterisk", `C:\a*b.exe`, false},
+		{"wildcard in directory", `C:\a*\b.exe`, false},
+		{"tab", "C:\\a\tb.exe", false},
+		{"unit separator 0x1f", "C:\\a\x1fb.exe", false},
+		{"escape 0x1b", "C:\\a\x1bb.exe", false},
+		{"del 0x7f", "C:\\a\x7fb.exe", false},
+		{"space and unicode are fine", "C:\\a b\\ａ　b.exe", true},
+
+		// 予約デバイス名
+		{"CON file", `C:\Tools\CON.exe`, false},
+		{"lower-case con file", `C:\Tools\con.exe`, false},
+		{"PRN file", `C:\Tools\PRN.exe`, false},
+		{"AUX file", `C:\Tools\Aux.exe`, false},
+		{"NUL file", `C:\Tools\nul.exe`, false},
+		{"COM1 file", `C:\Tools\COM1.exe`, false},
+		{"COM9 file", `C:\Tools\com9.exe`, false},
+		{"LPT1 file", `C:\Tools\LPT1.exe`, false},
+		{"LPT9 file", `C:\Tools\lpt9.exe`, false},
+		{"reserved name with extra extension", `C:\Tools\NUL.tar.exe`, false},
+		{"reserved name with trailing space before dot", `C:\Tools\NUL .exe`, false},
+		{"reserved name as directory", `C:\Tools\CON\a.exe`, false},
+		{"reserved name as directory with extension", `C:\Tools\aux.d\a.exe`, false},
+		{"reserved name as directory with trailing dot", `C:\Tools\COM3.\a.exe`, false},
+		{"reserved name directory with forward slash", `C:/PRN/a.exe`, false},
+		{"COM0 is not reserved", `C:\Tools\COM0.exe`, true},
+		{"COM10 is not reserved", `C:\Tools\COM10.exe`, true},
+		{"LPT0 is not reserved", `C:\Tools\LPT0.exe`, true},
+		{"name only starting with a reserved name", `C:\Tools\console.exe`, true},
+		{"name ending with a reserved name", `C:\Tools\mycon.exe`, true},
+		{"reserved name after the first dot only", `C:\Tools\a.con.exe`, true},
+
+		// 長さ（UTF-16 のコードユニットで 32,767 まで）
+		{"longest path", exeOfUnits(32767), true},
+		{"one unit too long", exeOfUnits(32768), false},
+		{"astral characters count as two units", `C:\` + strings.Repeat("😀", 16382) + ".exe", false}, // 3 + 32764 + 4 = 32771
+		{"astral characters within the limit", `C:\` + strings.Repeat("😀", 16380) + ".exe", true},    // 3 + 32760 + 4 = 32767
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,6 +132,15 @@ func TestExePathShape(t *testing.T) {
 	}
 }
 
+// exeOfUnits は UTF-16 で units ユニットの、形は有効な実行ファイルのパスを返す。
+func exeOfUnits(units int) string {
+	return `C:\` + strings.Repeat("a", units-len(`C:\`)-len(".exe")) + ".exe"
+}
+
+// dirOfUnits は UTF-16 で units ユニットの、形は有効な作業ディレクトリを返す。
+func dirOfUnits(units int) string {
+	return `C:\` + strings.Repeat("a", units-len(`C:\`))
+}
 func TestWorkingDirShape(t *testing.T) {
 	tests := []struct {
 		name string
@@ -103,6 +161,24 @@ func TestWorkingDirShape(t *testing.T) {
 		{"dot-dot element", `C:\Work\..\x`, false},
 		{"drive relative", `C:Work`, false},
 		{"nul", "C:\\Wo\x00rk", false},
+
+		{"ads on directory", `C:\Work:x`, false},
+		{"data stream", `C:\Work::$DATA`, false},
+		{"colon in file name", `C:\a:b`, false},
+		{"wildcard", `C:\Work\*`, false},
+		{"question mark", `C:\Wo?k`, false},
+		{"pipe", `C:\Wo|k`, false},
+		{"quote", `C:\Wo"k`, false},
+		{"angle brackets", `C:\<Work>`, false},
+		{"tab", "C:\\Wo\tk", false},
+		{"del", "C:\\Wo\x7fk", false},
+		{"reserved CON", `C:\Work\CON`, false},
+		{"reserved nul with extension", `C:\Work\nul.txt`, false},
+		{"reserved COM1 with trailing dot", `C:\Work\COM1.`, false},
+		{"reserved LPT9 in the middle", `C:\LPT9\Work`, false},
+		{"COM0 is not reserved", `C:\Work\COM0`, true},
+		{"longest", dirOfUnits(32767), true},
+		{"one unit too long", dirOfUnits(32768), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

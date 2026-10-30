@@ -202,6 +202,7 @@ type ctlEnv struct {
 	launcher  *platformtest.FakeAppLauncher
 	picker    *platformtest.FakeFilePicker
 	appStore  repository.LaunchableApps
+	appDB     string // appStore の SQLite ファイル（テストが行を直接書き換えるのに使う）
 	apps      AppRegistry
 	kill      *KillSwitchManager
 	power     *platformtest.FakePower
@@ -239,7 +240,7 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 		picker:    platformtest.NewFakeFilePicker(),
 	}
 	e.ui = platformtest.NewFakeUIAutomation(e.windows)
-	e.appStore = openAppStore(t)
+	e.appStore, e.appDB = openAppStore(t)
 	apps, err := NewAppRegistry(AppRegistryConfig{
 		Apps: e.appStore, Launcher: e.launcher, Picker: e.picker, Audit: e.audit, Clock: e.clock, IDs: &ctlIDs{},
 	})
@@ -272,13 +273,14 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 	return e
 }
 
-// openAppStore は一時ファイルの SQLite の起動許可リストを返す（label の一意性・50 件の上限は本物の repository で確かめる）。
-func openAppStore(t *testing.T) repository.LaunchableApps {
+// openAppStore は一時ファイルの SQLite の起動許可リストとそのファイルのパスを返す（label の一意性・50 件の上限は本物の repository で確かめる）。
+func openAppStore(t *testing.T) (repository.LaunchableApps, string) {
 	t.Helper()
-	db, err := repository.Open(context.Background(), filepath.Join(t.TempDir(), "puppet-remo.db"))
+	path := filepath.Join(t.TempDir(), "puppet-remo.db")
+	db, err := repository.Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return db.LaunchableApps()
+	return db.LaunchableApps(), path
 }

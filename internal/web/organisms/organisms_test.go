@@ -170,6 +170,13 @@ func TestAppListRowsAndEditingRow(t *testing.T) {
 	hasNot(t, evil, "<script>")
 }
 
+// 読めない行は、引数の代わりに警告を出す（「なし」とは出さない）。
+func TestAppCardCorruptRowShowsWarning(t *testing.T) {
+	card := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: `C:\c.exe`, Corrupt: true}))
+	has(t, card, "data-app-corrupt", "読めません")
+	hasNot(t, card, "data-app-args", ">なし<")
+}
+
 func TestSidebarHasTheAppsEntry(t *testing.T) {
 	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}, false))
 	has(t, out, `href="/apps"`, "起動許可アプリ")

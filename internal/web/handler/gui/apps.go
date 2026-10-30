@@ -56,7 +56,7 @@ func appFormValues(a domain.LaunchableApp) view.AppFormValues {
 
 func (h *Handler) appRow(a domain.LaunchableApp) view.AppRow {
 	return view.AppRow{
-		ID: a.ID, Label: a.Label, ExePath: a.ExePath, Args: a.Args, WorkingDir: a.WorkingDir,
+		ID: a.ID, Label: a.Label, ExePath: a.ExePath, Args: a.Args, WorkingDir: a.WorkingDir, Corrupt: a.Corrupt,
 		EditURL: appEditURL(a.ID), DeleteConfirm: appDeleteURL(a.ID),
 	}
 }

@@ -93,7 +93,7 @@ func launchAuditDetail(appID, label string, res LaunchResult, err error) map[str
 	}
 	var de *domain.Error
 	if errors.As(err, &de) && de.Code == domain.CodeLaunchFailed {
-		if reason, ok := de.Detail["reason"].(domain.LaunchFailure); ok {
+		if reason, ok := de.Detail["reason"].(domain.LaunchFailure); ok && reason.Valid() {
 			detail["reason"] = string(reason)
 		}
 	}

@@ -17,7 +17,9 @@ templ AppCard(a view.AppRow) {
 			<dd class="min-w-0 break-all"><code class="rounded bg-slate-100 px-1 py-0.5 text-xs" data-app-exe>{ a.ExePath }</code></dd>
 			<dt class="text-slate-500">引数</dt>
 			<dd class="min-w-0">
-				if len(a.Args) == 0 {
+				if a.Corrupt {
+					<span class="text-sm text-red-700" data-app-corrupt>保存された引数を読めません。このアプリは起動できません。削除するか、編集して保存し直してください。</span>
+				} else if len(a.Args) == 0 {
 					<span class="text-slate-500">なし</span>
 				} else {
 					<ul class="space-y-0.5" data-app-args>
