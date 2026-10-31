@@ -125,13 +125,14 @@ func hasExeSuffix(p string) bool {
 //   - ドライブ指定（2 文字目）以外の ":"（代替データストリーム `a.exe:x`・`a.exe::$DATA`）、`<>"|?*`、
 //     C0 制御文字（NUL を含む）と DEL
 //   - ".." の要素（末尾の空白・ドットを除くと空になる要素。Windows はそれらを取り除くため "..." や ".. " を含む）
-//   - 予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9、および上付き数字の COM¹²³・LPT¹²³）の要素。大文字小文字を
-//     区別せず、末尾のドット・空白を落とした後の、最初の "." より前（"con.txt"・"NUL .x" も該当）で判定する。ディレクトリの要素にも効く
+//   - 予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9、上付き数字の COM¹²³・LPT¹²³、コンソールの CONIN$・CONOUT$）の要素。
+//     大文字小文字を区別せず、末尾のドット・空白を落とした後の、最初の "." より前（"con.txt"・"NUL .x"・"CONOUT$.exe" も該当）で判定する。
+//     ディレクトリの要素にも効く
 func isAbsoluteLocalPath(p string) bool {
 	if len(p) < 3 || !isASCIILetter(p[0]) || p[1] != ':' || !isSeparator(p[2]) {
 		return false
 	}
-	if utf16Len(p) > maxPathUnits {
+	if UTF16Len(p) > maxPathUnits {
 		return false
 	}
 	for _, r := range p[2:] {
@@ -152,8 +153,10 @@ func isAbsoluteLocalPath(p string) bool {
 func isReservedDeviceName(elem string) bool {
 	base, _, _ := strings.Cut(elem, ".")
 	base = strings.TrimRight(base, " ")
+	// CONIN$・CONOUT$ はコンソールの入力・出力バッファを指すデバイス名で、CON・NUL などと同じく、拡張子が付いても
+	// （"CONOUT$.exe"）予約名として扱う。Windows 実機での挙動は未確認で、迷うときは拒否する側に倒す（fail closed）。
 	switch strings.ToUpper(base) {
-	case "CON", "PRN", "AUX", "NUL":
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
 		return true
 	}
 	// COM1〜9・LPT1〜9 と、上付き数字の COM¹²³・LPT¹²³（Windows はこれらも予約名として扱う）。
@@ -167,8 +170,9 @@ func isReservedDeviceName(elem string) bool {
 	return false
 }
 
-// utf16Len は s を UTF-16 にしたときのコードユニット数を返す（割り当てなし）。
-func utf16Len(s string) int {
+// UTF16Len は s を UTF-16 にしたときのコードユニット数を返す（割り当てなし）。パスとコマンドラインの上限（Windows は
+// UTF-16 のコードユニットで数える）の検査に、domain と platform が共通で使う。
+func UTF16Len(s string) int {
 	n := 0
 	for _, r := range s {
 		n++

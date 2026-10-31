@@ -109,6 +109,15 @@ func TestExePathShape(t *testing.T) {
 		{"reserved name after the first dot only", `C:\Tools\a.con.exe`, true},
 		{"conf is not reserved", `C:\Tools\conf.exe`, true},
 		{"com alone is not reserved", `C:\Tools\com.exe`, true},
+		{"CONIN$ file", `C:\Tools\CONIN$.exe`, false},
+		{"CONOUT$ file", `C:\Tools\CONOUT$.exe`, false},
+		{"lower-case conout$ file", `C:\Tools\conout$.exe`, false},
+		{"CONOUT$ with extra extension", `C:\Tools\CONOUT$.tar.exe`, false},
+		{"CONIN$ with trailing space before dot", `C:\Tools\CONIN$ .exe`, false},
+		{"CONOUT$ as directory", `C:\Tools\CONOUT$\a.exe`, false},
+		{"CONIN$ without the dollar is not reserved", `C:\Tools\CONIN.exe`, true},
+		{"CONOUT$ with a suffix is not reserved", `C:\Tools\CONOUT$x.exe`, true},
+		{"dollar in an ordinary name is fine", `C:\Tools\a$b.exe`, true},
 
 		// 通常の名前（空白・括弧・記号）
 		{"program files with spaces and parentheses", `C:\Program Files (x86)\a b\c.exe`, true},
@@ -189,6 +198,8 @@ func TestWorkingDirShape(t *testing.T) {
 		{"reserved LPT9 in the middle", `C:\LPT9\Work`, false},
 		{"reserved COM superscript", `C:\Work\COM²`, false},
 		{"reserved lpt superscript", `C:\Work\lpt³`, false},
+		{"reserved CONOUT$", `C:\Work\CONOUT$`, false},
+		{"reserved conin$ with extension", `C:\Work\conin$.d`, false},
 		{"COM0 is not reserved", `C:\Work\COM0`, true},
 		{"lpt0 is not reserved", `C:\Work\lpt0`, true},
 		{"COM10 is not reserved", `C:\Work\COM10`, true},
@@ -483,6 +494,24 @@ func TestLaunchFailureValid(t *testing.T) {
 	for _, s := range []string{"", "File_Missing", "unknown"} {
 		if domain.LaunchFailure(s).Valid() {
 			t.Errorf("%q should not be valid", s)
+		}
+	}
+}
+
+func TestUTF16Len(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"empty", "", 0},
+		{"ascii", "abc", 3},
+		{"BMP non-ASCII is one unit", "あ¹", 2},
+		{"supplementary plane is a surrogate pair", "a😀", 3},
+	}
+	for _, tt := range tests {
+		if got := domain.UTF16Len(tt.in); got != tt.want {
+			t.Errorf("%s: UTF16Len(%q) = %d, want %d", tt.name, tt.in, got, tt.want)
 		}
 	}
 }
