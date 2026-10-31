@@ -184,3 +184,37 @@ func TestGUIRegistersTheAppRoutes(t *testing.T) {
 		t.Errorf("PUT unknown: %s", rec.Body)
 	}
 }
+
+// GUI の状態変更リクエストの本文は GUIMaxBodyBytes までで、超えたら 413 でハンドラに届かない（何も保存しない）。
+// 上限ちょうどまでは通る。GET は本文を見ない。
+func TestGUILimitsStateChangingRequestBodies(t *testing.T) {
+	h, f := newGUI(t)
+	post := func(method, target string, size int) *httptest.ResponseRecorder {
+		body := "label=" + strings.Repeat("a", size-len("label="))
+		req := httptest.NewRequest(method, target, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for _, tt := range []struct{ method, path string }{
+		{http.MethodPost, "/apps"}, {http.MethodPut, "/apps/app1"}, {http.MethodPost, "/apps/pick-file"}, {http.MethodPut, "/settings"},
+	} {
+		if rec := post(tt.method, tt.path, router.GUIMaxBodyBytes+1); rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("%s %s over the limit = %d, want 413", tt.method, tt.path, rec.Code)
+		}
+	}
+	if len(f.Apps.Created) != 0 || f.Apps.Picks != 0 {
+		t.Errorf("an oversized request reached a handler: created=%v picks=%d", f.Apps.Created, f.Apps.Picks)
+	}
+
+	// 上限ちょうどはハンドラまで届く（検証エラーなどで 413 以外が返る）。
+	if rec := post(http.MethodPost, "/apps", router.GUIMaxBodyBytes); rec.Code == http.StatusRequestEntityTooLarge {
+		t.Errorf("POST /apps at the limit = %d, want it to reach the handler", rec.Code)
+	}
+	if rec := do(h, http.MethodGet, "/apps"); rec.Code != http.StatusOK {
+		t.Errorf("GET /apps = %d", rec.Code)
+	}
+}

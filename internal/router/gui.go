@@ -21,6 +21,10 @@ type GUIConfig struct {
 
 var ginModeOnce sync.Once
 
+// GUIMaxBodyBytes は GUI の状態変更リクエストの本文の上限（1 MiB。リモートの MCP の MaxRequestBodyBytes と同じ）。
+// 起動許可アプリのフォームは、パス（32,766 文字）・引数（合計 8,192 文字）を URL エンコードしても数百 KB に収まる。
+const GUIMaxBodyBytes = 1 << 20
+
 // NewGUI はホスト GUI のルーター（プロセス内。ソケットを開かない）を返す。Wails の AssetOptions.Handler に渡す。
 //
 // すべての応答（404・静的ファイルを含む）に csp ミドルウェアが CSP ヘッダーを付ける（NFR-S19）。
@@ -46,7 +50,7 @@ func NewGUI(cfg GUIConfig) (http.Handler, error) {
 	cfg.Handler.Register(dynamic)
 	e.NoRoute(noStore, cfg.Handler.NotFound)
 
-	return middleware.CSP()(e), nil
+	return middleware.CSP()(middleware.LimitBody(GUIMaxBodyBytes)(e)), nil
 }
 
 // noStore は動的な応答をキャッシュさせない。

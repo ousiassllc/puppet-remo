@@ -43,6 +43,15 @@ func ToolAuditEntry(who domain.Actor, tool string, args map[string]any, leaseID 
 	return e
 }
 
+// SchemaRejectedAuditEntry は、入力スキーマに合わず、MCP の SDK が実行前に拒否したツール呼び出しの監査エントリを作る
+// （FR-AU06。ツールの本体にも Control にも届かないため、受信側が記録する）。result は denied、error_code は invalid_argument。
+// 引数は SDK に拒否された未検証の値なので、detail には何も入れない（パス・引数が運用ログ・監査に漏れない。NFR-S13）。
+func SchemaRejectedAuditEntry(who domain.Actor, tool string, took time.Duration) repository.AuditEntry {
+	e := ToolAuditEntry(who, tool, nil, "", domain.ErrInvalidArgument, took)
+	e.Result = auditDenied
+	return e
+}
+
 // auditResult はエラーを監査の result に写す。
 func auditResult(err error) string {
 	switch domain.CodeOf(err) {

@@ -303,6 +303,45 @@ func TestLaunchAppRejectsSchemaViolations(t *testing.T) {
 	}
 }
 
+// スキーマ違反の launch_app は Control に届かないので、mcp 層が tool.launch_app（denied・invalid_argument）を 1 件記録する（FR-AU06）。
+// 引数（未検証の値）は記録に入れない。スキーマに合う呼び出しは Control.Launch が記録し、mcp 層は記録しない（二重にしない）。
+func TestLaunchAppSchemaViolationIsAudited(t *testing.T) {
+	a := &auditLog{}
+	e := newEnv(t, func(c *Config) { c.Audit = a })
+	e.ctl.apps = sampleApps
+	cs := e.connect("c1")
+	ctx, cancel := context.WithTimeout(context.Background(), waitLimit)
+	defer cancel()
+
+	if res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "launch_app", Arguments: map[string]any{"app_id": sampleApps[0].ID, "path": leakMark}}); err != nil || !res.IsError {
+		t.Fatalf("CallTool = %+v, %v, want a rejected call", res, err)
+	}
+	got := a.all()
+	if len(got) != 1 {
+		t.Fatalf("%d audit entries, want 1: %+v", len(got), got)
+	}
+	en := got[0]
+	if en.Kind != "tool" || en.Event != "tool.launch_app" || en.Tool != "launch_app" || en.Result != "denied" || en.ErrorCode != string(domain.CodeInvalidArgument) {
+		t.Errorf("entry = %+v", en)
+	}
+	if en.ActorType != domain.ActorMCP || en.ClientID != "c1" || en.SessionID == "" || en.DurationMS == nil {
+		t.Errorf("actor / duration of the entry = %+v", en)
+	}
+	if len(en.DetailJSON) != 0 || strings.Contains(string(en.DetailJSON), "sentinel") {
+		t.Errorf("detail = %s, want none (the rejected values are not recorded)", en.DetailJSON)
+	}
+
+	// 他のツールのスキーマ違反はこの層では記録しない（FR-AU06 の対象は launch_app）。
+	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "mouse_move", Arguments: map[string]any{"x": "no"}}); err != nil {
+		t.Fatal(err)
+	}
+	// スキーマに合う呼び出しは、この層では記録しない（e.ctl は Control の偽物で、記録しない）。
+	callTool(t, cs, "launch_app", map[string]any{"app_id": sampleApps[0].ID})
+	if n := len(a.all()); n != 1 {
+		t.Errorf("%d audit entries after the other calls, want still 1", n)
+	}
+}
+
 // 公開されるスキーマも app_id だけ（追加のプロパティは許さない）。
 func TestLaunchAppInputSchemaHasOnlyAppID(t *testing.T) {
 	e := newEnv(t)

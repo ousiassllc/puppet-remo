@@ -196,7 +196,7 @@ func (h *Handler) Clients(c *gin.Context) {
 }
 ```
 
-- 状態変更のルートは `X-Puppet-Remo: 1` を必須にする（リモートのみ。API 仕様 §1 の連鎖の 2）。`<body hx-headers='{"X-Puppet-Remo":"1"}'>` で全リクエストに付与する
+- 状態変更のルートは `X-Puppet-Remo: 1` を必須にする（リモートのみ。API 仕様 §1 の連鎖の 2。ホスト GUI のルーターには付けない — ソケットを開かずプロセス内の WebView だけが到達できるため。前提は API 仕様 §7 の冒頭）。`<body hx-headers='{"X-Puppet-Remo":"1"}'>` で全リクエストに付与する
 - ビューアのページには `X-Viewer-Id` も付ける: `<main id="viewer-root" hx-headers={ templ.JSONString(map[string]string{"X-Viewer-Id": id}) }>`（`hx-headers` は子孫へ継承され、親の値とマージされる）
 
 ### 5.2 OOB（Out of Band）スワップ

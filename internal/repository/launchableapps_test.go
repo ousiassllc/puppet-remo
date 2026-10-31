@@ -351,8 +351,8 @@ func TestLaunchableAppsDelete(t *testing.T) {
 	}
 }
 
-// 手で書き換えられて読めない行（配列だが要素が文字列でない）は、Get・List を失敗させず、Corrupt を立てて Args を空で返す
-// （パス・引数は残さない）。起動は domain.CheckLaunchTarget が拒否し、ホスト所有者は削除できる。
+// 手で書き換えられて読めない行（配列だが要素が文字列でない。null 要素を含む）は、Get・List を失敗させず、Corrupt を立てて
+// Args を空で返す（パス・引数は残さない）。起動は domain.CheckLaunchTarget が拒否し、ホスト所有者は削除できる。
 func TestLaunchableAppsUnreadableArgsIsMarkedCorrupt(t *testing.T) {
 	ctx := context.Background()
 	db, _ := openTestDB(t)
@@ -363,7 +363,7 @@ func TestLaunchableAppsUnreadableArgsIsMarkedCorrupt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, bad := range []string{`[1]`, `[1, {"secret": "hunter2"}]`, `[["nested"]]`} {
+	for _, bad := range []string{`[1]`, `[1, {"secret": "hunter2"}]`, `[["nested"]]`, `["a",null]`, `[null]`, `["a","b",null]`} {
 		mustExec(t, db, `UPDATE launchable_apps SET args_json = '`+strings.ReplaceAll(bad, `'`, `''`)+`' WHERE id = 'a1'`)
 
 		got, err := s.Get(ctx, "a1")

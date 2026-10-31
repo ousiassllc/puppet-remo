@@ -274,7 +274,7 @@ erDiagram
 |--------|----|------|--------|------|
 | `id` | TEXT | NO | — | PK。ULID（アプリ側で生成）。MCP の `app_id`。編集しても変わらず、削除すると無効になり再利用されない |
 | `label` | TEXT | NO | — | 表示名（1〜64 文字。前後の空白は `domain` が除く）。`COLLATE NOCASE` で UNIQUE。**NOCASE の畳み込みは ASCII のみ**（`A`〜`Z`）で、全角英字・Unicode の大文字小文字は別の値として扱う（正規化列は設けない。重複の判定は ASCII の大文字小文字を無視した一致）。MCP の `list_launchable_apps` が返す |
-| `exe_path` | TEXT | NO | — | 実行ファイルの絶対パス。ローカルドライブの `.exe` で、UNC・デバイスパス（`\\?\`・`\\.\`）・相対パス・`..` を含むパス、ドライブ指定以外の `:`（代替データストリーム）、`<>"\|?*`、制御文字（C0 と DEL）、予約デバイス名（`CON`・`PRN`・`AUX`・`NUL`・`COM1`〜`COM9`・`LPT1`〜`LPT9`、上付き数字の `COM¹`・`COM²`・`COM³`・`LPT¹`・`LPT²`・`LPT³`。拡張子付き・ディレクトリの要素でも）を含むパス、32,766 文字（UTF-16。終端の NUL を含めて 32,767）を超えるパスは保存しない（検証は `domain`、存在確認は登録・更新時に `platform.AppLauncher`。FR-H12）。`CreateProcess` の `lpApplicationName` にそのまま使う |
+| `exe_path` | TEXT | NO | — | 実行ファイルの絶対パス。ローカルドライブの `.exe` で、UNC・デバイスパス（`\\?\`・`\\.\`）・相対パス・`..` を含むパス、ドライブ指定以外の `:`（代替データストリーム）、`<>"\|?*`、制御文字（C0 と DEL）、予約デバイス名（`CON`・`PRN`・`AUX`・`NUL`・`COM1`〜`COM9`・`LPT1`〜`LPT9`、上付き数字の `COM¹`・`COM²`・`COM³`・`LPT¹`・`LPT²`・`LPT³`、コンソールの `CONIN$`・`CONOUT$`。拡張子付き・ディレクトリの要素でも）を含むパス、32,766 文字（UTF-16。終端の NUL を含めて 32,767）を超えるパスは保存しない（検証は `domain`、存在確認は登録・更新時に `platform.AppLauncher`。FR-H12）。`CreateProcess` の `lpApplicationName` にそのまま使う |
 | `args_json` | TEXT | NO | `'[]'` | 起動引数。文字列の JSON 配列（最大 32 個・合計 8,192 文字）。引数の連結（Windows のコマンドライン規則に沿った引用）は起動時に `platform` が行い、DB にはコマンドライン文字列を持たない（引用後の全体が 32,766 UTF-16 ユニット（終端の NUL を含めて 32,767）を超えると起動しない）。登録時に固定し、`launch_app` から変更できない。手で書き換えられて「文字列の配列」として読めない行は、読み出し側が `Corrupt`（引数は空）として返し、一覧・削除は成功するが、起動は `app_not_found` で拒否する |
 | `working_dir` | TEXT | NO | `''` | 作業ディレクトリの絶対パス（既存のディレクトリ。`exe_path` と同じパスの規則）。空文字は「実行ファイルのあるディレクトリ」 |
 | `created_at` | INTEGER | NO | — | 登録時刻 |
@@ -417,7 +417,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 
 | event | kind | actor_type | result | `detail_json` |
 |-------|------|------------|--------|---------------|
-| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード |
+| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・入力スキーマ違反）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument` |
 | `tool.list_launchable_apps` | `tool` | `mcp` | `ok` | `{ "count" }` |
 | `settings.launchable_app.create` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count" }` |
 | `settings.launchable_app.update` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count", "changed": ["label", "exe_path", "args", "working_dir"] }`。`changed` は変わった項目だけ。更新前の行が読めない行（`Corrupt`）のときは、壊れていた引数が破棄されたことを残すため `args` を必ず含める |

@@ -134,7 +134,7 @@ func TestBuildCommandLineLengthLimit(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error = %v, want nil", err)
 				}
-				if n := utf16Len(line); n > 32766 {
+				if n := domain.UTF16Len(line); n > 32766 {
 					t.Errorf("command line is %d units", n)
 				}
 				return

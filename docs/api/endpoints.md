@@ -256,7 +256,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 - 検査の順序は、キルスイッチ（ミドルウェア連鎖の 3）→ 操作リース → 許可リスト。リース未保持なら暗黙に取得する（FR-L04）。リースの承認は M1.5 には無い（M3 から）
 - エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
 - 同じアプリが起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない。フォーカス切り替えはしない）。起動済みのプロセスは、リースの解放・セッションの切断・キルスイッチ・許可リストからの削除では終了しない
-- すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。`list_launchable_apps` も `tool.list_launchable_apps` として追記する
+- すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。入力スキーマに合わない呼び出し（`app_id` の欠落・型違い・追加のプロパティ）は SDK が実行前に拒否するため `Control.Launch` に届かない。この場合は MCP の受信ミドルウェアが `tool.launch_app`（`denied`・`error_code = invalid_argument`、`detail` なし。拒否された値は記録しない）を 1 件追記する。`list_launchable_apps` も `tool.list_launchable_apps` として追記する
 
 #### 内蔵エージェント
 
@@ -427,7 +427,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 ## 7. GUI ルーター（プロセス内）
 
-ホスト GUI。Wails の WebView からのみ到達でき、TCP のソケットを開かない。Templ + HTMX で描画し、HTML フラグメントを返す。リモートの `X-Puppet-Remo` は不要（ネットワークから到達できないため）。WebView は外部 URL へ遷移させない。HTML 応答には §1 の CSP ヘッダーを付ける。高速パスの設定（§7.3）は**このルーターにだけ**あり、リモートルーターに同名の経路は作らない。
+ホスト GUI。Wails の WebView からのみ到達でき、TCP のソケットを開かない。Templ + HTMX で描画し、HTML フラグメントを返す。リモートの `X-Puppet-Remo`・Host / Origin の検査は付けない。ソケットを開かず、到達できるのは本アプリのプロセス内の WebView だけで（NFR-S06 により AI の入力も受けない）、それを前提とする設計であり、ネットワークから来る CSRF・DNS リバインディングは経路が無いため成立しない。プロセス内の別の呼び出し元が現れる（GUI ルーターをソケットで公開する）変更では、この前提を見直し、`RequireCSRFHeader` と Host / Origin の検査を入れること。状態変更（GET / HEAD / OPTIONS 以外）のリクエストの本文は 1 MiB まで（`router.GUIMaxBodyBytes`。NFR-S09 と同じ値）で、超えたら 413 を返してハンドラを呼ばない。WebView は外部 URL へ遷移させない。HTML 応答には §1 の CSP ヘッダーを付ける。高速パスの設定（§7.3）は**このルーターにだけ**あり、リモートルーターに同名の経路は作らない。
 
 GUI は AI が操作できないよう、自ウィンドウをキャプチャから除外し、InputGuard が入力を拒否する（NFR-S06）。以下はすべて**ホスト所有者の操作**として監査ログに `actor_type = host` で記録する（閲覧のみの `GET` を除く）。
 
