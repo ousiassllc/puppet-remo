@@ -1,0 +1,82 @@
+name: build-installer
+description: >-
+  Wails の Windows 向け NSIS インストーラを、セルフホストの Linux runner で作る。
+  道具（Go・Node・task・wails3・makensis）はこのアクションの中で入れる。署名はしない。
+  呼び出す側が先に actions/checkout を済ませておくこと（リポジトリの内容を使う）。
+
+inputs:
+  version:
+    description: インストーラに入る版（数字 3 つの X.Y.Z）。VERSION ファイルの値を上書きする
+    required: true
+  app-version:
+    description: exe の main.version に入れる文字列
+    required: true
+  asset:
+    description: 出力するインストーラのファイル名（例 puppet-remo-0.1.0-amd64-installer.exe）
+    required: true
+
+outputs:
+  assets-dir:
+    description: インストーラと .sha256 を置いたディレクトリ
+    value: ${{ steps.collect.outputs.assets-dir }}
+
+runs:
+  using: composite
+  steps:
+    # Go・npm のキャッシュと、入れた道具は、ジョブ専用の一時領域（RUNNER_TEMP）に置く。runner のホームや他ジョブへ状態を残さない。
+    - name: キャッシュと道具の置き場をジョブ専用の領域にする
+      shell: bash
+      run: |
+        {
+          echo "GOPATH=$RUNNER_TEMP/go"
+          echo "GOCACHE=$RUNNER_TEMP/go-build"
+          echo "npm_config_cache=$RUNNER_TEMP/npm"
+        } >> "$GITHUB_ENV"
+        echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
+
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: false
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    # wails3 の CLI は、cgo が有効だと Linux では gtk4・webkitgtk-6.0 を要求して導入に失敗する。CLI の導入だけ cgo を切る。
+    - name: task と wails3 を導入（wails3 は go.mod の版）
+      shell: bash
+      run: |
+        go install github.com/go-task/task/v3/cmd/task@v3.53.1
+        CGO_ENABLED=0 go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+
+    - name: makensis（NSIS）を用意
+      shell: bash
+      run: ./scripts/ci/install-nsis.sh
+
+    - name: インストーラをビルド（task windows:package）
+      shell: bash
+      env:
+        RELEASE_VERSION: ${{ inputs.version }}
+        APP_VERSION: ${{ inputs.app-version }}
+      run: task windows:package "RELEASE_VERSION=$RELEASE_VERSION" "APP_VERSION=$APP_VERSION"
+
+    - name: 成果物を集める（改名・SHA-256・版の埋め込みの確認）
+      id: collect
+      shell: bash
+      env:
+        APP_VERSION: ${{ inputs.app-version }}
+        ASSET: ${{ inputs.asset }}
+      run: |
+        dir="$RUNNER_TEMP/release-assets"
+        rm -rf "$dir"
+        mkdir -p "$dir"
+        src=bin/puppet-remo-amd64-installer.exe
+        test -s "$src"
+        # exe の main.version が、渡した版になっていること。
+        grep -qaF -- "$APP_VERSION" bin/puppet-remo.exe
+        cp "$src" "$dir/$ASSET"
+        (cd "$dir" && sha256sum "$ASSET" > "$ASSET.sha256")
+        ls -l "$dir"
+        cat "$dir/$ASSET.sha256"
+        echo "assets-dir=$dir" >> "$GITHUB_OUTPUT"
