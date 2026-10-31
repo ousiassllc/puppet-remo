@@ -59,6 +59,7 @@ func registerTool[In any](s *Server, name, description string, readOnly bool, au
 		Annotations: &mcpsdk.ToolAnnotations{ReadOnlyHint: readOnly},
 	}
 	mcpsdk.AddTool(s.sdk, tool, func(ctx context.Context, req *mcpsdk.CallToolRequest, in In) (*mcpsdk.CallToolResult, any, error) {
+		markReached(ctx)
 		who, err := s.actor(req)
 		if err != nil {
 			return s.toolError(name, err), nil, nil

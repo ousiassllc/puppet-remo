@@ -154,7 +154,7 @@ func New(cfg Config) (*Server, error) {
 			KeepAliveFailureThreshold: keepAliveFailureThreshold,
 		},
 	)
-	s.sdk.AddReceivingMiddleware(s.trackSessions)
+	s.sdk.AddReceivingMiddleware(s.trackSessions, s.auditRejectedLaunch)
 	s.addTools()
 
 	// SDK の設定は API 仕様 §8.1 のとおり: Stateless=false（リース保持者はセッションに束縛）、

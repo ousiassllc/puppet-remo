@@ -417,7 +417,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 
 | event | kind | actor_type | result | `detail_json` |
 |-------|------|------------|--------|---------------|
-| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード |
+| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・入力スキーマ違反）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument` |
 | `tool.list_launchable_apps` | `tool` | `mcp` | `ok` | `{ "count" }` |
 | `settings.launchable_app.create` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count" }` |
 | `settings.launchable_app.update` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count", "changed": ["label", "exe_path", "args", "working_dir"] }`。`changed` は変わった項目だけ。更新前の行が読めない行（`Corrupt`）のときは、壊れていた引数が破棄されたことを残すため `args` を必ず含める |
