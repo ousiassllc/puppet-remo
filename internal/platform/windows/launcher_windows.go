@@ -41,6 +41,9 @@ func (*Launcher) Launch(ctx context.Context, spec platform.LaunchSpec) (uint32, 
 	if err != nil {
 		return 0, err
 	}
+	if err := verifyExecutableLocation(spec.ExePath); err != nil {
+		return 0, err
+	}
 	dir := spec.WorkingDir
 	if dir == "" {
 		dir = filepath.Dir(spec.ExePath)
@@ -66,6 +69,52 @@ func (*Launcher) Launch(ctx context.Context, spec platform.LaunchSpec) (uint32, 
 	_ = windows.CloseHandle(pi.Thread)
 	_ = windows.CloseHandle(pi.Process)
 	return pi.ProcessId, nil
+}
+
+// verifyExecutableLocation は exePath が、ローカルの固定ディスク上の、シンボリックリンク・ジャンクション・マップドドライブ・
+// subst を経由しない実体であることを確かめる（NFR-S20 (3)）。
+//
+//   - ドライブのルートの GetDriveType が DRIVE_FIXED 以外（ネットワーク・リムーバブルなど）なら拒否する。
+//   - ファイルを開き（CreateFile は途中のリンクをたどる）、GetFinalPathNameByHandle が返す実体のパスが、登録されたパスと一致しなければ
+//     拒否する（finalPathMatches）。UNC に解決される場合もここで拒否される。
+//   - 拒否は access_denied（原因は errLocationNotAllowed。パスを含まない）。ファイルが開けない失敗は CreateProcess と同じ分類
+//     （存在しなければ file_missing）。
+//
+// 検査と CreateProcess の間にファイルが差し替えられうる（TOCTOU）ことは防げない。登録先のディレクトリを書き換えられる者は、
+// 許可リストに無い実行ファイルを置いて起動させられるため、NFR-S20 の残存リスクとして残る。
+func verifyExecutableLocation(exePath string) error {
+	root, err := windows.UTF16PtrFromString(filepath.VolumeName(exePath) + `\`)
+	if err != nil {
+		return domain.ErrInvalidArgument.WithMsg("executable path contains a NUL character")
+	}
+	if !isLocalFixedDrive(windows.GetDriveType(root)) {
+		return &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
+	}
+	path, err := windows.UTF16PtrFromString(exePath)
+	if err != nil {
+		return domain.ErrInvalidArgument.WithMsg("executable path contains a NUL character")
+	}
+	h, err := windows.CreateFile(path, windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		return newLaunchError(err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+
+	buf := make([]uint16, windows.MAX_PATH)
+	for {
+		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0) // FILE_NAME_NORMALIZED | VOLUME_NAME_DOS
+		if err != nil {
+			return newLaunchError(err)
+		}
+		if int(n) < len(buf) {
+			if !finalPathMatches(exePath, windows.UTF16ToString(buf[:n])) {
+				return &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
+			}
+			return nil
+		}
+		buf = make([]uint16, n+1) // n は終端の NUL を含む必要な長さ
+	}
 }
 
 // Inspect は exePath が存在する通常ファイルか、workingDir（空でなければ）が存在するディレクトリかを調べる。無ければ platform.ErrNotFound。
