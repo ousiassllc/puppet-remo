@@ -250,6 +250,28 @@ assert_not_contains "片付け: プレリリースでない nightly は対象外
 assert_not_contains "片付け: 下書きの nightly は対象外" "$got" abcdef1
 assert_eq "片付け: 残す本数を変える(3 本残す → 7 本削除)" 7 "$(prune "$list" 3 | wc -l | tr -d ' ')"
 
+# 短い sha は、7 桁で曖昧なとき 7 桁より長くなる（git rev-parse --short=7）。8・12・40 桁の古いナイトリーも対象にする。
+# 6 桁・41 桁・16 進でない文字は対象にしない。
+long=""
+long+=$(tsv nightly-20260901-1234567 2026-09-01T00:00:00Z true false)$'\n'
+long+=$(tsv nightly-20260902-12345678 2026-09-02T00:00:00Z true false)$'\n'
+long+=$(tsv nightly-20260903-0123456789ab 2026-09-03T00:00:00Z true false)$'\n'
+long+=$(tsv "nightly-20260904-$(printf 'a%.0s' {1..40})" 2026-09-04T00:00:00Z true false)$'\n'
+long+=$(tsv nightly-20260905-123456 2026-09-05T00:00:00Z true false)$'\n'
+long+=$(tsv "nightly-20260906-$(printf 'a%.0s' {1..41})" 2026-09-06T00:00:00Z true false)$'\n'
+long+=$(tsv nightly-20260907-123456g 2026-09-07T00:00:00Z true false)$'\n'
+long+=$(tsv nightly-20260908-ABCDEF0 2026-09-08T00:00:00Z true false)$'\n'
+long+=$(tsv nightly-2026090-1234567 2026-09-09T00:00:00Z true false)$'\n'
+# 対象は 4 本（7・8・12・40 桁）。1 本だけ残す → 古い 3 本が出る。
+assert_eq "片付け: 7〜40 桁の sha を対象にする" \
+  $'nightly-20260903-0123456789ab\nnightly-20260902-12345678\nnightly-20260901-1234567' \
+  "$(prune "$long" 1)"
+assert_eq "片付け: 長い sha の最新を残す(40 桁の sha は残る側)" 3 "$(prune "$long" 1 | wc -l | tr -d ' ')"
+assert_eq "片付け: 範囲外のタグは何本あっても消さない" "" "$(prune "$(grep -E '2026090[5-9]' <<<"$long")" 1)"
+# 最後の行に改行が無い入力でも、その行を落とさない。
+assert_eq "片付け: 末尾に改行が無くても処理する" "nightly-20260901-1234567" \
+  "$(printf 'nightly-20260901-1234567\t2026-09-01T00:00:00Z\ttrue\tfalse\nnightly-20260902-1234567\t2026-09-02T00:00:00Z\ttrue\tfalse' | "$here/prune-nightlies.sh" 1)"
+
 # 7 本以下なら何も消さない。正式版しか無くても何も消さない。
 assert_eq "片付け: ちょうど 7 本は消さない" "" "$(prune "$(head -n 7 <<<"$list")")"
 assert_eq "片付け: 正式版だけなら何も消さない" "" "$(prune "$(tsv v0.1.0 2026-01-01T00:00:00Z false false)

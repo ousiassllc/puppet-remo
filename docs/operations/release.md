@@ -19,7 +19,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 
 1. `develop` に push されると、`nightly.yml` が起動します。
 2. インストーラを作り、プレリリースとして公開します。CI（`ci.yml`）の成功は待ちません。
-3. タグは `nightly-YYYYMMDD-<短い sha 7 桁>` です。日付は commit の日付（UTC）で、同じ commit は何度実行しても同じタグになります。同じ日に複数回出ても、sha で区別されます。
+3. タグは `nightly-YYYYMMDD-<短い sha>` です。短い sha は通常 7 桁で、git が曖昧と判断したときだけ長くなります（片付けは 7〜40 桁を対象にします）。日付は commit の日付（UTC）で、同じ commit は何度実行しても同じタグになります。同じ日に複数回出ても、sha で区別されます。
 4. 最新 7 本だけ残し、それより古いナイトリーの Release とタグは削除します。対象は、タグが上の形に完全に一致するプレリリースだけです。正式版は対象になりません（[`scripts/ci/prune-nightlies.sh`](../../scripts/ci/prune-nightlies.sh)）。「7 本」は Release の数なので、1 日に 7 回 push があれば、その日のうちに入れ替わります。
 5. 同時に 2 本は走りません（`concurrency`）。待ちは 1 件しか保持されないので、続けて push したときの間の commit は出ないことがあります。最後の commit が、それまでの変更をすべて含みます。
 

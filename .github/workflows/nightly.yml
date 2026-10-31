@@ -1,7 +1,7 @@
 name: Nightly
 
 # develop への push ごとに、Windows 向け NSIS インストーラを作り、プレリリースとして GitHub Releases に公開する。
-# タグは nightly-YYYYMMDD-<短い sha 7 桁>（日付は commit の日付 UTC）。最新 7 本だけ残し、古い Release とタグは削除する。
+# タグは nightly-YYYYMMDD-<短い sha。通常 7 桁、曖昧なときは長くなる>（日付は commit の日付 UTC）。最新 7 本だけ残し、古い Release とタグは削除する。
 # 版・タグの決め方は scripts/ci/next-version.sh、運用は docs/operations/release.md。
 # すべてのジョブはセルフホストの Linux ランナーで走らせる。使うトークンは GITHUB_TOKEN だけ。署名はしない。
 on:
@@ -61,7 +61,7 @@ jobs:
           ./scripts/ci/publish-release.sh "$TAG" "$GITHUB_SHA" true "puppet-remo $TAG" "$RUNNER_TEMP/notes.md" \
             "$ASSETS_DIR/$ASSET" "$ASSETS_DIR/$ASSET.sha256"
 
-      # 対象はタグが nightly-YYYYMMDD-<sha7> の形のプレリリースだけ。正式版には触らない（scripts/ci/prune-nightlies.sh）。
+      # 対象はタグが nightly-YYYYMMDD-<sha 7〜40 桁> の形のプレリリースだけ。正式版には触らない（scripts/ci/prune-nightlies.sh）。
       - name: 古いナイトリーを削除（最新 7 本を残す）
         run: |
           gh release list --limit 1000 --json tagName,createdAt,isPrerelease,isDraft \
