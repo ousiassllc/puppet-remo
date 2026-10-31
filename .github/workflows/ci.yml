@@ -18,6 +18,9 @@ concurrency:
 # ツール（Go・Node・golangci-lint・templ）はランナーに入っている前提にせず、setup アクションで導入する。
 # Go・npm のキャッシュはジョブ専用の一時領域（RUNNER_TEMP）に置き、ランナーのホームや他ジョブへ状態を残さない。
 # Lit のテスト・Playwright の E2E は M2（Web UI）で足す。
+# 配信（nightly.yml・release.yml。docs/operations/release.md）の検査として、installer ジョブでインストーラをビルドだけして
+# （公開はしない）runner の道具の導入を確かめ、release-scripts ジョブで配信スクリプトのテストとワークフローの検査をする。
+# release.yml は、この CI（name: CI）が main への push で成功したときに起動する。
 jobs:
   go:
     name: go (linux)
@@ -201,3 +204,66 @@ jobs:
         env:
           GOOS: windows
           GOARCH: amd64
+
+  # 配信のスクリプト（版・タグの決定、片付け、公開）のテストと、ワークフローの静的検査。
+  release-scripts:
+    name: release scripts
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Go のキャッシュをジョブ専用の領域にする
+        run: |
+          {
+            echo "GOPATH=$RUNNER_TEMP/go"
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+          } >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: 配信スクリプトのテスト（偽のタグ・偽の gh。ネットワークなし）
+        run: ./scripts/ci/test-release-scripts.sh
+
+      - name: actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          actionlint
+
+  # インストーラのビルドだけ（公開しない）。nightly.yml・release.yml と同じ composite action で作り、
+  # runner での道具（task・wails3・makensis・gh）の導入が通ることを PR の段階で確かめる。
+  installer:
+    name: installer (build only)
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 版を決める（VERSION ファイルの値。公開はしない）
+        id: ver
+        run: |
+          echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+          echo "app_version=ci-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/build-installer
+        id: build
+        with:
+          version: ${{ steps.ver.outputs.version }}
+          app-version: ${{ steps.ver.outputs.app_version }}
+          asset: puppet-remo-ci-amd64-installer.exe
+
+      - name: gh を用意（公開ジョブと同じ手順）
+        run: ./scripts/ci/install-gh.sh
+
+      - name: gh の版
+        run: gh --version

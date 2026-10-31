@@ -1,0 +1,73 @@
+name: Nightly
+
+# develop への push ごとに、Windows 向け NSIS インストーラを作り、プレリリースとして GitHub Releases に公開する。
+# タグは nightly-YYYYMMDD-<短い sha。通常 7 桁、曖昧なときは長くなる>（日付は commit の日付 UTC）。最新 7 本だけ残し、古い Release とタグは削除する。
+# 版・タグの決め方は scripts/ci/next-version.sh、運用は docs/operations/release.md。
+# すべてのジョブはセルフホストの Linux ランナーで走らせる。使うトークンは GITHUB_TOKEN だけ。署名はしない。
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+# 同時に 2 本走らせない。待ちは 1 件だけ保持されるので、間の push はスキップされることがある（最後の push が全部含む）。
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    name: nightly installer
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # 版の決定にタグが要るので、履歴とタグを全部取る。
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 版とタグを決める
+        id: ver
+        run: ./scripts/ci/next-version.sh nightly "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/build-installer
+        id: build
+        with:
+          version: ${{ steps.ver.outputs.version }}
+          app-version: ${{ steps.ver.outputs.app_version }}
+          asset: ${{ steps.ver.outputs.asset }}
+
+      - name: gh を用意
+        run: ./scripts/ci/install-gh.sh
+
+      - name: Release を公開（プレリリース）
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          PREV_TAG: ${{ steps.ver.outputs.prev_tag }}
+          ASSET: ${{ steps.ver.outputs.asset }}
+          ASSETS_DIR: ${{ steps.build.outputs.assets-dir }}
+        run: |
+          ./scripts/ci/release-notes.sh nightly "$TAG" "$GITHUB_SHA" "$PREV_TAG" > "$RUNNER_TEMP/notes.md"
+          ./scripts/ci/publish-release.sh "$TAG" "$GITHUB_SHA" true "puppet-remo $TAG" "$RUNNER_TEMP/notes.md" \
+            "$ASSETS_DIR/$ASSET" "$ASSETS_DIR/$ASSET.sha256"
+
+      # 対象はタグが nightly-YYYYMMDD-<sha 7〜40 桁> の形のプレリリースだけ。正式版には触らない（scripts/ci/prune-nightlies.sh）。
+      - name: 古いナイトリーを削除（最新 7 本を残す）
+        run: |
+          gh release list --limit 1000 --json tagName,createdAt,isPrerelease,isDraft \
+            --jq '.[] | [.tagName, .createdAt, .isPrerelease, .isDraft] | @tsv' \
+            | ./scripts/ci/prune-nightlies.sh 7 > "$RUNNER_TEMP/prune.txt"
+          while IFS= read -r tag; do
+            echo "削除: $tag"
+            gh release delete "$tag" --cleanup-tag --yes
+          done < "$RUNNER_TEMP/prune.txt"

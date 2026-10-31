@@ -76,6 +76,10 @@ MCP の `launch_app` で起動できるのは、ホスト所有者が許可リ�
 - 起動の監査は、プロセスを作ったあとに非同期で記録します。記録のキューが満杯のとき・書き込みに失敗したときは、起動は成立したまま監査に残りません。その場合は運用ログに Error（`audit entry dropped`・`audit append failed`）が出ます。
 - 起動したあとのプロセスは、本アプリの管理外です。終了も監視もしません（本アプリを終了しても、キルスイッチを発動しても、起動済みのプロセスは残ります）。
 
+## 配布（ナイトリーと正式版）
+
+Windows 向けのインストーラ（NSIS）は、GitHub Actions が GitHub Releases に自動で公開します。`develop` への push はナイトリー（プレリリース。最新 7 本だけ残る）、`main` への push は正式版です。版は `VERSION` ファイルと最新の正式タグで決まり、人はタグを打ちません。仕組みと運用は [配信の運用](docs/operations/release.md) を参照してください。
+
 ## ビルドと開発
 
 必要なもの: Go（`go.mod` の `go` 行の版）、Node.js、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。
@@ -90,7 +94,7 @@ task lint          # golangci-lint（ホスト OS と Windows）
 task templ:generate # .templ から _templ.go を生成（生成物はコミットする）
 task frontend:build # static/dist を作る（esbuild・Tailwind CSS・htmx）
 task ci            # CI と同じ検査を一通り実行
-task package       # NSIS インストーラを作る
+task package       # NSIS インストーラを作る（版は VERSION ファイル。RELEASE_VERSION= で上書き）
 task dev           # wails3 dev で開発する（Windows。別ターミナルで task templ:watch）
 ```
 
@@ -108,3 +112,4 @@ Linux / macOS では、Windows 専用のコードを除いてビルド・テス�
 | [コンポーネント設計](docs/components/overview.md) | パッケージの責務とインターフェース |
 | [API 仕様](docs/api/endpoints.md) | MCP・ルート・エラー形式 |
 | [Windows 実機スモーク手順](docs/operations/smoke-windows.md) | CI で動かせない項目の手動確認 |
+| [配信の運用](docs/operations/release.md) | ナイトリー・正式版の配信、版・タグの決め方 |

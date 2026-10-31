@@ -4,26 +4,49 @@ version: '3'
 # ルートの Taskfile.yml が `windows:` として取り込む（作業ディレクトリはリポジトリのルート）。
 #   task windows:build       本番ビルド（static/dist を go:embed）→ bin/puppet-remo.exe
 #   task windows:package     NSIS インストーラ → bin/puppet-remo-amd64-installer.exe（Windows か makensis が要る）
+# 版はリポジトリ直下の VERSION（X.Y.Z）が唯一の持ち主で、info.json の版とインストーラの版（-DINFO_PRODUCTVERSION）は
+# ここから作る。CI は `RELEASE_VERSION=<X.Y.Z> APP_VERSION=<main.version>` をコマンドラインで渡して上書きする。
 # 署名はしない（NFR-O07）。
 
 vars:
   APP_NAME: puppet-remo
   BIN_DIR: bin
-  # -X main.version に入れる版。タグがなければコミットの短縮 ID、git が無ければ dev。
-  VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  # -X main.version に入れる版（APP_VERSION=で上書き）。既定は、正式版のタグ（v<X.Y.Z>。ナイトリーのタグ nightly-* は対象外）
+  # からの git describe、タグがなければコミットの短縮 ID、git が無ければ dev。
+  GIT_VERSION:
+    sh: git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev
+  APP_VERSION_RESOLVED: '{{.APP_VERSION | default .GIT_VERSION}}'
+  # info.json の版情報とインストーラの版（数字 3 つの X.Y.Z だけ。NSIS の VIProductVersion の制約）。
+  # 既定は VERSION ファイル、RELEASE_VERSION=で上書き。
+  FILE_VERSION:
+    sh: tr -d '[:space:]' < "{{.ROOT_DIR}}/VERSION"
+  PRODUCT_VERSION: '{{.RELEASE_VERSION | default .FILE_VERSION}}'
+  # info.json の版を PRODUCT_VERSION に置き換えた生成物（git 管理外）。
+  INFO_JSON: build/windows/info.generated.json
   SYSO: cmd/puppet-remo/rsrc_windows_amd64.syso
 
 tasks:
+  generate:info:
+    summary: build/windows/info.json の版（file_version・ProductVersion）を PRODUCT_VERSION に置き換えて info.generated.json を作る
+    internal: true
+    preconditions:
+      - sh: echo "{{.PRODUCT_VERSION}}" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+        msg: "PRODUCT_VERSION（VERSION ファイル）は X.Y.Z の数字だけ: '{{.PRODUCT_VERSION}}'"
+    cmds:
+      - |
+        sed -E 's/"(file_version|ProductVersion)": "[^"]*"/"\1": "{{.PRODUCT_VERSION}}"/' build/windows/info.json > {{.INFO_JSON}}
+
   generate:syso:
     summary: アイコン・manifest（Per-Monitor DPI Aware V2。NFR-S06・座標の物理ピクセル）・版情報を .syso にして埋め込む
     internal: true
+    deps:
+      - task: generate:info
     cmds:
-      - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out {{.SYSO}}
+      - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info {{.INFO_JSON}} -out {{.SYSO}}
     sources:
       - build/windows/icon.ico
       - build/windows/wails.exe.manifest
-      - build/windows/info.json
+      - '{{.INFO_JSON}}'
     generates:
       - '{{.SYSO}}'
 
@@ -34,7 +57,7 @@ tasks:
       - task: :frontend:build
       - task: generate:syso
     cmds:
-      - go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X main.version={{.VERSION}}" -o {{.BIN_DIR}}/{{.APP_NAME}}.exe ./cmd/puppet-remo
+      - go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X main.version={{.APP_VERSION_RESOLVED}}" -o {{.BIN_DIR}}/{{.APP_NAME}}.exe ./cmd/puppet-remo
     env:
       GOOS: windows
       GOARCH: amd64
@@ -70,4 +93,4 @@ tasks:
         msg: "makensis (NSIS) が見つかりません。Windows: choco install nsis / Linux: apt install nsis"
     cmds:
       - wails3 generate webview2bootstrapper -dir "{{.ROOT_DIR}}/build/windows/nsis"
-      - makensis {{if eq .INSTALL_SCOPE "user"}}-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user {{end}}-DARG_WAILS_AMD64_BINARY="{{.EXE}}" project.nsi
+      - makensis {{if eq .INSTALL_SCOPE "user"}}-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user {{end}}-DINFO_PRODUCTVERSION={{.PRODUCT_VERSION}} -DARG_WAILS_AMD64_BINARY="{{.EXE}}" project.nsi

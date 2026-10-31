@@ -1,0 +1,75 @@
+name: Release
+
+# main への push の CI（ci.yml）が成功したら、その commit の Windows 向け NSIS インストーラを作り、正式版として
+# GitHub Releases に公開する。人はタグを打たない。タグ v<X.Y.Z> と Release はこのワークフローが作る。
+# 手動実行（workflow_dispatch）は使わない。CI が成功以外（失敗・キャンセル）のときは何もしない。
+# 版の決め方は scripts/ci/next-version.sh、運用は docs/operations/release.md。
+# すべてのジョブはセルフホストの Linux ランナーで走らせる。使うトークンは GITHUB_TOKEN だけ。署名はしない。
+#
+# workflow_run は既定ブランチ（main）のこのファイルで動く。対象の commit は workflow_run の head_sha（github.sha ではない）。
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# 同時に 2 本走らせない。待ちは 1 件だけ保持されるので、間の commit はスキップされることがある
+# （次の commit の CI が成功すれば、その版に含まれて出る）。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release installer
+    # push の CI が成功したときだけ。pull_request の CI や、失敗・キャンセルのときは何もしない。
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      # 版の決定にタグが要るので、履歴とタグを全部取る。
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 版とタグを決める
+        id: ver
+        run: ./scripts/ci/next-version.sh release "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/build-installer
+        id: build
+        if: steps.ver.outputs.action == 'build'
+        with:
+          version: ${{ steps.ver.outputs.version }}
+          app-version: ${{ steps.ver.outputs.app_version }}
+          asset: ${{ steps.ver.outputs.asset }}
+
+      - name: gh を用意
+        if: steps.ver.outputs.action == 'build'
+        run: ./scripts/ci/install-gh.sh
+
+      - name: Release を公開（正式版）
+        if: steps.ver.outputs.action == 'build'
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          PREV_TAG: ${{ steps.ver.outputs.prev_tag }}
+          ASSET: ${{ steps.ver.outputs.asset }}
+          ASSETS_DIR: ${{ steps.build.outputs.assets-dir }}
+        run: |
+          ./scripts/ci/release-notes.sh release "$TAG" "$HEAD_SHA" "$PREV_TAG" > "$RUNNER_TEMP/notes.md"
+          ./scripts/ci/publish-release.sh "$TAG" "$HEAD_SHA" false "puppet-remo $TAG" "$RUNNER_TEMP/notes.md" \
+            "$ASSETS_DIR/$ASSET" "$ASSETS_DIR/$ASSET.sha256"
