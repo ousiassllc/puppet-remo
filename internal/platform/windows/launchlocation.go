@@ -1,9 +1,6 @@
 package windows
 
-import (
-	"errors"
-	"strings"
-)
+import "strings"
 
 // 実行ファイルの場所の検査（NFR-S20 (3)「ローカルの .exe」の実行時の確認）の、OS を呼ばない判定の部分。
 // Win32 の呼び出し（GetDriveType・CreateFile・GetFinalPathNameByHandle）は launcher_windows.go の verifyExecutableLocation にあり、
@@ -11,10 +8,6 @@ import (
 
 // driveFixed は GetDriveType が固定ディスクに返す値（DRIVE_FIXED。x/sys/windows の定数と同じ値）。
 const driveFixed = 3
-
-// errLocationNotAllowed は、実行ファイルがローカルの固定ディスク上の、シンボリックリンク・ジャンクションを経由しない
-// 実体でないために起動しなかったことを表す（*platform.LaunchError の Err。パスを含まない）。
-var errLocationNotAllowed = errors.New("windows: executable is not a plain file on a local fixed drive")
 
 // isLocalFixedDrive は GetDriveType の値が固定ディスク（DRIVE_FIXED）かを返す。リムーバブル・ネットワーク（マップドドライブ）・
 // CD-ROM・RAM ディスク・不明・ルートなしは許さない。

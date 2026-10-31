@@ -4,6 +4,7 @@ package windows
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"unsafe"
 
@@ -14,6 +15,10 @@ import (
 )
 
 var _ platform.AppLauncher = (*Launcher)(nil)
+
+// errLocationNotAllowed は、実行ファイルがローカルの固定ディスク上の、シンボリックリンク・ジャンクションを経由しない
+// 実体でないために起動しなかったことを表す（*platform.LaunchError の Err。パスを含まない）。
+var errLocationNotAllowed = errors.New("windows: executable is not a plain file on a local fixed drive")
 
 // Launcher は platform.AppLauncher の Windows 実装（CreateProcess。FR-M19、NFR-S20）。状態を持たず、どの goroutine からも呼べる。
 //
