@@ -102,10 +102,19 @@ func (a *Audit) Record(ctx context.Context, e repository.AuditEntry) {
 // Dropped はキューの満杯・Close 後の Record で捨てた件数を返す。
 func (a *Audit) Dropped() int64 { return a.dropped.Load() }
 
+// drop は e を捨てたことを記録する。launch_app は、プロセスを作ったあとに記録する（Control.Launch）ため、捨てると、起動が
+// 成立したのに監査に残らない（NFR-S20 の残存リスク）。運用で気づけるよう Error で出す。それ以外は Warn。
 func (a *Audit) drop(e repository.AuditEntry, why string) {
 	n := a.dropped.Add(1)
-	a.log.Warn("audit entry dropped", "reason", why, "kind", e.Kind, "event", e.Event, "dropped_total", n)
+	level := slog.LevelWarn
+	if e.Event == launchAppAuditEvent {
+		level = slog.LevelError
+	}
+	a.log.Log(context.Background(), level, "audit entry dropped", "reason", why, "kind", e.Kind, "event", e.Event, "dropped_total", n)
 }
+
+// launchAppAuditEvent は launch_app の監査のイベント名（ToolAuditEntry の "tool." + ツール名）。
+const launchAppAuditEvent = "tool.launch_app"
 
 // Flush は、呼び出し前に Record された件がすべて書き込まれるまで待つ。
 func (a *Audit) Flush(ctx context.Context) error {

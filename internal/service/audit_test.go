@@ -139,6 +139,31 @@ func TestAuditStoreFailureDoesNotStopTheWriter(t *testing.T) {
 	}
 }
 
+// launch_app の監査はプロセスを作ったあとに記録するため、取りこぼす（キューが満杯・Close 後）と起動が成立したのに残らない。
+// その場合は Error、それ以外のイベントは Warn で出す。書き込みの失敗は、どのイベントも Error（run）。
+func TestAuditLossOfLaunchAppIsLoggedAtError(t *testing.T) {
+	tests := []struct {
+		event     string
+		wantLevel string
+	}{
+		{"tool.launch_app", "level=ERROR"},
+		{"tool.type", "level=WARN"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.event, func(t *testing.T) {
+			var logs bytes.Buffer
+			a := newTestAudit(t, &ctlAuditStore{}, 0, &logs)
+			if err := a.Close(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			a.Record(context.Background(), repository.AuditEntry{Kind: "tool", Event: tt.event, Result: "ok"})
+			if !strings.Contains(logs.String(), "audit entry dropped") || !strings.Contains(logs.String(), tt.wantLevel) {
+				t.Fatalf("logs = %s, want a drop record with %s", logs.String(), tt.wantLevel)
+			}
+		})
+	}
+}
+
 func TestAuditCloseDrainsQueueAndRefusesLaterRecords(t *testing.T) {
 	store := &ctlAuditStore{}
 	a := newTestAudit(t, store, 0, nil)
