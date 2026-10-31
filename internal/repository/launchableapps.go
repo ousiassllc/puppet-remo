@@ -37,13 +37,27 @@ func scanLaunchableApp(row interface{ Scan(...any) error }) (domain.LaunchableAp
 	if err := row.Scan(&a.ID, &a.Label, &a.ExePath, &argsJSON, &a.WorkingDir, &createdAt, &updatedAt); err != nil {
 		return domain.LaunchableApp{}, err
 	}
-	// 手で書き換えられた行（配列だが要素が文字列でない）は読めない。List 全体や GUI を巻き込まないよう、Args を空にして
-	// Corrupt を立てて返す（起動は domain.CheckLaunchTarget が拒否し、所有者は削除できる）。内容（パス・引数）は残さない。
-	if err := json.Unmarshal([]byte(argsJSON), &a.Args); err != nil {
-		a.Args, a.Corrupt = []string{}, true
-	}
-	if a.Args == nil { // JSON null（配列でない行は CHECK が拒む）
-		a.Args = []string{}
+	// 手で書き換えられた行（配列だが要素が文字列でない。null 要素 ["a",null] を含む）は読めない。List 全体や GUI を
+	// 巻き込まないよう、Args を空にして Corrupt を立てて返す（起動は domain.CheckLaunchTarget が拒否し、所有者は削除できる）。
+	// 内容（パス・引数）は残さない。json は null 要素を []string に読むと黙って "" にするため、*string で受けて区別する
+	// （本物の空文字列 "" は null と別で、読める行のまま CheckLaunchTarget が拒否する）。
+	var elems []*string
+	a.Args = []string{}
+	if err := json.Unmarshal([]byte(argsJSON), &elems); err != nil {
+		a.Corrupt = true
+	} else {
+		// JSON null（配列でない行は CHECK が拒む）は要素なしの配列になる。
+		args := make([]string, 0, len(elems))
+		for _, e := range elems {
+			if e == nil {
+				a.Corrupt = true
+				break
+			}
+			args = append(args, *e)
+		}
+		if !a.Corrupt {
+			a.Args = args
+		}
 	}
 	a.CreatedAt, a.UpdatedAt = fromMS(createdAt), fromMS(updatedAt)
 	return a, nil
