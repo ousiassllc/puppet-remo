@@ -11,28 +11,38 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
-// このファイルは GUI の設定画面が扱う M1 の設定（FR-S01〜S04、FR-S08。docs/architecture/er.md のキー一覧）。
+// このファイルは GUI の設定画面が扱う設定（FR-S01〜S04、FR-S06、FR-S08。docs/architecture/er.md のキー一覧）。
 const (
-	settingServerPort    = "server.port"
-	settingKillHotkey    = "killswitch.hotkey"
-	defaultServerPort    = 8765
-	defaultKillHotkey    = "Ctrl+Alt+Shift+K"
-	settingMinPort       = 1024
-	settingMaxPort       = 65535
-	settingMinMaxDim     = 256
-	settingMaxMaxDim     = 4096
-	settingMinIdleSec    = 30
-	settingMaxIdleSec    = 3600
-	maxHotkeyLength      = 64
-	hostSettingsAuditKey = "settings.update"
+	settingServerPort           = "server.port"
+	settingKillHotkey           = "killswitch.hotkey"
+	settingViewerDefaultQuality = "viewer.default_quality"
+	settingViewerDefaultFPS     = "viewer.default_fps"
+	defaultServerPort           = 8765
+	defaultKillHotkey           = "Ctrl+Alt+Shift+K"
+	defaultViewerQuality        = 70
+	defaultViewerFPS            = 10
+	settingMinPort              = 1024
+	settingMaxPort              = 65535
+	settingMinMaxDim            = 256
+	settingMaxMaxDim            = 4096
+	settingMinIdleSec           = 30
+	settingMaxIdleSec           = 3600
+	viewerMinQuality            = 1
+	viewerMaxQuality            = 100
+	viewerMinFPS                = 1
+	viewerMaxFPS                = 30
+	maxHotkeyLength             = 64
+	hostSettingsAuditKey        = "settings.update"
 )
 
-// HostSettings は M1 の設定。
+// HostSettings は設定画面の設定（M1 の 4 項目と自動起動、M2 の FR-S06）。
 type HostSettings struct {
 	Port                   int    // server.port（1024〜65535）
 	KillSwitchHotkey       string // killswitch.hotkey（`Ctrl+Alt+Shift+K` の書式）
 	ScreenshotMaxDimension int    // screenshot.max_dimension（256〜4096）
 	LeaseIdleTimeoutSec    int    // lease.idle_timeout_sec（30〜3600）
+	ViewerDefaultQuality   int    // viewer.default_quality（1〜100）。Web UI の既定の JPEG 品質（FR-S06）
+	ViewerDefaultFPS       int    // viewer.default_fps（1〜30）。Web UI の既定の FPS（FR-S06）
 	Autostart              bool   // ログオン時の自動起動（OS が真実の源。DB には持たない）
 }
 
@@ -42,6 +52,8 @@ const (
 	FieldKillSwitchHotkey       = "killswitch.hotkey"
 	FieldScreenshotMaxDimension = "screenshot.max_dimension"
 	FieldLeaseIdleTimeoutSec    = "lease.idle_timeout_sec"
+	FieldViewerDefaultQuality   = "viewer.default_quality"
+	FieldViewerDefaultFPS       = "viewer.default_fps"
 )
 
 // ValidationError は入力の項目別の不備（GUI は 422 でフォームを再描画する）。domain.CodeInvalidArgument として扱える。
@@ -71,6 +83,12 @@ func (s HostSettings) Validate() error {
 	}
 	if s.LeaseIdleTimeoutSec < settingMinIdleSec || s.LeaseIdleTimeoutSec > settingMaxIdleSec {
 		bad[FieldLeaseIdleTimeoutSec] = fmt.Sprintf("%d〜%d 秒の整数を指定してください。", settingMinIdleSec, settingMaxIdleSec)
+	}
+	if s.ViewerDefaultQuality < viewerMinQuality || s.ViewerDefaultQuality > viewerMaxQuality {
+		bad[FieldViewerDefaultQuality] = fmt.Sprintf("%d〜%d の整数を指定してください。", viewerMinQuality, viewerMaxQuality)
+	}
+	if s.ViewerDefaultFPS < viewerMinFPS || s.ViewerDefaultFPS > viewerMaxFPS {
+		bad[FieldViewerDefaultFPS] = fmt.Sprintf("%d〜%d の整数を指定してください。", viewerMinFPS, viewerMaxFPS)
 	}
 	if msg := validateHotkey(s.KillSwitchHotkey); msg != "" {
 		bad[FieldKillSwitchHotkey] = msg
@@ -150,6 +168,14 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 	if err != nil {
 		return HostSettings{}, err
 	}
+	quality, err := loadPositiveInt(ctx, h.cfg.Settings, settingViewerDefaultQuality, defaultViewerQuality)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	fps, err := loadPositiveInt(ctx, h.cfg.Settings, settingViewerDefaultFPS, defaultViewerFPS)
+	if err != nil {
+		return HostSettings{}, err
+	}
 	hotkey := defaultKillHotkey
 	raw, ok, err := h.cfg.Settings.Get(ctx, settingKillHotkey)
 	if err != nil {
@@ -168,8 +194,23 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 	}
 	return HostSettings{
 		Port: port, KillSwitchHotkey: hotkey, ScreenshotMaxDimension: dim,
-		LeaseIdleTimeoutSec: idle, Autostart: autostart,
+		LeaseIdleTimeoutSec: idle, ViewerDefaultQuality: quality, ViewerDefaultFPS: fps, Autostart: autostart,
 	}, nil
+}
+
+// ViewerDefaults は設定 viewer.default_quality・viewer.default_fps（既定 70・10。FR-S06）を読む。
+// 値が範囲（品質 1〜100、FPS 1〜30）の整数でなければ domain.ErrInvalidArgument。settings が nil なら既定値。
+func ViewerDefaults(ctx context.Context, settings repository.Settings) (quality, fps int, err error) {
+	if quality, err = loadPositiveInt(ctx, settings, settingViewerDefaultQuality, defaultViewerQuality); err != nil {
+		return 0, 0, err
+	}
+	if fps, err = loadPositiveInt(ctx, settings, settingViewerDefaultFPS, defaultViewerFPS); err != nil {
+		return 0, 0, err
+	}
+	if quality > viewerMaxQuality || fps > viewerMaxFPS {
+		return 0, 0, domain.ErrInvalidArgument.WithMsg("viewer default settings are out of range")
+	}
+	return quality, fps, nil
 }
 
 func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, error) {
@@ -198,6 +239,8 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		{settingKillHotkey, s.KillSwitchHotkey, func(a *HostSettings) { a.KillSwitchHotkey = s.KillSwitchHotkey }},
 		{settingScreenshotMaxDim, s.ScreenshotMaxDimension, func(a *HostSettings) { a.ScreenshotMaxDimension = s.ScreenshotMaxDimension }},
 		{settingLeaseIdleTimeoutSec, s.LeaseIdleTimeoutSec, func(a *HostSettings) { a.LeaseIdleTimeoutSec = s.LeaseIdleTimeoutSec }},
+		{settingViewerDefaultQuality, s.ViewerDefaultQuality, func(a *HostSettings) { a.ViewerDefaultQuality = s.ViewerDefaultQuality }},
+		{settingViewerDefaultFPS, s.ViewerDefaultFPS, func(a *HostSettings) { a.ViewerDefaultFPS = s.ViewerDefaultFPS }},
 	} {
 		raw, err := json.Marshal(kv.val)
 		if err != nil {
@@ -245,6 +288,12 @@ func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
 	}
 	if old.LeaseIdleTimeoutSec != updated.LeaseIdleTimeoutSec {
 		changed[FieldLeaseIdleTimeoutSec] = updated.LeaseIdleTimeoutSec
+	}
+	if old.ViewerDefaultQuality != updated.ViewerDefaultQuality {
+		changed[FieldViewerDefaultQuality] = updated.ViewerDefaultQuality
+	}
+	if old.ViewerDefaultFPS != updated.ViewerDefaultFPS {
+		changed[FieldViewerDefaultFPS] = updated.ViewerDefaultFPS
 	}
 	if old.Autostart != updated.Autostart {
 		changed["autostart"] = updated.Autostart
