@@ -86,9 +86,13 @@ func seed() *guitest.Fakes {
 	f.Clock.T = now
 	f.KillSwitch.Now = time.Now
 
+	// サーバー状態のカードで、長い値（Issue #43）が折り返されることを確認できるよう、IPv4 と完全形の長い IPv6、
+	// [IPv6]:ポート の待ち受け、非常に長い MagicDNS 名（ラベル 1 つが 63 文字）を入れる。
 	f.Status.V = service.ServerStatus{
-		Tailscaled: service.TailscaledRunning, TailnetIPs: []string{"100.64.0.1", "fd7a:115c:a1e0::1"}, DNSName: "demo-host.example.ts.net",
-		Port: 8765, Listening: true, ListenAddrs: []string{"100.64.0.1:8765", "[fd7a:115c:a1e0::1]:8765"},
+		Tailscaled: service.TailscaledRunning,
+		TailnetIPs: []string{"100.64.0.1", "fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6"},
+		DNSName:    "demo-host-with-a-very-long-machine-name-for-overflow-0123456789.tail-demo-example-network.ts.net",
+		Port:       8765, Listening: true, ListenAddrs: []string{"100.64.0.1:8765", "[fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6]:8765"},
 	}
 	f.Sessions.Items = []service.SessionInfo{
 		{ID: "s1", ClientID: "client-001", Label: "demo-desktop", Kind: domain.ActorMCP, Since: now.Add(-12 * time.Minute)},
