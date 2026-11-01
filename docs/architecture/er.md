@@ -447,7 +447,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete` | `host` |
 | 更新の確認・適用 | `update` | **未実装**（#74） | — |
 
-`type` の本文とクリップボードの本文（M3・#71。FR-AU03、FR-S07）。設定 `audit.record_text`（既定 false）が false のあいだは、`detail_json` に文字数 `text_len` だけを入れる（M1 から同じ）。true のとき、`type` / `input.text`（`tool.type`）、クリップボードの書き込み（`tool.clipboard_write`）・読み取りの結果（`tool.clipboard_read`）の `detail_json` に `text`（本文）を足す（`text_len` は残す）。本文は 4,096 文字（ルーン）までで、超えた分は切り詰めて `"text_truncated": true` を付ける（`text_len` は元の長さ）。本文の中のトークン（`prm_…`）・`Bearer …` の形は `[REDACTED]` に置き換え、トークンと API キーは設定にかかわらず記録しない。キーの名前（`key_down` / `key_up` の `code`・`key`）は、この設定でも記録しない。設定が読めない・真偽値でないときは記録しない側に倒す。
+`type` の本文とクリップボードの本文（M3・#71。FR-AU03、FR-S07）。設定 `audit.record_text`（既定 false）が false のあいだは、`detail_json` に文字数 `text_len` だけを入れる（M1 から同じ）。true のとき、`type` / `input.text`（`tool.type`）、クリップボードの書き込み（`tool.clipboard_write`）・読み取りの結果（`tool.clipboard_read`）の `detail_json` に `text`（本文）を足す（`text_len` は残す）。本文の中のトークン（`prm_…`）・`Bearer …` の形は、先に `[REDACTED]` に置き換える（切り詰めの境界をまたぐ秘密を残さないため。トークンと API キーは設定にかかわらず記録しない）。置き換えたあとの本文が 4,096 文字（ルーン）を超えるときは、4,096 文字までに切り詰めて `"text_truncated": true` を付ける（`text_len` は元の長さ）。キーの名前（`key_down` / `key_up` の `code`・`key`）は、この設定でも記録しない。設定が読めない・真偽値でないときは記録しない側に倒す。
 
 縮小スクリーンショットの保存（M3・#71。FR-AU02）。縮小・符号化は純粋関数 `service.NewThumbnail`（アスペクト比を保って長辺 320 px。拡大しない。短辺は最小 1 px。JPEG 品質 60。`golang.org/x/image/draw` の `CatmullRom`・`image/jpeg`。cgo なし）。保存は `Audit` の書き込み goroutine が 1 件ずつ、`Append` → `ThumbStore.Save`（`YYYY/MM/DD/<ULID>.jpg`。日付はイベントの `ts` の UTC）→ `AttachThumb` → 容量の確認（`Maintenance.PurgeThumbsOverCap`）の順に行う。`Record` は呼び出しを遅らせない（キューが満杯・`Close` 後は、これまでどおりエントリごと捨てて運用ログに残す）。キューにあるサムネイルの件数には別の上限（既定 32）があり、超えた分は画像だけを捨ててエントリは追記する（画像のバイト列でメモリが増え続けない）。`Save` / `AttachThumb` / 容量の確認の失敗は運用ログに残すだけで、ログ行と `Control.Do` の結果は変わらない（`AttachThumb` に失敗したら保存したファイルを消す）。`audit.thumbnails_enabled`（既定 true）は保存のたびに読み、false か真偽値でない値なら保存しない。
 
@@ -547,3 +547,4 @@ erDiagram
 | 1.16 | 2026-11-02 | `clients.approved_at` の使われ方（`first_time` の承認時の記録と取り消し。`repository.Clients.MarkApproved` / `ResetApproval`）を追記。承認系の監査イベント名（取得要求・拒否・タイムアウト）は未決のため追記しない（`pending_approval → held` は `lease.acquire`） | #66 |
 | 1.17 | 2026-11-02 | 監査イベントのカタログ（FR-AU01 との対応。`auth.connreq_create` を追加）、`audit.record_text` の記録の形（`text`・4,096 文字・`text_truncated`）、サムネイルの保存の流れを追記 | #71 |
 | 1.18 | 2026-11-02 | 「データの保守」の M3 の実装の補足を、設定画面（#73）が同じ範囲を使うこと・範囲と単位が所有者の確認待ちであることに更新 | #73 |
+| 1.19 | 2026-11-02 | `audit.record_text` の本文は、トークンの形を伏せてから 4,096 文字に切り詰める順序を明記（境界をまたぐ秘密を残さない） | #75 |
