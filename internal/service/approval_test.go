@@ -298,3 +298,49 @@ func TestApprovalWithoutBus(t *testing.T) {
 		t.Errorf("err = %v, want ErrApprovalTimeout", err)
 	}
 }
+
+// 承認待ちが終わるたびに approval-closed を 1 回出す（許可・拒否・失効・取り下げのどれでも）。Pending から消えたあとに届く。
+func TestApprovalPublishesClosedWhenTheRequestEnds(t *testing.T) {
+	ends := map[string]func(e *approvalEnv, req ApprovalRequest, cancel context.CancelFunc){
+		"allow":   func(e *approvalEnv, req ApprovalRequest, _ context.CancelFunc) { _ = e.a.Resolve(req.ID, true) },
+		"deny":    func(e *approvalEnv, req ApprovalRequest, _ context.CancelFunc) { _ = e.a.Resolve(req.ID, false) },
+		"timeout": func(e *approvalEnv, _ ApprovalRequest, _ context.CancelFunc) { e.timers.FireAll() },
+		"cancel":  func(_ *approvalEnv, _ ApprovalRequest, cancel context.CancelFunc) { cancel() },
+	}
+	for name, end := range ends {
+		t.Run(name, func(t *testing.T) {
+			e := newApprovalEnv(t)
+			closed, cancelSub := e.bus.Subscribe(TopicApprovalClosed)
+			defer cancelSub()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			req, out := e.request(t, ctx, ctlAlice)
+			select {
+			case ev := <-closed:
+				t.Fatalf("approval-closed before the request ended: %+v", ev)
+			default:
+			}
+
+			end(e, req, cancel)
+			recv(t, out)
+			select {
+			case ev := <-closed:
+				if got, ok := ev.Data.(ApprovalClosedEvent); !ok || got.ID != req.ID {
+					t.Errorf("event data = %#v, want ApprovalClosedEvent{%s}", ev.Data, req.ID)
+				}
+				if p := e.a.Pending(); len(p) != 0 {
+					t.Errorf("the event must come after the request left Pending: %+v", p)
+				}
+			case <-time.After(approvalWait):
+				t.Fatal("no approval-closed event")
+			}
+			// 二重の Resolve（負けた側）は何も出さない。
+			_ = e.a.Resolve(req.ID, true)
+			select {
+			case ev := <-closed:
+				t.Errorf("a second approval-closed event: %+v", ev)
+			default:
+			}
+		})
+	}
+}
