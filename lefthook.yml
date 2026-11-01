@@ -50,6 +50,7 @@ pre-commit:
     - name: frontend-typecheck
       root: static/
       glob:
+        - "static/src/*.ts"
         - "static/src/**/*.ts"
         - static/tsconfig.json
         - static/package.json

@@ -149,7 +149,7 @@ task hooks:install    # lefthook install（.git/hooks にフックを入れる�
 | | `golangci-lint run ./...`（ホスト OS） | `*.go`・`go.mod`・`go.sum`・`.golangci.yml` |
 | | `scripts/check-imports.sh` | `*.go`・`go.mod`・`scripts/check-imports.sh` |
 | | templ generate の差分チェック（ステージした内容と一致すること） | `*.templ`・`*_templ.go`・`go.mod` |
-| | フロントエンドの型検査（`static/` で `bun install --frozen-lockfile && bunx tsc -p .`） | `static/src/**/*.ts`・`static/tsconfig.json`・`static/package.json`・`static/bun.lock` |
+| | フロントエンドの型検査（`static/` で `bun install --frozen-lockfile && bunx tsc -p .`） | `static/src/*.ts`・`static/src/**/*.ts`・`static/tsconfig.json`・`static/package.json`・`static/bun.lock` |
 | pre-push | `go test ./...` | 常に |
 
 - フックを入れずに手元で実行するには `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使う。どちらも `lefthook run ... --no-auto-install` を呼ぶので、`.git/hooks` は書き換えない。
@@ -168,3 +168,4 @@ OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義�
 | 版 | 日付 | 変更内容 | 変更理由 |
 |----|------|---------|---------|
 | 1.0 | 2026-11-01 | 新規作成。Go・Wails v3・Task・GitHub Actions・golangci-lint・gofmt・templ・bun によるフロントエンドのビルド・Lefthook の現状を記載。Linterly は未導入と明記 | #40 |
+| 1.1 | 2026-11-01 | フロントエンドの型検査の実行条件に `static/src/*.ts`（`static/src` 直下）を追加 | レビュー指摘（`**/` は直下に一致しない） |
