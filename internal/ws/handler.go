@@ -189,7 +189,8 @@ type conn struct {
 	client   domain.Client
 	viewerID string
 
-	sess service.ViewerSession
+	sess    service.ViewerSession
+	pressed pressed // 押下中のボタン・キー。セッションの終わりで離す
 
 	closeOnce sync.Once
 }
@@ -211,6 +212,8 @@ func (c *conn) serve() {
 	if !c.open() {
 		return
 	}
+	// セッションの終わり（切断・置き換えなど）で、web のリースを解放する前に、押下中のボタン・キーを離す。
+	c.sess.OnEnd(c.releasePressed)
 	defer c.sess.Close() // 閲覧者の登録を外し、web のリースを解放する（FR-L05）
 
 	// 先に購読して、ready の後にリースが変わっても取りこぼさない。
@@ -460,7 +463,10 @@ func (c *conn) handle(data []byte) error {
 
 // input は入力を Control に渡す。拒否（リース・InputGuard・座標など）は error メッセージで返し、入力は破棄する（切断しない）。
 func (c *conn) input(op domain.Op) error {
-	if _, err := c.h.cfg.Control.Do(c.ctx, c.sess.Actor(), op); err != nil {
+	if err := c.injectInput(op); err != nil {
+		if errors.Is(err, errInputEnded) {
+			return err // セッションが終わった。接続を閉じる
+		}
 		if c.ctx.Err() != nil {
 			return c.ctx.Err()
 		}

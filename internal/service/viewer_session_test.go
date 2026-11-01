@@ -441,3 +441,51 @@ func hasLeaseEvent(events []string, want string) bool {
 	}
 	return false
 }
+
+// OnEnd の fn は、どの終わり方でも、リースを保持しているうちに 1 度だけ呼ばれる。
+func TestViewerOnEndRunsOnceBeforeTheLeaseIsReleased(t *testing.T) {
+	e := newViewerEnv(t)
+	id := e.sessions.Issue(viewerClientA)
+	s, _ := e.open(t, id, viewerClientA)
+	mustAcquire(t, e.ctlEnv, s.Actor())
+
+	calls, heldInHook := 0, false
+	s.OnEnd(func() {
+		calls++
+		_, heldInHook = e.leases.Holder()
+	})
+	s.Close()
+	s.Close()
+	waitClosed(t, s)
+	if calls != 1 || !heldInHook {
+		t.Fatalf("calls = %d, lease held in the hook = %v, want 1 and true", calls, heldInHook)
+	}
+	if _, held := e.leases.Holder(); held {
+		t.Fatal("the lease must be released after the hook")
+	}
+}
+
+func TestViewerOnEndRunsWhenTheSessionIsReplaced(t *testing.T) {
+	e := newViewerEnv(t)
+	id := e.sessions.Issue(viewerClientA)
+	old, _ := e.open(t, id, viewerClientA)
+	mustAcquire(t, e.ctlEnv, old.Actor())
+	heldInHook := false
+	old.OnEnd(func() { _, heldInHook = e.leases.Holder() })
+
+	e.open(t, id, viewerClientA)
+	if old.Reason() != ViewerClosedReplaced || !heldInHook {
+		t.Fatalf("reason = %q, lease held in the hook = %v", old.Reason(), heldInHook)
+	}
+}
+
+func TestViewerOnEndOnAnEndedSessionRunsImmediately(t *testing.T) {
+	e := newViewerEnv(t)
+	s, _ := e.open(t, e.sessions.Issue(viewerClientA), viewerClientA)
+	s.Close()
+	called := false
+	s.OnEnd(func() { called = true })
+	if !called {
+		t.Fatal("OnEnd on an ended session must run fn at once")
+	}
+}
