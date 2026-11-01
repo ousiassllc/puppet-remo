@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -52,7 +54,10 @@ func newSettingsEnv(t *testing.T, withAutostart bool) *settingsEnv {
 	return e
 }
 
-var defaultHostSettings = HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}
+var defaultHostSettings = HostSettings{
+	Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
+	AuditThumbnailsEnabled: true, AuditRecordText: false, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: UpdateApplyConfirm,
+}
 
 func TestHostSettingsDefaults(t *testing.T) {
 	e := newSettingsEnv(t, true)
@@ -68,7 +73,11 @@ func TestHostSettingsDefaults(t *testing.T) {
 func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	e := newSettingsEnv(t, true)
-	want := HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24, Autostart: true}
+	want := HostSettings{
+		Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24,
+		AuditThumbnailsEnabled: false, AuditRecordText: true, AuditRetentionDays: 7, AuditThumbsMaxBytes: 536870912, UpdateApplyMode: UpdateApplyAutoIdle,
+		Autostart: true,
+	}
 
 	saved, err := e.svc.Save(ctx, want)
 	if err != nil || saved != want {
@@ -82,7 +91,8 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	if d, err := LeaseIdleTimeout(ctx, e.store); err != nil || d.Seconds() != 120 {
 		t.Errorf("LeaseIdleTimeout = %v, %v", d, err)
 	}
-	for key, raw := range map[string]string{"server.port": "9000", "killswitch.hotkey": `"Ctrl+Shift+Q"`, "screenshot.max_dimension": "2048", "lease.idle_timeout_sec": "120", "viewer.default_quality": "85", "viewer.default_fps": "24"} {
+	for key, raw := range map[string]string{"server.port": "9000", "killswitch.hotkey": `"Ctrl+Shift+Q"`, "screenshot.max_dimension": "2048", "lease.idle_timeout_sec": "120", "viewer.default_quality": "85", "viewer.default_fps": "24",
+		"audit.thumbnails_enabled": "false", "audit.record_text": "true", "audit.retention_days": "7", "audit.thumbs_max_bytes": "536870912", "update.apply_mode": `"auto_idle"`} {
 		if got := string(e.store.values[key]); got != raw {
 			t.Errorf("%s = %s, want %s", key, got, raw)
 		}
@@ -102,9 +112,72 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	if len(a) != 1 || a[0].Event != "settings.update" || a[0].ActorType != domain.ActorHost || a[0].Kind != "settings" {
 		t.Fatalf("audit = %+v", a)
 	}
-	var detail map[string]any
-	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 7 || detail["server.port"] != float64(9000) || detail["autostart"] != true {
-		t.Errorf("detail = %s (%v)", a[0].DetailJSON, err)
+	// 監査の detail は変えたキー名の配列だけ（値は入れない。er.md）。
+	wantKeys := `["server.port","killswitch.hotkey","screenshot.max_dimension","lease.idle_timeout_sec","viewer.default_quality","viewer.default_fps",` +
+		`"audit.thumbnails_enabled","audit.record_text","audit.retention_days","audit.thumbs_max_bytes","update.apply_mode","autostart"]`
+	if string(a[0].DetailJSON) != wantKeys {
+		t.Errorf("detail = %s, want %s", a[0].DetailJSON, wantKeys)
+	}
+}
+
+// 変更した項目のキー名だけが監査に残り、audit.record_text の値（true / false）は detail に入らない。
+func TestHostSettingsAuditListsOnlyChangedKeyNames(t *testing.T) {
+	ctx := context.Background()
+	e := newSettingsEnv(t, true)
+	s := defaultHostSettings
+	s.AuditRecordText = true
+	s.AuditRetentionDays = 90
+	if _, err := e.svc.Save(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.audit.entries) != 1 {
+		t.Fatalf("audit = %+v", e.audit.entries)
+	}
+	if got, want := string(e.audit.entries[0].DetailJSON), `["audit.record_text","audit.retention_days"]`; got != want {
+		t.Errorf("detail = %s, want %s", got, want)
+	}
+	// 元に戻しても同じ。値は出ない。
+	if _, err := e.svc.Save(ctx, defaultHostSettings); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(e.audit.entries[1].DetailJSON); strings.Contains(got, "true") || strings.Contains(got, "false") || strings.Contains(got, "90") {
+		t.Errorf("detail must not carry values: %s", got)
+	}
+}
+
+func TestHostSettingsAuditDefaultsWhenRowsAreMissing(t *testing.T) {
+	e := newSettingsEnv(t, false)
+	got, err := e.svc.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.AuditThumbnailsEnabled || got.AuditRecordText || got.AuditRetentionDays != 30 || got.AuditThumbsMaxBytes != 1<<30 || got.UpdateApplyMode != "confirm" {
+		t.Errorf("defaults = %+v", got)
+	}
+}
+
+// audit.retention_days・audit.thumbs_max_bytes の不正な保存値は、保守（Maintenance）と同じく既定値として読み、警告を出す。
+func TestHostSettingsInvalidStoredAuditNumbersFallBackToDefault(t *testing.T) {
+	for key, raw := range map[string]string{
+		"audit.retention_days":   "36501",
+		"audit.thumbs_max_bytes": "1.5",
+	} {
+		t.Run(key, func(t *testing.T) {
+			var logs strings.Builder
+			store := newCtlSettings()
+			store.put(key, raw)
+			svc, err := NewHostSettings(HostSettingsConfig{Settings: store, Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := svc.Load(context.Background())
+			if err != nil || got.AuditRetentionDays != 30 || got.AuditThumbsMaxBytes != 1<<30 {
+				t.Errorf("Load = %+v, %v; want the defaults", got, err)
+			}
+			if !strings.Contains(logs.String(), key) {
+				t.Errorf("no warning for %s: %q", key, logs.String())
+			}
+		})
 	}
 }
 
@@ -144,12 +217,23 @@ func TestHostSettingsValidation(t *testing.T) {
 		{"fps above", func(s *HostSettings) { s.ViewerDefaultFPS = 31 }, []string{FieldViewerDefaultFPS}},
 		{"fps bounds", func(s *HostSettings) { s.ViewerDefaultFPS = 1 }, nil},
 		{"fps upper bound", func(s *HostSettings) { s.ViewerDefaultFPS = 30 }, nil},
+		{"retention below", func(s *HostSettings) { s.AuditRetentionDays = 0 }, []string{FieldAuditRetentionDays}},
+		{"retention above", func(s *HostSettings) { s.AuditRetentionDays = 36501 }, []string{FieldAuditRetentionDays}},
+		{"retention lower bound", func(s *HostSettings) { s.AuditRetentionDays = 1 }, nil},
+		{"retention upper bound", func(s *HostSettings) { s.AuditRetentionDays = 36500 }, nil},
+		{"thumbs cap below", func(s *HostSettings) { s.AuditThumbsMaxBytes = 0 }, []string{FieldAuditThumbsMaxBytes}},
+		{"thumbs cap above", func(s *HostSettings) { s.AuditThumbsMaxBytes = 1<<53 + 1 }, []string{FieldAuditThumbsMaxBytes}},
+		{"thumbs cap lower bound", func(s *HostSettings) { s.AuditThumbsMaxBytes = 1 }, nil},
+		{"thumbs cap upper bound", func(s *HostSettings) { s.AuditThumbsMaxBytes = 1 << 53 }, nil},
+		{"apply mode auto_idle", func(s *HostSettings) { s.UpdateApplyMode = "auto_idle" }, nil},
+		{"apply mode unknown", func(s *HostSettings) { s.UpdateApplyMode = "auto" }, []string{FieldUpdateApplyMode}},
+		{"apply mode empty", func(s *HostSettings) { s.UpdateApplyMode = "" }, []string{FieldUpdateApplyMode}},
 		{"hotkey empty", func(s *HostSettings) { s.KillSwitchHotkey = "" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey without modifier", func(s *HostSettings) { s.KillSwitchHotkey = "K" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey unknown modifier", func(s *HostSettings) { s.KillSwitchHotkey = "Hyper+K" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey too long", func(s *HostSettings) { s.KillSwitchHotkey = "Ctrl+" + string(make([]byte, 100)) }, []string{FieldKillSwitchHotkey}},
 		{"hotkey case-insensitive", func(s *HostSettings) { s.KillSwitchHotkey = "ctrl+alt+k" }, nil},
-		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldViewerDefaultQuality, FieldViewerDefaultFPS, FieldKillSwitchHotkey}},
+		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldViewerDefaultQuality, FieldViewerDefaultFPS, FieldKillSwitchHotkey, FieldAuditRetentionDays, FieldAuditThumbsMaxBytes, FieldUpdateApplyMode}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -229,7 +313,8 @@ func TestHostSettingsFailures(t *testing.T) {
 		}
 	})
 	t.Run("corrupt stored value", func(t *testing.T) {
-		for key, raw := range map[string]string{"server.port": `"x"`, "screenshot.max_dimension": "0", "lease.idle_timeout_sec": "1.5", "killswitch.hotkey": "7", "viewer.default_quality": "0", "viewer.default_fps": `"x"`} {
+		for key, raw := range map[string]string{"server.port": `"x"`, "screenshot.max_dimension": "0", "lease.idle_timeout_sec": "1.5", "killswitch.hotkey": "7", "viewer.default_quality": "0", "viewer.default_fps": `"x"`,
+			"audit.thumbnails_enabled": `"yes"`, "audit.record_text": "1", "update.apply_mode": `"auto"`} {
 			e := newSettingsEnv(t, true)
 			e.store.put(key, raw)
 			if _, err := e.svc.Load(ctx); !errors.Is(err, domain.ErrInvalidArgument) {
@@ -281,7 +366,8 @@ func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}
+	want := defaultHostSettings
+	want.Port, want.KillSwitchHotkey, want.ScreenshotMaxDimension, want.LeaseIdleTimeoutSec = 9000, "Ctrl+Shift+Q", 2048, 120
 
 	if _, err := svc.Save(ctx, want); !errors.Is(err, boom) {
 		t.Fatalf("Save = %v, want %v", err, boom)
@@ -298,9 +384,8 @@ func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
 	if len(audit.entries) != 1 {
 		t.Fatalf("audit = %+v", audit.entries)
 	}
-	var detail map[string]any
-	if err := json.Unmarshal(audit.entries[0].DetailJSON, &detail); err != nil || len(detail) != 2 || detail["server.port"] != float64(9000) {
-		t.Errorf("audit detail = %s (%v)", audit.entries[0].DetailJSON, err)
+	if got, want := string(audit.entries[0].DetailJSON), `["server.port","killswitch.hotkey"]`; got != want {
+		t.Errorf("audit detail = %s, want %s", got, want)
 	}
 }
 
