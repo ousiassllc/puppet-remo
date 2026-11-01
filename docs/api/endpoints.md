@@ -229,9 +229,9 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 | ツール | 出力 |
 |--------|------|
-| `acquire_control` | `get_control_status` と同じ。M1 は承認なしで取得できる（`idle → held`）。承認が必要な場合（承認モード。M3 から）は承認を待つ（最大 60 秒） |
+| `acquire_control` | `get_control_status` と同じ（成功すると `held`）。承認が必要でなければ `idle → held`。承認が必要な場合（承認モード。M3 から）は `idle → pending_approval` にして、ホストの結果を待つ（最大 60 秒）。拒否は 403 `approval_denied`、60 秒の無応答は 408 `approval_timeout`（§2。ツールエラー。どちらも `idle` に戻る）。他者が保持中、または他者が承認待ちなら `lease_held_by_other`。暗黙の取得（入力系のツール・`launch_app`）も同じに承認を待ち、同じコードで失敗する |
 | `release_control` | `{ "ok": true }`。保持者でなければ何もしない |
-| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M2 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` / `web`（M2 から）。強制剥奪された直後は `idle`。`pending_approval` は M3、`agent`（と `task_id`）は M4 から |
+| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` と `idle_remaining_sec` は `held` のときだけ）。`pending_approval`（M3）は承認待ちで、`holder` は出さず、`mine` は承認待ちの要求者が自分のセッションかどうか。`state` が `held` のとき `mine` は保持者が自分かどうか。`holder.kind` は `mcp` / `web`（M2 から）。強制剥奪された直後は `idle`。`agent`（と `task_id`）は M4 から |
 
 #### アプリ起動（M1.5）
 
@@ -372,7 +372,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | GET | `/` | `/viewer` へリダイレクト | 302 |
 | GET | `/viewer` | ビューアのページ（ツールバー、リースパネル、`<remo-screen-viewer>`） | 200 HTML（`viewer_id` を埋め込む） |
 | GET | `/viewer/lease` | リースパネルのフラグメント | 200 HTML。保持者種別・名前・状態と、状態に応じたボタンのみ |
-| POST | `/viewer/lease/acquire` | 操作権を取得 | 200 リースパネル。承認待ちなら承認待ちのパネル（ホストの承認後に WebSocket の `lease` で更新）。他者が保持なら 409 `lease_held_by_other` |
+| POST | `/viewer/lease/acquire` | 操作権を取得 | 200 リースパネル。承認待ちなら承認待ちのパネル（ホストの承認後に WebSocket の `lease` で更新）。他者が保持中・承認待ちなら 409 `lease_held_by_other`。ホストの拒否は 403 `approval_denied`、60 秒の無応答は 408 `approval_timeout`（トースト。パネルは空きのまま）。**M3 の実装は、承認を待つあいだ応答を返さず（最大 60 秒）、許可で 200 のリースパネル、拒否・タイムアウトでトーストを返す**（承認待ちのパネルを 200 で即座に返す窓口は未決。§7.5） |
 | POST | `/viewer/lease/release` | 操作権を解放 | 200 リースパネル |
 | POST | `/viewer/lease/revoke` | 他者のリースを強制剥奪（保持者が `agent` ならそのタスクを中断。FR-L06） | 200 リースパネル（保持者は `idle` になる）。自身が取得するには改めて `acquire` する |
 | POST | `/viewer/settings` | このビューアのモニター・品質・FPS | フォーム `monitor`, `quality`（1〜100）, `fps`（1〜30）。200 ツールバーのフラグメント。WebSocket の `config` に反映される |
@@ -428,9 +428,9 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 |------|------|
 | `ready` | 接続直後に 1 回（画面フレームより前）。`{ "monitors": [...], "monitor": 0, "width": 2560, "height": 1440, "quality": 70, "fps": 10, "lease": {…} }`。`width` / `height` はストリームの座標空間（選択モニターの物理ピクセル）。`monitors[]` の各要素は `get_screen_info`（§3.3）から縮小に関する項目（`scale`・`scaled`）を除いた `{ "index", "name", "primary", "origin": { "x", "y" }, "physical": { "width", "height" }, "dpi_scale" }`。`lease` は下の `lease` メッセージと同じ形 |
 | `config` | 設定の反映結果。`{ "monitor", "width", "height", "quality", "fps" }`。モニター変更時はキーフレームが続く。WebSocket の `config` だけでなく、`POST /viewer/settings` で変えたときにも届く |
-| `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のとき省く（`pending_approval` は M3）。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
+| `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のときだけ省く（M3: `pending_approval` では承認待ちの要求者の `holder` を付け、`mine` は要求者が自分のビューアかどうか。承認待ちでは入力が許されない）。リースの変化は、承認待ちの開始（`pending_approval`）・許可（`held`）・拒否・タイムアウト・取り下げ（`idle`）のたびに全ビューアへ送る。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
 | `killswitch` | `{ "active": true }`。続けて 4503 で閉じる。以降の接続も 4503 で閉じられる |
-| `error` | `{ "code", "message" }`。入力の拒否。`code` は §2 のコードで、`lease_required` / `lease_held_by_other` / `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`。`internal` の `message` は詳細を含まない固定文。切断はしない |
+| `error` | `{ "code", "message" }`。入力の拒否。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`。`internal` の `message` は詳細を含まない固定文。切断はしない |
 
 **クライアント → サーバー**
 
@@ -620,7 +620,8 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | MCP ツールの監査（§3.3） | — | `Control` を通らないツール（`get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status`）の呼び出しは、`mcp` のツール登録で `kind = tool` として監査する。入力系などは `Control` が記録する |
 | HTTP サーバー（§1） | — | tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒、`IdleTimeout` 120 秒、`MaxHeaderBytes` 64 KiB。`WriteTimeout` は付けない。WhoIs の LocalAPI 呼び出しは 5 秒で打ち切り、失敗は 403 `whois_failed`（fail closed） |
 | MCP の keepalive（§3.1・NFR-A04） | — | 既定で ping しない（§3.1） |
-| WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のとき省く。`ready` の `monitors[]` の形は §5.3 |
+| Web の承認待ち（§4.2・M3。#67） | `POST /viewer/lease/acquire` は承認待ちなら承認待ちのパネルを 200 で返す | 承認が要るクライアントでは、`LeaseManager.Acquire` が最大 60 秒ブロックするため、ハンドラはその間応答を返さない（リモートの `http.Server` に `WriteTimeout` は無い）。許可なら 200 のリースパネル、拒否は 403 `approval_denied`・無応答は 408 `approval_timeout` のトースト。承認待ちのあいだ、ほかのビューア（と、WebSocket の `lease` で更新された本人のパネル）は「承認待ち: <名前>（種別）」を見る。承認待ちを即座に返す窓口（`Acquire` の非同期版など）は、docs に決まりが無いため実装していない（未決。#66 の未決事項）。ブラウザが接続を切ると `Acquire` の ctx がキャンセルされ、承認待ちは取り下げられる |
+| WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のときだけ省く（M3: `pending_approval` は承認待ちの要求者の `holder` と、要求者本人かの `mine`）。`ready` の `monitors[]` の形は §5.3 |
 | Web UI（§4・M2。#62） | §4.2 のとおり | ハンドラは `web/handler/remote`（Gin。`router.NewRemote` が `/`・`/viewer`・`/viewer/` のパターンでマウントする）。未登録デバイスのページの選択は `middleware.RemoteConfig.ConnStates`（`service.ConnRequestStates`。読み取り専用。nil なら常に待機）。ページは `pages.Pending` / `Denied` / `Expired`（アクションルートにも同じページを返す）。ミドルウェアの HTML の拒否（`invalid_host` など）は `pages.RemoteError`（ページ）と `atoms.Alert`（アクションルートのフラグメント）。存在しない `monitor` の検証エラーは、ホスト GUI の検証エラーと同じ 422 `invalid_argument` のフォーム再描画（§4.2）。`<remo-screen-viewer>` の `dist/js/screen-viewer.js` はレイアウトが読み込むが、成果物は別の子 Issue（#63）が出す（それまでは 404 で、ライブ画面は出ない） |
 
 ## 8. 決定事項と実装時の検証事項
@@ -674,3 +675,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.22 | 2026-11-01 | §5.1 にハンドシェイク前後の拒否の分け方・既定の配信・終了時の 1001、§5.2 の 4400 / 4401 の範囲、§5.3 の `ready` の `monitors[]`・`lease` の `holder`・`error` の `code` の一覧・メッセージの上限、§7.5 に WebSocket の差分とリモートルーターの提供物（`GET /ws/screen`）を追記 | #61 |
 | 1.23 | 2026-11-01 | §5.3 の押下中のボタン・キーを、WebSocket の終わり（切断・置き換え・クライアントの削除・無効化）でも、リースの解放の前に `up` で離すと改めた（「切断では離さない」を撤回） | #61 |
 | 1.24 | 2026-11-01 | §4.2 に待機ページの出し分け（接続要求の状態を読み取り専用で引く）・Web UI の入力とエラー（`X-Viewer-Id`・本文 1 MiB・検証エラーの 422・トースト）・ショートカット送信メニューの一覧を、§7.5 に Web UI の実装と `/`・`/viewer*`・`/static/*` を追記 | #62 |
+| 1.25 | 2026-11-02 | §3.3 の `acquire_control`・`get_control_status` に承認待ち（`pending_approval`・`approval_denied` 403・`approval_timeout` 408・`holder` は `held` のときだけ・`mine`）、§4.2 の `POST /viewer/lease/acquire` の承認待ち・拒否・タイムアウト、§5.3 の `lease` の `pending_approval`（`holder` は `idle` のときだけ省く）と承認待ち中の入力の拒否、§7.5 に Web の承認待ちの実装を追記 | #67 |
