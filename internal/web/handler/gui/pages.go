@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -155,4 +156,25 @@ func (h *Handler) pageFail(c *gin.Context, err error) {
 		return
 	}
 	h.render(c, f.status, pages.Error(v))
+}
+
+// Logs は GET /logs?level=all|warn|error&page=N（アプリのログ。FR-H13）。level は無い・未知の値なら all、page は 1 始まりで
+// 不正な値は 1。HTMX の部分更新（絞り込み・ページ送り）はログのフラグメント。
+func (h *Handler) Logs(c *gin.Context) {
+	ctx := c.Request.Context()
+	filter := service.ParseAppLogFilter(c.Query("level"))
+	page, err := h.d.Logs.Entries(ctx, filter, pageParam(c))
+	if err != nil {
+		h.pageFail(c, err)
+		return
+	}
+	log := h.appLogView(filter, page)
+	switch {
+	case boostedRequest(c):
+		h.render(c, http.StatusOK, pages.LogsBoosted(view.AppLogPage{Chrome: h.chrome(ctx, view.NavLogs), Path: h.d.Logs.Path(), Log: log}))
+	case fragmentRequest(c):
+		h.render(c, http.StatusOK, organisms.AppLog(log))
+	default:
+		h.render(c, http.StatusOK, pages.Logs(view.AppLogPage{Chrome: h.chrome(ctx, view.NavLogs), Path: h.d.Logs.Path(), Log: log}))
+	}
 }

@@ -255,6 +255,8 @@ func (h *Handler) Clients(c *gin.Context) {
 
 **接続要求の履歴（`/requests/history`。FR-H03）**: 「接続要求」画面の「未処理」と「履歴」を `RequestsTabs` organism のタブで切り替える（どちらも `hx-boost`・`hx-target="#main"`・`hx-target-error="#main"`。サイドバーの強調は「接続要求」のまま）。履歴は `ConnectionRequestHistory` organism（`#request-history`）で、届いた日時・デバイス名・tailnet IP・ユーザー・結果（許可・拒否・失効・未処理のバッジ）・処理した日時の表を、読み取り専用で出す。件数が増えても重くならないよう、**1 ページ 20 件の固定のページ送り**にする（全件の読み込みも件数の上限による打ち切りもしない）。ページはクエリ `page` で、前へ・次へのリンクは `hx-get`・`hx-target="#request-history"`・`hx-swap="outerHTML"`・`hx-push-url="true"` で表だけを差し替える（`href` も持つため、JS なしや履歴の復元でも同じ URL でフルページが開く）。履歴は `#request-list` と違い `data-poll-rev` を持たず、`/poll` の対象にしない（表示中の表を勝手に差し替えない）。実装は `organisms/request_history.templ`・`pages/request_history.templ`
 
+**ログ画面（`/logs`。FR-H13）**: サイドバーの「ログ」（`navItems`・`view.NavLogs`）。アプリの運用ログ（NFR-O01。ファイル）を、日時・レベル（`atoms.Badge`。ERROR は danger・WARN は warn・INFO は ok・DEBUG は neutral）・内容（メッセージと属性の `キー 値`）の表で新しい順に出す。`AppLog` organism（`#app-log`）が、レベルの絞り込み（「すべて」「WARN 以上」「ERROR のみ」のリンク。クエリ `level`）・表・ページ送り（クエリ `page`。1 ページ 50 件の固定。「接続要求の履歴」と同じ理由）を持ち、リンクは `hx-get`・`hx-target="#app-log"`・`hx-swap="outerHTML"`・`hx-push-url="true"` で `#app-log` だけを差し替えて URL を更新する（絞り込みのリンクはページを 1 に戻し、ページ送りは `level` を保つ）。ログファイルのパスはページ（`pages/logs.templ`）の見出しの下に出す（フラグメントには含めない）。ホストのファイルマネージャーで開くボタンは持たない（M1 の GUI にフォルダーを開く仕組みがなく、パスが分かれば足りるため。Issue #45）。読み取り専用で、`/poll` の対象ではない（手動の再読み込み。絞り込みのリンクのクリックでも最新になる）。ハンドラは `gui.Deps.Logs`（利用者側のインターフェース `gui.Logs`。実体は `app.LogReader`）で受ける。ログの文字列はすべて templ がエスケープする。ログに秘密が出ないこと（NFR-S13）は、書き込み側の `ReplaceAttr` と読み出し側の `redactString` で守る（[アーキテクチャ「運用ログと監査ログ」](overview.md)）
+
 ### 5.5 HTMX 拡張の採否
 
 | 拡張 | 採否 | 理由 |
@@ -560,3 +562,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.9 | 2026-10-30 | 起動許可アプリの画面の実装（#23）に合わせて、§5.4 のファイル選択の `hx-target` と `form_id`、§5 の `/apps` の応答（フラグメント・OOB・422・409）と構成、§10 のトレース、§12 のアトム（`textarea`）・ページを追記 | #23 の実装との整合 |
 | 1.10 | 2026-11-01 | フロントエンド（`static/`）のパッケージマネージャを npm から bun に変更（§8.1・§8.2・§8.3・§9）。ロックファイルは `package-lock.json` から `bun.lock`、スクリプトは `bun run`・`bunx`、CI は `bun install --frozen-lockfile`。runner への bun の導入手順（sudo なし）を CI の中に持つ | TS/JS のパッケージマネージャは bun に固定する方針（#42） |
 | 1.11 | 2026-11-01 | §5.4 に接続要求の履歴（「未処理」「履歴」のタブと、1 ページ 20 件のページ送り。固定の件数のページ分けを選んだ理由と `hx-get` の差し替え）を追加 | #44 |
+| 1.12 | 2026-11-01 | §5.4 にログ画面（サイドバーの「ログ」。レベルの絞り込みと 1 ページ 50 件のページ送り、`#app-log` の差し替え、ファイルを開くボタンを持たない理由）を追加 | #45 |

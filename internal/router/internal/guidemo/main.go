@@ -13,10 +13,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -114,6 +116,7 @@ func seed() *guitest.Fakes {
 			RequestCount: 1, FirstSeenAt: now.Add(-5 * time.Minute), LastSeenAt: now.Add(-5 * time.Minute), ExpiresAt: now.Add(24 * time.Hour)},
 	}
 	f.Admin.Requests = append(f.Admin.Requests, demoRequestHistory(now)...)
+	f.Logs.Items = demoLogs(now)
 	expires := now.Add(60 * 24 * time.Hour)
 	used := now.Add(-time.Hour)
 	revoked := now.Add(-24 * time.Hour)
@@ -153,4 +156,55 @@ func demoRequestHistory(now time.Time) []service.ConnRequest {
 		out = append(out, r)
 	}
 	return out
+}
+
+// demoLogs はログ画面（Issue #45）の見た目の確認用。成功（INFO）・注意（WARN）・失敗（ERROR）が混ざった 60 件を新しい順に並べる
+// （1 ページ 50 件を超えるのでページ送りが出る）。ホスト名・IP・トークンの ID は架空で、秘密（トークンの平文・ハッシュ）は入れない。
+func demoLogs(now time.Time) []service.AppLogEntry {
+	type spec struct {
+		level  slog.Level
+		msg    string
+		attrs  []service.AppLogAttr
+		offset time.Duration // 現在から遡る時間
+	}
+	a := func(kv ...string) []service.AppLogAttr {
+		var out []service.AppLogAttr
+		for i := 0; i+1 < len(kv); i += 2 {
+			out = append(out, service.AppLogAttr{Key: kv[i], Value: kv[i+1]})
+		}
+		return out
+	}
+	specs := []spec{
+		{slog.LevelError, "mcp tool failed", a("tool", "screenshot", "error", "capture failed: access denied"), 40 * time.Second},
+		{slog.LevelInfo, "mcp tool succeeded", a("tool", "mouse_click", "client", "demo-desktop", "took_ms", "18"), 95 * time.Second},
+		{slog.LevelWarn, "mcp tool was rejected", a("tool", "key_press", "client", "demo-laptop", "took_ms", "1", "code", "lease_held_by_other"), 2 * time.Minute},
+		{slog.LevelInfo, "lease acquired", a("lease_id", "lease-1", "holder_kind", "mcp", "holder", "demo-desktop", "session", "s1"), 3 * time.Minute},
+		{slog.LevelWarn, "bearer authentication failed", a("reason", "revoked", "device", "demo-laptop", "remote_ip", "100.64.0.12"), 6 * time.Minute},
+		{slog.LevelInfo, "token issued", a("client_id", "client-001", "token_id", "tok-0007", "label", "desktop agent"), 9 * time.Minute},
+		{slog.LevelInfo, "connection request approved", a("request_id", "req-h000", "client_id", "client-001", "device", "demo-desktop", "login_name", "demo-user@example.com", "replaced", "false"), 12 * time.Minute},
+		{slog.LevelInfo, "connection request received", a("request_id", "req-h000", "device", "demo-desktop", "login_name", "demo-user@example.com", "remote_ip", "100.64.0.11"), 15 * time.Minute},
+		{slog.LevelWarn, "kill switch triggered", a("source", "hotkey"), 20 * time.Minute},
+		{slog.LevelInfo, "kill switch released", nil, 18 * time.Minute},
+		{slog.LevelError, "tailnet listener stopped", a("err", "listen tcp 100.64.0.1:8765: bind: address already in use"), 31 * time.Minute},
+		{slog.LevelWarn, "tailscaled is not reachable", a("state", "unavailable", "error", "pipe: The system cannot find the file specified."), 33 * time.Minute},
+		{slog.LevelInfo, "tailnet listener is listening", a("addrs", "[100.64.0.1:8765 [fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6]:8765]"), 44 * time.Minute},
+		{slog.LevelInfo, "tailscaled is running", a("state", "running", "ips", "[100.64.0.1 fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6]"), 45 * time.Minute},
+		{slog.LevelInfo, "kill switch hotkey registered", a("hotkey", "Ctrl+Alt+Shift+K"), 46 * time.Minute},
+		{slog.LevelInfo, "puppet-remo starting", a("version", "0.0.0-demo", "background", "false"), 47 * time.Minute},
+	}
+	entries := make([]service.AppLogEntry, 0, 60)
+	add := func(s spec) {
+		entries = append(entries, service.AppLogEntry{
+			Time: now.Add(-s.offset), Level: s.level.String(), Severity: s.level, Message: s.msg, Attrs: s.attrs,
+		})
+	}
+	for _, s := range specs {
+		add(s)
+	}
+	// ページ送りを見せるための、古い時間帯の成功の記録。
+	for i := range 44 {
+		add(spec{slog.LevelInfo, "mcp tool succeeded", a("tool", "mouse_move", "client", "demo-desktop", "took_ms", fmt.Sprint(3+i%9)), time.Duration(50+i) * time.Minute})
+	}
+	slices.SortStableFunc(entries, func(x, y service.AppLogEntry) int { return y.Time.Compare(x.Time) })
+	return entries
 }

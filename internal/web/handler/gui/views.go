@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"time"
@@ -319,4 +320,61 @@ func settingsValues(s service.HostSettings) view.SettingsValues {
 		Port: strconv.Itoa(s.Port), Hotkey: s.KillSwitchHotkey, ScreenshotMaxDim: strconv.Itoa(s.ScreenshotMaxDimension),
 		LeaseIdleSec: strconv.Itoa(s.LeaseIdleTimeoutSec), Autostart: s.Autostart,
 	}
+}
+
+// logLevelTone はログのレベルの色（ERROR 以上は赤、WARN は黄、INFO は緑＝成功・通常、DEBUG などは灰）。
+func logLevelTone(l slog.Level) view.BadgeTone {
+	switch {
+	case l >= slog.LevelError:
+		return view.ToneDanger
+	case l >= slog.LevelWarn:
+		return view.ToneWarn
+	case l >= slog.LevelInfo:
+		return view.ToneOK
+	}
+	return view.ToneNeutral
+}
+
+// logURL は /logs の URL。all と 1 ページ目は省略する。
+func logURL(filter service.AppLogFilter, page int) string {
+	q := url.Values{}
+	if filter != service.AppLogAll {
+		q.Set("level", string(filter))
+	}
+	if page > 1 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if len(q) == 0 {
+		return "/logs"
+	}
+	return "/logs?" + q.Encode()
+}
+
+func (h *Handler) appLogView(filter service.AppLogFilter, p service.AppLogPage) view.AppLog {
+	v := view.AppLog{Page: p.Page, Filter: string(filter)}
+	for _, f := range []struct {
+		filter service.AppLogFilter
+		label  string
+	}{{service.AppLogAll, "すべて"}, {service.AppLogWarn, "WARN 以上"}, {service.AppLogError, "ERROR のみ"}} {
+		v.Filters = append(v.Filters, view.LogFilterLink{Code: string(f.filter), Label: f.label, URL: logURL(f.filter, 1), Active: f.filter == filter})
+	}
+	for _, e := range p.Items {
+		row := view.LogRow{Time: h.formatLogTime(e.Time), Level: e.Level, LevelTone: logLevelTone(e.Severity), Message: e.Message}
+		for _, a := range e.Attrs {
+			row.Attrs = append(row.Attrs, view.LogAttr{Key: a.Key, Value: a.Value})
+		}
+		v.Rows = append(v.Rows, row)
+	}
+	if p.HasPrev {
+		v.PrevURL = logURL(filter, p.Page-1)
+	}
+	if p.HasNext {
+		v.NextURL = logURL(filter, p.Page+1)
+	}
+	return v
+}
+
+// formatLogTime はログの日時（秒まで）。
+func (h *Handler) formatLogTime(t time.Time) string {
+	return t.In(h.loc).Format("2006-01-02 15:04:05")
 }

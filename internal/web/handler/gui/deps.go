@@ -72,6 +72,13 @@ type Apps interface {
 	PickExecutable(ctx context.Context) (path string, ok bool, err error)
 }
 
+// Logs はアプリのログ（運用ログ。FR-H13）の閲覧。実体は app.LogReader。監査ログ（DB）とは別。
+type Logs interface {
+	Entries(ctx context.Context, filter service.AppLogFilter, page int) (service.AppLogPage, error)
+	// Path は今のログファイルのパス（画面に出す）。
+	Path() string
+}
+
 // Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
@@ -86,6 +93,7 @@ type Deps struct {
 	Admin      Admin
 	Settings   Settings
 	Apps       Apps
+	Logs       Logs
 	Events     Events
 	Clock      domain.Clock
 
@@ -115,7 +123,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Settings == nil, d.Apps == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

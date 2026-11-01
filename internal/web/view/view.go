@@ -30,6 +30,7 @@ const (
 	NavClients   Nav = "clients"
 	NavApps      Nav = "apps"
 	NavSettings  Nav = "settings"
+	NavLogs      Nav = "logs"
 )
 
 // Chrome は全画面共通の枠（ヘッダー・サイドバー）の表示。
@@ -376,4 +377,41 @@ type RequestHistory struct {
 type RequestsHistory struct {
 	Chrome  Chrome
 	History RequestHistory
+}
+
+// LogRow はアプリのログ（FR-H13）の 1 件。
+type LogRow struct {
+	Time      string
+	Level     string // ファイルの表記（DEBUG・INFO・WARN・ERROR など）
+	LevelTone BadgeTone
+	Message   string
+	Attrs     []LogAttr
+}
+
+// LogAttr はログに付いた属性（キー = 値）。
+type LogAttr struct{ Key, Value string }
+
+// LogFilterLink はレベルの絞り込みのリンク 1 つ。
+type LogFilterLink struct {
+	Code   string // all / warn / error
+	Label  string
+	URL    string
+	Active bool
+}
+
+// AppLog はアプリのログの 1 ページ（絞り込みのリンク・表・ページ送り）。PrevURL・NextURL が空なら、その向きのページは無い。
+type AppLog struct {
+	Rows    []LogRow
+	Page    int
+	Filters []LogFilterLink
+	Filter  string // 今の絞り込み（all / warn / error）
+	PrevURL string
+	NextURL string
+}
+
+// AppLogPage はログ画面のページ。Path は今のログファイルの場所。
+type AppLogPage struct {
+	Chrome Chrome
+	Path   string
+	Log    AppLog
 }

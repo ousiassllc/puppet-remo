@@ -30,6 +30,18 @@ func newListenSupervisor(newListener func() tailnet.Listener, h http.Handler, po
 	return &listenSupervisor{newListener: newListener, handler: h, port: port, log: log, reload: make(chan struct{}, 1)}
 }
 
+// logListenState は待ち受けの状態の変化（tailnet.Listener の OnChange。変わったときだけ呼ばれる）を運用ログに出す。
+func logListenState(log *slog.Logger, st tailnet.ListenState) {
+	switch {
+	case st.Listening && st.Reason == "":
+		log.Info("tailnet listener is listening", "addrs", st.Addrs)
+	case st.Listening:
+		log.Warn("tailnet listener is listening only on some addresses", "addrs", st.Addrs, "reason", st.Reason)
+	default:
+		log.Warn("tailnet listener is not listening", "reason", st.Reason)
+	}
+}
+
 // Reload は、設定のポートの変更を取り込んで待ち受け直すよう求める。待たずに戻る。
 func (s *listenSupervisor) Reload() {
 	select {

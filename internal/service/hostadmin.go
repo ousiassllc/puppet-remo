@@ -223,6 +223,8 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 		}
 		return domain.Client{}, mapRepoErr(err, "connection request")
 	}
+	h.cfg.Logger.Info("connection request approved", "request_id", requestID, "client_id", c.ID, "device", c.DisplayName,
+		"login_name", c.LoginName, "replaced", old.ID != "")
 	if old.ID != "" {
 		h.audit(ctx, "client", "client.replace", c, map[string]any{
 			"request_id": requestID, "stable_node_id": c.StableNodeID,
@@ -244,6 +246,7 @@ func (h *hostAdmin) DenyRequest(ctx context.Context, requestID string) error {
 	if err := h.cfg.ConnRequests.Decide(ctx, requestID, repository.ConnDenied, nil); err != nil {
 		return mapRepoErr(err, "connection request")
 	}
+	h.cfg.Logger.Info("connection request denied", "request_id", requestID, "device", req.DisplayName, "login_name", req.LoginName)
 	h.audit(ctx, "auth", "auth.connreq_deny", domain.Client{DisplayName: req.DisplayName}, map[string]any{
 		"request_id": requestID, "stable_node_id": req.StableNodeID, "login_name": req.LoginName,
 	})
@@ -294,6 +297,8 @@ func (h *hostAdmin) UpdateClient(ctx context.Context, id string, u ClientUpdate)
 	if before.WebEnabled && !after.WebEnabled {
 		h.disconnect(id, domain.ActorWeb)
 	}
+	h.cfg.Logger.Info("client updated", "client_id", id, "device", after.DisplayName,
+		"web_enabled", after.WebEnabled, "mcp_enabled", after.MCPEnabled, "agent_enabled", after.AgentEnabled)
 	h.audit(ctx, "client", "client.update", after, map[string]any{
 		"web_enabled": after.WebEnabled, "mcp_enabled": after.MCPEnabled, "agent_enabled": after.AgentEnabled,
 	})
@@ -310,6 +315,7 @@ func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
 	}
 	h.disconnect(id, domain.ActorMCP)
 	h.disconnect(id, domain.ActorWeb)
+	h.cfg.Logger.Info("client deleted", "client_id", id, "device", c.DisplayName)
 	h.audit(ctx, "client", "client.delete", c, map[string]any{"stable_node_id": c.StableNodeID, "login_name": c.LoginName})
 	return nil
 }
@@ -383,6 +389,7 @@ func (h *hostAdmin) RevokeToken(ctx context.Context, clientID, tokenID string) e
 	if h.cfg.Bus != nil {
 		h.cfg.Bus.Publish(Event{Topic: TopicSessions})
 	}
+	h.cfg.Logger.Info("token revoked", "client_id", clientID, "token_id", tokenID, "label", tok.Label)
 	h.audit(ctx, "token", "token.revoke", c, map[string]any{"token_id": tokenID, "label": tok.Label})
 	return nil
 }

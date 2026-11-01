@@ -62,6 +62,7 @@ func (a *App) toast(level, msg string) {
 // onSettingsChange は設定の保存後に、影響のあるコンポーネントへ変更を渡す（HostSettingsConfig.OnChange）。
 func (a *App) onSettingsChange(old, updated service.HostSettings) {
 	if old.Port != updated.Port {
+		a.log.Info("server port changed", "old", old.Port, "new", updated.Port)
 		a.port.Store(int32(updated.Port))
 		a.listen.Reload()
 	}
@@ -107,6 +108,8 @@ func (a *App) Start(ctx context.Context) error {
 	if err := a.hotkey.Bind(a.initialKey); err != nil {
 		a.log.Error("kill switch hotkey is not active; use the tray or the dashboard", "err", err)
 		a.toast("error", "キルスイッチのホットキーを登録できませんでした。トレイまたはダッシュボードから発動できます。")
+	} else {
+		a.log.Info("kill switch hotkey registered", "hotkey", a.initialKey)
 	}
 	return nil
 }
@@ -131,6 +134,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	a.stopped = true
 	cancel := a.cancel
 	a.mu.Unlock()
+	a.log.Info("puppet-remo is shutting down")
 
 	var errs []error
 	a.hotkey.Close()

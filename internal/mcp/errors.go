@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -55,6 +57,22 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 		IsError:           true,
 		Content:           []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("%s: %s", body.Code, body.Message)}},
 		StructuredContent: body,
+	}
+}
+
+// logToolCall はツール実行の結果を運用ログに出す（監査とは別。引数・結果の中身は出さない。FR-AU03、NFR-S13）。
+// 成功は、状態を変える操作を Info、読み取りだけのツール（スクリーンショットの取得など。頻繁に呼ばれる）を Debug にする。
+// 失敗のうち、拒否・不正な引数などのドメインエラーは Warn。想定外の失敗とタイムアウトは toolError が Error・Warn で出す。
+func (s *Server) logToolCall(ctx context.Context, tool string, who domain.Actor, readOnly bool, took time.Duration, err error) {
+	attrs := []any{"tool", tool, "client", who.Label, "took_ms", took.Milliseconds()}
+	var de *domain.Error
+	switch {
+	case err == nil && readOnly:
+		s.log.Log(ctx, slog.LevelDebug, "mcp tool succeeded", attrs...)
+	case err == nil:
+		s.log.Log(ctx, slog.LevelInfo, "mcp tool succeeded", attrs...)
+	case errors.As(err, &de) && de.Code != domain.CodeInternal:
+		s.log.Log(ctx, slog.LevelWarn, "mcp tool was rejected", append(attrs, "code", string(de.Code))...)
 	}
 }
 

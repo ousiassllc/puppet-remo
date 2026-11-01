@@ -268,6 +268,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 		Watcher:     e.watcher,
 		WhoIs:       e.whois,
 		Static:      staticFiles(),
+		Logs:        NewLogReader(t.TempDir()),
 		Version:     "0.0.0-test",
 		Logger:      discardLogger(),
 		ListenFunc:  e.listens.listen,

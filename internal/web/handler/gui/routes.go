@@ -17,6 +17,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/", h.Dashboard)
 	r.GET("/requests", h.Requests)
 	r.GET("/requests/history", h.RequestsHistory)
+	r.GET("/logs", h.Logs)
 	r.GET("/clients", h.Clients)
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)

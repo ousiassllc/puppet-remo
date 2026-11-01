@@ -324,3 +324,33 @@ func TestServerStatusBodyWrapsLongValues(t *testing.T) {
 		}
 	}
 }
+
+// アプリのログ: 3 列の表・レベルのバッジ（成功の INFO・WARN・ERROR）・属性・絞り込みのリンク。HTML は CSP に適合する。
+func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
+	v := view.AppLog{
+		Page: 2, Filter: "warn",
+		Filters: []view.LogFilterLink{
+			{Code: "all", Label: "すべて", URL: "/logs"},
+			{Code: "warn", Label: "WARN 以上", URL: "/logs?level=warn", Active: true},
+			{Code: "error", Label: "ERROR のみ", URL: "/logs?level=error"},
+		},
+		Rows: []view.LogRow{
+			{Time: "2026-11-01 09:00:03", Level: "ERROR", LevelTone: view.ToneDanger, Message: "mcp tool failed", Attrs: []view.LogAttr{{Key: "tool", Value: "screenshot"}}},
+			{Time: "2026-11-01 09:00:02", Level: "WARN", LevelTone: view.ToneWarn, Message: "auth failed <b>"},
+			{Time: "2026-11-01 09:00:01", Level: "INFO", LevelTone: view.ToneOK, Message: "lease acquired"},
+		},
+		PrevURL: "/logs?level=warn", NextURL: "/logs?level=warn&page=3",
+	}
+	out := webtest.Render(t, organisms.AppLog(v))
+	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
+		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<",
+		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
+		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
+	has(t, out, "auth failed &lt;b&gt;")
+	hasNot(t, out, "auth failed <b>", "<form", "hx-post")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	empty := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1}))
+	has(t, empty, `data-empty="app-log"`)
+	hasNot(t, empty, "<tbody", "data-pager")
+}
