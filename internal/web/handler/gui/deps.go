@@ -23,9 +23,11 @@ type SessionLister interface {
 	Sessions() []service.SessionInfo
 }
 
-// LeaseReader は現在のリース保持者を返す（M1 は表示のみ）。
-type LeaseReader interface {
+// LeaseControl は現在のリース保持者の読み取りと、ホスト所有者による強制剥奪（FR-H02、FR-L06）。実体は service.LeaseManager。
+// 剥奪の監査（lease.revoke）は実体が記録するため、ハンドラは記録しない。
+type LeaseControl interface {
 	Holder() (service.Holder, bool)
+	Revoke(by domain.Actor) error
 }
 
 // KillSwitch はキルスイッチの状態と、ホスト所有者による発動・解除。
@@ -88,7 +90,7 @@ type Events interface {
 type Deps struct {
 	Status     StatusReader
 	Sessions   SessionLister
-	Leases     LeaseReader
+	Leases     LeaseControl
 	KillSwitch KillSwitch
 	Admin      Admin
 	Settings   Settings

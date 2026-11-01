@@ -31,8 +31,9 @@ func TestDashboardShowsServerState(t *testing.T) {
 		`id="server-status"`, `id="sessions"`, `id="lease"`, `id="header-killswitch"`, `name="rev_killswitch"`,
 	)
 	lacks(t, res, "sse-connect", "sse-swap", "sse:", "sse.min.js", "/events")
-	// M1 のダッシュボードには強制剥奪も実行中タスクも無い。
-	lacks(t, res, "/lease/revoke", "強制剥奪", "タスク", "/tasks")
+	// 保持者（MCP）がいるので強制剥奪のボタンが出る（FR-H02）。実行中タスクは M4。
+	contains(t, res, `hx-post="/lease/revoke"`, "強制剥奪")
+	lacks(t, res, "タスク", "/tasks")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" && got != "" {
 		t.Errorf("Cache-Control = %q", got)
 	}
@@ -167,8 +168,8 @@ func TestUnknownRoutes(t *testing.T) {
 		status(t, res, http.StatusNotFound)
 		contains(t, res, "<html", `data-error-code="not_found"`, "ページが見つかりません")
 	}
-	// M1 に無い操作の経路は作らない（メソッド違いでも 404）。
-	for _, route := range [][2]string{{http.MethodPost, "/lease/revoke"}, {http.MethodPost, "/tasks/t1/cancel"}, {http.MethodPut, "/agent"}} {
+	// M4 までに無い操作の経路は作らない（メソッド違いでも 404。/lease/revoke は POST だけ）。
+	for _, route := range [][2]string{{http.MethodPut, "/lease/revoke"}, {http.MethodPost, "/tasks/t1/cancel"}, {http.MethodPut, "/agent"}} {
 		res := r.do(route[0], route[1], nil, hx...)
 		status(t, res, http.StatusNotFound)
 	}
@@ -177,4 +178,69 @@ func TestUnknownRoutes(t *testing.T) {
 	status(t, res, http.StatusNotFound)
 	lacks(t, res, "<html")
 	contains(t, res, `data-error-code="not_found"`)
+}
+
+// 状態駆動レンダリング: 強制剥奪のボタンは、他者（mcp・web）が保持中のときだけ HTML に出る（FR-H02、FR-L06）。
+func TestDashboardRevokeButtonIsStateDriven(t *testing.T) {
+	holder := func(kind domain.ActorKind) func(*guitest.Fakes) {
+		return func(f *guitest.Fakes) {
+			f.Leases.Held = true
+			f.Leases.H = service.Holder{LeaseID: "l1", Actor: domain.Actor{Kind: kind, ClientID: "c1", Label: "laptop"}, Since: f.Clock.T, IdleRemaining: time.Minute}
+		}
+	}
+	tests := []struct {
+		name   string
+		mutate func(*guitest.Fakes)
+		want   []string
+		not    []string
+	}{
+		{"idle", func(*guitest.Fakes) {}, []string{"空き"}, []string{"/lease/revoke", "強制剥奪"}},
+		{"held by mcp", holder(domain.ActorMCP), []string{`hx-post="/lease/revoke"`, "強制剥奪", "MCP"}, nil},
+		{"held by web", holder(domain.ActorWeb), []string{`hx-post="/lease/revoke"`, "強制剥奪", "Web", "laptop"}, nil},
+		// agent の剥奪（タスクの中断を伴う）は M4。M2 では出さない。
+		{"held by agent", holder(domain.ActorAgent), []string{"エージェント", "保持中"}, []string{"/lease/revoke", "強制剥奪"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := newRig(t, tt.mutate).get("/")
+			status(t, res, http.StatusOK)
+			contains(t, res, tt.want...)
+			lacks(t, res, tt.not...)
+		})
+	}
+}
+
+func TestRevokeLease(t *testing.T) {
+	held := func(f *guitest.Fakes) {
+		f.Leases.Held = true
+		f.Leases.H = service.Holder{LeaseID: "l1", Actor: domain.Actor{Kind: domain.ActorWeb, ClientID: "c1", Label: "laptop"}, Since: f.Clock.T, IdleRemaining: time.Minute}
+	}
+	t.Run("revokes as the host and returns the lease body", func(t *testing.T) {
+		r := newRig(t, held)
+		res := r.post("/lease/revoke", nil, hx...)
+		status(t, res, http.StatusOK)
+		must(t, r.f.Leases.RevokeCalls == 1, "Revoke calls = %d, want 1", r.f.Leases.RevokeCalls)
+		must(t, r.f.Leases.LastBy == service.HostActor && r.f.Leases.LastBy.Kind == domain.ActorHost, "Revoke by = %+v, want the host actor", r.f.Leases.LastBy)
+		// 保持者は空きになり、ボタンは消える。完了のトーストが OOB で添えられる。
+		contains(t, res, "空き", "操作権を剥奪しました。", `hx-swap-oob="beforeend:#toast-root"`)
+		lacks(t, res, "/lease/revoke", "強制剥奪", "保持中", "<html", "laptop")
+	})
+	t.Run("idle is an idempotent 200 without a toast", func(t *testing.T) {
+		r := newRig(t)
+		res := r.post("/lease/revoke", nil, hx...)
+		status(t, res, http.StatusOK)
+		must(t, r.f.Leases.RevokeCalls == 1, "Revoke calls = %d, want 1", r.f.Leases.RevokeCalls)
+		contains(t, res, "空き")
+		lacks(t, res, "/lease/revoke", "操作権を剥奪しました。", "toast-root")
+	})
+	t.Run("a service error is a fragment error and keeps the holder", func(t *testing.T) {
+		r := newRig(t, held, func(f *guitest.Fakes) { f.Leases.RevokeErr = errCleanup })
+		res := r.post("/lease/revoke", nil, hx...)
+		status(t, res, http.StatusInternalServerError)
+		contains(t, res, `data-error-code="internal"`)
+		lacks(t, res, "cleanup boom")
+		if _, ok := r.f.Leases.Holder(); !ok {
+			t.Error("the holder was removed although Revoke failed")
+		}
+	})
 }

@@ -295,7 +295,7 @@ func TestHostOnlyRoutesAreNotReachableRemotely(t *testing.T) {
 	client := &http.Client{Transport: remoteTransport{e: e, token: token}}
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/"}, {http.MethodGet, "/settings"}, {http.MethodGet, "/events"}, {http.MethodGet, "/poll"}, {http.MethodGet, "/clients"},
-		{http.MethodPost, "/killswitch/trigger"}, {http.MethodPost, "/killswitch/release"},
+		{http.MethodPost, "/killswitch/trigger"}, {http.MethodPost, "/killswitch/release"}, {http.MethodPost, "/lease/revoke"},
 		{http.MethodPut, "/settings"}, {http.MethodPost, "/clients/client-1/tokens"},
 	} {
 		req, _ := http.NewRequest(tc.method, "http://"+testTailnetIP+":8765"+tc.path, nil)

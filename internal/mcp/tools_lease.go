@@ -19,7 +19,7 @@ type holderBody struct {
 }
 
 // statusBody は get_control_status の出力（API 仕様 §3.3）。
-// M1 の state は idle / held のみ、holder.kind は mcp のみ（pending_approval は M3、web は M2、agent は M4）。
+// state は idle / held のみ、holder.kind は mcp / web（pending_approval は M3、agent は M4）。
 type statusBody struct {
 	State            string      `json:"state"`
 	Holder           *holderBody `json:"holder,omitempty"`

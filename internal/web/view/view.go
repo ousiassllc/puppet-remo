@@ -72,9 +72,10 @@ type Session struct {
 // Sessions は接続中セッション一覧。
 type Sessions struct{ Items []Session }
 
-// Lease はリース保持者の表示（M1 は表示のみ。強制剥奪の操作は持たない）。
+// Lease はリース保持者の表示。CanRevoke のときだけ強制剥奪のボタンを出す（状態駆動）。
 type Lease struct {
 	Held          bool
+	CanRevoke     bool // 剥奪できる保持者（mcp・web）がいる（FR-L06。agent の剥奪は M4）
 	HolderLabel   string
 	KindLabel     string // 保持者の種別（mcp など）
 	Since         string

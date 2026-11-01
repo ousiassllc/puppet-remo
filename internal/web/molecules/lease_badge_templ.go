@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import "github.com/ousiassllc/puppet-remo/internal/web/atoms"
 
-// LeaseBadge は操作権の保持者の種別つきの表示（M1 は表示のみ。強制剥奪の操作は持たない）。
+// LeaseBadge は操作権の保持者の種別つきの表示（操作は持たない。強制剥奪のボタンは organisms.LeasePanelBody）。
 func LeaseBadge(held bool, holder, kind string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

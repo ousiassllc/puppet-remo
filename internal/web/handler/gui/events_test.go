@@ -158,7 +158,7 @@ func TestEventsPushesFragmentsOnChange(t *testing.T) {
 		t.Errorf("killswitch event = %q", e.Data)
 	}
 
-	// リースの変化 → 保持者のフラグメント。強制剥奪の操作は含まない。
+	// リースの変化 → 保持者のフラグメント。表示だけで、強制剥奪の操作は含まない（/events は M2 でも変えない）。
 	r.f.Leases.Held = true
 	r.f.Leases.H = service.Holder{Actor: domain.Actor{Kind: domain.ActorMCP, Label: "claude-desktop"}, Since: r.f.Clock.T, IdleRemaining: 5 * time.Minute}
 	r.f.Bus.Publish(service.Event{Topic: service.TopicLease})

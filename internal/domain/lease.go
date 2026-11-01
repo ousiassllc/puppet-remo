@@ -8,7 +8,7 @@ import (
 // DefaultLeaseIdleTimeout はリースのアイドルタイムアウトの既定値（FR-L05、設定 lease.idle_timeout_sec の既定 300 秒）。
 const DefaultLeaseIdleTimeout = 5 * time.Minute
 
-// LeaseState はリースの状態。M1 は idle → held → idle（FR-L03）。
+// LeaseState はリースの状態。M1・M2 は idle → held → idle（FR-L03）。
 // pending_approval（承認待ち）は M3 で加わる。
 type LeaseState string
 
@@ -25,6 +25,7 @@ const (
 	ReleaseIdleTimeout ReleaseReason = "idle_timeout" // アイドルタイムアウト
 	ReleaseDisconnect  ReleaseReason = "disconnect"   // セッション切断・クライアントの削除・無効化
 	ReleaseKillSwitch  ReleaseReason = "kill_switch"  // キルスイッチ
+	ReleaseRevoked     ReleaseReason = "revoked"      // 他者による強制剥奪（FR-L06。M2）
 )
 
 // Lease は保持中のリース。
@@ -40,10 +41,16 @@ type LeaseEvent struct {
 	From, To LeaseState
 	Lease    Lease         // 遷移したリース（解放時は解放直前の内容）
 	Reason   ReleaseReason // To == LeaseIdle のときだけ設定される
-	At       time.Time
+	// By は強制剥奪（Reason == ReleaseRevoked）をした操作主体（host または web）。それ以外では空。
+	By Actor
+	At time.Time
 }
 
 // LeaseMachine はリースの状態機械（idle → held → idle）。外部 I/O もタイマーも持たない。
+//
+// 強制剥奪（Revoke）された保持者は、次の Acquire が成功するまで覚えておく。その保持者の Check は、その間
+// （リースが空きのままなら）ErrLeaseRequired ではなく ErrLeaseRevoked を返す（FR-L06）。他者が保持中なら、
+// 通常どおり ErrLeaseHeldByOther。剥奪された保持者が自分で Acquire し直すと、覚えていた印は消える。
 // goroutine セーフではないため、排他とアイドルタイマーは呼び出し側（LeaseManager）が受け持つ。
 //
 // アイドル超過は、期限（LastActivity + IdleTimeout）の時刻に達した瞬間から有効になる。
@@ -53,6 +60,7 @@ type LeaseMachine struct {
 	ids         IDGen
 	idleTimeout time.Duration
 	cur         *Lease
+	revoked     *Actor // 最後に強制剥奪された保持者。次の Acquire の成功で忘れる
 }
 
 // NewLeaseMachine は idle 状態の LeaseMachine を作る。idleTimeout は正でなければならない。
@@ -103,7 +111,7 @@ func (m *LeaseMachine) IdleDeadline() (time.Time, bool) {
 }
 
 // Acquire は who にリースを取得させる（idle → held。承認なし。FR-L03）。
-//   - 保持者になれない種別（M1 は mcp 以外）、セッション ID が空 → ErrInvalidArgument
+//   - 保持者になれない種別（mcp・web 以外）、セッション ID が空 → ErrInvalidArgument
 //   - 他者が保持中 → ErrLeaseHeldByOther（待機しない）
 //   - 自分が保持中 → 同じリースを返し、活動時刻を更新する（遷移なし）
 //
@@ -124,6 +132,7 @@ func (m *LeaseMachine) Acquire(who Actor) (Lease, []LeaseEvent, error) {
 		m.cur.LastActivity = now
 		return *m.cur, events, nil
 	}
+	m.revoked = nil
 	m.cur = &Lease{ID: m.ids.NewID(), Holder: who, Since: now, LastActivity: now}
 	events = append(events, LeaseEvent{From: LeaseIdle, To: LeaseHeld, Lease: *m.cur, At: now})
 	return *m.cur, events, nil
@@ -150,14 +159,36 @@ func (m *LeaseMachine) ReleaseAll(reason ReleaseReason) []LeaseEvent {
 	return append(events, m.release(now, reason))
 }
 
+// Revoke は by が保持者を強制剥奪する（held → idle。FR-L06）。idle なら何もせず成功する（冪等）。
+// by の種別は host か web のみ（それ以外は ErrInvalidArgument）。agent の保持者の剥奪（タスクの中断を伴う）は M4。
+// 剥奪された保持者は、次の Acquire が成功するまで Check が ErrLeaseRevoked を返す。
+func (m *LeaseMachine) Revoke(by Actor) ([]LeaseEvent, error) {
+	if !by.Kind.CanRevokeLease() {
+		return nil, ErrInvalidArgument.WithMsg(fmt.Sprintf("actor kind %q cannot revoke the lease", by.Kind))
+	}
+	now := m.clock.Now()
+	events := m.expireAt(now)
+	if m.cur == nil {
+		return events, nil
+	}
+	holder := m.cur.Holder
+	ev := m.release(now, ReleaseRevoked)
+	ev.By = by
+	m.revoked = &holder
+	return append(events, ev), nil
+}
+
 // Check は who に以後の入力操作が許されるかを確認し、許されるなら活動時刻を更新する
 // （アイドル解放の起点。FR-L05）。
-//   - idle → ErrLeaseRequired（呼び出し側が暗黙取得を試みる。FR-L04）
+//   - idle → ErrLeaseRequired（呼び出し側が暗黙取得を試みる。FR-L04）。who が強制剥奪された保持者なら ErrLeaseRevoked（次の Acquire まで。FR-L06）
 //   - 他者が保持中 → ErrLeaseHeldByOther
 func (m *LeaseMachine) Check(who Actor) ([]LeaseEvent, error) {
 	now := m.clock.Now()
 	events := m.expireAt(now)
 	if m.cur == nil {
+		if m.revoked != nil && m.revoked.SameSession(who) {
+			return events, ErrLeaseRevoked
+		}
 		return events, ErrLeaseRequired
 	}
 	if !m.cur.Holder.SameSession(who) {

@@ -77,7 +77,11 @@ func marshalDetail(detail map[string]any) json.RawMessage {
 }
 
 // leaseAuditEntry はリースの遷移を監査エントリにする（kind = lease）。
+// 強制剥奪（lease.revoke）の操作主体は剥奪した側（ホスト GUI なら host）で、剥奪された保持者は detail に残す。
 func leaseAuditEntry(ev domain.LeaseEvent) repository.AuditEntry {
+	if ev.Reason == domain.ReleaseRevoked {
+		return leaseRevokeAuditEntry(ev)
+	}
 	h := ev.Lease.Holder
 	e := repository.AuditEntry{
 		TS:          ev.At,
@@ -96,6 +100,24 @@ func leaseAuditEntry(ev domain.LeaseEvent) repository.AuditEntry {
 	e.Event = "lease.release"
 	e.DetailJSON = marshalDetail(map[string]any{"reason": string(ev.Reason)})
 	return e
+}
+
+func leaseRevokeAuditEntry(ev domain.LeaseEvent) repository.AuditEntry {
+	by, h := ev.By, ev.Lease.Holder
+	return repository.AuditEntry{
+		TS:          ev.At,
+		Kind:        "lease",
+		Event:       "lease.revoke",
+		ActorType:   by.Kind,
+		ClientID:    by.ClientID,
+		ClientLabel: by.Label,
+		SessionID:   by.SessionID,
+		LeaseID:     ev.Lease.ID,
+		Result:      auditOK,
+		DetailJSON: marshalDetail(map[string]any{
+			"holder_kind": string(h.Kind), "holder_client_id": h.ClientID, "holder_label": h.Label,
+		}),
+	}
 }
 
 // leaseDeniedAuditEntry は取得の失敗（他者が保持中など）を監査エントリにする。

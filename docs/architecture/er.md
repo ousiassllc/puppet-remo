@@ -416,6 +416,8 @@ erDiagram
 
 制約: `CHECK (result IN ('ok','error','denied'))`、`CHECK (actor_type IN ('mcp','web','agent','host','system'))`、`CHECK (detail_json IS NULL OR json_valid(detail_json))`。
 
+強制剥奪の監査（M2。FR-L06）。`kind = lease`、`event = lease.revoke`、`result = ok`、`lease_id` は剥奪されたリースの ID。`actor_type` / `client_id` / `client_label` / `session_id` は**剥奪した側**（ホスト GUI からは `host`・`(host)`）で、`detail_json` に剥奪された保持者を `{ "holder_kind", "holder_client_id", "holder_label" }` で残す。剥奪は `lease.release` とは別に記録する（同じ遷移を二重に記録しない）。保持者がいないときの剥奪は記録しない。
+
 M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、既存の `tool` / `settings` をイベント名で区別する。
 
 | event | kind | actor_type | result | `detail_json` |
@@ -517,3 +519,4 @@ erDiagram
 | 1.11 | 2026-10-30 | `launchable_apps` の予約デバイス名に上付き数字を追加、パスの上限を終端の NUL を含めて 32,767（32,766 文字）に訂正、`settings.launchable_app.update` の `changed` が読めない行の更新で `args` を必ず含むことを追記 | #16 の再レビュー指摘 |
 | 1.12 | 2026-11-01 | `connection_requests` に接続要求の履歴の読み方（新しい順・ページ分け・保持期間）と索引 `ix_connreq_first_seen`（マイグレーション v3）を追加。結果と処理日時の列は v1 からあるため足さない | #44 |
 | 1.13 | 2026-11-01 | `tool.launch_app` の `detail` に `reused_existing_window`（ok のみ）を追加 | #46 |
+| 1.14 | 2026-11-01 | 監査イベント `lease.revoke`（M2。操作主体は剥奪した側、`detail_json` に剥奪された保持者）を追記 | #58 |

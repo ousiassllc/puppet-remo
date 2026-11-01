@@ -524,8 +524,10 @@ type LeaseManager interface {
     Release(who domain.Actor)
     // セッション切断（FR-L05）。Release と同じだが、監査の理由が explicit ではなく disconnect になる。
     ReleaseSession(who domain.Actor)
-    // 強制剥奪（Web・ホスト。M2 から）。保持者が agent（M4）ならタスクを中断する（Agent.Cancel を呼ぶ）。
-    Revoke(by domain.Actor) error // M2。M1 の実装には持たない
+    // 強制剥奪（Web・ホスト。M2 から）。by は host か web（それ以外は ErrInvalidArgument）。保持者がいなければ何もせず nil（冪等）。
+    // 保持者が agent（M4）ならタスクを中断する（Agent.Cancel を呼ぶ）。M2 では agent の保持者がいないので Cancel は呼ばない。
+    // 剥奪された保持者の Check は、次の Acquire が成功するまで ErrLeaseRevoked を返し続ける。監査は lease.revoke（actor_type = by）。
+    Revoke(by domain.Actor) error
     // 以後の入力操作が許されるかの確認。活動時刻を更新する（アイドル解放の起点）。
     Check(who domain.Actor) error // ErrLeaseRequired / ErrLeaseHeldByOther / ErrLeaseRevoked
     Holder() (Holder, bool)
@@ -537,7 +539,7 @@ type Lease struct{ ID string; Holder domain.Actor; Since time.Time }
 type Holder struct{ LeaseID string; Actor domain.Actor; Since time.Time; IdleRemaining time.Duration }
 ```
 
-- 状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は他者の取得を `ErrLeaseHeldByOther` で断る
+- 保持者種別は `mcp`（M1）と `web`（M2）。`agent` は M4。状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は他者の取得を `ErrLeaseHeldByOther` で断る
 - アイドルタイマーは `lease.idle_timeout_sec`（既定 300 秒）。`Check` が呼ばれるたびに延長する。`agent` のリース（M4）は、エージェントの各アクション実行が `Check` を呼ぶことで延長される（FR-L08）
 - **リースは MCP セッションに紐づく**: セッション終了で `Release`。WebSocket の切断で `web` のリースを `Release`（M2）
 - 状態遷移はすべて `Audit` に記録し、`Bus` に `lease` イベントを出す（Web UI・GUI が購読）
@@ -1038,7 +1040,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 運用ログの行（FR-H13・NFR-O01） | 一部の失敗だけ | 主な処理の成功と失敗を、次のレベルで `slog` に出す（ポーリングやフレームごとには出さない。秘密は渡さない）。起動 `puppet-remo starting`（INFO。`main`）・終了 `puppet-remo is shutting down`（INFO）。tailscaled の状態が変わったとき `tailscaled is running`（INFO）・`is not logged in` / `is not reachable`（WARN。`StatusTracker`）。待ち受けの状態が変わったとき `tailnet listener is listening`（INFO）・`is not listening`・一部のアドレスだけ（WARN。`app`）。接続要求 `connection request received`（INFO。新しい要求ができたときだけ）・`approved` / `denied`（INFO。`HostAdmin`）・レート制限 `connection requests are rate limited`（WARN）。認証 `bearer authentication failed`（WARN。理由・デバイス・IP だけ）・`bearer authentication is rate limited`（WARN）・WhoIs の失敗 `whois failed; the request was rejected`（WARN）。トークン `token issued` / `token revoked`（INFO。ID とラベルだけ）。クライアント `client updated` / `client deleted`（INFO）。リース `lease acquired` / `lease released`（INFO。理由つき）・`lease acquire denied`（INFO）。ツール `mcp tool succeeded`（状態を変えるものは INFO、読み取りだけは DEBUG）・`mcp tool was rejected`（WARN。コードつき）・想定外の失敗 `mcp tool failed`（ERROR）・`mcp tool timed out`（WARN）。キルスイッチ `kill switch triggered`（WARN）・`released`（INFO）・失敗（ERROR）。設定の反映 `server port changed`・`kill switch hotkey registered`（INFO）。ツールの引数・結果、トークンの平文・ハッシュ、Authorization ヘッダーは出さない。リリースの更新確認（FR-H09）は `Updater` が M1 に無いため、まだ出さない（`Updater` を実装するときに、確認・適用・失敗を同じ規則で足す） |
 | MCP ツールの監査 | `Control` が記録する（§5.4） | `Control.Do` を通る入力系・`focus_window`・クリップボード・UI ツリー・`wait` と、`Control.Launch` を通る `launch_app`（M1.5）は `Control` が監査する。`list_launchable_apps` は `mcp` のツール登録（`addAuditedTool`）が `{count}` で記録する（件数は結果から決まるため、`toolResult.AuditDetail` で足す）。`Do` を通らない `get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status` は、`mcp` のツール登録（`addAuditedTool`）が `service.ToolAuditEntry` で記録する。拒否（リース・InputGuard・キルスイッチ）は `denied`、それ以外の失敗は `error` |
 | `Control` の直列化（§5.4） | ステートレス | 入力の実行（マウス・キーボード）は 1 度に 1 つへ直列化する（容量 1 のセマフォ。「移動してからクリック」の間に別の入力を割り込ませない）。検査の順序は設計のとおり（キルスイッチ → リース → 引数検査・縮小座標の変換 → InputGuard → platform → 監査。`Judge` は M4）。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000（既定 5・500）で、超えると `invalid_argument` |
-| `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke` は M2。`LeaseConfig.Power` でスリープ・画面オフを抑止する |
+| `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke(by)` は M2 で実装した（#58）: `by` は host / web だけ、idle なら何もしない（冪等）、剥奪された保持者は次の `Acquire` の成功まで `Check` が `ErrLeaseRevoked`（`LeaseMachine` が剥奪された保持者を 1 件覚える。ほかの保持者が取得すると忘れる）。解放の理由は `revoked`（`domain.ReleaseRevoked`）、`LeaseEvent.By` に剥奪した側が入り、監査は `lease.revoke`（`actor_type` は `by`、`detail` に剥奪された保持者の `holder_kind`・`holder_client_id`・`holder_label`）。ホスト GUI は `service.HostActor`（`host`）で呼ぶ。`LeaseConfig.Power` でスリープ・画面オフを抑止する |
 | `KillSwitch`（§5.8） | `Trigger` は (1) 永続化 → (2) リース剥奪 → … → (7) 監査の順で、1 秒以内（NFR-P05） | 実装は、メモリ上の状態を先に `active` にして（以後のリクエストは 503）、(1) `settings` に永続化 → (2) `LeaseManager.ReleaseAll` → (3) 登録済みのクローザーを**並行**に実行（MCP セッションの切断、押下中の入力の解放）→ 監査の順。`Agent`（M4）・WebSocket（M2）・オーバーレイ（M3）はまだ無い。永続化とクローザーはそれぞれ自分の期限（`KillSwitchConfig.Timeout`。既定 1 秒）を持つ。**既知の制限**: 永続化が遅い（遅いディスクなど）と、永続化が最大 1 期限、クローザーが最大 1 期限を使い、`Trigger` が戻るまで最大 2 × `Timeout`（既定で 2 秒）かかり、NFR-P05 の 1 秒を超えうる。メモリ上の状態は先頭で `active` になるので受付停止は直ちに効くが、全セッションの切断・入力の解放の完了は遅れうる。この点は未解決で、1 秒を保証していない |
 | 未実装（M2〜M4） | `Approval`（M3）、`Judge`・`Agent`・`FastPath`（M4）、`Streamer`（M2）、`Updater`（M3） | — |
 
@@ -1079,3 +1081,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.17 | 2026-11-01 | §13.5 に `AppLog`（運用ログの閲覧。`app.LogReader`・`app.Config.Logs`・伏せ字の安全網）と、運用ログに足した行（認証の失敗・接続要求・トークン・リース・ツールの実行・キルスイッチ・tailscaled の状態・待ち受け）を追加 | #45 |
 | 1.18 | 2026-11-01 | §5.4.1 の `LaunchResult` に `Window`・`ReusedExistingWindow` を追加し、`Launch` の検査の順序に起動後のウィンドウの観測（5b。200 ミリ秒間隔・最大 16 回、`Sleep` で待つ）と監査の `reused_existing_window` を追記。`FakeAppLauncher.OnLaunch`（起動に伴うウィンドウの出現を再現するテスト用の関数）を追記 | #46 |
 | 1.19 | 2026-11-01 | §5.4 の `Do` の検査順序の 3 に `own_window` の範囲（`Detail[DetailOwnWindows]`）、「InputGuard は platform ではなく service にある」に `InputBlockReason`・`ScaledRect`・`OwnWindowRegions` と `Shot.OwnWindows` を追記 | #47（FR-M20） |
+| 1.21 | 2026-11-01 | §5.2 の `LeaseManager.Revoke`（`by` は host / web、idle は冪等、剥奪された保持者は次の `Acquire` まで `ErrLeaseRevoked`、保持者種別 `web`）と §13.5 の `LeaseManager` 行を M2 の実装に更新 | #58 |
