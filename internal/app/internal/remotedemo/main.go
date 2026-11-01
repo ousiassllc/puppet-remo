@@ -11,6 +11,9 @@
 // （例: google-chrome --host-resolver-rules="MAP 100.64.0.1 127.0.0.1" http://100.64.0.1:8765/viewer）。
 // ホスト GUI（ダッシュボード）は別のポートで配信する。接続元のデバイスは、ホスト GUI のポートの
 // /__demo/identity?as=registered|unregistered で切り替える（未登録なら待機ページになる）。
+//
+// -approval always にすると、デモのクライアントは毎回承認が要る（既定の auto は承認なしでリースを取る）。ビューアの取得ボタンは
+// 決まるまで応答せず、承認要求の id がログに出る。ホスト GUI の /approvals/{id} で許可・拒否する（60 秒放置するとタイムアウト）。
 package main
 
 import (
@@ -49,8 +52,9 @@ const (
 func main() {
 	remoteAddr := flag.String("addr", "127.0.0.1:"+demoPort, "リモートルーターの待ち受けアドレス（loopback のみ。ポートは "+demoPort+" 固定）")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:8899", "ホスト GUI の待ち受けアドレス（loopback のみ）")
+	approval := flag.String("approval", string(domain.ApprovalAuto), "デモのクライアントの承認モード（auto: 承認なしでリースを取る / always: 毎回承認。承認要求の id はログに出る）")
 	flag.Parse()
-	if err := run(*remoteAddr, *guiAddr); err != nil {
+	if err := run(*remoteAddr, *guiAddr, domain.ApprovalMode(*approval)); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -69,7 +73,10 @@ func checkLoopback(flagName, addr, wantPort string) error {
 	return nil
 }
 
-func run(remoteAddr, guiAddr string) error {
+func run(remoteAddr, guiAddr string, approval domain.ApprovalMode) error {
+	if approval != domain.ApprovalAuto && approval != domain.ApprovalAlways {
+		return fmt.Errorf("remotedemo: -approval は auto / always のどちらか（%q）", approval)
+	}
 	if err := checkLoopback("addr", remoteAddr, demoPort); err != nil {
 		return err
 	}
@@ -92,7 +99,7 @@ func run(remoteAddr, guiAddr string) error {
 
 	if err := db.Clients().Create(ctx, domain.Client{
 		ID: registeredID, StableNodeID: "node-demo-1", LoginName: "demo-user@example.com", DisplayName: "demo-laptop",
-		WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAuto, // デモは承認ダイアログを開けない（Wails が無い）ので、承認を待たずにリースを取る
+		WebEnabled: true, MCPEnabled: true, ApprovalMode: approval, // 既定の auto は承認を待たずにリースを取る。always は承認ダイアログ（偽のウィンドウ）を開き、ホスト GUI の /approvals/{id} で決める
 	}); err != nil {
 		return err
 	}
@@ -101,7 +108,7 @@ func run(remoteAddr, guiAddr string) error {
 	clip := platformtest.NewFakeClipboard()
 	clip.SetText("demo clipboard text (fictional)\nsecond line: https://example.com/demo")
 	// 前面のウィンドウが無いと、入力は「ホストの画面を操作できません（ロック画面など）」で拒否される。
-	windows := platformtest.NewFakeWindows(domain.WindowInfo{
+	hostWindows := platformtest.NewFakeWindows(domain.WindowInfo{
 		ID: "1001", Title: "Notes - demo-notes.txt", Process: "notes.exe", PID: 4242, Foreground: true,
 		Rect: domain.Rect{X: 153, Y: 57, W: 640, H: 446},
 	})
@@ -109,12 +116,15 @@ func run(remoteAddr, guiAddr string) error {
 	whois.set(registeredIdentity)
 	watcher := &staticWatcher{st: tailnet.Status{LoggedIn: true, DNSName: demoDNSName, IPs: []netip.Addr{netip.MustParseAddr(demoTailnet)}}}
 
+	windows := app.NewFakeWindows() // デモは Wails を使わない（承認ダイアログのウィンドウは開かず、id をログに出すだけ）
+	go logApprovals(ctx, windows)
+
 	a, err := app.New(ctx, app.Config{
 		Repo:    db,
-		Windows: app.NewFakeWindows(), // デモは Wails を使わない（承認ダイアログは開かない。リースは承認なしで取る）
+		Windows: windows,
 		Platform: app.Platform{
 			Capturer: newCapturer(sc), Input: &input{FakeInput: platformtest.NewFakeInput(), scene: sc, log: logger},
-			Windows: windows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(windows),
+			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
 			Launcher: platformtest.NewFakeAppLauncher(), FilePicker: platformtest.NewFakeFilePicker(),
 			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
 		},
@@ -155,6 +165,19 @@ func run(remoteAddr, guiAddr string) error {
 	}
 	<-ctx.Done()
 	return nil
+}
+
+// logApprovals は承認ダイアログが開かれたこと（承認要求の id）をログに出す。-approval always で、ホスト GUI の
+// /approvals/{id} を開いて許可・拒否するための手がかり。
+func logApprovals(ctx context.Context, w *app.FakeWindows) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case win := <-w.Opened():
+			log.Printf("remotedemo: approval requested id=%s (host GUI /approvals/%s)", win.ID(), win.ID())
+		}
+	}
 }
 
 func mustStatic() http.Handler {
