@@ -1,0 +1,14 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+// Viewer はビューアのページ（FR-W01）。HX-Request のときは、ハンドラが organisms.ViewerRoot だけを返す。
+templ Viewer(v view.Viewer) {
+	@layout.Remote("ビューア") {
+		@organisms.ViewerRoot(v)
+	}
+}

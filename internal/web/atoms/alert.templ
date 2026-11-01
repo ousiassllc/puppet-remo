@@ -1,0 +1,7 @@
+package atoms
+
+// Alert は、ミドルウェアが拒否した状態変更のリクエスト（アクションルート）に返すエラーのフラグメント。
+// data-error-code に API 仕様 §2 のコードを持つ。
+templ Alert(code, message string) {
+	<div role="alert" data-error-code={ code }>{ message }</div>
+}

@@ -1,0 +1,25 @@
+package organisms
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+	"strconv"
+)
+
+// ViewerRoot はビューアの本体（<main id="viewer-root">。frontend.md §5.1・§6.2）。ページルートの HX-Request の応答もこれ。
+// hx-headers の X-Viewer-Id は子孫へ継承され、ツールバー・リース・クリップボード・ショートカットのリクエストに付く。
+// <remo-screen-viewer> は HTMX が差し替えない領域に置き（Lit の描画を壊さない）、readonly は描画時の操作権の有無から決める。
+templ ViewerRoot(v view.Viewer) {
+	<main id="viewer-root" class="space-y-4" hx-headers={ templ.JSONString(map[string]string{"X-Viewer-Id": v.ViewerID}) }>
+		@ViewerToolbar(v.Toolbar)
+		@ViewerLeasePanel(v.Lease)
+		@ViewerOps(v.Ops)
+		<remo-screen-viewer
+			class="block overflow-hidden rounded-lg border border-slate-300 bg-black"
+			ws-url={ v.WSURL }
+			readonly?={ !v.Lease.Mine }
+			monitor={ strconv.Itoa(v.Monitor) }
+			quality={ strconv.Itoa(v.Quality) }
+			fps={ strconv.Itoa(v.FPS) }
+		></remo-screen-viewer>
+	</main>
+}

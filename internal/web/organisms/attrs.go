@@ -21,3 +21,11 @@ func flagAttrs(f view.ClientFlag, cardID string) atoms.Attrs {
 		"hx-disabled-elt": "this",
 	}
 }
+
+// toolbarErrorAttrs は検証エラー（422）で再描画したツールバーに data-error-code を付ける（API 仕様 §1）。
+func toolbarErrorAttrs(v view.ViewerToolbar) atoms.Attrs {
+	if v.Errors == (view.ViewerToolbarErrors{}) {
+		return nil
+	}
+	return atoms.Attrs{"data-error-code": "invalid_argument"}
+}

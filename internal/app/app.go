@@ -6,7 +6,7 @@
 // wails_windows.go だけにあり、cmd/puppet-remo が本物の部品を渡して動かす。
 //
 // 公開面は 2 つに分かれる: GUI ルーター（GUIHandler。Wails の AssetOptions.Handler に渡す。ソケットは開かない）と、
-// リモートルーター（tailnet の IP だけで Listen。/mcp と /ws/screen）。
+// リモートルーター（tailnet の IP だけで Listen。/mcp・/ws/screen・Web UI の /viewer・/static/*）。
 package app
 
 import (
@@ -28,6 +28,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/tailnet"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui"
+	webremote "github.com/ousiassllc/puppet-remo/internal/web/handler/remote"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 	"github.com/ousiassllc/puppet-remo/internal/ws"
 )
@@ -99,19 +100,22 @@ type App struct {
 	bus  *service.Bus
 	kill service.HostKillSwitch
 
-	leases   service.LeaseManager
-	authz    service.Authz
-	audit    *service.Audit
-	admin    service.HostAdmin
-	apps     service.AppRegistry
-	mcp      *mcp.Server
-	viewers  service.ViewerSessions // viewer_id の発行・検証（/ws/screen。/viewer は別の子 Issue）
-	ws       *ws.Handler
-	tracker  *service.StatusTracker
-	maint    *service.Maintenance
-	listen   *listenSupervisor
-	hotkey   *KillSwitchHotkey
-	settings service.HostSettingsService
+	leases  service.LeaseManager
+	authz   service.Authz
+	audit   *service.Audit
+	admin   service.HostAdmin
+	apps    service.AppRegistry
+	mcp     *mcp.Server
+	viewers service.ViewerSessions // viewer_id の発行・検証（/viewer と /ws/screen）
+	ws      *ws.Handler
+	web     *webremote.Handler // リモートの Web UI（/viewer）
+	// connStates は未登録デバイスのブラウザに返す待機・拒否・失効のページの選択に使う、接続要求の状態の読み取り専用の参照。
+	connStates service.ConnRequestStates
+	tracker    *service.StatusTracker
+	maint      *service.Maintenance
+	listen     *listenSupervisor
+	hotkey     *KillSwitchHotkey
+	settings   service.HostSettingsService
 
 	gui    http.Handler
 	remote http.Handler
@@ -283,17 +287,32 @@ func (a *App) build(ctx context.Context) error {
 		return fmt.Errorf("maintenance: %w", err)
 	}
 
+	a.connStates, err = service.NewConnRequestStates(connRequests, cfg.Clock)
+	if err != nil {
+		return fmt.Errorf("connection request states: %w", err)
+	}
+	a.web, err = webremote.New(webremote.Deps{
+		Sessions: a.viewers, Leases: a.leases, Control: control, Settings: a.settings, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("web ui: %w", err)
+	}
+
 	return a.buildRouters(killMgr)
 }
 
 func (a *App) buildRouters(kill service.KillSwitchState) error {
 	cfg := a.cfg
 
-	// リモートルーター: tailnet の IP だけで Listen する。配信するのは /mcp と /ws/screen。
+	// リモートルーター: tailnet の IP だけで Listen する。配信するのは /mcp・/ws/screen・Web UI（/viewer）・/static/*。
 	remote, err := router.NewRemote(router.RemoteConfig{
-		Chain: middleware.RemoteConfig{Hosts: a.allowedHosts, KillSwitch: kill, WhoIs: cfg.WhoIs, Authz: a.authz},
-		MCP:   a.mcp.Handler(),
-		WS:    a.ws,
+		Chain: middleware.RemoteConfig{
+			Hosts: a.allowedHosts, KillSwitch: kill, WhoIs: cfg.WhoIs, Authz: a.authz, ConnStates: a.connStates,
+		},
+		MCP:    a.mcp.Handler(),
+		WS:     a.ws,
+		Web:    a.web,
+		Static: cfg.Static,
 	})
 	if err != nil {
 		return fmt.Errorf("remote router: %w", err)

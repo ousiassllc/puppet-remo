@@ -384,6 +384,17 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 ブラウザが未登録デバイスのとき、すべてのルートは 403 `device_not_registered` となり、`Accept: text/html` には待機ページ（「接続要求を送信しました。ホストの許可を待っています」）を返す。許可後に再読み込みするとビューアが開く。拒否・失効（24 時間）のときはその旨のページ。
 
+**待機ページの出し分け**（FR-W02）: ステータスとエラーコード（403 `device_not_registered`）、接続要求の作成・集約・拒否後の抑止（FR-A06）は §1 の連鎖のとおりで変わらない。ページの内容だけを、許可リストの照合（と接続要求の作成・集約）のあとに、デバイスの node ID で接続要求の最新の 1 件を**読み取り専用**で引いて選ぶ: `pending`（期限内）または状態が無い・読めない → 待機、`denied`（拒否から 24 時間以内）→ 拒否、`expired`（期限切れ。`pending` が期限を過ぎたもの、拒否の抑止期間（24 時間）が過ぎたものを含む）→ 失効。ページは `data-error-code="device_not_registered"` と `data-connection-state="pending|denied|expired"` を持ち、スタイル・スクリプトは読み込まない（未登録のデバイスは `/static/*` も 403 のため）。接続要求の作成は照合の中で先に行われるため、通常は新しい要求が作られて待機になり、拒否の抑止中は拒否、新しい要求を作れなかったとき（作成の頻度制限など）は失効が出る。
+
+**Web UI の入力とエラー**（M2。#62）:
+
+- フォームは `application/x-www-form-urlencoded`、本文は 1 MiB まで（超過・読めないときは 400 `invalid_argument`。クリップボードの `text` は本文の上限の内側でも 1 MiB まで）。ビューアのセッションは `X-Viewer-Id`（§4.1）で伝え、無い・未知・期限切れ・別のクライアントに束縛されたものは、アクションルートも `GET /viewer/lease` も 400 `invalid_argument`
+- アクションの失敗は、同じステータス・`data-error-code` 付きのトースト（`HX-Retarget: #toast-root`）。`POST /viewer/settings` の検証エラー（`monitor` が存在しない・`quality`・`fps` が範囲外・整数でない）は 422 `invalid_argument` で、入力値とメッセージ付きのツールバー（`#viewer-toolbar`）を再描画する（`hx-target-422`。ホスト GUI の検証エラーと同じ）。接続していない `viewer_id` の設定変更は 400 `invalid_argument`（`ViewerSessions.Configure`）
+- `POST /viewer/lease/revoke` は、自分が保持しているときは 409 `conflict`（解放を使う）。保持者がいなければ何もせず現在のパネルを返す。リースの 3 つのルートと `GET /viewer/lease` の応答は、リースパネル（`#lease-panel`）に、操作権の有無で変わるクリップボード・ショートカットの領域（`#viewer-ops`）を OOB で添える（持っていないときは空）
+- `POST /viewer/clipboard/send` の 200 は送った文字数だけを返し、本文は返さない。動的な応答はすべて `Cache-Control: no-store`
+
+**ショートカット送信メニュー**（FR-W06。`keys` の値）: `alt+tab`（Alt+Tab）・`alt+f4`（Alt+F4）・`win+d`（Win+D。`keys` の書式では `win` は修飾キーのため Win キー単独は送れず、デスクトップの表示で代える）・`ctrl+w`（Ctrl+W）・`escape`（Esc）。`ctrl+alt+delete` は含めない（UI から送れない旨を表示する。FR-W08）。ルートは §3.3 の書式であれば任意の `keys` を受けるが、メニューが出すのは上の 5 つだけ。
+
 ## 5. WebSocket（`/ws/screen`）
 
 ### 5.1 接続
@@ -598,7 +609,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
-| リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp` と `GET /ws/screen`（M2）だけ**。それ以外のパス（`/` を含む）は 404。`/viewer`・静的ファイル・`/api/v1`（Huma）は M2 の続き以降 |
+| リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp`・`GET /ws/screen`（M2。#61）・Web UI（`GET /`・`/viewer*`。M2。#62）・`GET /static/*`（M2。#62）**。それ以外のパスは 404。`/api/v1`（Huma）は M2 以降の別の段階 |
 | GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`・`/lease/revoke`（M2）、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
 | `PUT /settings` の項目（§7.3） | 13 項目 | `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目（M1）に、M2 で `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を足した 7 項目。他は各段階で足す |
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
@@ -610,6 +621,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | HTTP サーバー（§1） | — | tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒、`IdleTimeout` 120 秒、`MaxHeaderBytes` 64 KiB。`WriteTimeout` は付けない。WhoIs の LocalAPI 呼び出しは 5 秒で打ち切り、失敗は 403 `whois_failed`（fail closed） |
 | MCP の keepalive（§3.1・NFR-A04） | — | 既定で ping しない（§3.1） |
 | WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のとき省く。`ready` の `monitors[]` の形は §5.3 |
+| Web UI（§4・M2。#62） | §4.2 のとおり | ハンドラは `web/handler/remote`（Gin。`router.NewRemote` が `/`・`/viewer`・`/viewer/` のパターンでマウントする）。未登録デバイスのページの選択は `middleware.RemoteConfig.ConnStates`（`service.ConnRequestStates`。読み取り専用。nil なら常に待機）。ページは `pages.Pending` / `Denied` / `Expired`（アクションルートにも同じページを返す）。ミドルウェアの HTML の拒否（`invalid_host` など）は `pages.RemoteError`（ページ）と `atoms.Alert`（アクションルートのフラグメント）。存在しない `monitor` の検証エラーは、ホスト GUI の検証エラーと同じ 422 `invalid_argument` のフォーム再描画（§4.2）。`<remo-screen-viewer>` の `dist/js/screen-viewer.js` はレイアウトが読み込むが、成果物は別の子 Issue（#63）が出す（それまでは 404 で、ライブ画面は出ない） |
 
 ## 8. 決定事項と実装時の検証事項
 
@@ -661,3 +673,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.21 | 2026-11-01 | §4.1 に切断後 5 分の有効期間・同時接続 1 本（置き換え）・切断以外の終わり方でのリース解放、§5.3 に `input.mouse` の `down` / `up`（移動してから押す・離す）・`input.key` の監査・SAS の `input_blocked`、§7.5 に Web 入力の監査を追記 | #60 |
 | 1.22 | 2026-11-01 | §5.1 にハンドシェイク前後の拒否の分け方・既定の配信・終了時の 1001、§5.2 の 4400 / 4401 の範囲、§5.3 の `ready` の `monitors[]`・`lease` の `holder`・`error` の `code` の一覧・メッセージの上限、§7.5 に WebSocket の差分とリモートルーターの提供物（`GET /ws/screen`）を追記 | #61 |
 | 1.23 | 2026-11-01 | §5.3 の押下中のボタン・キーを、WebSocket の終わり（切断・置き換え・クライアントの削除・無効化）でも、リースの解放の前に `up` で離すと改めた（「切断では離さない」を撤回） | #61 |
+| 1.24 | 2026-11-01 | §4.2 に待機ページの出し分け（接続要求の状態を読み取り専用で引く）・Web UI の入力とエラー（`X-Viewer-Id`・本文 1 MiB・検証エラーの 422・トースト）・ショートカット送信メニューの一覧を、§7.5 に Web UI の実装と `/`・`/viewer*`・`/static/*` を追記 | #62 |
