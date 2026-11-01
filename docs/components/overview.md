@@ -523,11 +523,14 @@ func New(key func(ctx context.Context) (string, error), cfg Config) Chooser
 
 ```go
 type LeaseManager interface {
-    // 取得。M1・M2 は承認なしで idle → held（保持者種別は mcp と web）。M3 から、承認が必要なら Approval に問い合わせて待つ（最大 60 秒）。他者が保持中は ErrLeaseHeldByOther。
+    // 取得。承認が要らなければ idle → held（保持者種別は mcp と web）。M3 から、クライアントの承認モード（FR-L07）が承認を求めるときは
+    // idle → pending_approval にして、ロックを手放してから Approval に問い合わせて待つ（最大 60 秒）。許可で held、拒否は ErrApprovalDenied、
+    // タイムアウトは ErrApprovalTimeout。待ち中の ctx のキャンセルは ctx.Err()、キルスイッチの発動は ErrKillSwitchActive（後から許可されても held にならない）、
+    // セッション切断・クライアントの削除・無効化は ErrLeaseRequired（取り下げ）で、いずれも idle に戻る。他者が保持中、または承認待ちは ErrLeaseHeldByOther。
     Acquire(ctx context.Context, who domain.Actor) (Lease, error)
     // 保持者のみ。保持していなければ何もしない。
     Release(who domain.Actor)
-    // セッション切断（FR-L05）。Release と同じだが、監査の理由が explicit ではなく disconnect になる。
+    // セッション切断（FR-L05）。Release と同じだが、監査の理由が explicit ではなく disconnect になる。who の承認待ちがあれば取り下げて idle に戻す。
     ReleaseSession(who domain.Actor)
     // 強制剥奪（Web・ホスト。M2 から）。by は host か web（それ以外は ErrInvalidArgument）。保持者がいなければ何もせず nil（冪等）。
     // 保持者が agent（M4）ならタスクを中断する（Agent.Cancel を呼ぶ）。M2 では agent の保持者がいないので Cancel は呼ばない。
@@ -535,16 +538,18 @@ type LeaseManager interface {
     Revoke(by domain.Actor) error
     // 以後の入力操作が許されるかの確認。活動時刻を更新する（アイドル解放の起点）。
     Check(who domain.Actor) error // ErrLeaseRequired / ErrLeaseHeldByOther / ErrLeaseRevoked
-    Holder() (Holder, bool)
-    // キルスイッチ・セッション切断用。
+    Holder() (Holder, bool)           // held のときだけ。承認待ちは Pending
+    Pending() (PendingLease, bool)    // 承認待ち（pending_approval）の要求者。M3 から
+    // キルスイッチ・セッション切断用。承認待ちがあれば取り下げる。
     ReleaseAll(reason string)
     Subscribe() <-chan domain.LeaseEvent // 変化（Bus 経由でも配る）
 }
 type Lease struct{ ID string; Holder domain.Actor; Since time.Time }
 type Holder struct{ LeaseID string; Actor domain.Actor; Since time.Time; IdleRemaining time.Duration }
+type PendingLease struct{ LeaseID string; Actor domain.Actor; Since time.Time } // LeaseID は承認されたときのリースの ID
 ```
 
-- 保持者種別は `mcp`（M1）と `web`（M2）。`agent` は M4。状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は他者の取得を `ErrLeaseHeldByOther` で断る
+- 保持者種別は `mcp`（M1）と `web`（M2）。`agent` は M4。状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は、他者の取得を `ErrLeaseHeldByOther` で断る。**要求者本人も同じ**（承認前の `Acquire`・`Check` は `ErrLeaseHeldByOther`。承認を待たずに `held` にしない。明示解放 `Release` は承認待ちに触れない。取り下げは `ctx` のキャンセル・キルスイッチ・セッション切断・クライアントの削除・無効化だけ）。承認が要るかは `domain.NeedsApproval(mode, approved_at)` が決める（`always` は常に、`first_time` は `approved_at` が NULL のときだけ、`auto` は要らない。定義外の値は要る）。保持者の再 `Acquire` は承認を要さず、活動として数える。取得者のクライアントが読めない（未登録・削除済み・読み取りの失敗）ときは承認を求めず取得させない（fail-closed）。`first_time` で許可されたら `clients.approved_at` を記録する（記録に失敗してもリースは取り消さず、次の取得でもう一度承認を求める）。アイドルタイマーとスリープ抑止（NFR-A05）は `held` の間だけ
 - アイドルタイマーは `lease.idle_timeout_sec`（既定 300 秒）。`Check` が呼ばれるたびに延長する。`agent` のリース（M4）は、エージェントの各アクション実行が `Check` を呼ぶことで延長される（FR-L08）
 - **リースは MCP セッションに紐づく**: セッション終了で `Release`。WebSocket の切断で `web` のリースを `Release`（M2）
 - 状態遷移はすべて `Audit` に記録し、`Bus` に `lease` イベントを出す（Web UI・GUI が購読）
@@ -553,21 +558,23 @@ type Holder struct{ LeaseID string; Actor domain.Actor; Since time.Time; IdleRem
 
 ```go
 type Approval interface {
-    // ダイアログを開いて待つ。60 秒でタイムアウトし ErrApprovalTimeout。ctx のキャンセルで取り下げる。
+    // ダイアログを開いて待つ。60 秒でタイムアウトし ErrApprovalTimeout。ctx のキャンセルで取り下げる（ctx.Err() を返す）。
+    // 許可・拒否は Decision{Allow}（拒否はエラーではない）。ID と ExpiresAt は Approval が決める。
     Request(ctx context.Context, req ApprovalRequest) (Decision, error)
-    // GUI ルーターから呼ばれる。解決済み・失効は ErrApprovalTimeout（410）。
+    // GUI ルーターから呼ばれる。解決済み・失効・取り下げ済み・存在しない id は ErrApprovalTimeout（410）。
     Resolve(id string, allow bool) error
-    Pending() []ApprovalRequest
+    Pending() []ApprovalRequest // 要求した順
 }
 type ApprovalRequest struct {
-    ID   string
-    Kind string // "lease" | "safety_check" | "judge_action"
-    Who  domain.Actor
-    Detail ApprovalDetail // 内容（指示の要約、安全チェック、アクション、対象ウィンドウ、判定の理由）
+    ID        string
+    Kind      string // "lease"（M3）| "safety_check" | "judge_action"（M4）
+    Who       domain.Actor
+    ExpiresAt time.Time // この時刻までに結果がなければ ErrApprovalTimeout（ダイアログのカウントダウン用）
+    // Detail ApprovalDetail // 内容（指示の要約、安全チェック、アクション、対象ウィンドウ、判定の理由）。M4 で足す。M3 の lease は Kind と Who だけ
 }
 ```
 
-要求を作るたびに `Bus` へ `approval` を出す。承認ダイアログのウィンドウを開くのは `app`（購読側）で、`Approval` は UI を知らない。`Approval` は M3 から使う（M1 の `LeaseManager` は `Approval` を呼ばず、承認なしで取得させる）。
+要求を作るたびに `Bus` へ `approval`（`Data` は `ApprovalEvent{ID, Kind}`）を**ブロックせずに**出す（NFR-P06: リース取得要求からダイアログの表示まで 1 秒以内）。承認ダイアログのウィンドウを開くのは `app`（購読側）で、`Approval` は UI を知らない（M3 では #68 が購読する）。`Approval` は M3 から使う（M1・M2 の `LeaseManager` は `Approval` を呼ばず、承認なしで取得させた）。状態（承認待ちの要求）は `sync.Mutex` 1 つで守り、ロックを持ったまま `Bus`・呼び出し側を呼ばない。タイムアウトは `domain.Clock` と `AfterFunc` の差し替えで進める。
 
 ### 5.4 Control と InputGuard（すべての入力の唯一の入口）
 
@@ -644,7 +651,7 @@ type LaunchResult struct {
 `Control.Launch` の検査の順序（1 つでも失敗したら起動しない。`Do` の 1・2 と同じ前段を共有し、3 以降が異なる）:
 
 1. `KillSwitch.Active()` → `ErrKillSwitchActive`
-2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04）
+2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04。**M3 から、クライアントの承認モード（FR-L07）が承認を求めるときは、この `Acquire` がホストの結果を待つ（最大 60 秒）ので、`Do` / `Launch` の呼び出しもその間ブロックする**。拒否・タイムアウト・取り下げなら実行せず、`ErrApprovalDenied` / `ErrApprovalTimeout` などを返し、監査の `result` は `denied`）
 3. `AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。
 4. `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）→ `ErrKillSwitchActive`
 5. `platform.AppLauncher.Launch`（Windows 実装は、起動の直前に実行ファイルがローカルの固定ディスク上の実体であること — `GetDriveType` が `DRIVE_FIXED`、`GetFinalPathNameByHandle` の結果が登録されたパスと一致 — を確かめ、違えば `access_denied`）→ 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
@@ -652,7 +659,7 @@ type LaunchResult struct {
 6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・5 の失敗 `error`。`tool.launch_app`。FR-AU06）。起動のあとに非同期で記録するため、キューが満杯・書き込み失敗のときは起動が成立したまま記録が残らない（fail-open。NFR-S20 の残存リスク）。`Audit` は取りこぼしを Error で運用ログに出す（`audit entry dropped`・`audit append failed`）
 
 - 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。`detail` は `{app_id, label（許可リストを引けたときだけ）, pid と reused_existing_window（成功のみ）, reason（launch_failed のみ）}`。前面のウィンドウのタイトル・id は記録しない。パス・引数・作業ディレクトリは入れない
-- **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 で承認モードを適用する場合は、2 と 3 の間に入れる
+- **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 の承認モードは、2 の暗黙のリース取得（`LeaseManager.Acquire`）で 1 回だけ適用する（FR-L07。`launch_app` にもかかる）。リースの保持中に `launch_app` の呼び出しごとの承認を足すかは未決で、M3（#66）では足していない
 - 起動の直列化はしない（`Do` の入力セマフォを使わない。プロセスの作成は入力の順序に影響しない）。同じアプリの多重起動を禁止しない（毎回新しいプロセス）
 - `Control` だけが `platform.AppLauncher` を呼べる（`InputInjector` と同じ。パッケージの可視性で保証する）。**M4 の `Agent` がアプリを起動するときも、`Control.Launch`（`who.Kind = agent`）と同じ `AppRegistry` を使い**、別の許可リスト・別の起動経路は作らない（決定事項）。`agent` のときの Judge・承認の適用は M4 の設計で定める
 - `LaunchableApps` は `AppRegistry.List` のうち、起動できない行（`domain.CheckLaunchTarget` が拒否する行。読めない `Corrupt` の行を含む）を除いて `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
@@ -1089,10 +1096,11 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `Control` の直列化（§5.4） | ステートレス | 入力の実行（マウス・キーボード）は 1 度に 1 つへ直列化する（容量 1 のセマフォ。「移動してからクリック」の間に別の入力を割り込ませない）。検査の順序は設計のとおり（キルスイッチ → リース → 引数検査・縮小座標の変換 → InputGuard → platform → 監査。`Judge` は M4）。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000（既定 5・500）で、超えると `invalid_argument` |
 | `Control` の Web 入力（§5.4。M2・#60） | `Do` は MCP の入力が中心 | `web` の入力（`PointerMove`・`MouseButton`・`Wheel`・`KeyEvent`・`KeyPress`・`TypeText`・`ClipboardRead`・`ClipboardWrite`）も `Do` が同じ順序（キルスイッチ → リース → 引数検査と座標変換 → InputGuard → platform → 監査）で処理する。判断: (1) `web` は暗黙にリースを取らず、他者の保持と剥奪は `ErrLeaseHeldByOther` / `ErrLeaseRevoked`、(2) ストリームの座標は縮小せず、選択モニターの原点を足す（外は `ErrInvalidCoordinates`）、(3) `Wheel` は有限・絶対値 50 ノッチまで、(4) `PointerMove`（連続するカーソル移動）は監査しない。クリック・ホイール・キー・テキスト・クリップボードは監査する（`web` の `kind` は `input`、イベントは `tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up` など）、(5) `KeyEvent` の監査にはキーの名前（`code`・`key`）を入れず、`action` と修飾キーだけを残す（パスワードの入力を監査ログに残さない。FR-AU03 の `type` と同じ扱い）。SAS は `KeyPress`・`KeyEvent` とも `input_blocked`（`secure_attention_sequence`）。キルスイッチは `ReleaseAll` で押下中のボタンとキーを離す |
 | `ViewerSessions`（§5.7.1。M2・#60） | なし | `service.NewViewerSessions(ViewerSessionsConfig{Streamer, Leases, Kill, Clock, IDs})`。`viewer_id` の発行・検証（クライアントへの束縛）・WebSocket の接続（`Open`）・切断でのリース解放・置き換え・`SessionCloser`・キルスイッチのクローザー（`web-sessions`）・設定の経路（`Configure` → `ConfigChanged`）。判断: (1) 切断した `viewer_id` は 5 分のあいだ再接続できる、(2) 同時接続は 1 本で、新しい接続が古い接続を閉じて置き換える（ユーザー確定）、(3) `ViewerIDTTL` は 5 分。`Viewer` に `Config`（登録時の設定）を足した。`app` への組み込み（#61）: `app.sessionClosers{mcp, viewers}` を `HostAdmin.Sessions` へ渡し、クライアントの削除・無効化で MCP のセッションと WebSocket のビューアを閉じる。キルスイッチのクローザーは `NewViewerSessions` が登録する `web-sessions` だけ（`ws` 専用のクローザーは作らない。閉じた理由 `kill_switch` から `ws` が 4503 で閉じる）。`/viewer/*` は別の子 Issue |
-| `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke(by)` は M2 で実装した（#58）: `by` は host / web だけ、idle なら何もしない（冪等）、剥奪された保持者は次の `Acquire` の成功まで `Check` が `ErrLeaseRevoked`（`LeaseMachine` が剥奪された保持者を 1 件覚える。ほかの保持者が取得すると忘れる）。解放の理由は `revoked`（`domain.ReleaseRevoked`）、`LeaseEvent.By` に剥奪した側が入り、監査は `lease.revoke`（`actor_type` は `by`、`detail` に剥奪された保持者の `holder_kind`・`holder_client_id`・`holder_label`）。ホスト GUI は `service.HostActor`（`host`）で呼ぶ。`LeaseConfig.Power` でスリープ・画面オフを抑止する |
+| `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke(by)` は M2 で実装した（#58）: `by` は host / web だけ、idle なら何もしない（冪等）、剥奪された保持者は次の `Acquire` の成功まで `Check` が `ErrLeaseRevoked`（`LeaseMachine` が剥奪された保持者を 1 件覚える。ほかの保持者が取得すると忘れる）。解放の理由は `revoked`（`domain.ReleaseRevoked`）、`LeaseEvent.By` に剥奪した側が入り、監査は `lease.revoke`（`actor_type` は `by`、`detail` に剥奪された保持者の `holder_kind`・`holder_client_id`・`holder_label`）。ホスト GUI は `service.HostActor`（`host`）で呼ぶ。`LeaseConfig.Power` でスリープ・画面オフを抑止する **M3（#66）**: 承認モード（FR-L07）を実装した。`LeaseConfig.Approval`・`Clients`（`LeaseClients` = `repository.Clients` の `Get` と `MarkApproved`）は両方あるときだけ承認を適用し（`app` は常に渡す）、`Acquire` が `idle → pending_approval` にしてロックを手放し、`Approval.Request` を待つ。`domain.LeaseMachine` に `Request`・`Approve`・`Withdraw`・`WithdrawSession`・`Pending` を足し、`LeaseState` に `pending_approval`、`ReleaseReason` に `approval_denied`・`approval_timeout`・`withdrawn` を足した。`LeaseManager` に `Pending()`（承認待ちの要求者）を足した。承認待ちの間は本人を含む `Acquire`・`Check` を `ErrLeaseHeldByOther` で断り、`Release` は何もしない（取り下げはキルスイッチ・`ReleaseSession`（`HostAdmin` のクライアントの削除・無効化の切断を含む）・`ctx` のキャンセルだけ）。キルスイッチの発動後に許可が届いても `held` にしない（`ErrKillSwitchActive`）。承認が要るかの判定（`domain.NeedsApproval`）・取得者のクライアントが読めないときの fail-closed・`first_time` の `approved_at` 記録は §5.2。承認系の監査（取得要求・拒否・タイムアウト）はイベント名が未決のため記録せず（`pending_approval → held` だけ `lease.acquire`）、運用ログには出す |
+| `Approval`（§5.3） | `Request`・`Resolve`・`Pending` | M3（#66）で実装した。`ApprovalRequest` は `ID`・`Kind`・`Who`・`ExpiresAt`（`Detail` は M4 で足す）、`Decision{Allow}`、`ApprovalEvent{ID, Kind}`（`Bus` の `approval` の `Data`。`service.TopicApproval`）。`ApprovalConfig`（`Clock`・`IDs`・`Bus`・`AfterFunc`・`Timeout`。既定 60 秒 = `DefaultApprovalTimeout`）。`Request` は ID を `IDs` から決め、要求を登録して `Bus` へ非ブロッキングで出してから待つ。`ctx` のキャンセルは `ctx.Err()`。`Resolve` と満了と取り下げは 1 回だけ有効で、負けた側（解決済み・失効・取り下げ済み・未知の id の `Resolve`）は `ErrApprovalTimeout`。ダイアログを開く購読と `Resolve` を呼ぶ GUI ルーターは #68 |
 | `KillSwitch`（§5.8） | `Trigger` は (1) 永続化 → (2) リース剥奪 → … → (7) 監査の順で、1 秒以内（NFR-P05） | 実装は、メモリ上の状態を先に `active` にして（以後のリクエストは 503）、(1) `settings` に永続化 → (2) `LeaseManager.ReleaseAll` → (3) 登録済みのクローザーを**並行**に実行（MCP セッションの切断、押下中の入力の解放）→ 監査の順。`Agent`（M4）・オーバーレイ（M3）はまだ無い（WebSocket は M2 で、クローザー `web-sessions` が閉じる）。永続化とクローザーはそれぞれ自分の期限（`KillSwitchConfig.Timeout`。既定 1 秒）を持つ。**既知の制限**: 永続化が遅い（遅いディスクなど）と、永続化が最大 1 期限、クローザーが最大 1 期限を使い、`Trigger` が戻るまで最大 2 × `Timeout`（既定で 2 秒）かかり、NFR-P05 の 1 秒を超えうる。メモリ上の状態は先頭で `active` になるので受付停止は直ちに効くが、全セッションの切断・入力の解放の完了は遅れうる。この点は未解決で、1 秒を保証していない |
 | `Streamer`（§5.7）・FR-S06（M2） | `Subscribe`・`Configure`、`Viewer{Frames, Done}` | `service.NewStreamer(StreamerConfig{Capturer, Clock, IDs, Settings, KeyframeInterval, Logger})`。`Viewer` に `ID` を足し、`ViewerConfig{Monitor, Quality, FPS}` を置く（0 は既定値 / 今の値）。バイナリフレームの符号化（`encodeFrame`）と 64×64 の差分（`changedRects`）は `service` が持つ（標準ライブラリの `image/jpeg`）。連番はプロファイルごとに 1 から数え、同じ回のキーフレームと差分は同じ連番を持つ。`app` が `Platform.Capturer`・`Settings` を渡して組み立てる（#61）。設定 `viewer.default_quality`（1〜100、既定 70）・`viewer.default_fps`（1〜30、既定 10）は `HostSettings`（`ViewerDefaultQuality`・`ViewerDefaultFPS`）で `Load` / `Save` し、`service.ViewerDefaults` が `Streamer` 用に読む |
-| 未実装（M3〜M4） | `Approval`（M3）、`Judge`・`Agent`・`FastPath`（M4）、`Updater`（M3） | — |
+| 未実装（M3〜M4） | `Judge`・`Agent`・`FastPath`（M4）、`Updater`（M3）。`Approval` は M3（#66）で実装した（承認ダイアログ・設定 UI・GUI ルーターの `Resolve` は #68） | — |
 
 ### 13.6 入口とアプリ（§6・§7・§9）
 
@@ -1108,7 +1116,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `cmd/puppet-remo` | Windows 以外では `puppet-remo: Windows only` を出して非ゼロで終了するスタブ（`main_other.go`）。`go build ./...` を Linux の CI で通すため |
 | 開発・補助 | 開発タスクは `frontend:dev`（`dev:frontend` ではない）。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service、loopback）がある。スクリーンショットは `docs/screenshots/m1/`、実機スモークの手順は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) |
 
-**M1 では実装していない `Approval`・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
+**M1 では実装していない `Approval`（M3 の #66 で実装した。§13.5）・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
 
 ## 改訂履歴
 
@@ -1140,3 +1148,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.24 | 2026-11-01 | §6 の `ws`（`Config`・3 本の goroutine・keepalive）、§13.1 の `ws` の存在、§13.5 の `app` への組み込み（`sessionClosers`・`web-sessions`）、§13.6 のリモートルーターの `GET /ws/screen` と `ws` の実装判断を追記 | #61 |
 | 1.25 | 2026-11-01 | §5.7.1 の `ViewerSession` に `OnEnd` を追加し、押下中のボタン・キーをセッションの終わりで（リースの解放の前に）離すと改めた（「切断では離さない」「`Control` に解放の窓口は無い」を撤回）。§6 の `ws` の注記も更新 | #61 |
 | 1.26 | 2026-11-01 | §13.6 にリモートルーターの提供物（Web UI・`/static/*`）、`web/handler/remote`、`ConnRequestStates`（`repository.ConnRequests.LatestByNode`・`middleware.RemoteConfig.ConnStates`）を追記 | #62 |
+| 1.27 | 2026-11-02 | §5.2・§5.3・§13.5 を M3 の `pending_approval` と `Approval` の実装に更新（承認待ちの間は本人も含めて `Acquire`・`Check` を `ErrLeaseHeldByOther`、取り下げの経路、`first_time` の `approved_at`、fail-closed）。§5.4 の検査順序に、暗黙取得が承認で最大 60 秒ブロックすること・`launch_app` の承認はリース取得時の 1 回だけ（呼び出しごとは未決）を追記 | #66 |
