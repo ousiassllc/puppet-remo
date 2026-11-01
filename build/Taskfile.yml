@@ -11,6 +11,7 @@ tasks:
       - ../appicon.svg
       - ../appicon-small.svg
       - render.mjs
+      - package.json
       - package-lock.json
     generates:
       - ../appicon.png

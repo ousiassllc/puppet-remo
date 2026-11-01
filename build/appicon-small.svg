@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <!-- 小さいサイズ（16・24・32px）用。appicon.svg と同じ骨格（棒 2 本の交差と糸 4 本）のまま、細い輪郭線では 16px で潰れるので、
+  <!-- 小さいサイズ（16〜64px。ICO の 16・24・32・48・64px と internal/app/tray.png。build/icons/render.mjs の SMALL_MAX=64）用。appicon.svg と同じ骨格（棒 2 本の交差と糸 4 本）のまま、細い輪郭線では 16px で潰れるので、
        棒は塗りの太い線、糸は幅 2 単位（16px で 1px）にして、手前の棒の周りに白い縁を取り、奥の棒が分かれて見えるようにした。
-       糸の x は 16px の列（3・6・9・12 列目）の中心に合わせてある（1 単位 = 32px で 1px、16px で 0.5px）。 -->
+       糸の x は 16px の列（0 始まりで 3・6・9・12 列目）の中心に合わせてある（1 単位 = 32px で 1px、16px で 0.5px）。 -->
   <rect width="32" height="32" rx="6" fill="#fff"/>
   <g fill="none" stroke="#000" stroke-width="2">
     <!-- 奥の短い棒 -->
