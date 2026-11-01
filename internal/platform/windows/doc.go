@@ -1,7 +1,7 @@
 // Package windows は internal/platform のインターフェースの Windows 実装（cgo なし、golang.org/x/sys/windows と user32 / gdi32 などの直接呼び出し）。
 //
 // 実装:
-//   - Capturer: GDI BitBlt によるキャプチャ（マルチモニター・DPI）。DXGI と Watch は M2。
+//   - Capturer: Grab は GDI BitBlt（マルチモニター・DPI）。Watch（継続キャプチャ）は DXGI Desktop Duplication（kirides/go-d3d）を主、GDI をフォールバックとする。制御（再初期化・切り替え・fps）は OS 非依存の watch.go。
 //   - Input（platform.InputInjector）: SendInput。呼び出しは専用の OS スレッドへ直列化する。
 //   - WindowManager: ウィンドウの列挙・前面・フォーカス（昇格ウィンドウへの入力は UIPI のため input_blocked）。
 //   - Clipboard: CF_UNICODETEXT の読み書き。

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
@@ -28,6 +29,62 @@ import (
 
 func TestSmokeCapturer(t *testing.T) {
 	platformtest.RunCapturerContract(t, func(*testing.T) platform.Capturer { return pwin.NewCapturer() })
+}
+
+// TestSmokeCapturerWatchAllMonitors は全モニターの Watch を同時に開き、どれも最初のコマが来て、取り消しで止まることを確かめる
+// （マルチモニターで DXGI の出力を同時に複製できること。契約テストは 1 台ずつ）。画面は読むだけ。
+// 最初のコマより前にエラー（ErrDesktopUnavailable なら DXGI を失って GDI に切り替わった）が流れたら、-v のログに出す。
+func TestSmokeCapturerWatchAllMonitors(t *testing.T) {
+	c := pwin.NewCapturer()
+	monitors, err := c.Monitors(context.Background())
+	if err != nil {
+		t.Fatalf("Monitors: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type watch struct {
+		frames <-chan platform.Frame
+		errs   <-chan error
+	}
+	watches := make([]watch, len(monitors))
+	for i, m := range monitors {
+		frames, errs, err := c.Watch(ctx, m.Index, 10)
+		if err != nil {
+			t.Fatalf("Watch(%d): %v", m.Index, err)
+		}
+		watches[i] = watch{frames, errs}
+	}
+	deadline := time.After(10 * time.Second)
+	for i, w := range watches {
+		select {
+		case fr, ok := <-w.frames:
+			if !ok || fr.Image == nil {
+				t.Fatalf("monitor %d: no first frame", monitors[i].Index)
+			}
+			t.Logf("monitor %d: first frame %v", monitors[i].Index, fr.Image.Bounds())
+		case err := <-w.errs:
+			t.Logf("monitor %d: error before the first frame: %v", monitors[i].Index, err)
+		case <-deadline:
+			t.Fatalf("monitor %d: no frame within 10s", monitors[i].Index)
+		}
+	}
+	cancel()
+	for i, w := range watches {
+		for w.frames != nil || w.errs != nil {
+			select {
+			case _, ok := <-w.frames:
+				if !ok {
+					w.frames = nil
+				}
+			case _, ok := <-w.errs:
+				if !ok {
+					w.errs = nil
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatalf("monitor %d: the channels were not closed within 10s of the cancel", monitors[i].Index)
+			}
+		}
+	}
 }
 
 func TestSmokeWindowManager(t *testing.T) {

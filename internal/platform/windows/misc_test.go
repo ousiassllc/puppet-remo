@@ -44,6 +44,14 @@ func TestBGRAToRGBA(t *testing.T) {
 	bgraToRGBA(dst, src[:5]) // 4 の倍数に満たない端は無視
 }
 
+func TestMakeOpaque(t *testing.T) {
+	pix := []byte{1, 2, 3, 0, 10, 20, 30, 7, 5, 6}
+	makeOpaque(pix)
+	if want := []byte{1, 2, 3, 255, 10, 20, 30, 255, 5, 6}; !bytes.Equal(pix, want) {
+		t.Errorf("pix = %v, want %v", pix, want)
+	}
+}
+
 func TestClipboardTextRoundTrip(t *testing.T) {
 	for _, s := range []string{"", "hello", "日本語 😀 mixed", "line1\r\nline2\ttab", " leading and trailing ", "a\nb"} {
 		units := encodeClipboardText(s)

@@ -8,3 +8,10 @@ func bgraToRGBA(dst, src []byte) {
 		dst[i], dst[i+1], dst[i+2], dst[i+3] = src[i+2], src[i+1], src[i], 0xFF
 	}
 }
+
+// makeOpaque は RGBA のアルファをすべて 255 にする。DXGI のコマはアルファが 0 や不定のことがあるので、GDI の Grab（bgraToRGBA）と同じく不透明にそろえる。
+func makeOpaque(pix []byte) {
+	for i := 3; i < len(pix); i += 4 {
+		pix[i] = 0xFF
+	}
+}
