@@ -252,6 +252,17 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | A11 | 監査（DB の `audit_logs`。閲覧 UI は M3） | `tool.launch_app`（`ok` / `denied` / `error`）、`tool.list_launchable_apps`、`settings.launchable_app.create` / `.update` / `.delete`（`actor_type = host`）が追記される。`launch_app` の記録にパス・引数・作業ディレクトリが無く、登録系にも引数・作業ディレクトリが無い（引数の件数だけ） |
 | A12 | 起動したメモ帳（本アプリの子プロセスではあるがジョブに入れていない）を残したまま、本アプリを終了する | メモ帳は終了しない |
 
+### 4.9 監査のサムネイルの置き場（`thumbs\`。M3・FR-AU02・AU04。NFR-S11）
+
+`repository.ThumbStore`（`%LOCALAPPDATA%\puppet-remo\thumbs\`）の確認。ACL は OS が決めるため、CI（Linux）では確認できない。**これは未確認**（サムネイルを保存する #71 のあとで、実機の確認を別 Issue にまとめる）。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| T1 | サムネイルを保存したあと、エクスプローラーの「プロパティ → セキュリティ」か `icacls %LOCALAPPDATA%\puppet-remo\thumbs` で `thumbs\` のアクセス権を見る | 現在のユーザー・SYSTEM・Administrators だけが読める（親の `%LOCALAPPDATA%\puppet-remo` の ACL を継承）。`Everyone`・`Users` に読み取りが付いていない（NFR-S11） |
+| T2 | `thumbs\` の下の `.jpg` を `icacls` で見る | 親から継承した ACL のまま。別のユーザーのアカウントで開けない |
+| T3 | `thumbs\` の下にディレクトリのジャンクション（`mklink /J`）か、外のファイルへのシンボリックリンクを作ってから、そのパスの `rel_path` を持つサムネイルを `/audit/{id}/thumbnail` で開く | `ErrInvalidArgument` 相当で拒否され（404 や 400 の画面）、外のファイルは読まれない。孤児の掃除（再起動）でリンク自体が消え、リンク先のファイルは残る |
+| T4 | 保存中（`Save` の途中）にアプリを強制終了してから起動する | `thumbs\` に `.tmp-` で始まるファイルが残っていても、1 分を過ぎたあとの起動で孤児として消える |
+
 ## 5. 既知の制約（M1）
 
 - キャプチャ: 1 枚撮り（`Grab`）は GDI `BitBlt`、継続キャプチャ（`Watch`）は DXGI（Desktop Duplication）で、使えなければ GDI（M2。§3.9）。DXGI は既定のアダプターに接続されたモニターだけを複製する（別 GPU のモニターは GDI になる）。`Frame.Dirty` は常に全面。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
@@ -273,3 +284,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-11-01 | §4.8 に A5b（Windows 11 のメモ帳で既存のウィンドウが前に出ただけのときの `launch_app` の結果）を追加。実機の確認は未確認 | #46 |
 | — | 2026-11-01 | §3.2 に I15（自ウィンドウの範囲 `own_windows`・`blocked` の確認）を追加。実機の確認は未確認 | #47 |
 | — | 2026-11-01 | §3.9（`Capturer.Watch`: DXGI・GDI フォールバックの確認 W1〜W8。未確認）を追加し、§2 に `TestSmokeCapturerWatchAllMonitors`、§5 のキャプチャの制約を M2 の実装に更新 | #57 |
+| — | 2026-11-02 | §4.9（監査のサムネイルの置き場 `thumbs\` の ACL・リンクの拒否・一時ファイルの掃除 T1〜T4。未確認）を追加 | #70 |
