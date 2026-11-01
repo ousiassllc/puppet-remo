@@ -39,6 +39,7 @@ type KillSwitch interface {
 // Admin は接続要求・クライアント・トークンの管理（FR-H03、FR-H04）。
 type Admin interface {
 	PendingRequests(ctx context.Context) ([]service.ConnRequest, error)
+	RequestHistory(ctx context.Context, page int) (service.RequestHistoryPage, error)
 	ApproveRequest(ctx context.Context, requestID string, in service.ApproveInput) (domain.Client, error)
 	DenyRequest(ctx context.Context, requestID string) error
 

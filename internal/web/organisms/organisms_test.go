@@ -110,6 +110,40 @@ func TestConnectionRequestListApprovalModeOnlyShowsAvailableModes(t *testing.T) 
 	hasNot(t, empty, "<button", "/approve")
 }
 
+// 接続要求の履歴: 6 列の表・結果のバッジ・読み取り専用（操作なし）。前後のページへのリンクは、その向きのページがあるときだけ出る。
+func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
+	rows := []view.HistoryRow{
+		{ID: "r1", DisplayName: "bob", LoginName: "bob@example.com", RemoteIP: "100.64.0.9", ReceivedAt: "2026-11-01 10:00",
+			Result: "許可", ResultTone: view.ToneOK, ResultCode: "approved", DecidedAt: "2026-11-01 10:05"},
+		{ID: "r2", DisplayName: "carol", LoginName: "carol@example.com", RemoteIP: "100.64.0.10", ReceivedAt: "2026-11-01 09:00",
+			Result: "拒否", ResultTone: view.ToneDanger, ResultCode: "denied", DecidedAt: "2026-11-01 09:01"},
+		{ID: "r3", DisplayName: "dave", LoginName: "dave@example.com", RemoteIP: "100.64.0.11", ReceivedAt: "2026-11-01 08:00",
+			Result: "未処理", ResultTone: view.ToneWarn, ResultCode: "pending", DecidedAt: "-"},
+	}
+	out := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3"}))
+	has(t, out, `id="request-history"`, "届いた日時", "処理した日時", `data-history-request="r1" data-result="approved"`, "許可", "拒否", "未処理",
+		"100.64.0.9", "bob@example.com", "2026-11-01 10:05",
+		`hx-get="/requests/history?page=1"`, `hx-get="/requests/history?page=3"`, `hx-target="#request-history"`, `hx-push-url="true"`,
+		"data-pager-prev", "data-pager-next", "2 ページ目")
+	hasNot(t, out, "<button", "hx-post", "name=\"rev_requests\"")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	first := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1, NextURL: "/requests/history?page=2"}))
+	has(t, first, "data-pager-next")
+	hasNot(t, first, "data-pager-prev")
+	single := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1}))
+	hasNot(t, single, "data-pager")
+	empty := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1}))
+	has(t, empty, `data-empty="request-history"`)
+	hasNot(t, empty, "<table", "data-pager")
+
+	tabs := webtest.Render(t, organisms.RequestsTabs(view.RequestsTabHistory))
+	has(t, tabs, `href="/requests"`, `href="/requests/history"`, `hx-boost="true"`, `hx-target-error="#main"`, "data-requests-tabs")
+	if got := strings.Count(tabs, `aria-current="page"`); got != 1 || !strings.Contains(tabs[strings.Index(tabs, `aria-current`):], "履歴") {
+		t.Errorf("exactly the history tab must be current:\n%s", tabs)
+	}
+}
+
 func TestSettingsFormErrorsAndAutostart(t *testing.T) {
 	form := view.SettingsForm{
 		Values: view.SettingsValues{Port: "80", Hotkey: "K", ScreenshotMaxDim: "1568", LeaseIdleSec: "300"},
@@ -220,6 +254,10 @@ func TestUserControlledValuesAreEscaped(t *testing.T) {
 	}}}))
 	hasNot(t, out, "<script>alert")
 	webtest.AssertCSPCompliantHTML(t, out)
+	out = webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: []view.HistoryRow{{
+		ID: "r1", DisplayName: evil, LoginName: evil, RemoteIP: evil, ReceivedAt: evil, Result: evil, DecidedAt: evil,
+	}}}))
+	hasNot(t, out, "<script>alert")
 	out = webtest.Render(t, organisms.SessionListBody(view.Sessions{Items: []view.Session{{ClientLabel: evil, KindLabel: "MCP"}}}))
 	hasNot(t, out, "<script>alert")
 }

@@ -342,3 +342,38 @@ type AppExePathField struct {
 	Error   string
 	PickURL string
 }
+
+// RequestsTab は接続要求画面のタブ（未処理の一覧と、履歴）。
+type RequestsTab string
+
+const (
+	RequestsTabPending RequestsTab = "pending"
+	RequestsTabHistory RequestsTab = "history"
+)
+
+// HistoryRow は接続要求の履歴 1 件。
+type HistoryRow struct {
+	ID          string
+	DisplayName string
+	LoginName   string
+	RemoteIP    string
+	ReceivedAt  string // 届いた日時（first_seen_at）
+	Result      string // 結果の表示名（許可・拒否・未処理・失効）
+	ResultTone  BadgeTone
+	ResultCode  string // approved / denied / pending / expired
+	DecidedAt   string // 処理した日時。許可・拒否だけ入る（それ以外は "-"）
+}
+
+// RequestHistory は接続要求の履歴の 1 ページ。PrevURL・NextURL が空なら、その向きのページは無い。
+type RequestHistory struct {
+	Rows    []HistoryRow
+	Page    int
+	PrevURL string
+	NextURL string
+}
+
+// RequestsHistory は接続要求の履歴のページ。
+type RequestsHistory struct {
+	Chrome  Chrome
+	History RequestHistory
+}

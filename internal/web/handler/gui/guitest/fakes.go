@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -198,6 +200,7 @@ type Admin struct {
 	Updates  []service.ClientUpdate
 	// 注入するエラー。nil でなければ、該当の操作がこれを返す。
 	PendingErr error
+	HistoryErr error
 	IssueErr   error
 }
 
@@ -233,6 +236,27 @@ func (a *Admin) PendingRequests(context.Context) ([]service.ConnRequest, error) 
 	return out, nil
 }
 
+// RequestHistory は Requests を、届いた日時（FirstSeenAt）の新しい順（同時刻は ID の新しい順）に 1 ページ返す（本物と同じ規則）。
+func (a *Admin) RequestHistory(_ context.Context, page int) (service.RequestHistoryPage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.HistoryErr != nil {
+		return service.RequestHistoryPage{}, a.HistoryErr
+	}
+	page = max(page, 1)
+	all := slices.Clone(a.Requests)
+	slices.SortStableFunc(all, func(x, y service.ConnRequest) int {
+		if c := y.FirstSeenAt.Compare(x.FirstSeenAt); c != 0 {
+			return c
+		}
+		return strings.Compare(y.ID, x.ID)
+	})
+	size := service.RequestHistoryPageSize
+	start := min((page-1)*size, len(all))
+	end := min(start+size, len(all))
+	return service.RequestHistoryPage{Items: all[start:end], Page: page, HasPrev: page > 1, HasNext: end < len(all)}, nil
+}
+
 func (a *Admin) decide(id, status string, clientID *string) error {
 	for i := range a.Requests {
 		if a.Requests[i].ID != id {
@@ -243,6 +267,8 @@ func (a *Admin) decide(id, status string, clientID *string) error {
 		}
 		a.Requests[i].Status = status
 		a.Requests[i].ClientID = clientID
+		decided := a.clock.Now()
+		a.Requests[i].DecidedAt = &decided
 		return nil
 	}
 	return domain.NewError(domain.CodeConflict, "connection request is not pending", nil)

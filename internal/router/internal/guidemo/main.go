@@ -113,6 +113,7 @@ func seed() *guitest.Fakes {
 		{ID: "req-002", StableNodeID: "node-demo-4", LoginName: "guest@example.com", DisplayName: "demo-tablet", RemoteIP: "100.64.0.22", Status: service.ConnPending,
 			RequestCount: 1, FirstSeenAt: now.Add(-5 * time.Minute), LastSeenAt: now.Add(-5 * time.Minute), ExpiresAt: now.Add(24 * time.Hour)},
 	}
+	f.Admin.Requests = append(f.Admin.Requests, demoRequestHistory(now)...)
 	expires := now.Add(60 * 24 * time.Hour)
 	used := now.Add(-time.Hour)
 	revoked := now.Add(-24 * time.Hour)
@@ -123,4 +124,33 @@ func seed() *guitest.Fakes {
 		},
 	}
 	return f
+}
+
+// demoRequestHistory は接続要求の履歴の見た目の確認用（Issue #44）。許可・拒否・失効が混ざった処理済みの要求を、1 ページ（20 件）を
+// 超える 26 件入れる（ページ送りが出る）。届いた日時は 40 分前の未処理の要求より前。
+func demoRequestHistory(now time.Time) []service.ConnRequest {
+	names := []string{"demo-phone", "demo-tablet", "demo-laptop", "demo-desktop", "demo-kiosk", "demo-tv", "demo-watch"}
+	users := []string{"guest@example.com", "demo-user@example.com", "visitor@example.com"}
+	var out []service.ConnRequest
+	for i := range 26 {
+		first := now.Add(-time.Hour - time.Duration(i)*5*time.Hour - 7*time.Minute)
+		r := service.ConnRequest{
+			ID: fmt.Sprintf("req-h%03d", i), StableNodeID: fmt.Sprintf("node-hist-%d", i),
+			LoginName: users[i%len(users)], DisplayName: fmt.Sprintf("%s-%d", names[i%len(names)], i+1),
+			RemoteIP: fmt.Sprintf("100.64.1.%d", 10+i), RequestCount: 1 + i%3, FirstSeenAt: first, LastSeenAt: first,
+			ExpiresAt: first.Add(24 * time.Hour),
+		}
+		switch i % 4 {
+		case 0, 1:
+			decided := first.Add(time.Duration(2+i%7) * time.Minute)
+			r.Status, r.DecidedAt = service.ConnApproved, &decided
+		case 2:
+			decided := first.Add(time.Duration(1+i%5) * time.Minute)
+			r.Status, r.DecidedAt = service.ConnDenied, &decided
+		default:
+			r.Status = service.ConnExpired
+		}
+		out = append(out, r)
+	}
+	return out
 }

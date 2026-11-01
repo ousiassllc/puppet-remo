@@ -42,6 +42,26 @@ func (h *Handler) Requests(c *gin.Context) {
 	}
 }
 
+// RequestsHistory は GET /requests/history?page=N（接続要求の履歴。1 始まりのページ番号。不正な値は 1 として扱う）。
+// HTMX の部分更新（ページ送り）は履歴のフラグメント。
+func (h *Handler) RequestsHistory(c *gin.Context) {
+	ctx := c.Request.Context()
+	page, err := h.d.Admin.RequestHistory(ctx, pageParam(c))
+	if err != nil {
+		h.pageFail(c, err)
+		return
+	}
+	history := h.requestHistoryView(page)
+	switch {
+	case boostedRequest(c):
+		h.render(c, http.StatusOK, pages.RequestsHistoryBoosted(view.RequestsHistory{Chrome: h.chrome(ctx, view.NavRequests), History: history}))
+	case fragmentRequest(c):
+		h.render(c, http.StatusOK, organisms.ConnectionRequestHistory(history))
+	default:
+		h.render(c, http.StatusOK, pages.RequestsHistory(view.RequestsHistory{Chrome: h.chrome(ctx, view.NavRequests), History: history}))
+	}
+}
+
 // Clients は GET /clients。
 func (h *Handler) Clients(c *gin.Context) {
 	ctx := c.Request.Context()

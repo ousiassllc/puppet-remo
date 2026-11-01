@@ -22,7 +22,23 @@ const (
 	ConnPending  = repository.ConnPending
 	ConnApproved = repository.ConnApproved
 	ConnDenied   = repository.ConnDenied
+	ConnExpired  = repository.ConnExpired
 )
+
+const (
+	// RequestHistoryPageSize は接続要求の履歴 1 ページの件数（固定）。
+	RequestHistoryPageSize = 20
+	// maxRequestHistoryPage は履歴のページ番号の上限（OFFSET の溢れを避ける。保持期間内の最大件数より大きい）。
+	maxRequestHistoryPage = 10000
+)
+
+// RequestHistoryPage は接続要求の履歴の 1 ページ。
+type RequestHistoryPage struct {
+	Items   []ConnRequest // 届いた日時（first_seen_at）の新しい順
+	Page    int           // 1 始まり
+	HasPrev bool
+	HasNext bool
+}
 
 // ApproveInput は接続要求を許可するときの入力（FR-H03）。
 // M1 の承認モードは常に always（DB の既定値）で、M3 まで参照しない。
@@ -56,6 +72,10 @@ type SessionCloser interface {
 // domain.CodeConflict、入力の不備は domain.CodeInvalidArgument で返す。
 type HostAdmin interface {
 	PendingRequests(ctx context.Context) ([]ConnRequest, error)
+	// RequestHistory は接続要求の履歴（許可・拒否・失効・未処理のすべて）を、届いた日時（first_seen_at）の新しい順に
+	// 1 ページ（RequestHistoryPageSize 件）返す。page は 1 始まりで、1 未満は 1、maxRequestHistoryPage 超はその値に丸める。
+	// 1 行は 1 デバイス 1 件の集約（FR-A06）の単位で、許可・拒否・失効までの同じデバイスの試行を 1 件にまとめている。
+	RequestHistory(ctx context.Context, page int) (RequestHistoryPage, error)
 	// ApproveRequest は要求を許可してクライアントを登録する。同じデバイスの登録済みクライアント
 	// （ログイン名の変更など）があれば、そのトークン・セッション・リースごと置き換える。
 	ApproveRequest(ctx context.Context, requestID string, in ApproveInput) (domain.Client, error)
@@ -130,6 +150,22 @@ func mapRepoErr(err error, what string) error {
 
 func (h *hostAdmin) PendingRequests(ctx context.Context) ([]ConnRequest, error) {
 	return h.cfg.ConnRequests.ListPending(ctx)
+}
+
+func (h *hostAdmin) RequestHistory(ctx context.Context, page int) (RequestHistoryPage, error) {
+	page = min(max(page, 1), maxRequestHistoryPage)
+	// 次のページがあるかを知るために 1 件多く読む（全件の数え上げをしない）。
+	rows, err := h.cfg.ConnRequests.ListHistory(ctx, RequestHistoryPageSize+1, (page-1)*RequestHistoryPageSize)
+	if err != nil {
+		return RequestHistoryPage{}, err
+	}
+	out := RequestHistoryPage{Page: page, HasPrev: page > 1}
+	if len(rows) > RequestHistoryPageSize {
+		out.HasNext = true
+		rows = rows[:RequestHistoryPageSize]
+	}
+	out.Items = rows
+	return out, nil
 }
 
 func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in ApproveInput) (domain.Client, error) {

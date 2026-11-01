@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -186,6 +188,51 @@ func (h *Handler) requestListView(reqs []service.ConnRequest) view.RequestList {
 		})
 	}
 	v.Rev = revision(v)
+	return v
+}
+
+// pageParam はクエリ page（1 始まり）。無い・数値でない・1 未満は 1。
+func pageParam(c *gin.Context) int {
+	n, err := strconv.Atoi(c.Query("page"))
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// historyResult は履歴の行の結果の表示。期限を過ぎた pending は、保守（Expire）で expired にされる前でも失効として出す。
+func (h *Handler) historyResult(r service.ConnRequest) (code, label string, tone view.BadgeTone) {
+	status := r.Status
+	if status == service.ConnPending && !r.ExpiresAt.After(h.d.Clock.Now()) {
+		status = service.ConnExpired
+	}
+	switch status {
+	case service.ConnApproved:
+		return status, "許可", view.ToneOK
+	case service.ConnDenied:
+		return status, "拒否", view.ToneDanger
+	case service.ConnExpired:
+		return status, "失効", view.ToneNeutral
+	}
+	return status, "未処理", view.ToneWarn
+}
+
+func (h *Handler) requestHistoryView(p service.RequestHistoryPage) view.RequestHistory {
+	v := view.RequestHistory{Page: p.Page}
+	for _, r := range p.Items {
+		code, label, tone := h.historyResult(r)
+		v.Rows = append(v.Rows, view.HistoryRow{
+			ID: r.ID, DisplayName: r.DisplayName, LoginName: r.LoginName, RemoteIP: r.RemoteIP,
+			ReceivedAt: h.formatTime(r.FirstSeenAt), Result: label, ResultTone: tone, ResultCode: code,
+			DecidedAt: h.formatTimePtr(r.DecidedAt, "-"),
+		})
+	}
+	if p.HasPrev {
+		v.PrevURL = "/requests/history?page=" + strconv.Itoa(p.Page-1)
+	}
+	if p.HasNext {
+		v.NextURL = "/requests/history?page=" + strconv.Itoa(p.Page+1)
+	}
 	return v
 }
 
