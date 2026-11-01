@@ -100,15 +100,16 @@ type App struct {
 	bus  *service.Bus
 	kill service.HostKillSwitch
 
-	leases  service.LeaseManager
-	authz   service.Authz
-	audit   *service.Audit
-	admin   service.HostAdmin
-	apps    service.AppRegistry
-	mcp     *mcp.Server
-	viewers service.ViewerSessions // viewer_id の発行・検証（/viewer と /ws/screen）
-	ws      *ws.Handler
-	web     *webremote.Handler // リモートの Web UI（/viewer）
+	leases   service.LeaseManager
+	approval service.Approval // リース取得の承認待ち（FR-L07）
+	authz    service.Authz
+	audit    *service.Audit
+	admin    service.HostAdmin
+	apps     service.AppRegistry
+	mcp      *mcp.Server
+	viewers  service.ViewerSessions // viewer_id の発行・検証（/viewer と /ws/screen）
+	ws       *ws.Handler
+	web      *webremote.Handler // リモートの Web UI（/viewer）
 	// connStates は未登録デバイスのブラウザに返す待機・拒否・失効のページの選択に使う、接続要求の状態の読み取り専用の参照。
 	connStates service.ConnRequestStates
 	tracker    *service.StatusTracker
@@ -191,7 +192,15 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lease idle timeout: %w", err)
 	}
-	a.leases, err = service.NewLeaseManager(service.LeaseConfig{Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log})
+	// 承認待ちの要求（FR-L07）。要求のたびに Bus へ approval を出す。ダイアログを開く購読側と Resolve を呼ぶ GUI ルーターは別の作業（#68）。
+	a.approval, err = service.NewApproval(service.ApprovalConfig{Clock: cfg.Clock, IDs: cfg.IDs, Bus: a.bus})
+	if err != nil {
+		return fmt.Errorf("approval: %w", err)
+	}
+	a.leases, err = service.NewLeaseManager(service.LeaseConfig{
+		Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log,
+		Approval: a.approval, Clients: cfg.Repo.Clients(),
+	})
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
 	}

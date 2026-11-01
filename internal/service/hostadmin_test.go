@@ -667,3 +667,62 @@ func TestHostAdminRevokeToken(t *testing.T) {
 		t.Errorf("unknown client: %v", err)
 	}
 }
+
+func TestHostAdminDeleteClientWithdrawsItsPendingLeaseApproval(t *testing.T) {
+	e := newAdminEnv(t)
+	approval, err := NewApproval(ApprovalConfig{Clock: e.clock, IDs: &seqIDs{}, Bus: e.bus, AfterFunc: (&ctlTimers{}).AfterFunc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases, err := NewLeaseManager(LeaseConfig{
+		Clock: e.clock, IDs: &ctlIDs{}, IdleTimeout: time.Minute, AfterFunc: (&ctlTimers{}).AfterFunc,
+		Approval: approval, Clients: e.db.Clients(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.admin, err = NewHostAdmin(HostAdminConfig{
+		Clients: e.db.Clients(), Tokens: e.db.Tokens(), ConnRequests: e.db.ConnRequests(), Authz: e.authz,
+		Leases: leases, Sessions: e.sessions, Audit: e.audit, Bus: e.bus, Clock: e.clock, IDs: &seqIDs{n: 200},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := e.approve(t, "nodeA", "pc", ApproveInput{MCPEnabled: true}) // 承認モードは既定の always
+	who := domain.Actor{Kind: domain.ActorMCP, ClientID: c.ID, SessionID: "s1"}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := leases.Acquire(e.ctx, who)
+		done <- err
+	}()
+	for waiting := true; waiting; {
+		select {
+		case ev := <-e.events:
+			waiting = ev.Topic != TopicApproval
+		case <-time.After(approvalWait):
+			t.Fatal("the approval request was not made")
+		}
+	}
+	if _, ok := leases.Pending(); !ok {
+		t.Fatal("the lease must be pending approval")
+	}
+
+	if err := e.admin.DeleteClient(e.ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, domain.ErrLeaseRequired) {
+			t.Errorf("Acquire = %v, want ErrLeaseRequired（取り下げ）", err)
+		}
+	case <-time.After(approvalWait):
+		t.Fatal("Acquire kept waiting after the client was deleted")
+	}
+	if _, ok := leases.Pending(); ok {
+		t.Error("the pending approval must be withdrawn")
+	}
+	if len(approval.Pending()) != 0 {
+		t.Error("the approval request must be withdrawn")
+	}
+}

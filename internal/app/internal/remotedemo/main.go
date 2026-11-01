@@ -92,7 +92,7 @@ func run(remoteAddr, guiAddr string) error {
 
 	if err := db.Clients().Create(ctx, domain.Client{
 		ID: registeredID, StableNodeID: "node-demo-1", LoginName: "demo-user@example.com", DisplayName: "demo-laptop",
-		WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAlways,
+		WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAuto, // 承認ダイアログ（#68）が入るまで、デモは承認を待たずにリースを取る
 	}); err != nil {
 		return err
 	}
