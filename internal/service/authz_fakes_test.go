@@ -268,6 +268,10 @@ func (m *memConnRequests) ListPending(context.Context) ([]repository.ConnRequest
 
 func (m *memConnRequests) Expire(context.Context, time.Time) error { return errors.New("unused") }
 
+func (m *memConnRequests) ListHistory(context.Context, int, int) ([]repository.ConnRequest, error) {
+	return nil, errors.New("unused")
+}
+
 func (m *memConnRequests) snapshot() []repository.ConnRequest {
 	m.mu.Lock()
 	defer m.mu.Unlock()

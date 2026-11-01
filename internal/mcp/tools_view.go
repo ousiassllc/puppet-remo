@@ -32,6 +32,24 @@ type rectBody struct {
 
 func sizeOf(s domain.Size) sizeBody { return sizeBody{Width: s.W, Height: s.H} }
 
+func rectOf(r domain.Rect) rectBody { return rectBody{X: r.X, Y: r.Y, Width: r.W, Height: r.H} }
+
+// ownWindowBody は puppet-remo 自身のウィンドウが占める範囲（NFR-S06）。ウィンドウはスクリーンショットに写らず、入力は拒否される。
+// rect は monitor の縮小スクリーンショットの座標（AI が使う座標系。物理座標ではない）。名前・ID などは含まない。
+type ownWindowBody struct {
+	Monitor int      `json:"monitor"`
+	Rect    rectBody `json:"rect"`
+}
+
+// ownWindowBodies は regions を出力の形にする。空でも nil にせず、JSON では [] になる（「無い」ことを示す）。
+func ownWindowBodies(regions []domain.OwnRegion) []ownWindowBody {
+	out := make([]ownWindowBody, 0, len(regions))
+	for _, r := range regions {
+		out = append(out, ownWindowBody{Monitor: r.Monitor, Rect: rectOf(r.Rect)})
+	}
+	return out
+}
+
 // monitorBody は get_screen_info のモニター 1 台（API 仕様 §3.3）。
 type monitorBody struct {
 	Index    int       `json:"index"`
@@ -54,6 +72,8 @@ type screenshotBody struct {
 	Physical sizeBody `json:"physical"`
 	Scaled   sizeBody `json:"scaled"`
 	Scale    float64  `json:"scale"`
+	// OwnWindows は puppet-remo のウィンドウの、このスクリーンショット上の範囲。ウィンドウは画像に写らないが、入力は拒否される。
+	OwnWindows []ownWindowBody `json:"own_windows"`
 }
 
 type cursorBody struct {
@@ -111,7 +131,9 @@ func (s *Server) addViewTools() {
 
 	addAuditedTool(s, "screenshot",
 		"Take a screenshot of a monitor. The image is scaled down so that its long side fits the configured maximum; "+
-			"coordinates for the other tools are pixels of this scaled image.",
+			"coordinates for the other tools are pixels of this scaled image. "+
+			"puppet-remo's own windows are never captured, so the image shows what lies behind them, but input there is blocked "+
+			"(input_blocked, reason own_window); own_windows in the result lists where they are, as rects in this image's pixels.",
 		true, screenshotArgs, func(ctx context.Context, _ domain.Actor, in screenshotIn) (toolResult, error) {
 			monitor, err := monitorArg(in.Monitor)
 			if err != nil {
@@ -126,6 +148,8 @@ func (s *Server) addViewTools() {
 				Physical: sizeOf(shot.Physical),
 				Scaled:   sizeOf(shot.Scaled),
 				Scale:    shot.Scale,
+
+				OwnWindows: ownWindowBodies(shot.OwnWindows),
 			}
 			text, err := json.Marshal(meta)
 			if err != nil {

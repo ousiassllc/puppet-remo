@@ -5,14 +5,14 @@
   "description": "puppet-remo のホスト GUI のフロントエンド（HTMX + Tailwind。docs/architecture/frontend.md §8）",
   "type": "module",
   "scripts": {
-    "build": "npm run clean && npm run build:css && npm run build:js && npm run copy:htmx",
-    "clean": "node scripts/clean.mjs",
-    "build:js": "node esbuild.config.mjs",
-    "build:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
-    "copy:htmx": "node scripts/copy-htmx.mjs",
-    "dev": "concurrently \"npm run dev:css\" \"npm run dev:js\"",
-    "dev:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
-    "dev:js": "node esbuild.config.mjs --watch"
+    "build": "bun run clean && bun run build:css && bun run build:js && bun run copy:htmx",
+    "clean": "bun scripts/clean.mjs",
+    "build:js": "bun esbuild.config.mjs",
+    "build:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
+    "copy:htmx": "bun scripts/copy-htmx.mjs",
+    "dev": "bun --bun concurrently \"bun run dev:css\" \"bun run dev:js\"",
+    "dev:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
+    "dev:js": "bun esbuild.config.mjs --watch"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",
@@ -27,6 +27,6 @@
     "htmx.org": "2.0.11"
   },
   "engines": {
-    "node": ">=22"
+    "bun": ">=1.3.14"
   }
 }

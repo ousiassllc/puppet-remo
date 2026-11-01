@@ -25,6 +25,7 @@ type FakeAppLauncher struct {
 	denied   map[string]bool
 	elevated map[string]bool
 	nextPID  uint32
+	onLaunch func(pid uint32)
 }
 
 func NewFakeAppLauncher() *FakeAppLauncher {
@@ -62,6 +63,14 @@ func (f *FakeAppLauncher) RequireElevation(path string) {
 	f.elevated[path] = true
 }
 
+// OnLaunch は、起動に成功するたびに（Launch が返る直前に、内部のロックを外してから）pid つきで呼ばれる関数を設定する。
+// プロセスの作成に伴うウィンドウの出現を、FakeWindows の差し替えで再現するためのもの。nil で解除する。
+func (f *FakeAppLauncher) OnLaunch(fn func(pid uint32)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onLaunch = fn
+}
+
 func (f *FakeAppLauncher) Launch(ctx context.Context, spec platform.LaunchSpec) (uint32, error) {
 	if err := f.enter(ctx, "Launch", spec); err != nil {
 		return 0, err
@@ -69,6 +78,21 @@ func (f *FakeAppLauncher) Launch(ctx context.Context, spec platform.LaunchSpec) 
 	if spec.ExePath == "" {
 		return 0, domain.ErrInvalidArgument.WithMsg("empty executable path")
 	}
+	pid, err := f.start(spec)
+	if err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	fn := f.onLaunch
+	f.mu.Unlock()
+	if fn != nil {
+		fn(pid)
+	}
+	return pid, nil
+}
+
+// start は起動の成否を決めて新しい pid を返す。
+func (f *FakeAppLauncher) start(spec platform.LaunchSpec) (uint32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {

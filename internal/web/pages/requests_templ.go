@@ -37,7 +37,15 @@ func requestsBody(v view.Requests) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">接続要求</h1><p class=\"text-sm text-slate-600\">未登録のデバイスからの接続要求です。許可するとクライアントとして登録され、拒否すると 24 時間は同じデバイスからの要求を受け付けません。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">接続要求</h1>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = organisms.RequestsTabs(view.RequestsTabPending).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p class=\"text-sm text-slate-600\">未登録のデバイスからの接続要求です。許可するとクライアントとして登録され、拒否すると 24 時間は同じデバイスからの要求を受け付けません。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -45,7 +53,7 @@ func requestsBody(v view.Requests) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

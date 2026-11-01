@@ -46,10 +46,12 @@ func (a *authz) IssueToken(ctx context.Context, clientID, label string, ttl *tim
 	}
 	token, err := newToken(a.rnd)
 	if err != nil {
+		a.log.Error("issue token failed", "client_id", clientID, "error", err)
 		return "", err
 	}
+	tokenID := a.cfg.IDs.NewID()
 	err = a.cfg.Tokens.Create(ctx, repository.TokenRecord{
-		ID:        a.cfg.IDs.NewID(),
+		ID:        tokenID,
 		ClientID:  clientID,
 		Label:     label,
 		TokenHash: repository.HashToken(token),
@@ -61,8 +63,11 @@ func (a *authz) IssueToken(ctx context.Context, clientID, label string, ttl *tim
 		return "", domain.NewError(domain.CodeConflict, "a token with this label already exists", nil)
 	}
 	if err != nil {
+		a.log.Error("issue token failed", "client_id", clientID, "error", err)
 		return "", err
 	}
+	// トークンの平文・ハッシュ・表示用の接頭辞はログに出さない（NFR-S13）。ID とラベルだけ。
+	a.log.Info("token issued", "client_id", clientID, "token_id", tokenID, "label", label)
 	return token, nil
 }
 

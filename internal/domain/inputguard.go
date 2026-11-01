@@ -2,19 +2,37 @@ package domain
 
 import "slices"
 
+// 入力を拒否する宛先の reason（ErrInputBlocked の Detail["reason"]。API 仕様 §3.4）。
+const (
+	ReasonOwnWindow      = "own_window"
+	ReasonElevatedWindow = "elevated_window"
+)
+
+// InputBlockReason は w への入力を拒否する理由（ReasonOwnWindow / ReasonElevatedWindow）を返す。拒否しないウィンドウは空文字。
+// 自ウィンドウかつ昇格のときは自ウィンドウを優先する。CheckInputTarget と list_windows の blocked の印が同じ規則を使う。
+func InputBlockReason(w WindowInfo) string {
+	switch {
+	case w.Own:
+		return ReasonOwnWindow
+	case w.Elevated:
+		return ReasonElevatedWindow
+	}
+	return ""
+}
+
 // CheckInputTarget は、入力の宛先ウィンドウに対する InputGuard の判定規則（NFR-S06）。
 // 自プロセスのウィンドウ（ホスト GUI・承認ダイアログ・オーバーレイ）と、昇格ウィンドウ（UIPI で入力できない）を
 // ErrInputBlocked で拒否する。ウィンドウの事実（Own・Elevated）は platform が返す。
 func CheckInputTarget(w WindowInfo) error {
-	switch {
-	case w.Own:
+	switch InputBlockReason(w) {
+	case ReasonOwnWindow:
 		return ErrInputBlocked.
 			WithMsg("the target is a puppet-remo window").
-			WithDetail("reason", "own_window")
-	case w.Elevated:
+			WithDetail("reason", ReasonOwnWindow)
+	case ReasonElevatedWindow:
 		return ErrInputBlocked.
 			WithMsg("the target window is elevated (UIPI)").
-			WithDetail("reason", "elevated_window").
+			WithDetail("reason", ReasonElevatedWindow).
 			WithDetail("window_id", w.ID)
 	}
 	return nil
@@ -26,7 +44,7 @@ func CheckObserveTarget(w WindowInfo) error {
 	if w.Own {
 		return ErrInputBlocked.
 			WithMsg("the target is a puppet-remo window").
-			WithDetail("reason", "own_window")
+			WithDetail("reason", ReasonOwnWindow)
 	}
 	return nil
 }

@@ -1,5 +1,5 @@
 // htmx 本体と拡張（response-targets・sse）を dist/js にコピーする（docs/architecture/frontend.md §8.1）。
-// 版は package-lock.json で固定する。
+// 版は bun.lock で固定する。
 import { copyFileSync, mkdirSync } from "node:fs";
 
 const files = [

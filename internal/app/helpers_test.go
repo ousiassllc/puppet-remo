@@ -188,6 +188,7 @@ type env struct {
 	whois     *fakeWhoIs
 	listens   *listenLog
 	hotkey    *platformtest.FakeHotkey
+	windows   *platformtest.FakeWindows
 	power     *platformtest.FakePower
 	input     *platformtest.FakeInput
 	autostart *platformtest.FakeAutostart
@@ -250,7 +251,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 	t.Helper()
 	windows := platformtest.NewFakeWindows()
 	e := &env{
-		t: t, db: db,
+		t: t, db: db, windows: windows,
 		watcher: &fakeWatcher{},
 		whois:   &fakeWhoIs{id: tailnet.Identity{LoginName: "alice@example.com", StableNodeID: "nodeA", NodeName: "alice-laptop"}},
 		listens: &listenLog{}, hotkey: platformtest.NewFakeHotkey(), power: platformtest.NewFakePower(), input: platformtest.NewFakeInput(),
@@ -268,6 +269,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 		Watcher:     e.watcher,
 		WhoIs:       e.whois,
 		Static:      staticFiles(),
+		Logs:        NewLogReader(t.TempDir()),
 		Version:     "0.0.0-test",
 		Logger:      discardLogger(),
 		ListenFunc:  e.listens.listen,

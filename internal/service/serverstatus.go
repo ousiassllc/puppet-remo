@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -62,6 +63,8 @@ type StatusTrackerConfig struct {
 	Port func() int
 	// Bus は状態が変わったときに server-status を流す。nil なら通知しない。
 	Bus *Bus
+	// Logger には tailscaled の状態（TailscaledState）が変わったときだけ出す。nil なら slog.Default()。
+	Logger *slog.Logger
 }
 
 // StatusTracker は tailnet.Watcher の最新の状態と Listener の状態を束ねて ServerStatus にする。
@@ -71,10 +74,14 @@ type StatusTracker struct {
 	mu     sync.Mutex
 	status tailnet.Status
 	seen   bool
+	logged TailscaledState // 運用ログに最後に出した状態
 }
 
 // NewStatusTracker は StatusTracker を作る。状態を集めるには Run を goroutine で動かす。
 func NewStatusTracker(cfg StatusTrackerConfig) *StatusTracker {
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
 	return &StatusTracker{cfg: cfg}
 }
 
@@ -95,9 +102,41 @@ func (t *StatusTracker) Run(ctx context.Context) error {
 			}
 			t.mu.Lock()
 			t.status, t.seen = st, true
+			changed := tailscaledStateOf(st) != t.logged
+			t.logged = tailscaledStateOf(st)
 			t.mu.Unlock()
+			if changed {
+				t.logTailscaled(st)
+			}
 			t.Notify()
 		}
+	}
+}
+
+// tailscaledStateOf は Watcher の状態をダッシュボードの分類にする。
+func tailscaledStateOf(st tailnet.Status) TailscaledState {
+	switch {
+	case st.Err != nil:
+		return TailscaledUnavailable
+	case !st.LoggedIn:
+		return TailscaledNeedsLogin
+	}
+	return TailscaledRunning
+}
+
+// logTailscaled は tailscaled の状態の変化を運用ログに出す（変わったときだけ。ポーリングごとには出さない）。
+func (t *StatusTracker) logTailscaled(st tailnet.Status) {
+	switch state := tailscaledStateOf(st); state {
+	case TailscaledRunning:
+		ips := make([]string, len(st.IPs))
+		for i, ip := range st.IPs {
+			ips[i] = ip.String()
+		}
+		t.cfg.Logger.Info("tailscaled is running", "state", string(state), "ips", ips)
+	case TailscaledNeedsLogin:
+		t.cfg.Logger.Warn("tailscaled is not logged in", "state", string(state))
+	default:
+		t.cfg.Logger.Warn("tailscaled is not reachable", "state", string(state), "error", st.Err)
 	}
 }
 
@@ -118,16 +157,14 @@ func (t *StatusTracker) ServerStatus(context.Context) ServerStatus {
 	if t.cfg.Port != nil {
 		out.Port = t.cfg.Port()
 	}
-	switch {
-	case !seen:
-	case st.Err != nil:
-		out.Tailscaled = TailscaledUnavailable
+	if seen {
+		out.Tailscaled = tailscaledStateOf(st)
+	}
+	switch out.Tailscaled {
+	case TailscaledUnavailable:
 		out.Reason = "tailscaled に接続できません。"
-	case !st.LoggedIn:
-		out.Tailscaled = TailscaledNeedsLogin
+	case TailscaledNeedsLogin:
 		out.Reason = "tailscaled にログインしていません。"
-	default:
-		out.Tailscaled = TailscaledRunning
 	}
 	for _, ip := range st.IPs {
 		out.TailnetIPs = append(out.TailnetIPs, ip.String())

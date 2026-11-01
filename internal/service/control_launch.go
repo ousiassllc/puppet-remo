@@ -68,7 +68,8 @@ func (c *control) launch(ctx context.Context, who domain.Actor, appID string) (r
 	if err != nil {
 		return LaunchResult{}, label, leaseID, launchFailure(err)
 	}
-	return LaunchResult{AppID: app.ID, PID: pid}, label, leaseID, nil
+	obs := c.observeLaunchedWindow(ctx, pid)
+	return LaunchResult{AppID: app.ID, PID: pid, Window: obs.foreground, ReusedExistingWindow: obs.reusedExistingWindow()}, label, leaseID, nil
 }
 
 // launchFailure は AppLauncher.Launch の失敗を API の launch_failed に写す。理由（4 値）以外は載せない。
@@ -85,7 +86,8 @@ func launchFailure(err error) error {
 }
 
 // launchAuditDetail は tool.launch_app の detail（API 仕様・er.md）。パス・引数・作業ディレクトリは入れない。
-// label は許可リストを引けたときだけ、pid は成功のときだけ、reason は launch_failed のときだけ入る。
+// label は許可リストを引けたときだけ、pid と reused_existing_window は成功のときだけ、reason は launch_failed のときだけ入る。
+// 前面のウィンドウのタイトル・id は記録しない。
 func launchAuditDetail(appID, label string, res LaunchResult, err error) map[string]any {
 	detail := map[string]any{"app_id": truncateRunes(appID, maxAuditAppIDRunes)}
 	if label != "" {
@@ -93,6 +95,7 @@ func launchAuditDetail(appID, label string, res LaunchResult, err error) map[str
 	}
 	if err == nil {
 		detail["pid"] = res.PID
+		detail["reused_existing_window"] = res.ReusedExistingWindow
 		return detail
 	}
 	var de *domain.Error

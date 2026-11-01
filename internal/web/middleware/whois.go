@@ -16,7 +16,7 @@ func WhoIs(whois service.WhoIs) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id, err := service.ResolveIdentity(r.Context(), whois, r.RemoteAddr)
 			if err != nil {
-				slog.Debug("whois failed", "error", err)
+				slog.Warn("whois failed; the request was rejected", "remote_addr", r.RemoteAddr, "error", err)
 				writeReject(w, r, classify(r), reject{code: domain.CodeWhoisFailed})
 				return
 			}

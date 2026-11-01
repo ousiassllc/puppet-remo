@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -26,7 +27,7 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 		}
 	}
 	for _, index := range []string{
-		"ux_connreq_pending_node", "ix_connreq_status_expires",
+		"ux_connreq_pending_node", "ix_connreq_status_expires", "ix_connreq_first_seen",
 		"ix_task_created", "ix_task_client_created", "ix_task_active",
 		"ix_audit_ts", "ix_audit_client_ts", "ix_audit_kind_ts", "ix_audit_result_ts",
 		"ix_audit_session", "ix_audit_task_step", "ix_thumb_created",
@@ -35,8 +36,8 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 			t.Errorf("index %s: got %d, want 1", index, n)
 		}
 	}
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 2 {
-		t.Errorf("schema version = %d, want 2", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 3 {
+		t.Errorf("schema version = %d, want 3", v)
 	}
 }
 
@@ -81,8 +82,8 @@ func TestOpenIsIdempotentAndKeepsData(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 2 {
-		t.Errorf("schema_migrations rows = %d, want 2 (reopen must not re-apply)", n)
+	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 3 {
+		t.Errorf("schema_migrations rows = %d, want 3 (reopen must not re-apply)", n)
 	}
 	if v, ok, err := db.Settings().Get(ctx, "server.port"); err != nil || !ok || string(v) != "8765" {
 		t.Errorf("setting after reopen = %q, %v, %v", v, ok, err)
@@ -296,8 +297,8 @@ func TestOpenUpgradesM1Database(t *testing.T) {
 		t.Fatalf("Open M1 database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 2 {
-		t.Errorf("schema version = %d, want 2", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 3 {
+		t.Errorf("schema version = %d, want 3", v)
 	}
 	if got, err := db.Clients().Get(ctx, "c1"); err != nil || got.StableNodeID != "node1" {
 		t.Errorf("existing client after upgrade = %+v, %v", got, err)
@@ -305,5 +306,85 @@ func TestOpenUpgradesM1Database(t *testing.T) {
 	app := domain.LaunchableApp{ID: "a1", Label: "メモ帳", ExePath: `C:\Windows\notepad.exe`}
 	if err := db.LaunchableApps().Create(ctx, app, domain.MaxLaunchableApps); err != nil {
 		t.Errorf("Create on upgraded database: %v", err)
+	}
+}
+
+// v2 の DB（接続要求が許可・拒否・未処理で残っている）を Open すると v3（履歴の索引）が足され、既存の行は 1 行も変わらず、
+// 処理済みの要求（結果と処理日時）が履歴に出る。
+func TestOpenUpgradesV2DatabaseKeepsDecidedConnRequests(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "puppet-remo.db")
+
+	full, err := fs.Sub(embeddedMigrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, name := range []string{"0001_init.sql", "0002_launchable_apps.sql"} {
+		body, err := fs.ReadFile(full, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = string(body)
+	}
+	conn, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetMaxOpenConns(1)
+	if err := migrate(ctx, conn, migrationsFS(files), newFakeClock().Now); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO clients (id, stable_node_id, login_name, display_name, created_at, updated_at)
+			VALUES ('c1', 'nodeA', 'a@example.com', 'dev-a', 1, 1)`,
+		`INSERT INTO connection_requests (id, stable_node_id, login_name, display_name, remote_ip, status,
+			first_seen_at, last_seen_at, expires_at, decided_at, client_id)
+			VALUES ('r1', 'nodeA', 'a@example.com', 'dev-a', '100.64.0.1', 'approved', 1000, 1000, 9000, 2000, 'c1')`,
+		`INSERT INTO connection_requests (id, stable_node_id, login_name, display_name, remote_ip, status,
+			first_seen_at, last_seen_at, expires_at, decided_at)
+			VALUES ('r2', 'nodeB', 'b@example.com', 'dev-b', '100.64.0.2', 'denied', 3000, 3000, 9000, 4000)`,
+		`INSERT INTO connection_requests (id, stable_node_id, login_name, display_name, remote_ip, status,
+			first_seen_at, last_seen_at, expires_at)
+			VALUES ('r3', 'nodeC', 'c@example.com', 'dev-c', '100.64.0.3', 'pending', 5000, 5000, 9000)`,
+	} {
+		if _, err := conn.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open v2 database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 3 {
+		t.Errorf("schema version = %d, want 3", v)
+	}
+	got, err := db.ConnRequests().ListHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids, statuses []string
+	for _, r := range got {
+		ids, statuses = append(ids, r.ID), append(statuses, r.Status)
+	}
+	if want := []string{"r3", "r2", "r1"}; !slices.Equal(ids, want) {
+		t.Fatalf("history ids = %v, want %v (newest first)", ids, want)
+	}
+	if want := []string{ConnPending, ConnDenied, ConnApproved}; !slices.Equal(statuses, want) {
+		t.Errorf("history statuses = %v, want %v", statuses, want)
+	}
+	if r := got[2]; r.DecidedAt == nil || r.DecidedAt.UnixMilli() != 2000 || r.ClientID == nil || *r.ClientID != "c1" {
+		t.Errorf("approved row after upgrade = %+v", r)
+	}
+	if r := got[1]; r.DecidedAt == nil || r.DecidedAt.UnixMilli() != 4000 {
+		t.Errorf("denied row after upgrade = %+v", r)
+	}
+	if r := got[0]; r.DecidedAt != nil {
+		t.Errorf("pending row has decided_at = %v", r.DecidedAt)
 	}
 }

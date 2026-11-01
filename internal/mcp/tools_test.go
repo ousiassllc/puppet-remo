@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -77,8 +78,8 @@ func TestScreenshot(t *testing.T) {
 			}
 			var meta screenshotBody
 			res.decode(t, &meta)
-			want := screenshotBody{Monitor: 1, Physical: sizeBody{2560, 1440}, Scaled: sizeBody{1568, 882}, Scale: 0.6125}
-			if meta != want {
+			want := screenshotBody{Monitor: 1, Physical: sizeBody{2560, 1440}, Scaled: sizeBody{1568, 882}, Scale: 0.6125, OwnWindows: []ownWindowBody{}}
+			if !reflect.DeepEqual(meta, want) {
 				t.Errorf("meta = %+v, want %+v", meta, want)
 			}
 			if text := res.text(); text == "" {
@@ -88,6 +89,35 @@ func TestScreenshot(t *testing.T) {
 				t.Error("screenshot acquired the lease")
 			}
 		})
+	}
+}
+
+func TestScreenshotReportsOwnWindows(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.shot = service.Shot{
+		Data: []byte("image-bytes"), MIME: "image/png", Monitor: 1,
+		Physical: domain.Size{W: 2560, H: 1440}, Scaled: domain.Size{W: 1568, H: 882}, Scale: 0.6125,
+		OwnWindows: []domain.OwnRegion{{Monitor: 1, Rect: domain.Rect{X: 784, Y: 0, W: 393, H: 442}}},
+	}
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "screenshot", map[string]any{"monitor": 1})
+	if res.IsError {
+		t.Fatal(res.text())
+	}
+	var meta screenshotBody
+	res.decode(t, &meta)
+	want := []ownWindowBody{{Monitor: 1, Rect: rectBody{X: 784, Y: 0, Width: 393, Height: 442}}}
+	if !reflect.DeepEqual(meta.OwnWindows, want) {
+		t.Errorf("own_windows = %+v, want %+v", meta.OwnWindows, want)
+	}
+	// JSON のキーは own_windows / monitor / rect{x,y,width,height}（縮小座標）。
+	raw, err := json.Marshal(meta.OwnWindows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, wantJSON := string(raw), `[{"monitor":1,"rect":{"x":784,"y":0,"width":393,"height":442}}]`; got != wantJSON {
+		t.Errorf("json = %s, want %s", got, wantJSON)
 	}
 }
 
@@ -281,6 +311,7 @@ func TestListWindows(t *testing.T) {
 		{ID: "132456", Title: "メモ帳", Process: "notepad.exe", PID: 4120, Rect: domain.Rect{X: 40, Y: 30, W: 800, H: 600}, Monitor: 0, Foreground: true},
 		{ID: "7", Title: "管理者", Process: "admin.exe", PID: 8, Rect: domain.Rect{X: 2560, Y: 0, W: 640, H: 360}, Monitor: 1, Elevated: true},
 		{ID: "8", Title: "最小化", Process: "min.exe", PID: 9, Rect: domain.Rect{X: -32000, Y: -32000, W: 160, H: 28}, Monitor: 0, Minimized: true},
+		{ID: "9", Title: "puppet-remo", Process: "puppet-remo.exe", PID: 10, Rect: domain.Rect{X: 1600, Y: 0, W: 800, H: 900}, Monitor: 0, Own: true},
 	}
 	cs := e.connect("c1")
 
@@ -292,8 +323,9 @@ func TestListWindows(t *testing.T) {
 	res.decode(t, &got)
 	want := windowsBody{Windows: []windowBody{
 		{ID: "132456", Title: "メモ帳", Process: "notepad.exe", PID: 4120, Rect: rectBody{X: 25, Y: 18, Width: 490, Height: 368}, Monitor: 0, Foreground: true},
-		{ID: "7", Title: "管理者", Process: "admin.exe", PID: 8, Rect: rectBody{X: 0, Y: 0, Width: 640, Height: 360}, Monitor: 1, Elevated: true},
+		{ID: "7", Title: "管理者", Process: "admin.exe", PID: 8, Rect: rectBody{X: 0, Y: 0, Width: 640, Height: 360}, Monitor: 1, Elevated: true, Blocked: true, BlockedReason: "elevated_window"},
 		{ID: "8", Title: "最小化", Process: "min.exe", PID: 9, Monitor: 0, Minimized: true},
+		{ID: "9", Title: "puppet-remo", Process: "puppet-remo.exe", PID: 10, Rect: rectBody{X: 980, Y: 0, Width: 490, Height: 552}, Monitor: 0, Blocked: true, BlockedReason: "own_window"},
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("list_windows =\n %+v\nwant\n %+v", got, want)

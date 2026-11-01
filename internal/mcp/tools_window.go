@@ -17,6 +17,10 @@ type windowBody struct {
 	Foreground bool     `json:"foreground"`
 	Minimized  bool     `json:"minimized"`
 	Elevated   bool     `json:"elevated"`
+	// Blocked は、このウィンドウへの入力を puppet-remo が拒否するか。BlockedReason は own_window（puppet-remo 自身のウィンドウ。
+	// スクリーンショットには写らない）か elevated_window。拒否しないウィンドウでは false と空（省略）。
+	Blocked       bool   `json:"blocked"`
+	BlockedReason string `json:"blocked_reason,omitempty"`
 }
 
 type windowsBody struct {
@@ -62,7 +66,9 @@ type uiTreeBody struct {
 func (s *Server) addWindowTools() {
 	addAuditedTool(s, "list_windows",
 		"List the top-level windows. rect is in the scaled coordinates of the monitor the window overlaps most, "+
-			"clipped to that monitor. Input into elevated windows is not possible.",
+			"clipped to that monitor. Input into elevated windows is not possible. "+
+			"blocked is true (with blocked_reason) for windows that reject input: elevated_window, and own_window for "+
+			"puppet-remo's own windows, which are not captured in screenshots (so they do not appear there) - avoid clicking or typing inside their rect.",
 		true, noArgsSummary, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
 			wins, err := s.control.Windows(ctx)
 			if err != nil {
@@ -74,6 +80,7 @@ func (s *Server) addWindowTools() {
 			}
 			out := windowsBody{Windows: make([]windowBody, 0, len(wins))}
 			for _, w := range wins {
+				blockReason := domain.InputBlockReason(w)
 				out.Windows = append(out.Windows, windowBody{
 					ID:         w.ID,
 					Title:      w.Title,
@@ -84,6 +91,9 @@ func (s *Server) addWindowTools() {
 					Foreground: w.Foreground,
 					Minimized:  w.Minimized,
 					Elevated:   w.Elevated,
+
+					Blocked:       blockReason != "",
+					BlockedReason: blockReason,
 				})
 			}
 			return toolResult{Structured: out}, nil
@@ -208,15 +218,11 @@ func (c converter) rect(monitor int, r domain.Rect) rectBody {
 	if !ok {
 		return rectBody{}
 	}
-	x0, y0 := max(r.X, m.Origin.X), max(r.Y, m.Origin.Y)
-	x1, y1 := min(r.X+r.W, m.Origin.X+m.Size.W), min(r.Y+r.H, m.Origin.Y+m.Size.H)
-	if x1 <= x0 || y1 <= y0 {
+	scaled, ok := m.ScaledRect(r, c.maxDim)
+	if !ok {
 		return rectBody{}
 	}
-	// 右下は排他的な端なので、最後のピクセルを縮小してから 1 を足す（範囲内の点は縮小画像の内側に収まる）。
-	tl := m.PhysicalToScaled(domain.Point{X: x0, Y: y0}, c.maxDim)
-	br := m.PhysicalToScaled(domain.Point{X: x1 - 1, Y: y1 - 1}, c.maxDim)
-	return rectBody{X: tl.X, Y: tl.Y, Width: br.X - tl.X + 1, Height: br.Y - tl.Y + 1}
+	return rectOf(scaled)
 }
 
 // node は UI ツリーを縮小座標にし、どこかの節点が打ち切られていたかを返す。

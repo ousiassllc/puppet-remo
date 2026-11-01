@@ -181,6 +181,8 @@ func (k *KillSwitchManager) Trigger(source string) error {
 	err := errors.Join(errs...)
 	if err != nil {
 		k.log.Error("kill switch trigger finished with errors", "source", source, "err", err)
+	} else {
+		k.log.Warn("kill switch triggered", "source", source)
 	}
 	k.recordAudit("killswitch.trigger", source, start, err)
 	return err
@@ -196,9 +198,11 @@ func (k *KillSwitchManager) Release() error {
 	ctx, cancel := context.WithTimeout(context.Background(), k.timeout)
 	defer cancel()
 	if err := k.persist(ctx, KillSwitchSnapshot{}); err != nil {
+		k.log.Error("kill switch release failed", "err", err)
 		k.recordAudit("killswitch.release", "", start, err)
 		return err
 	}
+	k.log.Info("kill switch released")
 	k.mu.Lock()
 	k.state = KillSwitchSnapshot{}
 	k.mu.Unlock()

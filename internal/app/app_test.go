@@ -32,6 +32,7 @@ func TestNewRequiresDependencies(t *testing.T) {
 		"Watcher":    func(c *Config) { c.Watcher = nil },
 		"WhoIs":      func(c *Config) { c.WhoIs = nil },
 		"Static":     func(c *Config) { c.Static = nil },
+		"Logs":       func(c *Config) { c.Logs = nil },
 	}
 	for name, clear := range cases {
 		t.Run(name, func(t *testing.T) {

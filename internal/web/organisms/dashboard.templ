@@ -12,29 +12,29 @@ func tone(t view.BadgeTone) atoms.BadgeTone { return atoms.BadgeTone(t) }
 
 // ServerStatusBody はサーバー状態の中身（SSE の server-status イベントの data と、GET /poll の OOB の中身）。
 templ ServerStatusBody(v view.ServerStatus) {
-	<dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm">
+	<dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-y-2">
 		<dt class="text-slate-500">tailscaled</dt>
-		<dd>@atoms.Badge(tone(v.TailscaledTone), v.TailscaledLabel)</dd>
+		<dd class="mb-1 min-w-0 sm:mb-0">@atoms.Badge(tone(v.TailscaledTone), v.TailscaledLabel)</dd>
 		<dt class="text-slate-500">tailnet IP</dt>
-		<dd data-field="tailnet-ips">
+		<dd data-field="tailnet-ips" class="mb-1 flex min-w-0 flex-wrap gap-2 sm:mb-0">
 			if len(v.TailnetIPs) == 0 {
 				<span class="text-slate-500">未取得</span>
 			}
 			for _, ip := range v.TailnetIPs {
-				<code class="mr-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs">{ ip }</code>
+				<code class="max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs">{ ip }</code>
 			}
 		</dd>
 		if v.DNSName != "" {
 			<dt class="text-slate-500">MagicDNS 名</dt>
-			<dd><code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{ v.DNSName }</code></dd>
+			<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs">{ v.DNSName }</code></dd>
 		}
 		<dt class="text-slate-500">ポート</dt>
-		<dd data-field="port">{ strconv.Itoa(v.Port) }</dd>
+		<dd data-field="port" class="mb-1 min-w-0 sm:mb-0">{ strconv.Itoa(v.Port) }</dd>
 		<dt class="text-slate-500">待ち受け</dt>
-		<dd>
+		<dd class="flex min-w-0 flex-wrap items-center gap-2">
 			@atoms.Badge(tone(v.ListenTone), v.ListenLabel)
 			for _, a := range v.ListenAddrs {
-				<code class="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs">{ a }</code>
+				<code class="max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-xs">{ a }</code>
 			}
 		</dd>
 	</dl>

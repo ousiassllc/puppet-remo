@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -71,7 +72,8 @@ type LeaseConfig struct {
 	Kill        KillSwitchState // nil なら常に非発動
 	AfterFunc   AfterFunc       // nil なら time.AfterFunc
 	// Power は保持中だけスリープと画面オフを抑止する（NFR-A05）。nil なら抑止しない。
-	Power platform.Power
+	Power  platform.Power
+	Logger *slog.Logger // nil なら slog.Default()
 }
 
 const leaseSubscriberBuffer = 16
@@ -82,6 +84,7 @@ type leaseManager struct {
 	kill  KillSwitchState
 	audit AuditRecorder
 	power platform.Power
+	log   *slog.Logger
 
 	// mu は全遷移（machine・timer・pending）を直列化する。ロックを持ったまま Audit・購読者を呼ばない。
 	mu       sync.Mutex
@@ -109,7 +112,11 @@ func NewLeaseManager(cfg LeaseConfig) (LeaseManager, error) {
 		kill:    cfg.Kill,
 		audit:   cfg.Audit,
 		power:   cfg.Power,
+		log:     cfg.Logger,
 		machine: machine,
+	}
+	if m.log == nil {
+		m.log = slog.Default()
 	}
 	if m.after == nil {
 		m.after = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
@@ -123,6 +130,7 @@ func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, er
 	// 取得が ReleaseAll の後に成功することはない。
 	if m.kill != nil && m.kill.Active() {
 		m.mu.Unlock()
+		m.logDenied(who, domain.ErrKillSwitchActive)
 		m.record(ctx, leaseDeniedAuditEntry(who, m.clock.Now(), domain.ErrKillSwitchActive))
 		return Lease{}, domain.ErrKillSwitchActive
 	}
@@ -131,6 +139,7 @@ func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, er
 	m.mu.Unlock()
 	m.flush()
 	if err != nil {
+		m.logDenied(who, err)
 		m.record(ctx, leaseDeniedAuditEntry(who, m.clock.Now(), err))
 		return Lease{}, err
 	}
@@ -259,6 +268,7 @@ func (m *leaseManager) flush() {
 	m.mu.Unlock()
 	m.keepAwake(held)
 	for _, ev := range events {
+		m.logEvent(ev)
 		m.record(context.Background(), leaseAuditEntry(ev))
 		m.publish(ev)
 	}
@@ -272,6 +282,21 @@ func (m *leaseManager) keepAwake(on bool) {
 	}
 	m.awake = on
 	m.power.KeepAwake(on)
+}
+
+// logEvent はリースの取得・解放を運用ログに出す（監査とは別。Check の活動の更新は出さない）。
+func (m *leaseManager) logEvent(ev domain.LeaseEvent) {
+	h := ev.Lease.Holder
+	if ev.To == domain.LeaseHeld {
+		m.log.Info("lease acquired", "lease_id", ev.Lease.ID, "holder_kind", string(h.Kind), "holder", h.Label, "session", h.SessionID)
+		return
+	}
+	m.log.Info("lease released", "lease_id", ev.Lease.ID, "reason", string(ev.Reason), "holder_kind", string(h.Kind), "holder", h.Label,
+		"held_for", ev.At.Sub(ev.Lease.Since).Round(time.Second).String())
+}
+
+func (m *leaseManager) logDenied(who domain.Actor, err error) {
+	m.log.Info("lease acquire denied", "code", string(domain.CodeOf(err)), "holder_kind", string(who.Kind), "holder", who.Label)
 }
 
 func (m *leaseManager) publish(ev domain.LeaseEvent) {

@@ -67,6 +67,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | I12 | 管理者として起動したメモ帳へ入力する（アプリは標準権限） | `list_windows` で `Elevated` が真。入力は UIPI で届かない。`service.InputGuard` が `input_blocked` で先に拒否する（platform 単体では SendInput が成功を返すことがある） |
 | I13 | `Ctrl+Alt+Del` | platform は送れない（SAS）。`service.InputGuard` が拒否する（NFR-S06）。platform の `Key` に渡しても OS が受け付けないことだけ確認する |
 | I14 | ロック画面・UAC のセキュアデスクトップ・RDP の切断中 | `SendInput` の失敗が `desktop_unavailable`（`input_blocked` ではない） |
+| I15 | ホスト GUI を開いたまま、MCP クライアントから `list_windows`・`screenshot`、GUI の上の点へ `mouse_move`（#47、FR-M20） | `list_windows` に puppet-remo のウィンドウが `blocked: true`・`blocked_reason: "own_window"` で出る。`screenshot` の画像には GUI が写らず（NFR-S06）、`own_windows` にその範囲（縮小座標の `rect`、`monitor`）が出る。GUI の範囲内への `mouse_move` は `input_blocked`（`own_window`）で、`detail.own_windows` の `rect` が `screenshot` の `own_windows` と一致する。2 台目のモニターと、縮小されるモニターでも同じ |
 
 ### 3.3 WindowManager（FR-M11・FR-M12）
 
@@ -226,7 +227,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | A2 | 「参照…」でファイル選択ダイアログを開き、`notepad.exe` を選ぶ（ダイアログを 1 分以上開いたままにしても確認する） | 入力欄に選んだパスが入り、手で編集できる。ダイアログが Wails のメインウィンドウを親にしたモーダルで開く（`WailsHost.MainWindowHandle` の結線。ダイアログの表示中はメインウィンドウを操作できず、前面に出たままになる）。ダイアログを開いている間も WebView が応答待ちのままタイムアウトしない。キャンセルでは入力欄が変わらない（204） |
 | A3 | 表示名 `メモ帳`・パス・引数なしで保存 | 一覧に行が追加される。同じ表示名（大文字小文字違いを含む）・存在しないパス・相対パス・UNC パス・`.exe` 以外・`..` を含むパスは、項目別のエラーで入力値が残る（422） |
 | A4 | MCP クライアントから `list_launchable_apps` | `{ "apps": [ { "id", "label": "メモ帳" } ] }` だけ。パス・引数は出ない |
-| A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid }` が返る。同じ呼び出しを繰り返すと、毎回新しいメモ帳が増える |
+| A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid, window, reused_existing_window }` が返る。Windows 10 のメモ帳など新しいウィンドウが開くときは `window.pid` が `pid` と一致し `reused_existing_window: false` |
+| A5b | メモ帳（Windows 11。タブ式）を、書きかけのタブを開いたまま起動する（#46） | 新しいウィンドウが開かず既存のウィンドウが前に出るだけなら、`window` が既存のウィンドウ（`pid` が返った `pid` と別）で `reused_existing_window: true`。入力の前に `screenshot` / `list_windows` で確かめられる。新しいタブで打つには AI が「＋」を押す必要がある |
 | A6 | 未登録の `app_id`、パスや引数を含む追加の引数（`args`・`path`）を渡す | 未登録は `app_not_found`。追加の引数は引数検査（スキーマ違反。`isError` のツール結果で、`code` は付かない）で拒否される。いずれも何も起動しない |
 | A7 | 別のセッションがリースを保持している状態で `launch_app` | `lease_held_by_other`。起動しない |
 | A8 | キルスイッチ発動中に `launch_app` / `list_launchable_apps` | `kill_switch_active`（HTTP 503）。解除後は起動できる。キルスイッチは起動済みのメモ帳を終了しない |
@@ -253,3 +255,5 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` / `PUPPET_REMO_SMOKE_LAUNCH_DENIED` を追加、§3.8 の L1・L2（`TestSmokeAppLauncherArgs` で自動化）・L9 と、テストの構成（`TestSmokeAppLauncherPid`、親なしの `TestSmokeFilePicker`）を実装に合わせた | #21 の実装 |
 | — | 2026-10-30 | §4.8 の A6 を、スキーマ違反が JSON-RPC の `invalid params` ではなく `isError` のツール結果で返る実装に合わせて訂正 | #22 の実装（go-sdk の挙動の実測） |
 | — | 2026-10-30 | §4.8 の A2 に、ファイル選択ダイアログの親ウィンドウ（Wails のメインウィンドウの結線。`WailsHost.MainWindowHandle`）の確認を追記。§4.8 の確認は未確認のまま | #23 の実装 |
+| — | 2026-11-01 | §4.8 に A5b（Windows 11 のメモ帳で既存のウィンドウが前に出ただけのときの `launch_app` の結果）を追加。実機の確認は未確認 | #46 |
+| — | 2026-11-01 | §3.2 に I15（自ウィンドウの範囲 `own_windows`・`blocked` の確認）を追加。実機の確認は未確認 | #47 |

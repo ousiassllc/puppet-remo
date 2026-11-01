@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"maps"
 	"net/http"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
 // errorBody はツール失敗の structuredContent（API 仕様 §3.4）。
@@ -33,7 +37,7 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 		if body.Message == "" {
 			body.Message = string(de.Code)
 		}
-		body.Detail = de.Detail
+		body.Detail = errorDetail(de)
 		if de.Code == domain.CodeLaunchFailed {
 			body.Detail, body.Reason = nil, launchReason(de)
 		}
@@ -55,6 +59,33 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 		IsError:           true,
 		Content:           []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("%s: %s", body.Code, body.Message)}},
 		StructuredContent: body,
+	}
+}
+
+// errorDetail は de.Detail を出力の形にする。own_windows（[]domain.OwnRegion）は rect の JSON 名（x, y, width, height）に直す。
+func errorDetail(de *domain.Error) map[string]any {
+	regions, ok := de.Detail[service.DetailOwnWindows].([]domain.OwnRegion)
+	if !ok {
+		return de.Detail
+	}
+	detail := maps.Clone(de.Detail)
+	detail[service.DetailOwnWindows] = ownWindowBodies(regions)
+	return detail
+}
+
+// logToolCall はツール実行の結果を運用ログに出す（監査とは別。引数・結果の中身は出さない。FR-AU03、NFR-S13）。
+// 成功は、状態を変える操作を Info、読み取りだけのツール（スクリーンショットの取得など。頻繁に呼ばれる）を Debug にする。
+// 失敗のうち、拒否・不正な引数などのドメインエラーは Warn。想定外の失敗とタイムアウトは toolError が Error・Warn で出す。
+func (s *Server) logToolCall(ctx context.Context, tool string, who domain.Actor, readOnly bool, took time.Duration, err error) {
+	attrs := []any{"tool", tool, "client", who.Label, "took_ms", took.Milliseconds()}
+	var de *domain.Error
+	switch {
+	case err == nil && readOnly:
+		s.log.Log(ctx, slog.LevelDebug, "mcp tool succeeded", attrs...)
+	case err == nil:
+		s.log.Log(ctx, slog.LevelInfo, "mcp tool succeeded", attrs...)
+	case errors.As(err, &de) && de.Code != domain.CodeInternal:
+		s.log.Log(ctx, slog.LevelWarn, "mcp tool was rejected", append(attrs, "code", string(de.Code))...)
 	}
 }
 

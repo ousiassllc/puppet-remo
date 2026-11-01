@@ -149,8 +149,9 @@ func TestLaunchApp(t *testing.T) {
 	if want := (launchAppBody{OK: true, AppID: sampleApps[0].ID, PID: 4120}); got != want {
 		t.Errorf("launch_app = %+v, want %+v", got, want)
 	}
-	if keys := res.keys(t); !slices.Equal(keys, []string{"app_id", "ok", "pid"}) {
-		t.Errorf("keys = %v, want ok, app_id and pid", keys)
+	// 前面のウィンドウを確かめられなかったときは window を付けず、reused_existing_window は常に付く。
+	if keys := res.keys(t); !slices.Equal(keys, []string{"app_id", "ok", "pid", "reused_existing_window"}) {
+		t.Errorf("keys = %v, want ok, app_id, pid and reused_existing_window", keys)
 	}
 	if ids := e.ctl.launchRequests(); !slices.Equal(ids, []string{sampleApps[0].ID}) {
 		t.Errorf("Control.Launch got %v", ids)
@@ -161,6 +162,41 @@ func TestLaunchApp(t *testing.T) {
 	}
 	if e.ctl.callCount() != 0 {
 		t.Error("launch_app must not go through Control.Do")
+	}
+}
+
+// 起動後に前面にあったウィンドウと、既存のウィンドウが前に出ただけのときの印を、そのまま返す（FR-M19）。
+func TestLaunchAppReportsTheForegroundWindow(t *testing.T) {
+	existing := domain.WindowInfo{ID: "77", Title: "無題 - メモ帳", Process: "notepad.exe", PID: 500, Foreground: true}
+	for _, tc := range []struct {
+		name   string
+		window *domain.WindowInfo
+		reused bool
+	}{
+		{name: "existing window brought forward", window: &existing, reused: true},
+		{name: "new window of the launched pid", window: &domain.WindowInfo{ID: "88", Title: "新規", Process: "notepad.exe", PID: 4120}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.ctl.apps = sampleApps
+			e.ctl.launchPID = 4120
+			e.ctl.launchWindow, e.ctl.launchReused = tc.window, tc.reused
+
+			res := callTool(t, e.connect("c1"), "launch_app", map[string]any{"app_id": sampleApps[0].ID})
+			if res.IsError {
+				t.Fatal(res.text())
+			}
+			var got launchAppBody
+			res.decode(t, &got)
+			w := tc.window
+			if got.PID != 4120 || got.ReusedExistingWindow != tc.reused || got.Window == nil ||
+				*got.Window != (launchWindowBody{ID: w.ID, Title: w.Title, PID: w.PID, Process: w.Process}) {
+				t.Errorf("launch_app = %+v (window %+v), want window %+v and reused_existing_window=%v", got, got.Window, w, tc.reused)
+			}
+			if keys := res.keys(t); !slices.Equal(keys, []string{"app_id", "ok", "pid", "reused_existing_window", "window"}) {
+				t.Errorf("keys = %v", keys)
+			}
+		})
 	}
 }
 

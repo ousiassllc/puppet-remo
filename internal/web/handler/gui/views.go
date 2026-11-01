@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -189,6 +192,51 @@ func (h *Handler) requestListView(reqs []service.ConnRequest) view.RequestList {
 	return v
 }
 
+// pageParam はクエリ page（1 始まり）。無い・数値でない・1 未満は 1。
+func pageParam(c *gin.Context) int {
+	n, err := strconv.Atoi(c.Query("page"))
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// historyResult は履歴の行の結果の表示。期限を過ぎた pending は、保守（Expire）で expired にされる前でも失効として出す。
+func (h *Handler) historyResult(r service.ConnRequest) (code, label string, tone view.BadgeTone) {
+	status := r.Status
+	if status == service.ConnPending && !r.ExpiresAt.After(h.d.Clock.Now()) {
+		status = service.ConnExpired
+	}
+	switch status {
+	case service.ConnApproved:
+		return status, "許可", view.ToneOK
+	case service.ConnDenied:
+		return status, "拒否", view.ToneDanger
+	case service.ConnExpired:
+		return status, "失効", view.ToneNeutral
+	}
+	return status, "未処理", view.ToneWarn
+}
+
+func (h *Handler) requestHistoryView(p service.RequestHistoryPage) view.RequestHistory {
+	v := view.RequestHistory{Page: p.Page}
+	for _, r := range p.Items {
+		code, label, tone := h.historyResult(r)
+		v.Rows = append(v.Rows, view.HistoryRow{
+			ID: r.ID, DisplayName: r.DisplayName, LoginName: r.LoginName, RemoteIP: r.RemoteIP,
+			ReceivedAt: h.formatTime(r.FirstSeenAt), Result: label, ResultTone: tone, ResultCode: code,
+			DecidedAt: h.formatTimePtr(r.DecidedAt, "-"),
+		})
+	}
+	if p.HasPrev {
+		v.PrevURL = "/requests/history?page=" + strconv.Itoa(p.Page-1)
+	}
+	if p.HasNext {
+		v.NextURL = "/requests/history?page=" + strconv.Itoa(p.Page+1)
+	}
+	return v
+}
+
 // revision は表示モデル v の版（内容が同じなら同じ文字列）。v は文字列・数値・それらの slice / struct だけでできている。
 func revision(v any) string {
 	sum := sha256.Sum256(fmt.Appendf(nil, "%+v", v))
@@ -272,4 +320,61 @@ func settingsValues(s service.HostSettings) view.SettingsValues {
 		Port: strconv.Itoa(s.Port), Hotkey: s.KillSwitchHotkey, ScreenshotMaxDim: strconv.Itoa(s.ScreenshotMaxDimension),
 		LeaseIdleSec: strconv.Itoa(s.LeaseIdleTimeoutSec), Autostart: s.Autostart,
 	}
+}
+
+// logLevelTone はログのレベルの色（ERROR 以上は赤、WARN は黄、INFO は緑＝成功・通常、DEBUG などは灰）。
+func logLevelTone(l slog.Level) view.BadgeTone {
+	switch {
+	case l >= slog.LevelError:
+		return view.ToneDanger
+	case l >= slog.LevelWarn:
+		return view.ToneWarn
+	case l >= slog.LevelInfo:
+		return view.ToneOK
+	}
+	return view.ToneNeutral
+}
+
+// logURL は /logs の URL。all と 1 ページ目は省略する。
+func logURL(filter service.AppLogFilter, page int) string {
+	q := url.Values{}
+	if filter != service.AppLogAll {
+		q.Set("level", string(filter))
+	}
+	if page > 1 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if len(q) == 0 {
+		return "/logs"
+	}
+	return "/logs?" + q.Encode()
+}
+
+func (h *Handler) appLogView(filter service.AppLogFilter, p service.AppLogPage) view.AppLog {
+	v := view.AppLog{Page: p.Page, Filter: string(filter)}
+	for _, f := range []struct {
+		filter service.AppLogFilter
+		label  string
+	}{{service.AppLogAll, "すべて"}, {service.AppLogWarn, "WARN 以上"}, {service.AppLogError, "ERROR のみ"}} {
+		v.Filters = append(v.Filters, view.LogFilterLink{Code: string(f.filter), Label: f.label, URL: logURL(f.filter, 1), Active: f.filter == filter})
+	}
+	for _, e := range p.Items {
+		row := view.LogRow{Time: h.formatLogTime(e.Time), Level: e.Level, LevelTone: logLevelTone(e.Severity), Message: e.Message}
+		for _, a := range e.Attrs {
+			row.Attrs = append(row.Attrs, view.LogAttr{Key: a.Key, Value: a.Value})
+		}
+		v.Rows = append(v.Rows, row)
+	}
+	if p.HasPrev {
+		v.PrevURL = logURL(filter, p.Page-1)
+	}
+	if p.HasNext {
+		v.NextURL = logURL(filter, p.Page+1)
+	}
+	return v
+}
+
+// formatLogTime はログの日時（秒まで）。
+func (h *Handler) formatLogTime(t time.Time) string {
+	return t.In(h.loc).Format("2006-01-02 15:04:05")
 }

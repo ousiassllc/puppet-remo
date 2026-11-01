@@ -59,7 +59,7 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 
 - `type` は `urn:puppet-remo:error:<code>`。`code` は拡張メンバーで、機械処理にはこれを使う
 - Web UI・GUI のルート（HTML を返す経路）は problem+json を返さない。同じ `code` と HTTP ステータスで、HTML のエラーフラグメント（またはエラーページ）を返す。バリデーションエラー（422）はフォームを入力値とエラーメッセージ付きで再描画する。表示先は `response-targets` の `hx-target-422` / `hx-target-4*` / `hx-target-5*` が決める（[フロントエンド設計](../architecture/frontend.md)）
-- MCP のツールエラーは HTTP ステータスではなく、ツール結果の `isError: true` と `structuredContent: {code, message}` で返す（§3.4）
+- MCP のツールエラーは HTTP ステータスではなく、ツール結果の `isError: true` と `structuredContent: {code, message, detail?}` で返す（§3.4）
 
 ### エラーコードと HTTP ステータス
 
@@ -86,7 +86,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `conflict` | 409 | GUI | 現在の状態では実行できない（要求が `pending` でない、更新を適用できない状態など） |
 | `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
 | `app_not_found` | 404 | `launch_app` | `app_id` が起動許可リストに無い（FR-M19。M1.5） |
-| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI） |
+| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に puppet-remo のウィンドウの範囲を付ける（§3.4） |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリだが OS がプロセスを作成できなかった（FR-M19。M1.5）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
 | `agent_disabled` | 403 | `run_task` | エージェント無効、API キー未登録、またはクライアントに利用許可が無い |
@@ -106,7 +106,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | 認証 | `Authorization: Bearer <token>`（§1 の連鎖。トークンは GUI で発行し、一度だけ表示される。FR-A08） |
 | セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する。SDK の keepalive の ping は standalone の GET SSE ストリームにしか流れず、GET を張らない（POST だけの）クライアントは応答できずセッションとリースを失う（3 回連続の失敗、15 秒間隔で 45 秒）ため、**MCP の keepalive は既定で無効**にする（NFR-A04。WebSocket の 15 秒 / 45 秒の keepalive は §5.1）。MCP の切断は、セッションの明示的な終了（`DELETE`）・トランスポートの切断、アイドル 30 分のセッション閉鎖（SDK の `SessionTimeout`）、リースのアイドル解放 5 分（独立。FR-S04。§8）で拾う |
 | サーバー情報 | `name: puppet-remo`、`version`: アプリの版 |
-| `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`launch_app` で起動できるのはホストが許可したアプリ（`list_launchable_apps` で確認）だけであること、`run_task` が非同期であることを記す |
+| `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`launch_app` で起動できるのはホストが許可したアプリ（`list_launchable_apps` で確認）だけであること、起動しても既存のウィンドウが前に出るだけのアプリがあるので入力の前にスクリーンショットか `list_windows` で対象を確かめること、puppet-remo 自身のウィンドウはスクリーンショットに写らず入力は `input_blocked`（`own_window`）になること（範囲は `screenshot` の `own_windows`・エラーの `detail.own_windows`・`list_windows` の `blocked` で分かる。FR-M20）、`run_task` が非同期であることを記す |
 | 同時セッション | 最大 5（NFR-C02） |
 
 SDK の localhost 向け保護には依存せず、自前の Host / Origin 検証を先に通す（[アーキテクチャ設計](../architecture/overview.md)）。SDK のオプションの設定値は §8 のとおり。
@@ -166,7 +166,9 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `monitor` | integer | いいえ | モニター index（既定: プライマリ） |
 | `format` | `"png"` \| `"jpeg"` | いいえ | 既定 `png` |
 
-出力: MCP の画像コンテンツ（`image/png` または `image/jpeg`、base64。縮小済み）と、テキストコンテンツの JSON `{ "monitor": 0, "physical": {…}, "scaled": {…}, "scale": 0.6125 }`。
+出力: MCP の画像コンテンツ（`image/png` または `image/jpeg`、base64。縮小済み）と、テキストコンテンツの JSON `{ "monitor": 0, "physical": {…}, "scaled": {…}, "scale": 0.6125, "own_windows": [ {"monitor": 0, "rect": {"x": 784, "y": 0, "width": 393, "height": 442}} ] }`。
+
+`own_windows` は、撮影した時点でそのモニター上にある puppet-remo 自身のウィンドウの範囲（無ければ空配列）。これらのウィンドウは画像に**写らず**（キャプチャ除外。NFR-S06）、入力は `input_blocked`（`own_window`）になるため、`rect`（この画像の座標。縮小座標）の範囲を避ける。画像には印を描かない（FR-M20）。範囲を取れなかったときも画像は返し、`own_windows` は空になる。
 
 **`cursor_position`**
 
@@ -199,12 +201,15 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
   "windows": [
     { "id": "132456", "title": "メモ帳", "process_name": "notepad.exe", "pid": 4120,
       "rect": {"x": 40, "y": 30, "width": 800, "height": 600}, "monitor": 0,
-      "foreground": true, "minimized": false, "elevated": false }
+      "foreground": true, "minimized": false, "elevated": false,
+      "blocked": false }
   ]
 }
 ```
 
 `id` は HWND の 10 進文字列。`rect` は、そのウィンドウが最も重なるモニターの縮小座標で、モニターの範囲に切り詰める。`elevated` が true のウィンドウには入力できない（`input_blocked`）。
+
+`blocked` は、そのウィンドウへの入力を puppet-remo が拒否するか。true のとき `blocked_reason`（`own_window` / `elevated_window`。false のときは省略）を付ける。puppet-remo 自身のウィンドウ（`own_window`）も一覧に出し、`blocked: true` の印を付ける。これらはスクリーンショットに写らない（NFR-S06）ので、`rect` の範囲への入力を避ける（FR-M20）。自ウィンドウと昇格の両方に当たるときは `own_window`。
 
 **`focus_window`**: `id`\*。存在しなければ `window_not_found`。
 
@@ -251,11 +256,26 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |------|----|------|------|
 | `app_id` | string | はい | `list_launchable_apps` の `id` |
 
-追加の引数（`args`・`cwd`・`path` など）は受け付けない（スキーマに無い引数・`app_id` の欠落・型違いは、MCP SDK の引数検査が拒否し、起動しない。§3.4）。出力: `{ "ok": true, "app_id": "01JA…", "pid": 4120 }`。`pid` は `CreateProcess` が返したプロセスの ID。プロセスの作成に成功した時点で返し、ウィンドウの表示は待たない（確認は `list_windows`）。
+追加の引数（`args`・`cwd`・`path` など）は受け付けない（スキーマに無い引数・`app_id` の欠落・型違いは、MCP SDK の引数検査が拒否し、起動しない。§3.4）。出力:
+
+```json
+{
+  "ok": true,
+  "app_id": "01JA…",
+  "pid": 4120,
+  "window": { "id": "6a2f…", "title": "無題 - メモ帳", "pid": 8812, "process_name": "notepad.exe" },
+  "reused_existing_window": true
+}
+```
+
+- `pid` は `CreateProcess` が返したプロセスの ID。
+- `window` は起動後に前面にあったウィンドウ（`list_windows` の `id`・`title`・`pid`・`process_name` と同じ値）。前面のウィンドウを確かめられなかったとき（前面が無い・デスクトップが使えない）は**付かない**。`window.pid` は `pid` と違うことがある。
+- `reused_existing_window` は常に付く。起動した `pid` のトップレベルウィンドウが 1 つも見つからず（最小化・背面のものを含む）、別のプロセスのウィンドウが前面にあるとき `true`（Windows 11 のメモ帳などのタブ式の単一ウィンドウのアプリで、新しいウィンドウを開かず既存のウィンドウが前に出ただけの可能性が高い。そのウィンドウにはユーザーの未保存の作業があるかもしれない）。それ以外は `false`（`window` が無いときも `false`）。`true` は確定ではなく、起動したプロセスが別のプロセスへ引き継いで新しいウィンドウを開いた場合も `true` になりうる。
+- プロセスの作成に成功した時点で起動は成功。そのあと、起動した `pid` のウィンドウが前面に出るのを、200 ミリ秒間隔で最大 16 回（およそ 3 秒。前面の `pid` が一致したらすぐ）観測して返す。ウィンドウが出なくても失敗にはしない。`window` を見たうえで、**入力の前に必ず `screenshot` か `list_windows` で対象を確かめる**（`instructions` とツールの説明にも同じ注意を書く）。
 
 - 検査の順序は、キルスイッチ（ミドルウェア連鎖の 3）→ 操作リース → 許可リスト。リース未保持なら暗黙に取得する（FR-L04）。リースの承認は M1.5 には無い（M3 から）
 - エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
-- 同じアプリが起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない。フォーカス切り替えはしない）。起動済みのプロセスは、リースの解放・セッションの切断・キルスイッチ・許可リストからの削除では終了しない
+- 同じアプリが起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない。自分からフォーカスを切り替えることはしない。アプリ自身が既存のウィンドウを前に出すことはあり、結果の `reused_existing_window` で分かる）。起動済みのプロセスは、リースの解放・セッションの切断・キルスイッチ・許可リストからの削除では終了しない
 - すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。入力スキーマに合わない呼び出し（`app_id` の欠落・型違い・追加のプロパティ）は SDK が実行前に拒否するため `Control.Launch` に届かない。この場合は MCP の受信ミドルウェアが `tool.launch_app`（`denied`・`error_code = invalid_argument`、`detail` なし。拒否された値は記録しない）を 1 件追記する。`list_launchable_apps` も `tool.list_launchable_apps` として追記する
 
 #### 内蔵エージェント
@@ -304,6 +324,28 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
   "structuredContent": { "code": "lease_held_by_other", "message": "…", "holder": {"kind": "web", "label": "my-laptop"} }
 }
 ```
+
+`detail` は、コードによって付く追加情報（無ければ省略）。`input_blocked` の `detail.reason` は `own_window` / `elevated_window`（`detail.window_id` も付く）/ `secure_attention_sequence`。
+
+**`own_window` の `detail.own_windows`**（FR-M20）: AI が避けられるよう、puppet-remo 自身のウィンドウ（スクリーンショットに写らない）の範囲を付ける。`get_ui_tree`・`focus_window` の `own_window` にも付く。
+
+```json
+{
+  "isError": true,
+  "content": [{ "type": "text", "text": "input_blocked: the target is a puppet-remo window" }],
+  "structuredContent": {
+    "code": "input_blocked", "message": "the target is a puppet-remo window",
+    "detail": {
+      "reason": "own_window",
+      "own_windows": [ { "monitor": 0, "rect": {"x": 784, "y": 0, "width": 393, "height": 442} } ]
+    }
+  }
+}
+```
+
+- `monitor` はモニター index、`rect` は**そのモニターの縮小スクリーンショットの座標**（左上が原点。物理座標ではない）。`list_windows` の `rect` と同じ丸め（右下は最後のピクセルを縮小して 1 を足す）で、モニターの範囲に切り詰める
+- 複数のモニターにまたがるウィンドウは、モニターごとに 1 件へ切り詰める。最小化されたウィンドウ、どのモニターとも重ならないウィンドウは含めない。どれも無い、またはウィンドウの一覧・モニター・設定を読めないときは、空配列（読めないときは `own_windows` ごと無い）で、拒否そのものは変えない
+- ウィンドウのタイトル・プロセス名・PID・ID・内容は載せない（範囲だけ）。`elevated_window` には付けない
 
 コードは §2 の表のとおり。引数のスキーマ違反（スキーマに無い引数・必須の欠落・型違い）は、ハンドラの手前で MCP SDK が拒否する。SDK（go-sdk）はこれを JSON-RPC エラーではなく、`isError` のツール結果（本文は `validating "arguments": …`。`structuredContent` は無く、`code` は付かない）で返す。
 
@@ -436,7 +478,9 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | パス | 画面 | 優先度 |
 |------|------|--------|
 | `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（表示のみ）、キルスイッチ、接続要求・クライアント管理への導線。リース強制剥奪ボタンは M2（FR-L06）、実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1 |
-| `/requests` | 接続要求の一覧（許可 / 拒否）。FR-H03 | M1 |
+| `/requests` | 接続要求の一覧（許可 / 拒否）。「未処理」と「履歴」のタブを持つ。FR-H03 | M1 |
+| `/requests/history` | 接続要求の履歴（許可・拒否・失効・未処理のすべて）。届いた日時の新しい順に 1 ページ 20 件の表（届いた日時・デバイス名・tailnet IP・ユーザー・結果・処理した日時）で、読み取り専用。クエリ `page`（1 始まり。無い・数値でない・1 未満は 1、10000 を超える値は 10000 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出る。範囲外のページは空の表示（200）。`HX-Request` ならフラグメント（`#request-history`。ページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ポーリング（`/poll`）の対象ではない。監査ログの閲覧（`/audit`）とは別。FR-H03 | M1 |
+| `/logs` | アプリのログ（運用ログ。NFR-O01）。日時・レベル・内容（属性つき）の表で、新しい順に 1 ページ 50 件、読み取り専用。画面にログファイルのパスを出す。クエリ `level`（`all`（既定）・`warn`（WARN 以上）・`error`（ERROR のみ）。大文字小文字を区別せず、無い・未知の値は `all`）、`page`（1 始まり。無い・数値でない・1 未満は 1、100 を超える値は 100 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出て、`level` を保つ。範囲外のページは空の表示（200）。ログファイルが無ければ空の表示。`HX-Request` ならフラグメント（`#app-log`。絞り込みとページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ログの読み出しに失敗したら 500（理由は画面に出さない）。監査ログの閲覧（FR-AU01）とは別。FR-H13 | M1 |
 | `/clients` | クライアント一覧。`/clients/{id}`: 詳細（有効化・承認モード・トークン）。FR-H04 | M1 |
 | `/apps` | 起動許可アプリの一覧・追加フォーム（`HX-Request` なら一覧のフラグメント）。`/apps/new`: 追加フォーム、`/apps/{id}/edit`: 編集フォーム（`HX-Request` ならフォームのフラグメント。フルページは一覧の該当行が編集フォーム。対象が無ければ 404）。FR-H12 | M1.5 |
 | `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウ）。FR-H05 | M3 |
@@ -600,3 +644,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.12 | 2026-10-30 | §3.4 の引数のスキーマ違反を、実装（go-sdk）の挙動に合わせて訂正（JSON-RPC の `invalid params` ではなく `isError` のツール結果）。§3.3 の `launch_app` の引数検査の記述も同様に揃えた | #22（`launch_app` の入力検査の実測との食い違い） |
 | 1.13 | 2026-10-30 | §7.1・§7.2 の起動許可アプリを実装（#23）に合わせて具体化（各ルートのフラグメントと OOB、`pick-file` の `form_id`、`args` の改行）。§7.5 の GUI ルートに `/apps` 系を追加 | #23 の実装との整合 |
 | 1.14 | 2026-10-30 | §3.3 の `list_launchable_apps` が起動できない行を返さないことを追記 | #16 の再レビュー指摘 |
+| 1.15 | 2026-11-01 | §7.1 に `GET /requests/history`（接続要求の履歴。1 ページ 20 件・`page` クエリ・フラグメントの応答）を追加し、`/requests` のタブに触れた | #44 |
+| 1.16 | 2026-11-01 | §7.1 に `GET /logs`（アプリのログ。`level`・`page` クエリ、1 ページ 50 件、フラグメントの応答）を追加 | #45 |
+| 1.17 | 2026-11-01 | §3.3 の `launch_app` の出力に `window`・`reused_existing_window` を追加（起動後に前面にあったウィンドウの観測と、既存のウィンドウが前に出ただけのときの印）、§3.1 の `instructions` に入力の前に確かめる旨を追記 | #46 |
+| 1.18 | 2026-11-01 | §3.4 に `own_window` の `detail.own_windows`（モニターと縮小座標の `rect`）を追加し、§3.3 の `screenshot` に `own_windows`、`list_windows` に `blocked`・`blocked_reason` を追加。§2 の `input_blocked` の行と §3.1 の `instructions` を更新 | #47（FR-M20） |

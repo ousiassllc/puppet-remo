@@ -179,7 +179,7 @@ graph TD
 
 | ルーター | 配信経路 | 提供するもの | 認可 |
 |---------|---------|-------------|------|
-| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、起動許可アプリ、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/poll`（GUI の更新。OOB）、`/events`（SSE。GUI は購読しない） | プロセス内到達のみ。ネットワークからは到達不能 |
+| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、起動許可アプリ、ログ、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/poll`（GUI の更新。OOB）、`/events`（SSE。GUI は購読しない） | プロセス内到達のみ。ネットワークからは到達不能 |
 | **リモートルーター** | tailnet IP の TCP ポート（FR-S01、既定 8765） | `/mcp`、`/viewer`（Web UI）、`/ws/screen`、`/api/v1/*`、静的ファイル | ミドルウェア連鎖（下図） |
 
 2 つのルーターは `templ` コンポーネント（atoms / molecules）を共有できるが、ハンドラは共有しない（ホスト専用操作がリモートに露出しないことを構造で保証する）。
@@ -269,6 +269,7 @@ sequenceDiagram
     participant L as LeaseManager
     participant R as AppRegistry
     participant P as platform.AppLauncher
+    participant W as platform.WindowManager
     participant AU as Audit
     C->>M: tools/call launch_app(app_id)
     M->>K: Active()
@@ -289,8 +290,10 @@ sequenceDiagram
                 M->>P: Launch(絶対パス, 固定の引数, 作業ディレクトリ)
                 alt CreateProcess 成功
                     P-->>M: pid
-                    M->>AU: 記録 (ok: app_id, label, pid)
-                    M-->>C: { ok, app_id, pid }
+                    M->>W: Foreground / List（pid のウィンドウが前面に出るまで最大およそ 3 秒）
+                    W-->>M: 前面のウィンドウ
+                    M->>AU: 記録 (ok: app_id, label, pid, reused_existing_window)
+                    M-->>C: { ok, app_id, pid, window?, reused_existing_window }
                 else 失敗
                     P-->>M: LaunchError(reason)
                     M->>AU: 記録 (error: launch_failed, reason)
@@ -446,6 +449,33 @@ sequenceDiagram
 
 発動経路（トレイ、ダッシュボード、グローバルホットキー）はいずれも `KillSwitch.Trigger()` を呼ぶ。処理順は、(1) 状態を `active` に永続化、(2) 全リース剥奪、(3) 実行中のエージェントのタスクを中断（OpenAI・TypeSafe 呼び出しの取り消し、押下中入力の解放）、(4) リモートルーターのリクエストを 503 `kill_switch_active` で拒否、(5) 全 MCP・WebSocket セッションを切断、(6) オーバーレイ消去、(7) 監査記録。順序は NFR-P05（1 秒以内）を満たすため同期で行い、永続化は先頭に置いて再起動後も維持する（[NFR-S07](../requirements/non-functional.md)）。
 
+## 運用ログと監査ログ
+
+この製品には 2 種類の「ログ」があり、目的・置き場所・閲覧の画面が違う。
+
+| | アプリの運用ログ（本節で言う「アプリログ」） | 監査ログ |
+|---|---|---|
+| 目的 | アプリの動作の記録。不具合の調査・動作の確認。成功・失敗・エラーをレベル（DEBUG・INFO・WARN・ERROR）つきで残す | 業務記録。誰が（操作主体）・いつ・何を・どうなったかを、あとから検証できるように残す（FR-AU01） |
+| 置き場所 | ファイル `%LOCALAPPDATA%\puppet-remo\logs\puppet-remo.log`（slog の JSON。10 MiB × 5 世代でローテーション。NFR-O01） | DB の `audit_logs`（`repository.Audit`。保持期間あり。[ER](er.md)） |
+| 書く側 | 各コンポーネントが `slog` で書く（起動・tailscaled の状態・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチ・設定の反映など） | `Audit.Record`（`Control`・`LeaseManager`・`KillSwitch`・`Authz`・`HostAdmin` など。非同期のキュー） |
+| 秘密 | トークンの平文・ハッシュ・API キーなどは出さない（NFR-S13。`slog` の `ReplaceAttr` が安全網） | 同じ（FR-AU03。`type` の本文・クリップボードも既定で記録しない） |
+| 閲覧 | ホスト GUI の「ログ」画面（`/logs`。FR-H13。**M1**）。ログファイルを直接開いてもよい | ホスト GUI の監査ログ画面（FR-AU01。**M3**。M1 は記録だけで、閲覧 UI はない） |
+
+運用ログの画面は、監査ログの代わりにはならない。たとえば認証の失敗は、運用ログには「理由・デバイス・IP」だけを 1 行（WARN）で残し、監査ログには `auth.bearer_failed` のイベントとして構造化して残す。運用ログは、ファイルが 10 MiB を超えて古い世代が消えると見えなくなる（5 世代まで）。長く残す必要のある記録は監査ログ（保持期間の設定による）に置く。
+
+### アプリログの読み方（ログ画面）
+
+「ログ」画面（`service.AppLog` の実装 `app.LogReader`）は、ログファイルを**末尾から一定のブロック（64 KiB）ずつ逆向きに読み**、1 ページ（50 件）に必要な分だけ取り出す。ファイル全体をメモリに載せない。今のファイルを読み切っても足りなければ、ローテーションされた古いファイル（`puppet-remo-<時刻>.log`。名前の時刻の降順）へ続く。選んだ理由:
+
+- **メモリ上のリングバッファ（slog のハンドラから複製）にしなかった**: 再起動で消える。ファイルに残っているログ（起動直後の失敗など）が見えなくなる。ファイルが唯一の真実の源であり続けるほうが、画面とファイルが食い違わない
+- **別の保存先（DB など）に二重に書かなかった**: 書き込みの経路が増え、ログを書く処理がログの保存の失敗に影響される
+- 逆向きの読みは、書き込み中の途中の行・JSON でない行・壊れた行・1 MiB を超える行を読み飛ばすだけで、ローテーション（`lumberjack` の名前の付け替え）にも追従する（1 回の読み出しごとにファイルの一覧を取り直す）
+- 絞り込み（レベル）は読みながら行う。深いページや、まれなレベル（ERROR のみ）では多くを読むが、読むのは保持するファイル（最大 50 MiB）までで、ページは 100 までに丸める。読んでいる間（数ミリ秒）にちょうどローテーションが起きると、Windows では名前の付け替えが共有違反で失敗し、そのときの 1 行が書けないことがある（次の書き込みでやり直す。画面の表示のために書き込みを待たせない選択）
+- 画面に出すときは、値を 500 文字までに切り詰め、1 件あたり 24 個までの属性だけを出す。値は書き込み時の伏せ字（`redactAttr`）のうえに、読み出し時にも同じ規則（`redactString`）で秘密を伏せる
+
+画面のレベルの絞り込みは「すべて」「WARN 以上」「ERROR のみ」。「すべて」はファイルにあるものをそのまま出すので、環境変数 `PUPPET_REMO_LOG_LEVEL=debug` で起動したときの DEBUG も含む（既定の INFO では DEBUG は書かれない）。ツールの成功のうち読み取りだけのもの（スクリーンショットの取得など。頻繁に呼ばれる）は DEBUG にして、既定のログを埋めない。
+
+
 ## 画面配信パイプライン
 
 ```mermaid
@@ -471,7 +501,7 @@ graph TD
   2. 管理者権限ウィンドウ（UIPI）が対象なら `input_blocked`
   3. キルスイッチ中・リース非保持なら拒否
   4. エージェントの入力は、上記に加えて Judge（次節）を通す。InputGuard はすべての保持者種別（`mcp` / `web` / `agent`）に同じ規則を適用する
-- **自ウィンドウのキャプチャ除外**: ホスト GUI・承認ダイアログ・オーバーレイは Wails の `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）を有効にする。AI のスクリーンショットにも Web UI のライブ画面にも写らない
+- **自ウィンドウのキャプチャ除外**: ホスト GUI・承認ダイアログ・オーバーレイは Wails の `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）を有効にする。AI のスクリーンショットにも Web UI のライブ画面にも写らない。AI が入力の止まる場所を避けられるよう、`own_window` のエラー・`screenshot` の `own_windows`・`list_windows` の `blocked`・`instructions` で範囲（縮小座標の矩形）と印を伝える（画像への描画はしない。FR-M20）
 - **オーバーレイ**: モニターごとに 1 ウィンドウ。枠なし・透過背景・最前面・`IgnoreMouseEvents`（クリック透過）・タスクバー非表示。リースの保持・解放イベントで表示・消去する
 - **承認ダイアログ**: 承認要求ごとに専用の Wails ウィンドウを開く（Go 側でウィンドウ生成）。内容は GUI ルーターが Templ で描画し、「許可 / 拒否」は HTMX の `hx-post` で GUI ルーターへ送る。操作は入力ガードにより AI から押せない
 
@@ -596,7 +626,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`。承認ダイアログとオーバーレイは M3 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
 | `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`）と `e2e/` は M2 |
-| 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
+| 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/environment/setup.md`（環境構築）、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
 | Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など |
 
 ### 依存の向き
@@ -634,3 +664,7 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.9 | 2026-10-30 | 「M1 実装での差分」を新設（依存ライブラリ・ディレクトリ構成・依存の向き・キルスイッチ（`Trigger` が最大 2 × 期限かかりうる既知の制限を含む）・受付と入力の実装値）。ディレクトリ構成の冒頭に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.10 | 2026-10-30 | 起動許可リスト（M1.5）を追加: 構成図（`AppLauncher`・`FilePicker`・許可リスト）、レイヤー表の `platform`、GUI ルーターの提供物、主要フロー「アプリ起動」、ディレクトリ構成（`launcher`・`filepicker`） | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.11 | 2026-10-30 | 許可リストの読み取りを `AppReader` に分け、`Control` には読み取り専用の面だけを渡すことを反映 | #16 の独立レビュー指摘 |
+| 1.12 | 2026-11-01 | 「運用ログと監査ログ」（違いと、ログ画面の読み方・選んだ理由）を追加し、GUI ルーターの画面に「ログ」を追記 | #45 |
+| 1.13 | 2026-11-01 | 「アプリ起動」の流れ図に、起動後のウィンドウの観測（`WindowManager`。最大およそ 3 秒）と、応答の `window`・`reused_existing_window` を追記 | #46 |
+| 1.14 | 2026-11-01 | 「入力注入と自己保護」に、自ウィンドウの範囲と印を AI へ伝える旨（FR-M20。画像には描かない）を追記 | #47 |
+| 1.15 | 2026-11-01 | M1 実装での差分の「追加のファイル」に `docs/environment/setup.md` を追加 | #40 |
