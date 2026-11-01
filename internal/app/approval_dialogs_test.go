@@ -274,7 +274,9 @@ func TestNonLeaseApprovalDoesNotOpenADialog(t *testing.T) {
 		t.Errorf("dialog %q, pending %+v: want the dialog for the lease request only", w.ID(), p)
 	}
 	cancel()
-	<-res
+	if err := <-res; !errors.Is(err, context.Canceled) {
+		t.Errorf("Request = %v, want context.Canceled after cancel", err)
+	}
 }
 
 // シャットダウン（ctx の終了）で、開いているダイアログをすべて閉じてから戻る。
@@ -408,5 +410,7 @@ func TestAppWiresTheApprovalDialogToTheLeaseAndTheGUIRouter(t *testing.T) {
 	default:
 		t.Error("Shutdown must close the open dialog")
 	}
-	<-res
+	if err := <-res; err == nil {
+		t.Error("Acquire must not succeed when shutdown withdraws the pending approval")
+	}
 }
