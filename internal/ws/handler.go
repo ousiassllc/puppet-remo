@@ -302,16 +302,25 @@ func streamSize(mons []domain.Monitor, index int) (w, h int) {
 	return 0, 0
 }
 
+// leaseBody は現在のリースの状態（held → pending_approval → idle の順に見る。承認待ちと保持は同時にならない）。
+// pending_approval の holder は承認待ちの要求者で、idle のときだけ holder を省く（API 仕様 §5.3）。
 func (c *conn) leaseBody() leaseBody {
-	holder, ok := c.h.cfg.Leases.Holder()
-	if !ok {
-		return leaseBody{State: string(domain.LeaseIdle)}
+	me := c.sess.Actor()
+	if holder, ok := c.h.cfg.Leases.Holder(); ok {
+		return leaseBody{
+			State:  string(domain.LeaseHeld),
+			Holder: &holderBody{Kind: string(holder.Actor.Kind), Label: holder.Actor.Label},
+			Mine:   holder.Actor.SameSession(me),
+		}
 	}
-	return leaseBody{
-		State:  string(domain.LeaseHeld),
-		Holder: &holderBody{Kind: string(holder.Actor.Kind), Label: holder.Actor.Label},
-		Mine:   holder.Actor.SameSession(c.sess.Actor()),
+	if p, ok := c.h.cfg.Leases.Pending(); ok {
+		return leaseBody{
+			State:  string(domain.LeasePendingApproval),
+			Holder: &holderBody{Kind: string(p.Actor.Kind), Label: p.Actor.Label},
+			Mine:   p.Actor.SameSession(me),
+		}
 	}
+	return leaseBody{State: string(domain.LeaseIdle)}
 }
 
 // writeLoop は Streamer のフレーム・設定の変化・リースの変化・セッションの終わりを書き出す。
