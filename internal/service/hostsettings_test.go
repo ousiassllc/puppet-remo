@@ -114,11 +114,13 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	var detail map[string]any
 	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 12 || detail["server.port"] != float64(9000) || detail["autostart"] != true ||
-		detail["audit.record_text"] != true || detail["audit.thumbnails_enabled"] != false || detail["audit.retention_days"] != float64(7) ||
+		!hasKey(detail, "audit.record_text") || detail["audit.record_text"] != nil || detail["audit.thumbnails_enabled"] != false || detail["audit.retention_days"] != float64(7) ||
 		detail["audit.thumbs_max_bytes"] != float64(536870912) || detail["update.apply_mode"] != "auto_idle" {
 		t.Errorf("detail = %s (%v)", a[0].DetailJSON, err)
 	}
 }
+
+func hasKey(m map[string]any, k string) bool { _, ok := m[k]; return ok }
 
 // 変更した項目だけが監査に残る（戻したときも、変わった項目だけ）。
 func TestHostSettingsAuditListsOnlyChangedKeys(t *testing.T) {
@@ -136,10 +138,10 @@ func TestHostSettingsAuditListsOnlyChangedKeys(t *testing.T) {
 	if len(e.audit.entries) != 2 {
 		t.Fatalf("audit = %+v", e.audit.entries)
 	}
-	if got, want := string(e.audit.entries[0].DetailJSON), `{"audit.record_text":true,"audit.retention_days":90}`; got != want {
+	if got, want := string(e.audit.entries[0].DetailJSON), `{"audit.record_text":null,"audit.retention_days":90}`; got != want {
 		t.Errorf("detail = %s, want %s", got, want)
 	}
-	if got, want := string(e.audit.entries[1].DetailJSON), `{"audit.record_text":false,"audit.retention_days":30}`; got != want {
+	if got, want := string(e.audit.entries[1].DetailJSON), `{"audit.record_text":null,"audit.retention_days":30}`; got != want {
 		t.Errorf("detail = %s, want %s", got, want)
 	}
 }

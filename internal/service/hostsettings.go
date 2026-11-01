@@ -364,8 +364,8 @@ func (h *hostSettings) committed(ctx context.Context, old, updated HostSettings)
 	}
 }
 
-// audit は変更した項目の名前と新しい値を記録する（値は範囲内の数値・真偽値・列挙・ホットキーで、秘密ではない。
-// audit.record_text の変更は、本文の記録の有無の切り替えとして残す価値があるため値ごと残す）。
+// audit は変更した項目の名前と新しい値を記録する（値は範囲内の数値・真偽値・列挙・ホットキーで、秘密ではない）。
+// ただし audit.record_text は、変えたことだけを残して値は入れない（null。本文の記録の設定を監査の経路に流さない）。
 func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
 	if h.cfg.Audit == nil {
 		return
@@ -383,7 +383,7 @@ func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
 		{FieldViewerDefaultQuality, old.ViewerDefaultQuality != updated.ViewerDefaultQuality, updated.ViewerDefaultQuality},
 		{FieldViewerDefaultFPS, old.ViewerDefaultFPS != updated.ViewerDefaultFPS, updated.ViewerDefaultFPS},
 		{FieldAuditThumbnails, old.AuditThumbnailsEnabled != updated.AuditThumbnailsEnabled, updated.AuditThumbnailsEnabled},
-		{FieldAuditRecordText, old.AuditRecordText != updated.AuditRecordText, updated.AuditRecordText},
+		{FieldAuditRecordText, old.AuditRecordText != updated.AuditRecordText, nil},
 		{FieldAuditRetentionDays, old.AuditRetentionDays != updated.AuditRetentionDays, updated.AuditRetentionDays},
 		{FieldAuditThumbsMaxBytes, old.AuditThumbsMaxBytes != updated.AuditThumbsMaxBytes, updated.AuditThumbsMaxBytes},
 		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode, updated.UpdateApplyMode},
