@@ -10,7 +10,7 @@ func numberAttrs(min, max string) atoms.Attrs {
 	return atoms.Attrs{"min": min, "max": max, "step": "1", "inputmode": "numeric"}
 }
 
-// SettingsForm は M1 の設定（FR-S01〜S04、FR-S08）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
+// SettingsForm は設定画面のフォーム（FR-S01〜S04、FR-S06、FR-S08）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
 // 自動起動のチェックは、OS の登録手段があるときだけ描画する。
 // ブラウザの入力検証は novalidate で止める（検証はサーバーが行い、422 でメッセージ付きに再描画する。frontend.md §5.6）。
 templ SettingsForm(f view.SettingsForm) {
@@ -36,6 +36,12 @@ templ SettingsForm(f view.SettingsForm) {
 		}
 		@molecules.FormField("set-idle", "リースのアイドルタイムアウト（秒）", "30〜3600。操作がないまま経過すると操作権を解放します。", f.Errors.LeaseIdleSec) {
 			@atoms.Input(atoms.InputProps{ID: "set-idle", Name: "lease.idle_timeout_sec", Type: "number", Value: f.Values.LeaseIdleSec, Required: true, Invalid: f.Errors.LeaseIdleSec != "", Attrs: numberAttrs("30", "3600")})
+		}
+		@molecules.FormField("set-vquality", "ビューアの既定の画質", "1〜100。Web ビューアを開いたときの JPEG の品質です。", f.Errors.ViewerQuality) {
+			@atoms.Input(atoms.InputProps{ID: "set-vquality", Name: "viewer.default_quality", Type: "number", Value: f.Values.ViewerQuality, Required: true, Invalid: f.Errors.ViewerQuality != "", Attrs: numberAttrs("1", "100")})
+		}
+		@molecules.FormField("set-vfps", "ビューアの既定の FPS", "1〜30。Web ビューアを開いたときの 1 秒あたりの更新の上限です。", f.Errors.ViewerFPS) {
+			@atoms.Input(atoms.InputProps{ID: "set-vfps", Name: "viewer.default_fps", Type: "number", Value: f.Values.ViewerFPS, Required: true, Invalid: f.Errors.ViewerFPS != "", Attrs: numberAttrs("1", "30")})
 		}
 		if f.CanSetAutostart {
 			<label class="flex items-center gap-2 text-sm text-slate-700">

@@ -57,16 +57,34 @@ func TestKillSwitchPanelRendersOnlyAvailableAction(t *testing.T) {
 	}
 }
 
-func TestLeasePanelIsDisplayOnly(t *testing.T) {
-	held := webtest.Render(t, organisms.LeasePanel(view.Lease{Held: true, HolderLabel: "claude", KindLabel: "MCP", Since: "2026-10-30 12:00", IdleRemaining: "5分"}))
-	has(t, held, "保持中", "claude", "MCP", "5分")
+// 状態駆動レンダリング（frontend.md §4.3）: 強制剥奪のボタンは、剥奪できる保持者がいる（CanRevoke）ときだけ HTML に出る。
+func TestLeasePanelRendersRevokeOnlyWhenCanRevoke(t *testing.T) {
+	held := view.Lease{Held: true, HolderLabel: "claude", KindLabel: "MCP", Since: "2026-10-30 12:00", IdleRemaining: "5分"}
 	idle := webtest.Render(t, organisms.LeasePanel(view.Lease{}))
 	has(t, idle, "空き")
 	hasNot(t, idle, "保持中", "アイドル解放まで")
-	for _, out := range []string{held, idle} {
+
+	revocable := held
+	revocable.CanRevoke = true
+	canRevoke := webtest.Render(t, organisms.LeasePanel(revocable))
+	has(t, canRevoke, "保持中", "claude", "MCP", "5分", "強制剥奪", `hx-post="/lease/revoke"`, `hx-target="#lease"`, `hx-swap="innerHTML"`, `hx-disabled-elt="this"`)
+
+	// 剥奪できない保持者（M4 の agent など）と、空きのときはボタンが描画されない。
+	cannot := webtest.Render(t, organisms.LeasePanel(held))
+	has(t, cannot, "保持中", "claude")
+	for _, out := range []string{idle, cannot} {
 		hasNot(t, out, "<button", "hx-post", "hx-delete", "revoke", "強制剥奪")
+	}
+	for _, out := range []string{idle, canRevoke, cannot, webtest.Render(t, organisms.LeasePanelBody(revocable))} {
 		webtest.AssertCSPCompliantHTML(t, out)
 	}
+}
+
+// SSE の lease イベント（M2 でも変えない）は表示だけで、強制剥奪の操作を含まない。
+func TestLeaseDisplayHasNoActions(t *testing.T) {
+	out := webtest.Render(t, organisms.LeaseDisplay(view.Lease{Held: true, CanRevoke: true, HolderLabel: "claude", KindLabel: "MCP", Since: "2026-10-30 12:00", IdleRemaining: "5分"}))
+	has(t, out, "保持中", "claude", "5分")
+	hasNot(t, out, "<button", "hx-post", "revoke", "強制剥奪")
 }
 
 func TestClientCardFlagsAndActions(t *testing.T) {

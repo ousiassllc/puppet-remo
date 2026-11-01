@@ -72,9 +72,10 @@ type Session struct {
 // Sessions は接続中セッション一覧。
 type Sessions struct{ Items []Session }
 
-// Lease はリース保持者の表示（M1 は表示のみ。強制剥奪の操作は持たない）。
+// Lease はリース保持者の表示。CanRevoke のときだけ強制剥奪のボタンを出す（状態駆動）。
 type Lease struct {
 	Held          bool
+	CanRevoke     bool // 剥奪できる保持者（mcp・web）がいる（FR-L06。agent の剥奪は M4）
 	HolderLabel   string
 	KindLabel     string // 保持者の種別（mcp など）
 	Since         string
@@ -237,6 +238,8 @@ type SettingsValues struct {
 	Hotkey           string
 	ScreenshotMaxDim string
 	LeaseIdleSec     string
+	ViewerQuality    string
+	ViewerFPS        string
 	Autostart        bool
 }
 
@@ -246,6 +249,8 @@ type SettingsErrors struct {
 	Hotkey           string
 	ScreenshotMaxDim string
 	LeaseIdleSec     string
+	ViewerQuality    string
+	ViewerFPS        string
 }
 
 // SettingsForm は設定フォーム。
@@ -414,4 +419,72 @@ type AppLogPage struct {
 	Chrome Chrome
 	Path   string
 	Log    AppLog
+}
+
+// 以下はリモートの Web UI（ビューア。docs/architecture/frontend.md §3・§4.3）の表示モデル。
+
+// Option は選択欄の選択肢 1 つ。
+type Option struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+// ViewerToolbarErrors は設定フォームの項目ごとのエラー（空なら無い）。
+type ViewerToolbarErrors struct {
+	Monitor string
+	Quality string
+	FPS     string
+}
+
+// ViewerToolbar はビューアのツールバー（モニター・画質・FPS。FR-W04・W05）。値はフォームの文字列で、
+// 検証エラーのときは利用者の入力値をそのまま出す。
+type ViewerToolbar struct {
+	Monitors []Option
+	Quality  string
+	FPS      string
+	Errors   ViewerToolbarErrors
+}
+
+// ViewerLease はビューアのリースパネル（FR-W08）。保持者の種別・名前・状態は常に出し、操作は Can* が true のものだけを描画する（状態駆動）。
+// CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web）が保持しているとき。
+type ViewerLease struct {
+	Held        bool
+	Mine        bool
+	HolderLabel string
+	KindLabel   string // 保持者の種別（mcp / web）
+	CanAcquire  bool
+	CanRelease  bool
+	CanRevoke   bool
+}
+
+// KeyMenuItem はショートカット送信メニューの 1 項目。Keys は API 仕様 §3.3 の `keys` の書式。
+type KeyMenuItem struct {
+	Label string
+	Keys  string
+}
+
+// ViewerOps はクリップボードとショートカット送信（操作権が要る操作。FR-W06・W07）。Enabled のときだけ描画する。
+type ViewerOps struct {
+	Enabled bool
+	Keys    []KeyMenuItem
+}
+
+// Viewer はビューアのページ。ViewerID は X-Viewer-Id と ws-url に埋め込む。
+type Viewer struct {
+	ViewerID string
+	WSURL    string
+	Monitor  int
+	Quality  int
+	FPS      int
+	Toolbar  ViewerToolbar
+	Lease    ViewerLease
+	Ops      ViewerOps
+}
+
+// RemoteError はリモートの Web UI のエラーページ。
+type RemoteError struct {
+	Code    string
+	Title   string
+	Message string
 }

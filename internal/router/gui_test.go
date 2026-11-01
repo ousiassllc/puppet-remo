@@ -75,6 +75,7 @@ func TestEveryResponseCarriesCSP(t *testing.T) {
 		{http.MethodGet, "/killswitch", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/poll", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/killswitch/trigger", []string{"HX-Request", "true"}},
+		{http.MethodPost, "/lease/revoke", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/requests/x/approve", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/static/js/app.js", nil},
 		{http.MethodGet, "/static/missing.js", nil},

@@ -30,7 +30,7 @@
 | tailnet 連携 | `tailscale.com/client/local` | LocalAPI の `WhoIs`、`WatchIPNBus`（IP 変化監視）、`StatusWithoutPeers`。Windows では名前付きパイプ経由でライブラリが接続する |
 | WebSocket | `github.com/coder/websocket` v1.8.15（ISC） | context 対応・バイナリフレーム・軽量 |
 | 永続化 | SQLite（`modernc.org/sqlite`、純 Go）+ 埋め込み SQL マイグレーション | cgo なし。WAL モード（[NFR-A06](../requirements/non-functional.md)） |
-| 画面キャプチャ | DXGI Desktop Duplication（主、`github.com/kirides/go-d3d` v1.0.1・MIT・cgo なし）、GDI BitBlt（フォールバック） | DXGI は変更矩形を OS から取得でき低 CPU。失敗時は GDI へ切り替え。`go-d3d` は M2 のキャプチャスパイクの結果を見て採用を確定し、スパイクが失敗した場合は自前の syscall 実装に切り替える |
+| 画面キャプチャ | DXGI Desktop Duplication（主、`github.com/kirides/go-d3d` v1.0.1・MIT・cgo なし）、GDI BitBlt（フォールバック） | DXGI は画面が変化したときだけコマを返し低 CPU。失敗時は GDI へ切り替え。`go-d3d` は M2 のキャプチャスパイク（#57）で採用を確定した（実機の安定性は未確認。成立しなければ自前の syscall 実装に切り替える）。`go-d3d` は変更矩形を公開しないため `Frame.Dirty` は全面で、差分はタイルハッシュ（Streamer）が求める |
 | 入力注入 | Win32 `SendInput`（`golang.org/x/sys/windows`） | cgo 不要。`type` は `KEYEVENTF_UNICODE` で日本語を直接送る |
 | UI Automation | COM `IUIAutomation`（`github.com/go-ole/go-ole` v1.3.0・MIT。IUIAutomation の vtable バインディングは自前で書く） | `get_ui_tree` と高速パスの候補表（スナップショット）用 |
 | 画像エンコード | 標準 `image/jpeg` | 純 Go 制約のため JPEG のみ |
@@ -480,7 +480,7 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    CAP["Capturer<br/>DXGI Desktop Duplication / GDI"] --> DIFF["差分検出<br/>DXGI 変更矩形 + タイルハッシュ"]
+    CAP["Capturer<br/>DXGI Desktop Duplication / GDI"] --> DIFF["差分検出<br/>タイルハッシュ（Dirty は全面）"]
     DIFF --> ENC["エンコード<br/>JPEG (標準 image/jpeg)<br/>プロファイル単位で共有"]
     ENC --> FAN["ファンアウト<br/>閲覧者ごとの送信キュー"]
     FAN --> WS["WebSocket バイナリフレーム"]
@@ -490,7 +490,7 @@ graph TD
 - キャプチャ・差分検出は**モニターごとに 1 つの goroutine**。閲覧者がゼロなら停止する（FR-W09、NFR-P04）
 - 差分は 64×64 px のタイル単位。変化したタイルを矩形にまとめて JPEG で送る。接続直後と一定間隔（既定 5 秒）で全面キーフレームを送る
 - エンコードは (モニター, 品質, FPS) のプロファイル単位に 1 回だけ行い、同じプロファイルの閲覧者で共有する（NFR-P07）。閲覧者ごとの送信キューが詰まったら古いフレームを捨てる（遅延の累積を防ぐ）
-- DXGI は `ACCESS_LOST`（ロック画面・UAC・解像度変更など）で再初期化する。復旧できなければ `desktop_unavailable` とし、GDI にフォールバックする
+- DXGI は `ACCESS_LOST`（ロック画面・UAC・解像度変更など）で再初期化する（200 ms 間隔で最大 5 回）。復旧できなければ `desktop_unavailable` を `errs` に流し、GDI にフォールバックする。DXGI は画面が変化したときだけコマを返し、GDI は `fps` の間隔で撮って前のコマと内容を比べる
 - `screenshot` ツールは配信とは独立に 1 回だけ撮り、縮小（FR-M16 の縮小率）して返す
 
 ## 入力注入と自己保護
@@ -604,9 +604,9 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
 | Huma（JSON API） | `/api/v1` を提供 | 使わない（`go.mod` に無い）。`/api/v1` は M2 以降 |
-| WebSocket | `github.com/coder/websocket` v1.8.15 | 直接依存ではない（`go.mod` では v1.8.14 の間接依存。Wails の依存）。直接依存にするのは `ws` を作る M2 |
+| WebSocket | `github.com/coder/websocket` v1.8.15 | M2（#61）で直接依存にした（`internal/ws`。v1.8.14 の間接依存だったものを v1.8.15 に上げた） |
 | 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | 依存に無い。M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけで、Windows 実装も呼び出しも無い（API キー管理は M4） |
-| DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | 依存に無い。M1 は GDI BitBlt だけで、`Capturer.Watch` は Windows 実装でエラーを返すスタブ |
+| DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | M2（#57）で直接依存に追加し採用を確定した（`internal/platform/windows` の `dxgi_windows.go`）。`Capturer.Watch` は DXGI を主、GDI をフォールバックとして実装した。変更矩形は使わず `Frame.Dirty` は全面 |
 | OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | 依存に無く、`internal/openai`・`internal/typesafe` も無い（M4） |
 | MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |
 | ULID | `oklog/ulid/v2` | 同じ（`internal/app` の `ULIDGen`）。`domain.IDGen` として注入する |
@@ -620,12 +620,12 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | 項目 | M1 の実装 |
 |------|----------|
 | `internal/openai`・`internal/typesafe`・`internal/ws` | 無い（M4・M4・M2 で作る） |
-| `internal/web` | `handler/gui` だけ（`handler/remote` は M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`（偽の service）を持つ |
+| `internal/web` | `handler/gui` と `handler/remote`（M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`・`handler/remote/remotetest/`（偽の service）を持つ |
 | `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ。`windows/` の `secret`（資格情報）は無い |
 | `internal/router` | `gui.go`・`remote.go` と `internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
 | `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`。承認ダイアログとオーバーレイは M3 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
-| `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`）と `e2e/` は M2 |
+| `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`。M2 の #63）。`e2e/` は作らない |
 | 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/environment/setup.md`（環境構築）、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
 | Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など |
 
@@ -635,13 +635,13 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 
 ### キルスイッチ（「キルスイッチ」の節）
 
-M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以後のリクエストを 503 にする）から、(1) 永続化、(2) 全リース剥奪、(3) 登録済みクローザーの**並行**実行（MCP セッションの切断・押下中の入力の解放）、監査の順で行う。エージェントの中断・WebSocket の切断・オーバーレイの消去は、それぞれ M4・M2・M3 で足す。永続化とクローザーはそれぞれ自分の期限（既定 1 秒）を持つため、永続化が遅いと `Trigger` が戻るまで最大 2 × 期限かかり、NFR-P05 の 1 秒を超えうる（**既知の制限**。受付停止はメモリ上の状態で直ちに効くが、セッション切断の完了は遅れうる。詳細はコンポーネント設計 §13.5）。
+M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以後のリクエストを 503 にする）から、(1) 永続化、(2) 全リース剥奪、(3) 登録済みクローザーの**並行**実行（MCP セッションの切断・押下中の入力の解放）、監査の順で行う。WebSocket の切断（クローザー `web-sessions`。閉じコード 4503）は M2 で足した。エージェントの中断・オーバーレイの消去は、それぞれ M4・M3 で足す。永続化とクローザーはそれぞれ自分の期限（既定 1 秒）を持つため、永続化が遅いと `Trigger` が戻るまで最大 2 × 期限かかり、NFR-P05 の 1 秒を超えうる（**既知の制限**。受付停止はメモリ上の状態で直ちに効くが、セッション切断の完了は遅れうる。詳細はコンポーネント設計 §13.5）。
 
 ### 受付と入力（「ルーターの分離とリクエスト処理」「入力注入と自己保護」の節）
 
 | 項目 | M1 の実装 |
 |------|----------|
-| リモートルーター | `/mcp` だけ（それ以外は 404）。tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒・`IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB（`WriteTimeout` なし） |
+| リモートルーター | `/mcp`・`GET /ws/screen`・Web UI（`/`・`/viewer*`）・`GET /static/*`（それ以外は 404）。未登録デバイスのブラウザへ返すページは、接続要求の状態（待機・拒否・失効）を読み取り専用で引いて選ぶ（FR-W02。ステータスと FR-A06 の挙動は変えない）。tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒・`IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB（`WriteTimeout` なし） |
 | WhoIs | LocalAPI の 1 回の呼び出しは 5 秒で打ち切る（失敗は `whois_failed`。fail closed）。結果は IP 単位に最大 10 秒キャッシュ |
 | 接続要求 | 期限切れの `pending` は一覧に出ず、許可もできない。同じデバイスの `pending` を 5 秒以内に更新済みなら DB に書かない。登録済みデバイスのログイン名が変わった要求を許可すると、古いクライアントを置き換える（`client.replace` を監査に記録。トークンは CASCADE で削除、セッションは切断、リースは解放）。古いクライアントの切断は、他の許可を止めないようロックの外で行う |
 | 監査 | クライアントの行がすでに無いときの `client_id` は NULL で保存する（ラベルは残る）。`Control` を通らない MCP ツール（`get_screen_info`・`screenshot` など）は `mcp` のツール登録が記録する |
@@ -668,3 +668,6 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.13 | 2026-11-01 | 「アプリ起動」の流れ図に、起動後のウィンドウの観測（`WindowManager`。最大およそ 3 秒）と、応答の `window`・`reused_existing_window` を追記 | #46 |
 | 1.14 | 2026-11-01 | 「入力注入と自己保護」に、自ウィンドウの範囲と印を AI へ伝える旨（FR-M20。画像には描かない）を追記 | #47 |
 | 1.15 | 2026-11-01 | M1 実装での差分の「追加のファイル」に `docs/environment/setup.md` を追加 | #40 |
+| 1.16 | 2026-11-01 | 技術スタックの画面キャプチャと「M1 実装での差分」の DXGI の行を、M2 の `Capturer.Watch` の実装（`go-d3d` の採用、`Frame.Dirty` は全面）に更新 | #57 |
+| 1.17 | 2026-11-01 | 技術選定の WebSocket（`coder/websocket` v1.8.15）を直接依存にしたこと、「M1 実装での差分」の `KillSwitch.Trigger` の記述に WebSocket の切断（`web-sessions`）を M2 で足したことを反映 | #61 |
+| 1.18 | 2026-11-01 | M1 実装での差分の `internal/web`（`handler/remote`・`remotetest`）とリモートルーターの提供物（Web UI・`/static/*`・待機ページの出し分け）を反映 | #62 |

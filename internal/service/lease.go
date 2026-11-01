@@ -13,8 +13,8 @@ import (
 
 // LeaseManager は操作リース（FR-L01〜L05）の状態の唯一の所有者（docs/components/overview.md §5.2）。
 //
-// M1 の範囲: 保持者種別は mcp のみ、承認なしで idle → held、アイドルタイマーとキルスイッチと明示解放・切断で解放。
-// 強制剥奪（Revoke。M2）と pending_approval（M3）は持たない。
+// M2 の範囲: 保持者種別は mcp と web、承認なしで idle → held、アイドルタイマーとキルスイッチと明示解放・切断・強制剥奪（Revoke）で解放。
+// pending_approval（M3）と agent の保持者（M4）は持たない。
 // 保持中は LeaseConfig.Power でスリープと画面オフを抑止する（NFR-A05）。どの解放の経路でも保持が終われば解除する。
 type LeaseManager interface {
 	// Acquire は idle → held（承認なし）。他者が保持中は ErrLeaseHeldByOther。同じ保持者の再取得は活動として数える。
@@ -25,8 +25,12 @@ type LeaseManager interface {
 	// ReleaseSession はセッション切断で保持者のリースを解放する（FR-L05）。保持者でなければ何もしない。
 	// 監査の理由が explicit ではなく disconnect になる以外は Release と同じ。
 	ReleaseSession(who domain.Actor)
+	// Revoke は by が保持者を強制剥奪する（FR-L06）。by は host（ホスト GUI）か web（Web クライアント）で、それ以外は ErrInvalidArgument。
+	// 保持者がいなければ何もせず nil（冪等）。剥奪された保持者の Check は、次の Acquire が成功するまで（リースが空きのあいだ）ErrLeaseRevoked を返す。
+	// 監査は by を操作主体とする lease.revoke。agent の保持者の剥奪（タスクの中断）は M4。
+	Revoke(by domain.Actor) error
 	// Check は以後の入力操作が許されるかの確認。活動時刻を更新する（アイドル解放の起点）。
-	// ErrLeaseRequired / ErrLeaseHeldByOther（M2 から ErrLeaseRevoked）。
+	// ErrLeaseRequired / ErrLeaseHeldByOther / ErrLeaseRevoked。
 	Check(who domain.Actor) error
 	Holder() (Holder, bool)
 	// ReleaseAll はキルスイッチ・シャットダウン用。reason は domain.ReleaseReason の値（監査に残る）。
@@ -35,7 +39,7 @@ type LeaseManager interface {
 	// （そうでなければ ErrInvalidArgument で何も変えない）。保持中のリースは新しい値で数え直し、既に期限を過ぎていれば
 	// すぐ idle_timeout で解放する。
 	SetIdleTimeout(timeout time.Duration) error
-	// Subscribe はリースの変化（取得・解放）を受け取るチャネルを返す。容量は小さく、遅い購読者には捨てる。
+	// Subscribe はリースの変化（取得・解放・剥奪）を受け取るチャネルを返す。容量は小さく、遅い購読者には捨てる。
 	// 購読の解除はない（購読者はプロセスの寿命と同じ GUI だけ）。
 	Subscribe() <-chan domain.LeaseEvent
 }
@@ -75,6 +79,9 @@ type LeaseConfig struct {
 	Power  platform.Power
 	Logger *slog.Logger // nil なら slog.Default()
 }
+
+// HostActor はホスト所有者（ホスト GUI）の操作主体。強制剥奪（LeaseManager.Revoke）の by に使い、監査の actor_type は host になる。
+var HostActor = domain.Actor{Kind: domain.ActorHost, Label: hostLabel}
 
 const leaseSubscriberBuffer = 16
 
@@ -155,6 +162,15 @@ func (m *leaseManager) release(who domain.Actor, reason domain.ReleaseReason) {
 	m.settleLocked(m.machine.Release(who, reason))
 	m.mu.Unlock()
 	m.flush()
+}
+
+func (m *leaseManager) Revoke(by domain.Actor) error {
+	m.mu.Lock()
+	events, err := m.machine.Revoke(by)
+	m.settleLocked(events)
+	m.mu.Unlock()
+	m.flush()
+	return err
 }
 
 func (m *leaseManager) ReleaseAll(reason string) {
@@ -284,15 +300,19 @@ func (m *leaseManager) keepAwake(on bool) {
 	m.power.KeepAwake(on)
 }
 
-// logEvent はリースの取得・解放を運用ログに出す（監査とは別。Check の活動の更新は出さない）。
+// logEvent はリースの取得・解放・剥奪を運用ログに出す（監査とは別。Check の活動の更新は出さない）。
 func (m *leaseManager) logEvent(ev domain.LeaseEvent) {
 	h := ev.Lease.Holder
 	if ev.To == domain.LeaseHeld {
 		m.log.Info("lease acquired", "lease_id", ev.Lease.ID, "holder_kind", string(h.Kind), "holder", h.Label, "session", h.SessionID)
 		return
 	}
-	m.log.Info("lease released", "lease_id", ev.Lease.ID, "reason", string(ev.Reason), "holder_kind", string(h.Kind), "holder", h.Label,
-		"held_for", ev.At.Sub(ev.Lease.Since).Round(time.Second).String())
+	attrs := []any{"lease_id", ev.Lease.ID, "reason", string(ev.Reason), "holder_kind", string(h.Kind), "holder", h.Label,
+		"held_for", ev.At.Sub(ev.Lease.Since).Round(time.Second).String()}
+	if ev.Reason == domain.ReleaseRevoked {
+		attrs = append(attrs, "revoked_by_kind", string(ev.By.Kind), "revoked_by", ev.By.Label)
+	}
+	m.log.Info("lease released", attrs...)
 }
 
 func (m *leaseManager) logDenied(who domain.Actor, err error) {

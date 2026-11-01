@@ -73,12 +73,31 @@ func RunInputContract(t *testing.T, newInput func(t *testing.T) platform.InputIn
 		requireCursor(t, in, safe, "Click")
 	})
 
+	t.Run("Button presses and releases at the cursor", func(t *testing.T) {
+		in := newInput(t)
+		t.Cleanup(func() { _ = in.ReleaseAll() })
+		if err := in.MoveTo(ctx, safe); err != nil {
+			t.Fatalf("MoveTo: %v", err)
+		}
+		for _, b := range []domain.Button{domain.ButtonLeft, domain.ButtonRight, domain.ButtonMiddle} {
+			if err := in.Button(ctx, b, domain.ButtonActionDown); err != nil {
+				t.Errorf("Button(%s, down): %v", b, err)
+			}
+			if err := in.Button(ctx, b, domain.ButtonActionUp); err != nil {
+				t.Errorf("Button(%s, up): %v", b, err)
+			}
+		}
+		requireCursor(t, in, safe, "Button")
+	})
+
 	t.Run("invalid arguments are rejected", func(t *testing.T) {
 		in := newInput(t)
 		requireCode(t, in.Click(ctx, "x", 1, nil), domain.ErrInvalidArgument, "Click(unknown button)")
 		requireCode(t, in.Click(ctx, domain.ButtonLeft, 0, nil), domain.ErrInvalidArgument, "Click(count 0)")
 		requireCode(t, in.Click(ctx, domain.ButtonLeft, 4, nil), domain.ErrInvalidArgument, "Click(count 4)")
 		requireCode(t, in.Click(ctx, domain.ButtonLeft, 1, []domain.Modifier{"hyper"}), domain.ErrInvalidArgument, "Click(unknown modifier)")
+		requireCode(t, in.Button(ctx, "x", domain.ButtonActionDown), domain.ErrInvalidArgument, "Button(unknown button)")
+		requireCode(t, in.Button(ctx, domain.ButtonLeft, "hold"), domain.ErrInvalidArgument, "Button(unknown action)")
 		requireCode(t, in.Drag(ctx, safe, near, []domain.Modifier{"hyper"}), domain.ErrInvalidArgument, "Drag(unknown modifier)")
 		requireCode(t, in.Scroll(ctx, safe, "sideways", 1), domain.ErrInvalidArgument, "Scroll(unknown direction)")
 		requireCode(t, in.Scroll(ctx, safe, domain.DirUp, 0), domain.ErrInvalidArgument, "Scroll(amount 0)")
@@ -121,6 +140,12 @@ func RunInputContract(t *testing.T, newInput func(t *testing.T) platform.InputIn
 		if err := in.ReleaseAll(); err != nil {
 			t.Errorf("ReleaseAll (key pressed): %v", err)
 		}
+		if err := in.Button(ctx, domain.ButtonLeft, domain.ButtonActionDown); err != nil {
+			t.Fatalf("Button(down): %v", err)
+		}
+		if err := in.ReleaseAll(); err != nil {
+			t.Errorf("ReleaseAll (button pressed): %v", err)
+		}
 	})
 
 	t.Run("canceled context", func(t *testing.T) {
@@ -128,6 +153,7 @@ func RunInputContract(t *testing.T, newInput func(t *testing.T) platform.InputIn
 		c := canceledCtx()
 		requireCanceled(t, in.MoveTo(c, safe), "MoveTo")
 		requireCanceled(t, in.Click(c, domain.ButtonLeft, 1, nil), "Click")
+		requireCanceled(t, in.Button(c, domain.ButtonLeft, domain.ButtonActionDown), "Button")
 		requireCanceled(t, in.Drag(c, safe, near, nil), "Drag")
 		requireCanceled(t, in.Scroll(c, safe, domain.DirUp, 1), "Scroll")
 		requireCanceled(t, in.Wheel(c, safe, 0, 1), "Wheel")

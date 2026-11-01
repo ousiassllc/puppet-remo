@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"unicode/utf8"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -66,6 +67,43 @@ func (c *control) plan(ctx context.Context, op domain.Op) (plan, error) {
 			o.At = at
 			return o, err
 		})
+	case domain.PointerMove:
+		return c.planStream(ctx, o.Monitor, func(conv pointConv) (domain.Op, error) {
+			at, err := conv(o.At)
+			o.At = at
+			return o, err
+		})
+	case domain.MouseButton:
+		if !o.Button.Valid() {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("unknown button: " + string(o.Button))
+		}
+		if !o.Action.Valid() {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("unknown button action: " + string(o.Action))
+		}
+		return c.planStream(ctx, o.Monitor, func(conv pointConv) (domain.Op, error) {
+			at, err := conv(o.At)
+			o.At = at
+			return o, err
+		})
+	case domain.Wheel:
+		if err := checkWheelNotches(o.DX, o.DY); err != nil {
+			return plan{}, err
+		}
+		return c.planStream(ctx, o.Monitor, func(conv pointConv) (domain.Op, error) {
+			at, err := conv(o.At)
+			o.At = at
+			return o, err
+		})
+	case domain.KeyEvent:
+		if !o.Action.Valid() {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("unknown key action: " + string(o.Action))
+		}
+		if o.Code == "" {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("key code is required")
+		}
+		if err := validateMods(o.Mods); err != nil {
+			return plan{}, err
+		}
 	case domain.KeyPress:
 		if err := o.Keys.Validate(); err != nil {
 			return plan{}, err
@@ -105,6 +143,34 @@ func (c *control) plan(ctx context.Context, op domain.Op) (plan, error) {
 
 // pointConv は縮小座標を物理座標へ変換する。
 type pointConv func(domain.Point) (domain.Point, error)
+
+// planStream は monitor（Index か MonitorPrimary）の座標系（モニターの物理ピクセル。Web UI のストリームの座標）で
+// 座標を変換する関数を build に渡し、その結果を計画にする。変換後は仮想デスクトップの物理座標。
+func (c *control) planStream(ctx context.Context, monitor int, build func(pointConv) (domain.Op, error)) (plan, error) {
+	mons, err := c.capture.Monitors(ctx)
+	if err != nil {
+		return plan{}, err
+	}
+	mon, err := pickMonitor(mons, monitor)
+	if err != nil {
+		return plan{}, err
+	}
+	op, err := build(mon.StreamToPhysical)
+	if err != nil {
+		return plan{}, err
+	}
+	return plan{op: op, monitors: mons}, nil
+}
+
+// checkWheelNotches は web のホイールの 1 メッセージの上限（絶対値 50 ノッチ。API 仕様 §5.3）を検査する。
+func checkWheelNotches(dx, dy float64) error {
+	for _, v := range []float64{dx, dy} {
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) > maxScrollAmount {
+			return domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("wheel delta must be finite and at most %d notches", maxScrollAmount))
+		}
+	}
+	return nil
+}
 
 // planPoints は monitor（Index か MonitorPrimary）の縮小率で座標を変換する関数を build に渡し、その結果を計画にする。
 func (c *control) planPoints(ctx context.Context, monitor int, build func(pointConv) (domain.Op, error)) (plan, error) {
@@ -184,7 +250,8 @@ func (c *control) lockInput(ctx context.Context) (unlock func(), err error) {
 // execute は検査済みの計画を platform で実行する。
 func (c *control) execute(ctx context.Context, p plan) (Result, error) {
 	switch p.op.(type) {
-	case domain.MouseMove, domain.Click, domain.Drag, domain.Scroll, domain.KeyPress, domain.TypeText:
+	case domain.MouseMove, domain.Click, domain.Drag, domain.Scroll, domain.KeyPress, domain.TypeText,
+		domain.PointerMove, domain.MouseButton, domain.Wheel, domain.KeyEvent:
 		unlock, err := c.lockInput(ctx)
 		if err != nil {
 			return Result{}, err
@@ -205,6 +272,17 @@ func (c *control) execute(ctx context.Context, p plan) (Result, error) {
 		return Result{}, c.input.Drag(ctx, o.From, o.To, o.Mods)
 	case domain.Scroll:
 		return Result{}, c.input.Scroll(ctx, o.At, o.Dir, o.Amount)
+	case domain.PointerMove:
+		return Result{}, c.input.MoveTo(ctx, o.At)
+	case domain.MouseButton:
+		if err := c.input.MoveTo(ctx, o.At); err != nil {
+			return Result{}, err
+		}
+		return Result{}, c.input.Button(ctx, o.Button, o.Action)
+	case domain.Wheel:
+		return Result{}, c.input.Wheel(ctx, o.At, o.DX, o.DY)
+	case domain.KeyEvent:
+		return Result{}, c.input.KeyEvent(ctx, o)
 	case domain.KeyPress:
 		return Result{}, c.input.Key(ctx, o.Keys)
 	case domain.TypeText:
@@ -264,6 +342,17 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 		return "left_click_drag", args
 	case domain.Scroll:
 		return "scroll", map[string]any{"x": o.At.X, "y": o.At.Y, "direction": string(o.Dir), "amount": o.Amount, "monitor": o.Monitor}
+	case domain.MouseButton:
+		return "mouse_" + string(o.Action), map[string]any{"x": o.At.X, "y": o.At.Y, "button": string(o.Button), "monitor": o.Monitor}
+	case domain.Wheel:
+		return "wheel", map[string]any{"x": o.At.X, "y": o.At.Y, "dx": o.DX, "dy": o.DY, "monitor": o.Monitor}
+	case domain.KeyEvent:
+		// キーの名前（code・key）は記録しない（パスワードなどの入力を監査ログに残さない。FR-AU03 の type と同じ扱い）。
+		args = map[string]any{"action": string(o.Action)}
+		if len(o.Mods) > 0 {
+			args["modifiers"] = modNames(o.Mods)
+		}
+		return "key_" + string(o.Action), args
 	case domain.KeyPress:
 		return "key", map[string]any{"keys": o.Keys.String()}
 	case domain.TypeText:

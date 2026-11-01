@@ -106,7 +106,7 @@ func (h *Handler) topicComponent(ctx context.Context, topic string, data any) te
 	case service.TopicSessions:
 		return organisms.SessionListBody(h.sessionsView())
 	case service.TopicLease:
-		return organisms.LeasePanelBody(h.leaseView())
+		return organisms.LeaseDisplay(h.leaseView())
 	case service.TopicConnectionRequests:
 		return organisms.RequestsBadge(h.header(ctx).PendingRequests)
 	case service.TopicKillSwitch:

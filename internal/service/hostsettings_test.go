@@ -52,7 +52,7 @@ func newSettingsEnv(t *testing.T, withAutostart bool) *settingsEnv {
 	return e
 }
 
-var defaultHostSettings = HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300}
+var defaultHostSettings = HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}
 
 func TestHostSettingsDefaults(t *testing.T) {
 	e := newSettingsEnv(t, true)
@@ -68,7 +68,7 @@ func TestHostSettingsDefaults(t *testing.T) {
 func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	e := newSettingsEnv(t, true)
-	want := HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, Autostart: true}
+	want := HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24, Autostart: true}
 
 	saved, err := e.svc.Save(ctx, want)
 	if err != nil || saved != want {
@@ -82,7 +82,7 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	if d, err := LeaseIdleTimeout(ctx, e.store); err != nil || d.Seconds() != 120 {
 		t.Errorf("LeaseIdleTimeout = %v, %v", d, err)
 	}
-	for key, raw := range map[string]string{"server.port": "9000", "killswitch.hotkey": `"Ctrl+Shift+Q"`, "screenshot.max_dimension": "2048", "lease.idle_timeout_sec": "120"} {
+	for key, raw := range map[string]string{"server.port": "9000", "killswitch.hotkey": `"Ctrl+Shift+Q"`, "screenshot.max_dimension": "2048", "lease.idle_timeout_sec": "120", "viewer.default_quality": "85", "viewer.default_fps": "24"} {
 		if got := string(e.store.values[key]); got != raw {
 			t.Errorf("%s = %s, want %s", key, got, raw)
 		}
@@ -103,7 +103,7 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 		t.Fatalf("audit = %+v", a)
 	}
 	var detail map[string]any
-	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 5 || detail["server.port"] != float64(9000) || detail["autostart"] != true {
+	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 7 || detail["server.port"] != float64(9000) || detail["autostart"] != true {
 		t.Errorf("detail = %s (%v)", a[0].DetailJSON, err)
 	}
 }
@@ -136,12 +136,20 @@ func TestHostSettingsValidation(t *testing.T) {
 		{"idle below", func(s *HostSettings) { s.LeaseIdleTimeoutSec = 29 }, []string{FieldLeaseIdleTimeoutSec}},
 		{"idle above", func(s *HostSettings) { s.LeaseIdleTimeoutSec = 3601 }, []string{FieldLeaseIdleTimeoutSec}},
 		{"idle bounds", func(s *HostSettings) { s.LeaseIdleTimeoutSec = 3600 }, nil},
+		{"quality below", func(s *HostSettings) { s.ViewerDefaultQuality = 0 }, []string{FieldViewerDefaultQuality}},
+		{"quality above", func(s *HostSettings) { s.ViewerDefaultQuality = 101 }, []string{FieldViewerDefaultQuality}},
+		{"quality bounds", func(s *HostSettings) { s.ViewerDefaultQuality = 1 }, nil},
+		{"quality upper bound", func(s *HostSettings) { s.ViewerDefaultQuality = 100 }, nil},
+		{"fps below", func(s *HostSettings) { s.ViewerDefaultFPS = 0 }, []string{FieldViewerDefaultFPS}},
+		{"fps above", func(s *HostSettings) { s.ViewerDefaultFPS = 31 }, []string{FieldViewerDefaultFPS}},
+		{"fps bounds", func(s *HostSettings) { s.ViewerDefaultFPS = 1 }, nil},
+		{"fps upper bound", func(s *HostSettings) { s.ViewerDefaultFPS = 30 }, nil},
 		{"hotkey empty", func(s *HostSettings) { s.KillSwitchHotkey = "" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey without modifier", func(s *HostSettings) { s.KillSwitchHotkey = "K" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey unknown modifier", func(s *HostSettings) { s.KillSwitchHotkey = "Hyper+K" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey too long", func(s *HostSettings) { s.KillSwitchHotkey = "Ctrl+" + string(make([]byte, 100)) }, []string{FieldKillSwitchHotkey}},
 		{"hotkey case-insensitive", func(s *HostSettings) { s.KillSwitchHotkey = "ctrl+alt+k" }, nil},
-		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldKillSwitchHotkey}},
+		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldViewerDefaultQuality, FieldViewerDefaultFPS, FieldKillSwitchHotkey}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -221,7 +229,7 @@ func TestHostSettingsFailures(t *testing.T) {
 		}
 	})
 	t.Run("corrupt stored value", func(t *testing.T) {
-		for key, raw := range map[string]string{"server.port": `"x"`, "screenshot.max_dimension": "0", "lease.idle_timeout_sec": "1.5", "killswitch.hotkey": "7"} {
+		for key, raw := range map[string]string{"server.port": `"x"`, "screenshot.max_dimension": "0", "lease.idle_timeout_sec": "1.5", "killswitch.hotkey": "7", "viewer.default_quality": "0", "viewer.default_fps": `"x"`} {
 			e := newSettingsEnv(t, true)
 			e.store.put(key, raw)
 			if _, err := e.svc.Load(ctx); !errors.Is(err, domain.ErrInvalidArgument) {
@@ -273,7 +281,7 @@ func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120}
+	want := HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}
 
 	if _, err := svc.Save(ctx, want); !errors.Is(err, boom) {
 		t.Fatalf("Save = %v, want %v", err, boom)
@@ -294,4 +302,35 @@ func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
 	if err := json.Unmarshal(audit.entries[0].DetailJSON, &detail); err != nil || len(detail) != 2 || detail["server.port"] != float64(9000) {
 		t.Errorf("audit detail = %s (%v)", audit.entries[0].DetailJSON, err)
 	}
+}
+
+func TestViewerDefaults(t *testing.T) {
+	ctx := context.Background()
+	t.Run("defaults", func(t *testing.T) {
+		q, f, err := ViewerDefaults(ctx, newCtlSettings())
+		if err != nil || q != 70 || f != 10 {
+			t.Errorf("ViewerDefaults = %d, %d, %v; want 70, 10", q, f, err)
+		}
+	})
+	t.Run("saved values", func(t *testing.T) {
+		e := newSettingsEnv(t, false)
+		s := defaultHostSettings
+		s.ViewerDefaultQuality, s.ViewerDefaultFPS = 40, 5
+		if _, err := e.svc.Save(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+		q, f, err := ViewerDefaults(ctx, e.store)
+		if err != nil || q != 40 || f != 5 {
+			t.Errorf("ViewerDefaults = %d, %d, %v; want 40, 5", q, f, err)
+		}
+	})
+	t.Run("out of range", func(t *testing.T) {
+		for key, raw := range map[string]string{"viewer.default_quality": "101", "viewer.default_fps": "31"} {
+			st := newCtlSettings()
+			st.put(key, raw)
+			if _, _, err := ViewerDefaults(ctx, st); !errors.Is(err, domain.ErrInvalidArgument) {
+				t.Errorf("%s=%s: err = %v, want invalid_argument", key, raw, err)
+			}
+		}
+	})
 }

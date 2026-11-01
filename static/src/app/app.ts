@@ -4,6 +4,8 @@
 //   2. トークンのコピー
 //   3. トースト（サーバーが OOB で追加する）の閉じる操作と自動消去
 //   4. 確認モーダルのキャンセル・トークン表示を閉じる（data-clear）
+//   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
+//   6. <remo-screen-viewer> の remo:error（入力の拒否など）をトーストにする
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 const TOAST_ROOT = "toast-root";
@@ -88,6 +90,40 @@ async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<
     }
   }
 }
+
+// 6. <remo-screen-viewer> が発火する remo:error（bubbles / composed。detail は { code, message }）のトースト。
+// WebSocket の error の message はドメインエラーの文（英語）で、契約はそのまま。利用者向けには code から日本語にする。
+// 文言は HTMX のアクションの失敗（internal/web/handler/remote/errors.go の failureMessages）と揃える。表に無い code はサーバーの message を出す。
+const wsErrorMessages: Readonly<Record<string, string>> = {
+  lease_required: "操作権がありません。先に「操作権を取得」を押してください。",
+  lease_held_by_other: "ほかのセッションが操作権を保持しています。",
+  lease_revoked: "操作権が強制的に外されました。改めて取得してください。",
+  invalid_argument: "入力内容を確認してください。",
+  kill_switch_active: "キルスイッチが発動中です。",
+  desktop_unavailable: "ホストの画面を操作できません（ロック画面など）。",
+  input_blocked: "ホストの前面のウィンドウには入力できません。",
+  internal: "内部エラーが発生しました。",
+};
+
+document.addEventListener("remo:error", (event) => {
+  const detail = (event as CustomEvent<{ code?: unknown; message?: unknown }>).detail;
+  const code = detail?.code;
+  const mapped = typeof code === "string" && Object.hasOwn(wsErrorMessages, code) ? wsErrorMessages[code] : undefined;
+  const message = mapped ?? detail?.message;
+  showErrorToast(typeof message === "string" && message !== "" ? message : "操作を実行できませんでした。");
+});
+
+// 5. スライダー（画質・FPS）の値の表示。送信は離したとき（change）にサーバーへ送られ、サーバーが再描画する。
+document.addEventListener("input", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.type !== "range") {
+    return;
+  }
+  const output = document.getElementById(target.dataset.rangeOutput ?? "");
+  if (output) {
+    output.textContent = target.value;
+  }
+});
 
 // 3. サーバーが追加したトーストを一定時間後に消す。
 const toastRoot = document.getElementById(TOAST_ROOT);

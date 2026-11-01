@@ -12,9 +12,14 @@ const (
 )
 
 // CanHoldLease は、この種別がリースの保持者になれるかを返す。
-// M1 の保持者種別は mcp のみ（FR-L01）。web は M2、agent は M4 で加わる。
+// 保持者種別は mcp（M1）と web（M2）。agent は M4 で加わる（FR-L01）。
 func (k ActorKind) CanHoldLease() bool {
-	return k == ActorMCP
+	return k == ActorMCP || k == ActorWeb
+}
+
+// CanRevokeLease は、この種別が他者のリースを強制剥奪できるかを返す（FR-L06）。Web クライアントとホスト所有者だけ。
+func (k ActorKind) CanRevokeLease() bool {
+	return k == ActorWeb || k == ActorHost
 }
 
 // Actor は操作主体。

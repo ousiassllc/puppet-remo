@@ -17,11 +17,11 @@ import (
 
 var _ platform.Capturer = (*Capturer)(nil)
 
-// Capturer は platform.Capturer の GDI BitBlt 実装（M1）。DXGI と Watch は M2。
+// Capturer は platform.Capturer の Windows 実装。1 枚撮り（Grab）は GDI BitBlt、継続キャプチャ（Watch）は DXGI Desktop Duplication（失敗したら GDI）。
 // 状態を持たないので、どの goroutine からも呼べる。
 type Capturer struct{}
 
-// NewCapturer は GDI のキャプチャを作る。座標を物理ピクセルで扱うため、プロセスを Per-Monitor DPI Aware にする（EnableDPIAwareness）。
+// NewCapturer はキャプチャを作る。座標を物理ピクセルで扱うため、プロセスを Per-Monitor DPI Aware にする（EnableDPIAwareness）。
 func NewCapturer() *Capturer {
 	EnableDPIAwareness()
 	return &Capturer{}
@@ -50,9 +50,42 @@ func (*Capturer) Grab(ctx context.Context, monitor int) (*image.RGBA, error) {
 	return grabRegion(monitors[monitor])
 }
 
-// Watch は M2（継続キャプチャ）で実装する。M1 では常にエラーを返す。
-func (*Capturer) Watch(context.Context, int, int) (<-chan platform.Frame, <-chan error, error) {
-	return nil, nil, errors.New("windows: Capturer.Watch is not available in M1")
+// Watch は monitor の継続キャプチャを始める。DXGI Desktop Duplication を使い、開けない・復旧できないときは GDI に切り替える
+// （制御は runWatch。契約は platform.Capturer.Watch）。モニターごとに 1 本の goroutine で、ctx の取り消しで止まる。
+func (c *Capturer) Watch(ctx context.Context, monitor int, fps int) (<-chan platform.Frame, <-chan error, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if fps <= 0 {
+		return nil, nil, domain.ErrInvalidArgument.WithMsg("fps must be positive")
+	}
+	monitors, err := listMonitors()
+	if err != nil {
+		return nil, nil, err
+	}
+	if monitor < 0 || monitor >= len(monitors) {
+		return nil, nil, domain.ErrInvalidArgument.WithMsg("unknown monitor")
+	}
+	frames, errs := startWatch(ctx, watchConfig{
+		interval: watchInterval(fps),
+		// 再初期化では、解像度などが変わっていてもよいように、モニターの一覧を引き直す。
+		openDXGI: func() (frameSource, error) {
+			current, err := listMonitors()
+			if err != nil {
+				return nil, err
+			}
+			if monitor >= len(current) {
+				return nil, errors.New("monitor is gone")
+			}
+			return openDXGISource(current[monitor])
+		},
+		openGDI: func() frameSource {
+			return newGDISource(func(ctx context.Context) (*image.RGBA, error) { return c.Grab(ctx, monitor) })
+		},
+		recoverTries: recoverTries,
+		recoverDelay: recoverDelay,
+	})
+	return frames, errs, nil
 }
 
 // grabRegion は仮想デスクトップ上の m の範囲を BitBlt で 32 ビットの DIB へ写し、RGBA にして返す。

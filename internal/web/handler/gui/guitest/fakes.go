@@ -56,7 +56,7 @@ func New() *Fakes {
 		Admin:      &Admin{clock: clock, bus: bus},
 		Apps:       &Apps{},
 		Logs:       &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
-		Settings:   &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300}, CanAutostart: true},
+		Settings:   &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}, CanAutostart: true},
 	}
 }
 
@@ -78,13 +78,27 @@ type Sessions struct{ Items []service.SessionInfo }
 
 func (s *Sessions) Sessions() []service.SessionInfo { return s.Items }
 
-// Leases は gui.LeaseReader の偽実装。
+// Leases は gui.LeaseControl の偽実装。Revoke は呼び出しを記録し、保持者を外す（RevokeErr があればそのエラーを返して外さない）。
 type Leases struct {
 	H    service.Holder
 	Held bool
+
+	RevokeErr   error
+	RevokeCalls int
+	LastBy      domain.Actor
 }
 
 func (l *Leases) Holder() (service.Holder, bool) { return l.H, l.Held }
+
+func (l *Leases) Revoke(by domain.Actor) error {
+	l.RevokeCalls++
+	l.LastBy = by
+	if l.RevokeErr != nil {
+		return l.RevokeErr
+	}
+	l.H, l.Held = service.Holder{}, false
+	return nil
+}
 
 // KillSwitch は gui.KillSwitch の偽実装。発動・解除の呼び出しを数える。
 type KillSwitch struct {

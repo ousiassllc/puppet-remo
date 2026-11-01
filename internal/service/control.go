@@ -21,7 +21,12 @@ type Control interface {
 	//  3. 引数の検査と縮小座標 → 物理座標の変換（FR-M16。範囲外は ErrInvalidCoordinates）
 	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI。own_window には puppet-remo のウィンドウの範囲を DetailOwnWindows で付ける）
 	//  5. platform の実行
-	//  6. Audit（引数・結果・所要時間。type の本文・クリップボードは文字数のみ。FR-AU03）
+	//  6. Audit（引数・結果・所要時間。type の本文・クリップボードは文字数、キー入力はキーの名前を記録しない。FR-AU03）
+	//
+	// Web UI（保持者種別 web。WebSocket の input.*）の入力は domain.PointerMove・MouseButton・Wheel・KeyEvent と、
+	// KeyPress・TypeText・ClipboardRead・ClipboardWrite で渡す。PointerMove・MouseButton・Wheel の座標は縮小座標ではなくストリームの座標
+	// （Monitor の物理ピクセル。3 で仮想デスクトップの物理座標へ変換し、モニターの外は ErrInvalidCoordinates）。
+	// web は暗黙にリースを取らない（未保持は ErrLeaseRequired）。PointerMove は監査しない（連続するカーソル移動で監査ログを埋めない）。
 	//
 	// Judge（4 の後。agent のみ）は M4 で足す。Wait はリース不要（KillSwitch の後に待つだけ）。
 	Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
@@ -193,7 +198,7 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error) {
 	start := c.clock.Now()
 	res, leaseID, err := c.do(ctx, who, op)
-	if c.audit != nil {
+	if _, isMove := op.(domain.PointerMove); c.audit != nil && !isMove {
 		tool, args := describeOp(op, res)
 		c.audit.Record(ctx, ToolAuditEntry(who, tool, args, leaseID, err, c.clock.Now().Sub(start)))
 	}

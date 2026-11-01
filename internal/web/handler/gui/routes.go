@@ -48,6 +48,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.DELETE("/apps/:id", h.DeleteApp)
 	r.POST("/apps/pick-file", h.PickAppFile)
 
+	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
+	r.POST("/lease/revoke", h.RevokeLease)
+
 	// キルスイッチ・設定
 	r.POST("/killswitch/trigger", h.TriggerKillSwitch)
 	r.POST("/killswitch/release", h.ReleaseKillSwitch)

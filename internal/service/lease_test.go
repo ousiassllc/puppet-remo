@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -25,8 +26,9 @@ func TestLeaseAcquireTable(t *testing.T) {
 		{name: "他者が保持中は ErrLeaseHeldByOther", who: ctlBob, setup: func(e *ctlEnv) { mustAcquire(t, e, ctlAlice) }, wantErr: domain.ErrLeaseHeldByOther},
 		{name: "同じクライアントでも別セッションは別の保持者", who: domain.Actor{Kind: domain.ActorMCP, ClientID: "client-a", SessionID: "sess-a2"},
 			setup: func(e *ctlEnv) { mustAcquire(t, e, ctlAlice) }, wantErr: domain.ErrLeaseHeldByOther},
-		{name: "web は M1 では保持者になれない", who: web, wantErr: domain.ErrInvalidArgument},
-		{name: "agent は M1 では保持者になれない", who: agent, wantErr: domain.ErrInvalidArgument},
+		{name: "web は保持者になれる（M2）", who: web},
+		{name: "web が保持中は mcp が ErrLeaseHeldByOther", who: ctlAlice, setup: func(e *ctlEnv) { mustAcquire(t, e, web) }, wantErr: domain.ErrLeaseHeldByOther},
+		{name: "agent は M4 まで保持者になれない", who: agent, wantErr: domain.ErrInvalidArgument},
 		{name: "セッション ID が空は不可", who: domain.Actor{Kind: domain.ActorMCP, ClientID: "c"}, wantErr: domain.ErrInvalidArgument},
 		{name: "キルスイッチ中は取得できない", who: ctlAlice, setup: func(e *ctlEnv) { _ = e.kill.Trigger("test") }, wantErr: domain.ErrKillSwitchActive},
 	}
@@ -123,6 +125,12 @@ func TestLeaseCheckTable(t *testing.T) {
 			mustAcquire(t, e, ctlAlice)
 			e.leases.Release(ctlAlice)
 		}, wantErr: domain.ErrLeaseRequired},
+		{name: "剥奪された保持者は ErrLeaseRevoked", who: ctlAlice, setup: func(e *ctlEnv) {
+			mustAcquire(t, e, ctlAlice)
+			if err := e.leases.Revoke(HostActor); err != nil {
+				t.Fatal(err)
+			}
+		}, wantErr: domain.ErrLeaseRevoked},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -412,5 +420,135 @@ func TestLeaseAcquireRefusedByKillSwitchIsAudited(t *testing.T) {
 	if en.Kind != "lease" || en.Event != "lease.acquire" || en.Result != "denied" || en.ErrorCode != "kill_switch_active" ||
 		en.ClientID != ctlAlice.ClientID || en.SessionID != ctlAlice.SessionID {
 		t.Errorf("entry = %+v", en)
+	}
+}
+
+var ctlViewer = domain.Actor{Kind: domain.ActorWeb, ClientID: "client-v", Label: "viewer", SessionID: "viewer-1"}
+
+func TestLeaseRevokeReleasesTheHolderAndAuditsTheRevoker(t *testing.T) {
+	for _, by := range []domain.Actor{HostActor, ctlViewer} {
+		t.Run(string(by.Kind), func(t *testing.T) {
+			e := newCtlEnv(t)
+			sub := e.leases.Subscribe()
+			l := mustAcquire(t, e, ctlAlice)
+			drain(sub)
+
+			if err := e.leases.Revoke(by); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := e.leases.Holder(); ok {
+				t.Fatal("the lease should be revoked")
+			}
+			events := drain(sub)
+			if len(events) != 1 || events[0].Reason != domain.ReleaseRevoked || events[0].To != domain.LeaseIdle || events[0].By != by {
+				t.Fatalf("events = %+v, want one revoked release by %v", events, by.Kind)
+			}
+			if e.power.Awake() {
+				t.Error("KeepAwake should be off after the revoke")
+			}
+
+			entries := e.audit.Entries()
+			revoke := entries[len(entries)-1]
+			if revoke.Kind != "lease" || revoke.Event != "lease.revoke" || revoke.Result != "ok" || revoke.LeaseID != l.ID ||
+				revoke.ActorType != by.Kind || revoke.ClientLabel != by.Label {
+				t.Fatalf("revoke entry = %+v", revoke)
+			}
+			var detail map[string]string
+			if err := json.Unmarshal(revoke.DetailJSON, &detail); err != nil {
+				t.Fatal(err)
+			}
+			if detail["holder_kind"] != "mcp" || detail["holder_client_id"] != "client-a" || detail["holder_label"] != "alice" {
+				t.Fatalf("detail = %v, want the revoked holder", detail)
+			}
+			if countEvent(e.audit.Events(), "lease.release") != 0 {
+				t.Fatalf("a revoke must not also be audited as lease.release: %v", e.audit.Events())
+			}
+		})
+	}
+}
+
+func TestLeaseRevokeOnIdleIsANoOp(t *testing.T) {
+	e := newCtlEnv(t)
+	sub := e.leases.Subscribe()
+	if err := e.leases.Revoke(HostActor); err != nil {
+		t.Fatalf("Revoke on idle = %v, want nil", err)
+	}
+	if got := drain(sub); len(got) != 0 {
+		t.Errorf("events = %+v, want none", got)
+	}
+	if got := e.audit.Events(); len(got) != 0 {
+		t.Errorf("audit = %v, want none", got)
+	}
+}
+
+func TestLeaseRevokeRejectsActorsThatCannotRevoke(t *testing.T) {
+	e := newCtlEnv(t)
+	mustAcquire(t, e, ctlAlice)
+	if err := e.leases.Revoke(ctlBob); !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Fatalf("Revoke by mcp = %v, want ErrInvalidArgument", err)
+	}
+	if _, ok := e.leases.Holder(); !ok {
+		t.Fatal("the lease must stay held")
+	}
+}
+
+func TestLeaseRevokedHolderGetsLeaseRevokedUntilItAcquiresAgain(t *testing.T) {
+	e := newCtlEnv(t)
+	mustAcquire(t, e, ctlAlice)
+	if err := e.leases.Revoke(HostActor); err != nil {
+		t.Fatal(err)
+	}
+
+	// 操作系は lease_revoked（mcp でも暗黙に取得し直さない。FR-M17）。
+	for range 2 {
+		if _, err := e.control.Do(context.Background(), ctlAlice, domain.TypeText{Text: "a"}); !errors.Is(err, domain.ErrLeaseRevoked) {
+			t.Fatalf("Do after the revoke = %v, want ErrLeaseRevoked", err)
+		}
+	}
+	if _, ok := e.leases.Holder(); ok {
+		t.Fatal("a revoked session must not re-acquire implicitly")
+	}
+
+	mustAcquire(t, e, ctlAlice) // 明示の取得で戻る
+	if _, err := e.control.Do(context.Background(), ctlAlice, domain.TypeText{Text: "a"}); err != nil {
+		t.Fatalf("Do after acquiring again = %v, want nil", err)
+	}
+}
+
+func TestLeaseWebHolderCanBeRevokedByHost(t *testing.T) {
+	e := newCtlEnv(t)
+	mustAcquire(t, e, ctlViewer)
+	if _, err := e.control.Do(context.Background(), ctlViewer, domain.TypeText{Text: "a"}); err != nil {
+		t.Fatalf("web holder Do = %v, want nil", err)
+	}
+	if err := e.leases.Revoke(HostActor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.control.Do(context.Background(), ctlViewer, domain.TypeText{Text: "a"}); !errors.Is(err, domain.ErrLeaseRevoked) {
+		t.Fatalf("revoked web Do = %v, want ErrLeaseRevoked", err)
+	}
+	// 他者（mcp）は暗黙に取得できる（承認は M3 から）。
+	if _, err := e.control.Do(context.Background(), ctlAlice, domain.TypeText{Text: "a"}); err != nil {
+		t.Fatalf("mcp Do after the web lease was revoked = %v, want nil", err)
+	}
+}
+
+func TestLeaseWebHolderReleasedOnSessionDisconnect(t *testing.T) {
+	e := newCtlEnv(t)
+	mustAcquire(t, e, ctlViewer)
+	e.leases.ReleaseSession(ctlViewer)
+	if _, ok := e.leases.Holder(); ok {
+		t.Fatal("the web lease should be released")
+	}
+}
+
+func TestToolAuditEntryForLeaseRevokedIsDenied(t *testing.T) {
+	e := ToolAuditEntry(ctlAlice, "type", nil, "", domain.ErrLeaseRevoked, 0)
+	if e.Result != "denied" || e.ErrorCode != "lease_revoked" {
+		t.Errorf("entry = result %q, error_code %q; want denied / lease_revoked", e.Result, e.ErrorCode)
+	}
+	web := ToolAuditEntry(ctlViewer, "type", nil, "", nil, 0)
+	if web.Kind != "input" {
+		t.Errorf("a web holder's tool entry kind = %q, want input", web.Kind)
 	}
 }

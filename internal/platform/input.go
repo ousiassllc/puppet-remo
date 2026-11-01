@@ -14,6 +14,9 @@ type InputInjector interface {
 	// Click は現在のカーソル位置でクリックする。count は 1〜3（ダブル・トリプルクリック）。
 	// mods はクリックの間だけ押下する。
 	Click(ctx context.Context, b domain.Button, count int, mods []domain.Modifier) error
+	// Button は現在のカーソル位置で b を押す・離す（Web UI の input.mouse の down / up）。押したまま離さないボタンは
+	// ReleaseAll が離す。未知のボタン・操作は何も注入せずに ErrInvalidArgument。
+	Button(ctx context.Context, b domain.Button, a domain.ButtonAction) error
 	// Drag は from で左ボタンを押し、to まで移動して離す。終了後のカーソルは to にある。
 	Drag(ctx context.Context, from, to domain.Point, mods []domain.Modifier) error
 	// Scroll は at へ移動してホイールをノッチ単位で回す。amount は正。

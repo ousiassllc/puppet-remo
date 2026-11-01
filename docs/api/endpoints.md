@@ -78,7 +78,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `kill_switch_active` | 503 | 共通 | キルスイッチで受付停止中 |
 | `lease_required` | 409 | 操作系 | リース無しで、暗黙取得もできない |
 | `lease_held_by_other` | 409 | 操作系 | 他のセッションがリースを保持 |
-| `lease_revoked` | 409 | 操作系 | 自身のリースが剥奪された |
+| `lease_revoked` | 409 | 操作系 | 自身のリースが強制剥奪された（FR-L06）。剥奪された保持者の操作は、**次の `acquire`（取得の成功）まで**返し続ける（暗黙の取得もしない。別の保持者が現れた間は `lease_held_by_other`） |
 | `approval_denied` | 403 | リース取得 | ホストが拒否した |
 | `approval_timeout` | 408 | リース取得 | 60 秒で応答が無かった |
 | `invalid_coordinates` | 400 | 操作系 | 座標がモニターの範囲外 |
@@ -231,7 +231,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |--------|------|
 | `acquire_control` | `get_control_status` と同じ。M1 は承認なしで取得できる（`idle → held`）。承認が必要な場合（承認モード。M3 から）は承認を待つ（最大 60 秒） |
 | `release_control` | `{ "ok": true }`。保持者でなければ何もしない |
-| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M1 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` のみ。`pending_approval` は M3、`web` は M2、`agent`（と `task_id`）は M4 から |
+| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M2 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` / `web`（M2 から）。強制剥奪された直後は `idle`。`pending_approval` は M3、`agent`（と `task_id`）は M4 から |
 
 #### アプリ起動（M1.5）
 
@@ -359,8 +359,9 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 - `GET /viewer` のレンダリング時に発行する。値は、接続元クライアント（node ID）と発行時刻に束縛される
 - `<remo-screen-viewer>` の `ws-url` に埋め込み、HTMX のリクエストには `hx-headers` で `X-Viewer-Id` として付ける
-- 有効期間: WebSocket の接続中、および発行から 5 分（接続前）。束縛と異なるクライアントからの利用は 400 `invalid_argument`
-- リース保持者（種別 `web`）は `viewer_id` で識別する。WebSocket の切断でリースを解放する
+- 有効期間: WebSocket の接続中、および発行から 5 分（接続前）。**切断後も 5 分間は有効**で、同じ `viewer_id` で再接続できる（[フロントエンド設計 §6.4](../architecture/frontend.md) の再接続）。束縛と異なるクライアントからの利用、未知・期限切れの `viewer_id` は 400 `invalid_argument`（WebSocket は閉じコード 4401）
+- 同時接続は 1 つの `viewer_id` につき 1 本。同じ `viewer_id` の新しい接続は、古い接続を閉じて置き換える（古い接続のリースは解放される。古い接続は閉じコード 4401 で閉じる。§5.2）
+- リース保持者（種別 `web`）は `viewer_id` で識別する。WebSocket の切断でリースを解放する（置き換えられた古い接続・クライアントの削除・無効化・キルスイッチによる切断も同じ）
 
 ### 4.2 ルート
 
@@ -383,6 +384,17 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 ブラウザが未登録デバイスのとき、すべてのルートは 403 `device_not_registered` となり、`Accept: text/html` には待機ページ（「接続要求を送信しました。ホストの許可を待っています」）を返す。許可後に再読み込みするとビューアが開く。拒否・失効（24 時間）のときはその旨のページ。
 
+**待機ページの出し分け**（FR-W02）: ステータスとエラーコード（403 `device_not_registered`）、接続要求の作成・集約・拒否後の抑止（FR-A06）は §1 の連鎖のとおりで変わらない。ページの内容だけを、許可リストの照合（と接続要求の作成・集約）のあとに、デバイスの node ID で接続要求の最新の 1 件を**読み取り専用**で引いて選ぶ: `pending`（期限内）または状態が無い・読めない → 待機、`denied`（拒否から 24 時間以内）→ 拒否、`expired`（期限切れ。`pending` が期限を過ぎたもの、拒否の抑止期間（24 時間）が過ぎたものを含む）→ 失効。ページは `data-error-code="device_not_registered"` と `data-connection-state="pending|denied|expired"` を持ち、スタイル・スクリプトは読み込まない（未登録のデバイスは `/static/*` も 403 のため）。接続要求の作成は照合の中で先に行われるため、通常は新しい要求が作られて待機になり、拒否の抑止中は拒否、新しい要求を作れなかったとき（作成の頻度制限など）は失効が出る。
+
+**Web UI の入力とエラー**（M2。#62）:
+
+- フォームは `application/x-www-form-urlencoded`、本文は 1 MiB まで（超過・読めないときは 400 `invalid_argument`。クリップボードの `text` は本文の上限の内側でも 1 MiB まで）。ビューアのセッションは `X-Viewer-Id`（§4.1）で伝え、無い・未知・期限切れ・別のクライアントに束縛されたものは、アクションルートも `GET /viewer/lease` も 400 `invalid_argument`
+- アクションの失敗は、同じステータス・`data-error-code` 付きのトースト（`HX-Retarget: #toast-root`）。`POST /viewer/settings` の検証エラー（`monitor` が存在しない・`quality`・`fps` が範囲外・整数でない）は 422 `invalid_argument` で、入力値とメッセージ付きのツールバー（`#viewer-toolbar`）を再描画する（`hx-target-422`。ホスト GUI の検証エラーと同じ）。接続していない `viewer_id` の設定変更は 400 `invalid_argument`（`ViewerSessions.Configure`）
+- `POST /viewer/lease/revoke` は、自分が保持しているときは 409 `conflict`（解放を使う）。保持者がいなければ何もせず現在のパネルを返す。リースの 3 つのルートと `GET /viewer/lease` の応答は、リースパネル（`#lease-panel`）に、操作権の有無で変わるクリップボード・ショートカットの領域（`#viewer-ops`）を OOB で添える（持っていないときは空）
+- `POST /viewer/clipboard/send` の 200 は送った文字数だけを返し、本文は返さない。動的な応答はすべて `Cache-Control: no-store`
+
+**ショートカット送信メニュー**（FR-W06。`keys` の値）: `alt+tab`（Alt+Tab）・`alt+f4`（Alt+F4）・`win+d`（Win+D。`keys` の書式では `win` は修飾キーのため Win キー単独は送れず、デスクトップの表示で代える）・`ctrl+w`（Ctrl+W）・`escape`（Esc）。`ctrl+alt+delete` は含めない（UI から送れない旨を表示する。FR-W08）。ルートは §3.3 の書式であれば任意の `keys` を受けるが、メニューが出すのは上の 5 つだけ。
+
 ## 5. WebSocket（`/ws/screen`）
 
 ### 5.1 接続
@@ -390,15 +402,18 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 - URL: `ws://<host>:<port>/ws/screen?viewer_id=<ULID>`。サブプロトコル `puppet-remo.v1` を指定する
 - 検査: §1 の連鎖（`Origin` は同一オリジンのみ）、`viewer_id` の束縛、`web_enabled`
 - 同時閲覧者は最大 5（NFR-C03）。超過は閉じコード 4429
-- keepalive: サーバーが 15 秒ごとに ping、45 秒応答が無ければ切断（NFR-A04）
+- keepalive: サーバーが 15 秒ごとに ping、45 秒応答が無ければ切断（NFR-A04）。切断すると、閲覧者を `Streamer` から外し、`web` のリースを解放する
 - 閲覧者がゼロになるとキャプチャを停止する（FR-W09）
+- ハンドシェイクの前のエラー（連鎖の拒否、サブプロトコルの不一致）は problem+json（§2。サブプロトコルの不一致は 400 `invalid_argument`）。ブラウザはハンドシェイクの失敗の理由を読めないため、`viewer_id` の不正（未知・期限切れ・別のクライアントに束縛）・同時閲覧者の上限・キルスイッチの発動中は、ハンドシェイクを受け付けてから閉じコード（§5.2）で閉じる
+- 接続すると、プライマリモニター・既定の品質と FPS（設定 `viewer.default_quality` / `viewer.default_fps`）で配信を始める。同じ `viewer_id` の新しい接続は古い接続を閉じて置き換える（§4.1）
+- アプリの終了時は、接続中の WebSocket を 1001 で閉じる
 
 ### 5.2 閉じコード
 
 | コード | 意味 |
 |--------|------|
-| 4400 | 不正なメッセージ（形式・サイズ超過） |
-| 4401 | 認可失敗（未登録・無効・`viewer_id` 不正） |
+| 4400 | 不正なメッセージ（形式・サイズ超過・範囲外の `config`・`wheel` の絶対値 > 50・バイナリフレーム） |
+| 4401 | 認可失敗（未登録・無効・`viewer_id` 不正）。同じ `viewer_id` の新しい接続に置き換えられた古い接続も 4401 で閉じる（再接続しないコードなので、置き換え合わない） |
 | 4429 | 同時閲覧者の上限 |
 | 4503 | キルスイッチで受付停止 |
 | 4510 | クライアントが削除・無効化された |
@@ -411,23 +426,25 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 | type | 内容 |
 |------|------|
-| `ready` | 接続直後に 1 回。`{ "monitors": [...], "monitor": 0, "width": 2560, "height": 1440, "quality": 70, "fps": 10, "lease": {…} }`。`width` / `height` はストリームの座標空間（選択モニターの物理ピクセル） |
-| `config` | 設定の反映結果。`{ "monitor", "width", "height", "quality", "fps" }`。モニター変更時はキーフレームが続く |
-| `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
-| `killswitch` | `{ "active": true }`。以降の接続は 4503 で閉じられる |
-| `error` | `{ "code", "message" }`。入力の拒否（`lease_required` / `input_blocked` など）。切断はしない |
+| `ready` | 接続直後に 1 回（画面フレームより前）。`{ "monitors": [...], "monitor": 0, "width": 2560, "height": 1440, "quality": 70, "fps": 10, "lease": {…} }`。`width` / `height` はストリームの座標空間（選択モニターの物理ピクセル）。`monitors[]` の各要素は `get_screen_info`（§3.3）から縮小に関する項目（`scale`・`scaled`）を除いた `{ "index", "name", "primary", "origin": { "x", "y" }, "physical": { "width", "height" }, "dpi_scale" }`。`lease` は下の `lease` メッセージと同じ形 |
+| `config` | 設定の反映結果。`{ "monitor", "width", "height", "quality", "fps" }`。モニター変更時はキーフレームが続く。WebSocket の `config` だけでなく、`POST /viewer/settings` で変えたときにも届く |
+| `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のとき省く（`pending_approval` は M3）。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
+| `killswitch` | `{ "active": true }`。続けて 4503 で閉じる。以降の接続も 4503 で閉じられる |
+| `error` | `{ "code", "message" }`。入力の拒否。`code` は §2 のコードで、`lease_required` / `lease_held_by_other` / `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`。`internal` の `message` は詳細を含まない固定文。切断はしない |
 
 **クライアント → サーバー**
 
 | type | 内容 |
 |------|------|
-| `config` | `{ "monitor": 0, "quality": 70, "fps": 10 }`（任意の項目のみ。範囲外は 4400） |
+| `config` | `{ "monitor": 0, "quality": 70, "fps": 10 }`（任意の項目のみ。省いた項目は今の値のまま。範囲外は 4400。`quality` は 1〜100、`fps` は 1〜30、`monitor` は `ready` の `monitors[]` の `index`） |
 | `input.mouse` | `{ "action": "move" \| "down" \| "up" \| "wheel", "x": 100, "y": 200, "button": "left" \| "right" \| "middle", "dx": 0, "dy": 1 }`。`x` / `y` は**ストリームの座標**（モニターの物理ピクセル。MCP の縮小座標ではない）。`wheel` は `dx` / `dy` を使い、**単位はノッチ**（数値。小数可。MCP `scroll` の `amount` と同じ単位。下記） |
 | `input.key` | `{ "action": "down" \| "up", "code": "KeyA", "key": "a", "modifiers": ["ctrl"] }`。`code` はブラウザの `KeyboardEvent.code` で、サーバーがスキャンコードに変換する |
 | `input.text` | `{ "text": "こんにちは" }`。IME で確定した文字列を Unicode で送る |
-| `ping` | `{ "type": "ping" }` → サーバーが `pong` を返す |
+| `ping` | `{ "type": "ping" }` → サーバーが `{ "type": "pong" }` を返す |
 
-入力メッセージはリース（保持者が自身の `viewer_id`）が必要で、InputGuard を通る。拒否は `error` で返し、入力は破棄する。
+入力メッセージはリース（保持者が自身の `viewer_id`）が必要で、InputGuard を通る。拒否は `error` で返し、入力は破棄する。入力の座標・モニターは、その時点の選択モニターのもの。クライアント → サーバーのメッセージは 64 KiB まで（超過は 4400。NFR-S09）。バイナリフレーム・未知の `type`・必須の項目の欠け・未知の `action` / `button` / 修飾キーも 4400。
+
+`input.mouse` の `down` / `up` はカーソルを `x` / `y` へ動かしてからボタンを押す・離す（`move` は動かすだけ。ブラウザ側で `Click` / `Drag` にまとめず、1 つずつ注入する）。押したままのボタン・キーを離すのは、`up` の入力（ブラウザ側が、フォーカスを失ったときなどに送る）、WebSocket の終わり（切断、同じ `viewer_id` の新しい接続による置き換え、クライアントの削除・無効化）、キルスイッチ（`ReleaseAll`）。WebSocket の終わりでは、サーバーがその接続で押したままのボタン・キーに `up` を、リースを解放する前に注入する（ボタンは最後のポインタの位置。ベストエフォートで、失敗はログに残すだけで、リースの解放は続ける）。`input.key` の `code` と `key` は、監査ログに記録しない（`type` の本文と同じ扱い）。`Ctrl+Alt+Delete`（`Delete` に `ctrl` と `alt`）は `input_blocked` の `error` で返す
 
 **`wheel` の単位と変換**（FR-M07 / FR-W）:
 
@@ -477,7 +494,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | パス | 画面 | 優先度 |
 |------|------|--------|
-| `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（表示のみ）、キルスイッチ、接続要求・クライアント管理への導線。リース強制剥奪ボタンは M2（FR-L06）、実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1 |
+| `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（種別付き。M2 から他者が保持中のときだけ強制剥奪ボタンを出す。FR-L06）、キルスイッチ、接続要求・クライアント管理への導線。実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1（強制剥奪ボタンは M2） |
 | `/requests` | 接続要求の一覧（許可 / 拒否）。「未処理」と「履歴」のタブを持つ。FR-H03 | M1 |
 | `/requests/history` | 接続要求の履歴（許可・拒否・失効・未処理のすべて）。届いた日時の新しい順に 1 ページ 20 件の表（届いた日時・デバイス名・tailnet IP・ユーザー・結果・処理した日時）で、読み取り専用。クエリ `page`（1 始まり。無い・数値でない・1 未満は 1、10000 を超える値は 10000 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出る。範囲外のページは空の表示（200）。`HX-Request` ならフラグメント（`#request-history`。ページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ポーリング（`/poll`）の対象ではない。監査ログの閲覧（`/audit`）とは別。FR-H03 | M1 |
 | `/logs` | アプリのログ（運用ログ。NFR-O01）。日時・レベル・内容（属性つき）の表で、新しい順に 1 ページ 50 件、読み取り専用。画面にログファイルのパスを出す。クエリ `level`（`all`（既定）・`warn`（WARN 以上）・`error`（ERROR のみ）。大文字小文字を区別せず、無い・未知の値は `all`）、`page`（1 始まり。無い・数値でない・1 未満は 1、100 を超える値は 100 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出て、`level` を保つ。範囲外のページは空の表示（200）。ログファイルが無ければ空の表示。`HX-Request` ならフラグメント（`#app-log`。絞り込みとページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ログの読み出しに失敗したら 500（理由は画面に出さない）。監査ログの閲覧（FR-AU01）とは別。FR-H13 | M1 |
@@ -526,7 +543,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト | 応答 |
 |---------|------|-----------|------|
-| POST | `/lease/revoke` | なし | 200 リースのフラグメント（保持者を剥奪。`agent` ならタスクを中断）。**M2 から**（M1 のダッシュボードに強制剥奪ボタンは無い。FR-H02）。`agent` の剥奪は M4 |
+| POST | `/lease/revoke` | なし | 200 リースのフラグメント（`#lease` の中身。保持者を剥奪して空きにする。`agent` ならタスクを中断）。**M2 から**（FR-H02、FR-L06）。操作主体は `host` で、監査は `lease.revoke`（`actor_type = host`）。**保持者がいなければ何もせず 200**（冪等。トーストも出さない）。剥奪できるのは `mcp` / `web` の保持者で、`agent` の剥奪（タスクの中断）は M4。成功すると「操作権を剥奪しました。」のトーストを OOB で添える |
 | POST | `/killswitch/trigger` | なし | 200 ダッシュボードのフラグメント（FR-H06 の手順。1 秒以内） |
 | POST | `/killswitch/release` | なし | 200（解除。受付を再開）。ダッシュボードのキルスイッチのパネルを返し、ヘッダーのバッジの更新・確認モーダルを閉じる・トーストを OOB で添える |
 | GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む。画面の更新は `GET /poll`（§7.4）が OOB で差し替える |
@@ -592,16 +609,19 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
-| リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp` だけ**。それ以外のパス（`/` を含む）は 404。`/viewer`・`/ws/screen`・静的ファイル・`/api/v1`（Huma）は M2 以降 |
-| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
-| `PUT /settings` の項目（§7.3） | 13 項目 | M1 は `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目だけ。他は各段階で足す |
+| リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp`・`GET /ws/screen`（M2。#61）・Web UI（`GET /`・`/viewer*`。M2。#62）・`GET /static/*`（M2。#62）**。それ以外のパスは 404。`/api/v1`（Huma）は M2 以降の別の段階 |
+| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`・`/lease/revoke`（M2）、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
+| `PUT /settings` の項目（§7.3） | 13 項目 | `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目（M1）に、M2 で `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を足した 7 項目。他は各段階で足す |
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
 | GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン・起動許可アプリ）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
 | 接続要求の許可（§7.2） | `pending` なら登録して `approved` | 期限切れの `pending` は一覧に出ず、許可もできない（409 `conflict`）。同じ `stable_node_id` の登録済みクライアントがあるとき（ログイン名の変更後の再許可）は、古いクライアントを置き換える（トークンは CASCADE で削除、セッションは切断、リースは解放）。このとき監査に `client.replace` を記録する。古いクライアントの切断（ツール呼び出しの完了待ち）は、他の許可・GUI の操作を止めないよう、許可の直列化のロックの外で行う。同じデバイスの `pending` を 5 秒以内に更新済みなら、DB に書かない |
+| Web 入力の監査（§5.3・M2） | Web UI 入力を記録（FR-AU01） | 入力の `kind` は `input`（`actor_type = web`、`session_id = viewer_id`）。`input.mouse` の `move` は連続するため記録せず、`down` / `up` / `wheel` と `input.key`（キーの名前は入れない）・`input.text`（文字数のみ）・クリップボード（文字数のみ）を記録する |
 | 監査（§7 の冒頭） | ホスト操作は `actor_type = host` | `client_id` は、クライアントの行がすでに無いとき（`client.delete` の直後など）NULL で記録する（`client_label` は残る） |
 | MCP ツールの監査（§3.3） | — | `Control` を通らないツール（`get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status`）の呼び出しは、`mcp` のツール登録で `kind = tool` として監査する。入力系などは `Control` が記録する |
 | HTTP サーバー（§1） | — | tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒、`IdleTimeout` 120 秒、`MaxHeaderBytes` 64 KiB。`WriteTimeout` は付けない。WhoIs の LocalAPI 呼び出しは 5 秒で打ち切り、失敗は 403 `whois_failed`（fail closed） |
 | MCP の keepalive（§3.1・NFR-A04） | — | 既定で ping しない（§3.1） |
+| WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のとき省く。`ready` の `monitors[]` の形は §5.3 |
+| Web UI（§4・M2。#62） | §4.2 のとおり | ハンドラは `web/handler/remote`（Gin。`router.NewRemote` が `/`・`/viewer`・`/viewer/` のパターンでマウントする）。未登録デバイスのページの選択は `middleware.RemoteConfig.ConnStates`（`service.ConnRequestStates`。読み取り専用。nil なら常に待機）。ページは `pages.Pending` / `Denied` / `Expired`（アクションルートにも同じページを返す）。ミドルウェアの HTML の拒否（`invalid_host` など）は `pages.RemoteError`（ページ）と `atoms.Alert`（アクションルートのフラグメント）。存在しない `monitor` の検証エラーは、ホスト GUI の検証エラーと同じ 422 `invalid_argument` のフォーム再描画（§4.2）。`<remo-screen-viewer>` の `dist/js/screen-viewer.js` はレイアウトが読み込むが、成果物は別の子 Issue（#63）が出す（それまでは 404 で、ライブ画面は出ない） |
 
 ## 8. 決定事項と実装時の検証事項
 
@@ -648,3 +668,9 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.16 | 2026-11-01 | §7.1 に `GET /logs`（アプリのログ。`level`・`page` クエリ、1 ページ 50 件、フラグメントの応答）を追加 | #45 |
 | 1.17 | 2026-11-01 | §3.3 の `launch_app` の出力に `window`・`reused_existing_window` を追加（起動後に前面にあったウィンドウの観測と、既存のウィンドウが前に出ただけのときの印）、§3.1 の `instructions` に入力の前に確かめる旨を追記 | #46 |
 | 1.18 | 2026-11-01 | §3.4 に `own_window` の `detail.own_windows`（モニターと縮小座標の `rect`）を追加し、§3.3 の `screenshot` に `own_windows`、`list_windows` に `blocked`・`blocked_reason` を追加。§2 の `input_blocked` の行と §3.1 の `instructions` を更新 | #47（FR-M20） |
+| 1.19 | 2026-11-01 | §2 の `lease_revoked` に「次の `acquire` まで返し続ける」、§3.3 の `get_control_status` の `holder.kind` に `web`（M2）、§7.1 のダッシュボードと §7.3 の `POST /lease/revoke`（冪等・`host` で監査・`agent` は M4）、§7.5 の GUI ルートに `/lease/revoke` を反映 | #58（M2 の強制剥奪の実装） |
+| 1.20 | 2026-11-01 | §7.3 の `PUT /settings` に `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を M2 で扱う旨を追記（§7.5） | #59 |
+| 1.21 | 2026-11-01 | §4.1 に切断後 5 分の有効期間・同時接続 1 本（置き換え）・切断以外の終わり方でのリース解放、§5.3 に `input.mouse` の `down` / `up`（移動してから押す・離す）・`input.key` の監査・SAS の `input_blocked`、§7.5 に Web 入力の監査を追記 | #60 |
+| 1.22 | 2026-11-01 | §5.1 にハンドシェイク前後の拒否の分け方・既定の配信・終了時の 1001、§5.2 の 4400 / 4401 の範囲、§5.3 の `ready` の `monitors[]`・`lease` の `holder`・`error` の `code` の一覧・メッセージの上限、§7.5 に WebSocket の差分とリモートルーターの提供物（`GET /ws/screen`）を追記 | #61 |
+| 1.23 | 2026-11-01 | §5.3 の押下中のボタン・キーを、WebSocket の終わり（切断・置き換え・クライアントの削除・無効化）でも、リースの解放の前に `up` で離すと改めた（「切断では離さない」を撤回） | #61 |
+| 1.24 | 2026-11-01 | §4.2 に待機ページの出し分け（接続要求の状態を読み取り専用で引く）・Web UI の入力とエラー（`X-Viewer-Id`・本文 1 MiB・検証エラーの 422・トースト）・ショートカット送信メニューの一覧を、§7.5 に Web UI の実装と `/`・`/viewer*`・`/static/*` を追記 | #62 |

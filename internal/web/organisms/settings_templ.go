@@ -18,7 +18,7 @@ func numberAttrs(min, max string) atoms.Attrs {
 	return atoms.Attrs{"min": min, "max": max, "step": "1", "inputmode": "numeric"}
 }
 
-// SettingsForm は M1 の設定（FR-S01〜S04、FR-S08）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
+// SettingsForm は設定画面のフォーム（FR-S01〜S04、FR-S06、FR-S08）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
 // 自動起動のチェックは、OS の登録手段があるときだけ描画する。
 // ブラウザの入力検証は novalidate で止める（検証はサーバーが行い、422 でメッセージ付きに再描画する。frontend.md §5.6）。
 func SettingsForm(f view.SettingsForm) templ.Component {
@@ -131,6 +131,50 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 			return nil
 		})
 		templ_7745c5c3_Err = molecules.FormField("set-idle", "リースのアイドルタイムアウト（秒）", "30〜3600。操作がないまま経過すると操作権を解放します。", f.Errors.LeaseIdleSec).Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var6 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = atoms.Input(atoms.InputProps{ID: "set-vquality", Name: "viewer.default_quality", Type: "number", Value: f.Values.ViewerQuality, Required: true, Invalid: f.Errors.ViewerQuality != "", Attrs: numberAttrs("1", "100")}).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = molecules.FormField("set-vquality", "ビューアの既定の画質", "1〜100。Web ビューアを開いたときの JPEG の品質です。", f.Errors.ViewerQuality).Render(templ.WithChildren(ctx, templ_7745c5c3_Var6), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var7 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = atoms.Input(atoms.InputProps{ID: "set-vfps", Name: "viewer.default_fps", Type: "number", Value: f.Values.ViewerFPS, Required: true, Invalid: f.Errors.ViewerFPS != "", Attrs: numberAttrs("1", "30")}).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = molecules.FormField("set-vfps", "ビューアの既定の FPS", "1〜30。Web ビューアを開いたときの 1 秒あたりの更新の上限です。", f.Errors.ViewerFPS).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

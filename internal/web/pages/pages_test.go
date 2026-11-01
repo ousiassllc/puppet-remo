@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/a-h/templ"
+
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 	"github.com/ousiassllc/puppet-remo/internal/web/webtest"
@@ -75,5 +77,69 @@ func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 				t.Errorf("contains <html> = %v, want %v", got, full)
 			}
 		})
+	}
+}
+
+// リモートのビューアのページ（FR-W01）: 外部ファイルだけを読み、screen-viewer.js は app.js の後（モジュール）。
+func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
+	out := webtest.Render(t, pages.Viewer(view.Viewer{ViewerID: "V", WSURL: "ws://h/ws/screen?viewer_id=V"}))
+	webtest.AssertCSPCompliantHTML(t, out)
+	prev := -1
+	for _, s := range []string{
+		`src="/static/js/htmx.min.js"`, `src="/static/js/htmx-config.js"`, `src="/static/js/response-targets.min.js"`,
+		`<script type="module" src="/static/js/app.js">`, `<script type="module" src="/static/js/screen-viewer.js">`,
+	} {
+		i := strings.Index(out, s)
+		if i < 0 {
+			t.Fatalf("missing %s", s)
+		}
+		if i < prev {
+			t.Errorf("%s is out of order", s)
+		}
+		prev = i
+	}
+	for _, want := range []string{`hx-ext="response-targets"`, `X-Puppet-Remo`, `id="toast-root"`, `id="viewer-root"`, `<remo-screen-viewer`, `<html lang="ja">`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("remote layout lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"http://", "https://", "//cdn", "live-poll", `hx-get="/poll"`, "sse"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("remote layout contains %q", bad)
+		}
+	}
+}
+
+// 待機・拒否・失効のページ（FR-W02）は、スタイル・スクリプトを読み込まない（未登録デバイスには /static も 403）。
+func TestRemoteNoticePages(t *testing.T) {
+	tests := []struct {
+		name  string
+		comp  templ.Component
+		state string
+		text  string
+	}{
+		{"待機", pages.Pending(), "pending", "接続要求を送信しました。ホストの許可を待っています。"},
+		{"拒否", pages.Denied(), "denied", "接続要求は拒否されました"},
+		{"失効", pages.Expired(), "expired", "接続要求の有効期限が切れました"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := webtest.Render(t, tt.comp)
+			webtest.AssertCSPCompliantHTML(t, out)
+			for _, want := range []string{`data-error-code="device_not_registered"`, `data-connection-state="` + tt.state + `"`, tt.text, `<html lang="ja">`} {
+				if !strings.Contains(out, want) {
+					t.Errorf("page lacks %q:\n%s", want, out)
+				}
+			}
+			for _, bad := range []string{"<script", "<link", "http://"} {
+				if strings.Contains(out, bad) {
+					t.Errorf("notice page contains %q", bad)
+				}
+			}
+		})
+	}
+	out := webtest.Render(t, pages.RemoteError(view.RemoteError{Code: "invalid_host", Title: "<b>t</b>", Message: "m"}))
+	if !strings.Contains(out, `data-error-code="invalid_host"`) || strings.Contains(out, "<b>t</b>") {
+		t.Errorf("error page = %s", out)
 	}
 }
