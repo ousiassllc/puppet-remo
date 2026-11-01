@@ -320,19 +320,30 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 		LeaseIdleSec:     strings.TrimSpace(c.PostForm(service.FieldLeaseIdleTimeoutSec)),
 		ViewerQuality:    strings.TrimSpace(c.PostForm(service.FieldViewerDefaultQuality)),
 		ViewerFPS:        strings.TrimSpace(c.PostForm(service.FieldViewerDefaultFPS)),
-		Autostart:        current.Autostart,
+		// チェックボックスは、外れていると値が送られない。
+		AuditThumbnails:     checked(c, service.FieldAuditThumbnails),
+		AuditRecordText:     checked(c, service.FieldAuditRecordText),
+		AuditRetentionDays:  strings.TrimSpace(c.PostForm(service.FieldAuditRetentionDays)),
+		AuditThumbsMaxBytes: strings.TrimSpace(c.PostForm(service.FieldAuditThumbsMaxBytes)),
+		UpdateApplyMode:     strings.TrimSpace(c.PostForm(service.FieldUpdateApplyMode)),
+		Autostart:           current.Autostart,
 	}
 	if h.d.Settings.AutostartAvailable() {
 		in.Autostart = checked(c, "autostart")
 	}
 
 	var errs view.SettingsErrors
-	s := service.HostSettings{KillSwitchHotkey: in.Hotkey, Autostart: in.Autostart}
+	s := service.HostSettings{
+		KillSwitchHotkey: in.Hotkey, Autostart: in.Autostart,
+		AuditThumbnailsEnabled: in.AuditThumbnails, AuditRecordText: in.AuditRecordText, UpdateApplyMode: in.UpdateApplyMode,
+	}
 	s.Port, errs.Port = parseInt(in.Port)
 	s.ScreenshotMaxDimension, errs.ScreenshotMaxDim = parseInt(in.ScreenshotMaxDim)
 	s.LeaseIdleTimeoutSec, errs.LeaseIdleSec = parseInt(in.LeaseIdleSec)
 	s.ViewerDefaultQuality, errs.ViewerQuality = parseInt(in.ViewerQuality)
 	s.ViewerDefaultFPS, errs.ViewerFPS = parseInt(in.ViewerFPS)
+	s.AuditRetentionDays, errs.AuditRetentionDays = parseInt(in.AuditRetentionDays)
+	s.AuditThumbsMaxBytes, errs.AuditThumbsMaxBytes = parseInt64(in.AuditThumbsMaxBytes)
 
 	// 数値に読めなかった項目のほかにも、範囲・書式の不備を同時に示す（読めなかった項目は 0 として検証し、メッセージは上書きしない）。
 	var verr *service.ValidationError
@@ -371,12 +382,24 @@ func mergeFieldErrors(errs view.SettingsErrors, verr *service.ValidationError) v
 	fill(&errs.LeaseIdleSec, service.FieldLeaseIdleTimeoutSec)
 	fill(&errs.ViewerQuality, service.FieldViewerDefaultQuality)
 	fill(&errs.ViewerFPS, service.FieldViewerDefaultFPS)
+	fill(&errs.AuditRetentionDays, service.FieldAuditRetentionDays)
+	fill(&errs.AuditThumbsMaxBytes, service.FieldAuditThumbsMaxBytes)
+	fill(&errs.UpdateApplyMode, service.FieldUpdateApplyMode)
 	return errs
 }
 
 // parseInt は整数のフォーム値を読む。読めなければ 0 と利用者向けのメッセージ。
 func parseInt(raw string) (int, string) {
 	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, "整数を指定してください。"
+	}
+	return n, ""
+}
+
+// parseInt64 は parseInt の 64 ビット版（バイト数など、32 ビットに収まらない値）。
+func parseInt64(raw string) (int64, string) {
+	n, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return 0, "整数を指定してください。"
 	}

@@ -241,7 +241,13 @@ type SettingsValues struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
-	Autostart        bool
+	// 監査ログ（FR-S07）。保持期間は日、容量の上限はバイト（単位は未決のため、保存値のまま表示する）。
+	AuditThumbnails     bool
+	AuditRecordText     bool
+	AuditRetentionDays  string
+	AuditThumbsMaxBytes string
+	UpdateApplyMode     string // confirm | auto_idle（FR-S09）
+	Autostart           bool
 }
 
 // SettingsField は設定の項目別のエラー。
@@ -252,6 +258,10 @@ type SettingsErrors struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
+	// 監査ログ・更新の項目別のエラー（チェックボックスは検証エラーにならない）。
+	AuditRetentionDays  string
+	AuditThumbsMaxBytes string
+	UpdateApplyMode     string
 }
 
 // SettingsForm は設定フォーム。
