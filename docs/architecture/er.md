@@ -412,7 +412,7 @@ erDiagram
 | `result` | TEXT | NO | — | `ok` / `error` / `denied` |
 | `error_code` | TEXT | YES | NULL | FR-M17 のエラーコード等 |
 | `duration_ms` | INTEGER | YES | NULL | 所要時間 |
-| `detail_json` | TEXT | YES | NULL | 引数・補足（JSON）。`type` の本文とクリップボードは既定では文字数のみ（FR-AU03）。トークンと API キーは含めない。エージェントのステップの内容は下記 |
+| `detail_json` | TEXT | YES | NULL | 引数・補足（JSON）。`type` の本文とクリップボードは既定では文字数のみ（FR-AU03。設定 `audit.record_text` が true のときだけ `text` に本文も入る。下記）。トークンと API キーは、どの設定でも含めない。エージェントのステップの内容は下記 |
 
 制約: `CHECK (result IN ('ok','error','denied'))`、`CHECK (actor_type IN ('mcp','web','agent','host','system'))`、`CHECK (detail_json IS NULL OR json_valid(detail_json))`。
 
@@ -429,6 +429,27 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | `settings.launchable_app.delete` | `settings` | `host` | `ok` | `{ "app_id", "label" }` |
 
 **引数（`args_json`）と作業ディレクトリは、どのイベントにも記録しない**（件数 `arg_count` だけ。FR-AU03・NFR-S13）。`exe_path` は許可を変える登録系イベントにだけ記録し、`tool.launch_app` には記録しない。クライアントが削除済みのときの `client_id` は NULL（既存の規則）。
+
+**イベントのカタログ（M3・#71。FR-AU01）**。ソースが追記するイベント名と FR-AU01（agent 以外）の対応で、`service.AuditCatalog` が持つ。網羅テスト（`audit_catalog_test.go`）が、ソースの追記・`AuditCatalog`・この表の食い違いを検出する。新しいイベントを足すときは、この表と `AuditCatalog` も足す。
+
+| FR-AU01 の項目 | `kind` | event | 操作主体（`actor_type`） |
+|----------------|--------|-------|------------------------|
+| 接続要求の作成 | `auth` | `auth.connreq_create`（`result = ok`。`client_label` はデバイス名。`detail_json` は `{ "request_id", "stable_node_id", "login_name", "remote_ip" }`。同じデバイスの pending への集約は記録しない） | `system` |
+| 接続要求の許可・拒否 | `auth` | `auth.connreq_approve` / `auth.connreq_deny` | `host` |
+| 認証失敗・過多 | `auth` | `auth.bearer_failed` / `auth.rate_limited`（Bearer）、`auth.connreq_rate_limited`（接続要求の作成の超過。窓ごとに 1 回） | `mcp` / `system` |
+| トークンの発行・失効 | `token` | `token.issue` / `token.revoke` | `host` |
+| クライアントの変更 | `client` | `client.replace` / `client.update` / `client.delete` | `host` |
+| リースの取得・解放・剥奪 | `lease` | `lease.acquire`（取得の失敗は `denied`）/ `lease.release` / `lease.revoke` | 保持者（剥奪は剥奪した側） |
+| リースの取得要求・承認・拒否（承認モード） | `lease` | **未実装**（#66） | — |
+| MCP ツール呼び出し | `tool` | `tool.<ツール名>`（`tool.left_click`・`tool.type`・`tool.launch_app` など） | `mcp` |
+| Web UI からの入力操作 | `input` | `tool.<入力種別>`（`tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up`・`tool.type`・`tool.clipboard_read` など。`PointerMove` は記録しない） | `web` |
+| キルスイッチの発動・解除 | `killswitch` | `killswitch.trigger` / `killswitch.release` | `host` |
+| 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete` | `host` |
+| 更新の確認・適用 | `update` | **未実装**（#74） | — |
+
+`type` の本文とクリップボードの本文（M3・#71。FR-AU03、FR-S07）。設定 `audit.record_text`（既定 false）が false のあいだは、`detail_json` に文字数 `text_len` だけを入れる（M1 から同じ）。true のとき、`type` / `input.text`（`tool.type`）、クリップボードの書き込み（`tool.clipboard_write`）・読み取りの結果（`tool.clipboard_read`）の `detail_json` に `text`（本文）を足す（`text_len` は残す）。本文は 4,096 文字（ルーン）までで、超えた分は切り詰めて `"text_truncated": true` を付ける（`text_len` は元の長さ）。本文の中のトークン（`prm_…`）・`Bearer …` の形は `[REDACTED]` に置き換え、トークンと API キーは設定にかかわらず記録しない。キーの名前（`key_down` / `key_up` の `code`・`key`）は、この設定でも記録しない。設定が読めない・真偽値でないときは記録しない側に倒す。
+
+縮小スクリーンショットの保存（M3・#71。FR-AU02）。縮小・符号化は純粋関数 `service.NewThumbnail`（アスペクト比を保って長辺 320 px。拡大しない。短辺は最小 1 px。JPEG 品質 60。`golang.org/x/image/draw` の `CatmullRom`・`image/jpeg`。cgo なし）。保存は `Audit` の書き込み goroutine が 1 件ずつ、`Append` → `ThumbStore.Save`（`YYYY/MM/DD/<ULID>.jpg`。日付はイベントの `ts` の UTC）→ `AttachThumb` → 容量の確認（`Maintenance.PurgeThumbsOverCap`）の順に行う。`Record` は呼び出しを遅らせない（キューが満杯・`Close` 後は、これまでどおりエントリごと捨てて運用ログに残す）。キューにあるサムネイルの件数には別の上限（既定 32）があり、超えた分は画像だけを捨ててエントリは追記する（画像のバイト列でメモリが増え続けない）。`Save` / `AttachThumb` / 容量の確認の失敗は運用ログに残すだけで、ログ行と `Control.Do` の結果は変わらない（`AttachThumb` に失敗したら保存したファイルを消す）。`audit.thumbnails_enabled`（既定 true）は保存のたびに読み、false か真偽値でない値なら保存しない。
 
 エージェントのステップ（`event = 'agent.step'`）の `detail_json`（FR-G19、FR-G23）。**入力した本文（`type` のテキスト）と要素の値は、どちらの経路でも記録しない**。
 
@@ -524,3 +545,4 @@ erDiagram
 | 1.14 | 2026-11-01 | 監査イベント `lease.revoke`（M2。操作主体は剥奪した側、`detail_json` に剥奪された保持者）を追記 | #58 |
 | 1.15 | 2026-11-02 | 「データの保守」に M3 の実装の補足（設定値の検証と既定値、削除の基準と順序、孤児の掃除の猶予、`Query` の索引とカーソル）を追記 | #70 |
 | 1.16 | 2026-11-02 | `clients.approved_at` の使われ方（`first_time` の承認時の記録と取り消し。`repository.Clients.MarkApproved` / `ResetApproval`）を追記。承認系の監査イベント名（取得要求・拒否・タイムアウト）は未決のため追記しない（`pending_approval → held` は `lease.acquire`） | #66 |
+| 1.17 | 2026-11-02 | 監査イベントのカタログ（FR-AU01 との対応。`auth.connreq_create` を追加）、`audit.record_text` の記録の形（`text`・4,096 文字・`text_truncated`）、サムネイルの保存の流れを追記 | #71 |

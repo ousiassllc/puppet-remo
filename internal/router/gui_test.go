@@ -126,10 +126,25 @@ func TestDynamicResponsesAreNoStore(t *testing.T) {
 	}
 }
 
+// 監査ログの閲覧（M3。FR-AU05）の経路は GUI にある。
+func TestGUIServesTheAuditRoutes(t *testing.T) {
+	h, _ := newGUI(t)
+	for _, p := range []string{"/audit", "/audit?kind=tool&limit=10"} {
+		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200", p, rec.Code)
+		}
+	}
+	for _, p := range []string{"/audit/1", "/audit/1/thumbnail"} {
+		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusNotFound { // 偽の AuditReader は空
+			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
+		}
+	}
+}
+
 // ホスト専用の経路だけがあり、/wails/* は予約され、M1 に無いものと、リモート向けの経路は存在しない。
 func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/audit", "/tasks", "/agent", "/approvals/a", "/update"} {
+	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks", "/agent", "/approvals/a", "/update"} {
 		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
 		}

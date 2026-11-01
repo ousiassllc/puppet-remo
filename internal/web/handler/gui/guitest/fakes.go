@@ -1,11 +1,13 @@
 package guitest
 
 import (
+	"bytes"
 	"context"
 	crand "crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -40,6 +42,7 @@ type Fakes struct {
 	Settings   *Settings
 	Apps       *Apps
 	Logs       *Logs
+	Audit      *Audit
 }
 
 // New は空の状態の Fakes を返す。時計は 2026-10-30 12:00 UTC。
@@ -55,6 +58,7 @@ func New() *Fakes {
 		KillSwitch: &KillSwitch{bus: bus},
 		Admin:      &Admin{clock: clock, bus: bus},
 		Apps:       &Apps{},
+		Audit:      &Audit{},
 		Logs:       &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
 		Settings:   &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}, CanAutostart: true},
 	}
@@ -64,7 +68,7 @@ func New() *Fakes {
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
 		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin,
-		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
+		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
 
@@ -473,4 +477,90 @@ func (l *Logs) Entries(_ context.Context, filter service.AppLogFilter, page int)
 	start := min((page-1)*size, len(all))
 	end := min(start+size, len(all))
 	return service.AppLogPage{Items: all[start:end], Page: page, HasPrev: page > 1, HasNext: end < len(all)}, nil
+}
+
+// Audit は gui.Audit の偽実装。Items は新しい順（ts の降順、同時刻は id の降順）に入れる。絞り込みと cursor・limit は本物
+// （repository.Audit.Query）と同じ規則。Details は id ごとの詳細（無ければ Items の行から引数なしで作る）。
+// Thumbs は id ごとのサムネイルの本体（JPEG）、ThumbErr は id ごとの Thumbnail の失敗（service.ErrNotFound や domain.ErrInvalidArgument など）。
+type Audit struct {
+	Items    []service.AuditEntry
+	Details  map[int64]service.AuditDetail
+	Thumbs   map[int64][]byte
+	ThumbErr map[int64]error
+	Err      error
+
+	mu      sync.Mutex
+	Queries []service.AuditQuery // Query が受け取った絞り込み（呼び出し順）
+}
+
+// LastQuery は最後の Query の絞り込み。
+func (a *Audit) LastQuery() service.AuditQuery {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.Queries) == 0 {
+		return service.AuditQuery{}
+	}
+	return a.Queries[len(a.Queries)-1]
+}
+
+// Query は Items を q で絞って 1 ページ返す。
+func (a *Audit) Query(_ context.Context, q service.AuditQuery) (service.AuditPage, error) {
+	a.mu.Lock()
+	a.Queries = append(a.Queries, q)
+	a.mu.Unlock()
+	if a.Err != nil {
+		return service.AuditPage{}, a.Err
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = service.DefaultAuditLimit
+	}
+	limit = min(limit, service.MaxAuditLimit)
+	var out []service.AuditEntry
+	next := int64(0)
+	for _, e := range a.Items {
+		switch {
+		case q.Cursor > 0 && e.ID >= q.Cursor,
+			!q.From.IsZero() && e.TS.Before(q.From),
+			!q.To.IsZero() && e.TS.After(q.To),
+			q.ClientID != "" && e.ClientID != q.ClientID,
+			q.Kind != "" && e.Kind != q.Kind,
+			q.Result != "" && e.Result != q.Result,
+			q.Q != "" && !strings.Contains(e.Event, q.Q):
+			continue
+		}
+		if len(out) == limit {
+			next = out[len(out)-1].ID
+			break
+		}
+		out = append(out, e)
+	}
+	return service.AuditPage{Entries: out, Next: next}, nil
+}
+
+// Get は id の詳細。
+func (a *Audit) Get(_ context.Context, id int64) (service.AuditDetail, error) {
+	if a.Err != nil {
+		return service.AuditDetail{}, a.Err
+	}
+	if d, ok := a.Details[id]; ok {
+		return d, nil
+	}
+	for _, e := range a.Items {
+		if e.ID == id {
+			return service.AuditDetail{AuditEntry: e}, nil
+		}
+	}
+	return service.AuditDetail{}, fmt.Errorf("audit log %d: %w", id, service.ErrNotFound)
+}
+
+// Thumbnail は id のサムネイルを開く。
+func (a *Audit) Thumbnail(_ context.Context, id int64) (io.ReadCloser, error) {
+	if err := a.ThumbErr[id]; err != nil {
+		return nil, err
+	}
+	if b, ok := a.Thumbs[id]; ok {
+		return io.NopCloser(bytes.NewReader(b)), nil
+	}
+	return nil, fmt.Errorf("thumbnail of audit log %d: %w", id, service.ErrNotFound)
 }

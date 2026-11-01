@@ -77,6 +77,11 @@ func auditSensitiveKey(key string) bool {
 		}
 	}
 	for _, b := range auditBodyKeys {
+		// text は、設定 audit.record_text が true のとき Control が本文を入れるキー（FR-AU03、FR-S07）。所有者が記録を
+		// 選んだ値なので、そのまま見せる（トークンの形は auditRedactString が伏せる）。接尾辞つき（label_text など）は伏せる。
+		if k == "text" {
+			continue
+		}
 		if k == b || strings.HasSuffix(k, "_"+b) {
 			return true
 		}
