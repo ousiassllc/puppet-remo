@@ -28,6 +28,8 @@ type SessionLister interface {
 // 剥奪の監査（lease.revoke）は実体が記録するため、ハンドラは記録しない。
 type LeaseControl interface {
 	Holder() (service.Holder, bool)
+	// Pending は承認待ち（pending_approval）の要求者。承認待ちでなければ false。
+	Pending() (service.PendingLease, bool)
 	Revoke(by domain.Actor) error
 }
 
@@ -49,11 +51,22 @@ type Admin interface {
 	Clients(ctx context.Context) ([]domain.Client, error)
 	Client(ctx context.Context, id string) (domain.Client, error)
 	UpdateClient(ctx context.Context, id string, u service.ClientUpdate) (domain.Client, error)
+	// ResetApproval は first_time の承認済みを取り消す（approved_at を NULL に戻す。FR-H04）。
+	ResetApproval(ctx context.Context, id string) (domain.Client, error)
 	DeleteClient(ctx context.Context, id string) error
 
 	Tokens(ctx context.Context, clientID string) ([]service.TokenRecord, error)
 	IssueToken(ctx context.Context, clientID, label string, ttl *time.Duration) (plaintext string, err error)
 	RevokeToken(ctx context.Context, clientID, tokenID string) error
+}
+
+// Approval は承認ダイアログ（FR-H05）が使う、承認待ちの要求の読み取りと、ホスト所有者の結果の伝達。実体は service.Approval。
+// ダイアログを開くのは app（Bus の approval を購読する）で、ここは中身の描画と許可・拒否の受け付けだけ。
+type Approval interface {
+	// Resolve は id の要求に結果を伝える。解決済み・失効・取り下げ済み・存在しない id は ErrApprovalTimeout。
+	Resolve(id string, allow bool) error
+	// Pending は承認待ちの要求を、要求した順に返す。
+	Pending() []service.ApprovalRequest
 }
 
 // Settings は設定画面の読み書き（FR-S01〜S04、FR-S08）。
@@ -103,6 +116,7 @@ type Deps struct {
 	Leases     LeaseControl
 	KillSwitch KillSwitch
 	Admin      Admin
+	Approval   Approval
 	Settings   Settings
 	Apps       Apps
 	Logs       Logs
@@ -136,7 +150,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

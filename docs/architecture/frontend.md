@@ -146,7 +146,7 @@ type LeasePanelView struct {
     State     string // "idle" | "pending_approval" | "held"
     Holder    *HolderView // 種別（mcp / web / agent）・名前・タスクの概要
     Mine      bool
-    CanAcquire, CanRelease, CanRevoke bool // ハンドラが LeaseManager の状態から決める
+    CanAcquire, CanRelease, CanRevoke bool // ハンドラが LeaseManager の状態から決める。pending_approval（M3）はすべて false（承認待ちの表示だけ。操作を持たない）
 }
 
 templ LeasePanel(v LeasePanelView) {
@@ -231,7 +231,7 @@ func (h *Handler) Clients(c *gin.Context) {
 - **表示中の領域だけを更新する**: 一覧・パネルのように作り直す領域（接続要求の一覧、キルスイッチのパネル）は、描画した状態の版を隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）に持つ。`hx-include="[data-poll-rev]"` がそれを `/poll` のクエリで送り返し、サーバーは**版が変わった領域だけ**を差し替える。そのページに無い領域は版が送られないため、差し込み先の無い OOB を返さない。入力中の許可フォームなどを、ポーリングで消さないための仕組み
 - ヘッダーのキルスイッチのバッジとサイドバーの件数バッジは、軽い差し替え（中身だけ）で常に返す
 - トーストは、`Bus` の `toast` を `gui.Handler` が `New` で購読して溜めておき、`GET /poll` が取り出して `#toast-root` に追加する OOB にする（取り出したものは次の応答に出ない。バッファは `Bus` の購読者ごとの上限 16 件で、超えた分は古いものから捨てる）
-- `approval` のイベントは DOM を更新しない。承認ダイアログのウィンドウは Go 側（`app` が `Bus` から購読）が開く（ポーリングの対象外）
+- `approval` のイベントは DOM を更新しない。承認ダイアログのウィンドウは Go 側（`app` の `approvalDialogs` が `Bus` から購読）が開き、`approval-closed`（承認待ちの終了）で閉じる（ポーリングの対象外。M3・#68）。ダイアログの残り時間（60 秒のカウントダウン）だけは、ダイアログのページ自身が HTMX の `hx-trigger="every 1s"` で `GET /approvals/{id}` を呼んで `#approval-remaining` を差し替える（`#live-poll` は使わない。専用ウィンドウにレイアウトのポーリングは無い。Lit は使わない。§6 の基準）。許可・拒否の応答の `HX-Trigger: closeWindow` は `static/src/app/app.ts` が受け、Wails のランタイム（`/wails/runtime.js`。同一オリジンの外部スクリプト）の `Window.Close` でウィンドウを閉じる（CSP を守る。インラインスクリプト・ハンドラ属性は使わない）
 - `GET /events`（SSE）は仕様のまま残す。ストリームを流せる経路で GUI を配信するとき・テストのために使える。`sse` 拡張の JS（`dist/js/sse.min.js`）も配信物に残すが、レイアウトは読み込まない
 - ポーリングの間隔は 3 秒。画面が隠れている間の停止は行わない（`hx-trigger` のフィルターは eval が要るため CSP の都合で使えない。§7）
 
@@ -374,7 +374,7 @@ stateDiagram-v2
 
 **入力（操作権を持つときだけ）**
 
-「入力が有効」とは、最後に受信した `lease`（`ready` の `lease` を含む）が `mine: true` であること。`mine: false`（他者の保持・空き・剥奪）では閲覧のみで、`mine` が `false` になった時点で押下中のキー・ボタンを送らずに捨てる（サーバーが解放する）。`readonly` 属性は描画時のサーバー判定を表す初期のヒントで、入力の可否には使わない（HTMX はコンポーネントを swap しないため、取得・解放・剥奪の後も属性は描画時のままで、これに頼ると操作権を取得しても入力が送られない）。サーバー側でも入力は常に検査される（リース・InputGuard）。
+「入力が有効」とは、最後に受信した `lease`（`ready` の `lease` を含む）が `state: "held"` かつ `mine: true` であること（`pending_approval` は承認待ちの本人（`mine: true`）でも閲覧のみ。M3）。`mine: false`（他者の保持・空き・剥奪）では閲覧のみで、`mine` が `false` になった時点で押下中のキー・ボタンを送らずに捨てる（サーバーが解放する）。`readonly` 属性は描画時のサーバー判定を表す初期のヒントで、入力の可否には使わない（HTMX はコンポーネントを swap しないため、取得・解放・剥奪の後も属性は描画時のままで、これに頼ると操作権を取得しても入力が送られない）。サーバー側でも入力は常に検査される（リース・InputGuard）。
 
 | 入力 | 送るメッセージ（API 仕様 §5.3） | 備考 |
 |------|------------------------------|------|
@@ -518,6 +518,8 @@ graph LR
 | FR-W01〜W09（Web UI） | `pages/remote`、`organisms/remote`、`<remo-screen-viewer>`、`handler/remote` |
 | FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`（`GET /poll`）。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。GUI の強制剥奪ボタンは M2 で実装した（`organisms.LeasePanelBody` の `CanRevoke`。`POST /lease/revoke`）。`task_panel` と中断ボタンは M4（FR-H02） |
 | FR-H12（起動許可アプリ。M1.5） | `pages`（`apps.templ`。設計の `pages/gui`）、`organisms`（`app_list.templ`・`app_form.templ`。設計の `organisms/gui`）、`handler/gui`（`apps.go`: `/apps`・`/apps/pick-file`）、`atoms`（`textarea`）、`molecules`（`modal`・`form_field`）。リモートの UI には作らない |
+| FR-H03・H04・H05・S05（承認モードと承認ダイアログ。M3・#68） | 接続要求の許可フォーム（`organisms.ConnectionRequestList`）の承認モード（常時承認（既定）・初回のみ承認・自動許可）、クライアントのカード（`organisms.ClientCard`）の承認モードの選択（`hx-patch`・`change` で送信。`approved_at` が NULL に戻る）と「初回のみ」の承認済み（日時）・未承認の表示・「承認を取り消す」（`POST /clients/{id}/approval/reset`。確認モーダルは挟まない）、承認ダイアログ（`pages.ApprovalDialog`・`organisms.ApprovalDialog`・`organisms.ApprovalRemaining`・`layout.Dialog`。サイドバー・ヘッダー・ポーリングの無い簡素な外枠） | `handler/gui/approvals.go`（`/approvals/{id}`・`allow`・`deny`。`gui.Deps.Approval`）。許可 / 拒否のボタンは `hx-disabled-elt="#approval-actions button"` で二重送信を防ぐ。表示する文字列はクライアント名・種別・要求の内容・残り時間だけ。`internal/router/internal/guidemo`（`-lease pending_approval`）で承認待ちとダイアログを確認でき、スクリーンショットは `docs/screenshots/m3/` |
+| FR-L07（承認待ち。M3・#67） | `lease_panel` に `pending_approval` の表示（「承認待ち: <名前>（種別）」。本人には「ホストの承認を待っています」）。承認待ちの間は取得・解放・強制剥奪のボタンも `#viewer-ops` も出さない | リモートの `ViewerLeasePanel` と GUI のダッシュボードの `#lease`（`LeaseDisplay`）は、`view.ViewerLease.Pending`・`PendingMine` / `view.Lease.Pending` で承認待ちを描く（`molecules.LeasePendingBadge`）。`data-lease-state="pending_approval"`。GUI は強制剥奪のボタンを `held` のときだけ出す現行の動きのまま（承認待ちの剥奪は docs に無い）。拒否・タイムアウトは `POST /viewer/lease/acquire` の 403 `approval_denied`・408 `approval_timeout` のトースト（`HX-Retarget: #toast-root`）。`<remo-screen-viewer>` は `state !== "held"` を入力無効として扱う |
 | FR-L06（強制剥奪。M2） | `lease_panel`（リモート・GUI）の状態駆動レンダリング。GUI のリースパネル（`#lease`）は M2 から `CanRevoke`（他者の `mcp` / `web` が保持中）のときだけ強制剥奪のボタンを描画する。リモートの `lease_panel` は別の子 Issue |
 | NFR-S02・S03（Host / Origin、カスタムヘッダー） | `middleware`、`layout` の `hx-headers` |
 | NFR-S06（自己保護） | ビューアに自ウィンドウが写らない（キャプチャ除外）。GUI に AI の入力が届かない（InputGuard） |
@@ -545,7 +547,7 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | リモートの UI（§1.3・§3・§6） | Web UI（`/viewer`）、Lit の `<remo-screen-viewer>`、`lib/ws.ts`、`handler/remote`、`organisms/remote`・`pages/remote` | Web UI のページ・ハンドラは M2 の #62 で作った（`/`・`/viewer`・リース・設定・クリップボード・ショートカット・待機ページ。API 仕様 §4.2・§7.5）。`<remo-screen-viewer>`・`lib/ws.ts`・`lib/logger.ts`・`src/components/` は #63 で作った（esbuild が `dist/js/screen-viewer.js` を出し、レイアウトが読み込む。`screen-viewer/` は `remo-screen-viewer.ts`・`protocol.ts`（メッセージ・バイナリフレームの復号）・`input.ts`（座標・ホイール・キーの変換））。Lit のテスト・`web-test-runner`・`e2e/`（Playwright）は作らない（下の「ビルドと CI」） |
 | `internal/web` の構成（§3） | `organisms/{gui,remote}/`・`pages/{gui,remote}/`、`handler/{gui,remote}/`、`layout/{gui,remote}` | `organisms/`・`pages/` は平ら（`gui/` / `remote/` のサブディレクトリを作らない。ビューアは `organisms/viewer_*.templ`、待機・エラーは `pages/remote_notice.templ`、ページは `pages/viewer.templ`）。`handler/gui/` と `handler/remote/`（M2。偽の依存は `handler/remote/remotetest/`）。`layout/` は `gui.templ` と `remote.templ`（`Remote` がビューアの外枠、`RemoteNotice` が待機・拒否・失効・ミドルウェアのエラーの簡素な外枠）。`webtest/`（ハンドラのテスト補助）と `handler/gui/guitest/`（偽の service）を追加した。`view/` は設計どおり（ビューアは `Viewer`・`ViewerToolbar`・`ViewerLease`・`ViewerOps`・`KeyMenuItem`・`RemoteError`）。アトムは `alert`・`badge`・`button`・`checkbox`・`input`・`select`・`spinner`・`textarea`・`toast`、モレキュールは `card`・`form_field`・`lease_badge`・`modal`・`status_pill`・`token_reveal` |
 | リモートのリースパネル・ビューアの組み立て（§4.3・§6.2） | `lease_panel`・`viewer_toolbar`・`clipboard_panel`・`key_menu` の各 organism を `<main id="viewer-root">` に並べる | `ViewerLeasePanel`（`#lease-panel`。`remo:lease-changed from:#viewer-root` で `GET /viewer/lease` を再取得して `outerHTML` で差し替える）・`ViewerToolbar`（`#viewer-toolbar`。`change` で `POST /viewer/settings`、422 は `hx-target-422="this"`）・`ViewerOps`（`#viewer-ops`。操作権を持つときだけ `ClipboardPanel` と `KeyMenu` を描画し、リース系の応答に OOB で添えて更新する）・`ViewerRoot`（`<remo-screen-viewer>` を HTMX の対象の外に置き、`readonly` は描画時の操作権の有無）。エラーはホスト GUI と同じく `HX-Retarget: #toast-root` のトースト。スライダー（画質・FPS）の横の数値は `app.ts` が `input` イベントで追従させる |
-| GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。M1.5 で apps（起動許可アプリ。`handler/gui/apps.go`）を足した。監査（`handler/gui/audit.go`。`/audit`・`/audit/{id}`・`/audit/{id}/thumbnail`）は M3 の #72 で足した。設定は M3 の #73 で監査ログ・更新のグループを足した。承認・タスク・エージェント・更新は M3・M4 |
+| GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。M1.5 で apps（起動許可アプリ。`handler/gui/apps.go`）を足した。監査（`handler/gui/audit.go`。`/audit`・`/audit/{id}`・`/audit/{id}/thumbnail`）は M3 の #72 で足した。設定は M3 の #73 で監査ログ・更新のグループを足した。承認（approvals。M3・#68 で実装。`handler/gui/approvals.go`）・タスク・エージェント・更新は M3・M4 |
 | ホスト GUI の更新（§5.3） | `GET /poll`（本書のとおり） | 同じ。`GET /events`（SSE）は残すが GUI は購読しない。`htmx-ext-sse` は `static/package.json` に入れて `dist/js/sse.min.js` へコピーするが、レイアウトは読み込まない（未使用。ビルドの対象としては残る） |
 | `static/package.json`（§8.2） | `lit`・`htmx-ext-*`・`@open-wc/testing`・`@web/test-runner`、`test` スクリプト | 依存は `htmx.org`・`htmx-ext-response-targets`・`htmx-ext-sse`・`lit`（#63。版は固定）、開発依存は `tailwindcss`・`@tailwindcss/cli`・`esbuild`・`typescript`・`concurrently`。`@open-wc/testing`・`@web/test-runner` は入れず、`test` スクリプトは無い（Lit のテストを CI に足さないというオーナーの決定。#64）。スクリプトに `clean` を足した（`build` の先頭で `dist` を消す）。esbuild のエントリーは `src/app/` の 2 ファイルと `screen-viewer`（`src/components/screen-viewer/remo-screen-viewer.ts` → `dist/js/screen-viewer.js`。ES モジュール）。`define` の `__DEBUG__`（`--watch` のとき true）で、`lib/logger.ts` の本番のログをエラー・警告だけにする |
 | 開発タスク名（§8.3） | `frontend:dev` | 同じ。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service を loopback で配信）を足した。スクリーンショットは `docs/screenshots/m1/` |
@@ -575,3 +577,5 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.17 | 2026-11-01 | §6.2 の `remo:error` のトーストを、`code` から日本語にする（文言は HTMX のアクション失敗と揃え、表に無い `code` はサーバーの `message`。WebSocket の契約は変えない） | #63 |
 | 1.18 | 2026-11-02 | §5.4 に監査ログ画面（`/audit`。絞り込み・「次へ」・詳細・サムネイル）、§12 の差分表の GUI のハンドラに `audit` を足した | #72 |
 | 1.19 | 2026-11-02 | §5.4 に設定画面の監査ログ・更新のグループ（平文の注意書き・`audit.record_text` の警告・バイト単位の入力・`update.apply_mode` の選択）、§12 の差分表の GUI のハンドラに設定の M3 の項目を追記 | #73 |
+| 1.20 | 2026-11-02 | §4.3 の `Can*` に承認待ちの扱い、§6.2 の「入力が有効」に `state: held` の条件、§12 に FR-L07（承認待ちのリースパネル・ダッシュボード）の実装を追記 | #67 |
+| 1.21 | 2026-11-02 | §5.3 の `approval`・`approval-closed` と承認ダイアログの残り時間・`closeWindow`、§12 に FR-H03・H04・H05・S05（承認モードの選択・取消、承認ダイアログ）の実装を追記 | #68 |

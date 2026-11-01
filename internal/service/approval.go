@@ -47,11 +47,16 @@ type ApprovalEvent struct {
 	Kind string
 }
 
+// ApprovalClosedEvent は Bus の approval-closed イベントの Data（承認待ちが終わるたびに出す）。許可・拒否（Resolve）・
+// 失効（タイムアウト）・取り下げ（ctx のキャンセル）のどれでも、要求が Pending から消えたあとに 1 回だけ出る。
+// 購読者（app）は、開いているダイアログをこれで閉じる。結果（許可・拒否）は含まない。
+type ApprovalClosedEvent struct{ ID string }
+
 // ApprovalConfig は NewApproval の設定。Clock・IDs は必須。
 type ApprovalConfig struct {
 	Clock domain.Clock
 	IDs   domain.IDGen
-	// Bus は nil なら何も出さない。出すときは待たない（購読者が遅くても要求は進む。NFR-P06）。
+	// Bus は nil なら何も出さない（approval と approval-closed）。出すときは待たない（購読者が遅くても要求は進む。NFR-P06）。
 	Bus *Bus
 	// AfterFunc は失効のタイマー。nil なら time.AfterFunc。
 	AfterFunc AfterFunc
@@ -176,6 +181,9 @@ func (a *approval) finish(id string, r approvalResult) bool {
 	a.mu.Unlock()
 	if ok {
 		e.done <- r // 容量 1 で、送るのはここだけ（ブロックしない）
+		if a.bus != nil {
+			a.bus.Publish(Event{Topic: TopicApprovalClosed, Data: ApprovalClosedEvent{ID: id}})
+		}
 	}
 	return ok
 }

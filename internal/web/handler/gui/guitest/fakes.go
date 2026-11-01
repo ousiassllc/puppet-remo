@@ -39,6 +39,7 @@ type Fakes struct {
 	Leases     *Leases
 	KillSwitch *KillSwitch
 	Admin      *Admin
+	Approval   *Approval
 	Settings   *Settings
 	Apps       *Apps
 	Logs       *Logs
@@ -57,6 +58,7 @@ func New() *Fakes {
 		Leases:     &Leases{},
 		KillSwitch: &KillSwitch{bus: bus},
 		Admin:      &Admin{clock: clock, bus: bus},
+		Approval:   &Approval{},
 		Apps:       &Apps{},
 		Audit:      &Audit{},
 		Logs:       &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
@@ -68,7 +70,7 @@ func New() *Fakes {
 // Deps は gui.New に渡す依存先。表示の時刻は UTC。
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
-		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin,
+		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin, Approval: f.Approval,
 		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
@@ -84,9 +86,13 @@ type Sessions struct{ Items []service.SessionInfo }
 func (s *Sessions) Sessions() []service.SessionInfo { return s.Items }
 
 // Leases は gui.LeaseControl の偽実装。Revoke は呼び出しを記録し、保持者を外す（RevokeErr があればそのエラーを返して外さない）。
+// 承認待ち（pending_approval）は PendingLease・HasPending で表す。
 type Leases struct {
 	H    service.Holder
 	Held bool
+
+	PendingLease service.PendingLease
+	HasPending   bool
 
 	RevokeErr   error
 	RevokeCalls int
@@ -94,6 +100,8 @@ type Leases struct {
 }
 
 func (l *Leases) Holder() (service.Holder, bool) { return l.H, l.Held }
+
+func (l *Leases) Pending() (service.PendingLease, bool) { return l.PendingLease, l.HasPending }
 
 func (l *Leases) Revoke(by domain.Actor) error {
 	l.RevokeCalls++
@@ -219,6 +227,7 @@ type Admin struct {
 	Approved []service.ApproveInput
 	Issued   []IssueCall
 	Updates  []service.ClientUpdate
+	Resets   []string // ResetApproval に成功したクライアントの ID
 	// 注入するエラー。nil でなければ、該当の操作がこれを返す。
 	PendingErr error
 	HistoryErr error
@@ -315,6 +324,12 @@ func (a *Admin) ApproveRequest(_ context.Context, id string, in service.ApproveI
 		ID: a.id("client"), StableNodeID: req.StableNodeID, LoginName: req.LoginName, DisplayName: name,
 		WebEnabled: in.WebEnabled, MCPEnabled: in.MCPEnabled, AgentEnabled: in.AgentEnabled, ApprovalMode: domain.ApprovalAlways,
 	}
+	if in.ApprovalMode != "" {
+		if !in.ApprovalMode.Valid() {
+			return domain.Client{}, domain.ErrInvalidArgument.WithMsg("invalid approval_mode")
+		}
+		c.ApprovalMode = in.ApprovalMode
+	}
 	a.Cs = append(a.Cs, c)
 	a.Approved = append(a.Approved, in)
 	if err := a.decide(id, service.ConnApproved, &c.ID); err != nil {
@@ -374,7 +389,32 @@ func (a *Admin) UpdateClient(_ context.Context, id string, u service.ClientUpdat
 	if u.AgentEnabled != nil {
 		a.Cs[i].AgentEnabled = *u.AgentEnabled
 	}
+	if u.ApprovalMode != nil {
+		if !u.ApprovalMode.Valid() {
+			return domain.Client{}, domain.ErrInvalidArgument.WithMsg("invalid approval_mode")
+		}
+		if *u.ApprovalMode != a.Cs[i].ApprovalMode {
+			a.Cs[i].ApprovedAt = nil // 本物（repository.Clients.Update）と同じ: モードの変更で承認済みを取り消す
+		}
+		a.Cs[i].ApprovalMode = *u.ApprovalMode
+	}
 	a.Updates = append(a.Updates, u)
+	return a.Cs[i], nil
+}
+
+// ResetApproval は本物と同じく、first_time で承認済みのときだけ approved_at を NULL に戻す（それ以外は conflict）。
+func (a *Admin) ResetApproval(_ context.Context, id string) (domain.Client, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	i := a.find(id)
+	if i < 0 {
+		return domain.Client{}, fmt.Errorf("client: %w", service.ErrNotFound)
+	}
+	if a.Cs[i].ApprovalMode != domain.ApprovalFirstTime || a.Cs[i].ApprovedAt == nil {
+		return domain.Client{}, domain.NewError(domain.CodeConflict, "the client has no first_time approval to reset", nil)
+	}
+	a.Cs[i].ApprovedAt = nil
+	a.Resets = append(a.Resets, id)
 	return a.Cs[i], nil
 }
 
@@ -450,6 +490,43 @@ func (a *Admin) RevokeToken(_ context.Context, clientID, tokenID string) error {
 		}
 	}
 	return fmt.Errorf("token: %w", service.ErrNotFound)
+}
+
+// Approval は gui.Approval の偽実装。Reqs が承認待ちの要求で、Resolve は本物と同じく、無い・終わった id を ErrApprovalTimeout にする。
+type Approval struct {
+	mu       sync.Mutex
+	Reqs     []service.ApprovalRequest
+	Resolved []ResolveCall
+	// ResolveErr が nil でなければ、Resolve は（要求があっても）これを返す。
+	ResolveErr error
+}
+
+// ResolveCall は Resolve の呼び出し 1 回分。
+type ResolveCall struct {
+	ID    string
+	Allow bool
+}
+
+func (p *Approval) Pending() []service.ApprovalRequest {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.Reqs)
+}
+
+func (p *Approval) Resolve(id string, allow bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ResolveErr != nil {
+		return p.ResolveErr
+	}
+	for i, r := range p.Reqs {
+		if r.ID == id {
+			p.Reqs = append(p.Reqs[:i], p.Reqs[i+1:]...)
+			p.Resolved = append(p.Resolved, ResolveCall{ID: id, Allow: allow})
+			return nil
+		}
+	}
+	return domain.ErrApprovalTimeout
 }
 
 // Logs は gui.Logs の偽実装。Items は新しい順に並べて入れる（本物のファイルと同じ順序。絞り込みとページ分けは本物と同じ規則）。

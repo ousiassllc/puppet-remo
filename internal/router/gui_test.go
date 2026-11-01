@@ -144,10 +144,14 @@ func TestGUIServesTheAuditRoutes(t *testing.T) {
 // ホスト専用の経路だけがあり、/wails/* は予約され、M1 に無いものと、リモート向けの経路は存在しない。
 func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks", "/agent", "/approvals/a", "/update"} {
+	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks", "/agent", "/update"} {
 		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
 		}
+	}
+	// 承認ダイアログ（M3。#68）は GUI ルーターにある。承認要求が無い id は 410 approval_timeout。
+	if rec := do(h, http.MethodGet, "/approvals/a"); rec.Code != http.StatusGone {
+		t.Errorf("GET /approvals/a: status %d, want 410", rec.Code)
 	}
 	// 末尾のスラッシュを別の URL に飛ばさない（リダイレクトしない）。
 	if rec := do(h, http.MethodGet, "/requests/"); rec.Code != http.StatusNotFound {

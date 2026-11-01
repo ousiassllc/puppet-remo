@@ -252,11 +252,21 @@ type env struct {
 
 func newEnv(t *testing.T, mutate ...func(*Config)) *env {
 	t.Helper()
+	return newEnvWithLeases(t, nil, mutate...)
+}
+
+// newEnvWithLeases は newEnv の LeaseManager の設定を leaseMutate で変える版（承認の結合テスト用）。
+func newEnvWithLeases(t *testing.T, leaseMutate func(*service.LeaseConfig), mutate ...func(*Config)) *env {
+	t.Helper()
 	kill := &fakeKill{}
-	leases, err := service.NewLeaseManager(service.LeaseConfig{
+	leaseCfg := service.LeaseConfig{
 		Clock: fixedClock{}, IDs: &seqIDs{}, IdleTimeout: 5 * time.Minute, Kill: kill,
 		AfterFunc: func(time.Duration, func()) func() bool { return func() bool { return true } },
-	})
+	}
+	if leaseMutate != nil {
+		leaseMutate(&leaseCfg)
+	}
+	leases, err := service.NewLeaseManager(leaseCfg)
 	if err != nil {
 		t.Fatal(err)
 	}

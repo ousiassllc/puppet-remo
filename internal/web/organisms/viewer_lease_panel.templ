@@ -25,7 +25,14 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 	>
 		<h2 class="mb-2 text-sm font-semibold text-slate-700">操作権</h2>
 		<div class="flex flex-wrap items-center gap-3" data-lease-state={ leaseState(v) }>
-			@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
+			if v.Pending {
+				@molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel)
+				if v.PendingMine {
+					@atoms.Badge(atoms.BadgeWarn, "あなた")
+				}
+			} else {
+				@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
+			}
 			if v.Mine {
 				@atoms.Badge(atoms.BadgeOK, "あなた")
 			}
@@ -39,12 +46,17 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 				@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Variant: atoms.ButtonDanger, Attrs: leaseButtonAttrs("/viewer/lease/revoke")})
 			}
 		</div>
+		if v.PendingMine {
+			<p class="mt-2 text-sm text-amber-700" role="status" data-lease-pending-message>ホストの承認を待っています。</p>
+		}
 		<p class="mt-2 text-xs text-slate-500">この画面から Ctrl+Alt+Del は送れません。</p>
 	</section>
 }
 
 func leaseState(v view.ViewerLease) string {
 	switch {
+	case v.Pending:
+		return "pending_approval"
 	case !v.Held:
 		return "idle"
 	case v.Mine:

@@ -132,7 +132,8 @@ export class RemoScreenViewer extends LitElement {
     this.closeCode = 0;
   }
 
-  // 入力が有効: 最後に受信した lease が mine: true（サーバー側でも入力は常に検査される）。
+  // 入力が有効: 最後に受信した lease が held かつ mine: true（pending_approval は承認待ちの本人でも readonly 扱い。
+  // サーバー側でも入力は常に検査される）。
   // readonly は描画時の操作権の有無を表す初期のヒントにすぎない。HTMX はこのコンポーネントを差し替えないので、
   // 操作権の取得・解放・剥奪で属性は更新されない。入力の可否は WebSocket の lease だけで決める（ready で現在の状態が届く）。
   private get inputEnabled(): boolean {
@@ -281,7 +282,7 @@ export class RemoScreenViewer extends LitElement {
   }
 
   private applyLease(lease: Lease): void {
-    this.leaseMine = lease.mine;
+    this.leaseMine = lease.state === "held" && lease.mine;
     this.syncInput();
     this.emit<Lease>("remo:lease-changed", lease);
   }

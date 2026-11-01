@@ -74,8 +74,11 @@ type Session struct {
 type Sessions struct{ Items []Session }
 
 // Lease はリース保持者の表示。CanRevoke のときだけ強制剥奪のボタンを出す（状態駆動）。
+// Pending（承認待ち。pending_approval）のときは HolderLabel・KindLabel が要求者で、Held は false・CanRevoke も false
+// （強制剥奪は held のときだけ。docs に承認待ちの剥奪の記述が無いため現行の動きを変えない）。
 type Lease struct {
 	Held          bool
+	Pending       bool // 承認待ち（FR-L07）。「承認待ち: <名前>（種別）」を出す
 	CanRevoke     bool // 剥奪できる保持者（mcp・web）がいる（FR-L06。agent の剥奪は M4）
 	HolderLabel   string
 	KindLabel     string // 保持者の種別（mcp など）
@@ -103,7 +106,7 @@ type Dashboard struct {
 	KillSwitch KillSwitch
 }
 
-// ApprovalModeOption は承認モードの選択肢。M1 は「常時承認」だけを出す（他は M3 で選択肢を足す）。
+// ApprovalModeOption は承認モードの選択肢（常時承認・初回のみ承認・自動許可。FR-H03）。
 type ApprovalModeOption struct {
 	Value    string
 	Label    string
@@ -144,8 +147,16 @@ type Client struct {
 	LoginName   string
 	NodeID      string
 	Approved    string // 承認モードの表示（「常時承認」など）
-	Flags       []ClientFlag
-	DetailURL   string
+	// Modes は承認モードの選択肢（現在の値が Selected）。変更は UpdateURL へ PATCH する（approved_at が NULL に戻る。FR-H04）。
+	Modes     []ApprovalModeOption
+	UpdateURL string
+	// FirstTimeStatus は first_time のときだけ、承認済み（日時）・未承認の表示。それ以外は空。
+	FirstTimeStatus string
+	// CanResetApproval は first_time で承認済みのときだけ true（承認の取り消しのボタン。確認は要らない）。
+	CanResetApproval bool
+	ResetApprovalURL string
+	Flags            []ClientFlag
+	DetailURL        string
 	// CanDelete / CanOpenDetail は、一覧のカードだけが true（詳細ページでは出さない）。
 	CanDelete     bool
 	CanOpenDetail bool
@@ -537,11 +548,15 @@ type ViewerToolbar struct {
 
 // ViewerLease はビューアのリースパネル（FR-W08）。保持者の種別・名前・状態は常に出し、操作は Can* が true のものだけを描画する（状態駆動）。
 // CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web）が保持しているとき。
+// Pending は承認待ち（pending_approval。FR-L07）で、HolderLabel・KindLabel が要求者、PendingMine が要求者本人。承認待ちの間は
+// Held・Mine・Can* がすべて false（操作権を持たず、取得も解放も強制剥奪もできない）。
 type ViewerLease struct {
 	Held        bool
 	Mine        bool
+	Pending     bool
+	PendingMine bool
 	HolderLabel string
-	KindLabel   string // 保持者の種別（mcp / web）
+	KindLabel   string // 保持者（承認待ちなら要求者）の種別（mcp / web）
 	CanAcquire  bool
 	CanRelease  bool
 	CanRevoke   bool
@@ -575,5 +590,35 @@ type Viewer struct {
 type RemoteError struct {
 	Code    string
 	Title   string
+	Message string
+}
+
+// ApprovalDialog は承認ダイアログ（/approvals/{id}。専用の Wails ウィンドウの中身。FR-H05）。表示するのはクライアント名・種別・
+// 要求の内容・残り時間だけで、秘密・パス・引数は持たない。
+type ApprovalDialog struct {
+	ID          string
+	ClientLabel string
+	KindLabel   string // クライアントの種別（mcp / web）
+	Summary     string // 要求の内容（lease: 「操作権（リース）の取得」）
+	Remaining   ApprovalRemaining
+	AllowURL    string
+	DenyURL     string
+}
+
+// ApprovalRemaining は承認ダイアログの残り時間（HTMX が 1 秒ごとに再取得して差し替える）。
+type ApprovalRemaining struct {
+	ID         string
+	Seconds    int    // 残り秒数（切り上げ。0 未満は 0）
+	RefreshURL string // GET /approvals/{id}
+}
+
+// ApprovalDone は許可・拒否を受け付けたあとのダイアログの表示（ウィンドウは closeWindow で閉じる）。
+type ApprovalDone struct {
+	Allowed bool
+}
+
+// ApprovalGone は承認要求が終わっている（失効・解決済み・存在しない）ときのダイアログの表示。
+type ApprovalGone struct {
+	Code    string
 	Message string
 }

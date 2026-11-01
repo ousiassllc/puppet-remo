@@ -76,10 +76,17 @@ func approvalLabel(m domain.ApprovalMode) string {
 	return string(m)
 }
 
-// approvalModes は接続要求の許可フォームの承認モードの選択肢。M1 は「常時承認」だけを出し、既定で選択する
-// （初回のみ承認・自動許可は適用が M3 のため、M3 で選択肢を足す）。
-func approvalModes() []view.ApprovalModeOption {
-	return []view.ApprovalModeOption{{Value: string(domain.ApprovalAlways), Label: approvalLabel(domain.ApprovalAlways), Selected: true}}
+// approvalModes は承認モードの選択肢（常時承認・初回のみ承認・自動許可。FR-H03）。selected が空なら always を選ぶ（許可フォームの既定）。
+func approvalModes(selected domain.ApprovalMode) []view.ApprovalModeOption {
+	if selected == "" {
+		selected = domain.ApprovalAlways
+	}
+	modes := []domain.ApprovalMode{domain.ApprovalAlways, domain.ApprovalFirstTime, domain.ApprovalAuto}
+	out := make([]view.ApprovalModeOption, len(modes))
+	for i, m := range modes {
+		out[i] = view.ApprovalModeOption{Value: string(m), Label: approvalLabel(m), Selected: m == selected}
+	}
+	return out
 }
 
 // chrome は全画面共通のヘッダー・サイドバーの表示を組み立てる。件数が取れなくても画面は出す（0 件として扱いログに残す）。
@@ -133,16 +140,26 @@ func (h *Handler) sessionsView() view.Sessions {
 func (h *Handler) leaseView() view.Lease {
 	holder, ok := h.d.Leases.Holder()
 	if !ok {
+		if p, pending := h.d.Leases.Pending(); pending {
+			return view.Lease{
+				Pending: true, HolderLabel: actorLabel(p.Actor), KindLabel: kindLabel(p.Actor.Kind), Since: h.formatTime(p.Since),
+			}
+		}
 		return view.Lease{}
 	}
-	label := holder.Actor.Label
-	if label == "" {
-		label = holder.Actor.ClientID
-	}
+	label := actorLabel(holder.Actor)
 	return view.Lease{
 		Held: true, CanRevoke: holder.Actor.Kind.CanHoldLease(), HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
 		Since: h.formatTime(holder.Since), IdleRemaining: formatDuration(holder.IdleRemaining),
 	}
+}
+
+// actorLabel は操作主体の表示名。ラベルが空なら ClientID。
+func actorLabel(a domain.Actor) string {
+	if a.Label == "" {
+		return a.ClientID
+	}
+	return a.Label
 }
 
 // killSwitchView は発動中なら解除だけ、そうでなければ発動だけを出す。
@@ -185,7 +202,7 @@ func (h *Handler) requestListView(reqs []service.ConnRequest) view.RequestList {
 		v.Rows = append(v.Rows, view.RequestRow{
 			ID: r.ID, DisplayName: r.DisplayName, LoginName: r.LoginName, RemoteIP: r.RemoteIP, Count: r.RequestCount,
 			FirstSeen: h.formatTime(r.FirstSeenAt), LastSeen: h.formatTime(r.LastSeenAt), ExpiresAt: h.formatTime(r.ExpiresAt),
-			ApproveURL: "/requests/" + id + "/approve", DenyURL: "/requests/" + id + "/deny", Modes: approvalModes(),
+			ApproveURL: "/requests/" + id + "/approve", DenyURL: "/requests/" + id + "/deny", Modes: approvalModes(""),
 		})
 	}
 	v.Rev = revision(v)
@@ -252,8 +269,9 @@ func (h *Handler) clientView(c domain.Client, inList bool) view.Client {
 	flag := func(field, label string, enabled bool) view.ClientFlag {
 		return view.ClientFlag{Field: field, Label: label, Enabled: enabled, ToggleURL: toggle, NextValue: strconv.FormatBool(!enabled)}
 	}
-	return view.Client{
+	v := view.Client{
 		ID: c.ID, DisplayName: c.DisplayName, LoginName: c.LoginName, NodeID: c.StableNodeID, Approved: approvalLabel(c.ApprovalMode),
+		Modes: approvalModes(c.ApprovalMode), UpdateURL: toggle,
 		Flags: []view.ClientFlag{
 			flag("web_enabled", "Web", c.WebEnabled),
 			flag("mcp_enabled", "MCP", c.MCPEnabled),
@@ -262,6 +280,18 @@ func (h *Handler) clientView(c domain.Client, inList bool) view.Client {
 		DetailURL: "/clients/" + id, DeleteConfirm: "/clients/" + id + "/delete/confirm",
 		CanDelete: inList, CanOpenDetail: inList,
 	}
+	if c.ApprovalMode == domain.ApprovalFirstTime {
+		v.FirstTimeStatus = "未承認（次のリース取得で承認が必要です）"
+		if c.ApprovedAt != nil {
+			v.FirstTimeStatus = "承認済み（" + h.formatTime(*c.ApprovedAt) + "）"
+			v.CanResetApproval = true
+			v.ResetApprovalURL = "/clients/" + id + "/approval/reset"
+			if !inList {
+				v.ResetApprovalURL += "?view=detail"
+			}
+		}
+	}
+	return v
 }
 
 func (h *Handler) clientListView(cs []domain.Client) view.ClientList {

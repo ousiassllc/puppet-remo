@@ -59,9 +59,26 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
+		if v.Pending {
+			templ_7745c5c3_Err = molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if v.PendingMine {
+				templ_7745c5c3_Err = atoms.Badge(atoms.BadgeWarn, "あなた").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		} else {
+			templ_7745c5c3_Err = molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		if v.Mine {
 			templ_7745c5c3_Err = atoms.Badge(atoms.BadgeOK, "あなた").Render(ctx, templ_7745c5c3_Buffer)
@@ -87,7 +104,17 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div><p class=\"mt-2 text-xs text-slate-500\">この画面から Ctrl+Alt+Del は送れません。</p></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if v.PendingMine {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"mt-2 text-sm text-amber-700\" role=\"status\" data-lease-pending-message>ホストの承認を待っています。</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p class=\"mt-2 text-xs text-slate-500\">この画面から Ctrl+Alt+Del は送れません。</p></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -97,6 +124,8 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 
 func leaseState(v view.ViewerLease) string {
 	switch {
+	case v.Pending:
+		return "pending_approval"
 	case !v.Held:
 		return "idle"
 	case v.Mine:

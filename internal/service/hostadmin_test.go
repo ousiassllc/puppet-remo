@@ -726,3 +726,124 @@ func TestHostAdminDeleteClientWithdrawsItsPendingLeaseApproval(t *testing.T) {
 		t.Error("the approval request must be withdrawn")
 	}
 }
+
+// 承認モード（FR-H03）: 許可時に選んだモードで保存する。空は always、定義外は ErrInvalidArgument で何も登録しない。
+func TestHostAdminApproveStoresTheChosenApprovalMode(t *testing.T) {
+	for _, mode := range []domain.ApprovalMode{domain.ApprovalAlways, domain.ApprovalFirstTime, domain.ApprovalAuto} {
+		t.Run(string(mode), func(t *testing.T) {
+			e := newAdminEnv(t)
+			c := e.approve(t, "nodeA", "bob", ApproveInput{MCPEnabled: true, ApprovalMode: mode})
+			if c.ApprovalMode != mode || c.ApprovedAt != nil {
+				t.Errorf("client = %+v, want mode %s with approved_at NULL", c, mode)
+			}
+			got, err := e.db.Clients().Get(e.ctx, c.ID)
+			if err != nil || got.ApprovalMode != mode {
+				t.Errorf("stored client = %+v, %v", got, err)
+			}
+			entry := e.auditEntry("auth.connreq_approve")
+			if entry == nil || !strings.Contains(string(entry.DetailJSON), `"approval_mode":"`+string(mode)+`"`) {
+				t.Errorf("audit = %+v, want approval_mode in the detail", entry)
+			}
+		})
+	}
+	t.Run("blank is always", func(t *testing.T) {
+		e := newAdminEnv(t)
+		if c := e.approve(t, "nodeA", "bob", ApproveInput{}); c.ApprovalMode != domain.ApprovalAlways {
+			t.Errorf("mode = %q, want always", c.ApprovalMode)
+		}
+	})
+	t.Run("invalid", func(t *testing.T) {
+		e := newAdminEnv(t)
+		r := e.request(t, "nodeA", "bob")
+		_, err := e.admin.ApproveRequest(e.ctx, r.ID, ApproveInput{ApprovalMode: "sometimes"})
+		if domain.CodeOf(err) != domain.CodeInvalidArgument {
+			t.Fatalf("err = %v, want invalid_argument", err)
+		}
+		if _, err := e.db.Clients().ByNode(e.ctx, "nodeA"); !errors.Is(err, repository.ErrNotFound) {
+			t.Errorf("a client was registered for an invalid mode: %v", err)
+		}
+		if pending, _ := e.admin.PendingRequests(e.ctx); len(pending) != 1 {
+			t.Errorf("the request must stay pending, got %d", len(pending))
+		}
+	})
+}
+
+// 承認モードの変更は approved_at を NULL に戻し、監査（client.update）の detail に変更前後を残す。同じモードの保存では戻さない。
+func TestHostAdminUpdateClientChangesApprovalModeAndClearsApprovedAt(t *testing.T) {
+	e := newAdminEnv(t)
+	c := e.approve(t, "nodeA", "bob", ApproveInput{MCPEnabled: true, ApprovalMode: domain.ApprovalFirstTime})
+	if err := e.db.Clients().MarkApproved(e.ctx, c.ID, e.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	same := domain.ApprovalFirstTime
+	if got, err := e.admin.UpdateClient(e.ctx, c.ID, ClientUpdate{ApprovalMode: &same}); err != nil || got.ApprovedAt == nil {
+		t.Fatalf("same mode: %+v, %v; approved_at must stay", got, err)
+	}
+
+	auto := domain.ApprovalAuto
+	got, err := e.admin.UpdateClient(e.ctx, c.ID, ClientUpdate{ApprovalMode: &auto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ApprovalMode != domain.ApprovalAuto || got.ApprovedAt != nil {
+		t.Errorf("client = %+v, want auto with approved_at NULL", got)
+	}
+	e.audit.mu.Lock()
+	last := e.audit.entries[len(e.audit.entries)-1]
+	e.audit.mu.Unlock()
+	if last.Event != "client.update" || last.ActorType != domain.ActorHost {
+		t.Fatalf("last audit = %+v, want a host client.update", last)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(last.DetailJSON, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail["approval_mode_before"] != "first_time" || detail["approval_mode"] != "auto" {
+		t.Errorf("last client.update detail = %v, want before first_time / after auto", detail)
+	}
+
+	bad := domain.ApprovalMode("sometimes")
+	if _, err := e.admin.UpdateClient(e.ctx, c.ID, ClientUpdate{ApprovalMode: &bad}); domain.CodeOf(err) != domain.CodeInvalidArgument {
+		t.Errorf("invalid mode: err = %v, want invalid_argument", err)
+	}
+	if _, err := e.admin.UpdateClient(e.ctx, "missing", ClientUpdate{ApprovalMode: &auto}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown client: err = %v, want ErrNotFound", err)
+	}
+}
+
+// 承認の取り消し: first_time で承認済みのときだけ approved_at を NULL に戻す。それ以外は conflict、無いクライアントは ErrNotFound。
+func TestHostAdminResetApproval(t *testing.T) {
+	e := newAdminEnv(t)
+	first := e.approve(t, "nodeA", "bob", ApproveInput{MCPEnabled: true, ApprovalMode: domain.ApprovalFirstTime})
+
+	// 未承認の first_time は取り消すものが無い。
+	if _, err := e.admin.ResetApproval(e.ctx, first.ID); domain.CodeOf(err) != domain.CodeConflict {
+		t.Errorf("unapproved: err = %v, want conflict", err)
+	}
+	if err := e.db.Clients().MarkApproved(e.ctx, first.ID, e.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := e.admin.ResetApproval(e.ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ApprovedAt != nil || got.ApprovalMode != domain.ApprovalFirstTime {
+		t.Errorf("client = %+v, want first_time with approved_at NULL", got)
+	}
+	// 取り消し後は次のリース取得から再び承認が要る。
+	if !domain.NeedsApproval(got.ApprovalMode, got.ApprovedAt) {
+		t.Error("the next lease must need approval again")
+	}
+	if _, err := e.admin.ResetApproval(e.ctx, first.ID); domain.CodeOf(err) != domain.CodeConflict {
+		t.Errorf("second reset: err = %v, want conflict", err)
+	}
+
+	always := e.approve(t, "nodeB", "carol", ApproveInput{MCPEnabled: true})
+	if _, err := e.admin.ResetApproval(e.ctx, always.ID); domain.CodeOf(err) != domain.CodeConflict {
+		t.Errorf("always: err = %v, want conflict", err)
+	}
+	if _, err := e.admin.ResetApproval(e.ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown client: err = %v, want ErrNotFound", err)
+	}
+}

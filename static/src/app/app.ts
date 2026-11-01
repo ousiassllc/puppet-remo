@@ -91,6 +91,24 @@ async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<
   }
 }
 
+// 7. 承認ダイアログ（専用の Wails ウィンドウ。/approvals/{id}）の許可・拒否の応答は HX-Trigger: closeWindow を返す。
+// htmx がこのイベントを（要素から document まで bubbles で）発火するので、ウィンドウを閉じる。Wails のランタイム（/wails/runtime.js。
+// 同一オリジンの外部スクリプトで、CSP の script-src 'self' に収まる。Wails の AssetServer が配信する）の Window.Close を使う。
+// ウィンドウは承認の終了（許可・拒否・失効）を購読した app 側も閉じる（internal/app）ので、ここが失敗しても（ブラウザでの開発など
+// ランタイムが無いとき）残るのは「許可しました。」の表示だけで、承認の結果には影響しない。
+const wailsRuntimeURL = "/wails/runtime.js";
+
+document.addEventListener("closeWindow", () => {
+  void (async () => {
+    try {
+      const runtime: { Window: { Close(): Promise<void> } } = await import(wailsRuntimeURL);
+      await runtime.Window.Close();
+    } catch {
+      // ランタイムが無い・閉じられない。ウィンドウは app が閉じる。
+    }
+  })();
+});
+
 // 6. <remo-screen-viewer> が発火する remo:error（bubbles / composed。detail は { code, message }）のトースト。
 // WebSocket の error の message はドメインエラーの文（英語）で、契約はそのまま。利用者向けには code から日本語にする。
 // 文言は HTMX のアクションの失敗（internal/web/handler/remote/errors.go の failureMessages）と揃える。表に無い code はサーバーの message を出す。

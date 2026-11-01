@@ -12,6 +12,7 @@ import (
 const (
 	TopicLease              = "lease"
 	TopicApproval           = "approval"
+	TopicApprovalClosed     = "approval-closed"
 	TopicConnectionRequests = "connection-requests"
 	TopicKillSwitch         = "killswitch"
 	TopicServerStatus       = "server-status"
