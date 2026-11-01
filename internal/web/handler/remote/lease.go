@@ -22,8 +22,11 @@ func (h *Handler) LeasePanel(c *gin.Context) {
 	}
 }
 
-// AcquireLease は POST /viewer/lease/acquire（操作権を取得。FR-W08）。他者が保持中なら 409 lease_held_by_other。
-// 承認待ち（pending_approval）は M3 で、M2 は承認なしで取得する。
+// AcquireLease は POST /viewer/lease/acquire（操作権を取得。FR-W08）。他者が保持中・承認待ちなら 409 lease_held_by_other。
+// 承認が要るクライアントでは Leases.Acquire が最大 60 秒ブロックし、ホストの結果（許可は 200 のリースパネル、拒否は 403
+// approval_denied、タイムアウトは 408 approval_timeout のトースト）まで応答しない。その間のパネルは WebSocket の lease
+// （remo:lease-changed → GET /viewer/lease）で承認待ちの表示に更新される。承認待ちを即座に返す窓口（Acquire の非同期版など）は
+// docs に決まりが無く、未実装（docs/components/overview.md §13.6）。
 func (h *Handler) AcquireLease(c *gin.Context) {
 	_, who, ok := h.viewerContext(c)
 	if !ok {

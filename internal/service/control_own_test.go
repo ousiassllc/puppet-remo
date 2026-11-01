@@ -186,3 +186,47 @@ func equalRegions(a, b []domain.OwnRegion) bool {
 	}
 	return true
 }
+
+// 承認ダイアログ（専用の Wails ウィンドウ。FR-H05）は自プロセスのウィンドウで、最前面の中央に出る。その座標への MCP・Web の入力は
+// own_window の input_blocked で拒否され、注入器に届かない（NFR-S06。AI は承認ダイアログを押せない）。
+func TestControlDoBlocksInputToTheApprovalDialog(t *testing.T) {
+	// 3200x1800 の中央に 440x340（物理 (1380,730)〜(1820,1070)）。縮小率 0.49 では左上 (676,357)。ダイアログの中の「許可」ボタンあたり。
+	dialog := domain.WindowInfo{ID: "9", Title: "puppet-remo 承認", Own: true, Foreground: true, Rect: domain.Rect{X: 1380, Y: 730, W: 440, H: 340}}
+	normal := domain.WindowInfo{ID: "1", Title: "normal", Rect: domain.Rect{X: 0, Y: 0, W: 3200, H: 1800}}
+	inside := domain.Point{X: 750, Y: 450} // 縮小座標 → 物理 (1531,918)
+
+	t.Run("mcp left_click", func(t *testing.T) {
+		e := newCtlEnv(t)
+		e.windows.SetWindows(dialog, normal)
+		_, err := e.control.Do(context.Background(), ctlAlice, domain.Click{At: &inside, Button: domain.ButtonLeft, Count: 1, Monitor: 0})
+		regions := ownWindowsOf(t, err)
+		if len(regions) != 1 || regions[0].Rect.W == 0 {
+			t.Errorf("own_windows = %+v, want the dialog's rect", regions)
+		}
+		if hasInputCall(e, "Click") || hasInputCall(e, "MoveTo") {
+			t.Error("a click on the approval dialog reached the injector")
+		}
+	})
+	t.Run("web pointer", func(t *testing.T) {
+		e := newWebEnv(t)
+		e.windows.SetWindows(dialog, normal)
+		stream := domain.Point{X: 1531, Y: 918} // ストリームの座標（物理ピクセル）
+		for _, op := range []domain.Op{
+			domain.PointerMove{At: stream, Monitor: 0},
+			domain.MouseButton{At: stream, Button: domain.ButtonLeft, Action: domain.ButtonActionDown, Monitor: 0},
+		} {
+			_, err := e.control.Do(context.Background(), ctlViewer, op)
+			ownWindowsOf(t, err)
+		}
+		if hasInputCall(e, "MoveTo") || hasInputCall(e, "Button") {
+			t.Error("a pointer operation on the approval dialog reached the injector")
+		}
+	})
+	t.Run("outside the dialog is not blocked", func(t *testing.T) {
+		e := newCtlEnv(t)
+		e.windows.SetWindows(dialog, normal)
+		if _, err := e.control.Do(context.Background(), ctlAlice, domain.Click{At: &domain.Point{X: 50, Y: 50}, Button: domain.ButtonLeft, Count: 1, Monitor: 0}); err != nil {
+			t.Errorf("click outside the dialog: %v", err)
+		}
+	})
+}

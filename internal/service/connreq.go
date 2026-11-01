@@ -54,6 +54,10 @@ func (a *authz) RecordConnectionRequest(ctx context.Context, id Identity, ip str
 	})
 	if err == nil && created {
 		a.log.Info("connection request received", "request_id", req.ID, "device", id.NodeName, "login_name", id.LoginName, "remote_ip", ip)
+		// 作成（新しい要求の行ができたとき）だけを記録する。pending への集約は記録しない（FR-AU01）。
+		a.audit(ctx, repository.AuditEntry{
+			Event: "auth.connreq_create", ActorType: domain.ActorSystem, ClientLabel: id.NodeName, Result: auditOK,
+		}, map[string]any{"request_id": req.ID, "stable_node_id": id.StableNodeID, "login_name": id.LoginName, "remote_ip": ip})
 	}
 	return err
 }

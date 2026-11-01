@@ -89,12 +89,15 @@ func (s *Sessions) Configure(_ string, _ domain.Client, c service.ViewerConfig) 
 
 // Leases は 1 つのリースを持つ偽の LeaseManager。保持者がいるとき、他者の Acquire は ErrLeaseHeldByOther。
 type Leases struct {
-	mu       sync.Mutex
-	holder   *domain.Actor
-	revoked  *domain.Actor
-	Revokers []domain.Actor // Revoke を呼んだ操作主体
-	Acquires int
-	Releases int
+	mu      sync.Mutex
+	holder  *domain.Actor
+	pending *domain.Actor // 承認待ちの要求者（pending_approval）
+	revoked *domain.Actor
+	// AcquireErr が nil でなければ Acquire はこれを返す（approval_denied・approval_timeout など。リースは変えない）。
+	AcquireErr error
+	Revokers   []domain.Actor // Revoke を呼んだ操作主体
+	Acquires   int
+	Releases   int
 }
 
 // Hold は actor が保持している状態にする（テストの準備）。
@@ -102,6 +105,13 @@ func (l *Leases) Hold(a domain.Actor) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.holder, l.revoked = &a, nil
+}
+
+// SetPending は actor が承認待ちの状態にする（テストの準備。保持者は外す）。
+func (l *Leases) SetPending(a domain.Actor) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.holder, l.pending = nil, &a
 }
 
 // Holding は今の保持者。
@@ -118,6 +128,12 @@ func (l *Leases) Acquire(_ context.Context, who domain.Actor) (service.Lease, er
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.Acquires++
+	if l.AcquireErr != nil {
+		return service.Lease{}, l.AcquireErr
+	}
+	if l.pending != nil {
+		return service.Lease{}, domain.ErrLeaseHeldByOther
+	}
 	if l.holder != nil && !l.holder.SameSession(who) {
 		return service.Lease{}, domain.ErrLeaseHeldByOther
 	}
@@ -155,6 +171,15 @@ func (l *Leases) Holder() (service.Holder, bool) {
 		return service.Holder{}, false
 	}
 	return service.Holder{LeaseID: "lease-1", Actor: *l.holder, Since: time.Unix(0, 0)}, true
+}
+
+func (l *Leases) Pending() (service.PendingLease, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.pending == nil {
+		return service.PendingLease{}, false
+	}
+	return service.PendingLease{LeaseID: "lease-1", Actor: *l.pending, Since: time.Unix(0, 0)}, true
 }
 
 // check は Control の入力の前提（保持者であること）。

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 )
@@ -470,7 +471,8 @@ func TestChangingTheIdleTimeoutSettingAppliesToTheLeaseManager(t *testing.T) {
 	if _, err := e.app.settings.Save(ctx, s); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.app.leases.Acquire(ctx, domain.Actor{Kind: domain.ActorMCP, ClientID: "c1", Label: "c1", SessionID: "s1"}); err != nil {
+	clientID, _ := e.registerClient()
+	if _, err := e.app.leases.Acquire(ctx, domain.Actor{Kind: domain.ActorMCP, ClientID: clientID, Label: "c1", SessionID: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	h, held := e.holder()
@@ -531,5 +533,47 @@ func TestShutdownBeforeStartStillClosesResources(t *testing.T) {
 	}
 	if err := e.app.Start(t.Context()); err == nil {
 		t.Error("Start after Shutdown must fail")
+	}
+}
+
+func TestLeaseAcquireWaitsForApprovalOfAnAlwaysClient(t *testing.T) {
+	// 組み立て: 承認モード always のクライアントの取得は、Approval を通ってホストの結果を待ち、Bus に approval が出る（FR-L07）。
+	e := newEnv(t)
+	clientID, _ := e.registerClient()
+	always := domain.ApprovalAlways
+	if err := e.db.Clients().Update(t.Context(), clientID, repository.ClientPatch{ApprovalMode: &always}); err != nil {
+		t.Fatal(err)
+	}
+	events, cancel := e.app.bus.Subscribe(service.TopicApproval)
+	defer cancel()
+
+	who := domain.Actor{Kind: domain.ActorMCP, ClientID: clientID, Label: "alice-laptop", SessionID: "s1"}
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.app.leases.Acquire(t.Context(), who)
+		done <- err
+	}()
+	select {
+	case ev := <-events:
+		data, ok := ev.Data.(service.ApprovalEvent)
+		if !ok || data.Kind != service.ApprovalKindLease {
+			t.Fatalf("approval event data = %#v", ev.Data)
+		}
+		if err := e.app.approval.Resolve(data.ID, true); err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("the approval event was not published")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("Acquire did not return after the approval")
+	}
+	if _, held := e.holder(); !held {
+		t.Error("the lease must be held after the approval")
 	}
 }

@@ -378,9 +378,12 @@ type LaunchableApps interface {
 type Audit interface {
     Append(ctx, e AuditEntry) (id int64, err error)
     Query(ctx, q AuditQuery) ([]AuditEntry, next int64, err error)
+    Get(ctx, id int64) (AuditEntry, error)                               // 詳細（detail_json・サムネイルのメタを含む）。無ければ ErrNotFound
     AttachThumb(ctx, auditID int64, t ThumbMeta) error
     PurgeBefore(ctx, t time.Time) (removedThumbs []string, err error)    // 行を先に削除し、ファイルは呼び出し側が消す
     PurgeThumbsOver(ctx, maxBytes int64) (removedThumbs []string, err error)
+    ThumbPaths(ctx) ([]string, error)                                    // 孤児の掃除用: audit_thumbnails の全 rel_path
+    PurgeMissingThumbs(ctx, exists func(rel string) bool) (int, error)   // 孤児の掃除用: ファイルの無い行を削除（ログ行は残す）
 }
 type Tasks interface {
     Create(ctx, t TaskRecord) error
@@ -395,6 +398,7 @@ type ThumbStore interface { // thumbs/ 配下のファイル
     Remove(relPath string) error
     SweepOrphans(ctx, known func(rel string) bool) error
 }
+// DB.Thumbs() が thumbs/（DB ファイルと同じディレクトリ）の ThumbStore を返す。
 ```
 
 **所有する goroutine / 状態**: `repository` は goroutine を持たない（保守処理のタイマーは `service/maintenance` が持つ）。マイグレーションは `Open` が起動時に同期で実行する。
@@ -523,11 +527,14 @@ func New(key func(ctx context.Context) (string, error), cfg Config) Chooser
 
 ```go
 type LeaseManager interface {
-    // 取得。M1・M2 は承認なしで idle → held（保持者種別は mcp と web）。M3 から、承認が必要なら Approval に問い合わせて待つ（最大 60 秒）。他者が保持中は ErrLeaseHeldByOther。
+    // 取得。承認が要らなければ idle → held（保持者種別は mcp と web）。M3 から、クライアントの承認モード（FR-L07）が承認を求めるときは
+    // idle → pending_approval にして、ロックを手放してから Approval に問い合わせて待つ（最大 60 秒）。許可で held、拒否は ErrApprovalDenied、
+    // タイムアウトは ErrApprovalTimeout。待ち中の ctx のキャンセルは ctx.Err()、キルスイッチの発動は ErrKillSwitchActive（後から許可されても held にならない）、
+    // セッション切断・クライアントの削除・無効化は ErrLeaseRequired（取り下げ）で、いずれも idle に戻る。他者が保持中、または承認待ちは ErrLeaseHeldByOther。
     Acquire(ctx context.Context, who domain.Actor) (Lease, error)
     // 保持者のみ。保持していなければ何もしない。
     Release(who domain.Actor)
-    // セッション切断（FR-L05）。Release と同じだが、監査の理由が explicit ではなく disconnect になる。
+    // セッション切断（FR-L05）。Release と同じだが、監査の理由が explicit ではなく disconnect になる。who の承認待ちがあれば取り下げて idle に戻す。
     ReleaseSession(who domain.Actor)
     // 強制剥奪（Web・ホスト。M2 から）。by は host か web（それ以外は ErrInvalidArgument）。保持者がいなければ何もせず nil（冪等）。
     // 保持者が agent（M4）ならタスクを中断する（Agent.Cancel を呼ぶ）。M2 では agent の保持者がいないので Cancel は呼ばない。
@@ -535,16 +542,18 @@ type LeaseManager interface {
     Revoke(by domain.Actor) error
     // 以後の入力操作が許されるかの確認。活動時刻を更新する（アイドル解放の起点）。
     Check(who domain.Actor) error // ErrLeaseRequired / ErrLeaseHeldByOther / ErrLeaseRevoked
-    Holder() (Holder, bool)
-    // キルスイッチ・セッション切断用。
+    Holder() (Holder, bool)           // held のときだけ。承認待ちは Pending
+    Pending() (PendingLease, bool)    // 承認待ち（pending_approval）の要求者。M3 から
+    // キルスイッチ・セッション切断用。承認待ちがあれば取り下げる。
     ReleaseAll(reason string)
     Subscribe() <-chan domain.LeaseEvent // 変化（Bus 経由でも配る）
 }
 type Lease struct{ ID string; Holder domain.Actor; Since time.Time }
 type Holder struct{ LeaseID string; Actor domain.Actor; Since time.Time; IdleRemaining time.Duration }
+type PendingLease struct{ LeaseID string; Actor domain.Actor; Since time.Time } // LeaseID は承認されたときのリースの ID
 ```
 
-- 保持者種別は `mcp`（M1）と `web`（M2）。`agent` は M4。状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は他者の取得を `ErrLeaseHeldByOther` で断る
+- 保持者種別は `mcp`（M1）と `web`（M2）。`agent` は M4。状態は `idle → held → idle`（M1。FR-L03）。`pending_approval`（`idle → pending_approval → held`）は M3（FR-L07）で加わる。`pending_approval` の間は、他者の取得を `ErrLeaseHeldByOther` で断る。**要求者本人も同じ**（承認前の `Acquire`・`Check` は `ErrLeaseHeldByOther`。承認を待たずに `held` にしない。明示解放 `Release` は承認待ちに触れない。取り下げは `ctx` のキャンセル・キルスイッチ・セッション切断・クライアントの削除・無効化だけ）。承認が要るかは `domain.NeedsApproval(mode, approved_at)` が決める（`always` は常に、`first_time` は `approved_at` が NULL のときだけ、`auto` は要らない。定義外の値は要る）。保持者の再 `Acquire` は承認を要さず、活動として数える。取得者のクライアントが読めない（未登録・削除済み・読み取りの失敗）ときは承認を求めず取得させない（fail-closed）。`first_time` で許可されたら `clients.approved_at` を記録する（記録に失敗してもリースは取り消さず、次の取得でもう一度承認を求める）。アイドルタイマーとスリープ抑止（NFR-A05）は `held` の間だけ
 - アイドルタイマーは `lease.idle_timeout_sec`（既定 300 秒）。`Check` が呼ばれるたびに延長する。`agent` のリース（M4）は、エージェントの各アクション実行が `Check` を呼ぶことで延長される（FR-L08）
 - **リースは MCP セッションに紐づく**: セッション終了で `Release`。WebSocket の切断で `web` のリースを `Release`（M2）
 - 状態遷移はすべて `Audit` に記録し、`Bus` に `lease` イベントを出す（Web UI・GUI が購読）
@@ -553,21 +562,23 @@ type Holder struct{ LeaseID string; Actor domain.Actor; Since time.Time; IdleRem
 
 ```go
 type Approval interface {
-    // ダイアログを開いて待つ。60 秒でタイムアウトし ErrApprovalTimeout。ctx のキャンセルで取り下げる。
+    // ダイアログを開いて待つ。60 秒でタイムアウトし ErrApprovalTimeout。ctx のキャンセルで取り下げる（ctx.Err() を返す）。
+    // 許可・拒否は Decision{Allow}（拒否はエラーではない）。ID と ExpiresAt は Approval が決める。
     Request(ctx context.Context, req ApprovalRequest) (Decision, error)
-    // GUI ルーターから呼ばれる。解決済み・失効は ErrApprovalTimeout（410）。
+    // GUI ルーターから呼ばれる。解決済み・失効・取り下げ済み・存在しない id は ErrApprovalTimeout（410）。
     Resolve(id string, allow bool) error
-    Pending() []ApprovalRequest
+    Pending() []ApprovalRequest // 要求した順
 }
 type ApprovalRequest struct {
-    ID   string
-    Kind string // "lease" | "safety_check" | "judge_action"
-    Who  domain.Actor
-    Detail ApprovalDetail // 内容（指示の要約、安全チェック、アクション、対象ウィンドウ、判定の理由）
+    ID        string
+    Kind      string // "lease"（M3）| "safety_check" | "judge_action"（M4）
+    Who       domain.Actor
+    ExpiresAt time.Time // この時刻までに結果がなければ ErrApprovalTimeout（ダイアログのカウントダウン用）
+    // Detail ApprovalDetail // 内容（指示の要約、安全チェック、アクション、対象ウィンドウ、判定の理由）。M4 で足す。M3 の lease は Kind と Who だけ
 }
 ```
 
-要求を作るたびに `Bus` へ `approval` を出す。承認ダイアログのウィンドウを開くのは `app`（購読側）で、`Approval` は UI を知らない。`Approval` は M3 から使う（M1 の `LeaseManager` は `Approval` を呼ばず、承認なしで取得させる）。
+要求を作るたびに `Bus` へ `approval`（`Data` は `ApprovalEvent{ID, Kind}`）を**ブロックせずに**出す（NFR-P06: リース取得要求からダイアログの表示まで 1 秒以内）。承認ダイアログのウィンドウを開くのは `app`（購読側。§7）で、`Approval` は UI を知らない。承認待ちが終わるたび（許可・拒否の `Resolve`・60 秒の失効・取り下げ）に、`Bus` へ `approval-closed`（`Data` は `ApprovalClosedEvent{ID}`）も**ブロックせずに**出す（要求が `Pending` から消えたあとに 1 回だけ。負けた `Resolve` は出さない）。購読側（`app`）はダイアログを閉じる（M3・#68）。`Approval` は M3 から使う（M1・M2 の `LeaseManager` は `Approval` を呼ばず、承認なしで取得させた）。状態（承認待ちの要求）は `sync.Mutex` 1 つで守り、ロックを持ったまま `Bus`・呼び出し側を呼ばない。タイムアウトは `domain.Clock` と `AfterFunc` の差し替えで進める。
 
 ### 5.4 Control と InputGuard（すべての入力の唯一の入口）
 
@@ -598,7 +609,7 @@ type Control interface {
 3. `InputGuard.Check(op)` → 自ウィンドウ・昇格ウィンドウ・SAS を `ErrInputBlocked` で拒否（NFR-S06、UIPI）。`own_window` の拒否には、`Control` が `WindowManager.List` と `Capturer.Monitors` から `domain.OwnWindowRegions` で求めた puppet-remo のウィンドウの範囲（モニターごとの縮小座標の矩形）を `Detail[DetailOwnWindows]`（値は `[]domain.OwnRegion`）に付ける（FR-M20。取れなければ付けず、拒否は変えない）
 4. `who.Kind == agent` のとき `Judge.Assess` → `Deny` は `ErrJudgeDenied`、`RequireApproval` は `Approval.Request`（拒否・失効は `ErrApprovalDenied`）
 5. `platform` の注入を実行
-6. `Audit.Append`（引数、結果、所要時間。`type` の本文は既定で文字数のみ。FR-AU03）。M1 はここまで（DB への追記のみ）。設定が有効ならサムネイル保存は M3（FR-AU02）
+6. `Audit.Record`（引数、結果、所要時間。`type` の本文・クリップボードは既定で文字数のみ。設定 `audit.record_text` が true のときだけ本文も記録。FR-AU03）。設定が有効なら、操作の直後にサムネイル保存（FR-AU02。撮る操作・モニター・タイミングは未決。§13.5）
 
 **Web UI（保持者種別 `web`）の入力**も同じ順序で `Do` を通る。`WebSocket` の `input.mouse` は `PointerMove`（move）・`MouseButton`（down / up。カーソルを動かしてから押す・離す）・`Wheel`（wheel）に、`input.key` は `KeyEvent` に、`input.text` は `TypeText` に、ショートカット送信（`POST /viewer/keys/send`）は `KeyPress` に、クリップボード（`POST /viewer/clipboard/send` / `fetch`）は `ClipboardWrite` / `ClipboardRead` に写す。`web` は暗黙にリースを取らず、未保持は `ErrLeaseRequired`（FR-L04）。3 では `PointerMove`・`MouseButton`・`Wheel` の座標（ストリームの座標）を、選択モニターの原点を足して仮想デスクトップの物理座標にする（モニターの外は `ErrInvalidCoordinates`。縮小しない）。`Wheel` の `DX` / `DY` は有限で絶対値 50 ノッチまで（超過は `ErrInvalidArgument`）。`ctrl+alt+delete`（SAS）は `KeyPress` も `KeyEvent`（`Delete` に `ctrl` と `alt`）も `ErrInputBlocked`（`secure_attention_sequence`）で、Web UI からも送れない。
 
@@ -644,7 +655,7 @@ type LaunchResult struct {
 `Control.Launch` の検査の順序（1 つでも失敗したら起動しない。`Do` の 1・2 と同じ前段を共有し、3 以降が異なる）:
 
 1. `KillSwitch.Active()` → `ErrKillSwitchActive`
-2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04）
+2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04。**M3 から、クライアントの承認モード（FR-L07）が承認を求めるときは、この `Acquire` がホストの結果を待つ（最大 60 秒）ので、`Do` / `Launch` の呼び出しもその間ブロックする**。拒否・タイムアウト・取り下げなら実行せず、`ErrApprovalDenied` / `ErrApprovalTimeout` などを返し、監査の `result` は `denied`）
 3. `AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。
 4. `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）→ `ErrKillSwitchActive`
 5. `platform.AppLauncher.Launch`（Windows 実装は、起動の直前に実行ファイルがローカルの固定ディスク上の実体であること — `GetDriveType` が `DRIVE_FIXED`、`GetFinalPathNameByHandle` の結果が登録されたパスと一致 — を確かめ、違えば `access_denied`）→ 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
@@ -652,7 +663,7 @@ type LaunchResult struct {
 6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・5 の失敗 `error`。`tool.launch_app`。FR-AU06）。起動のあとに非同期で記録するため、キューが満杯・書き込み失敗のときは起動が成立したまま記録が残らない（fail-open。NFR-S20 の残存リスク）。`Audit` は取りこぼしを Error で運用ログに出す（`audit entry dropped`・`audit append failed`）
 
 - 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。`detail` は `{app_id, label（許可リストを引けたときだけ）, pid と reused_existing_window（成功のみ）, reason（launch_failed のみ）}`。前面のウィンドウのタイトル・id は記録しない。パス・引数・作業ディレクトリは入れない
-- **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 で承認モードを適用する場合は、2 と 3 の間に入れる
+- **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 の承認モードは、2 の暗黙のリース取得（`LeaseManager.Acquire`）で 1 回だけ適用する（FR-L07。`launch_app` にもかかる）。リースの保持中に `launch_app` の呼び出しごとの承認を足すかは未決で、M3（#66）では足していない
 - 起動の直列化はしない（`Do` の入力セマフォを使わない。プロセスの作成は入力の順序に影響しない）。同じアプリの多重起動を禁止しない（毎回新しいプロセス）
 - `Control` だけが `platform.AppLauncher` を呼べる（`InputInjector` と同じ。パッケージの可視性で保証する）。**M4 の `Agent` がアプリを起動するときも、`Control.Launch`（`who.Kind = agent`）と同じ `AppRegistry` を使い**、別の許可リスト・別の起動経路は作らない（決定事項）。`agent` のときの Judge・承認の適用は M4 の設計で定める
 - `LaunchableApps` は `AppRegistry.List` のうち、起動できない行（`domain.CheckLaunchTarget` が拒否する行。読めない `Corrupt` の行を含む）を除いて `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
@@ -874,10 +885,10 @@ Bearer トークンは `prm_` + base64url（パディングなし）の 32 バ�
 
 | コンポーネント | インターフェース（要点） | 備考 |
 |---------------|-------------------------|------|
-| `Audit` | `Record(ctx, e domain.AuditEvent)`（非同期キューへ。満杯時は呼び出しを遅延させず、ドロップ数を `slog` に警告） | **M1**: 認証失敗・リース・ツール実行を `repository.Audit.Append` で DB に追記するところまで（閲覧 UI と縮小スクリーンショットは作らない）。**M3**: 全イベントの記録、閲覧（`Query`）、サムネイル保存（`Control` が `Capturer.Grab` → 縮小 → JPEG → `ThumbStore`）、保持期間・容量の削除（`Maintenance`） |
+| `Audit` | `Record(ctx, e domain.AuditEvent)`（非同期キューへ。満杯時は呼び出しを遅延させず、ドロップ数を `slog` に警告） | **M1**: 認証失敗・リース・ツール実行を `repository.Audit.Append` で DB に追記するところまで（閲覧 UI と縮小スクリーンショットは作らない）。**M3**: 全イベントの記録（カタログは ER「イベントのカタログ」）、閲覧（`Query`。読み取りの窓口は `AuditReader`。§13.5）、サムネイル保存（`Capturer.Grab` → 縮小 → JPEG → `ThumbStore`。`RecordWithThumb`。§13.5）、保持期間・容量の削除（`Maintenance`） |
 | `Updater` | `Check(ctx)`、`Apply(ctx)` | 署名検証（Ed25519）に失敗・ダウングレードは適用しない。リース・タスク実行中は適用しない |
 | `Bus` | `Publish(Event)`、`Subscribe(topics ...string) (<-chan Event, cancel func())` | イベント: `lease` / `approval` / `tasks` / `connection-requests` / `killswitch` / `server-status` / `sessions` / `toast` |
-| `Maintenance` | `Run(ctx)` | 起動時と 1 時間ごと: 接続要求の失効、監査の保持期間、サムネイル容量、孤児ファイルの掃除、タスクの保持期間。起動時に `Tasks.AbortActive` |
+| `Maintenance` | `Run(ctx)` | 起動時と 1 時間ごと: 接続要求の失効、監査の保持期間、サムネイル容量、孤児ファイルの掃除（起動時だけ）、タスクの保持期間。起動時に `Tasks.AbortActive`。M3 で監査の 3 つ（保持期間・容量・孤児）を実装（§13.5）。1 回分の容量の削除は `PurgeThumbsOverCap(ctx)` として公開し、サムネイルの保存の都度の確認（#71）と共用する |
 | `Settings`（service） | `Get[T](key) T`、`Set(ctx, key, v)` | 型付きの取り出し。既定値はコードで持つ。変更時に `Bus` と、影響のあるコンポーネント（`Listener` のポートなど）へ通知 |
 
 `agent.fastpath.enabled` の変更時、`Settings` は `agent.fastpath.consent_at` を設定（有効化）または削除（無効化）し、エージェントの有効化とは別の監査イベント（`fastpath_consent`）を記録する（FR-G22）。
@@ -903,10 +914,11 @@ type Windows interface { // ウィンドウの生成・破棄（Wails v3 のラ�
     ShowOverlay(monitors []domain.Monitor, label string)
     HideOverlay()
 }
+type Window interface{ Close() } // 閉じる操作。すでに閉じていれば何もしない
 ```
 
 - **メイン**: ホスト GUI（GUI ルーターを `AssetOptions.Handler` に渡す）。閉じてもトレイに残る。多重起動は Wails の単一インスタンスで 1 つに制限（FR-H01）
-- **承認ダイアログ**: `Bus` の `approval` を購読して開く。`ContentProtectionEnabled`（キャプチャ除外）を必ず有効にする
+- **承認ダイアログ**: `Bus` の `approval` を購読して開く。`ContentProtectionEnabled`（キャプチャ除外）を必ず有効にする。`approval-closed`（許可・拒否・失効・取り下げ）とシャットダウンで閉じる。同時に開くのは 1 つ（M3 の `kind` は `lease` だけで、`pending_approval` の間は他者の取得が断られる。複数が来たときの扱いは未決）。許可も拒否もせずウィンドウを閉じた場合は、承認待ちが 60 秒の失効で拒否になる（M3 の実装の判断。§13.6）
 - **オーバーレイ**: モニターごとに 1 ウィンドウ（枠なし・透過・最前面・`IgnoreMouseEvents`・タスクバー非表示・キャプチャ除外）。`Bus` の `lease` で表示・消去。`agent` のときは指示の要約を併記（FR-H07）
 - **トレイ**: キルスイッチ、ダッシュボードを開く、終了。`connection-requests` の件数で通知
 - **ホットキー**: `Hotkey.Register(killswitch.hotkey, killSwitch.Trigger)`。設定変更時は登録し直す
@@ -1064,7 +1076,9 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 項目 | M1 の実装 |
 |------|----------|
 | `repository.Clients` | `Replace(ctx, oldID, c)`（既存クライアントを削除して新しい行を同一トランザクションで作る。再許可用）を追加。`Create` は `stable_node_id` の重複で `ErrConflict` |
-| `repository.Audit` | `Append` だけ（M1）。`Query`・`AttachThumb`・`PurgeBefore`・`PurgeThumbsOver` と `Tasks`・`ThumbStore` は M3・M4 で足す。`AuditEntry.ClientID` が空、またはクライアントの行がすでに無いときは `client_id` を NULL で保存する（`client_label` は残る。ER） |
+| `repository.Audit` | M1 は `Append` だけ。M3（#70）で `Query`・`Get`・`AttachThumb`・`PurgeBefore`・`PurgeThumbsOver`・`ThumbPaths`・`PurgeMissingThumbs` と `ThumbStore`（`DB.Thumbs()`）を足した（詳細は下の「M3 の監査の読み出し・サムネイル・保守」の行）。`Tasks` は M4 で足す。`AuditEntry.ClientID` が空、またはクライアントの行がすでに無いときは `client_id` を NULL で保存する（`client_label` は残る。ER） |
+| M3 の監査の読み出し・サムネイル・保守（#70。FR-AU04・AU05） | — | `AuditEntry` に読み出し専用の `ID` と `Thumb *ThumbMeta`（`RelPath`・`SizeBytes`・`Width`・`Height`・`CreatedAt`）を足した（`Append` は無視する）。`Query` は `AuditQuery`（`From`・`To`（`ts` の以上・以下）・`ClientID`・`Kind`・`Result`・`Q`（イベント名の部分一致。`%`・`_`・`\` は文字どおり。SQLite の `LIKE` は ASCII の大文字小文字を区別しない）・`Cursor`・`Limit`（0 以下は 50、最大 200））で絞り込み、`ts` 降順（同時刻は `id` 降順）の 1 ページと `next`（次のページがあるときの最後の `id`。無ければ 0）を返す。一覧は `detail_json` を読まない（`Get` だけが読む）。カーソルの行が保持期間の削除で消えていたら空の結果。`AttachThumb` は 1 ログに 1 枚（2 回目は `ErrConflict`、ログが無ければ `ErrNotFound`）で、`rel_path` が `thumbs/` 配下の安全な相対パスでなければ `ErrInvalidArgument`。`PurgeBefore`・`PurgeThumbsOver` は同じトランザクションで削除対象の `rel_path` を集めて行を削除し、返したパスのファイルは呼び出し側（`Maintenance`）が後で消す。`PurgeThumbsOver` は `maxBytes <= 0` で `ErrInvalidArgument`、`created_at`（同じなら `id`）の古い順に、合計が `maxBytes` 以下になるまで行だけを削除する（ログ行は残る）。`ThumbPaths`・`PurgeMissingThumbs` は孤児の掃除用 |
+| `ThumbStore`（M3・#70） | — | `DB.Thumbs()`（DB ファイルと同じディレクトリの `thumbs/`。`app` では `%LOCALAPPDATA%\puppet-remo\thumbs\`）。パスは `/` 区切りの相対パスだけを受け付け、空・先頭の `/`・空や `.`・`..` の要素・`\`・`:`・`<>"\|?*`・制御文字（NUL を含む）・末尾が `.` か空白の要素・予約デバイス名（`CON`・`NUL`・`COM1`〜・上付き数字を含む）を `ErrInvalidArgument` で拒否する（書き換えて救済しない）。さらに `os.Root` で `thumbs/` の外へ出る操作を OS の層で防ぎ、途中・末尾のシンボリックリンクは `ErrInvalidArgument`。`Save` は同じディレクトリの一時ファイル（`.tmp-*`）へ書いて `Sync` してからリネームする（失敗しても残らない）。ディレクトリは `0700`、ファイルは `0600`（Windows は親の ACL を継承。NFR-S11）。`Open` は無ければ `ErrNotFound`、`Remove` は無くても成功。`SweepOrphans` は `known` が false のファイルと中断した `Save` の一時ファイルを消す（更新から 1 分以内のファイルは、保存の直後で DB への紐づけ前かもしれないので残す。シンボリックリンクは辿らずリンク自体を消す） |
 | 接続要求の扱い | 期限切れの `pending` は `ListPending` に含めず、許可もできない（Expire の前でも）。`UpsertPending` は ON CONFLICT による 1 文の集約。`client_tokens.token_hash` に `length = 32` の `CHECK` を足した。同じデバイスの `pending` を 5 秒以内に更新済みなら DB に書かない（`service` の `connRequestTouchInterval`） |
 | 接続要求の履歴 | `ConnRequests.ListHistory(ctx, limit, offset)`（状態を問わず `first_seen_at DESC, id DESC` の順。`limit` < 1・`offset` < 0 は `ErrInvalidArgument`）を追加。マイグレーション v3（`0003_connreq_history_index.sql`）で索引 `ix_connreq_first_seen` だけを足す（結果の `status` と `decided_at` は v1 から保存されており、許可・拒否した行は削除しない）。削除は従来どおり `last_seen_at` から 7 日（`ConnRequestRetention`）で、履歴に見える期間もこれに従う |
 | 接続要求の最新の 1 件（FR-W02。M2・#62） | `ConnRequests.LatestByNode(ctx, stableNodeID)`（状態を問わず `first_seen_at DESC, id DESC` の先頭。無ければ `ErrNotFound`）を追加。読み取り専用で、未登録デバイスのブラウザへ返すページ（待機・拒否・失効）の出し分け（`service.ConnRequestStates`。§13.6）にだけ使う。スキーマは変えない |
@@ -1081,18 +1095,27 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `Authz`（§5.9） | `Authorize`・`IssueToken`・`RecordConnectionRequest` | 拡張: `Authenticator`（`Identify`・`CheckAllowlist`・`VerifyBearer` を 1 段ずつ提供し、ミドルウェア連鎖の 4〜6 を各ミドルウェアが呼ぶ。`Authorize` はこの 3 段を順に呼ぶ）、`RevokeToken(ctx, tokenID)`、`Feature`（`FeatureWeb` / `FeatureMCP`）、`Request`、`Principal`、`Identity`、`ErrDeviceNotRegistered`・`ErrClientDisabled`・`ErrUnauthorized`・`ErrWhoIsFailed`、`RetryAfter`・`DetailRetryAfterSec` |
 | `HostAdmin`（新規） | なし | ホスト所有者の GUI 操作（接続要求の許可・拒否、クライアントの更新・削除、トークンの発行・失効）を担う（FR-H03・H04）。`SessionCloser`（MCP のセッション表が実装）で、無効化・削除・トークン失効のときにセッションを切断し、リースを解放する。すべて操作主体 `host` で監査する。`ApproveRequest` は、同じ `stable_node_id` の登録済みクライアントがあれば（ログイン名の変更後の再許可）置き換え、古いクライアントのトークンを CASCADE で消し、セッションを切断し、リースを解放して `client.replace` を監査する。古いクライアントの切断は `approveMu` の外で行う（切断はツール呼び出しの完了を待つため、ロック中に行うと他の許可を止める） |
 | `HostAdmin.RequestHistory`（FR-H03） | なし | `RequestHistory(ctx, page)` は `ListHistory` を `RequestHistoryPageSize`（20）+ 1 件で読み、次のページの有無を `HasNext` で返す（件数の数え上げをしない）。ページ番号は 1 始まりで、1 未満は 1、10000 超は 10000 に丸める。GUI（`web/handler/gui`）は `Deps.Admin` の `RequestHistory` で受け、`GET /requests/history` を描画する。結果の表示は、期限を過ぎて保守で `expired` にされる前の `pending` も「失効」として出す。履歴は監査ログ（`Audit`。FR-AU01、閲覧は M3）とは別の経路で、`audit_logs` は読まない |
-| 新規の型 | なし | `HostSettingsService`（`Load`・`Save`・`AutostartAvailable`。§5.10 の `Settings` の `Get[T]` / `Set` の代わり。M1 のキーは `server.port`・`killswitch.hotkey`・`screenshot.max_dimension`・`lease.idle_timeout_sec`、M2 で `viewer.default_quality`・`viewer.default_fps`（FR-S06）を足した。自動起動は OS が真実の源で DB に持たない）、`ServerStatus`・`StatusTracker`・`TailscaledState`（ダッシュボードのサーバー状態）、`SessionSource`・`SessionInfo`（接続中セッション一覧）、`Autostart`、`Toast`、`Maintenance`（M1 は接続要求の失効だけ）、`NewNotifyingConnRequests`・`NewNotifyingKillSwitch`・`BridgeLeaseEvents`（状態の変化を `Bus` へ流す）|
+| 新規の型 | なし | `HostSettingsService`（`Load`・`Save`・`AutostartAvailable`。§5.10 の `Settings` の `Get[T]` / `Set` の代わり。M1 のキーは `server.port`・`killswitch.hotkey`・`screenshot.max_dimension`・`lease.idle_timeout_sec`、M2 で `viewer.default_quality`・`viewer.default_fps`（FR-S06）、M3 の #73 で `audit.thumbnails_enabled`・`audit.record_text`・`audit.retention_days`・`audit.thumbs_max_bytes`（FR-S07）と `update.apply_mode`（FR-S09）を足した（詳しくは下の「設定画面の M3 の項目」の行）。自動起動は OS が真実の源で DB に持たない）、`ServerStatus`・`StatusTracker`・`TailscaledState`（ダッシュボードのサーバー状態）、`SessionSource`・`SessionInfo`（接続中セッション一覧）、`Autostart`、`Toast`、`Maintenance`（M1 は接続要求の失効だけ。M3 で監査の保持を足した。下の `Maintenance` の行）、`NewNotifyingConnRequests`・`NewNotifyingKillSwitch`・`BridgeLeaseEvents`（状態の変化を `Bus` へ流す）|
 | `Audit`（§5.10） | `Record(ctx, e domain.AuditEvent)` | `Record(ctx, e repository.AuditEntry)`（`domain.AuditEvent` は作っていない。`service.AuditEntry` は `repository.AuditEntry` の別名）。消費側のインターフェースは `AuditRecorder`（`LeaseManager`・`KillSwitch`・`Control` 用）と `AuditSink`（`Authz` 用）。書き込み goroutine 1 本、キューは既定 256。満杯・Close 後の記録は捨てて数える（`Dropped`）。`Flush`・`Close` を持つ |
+| `AuditReader`（新規。M3・#70。FR-AU05） | なし（§5.10 の `Audit` は書き込み側） | 監査の読み取りの窓口（`web` が `repository` を import しないため `service` に置く）。`NewAuditReader(repository.Audit, repository.ThumbStore)`。`Query(ctx, AuditQuery) (AuditPage{Entries, Next}, error)`（`AuditQuery = repository.AuditQuery`。一覧の `DetailJSON` は空）、`Get(ctx, id) (AuditDetail, error)`（`AuditEntry` に `Args []AuditArg`＝キーの昇順の（キー, 文字列にした値）を足した型。**生の `detail_json` は返さない**。オブジェクト以外の JSON は `detail` の 1 件。整数は桁を落とさない。入れ子の値は JSON の文字列。1 つの値は 500 文字で切る）、`Thumbnail(ctx, id) (io.ReadCloser, error)`（ログ・サムネイル・ファイルのどれかが無ければ `service.ErrNotFound`。`rel_path` は `ThumbStore` が走査を拒否する）。読み出し側でも秘密を伏せる（`[REDACTED]`。NFR-S13）: キー名が `secret`・`password`・`passwd`・`apikey`・`api_key`・`authorization`・`plaintext`・`hash` を含む、`token`・`*_token`、本文を指す `text`・`content`・`clipboard`・`body`（`*_text` なども。文字数の `text_len` は伏せない）の値、文字列に混ざったトークン（`prm_…`）・64 桁の 16 進・Bearer の値（入れ子も） |
+| `Maintenance`（M3・#70。FR-AU04） | `Run(ctx)` | `MaintenanceConfig` に `Audit`・`Thumbs`・`Settings` を足した（`Audit` が nil なら従来どおり接続要求の失効だけ。`Audit` があるのに `Thumbs`・`Settings` が nil なら `NewMaintenance` が失敗する）。`Run` は起動時に `SweepOrphans`（行はあるのにファイルが無い `audit_thumbnails` の行の削除 → 行が無いファイルの削除。ファイルの有無を確かめられない（`ErrNotFound` 以外の失敗）ときは行を残す）を 1 回、次に `RunOnce` を行い、以後 1 時間ごとに `RunOnce` を行う。`RunOnce` は接続要求の失効 → `PurgeAuditBeforeRetention`（`audit.retention_days` を過ぎた行の削除 → そのサムネイルのファイルの削除）→ `PurgeThumbsOverCap`（`audit.thumbs_max_bytes` を超える分を古い順に行 → ファイルの順に削除。#71 がサムネイルの保存の都度に呼ぶ公開関数）の順に行い、1 つが失敗しても残りを行って、エラーをまとめて返す（`Run` が `slog` に残す）。ファイルの削除は 1 つ失敗しても残りを消す（残るのは孤児ファイルで、次の起動の掃除が消す）。設定は保守のたびに `Settings` から読む（行が無ければ既定値: 保持期間 30 日・容量 1 GiB）。**値が 1 以上の整数でない（0 以下・小数・数値以外）、保持期間が 36500 日を超える、容量が 2^53 を超える場合は既定値を使い `slog` に警告する**（0 = 無期限などの削除を止める値は実装しない。許容範囲の確定は設定画面 #73） |
+| `Audit` のサムネイルの保存（M3・#71。FR-AU02） | `Audit`（サムネイル保存は `Control` が `Capturer.Grab` → 縮小 → JPEG → `ThumbStore`） | 縮小・符号化は純粋関数 `NewThumbnail(*image.RGBA) (Thumbnail, error)`（`thumbnail.go`。長辺 320 px・JPEG 品質 60。拡大しない）と、`CaptureThumbnail(ctx, Capturer, monitor)`。`AuditConfig` に `Thumbs`・`IDs`・`Settings`・`PurgeOverCap`（`Maintenance.PurgeThumbsOverCap`）・`MaxPendingThumbs`（既定 32）を足し、`Audit.RecordWithThumb(ctx, entry, Thumbnail)` が書き込み goroutine で `Append` → `Save` → `AttachThumb` → 容量の確認を行う。`Audit.ThumbnailsEnabled(ctx)` は `audit.thumbnails_enabled`（既定 true）を読み、保存できない構成（`Thumbs` が nil）・無効・不正な値なら false（呼び出し側は撮らない）。保存の失敗は運用ログだけで、エントリと `Control.Do` の結果は変えない。**`Control` への結線（どの操作を・どのモニターを・いつ・Web 入力を間引くか）は docs に無いため未実装**で、判断を待つ（それまで一枚も付かず、閲覧 UI はサムネイル無しで動く） |
+| 設定画面の M3 の項目（M3・#73。FR-S07、FR-S09） | `HostSettingsService`（`HostSettings`）・`handler/gui` の `PUT /settings` | `HostSettings` に `AuditThumbnailsEnabled`・`AuditRecordText`・`AuditRetentionDays`・`AuditThumbsMaxBytes`・`UpdateApplyMode` を足した。`Load` の既定値は ER の表（thumbnails true・record_text false・30 日・1073741824 バイト・`confirm`）。`audit.retention_days`・`audit.thumbs_max_bytes` の範囲（1〜36500・1〜2^53。`Validate` の項目別のエラー）と「保存済みの値が範囲外なら既定値を使って警告する」規則は `Maintenance` と同じ関数（`readBoundedInt`）を使い、フォームと保守が食い違わない。`audit.thumbs_max_bytes` の単位はバイトのまま表示する（MiB・GiB への換算は、単位が未決のため入れない）。真偽値・`update.apply_mode` の保存済みの値が不正なら `Load` は `domain.ErrInvalidArgument`（既存の項目と同じ）。`update.apply_mode`（`confirm` / `auto_idle`）は**保存するだけ**で、読んで動く側（更新の確認・適用）は #74 で入る（それまで何も読まない）。`log.level` は未決のため設定画面に出さない。`audit.record_text` を有効にするときの確認ダイアログは作らず、設定画面に常に出す注意書き（サムネイル・本文は平文で保存される。BitLocker とサムネイル無効化の案内。NFR-S11）だけにした。`settings.update` の監査は、既存の項目と同じく変えた項目のキーと新しい値を `detail_json` に入れる。ただし `audit.record_text` は変えたことだけを残し、値は `null`（本文の記録の設定を監査の経路に流さない） |
+| `audit.record_text`（M3・#71。FR-AU03、FR-S07） | `Control` が `type` の本文・クリップボードを文字数だけ記録 | 設定が true のとき、`Control.Do` の監査の `detail_json` に `text` を足す（`type`・`clipboard_write`・`clipboard_read` の結果。トークンの形を先に伏せてから 4,096 文字までに切り詰め、超過は `text_truncated`。ER「イベントのカタログ」）。MCP・Web の両方が `Control` を通るので、同じ規則になる。設定は記録のたびに読む |
+| 接続要求の作成の監査（M3・#71。FR-AU01） | 記録する | `Authz.RecordConnectionRequest` が、新しい要求の行ができたとき（`created = true`）だけ `auth.connreq_create`（`result = ok`・`actor_type = system`・`client_label` はデバイス名）を追記する。pending への集約は記録しない |
+| イベントのカタログ（M3・#71） | — | `service.AuditCatalog`（FR-AU01 の項目とイベント名の対応。承認（#66）・更新（#74）は未実装として載せる）。網羅テストがソースの追記と ER の表との食い違いを検出する |
 | アプリログの閲覧（FR-H13） | なし | `service.AppLog`（`Entries(ctx, filter, page)`・`Path()`）と、値の型（`AppLogEntry`・`AppLogAttr`・`AppLogPage`・`AppLogFilter` の `all` / `warn` / `error`。1 ページ `AppLogPageSize`（50）・ページの上限 `MaxAppLogPage`（100））を `service` に置く。実体は `app.LogReader`（`NewLogReader(dataDir)`）で、ログファイルを 64 KiB ずつ末尾から逆向きに読み、ローテーション済みの `puppet-remo-<時刻>.log` へ新しい順に続く（読み方と理由は [アーキテクチャ「運用ログと監査ログ」](../architecture/overview.md)）。GUI は `gui.Deps.Logs` で受け、`GET /logs` を描画する。`app.Config.Logs` は必須。`app.NewLogger` は `ReplaceAttr`（`redactAttr`）でトークン・ハッシュ・Authorization などを `[REDACTED]` にし、`LogReader` も読み出しで同じ規則を適用する（NFR-S13） |
 | 運用ログの行（FR-H13・NFR-O01） | 一部の失敗だけ | 主な処理の成功と失敗を、次のレベルで `slog` に出す（ポーリングやフレームごとには出さない。秘密は渡さない）。起動 `puppet-remo starting`（INFO。`main`）・終了 `puppet-remo is shutting down`（INFO）。tailscaled の状態が変わったとき `tailscaled is running`（INFO）・`is not logged in` / `is not reachable`（WARN。`StatusTracker`）。待ち受けの状態が変わったとき `tailnet listener is listening`（INFO）・`is not listening`・一部のアドレスだけ（WARN。`app`）。接続要求 `connection request received`（INFO。新しい要求ができたときだけ）・`approved` / `denied`（INFO。`HostAdmin`）・レート制限 `connection requests are rate limited`（WARN）。認証 `bearer authentication failed`（WARN。理由・デバイス・IP だけ）・`bearer authentication is rate limited`（WARN）・WhoIs の失敗 `whois failed; the request was rejected`（WARN）。トークン `token issued` / `token revoked`（INFO。ID とラベルだけ）。クライアント `client updated` / `client deleted`（INFO）。リース `lease acquired` / `lease released`（INFO。理由つき）・`lease acquire denied`（INFO）。ツール `mcp tool succeeded`（状態を変えるものは INFO、読み取りだけは DEBUG）・`mcp tool was rejected`（WARN。コードつき）・想定外の失敗 `mcp tool failed`（ERROR）・`mcp tool timed out`（WARN）。キルスイッチ `kill switch triggered`（WARN）・`released`（INFO）・失敗（ERROR）。設定の反映 `server port changed`・`kill switch hotkey registered`（INFO）。ツールの引数・結果、トークンの平文・ハッシュ、Authorization ヘッダーは出さない。リリースの更新確認（FR-H09）は `Updater` が M1 に無いため、まだ出さない（`Updater` を実装するときに、確認・適用・失敗を同じ規則で足す） |
 | MCP ツールの監査 | `Control` が記録する（§5.4） | `Control.Do` を通る入力系・`focus_window`・クリップボード・UI ツリー・`wait` と、`Control.Launch` を通る `launch_app`（M1.5）は `Control` が監査する。`list_launchable_apps` は `mcp` のツール登録（`addAuditedTool`）が `{count}` で記録する（件数は結果から決まるため、`toolResult.AuditDetail` で足す）。`Do` を通らない `get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status` は、`mcp` のツール登録（`addAuditedTool`）が `service.ToolAuditEntry` で記録する。拒否（リース・InputGuard・キルスイッチ）は `denied`、それ以外の失敗は `error` |
 | `Control` の直列化（§5.4） | ステートレス | 入力の実行（マウス・キーボード）は 1 度に 1 つへ直列化する（容量 1 のセマフォ。「移動してからクリック」の間に別の入力を割り込ませない）。検査の順序は設計のとおり（キルスイッチ → リース → 引数検査・縮小座標の変換 → InputGuard → platform → 監査。`Judge` は M4）。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000（既定 5・500）で、超えると `invalid_argument` |
 | `Control` の Web 入力（§5.4。M2・#60） | `Do` は MCP の入力が中心 | `web` の入力（`PointerMove`・`MouseButton`・`Wheel`・`KeyEvent`・`KeyPress`・`TypeText`・`ClipboardRead`・`ClipboardWrite`）も `Do` が同じ順序（キルスイッチ → リース → 引数検査と座標変換 → InputGuard → platform → 監査）で処理する。判断: (1) `web` は暗黙にリースを取らず、他者の保持と剥奪は `ErrLeaseHeldByOther` / `ErrLeaseRevoked`、(2) ストリームの座標は縮小せず、選択モニターの原点を足す（外は `ErrInvalidCoordinates`）、(3) `Wheel` は有限・絶対値 50 ノッチまで、(4) `PointerMove`（連続するカーソル移動）は監査しない。クリック・ホイール・キー・テキスト・クリップボードは監査する（`web` の `kind` は `input`、イベントは `tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up` など）、(5) `KeyEvent` の監査にはキーの名前（`code`・`key`）を入れず、`action` と修飾キーだけを残す（パスワードの入力を監査ログに残さない。FR-AU03 の `type` と同じ扱い）。SAS は `KeyPress`・`KeyEvent` とも `input_blocked`（`secure_attention_sequence`）。キルスイッチは `ReleaseAll` で押下中のボタンとキーを離す |
 | `ViewerSessions`（§5.7.1。M2・#60） | なし | `service.NewViewerSessions(ViewerSessionsConfig{Streamer, Leases, Kill, Clock, IDs})`。`viewer_id` の発行・検証（クライアントへの束縛）・WebSocket の接続（`Open`）・切断でのリース解放・置き換え・`SessionCloser`・キルスイッチのクローザー（`web-sessions`）・設定の経路（`Configure` → `ConfigChanged`）。判断: (1) 切断した `viewer_id` は 5 分のあいだ再接続できる、(2) 同時接続は 1 本で、新しい接続が古い接続を閉じて置き換える（ユーザー確定）、(3) `ViewerIDTTL` は 5 分。`Viewer` に `Config`（登録時の設定）を足した。`app` への組み込み（#61）: `app.sessionClosers{mcp, viewers}` を `HostAdmin.Sessions` へ渡し、クライアントの削除・無効化で MCP のセッションと WebSocket のビューアを閉じる。キルスイッチのクローザーは `NewViewerSessions` が登録する `web-sessions` だけ（`ws` 専用のクローザーは作らない。閉じた理由 `kill_switch` から `ws` が 4503 で閉じる）。`/viewer/*` は別の子 Issue |
-| `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke(by)` は M2 で実装した（#58）: `by` は host / web だけ、idle なら何もしない（冪等）、剥奪された保持者は次の `Acquire` の成功まで `Check` が `ErrLeaseRevoked`（`LeaseMachine` が剥奪された保持者を 1 件覚える。ほかの保持者が取得すると忘れる）。解放の理由は `revoked`（`domain.ReleaseRevoked`）、`LeaseEvent.By` に剥奪した側が入り、監査は `lease.revoke`（`actor_type` は `by`、`detail` に剥奪された保持者の `holder_kind`・`holder_client_id`・`holder_label`）。ホスト GUI は `service.HostActor`（`host`）で呼ぶ。`LeaseConfig.Power` でスリープ・画面オフを抑止する |
+| `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke(by)` は M2 で実装した（#58）: `by` は host / web だけ、idle なら何もしない（冪等）、剥奪された保持者は次の `Acquire` の成功まで `Check` が `ErrLeaseRevoked`（`LeaseMachine` が剥奪された保持者を 1 件覚える。ほかの保持者が取得すると忘れる）。解放の理由は `revoked`（`domain.ReleaseRevoked`）、`LeaseEvent.By` に剥奪した側が入り、監査は `lease.revoke`（`actor_type` は `by`、`detail` に剥奪された保持者の `holder_kind`・`holder_client_id`・`holder_label`）。ホスト GUI は `service.HostActor`（`host`）で呼ぶ。`LeaseConfig.Power` でスリープ・画面オフを抑止する **M3（#66）**: 承認モード（FR-L07）を実装した。`LeaseConfig.Approval`・`Clients`（`LeaseClients` = `repository.Clients` の `Get` と `MarkApproved`）は両方あるときだけ承認を適用し（`app` は常に渡す）、`Acquire` が `idle → pending_approval` にしてロックを手放し、`Approval.Request` を待つ。`domain.LeaseMachine` に `Request`・`Approve`・`Withdraw`・`WithdrawSession`・`Pending` を足し、`LeaseState` に `pending_approval`、`ReleaseReason` に `approval_denied`・`approval_timeout`・`withdrawn` を足した。`LeaseManager` に `Pending()`（承認待ちの要求者）を足した。承認待ちの間は本人を含む `Acquire`・`Check` を `ErrLeaseHeldByOther` で断り、`Release` は何もしない（取り下げはキルスイッチ・`ReleaseSession`（`HostAdmin` のクライアントの削除・無効化の切断を含む）・`ctx` のキャンセルだけ）。キルスイッチの発動後に許可が届いても `held` にしない（`ErrKillSwitchActive`）。承認が要るかの判定（`domain.NeedsApproval`）・取得者のクライアントが読めないときの fail-closed・`first_time` の `approved_at` 記録は §5.2。承認系の監査（取得要求・拒否・タイムアウト）はイベント名が未決のため記録せず（`pending_approval → held` だけ `lease.acquire`）、運用ログには出す |
+| `HostAdmin` の承認モード（M3・#68。FR-H03・H04） | `ApproveRequest`・`UpdateClient` | `ApproveInput.ApprovalMode`（空は `always`。定義外は `ErrInvalidArgument` で、要求も登録も変えない）と `ClientUpdate.ApprovalMode`（`*domain.ApprovalMode`。定義外は `ErrInvalidArgument`）を足した。`UpdateClient` が承認モードを変えると `approved_at` が NULL に戻り（`repository.Clients.Update` の規則。同じ値では戻らない）、監査 `client.update` の `detail` に `approval_mode_before`・`approval_mode` を入れる（`auth.connreq_approve` の `detail` にも `approval_mode`）。`ResetApproval(ctx, id)` は `first_time` で承認済みのときだけ `approved_at` を NULL に戻す（それ以外は `conflict`、無ければ `ErrNotFound`）。**取り消しの監査はイベント名が docs に無く（FR-AU01 は「設定変更」とだけ書く）未決のため記録しない**（運用ログ `client approval reset` だけ）。M3 で新しく記録するイベントの名前の決定待ち |
+| `Approval`（§5.3） | `Request`・`Resolve`・`Pending` | M3（#66）で実装した。`ApprovalRequest` は `ID`・`Kind`・`Who`・`ExpiresAt`（`Detail` は M4 で足す）、`Decision{Allow}`、`ApprovalEvent{ID, Kind}`（`Bus` の `approval` の `Data`。`service.TopicApproval`）。`ApprovalConfig`（`Clock`・`IDs`・`Bus`・`AfterFunc`・`Timeout`。既定 60 秒 = `DefaultApprovalTimeout`）。`Request` は ID を `IDs` から決め、要求を登録して `Bus` へ非ブロッキングで出してから待つ。`ctx` のキャンセルは `ctx.Err()`。`Resolve` と満了と取り下げは 1 回だけ有効で、負けた側（解決済み・失効・取り下げ済み・未知の id の `Resolve`）は `ErrApprovalTimeout`。ダイアログを開く購読（`app.approvalDialogs`）と `Resolve` を呼ぶ GUI ルーター（`/approvals/{id}/allow|deny`）は #68 で実装した。#68 で、承認待ちの終わりを知らせる `Bus` の `approval-closed`（`service.TopicApprovalClosed`・`ApprovalClosedEvent{ID}`）を足した |
 | `KillSwitch`（§5.8） | `Trigger` は (1) 永続化 → (2) リース剥奪 → … → (7) 監査の順で、1 秒以内（NFR-P05） | 実装は、メモリ上の状態を先に `active` にして（以後のリクエストは 503）、(1) `settings` に永続化 → (2) `LeaseManager.ReleaseAll` → (3) 登録済みのクローザーを**並行**に実行（MCP セッションの切断、押下中の入力の解放）→ 監査の順。`Agent`（M4）・オーバーレイ（M3）はまだ無い（WebSocket は M2 で、クローザー `web-sessions` が閉じる）。永続化とクローザーはそれぞれ自分の期限（`KillSwitchConfig.Timeout`。既定 1 秒）を持つ。**既知の制限**: 永続化が遅い（遅いディスクなど）と、永続化が最大 1 期限、クローザーが最大 1 期限を使い、`Trigger` が戻るまで最大 2 × `Timeout`（既定で 2 秒）かかり、NFR-P05 の 1 秒を超えうる。メモリ上の状態は先頭で `active` になるので受付停止は直ちに効くが、全セッションの切断・入力の解放の完了は遅れうる。この点は未解決で、1 秒を保証していない |
 | `Streamer`（§5.7）・FR-S06（M2） | `Subscribe`・`Configure`、`Viewer{Frames, Done}` | `service.NewStreamer(StreamerConfig{Capturer, Clock, IDs, Settings, KeyframeInterval, Logger})`。`Viewer` に `ID` を足し、`ViewerConfig{Monitor, Quality, FPS}` を置く（0 は既定値 / 今の値）。バイナリフレームの符号化（`encodeFrame`）と 64×64 の差分（`changedRects`）は `service` が持つ（標準ライブラリの `image/jpeg`）。連番はプロファイルごとに 1 から数え、同じ回のキーフレームと差分は同じ連番を持つ。`app` が `Platform.Capturer`・`Settings` を渡して組み立てる（#61）。設定 `viewer.default_quality`（1〜100、既定 70）・`viewer.default_fps`（1〜30、既定 10）は `HostSettings`（`ViewerDefaultQuality`・`ViewerDefaultFPS`）で `Load` / `Save` し、`service.ViewerDefaults` が `Streamer` 用に読む |
-| 未実装（M3〜M4） | `Approval`（M3）、`Judge`・`Agent`・`FastPath`（M4）、`Updater`（M3） | — |
+| 未実装（M3〜M4） | `Judge`・`Agent`・`FastPath`（M4）、`Updater`（M3）。`Approval` は M3（#66）で実装し、承認ダイアログ・承認モードの GUI・GUI ルーターの `Resolve` は #68 で実装した | — |
 
 ### 13.6 入口とアプリ（§6・§7・§9）
 
@@ -1101,14 +1124,17 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | リモートルーター | `/mcp`・`GET /ws/screen`（M2。`router.RemoteConfig.WS`）・Web UI（`GET /`・`/viewer*`。M2・#62。`RemoteConfig.Web`）・`GET /static/*`（`RemoteConfig.Static`。`/static` を外して渡す）を提供する（それ以外は 404）。`/api/v1` は M2 以降の別の段階 |
 | `ws`（M2。#61） | `ws.Handler`（`http.Handler`）。`web/middleware` を import できないため、連鎖が認可したクライアントは `Config.ClientFrom`（`app` が `middleware.ClientFrom` を渡す）で受け取る。`Config.Events` は `Bus` の `lease`（リースの変化の通知）の購読元。ハンドシェイク前の拒否（サブプロトコル不一致）は problem+json、`viewer_id` の不正・上限・キルスイッチ中はハンドシェイク後に 4401 / 4429 / 4503 で閉じる。モニターはプライマリで始める。入力は `Control.Do(ViewerSession.Actor(), op)`。`error` の `message` は、ドメインエラーの文言、想定外は固定文。keepalive は `Config.PingInterval` / `PongTimeout`（既定 15 秒 / 45 秒。テストが短くする）。`Handler.Close` はアプリの `Shutdown` が呼び、接続を 1001 で閉じる。**押下中のボタン・キーはセッションの終わり（切断・置き換えなど）で離す**（§5.7.1・API 仕様 §5.3。`conn` が押下の状態を覚え、`ViewerSession.OnEnd` から、リースの解放の前に `Control.Do` で `up` を注入する） |
 | `web/handler` | `handler/gui` と `handler/remote`（M2・#62）。`organisms` / `pages` は `gui/` / `remote/` のサブディレクトリに分けず、平らに置く。GUI のエラー応答は、`not_found`（対象なし。API 仕様 §2 のコード表に無い GUI 内のコード）を 404 で、`invalid_argument` を 422 で返す |
+| `mcp` / `ws` / `web/handler/remote` の承認待ち（M3・#67） | `get_control_status`・`lease` メッセージ・リースパネルに `pending_approval`、`approval_denied`（403）・`approval_timeout`（408） | `mcp`: `get_control_status` と `acquire_control` の出力の `state` に `pending_approval`（`LeaseManager.Holder` が無く `Pending` があるとき。`holder` と `idle_remaining_sec` は無し、`mine` は要求者が自分のセッションか）。`acquire_control` と暗黙取得（`Control` が `Acquire` する入力系・`launch_app`）は承認を待ち、拒否・タイムアウトは `domain.CodeOf` の表のとおり 403 `approval_denied`・408 `approval_timeout` のツールエラー（`structuredContent` は `code`・`message` だけ）。待ちは MCP の `ToolTimeout`（30 秒。NFR-S09）に従うので、承認が 30 秒を超える間にツール呼び出しの ctx が切れると `Approval` の要求は取り下げられる（60 秒の承認待ちを `ToolTimeout` の外で待つ設計は docs に無く、`ToolTimeout` は変えていない）。`ws`: `leaseBody` が `held`・`pending_approval`・`idle` を返し（`holder` は `idle` のときだけ省く。`pending_approval` の `holder` は要求者）、`ready` と `lease` メッセージに使う。`BridgeLeaseEvents` は承認待ちの遷移でも `lease` を出すので、各ビューアが自分の視点（`mine`）で受け取る。承認待ちの間の `input.*` は `Control` が `lease_held_by_other` を返す（本人も同じ）。`web/handler/remote`: `Leases` に `Pending` を足し、`leaseView` が `ViewerLease.Pending`・`PendingMine` を作る。`failureMessages` に `approval_denied`・`approval_timeout`。`POST /viewer/lease/acquire` が承認待ちのパネルを即座に返す窓口は **未実装**（docs に決まりが無い。ハンドラは `Acquire` が返るまで待つ）。`web/handler/gui`: `LeaseControl` に `Pending` を足し、ダッシュボードの `#lease` に「承認待ち: <名前>（種別）」を出す（強制剥奪は `held` のときだけ） |
 | `web/handler/remote`（M2・#62） | Gin のハンドラ。依存は利用者側のインターフェース `Sessions`（`service.ViewerSessions` の `Issue`・`Actor`・`Configure`）・`Leases`（`LeaseManager` の `Acquire`・`Release`・`Revoke`・`Holder`）・`Control`（`Monitors`・`Do`）・`Settings`（`Load`）だけで、`handler/gui` を import しない。連鎖が認可したクライアントは `middleware.ClientFrom` で受け、ビューアは `X-Viewer-Id` → `ViewerSessions.Actor` で操作主体（種別 `web`）にする。アクションの失敗はトースト（`HX-Retarget: #toast-root`）、`POST /viewer/settings` の検証エラーは 422 のツールバー再描画。クリップボードの本文は応答・ログ・監査に出さない（応答は文字数だけ）。本文の上限 1 MiB は `http.MaxBytesReader`（ハンドラ内）。偽の依存は `remotetest` |
 | `ConnRequestStates`（M2・#62。FR-W02） | 未登録デバイスのブラウザへ返すページ（待機・拒否・失効）を選ぶための、接続要求の状態の読み取り専用の参照（`service.NewConnRequestStates(repository.ConnRequests, Clock)`。`State(ctx, nodeID)`）。`repository.ConnRequests.LatestByNode` で最新の 1 件を読み、`pending`（期限内）→ 待機、`denied`（期限内）→ 拒否、期限切れの `pending`・期限切れの `denied`・`expired` → 失効、無い・許可済み → 待機、読めないとき → 待機（エラーはログだけ）。接続要求を作らず更新しないので、FR-A06 の集約・拒否後の抑止には関わらない。`middleware.Allowlist` は照合の結果が `device_not_registered`（HTML の経路）のときだけ引き、応答のステータス・コードは変えない（`RemoteConfig.ConnStates`。nil なら常に待機）。`app` が組み立てて渡す |
 | ホスト GUI の更新 | SSE ではなく `GET /poll`（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。トースト（`Bus` の `toast`）は `gui.Handler` が購読して待ち行列にし、`/poll` が取り出す）。SSE の `GET /events` は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが、M1 の GUI は読み込まない（未使用） |
-| `app` | `Windows` インターフェース（承認ダイアログ・オーバーレイ。§7）は M3 のため無い。M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Platform.Power` は必須。M1.5 で `Platform.Launcher`・`Platform.FilePicker` も必須にし、`AppRegistry` を組み立てて `Control`（読み取りと起動）と、ホスト GUI の `web/handler/gui`（`Deps.Apps`。登録・編集・削除とファイル選択。`/apps`）へ渡す（`mcp` と、`router` の設定には渡さない）。`cmd/puppet-remo` は `FilePicker` を `NewFilePicker(host.MainWindowHandle)` で作る（`WailsHost.MainWindowHandle` が Wails のメインウィンドウの HWND を返し、ウィンドウが無い間は 0 = 親なし）。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
+| `app` の `Windows`（承認ダイアログ。M3・#68） | `Windows`（`Main`・`OpenApproval`・`ShowOverlay`・`HideOverlay`） | `Windows`（`Main() MainWindow`・`OpenApproval(id) Window`）と `Window{Close()}`（`internal/app/windows.go`）。`ShowOverlay`・`HideOverlay` は #69 が足す。`app.Config.Windows` は必須（`New` が検査）。本番は `WailsHost.Windows()`（`wails_windows.go`。`//go:build windows`）、テストと開発デモは偽の `FakeWindows`（`windowsfake.go`。`OpenApproval` の呼び出しと `Close` を記録）。`approvalDialogs`（`windows.go`）が `Bus` の `approval`・`approval-closed` を購読して開閉する（`App.Start` が起動し、`runCtx` の終了 = `Shutdown` で開いているダイアログを閉じてから戻る）。`Bus` は遅い購読者のイベントを捨てうるので、イベントの種類ではなく `Approval.Pending` を真実の源にして開閉を合わせる。判断: (1) 同時に開くのは 1 つで、開いている間に来た別の要求は開かず（あとからも開かず）、60 秒の失効で拒否になる（`Pending` が複数のときの扱いは docs に無く未決のため、順番に開くなどはしていない）、(2) 許可も拒否もせずウィンドウを閉じても承認待ちは続き、60 秒の失効で拒否（再度は開かない。docs に定めが無く、承認が勝手に通らない動き）、(3) `kind` が `lease` 以外（M4）は開かない。Wails のウィンドウ（`OpenApproval`）は、固定サイズ（440×340）・最前面・画面中央・最小化 / 最大化ボタンなし・`ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）・URL `/approvals/{id}`（メインウィンドウと同じ `serveGUI`）で作る。プロセス内のウィンドウなので `platform.WindowManager` の `Own`（プロセス ID の一致）で入力拒否（`own_window`）の対象になる（`Control`・InputGuard の変更は無い）。トレイのメニューに項目は足さない。実機の確認は [`smoke-windows.md`](../operations/smoke-windows.md) §4 |
+| `app`（M1） | `Windows` インターフェース（オーバーレイ。§7）は #69（M3）で足す。M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Platform.Power` は必須。M1.5 で `Platform.Launcher`・`Platform.FilePicker` も必須にし、`AppRegistry` を組み立てて `Control`（読み取りと起動）と、ホスト GUI の `web/handler/gui`（`Deps.Apps`。登録・編集・削除とファイル選択。`/apps`）へ渡す（`mcp` と、`router` の設定には渡さない）。`cmd/puppet-remo` は `FilePicker` を `NewFilePicker(host.MainWindowHandle)` で作る（`WailsHost.MainWindowHandle` が Wails のメインウィンドウの HWND を返し、ウィンドウが無い間は 0 = 親なし）。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
 | `cmd/puppet-remo` | Windows 以外では `puppet-remo: Windows only` を出して非ゼロで終了するスタブ（`main_other.go`）。`go build ./...` を Linux の CI で通すため |
+| `web/handler/gui` の監査ログ（M3・#72。FR-AU05、FR-H08） | `/audit*` | `handler/gui/audit.go`。`Deps.Audit`（利用者側のインターフェース `gui.Audit`: `Query`・`Get`・`Thumbnail`。実体は `service.AuditReader`。`app` が `NewAuditReader(repo.Audit(), repo.Thumbs())` を渡す）。`GET /audit`（絞り込み・`cursor`・`limit`。`HX-Request` は `#audit-list` のフラグメント、不正な値は 422）・`GET /audit/:id`（404: 無い・数値でない）・`GET /audit/:id/thumbnail`（`image/jpeg`・`no-store`・`nosniff`。`ErrInvalidArgument`（パスの走査）・`ErrNotFound` は 404）。GUI ルーターだけで、リモートのルーターには無い。偽の `AuditReader` は `guitest.Audit`。`web` は `repository` / `platform` を import しない |
 | 開発・補助 | 開発タスクは `frontend:dev`（`dev:frontend` ではない）。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service、loopback）がある。スクリーンショットは `docs/screenshots/m1/`、実機スモークの手順は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) |
 
-**M1 では実装していない `Approval`・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
+**M1 では実装していない `Approval`（M3 の #66 で実装した。§13.5）・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
 
 ## 改訂履歴
 
@@ -1140,3 +1166,10 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.24 | 2026-11-01 | §6 の `ws`（`Config`・3 本の goroutine・keepalive）、§13.1 の `ws` の存在、§13.5 の `app` への組み込み（`sessionClosers`・`web-sessions`）、§13.6 のリモートルーターの `GET /ws/screen` と `ws` の実装判断を追記 | #61 |
 | 1.25 | 2026-11-01 | §5.7.1 の `ViewerSession` に `OnEnd` を追加し、押下中のボタン・キーをセッションの終わりで（リースの解放の前に）離すと改めた（「切断では離さない」「`Control` に解放の窓口は無い」を撤回）。§6 の `ws` の注記も更新 | #61 |
 | 1.26 | 2026-11-01 | §13.6 にリモートルーターの提供物（Web UI・`/static/*`）、`web/handler/remote`、`ConnRequestStates`（`repository.ConnRequests.LatestByNode`・`middleware.RemoteConfig.ConnStates`）を追記 | #62 |
+| 1.27 | 2026-11-02 | §4.1 の `Audit` に `Get`・`ThumbPaths`・`PurgeMissingThumbs`、`ThumbStore` の `DB.Thumbs()`、§5.10 の `Maintenance` の動作、§13.4 に M3 の監査の読み出し・`ThumbStore`、§13.5 に `AuditReader`・`Maintenance` の実装を追記 | #70 |
+| 1.28 | 2026-11-02 | §5.2・§5.3・§13.5 を M3 の `pending_approval` と `Approval` の実装に更新（承認待ちの間は本人も含めて `Acquire`・`Check` を `ErrLeaseHeldByOther`、取り下げの経路、`first_time` の `approved_at`、fail-closed）。§5.4 の検査順序に、暗黙取得が承認で最大 60 秒ブロックすること・`launch_app` の承認はリース取得時の 1 回だけ（呼び出しごとは未決）を追記 | #66 |
+| 1.29 | 2026-11-02 | §5.4 の `Do` の 6 と §5.10 の `Audit` を M3 の実装に合わせ、§13.5 にサムネイルの保存・`audit.record_text`・接続要求の作成の監査・イベントのカタログを追記（`Control` への結線は未決として未実装と明記） | #71 |
+| 1.30 | 2026-11-02 | §13.6 に監査ログの閲覧 UI（`handler/gui/audit.go`・`gui.Audit`・`guitest.Audit`）を追記 | #72 |
+| 1.31 | 2026-11-02 | §13.5 に設定画面の M3 の項目（`HostSettings` の監査ログ・更新の 5 項目、範囲の共通化、`update.apply_mode` は #74 まで読まれない、`log.level`・確認ダイアログは未実装）を追記 | #73 |
+| 1.32 | 2026-11-02 | §13.6 に `mcp` / `ws` / `web/handler/remote` / `web/handler/gui` の承認待ち（`pending_approval`・`approval_denied`・`approval_timeout`）の実装と、Web の承認待ちのパネルを即座に返す窓口が未実装であることを追記 | #67 |
+| 1.33 | 2026-11-02 | §5.3 に `approval-closed`、§7 に `Window`・承認ダイアログの開閉の規則、§13.5 に `HostAdmin` の承認モード・`approval-closed`、§13.6 に `app` の `Windows`（`FakeWindows`・`WailsHost.Windows`・`approvalDialogs`）を追記 | #68 |

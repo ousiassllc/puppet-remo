@@ -51,3 +51,31 @@ templ Boosted(title string, c view.Chrome) {
 	@organisms.Sidebar(c, true)
 	{ children... }
 }
+
+// Dialog は専用の Wails ウィンドウ（承認ダイアログ。FR-H05）のページの外枠。サイドバー・ヘッダー・ポーリングは無い（ウィンドウは
+// 60 秒または解決で閉じる）。スクリプトは外部ファイルだけ（CSP: NFR-S19）。app.js が HX-Trigger: closeWindow でウィンドウを閉じる。
+templ Dialog(title string) {
+	<!DOCTYPE html>
+	<html lang="ja">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } - puppet-remo</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+			<script src="/static/js/htmx.min.js"></script>
+			<script src="/static/js/htmx-config.js"></script>
+			<script src="/static/js/response-targets.min.js"></script>
+			<script type="module" src="/static/js/app.js"></script>
+		</head>
+		<body
+			class="min-h-screen bg-slate-100 p-4 text-slate-900 antialiased"
+			hx-ext="response-targets"
+			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
+		>
+			<main id="approval-root">
+				{ children... }
+			</main>
+			@organisms.ToastRoot()
+		</body>
+	</html>
+}

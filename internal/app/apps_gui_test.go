@@ -15,8 +15,9 @@ import (
 
 // auditSink は監査の書き込みを記録する（Repo の Audit を差し替える。ほかの表は本物の SQLite のまま）。
 type auditSink struct {
-	mu      sync.Mutex
-	entries []repository.AuditEntry
+	repository.Audit // Append 以外（閲覧・サムネイル・保守）は本物へ
+	mu               sync.Mutex
+	entries          []repository.AuditEntry
 }
 
 func (s *auditSink) Append(_ context.Context, e repository.AuditEntry) (int64, error) {
@@ -35,6 +36,12 @@ func (s *auditSink) all() []repository.AuditEntry {
 type auditRepo struct {
 	*repository.DB
 	sink *auditSink
+}
+
+func newAuditRepo(r Repo, sink *auditSink) auditRepo {
+	db := r.(*repository.DB)
+	sink.Audit = db.Audit()
+	return auditRepo{DB: db, sink: sink}
 }
 
 func (r auditRepo) Audit() repository.Audit { return r.sink }
@@ -71,7 +78,7 @@ func (c guiClient) do(method, path string, form url.Values) *httptest.ResponseRe
 // 許可リストに入り、actor_type = host・kind = settings で監査され、引数・作業ディレクトリはどの記録にも入らない（FR-AU06）。
 func TestGUIAppsManageTheAllowListAndAuditAsHost(t *testing.T) {
 	sink := &auditSink{}
-	e := newEnv(t, func(c *Config) { c.Repo = auditRepo{DB: c.Repo.(*repository.DB), sink: sink} })
+	e := newEnv(t, func(c *Config) { c.Repo = newAuditRepo(c.Repo, sink) })
 	e.launcher.AddExecutable(guiExe)
 	e.launcher.AddExecutable(guiExe2)
 	e.launcher.AddDir(guiDir)
@@ -159,7 +166,7 @@ func TestGUIAppsManageTheAllowListAndAuditAsHost(t *testing.T) {
 // ファイル選択は FilePicker に届き、選ばれたパスが入力欄に入る。選択だけでは登録も監査もしない。キャンセルは 204。
 func TestGUIPickFileUsesTheWiredFilePickerAndIsNotAudited(t *testing.T) {
 	sink := &auditSink{}
-	e := newEnv(t, func(c *Config) { c.Repo = auditRepo{DB: c.Repo.(*repository.DB), sink: sink} })
+	e := newEnv(t, func(c *Config) { c.Repo = newAuditRepo(c.Repo, sink) })
 	gui := guiClient{t: t, h: e.app.GUIHandler()}
 
 	pick := func(answer func()) *httptest.ResponseRecorder {

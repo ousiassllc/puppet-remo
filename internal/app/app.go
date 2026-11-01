@@ -40,6 +40,7 @@ type Repo interface {
 	Tokens() repository.Tokens
 	ConnRequests() repository.ConnRequests
 	Audit() repository.Audit
+	Thumbs() repository.ThumbStore
 	LaunchableApps() repository.LaunchableApps
 }
 
@@ -61,10 +62,12 @@ type Platform struct {
 	Autostart service.Autostart
 }
 
-// Config は New の設定。Repo・Platform（Autostart 以外）・Watcher・WhoIs・Static・Logs は必須。
+// Config は New の設定。Repo・Platform（Autostart 以外）・Windows・Watcher・WhoIs・Static・Logs は必須。
 type Config struct {
 	Repo     Repo
 	Platform Platform
+	// Windows はウィンドウの生成・破棄（承認ダイアログ。§7）。本番は Wails（WailsHost.Windows）、テストは FakeWindows。
+	Windows Windows
 	// Watcher と WhoIs は tailscaled の LocalAPI の上に作る（tailnet.NewWatcher / NewWhoIs）。
 	Watcher tailnet.Watcher
 	WhoIs   tailnet.WhoIs
@@ -100,15 +103,17 @@ type App struct {
 	bus  *service.Bus
 	kill service.HostKillSwitch
 
-	leases  service.LeaseManager
-	authz   service.Authz
-	audit   *service.Audit
-	admin   service.HostAdmin
-	apps    service.AppRegistry
-	mcp     *mcp.Server
-	viewers service.ViewerSessions // viewer_id の発行・検証（/viewer と /ws/screen）
-	ws      *ws.Handler
-	web     *webremote.Handler // リモートの Web UI（/viewer）
+	leases   service.LeaseManager
+	approval service.Approval // リース取得の承認待ち（FR-L07）
+	dialogs  *approvalDialogs // 承認待ちごとのダイアログの開閉（FR-H05）
+	authz    service.Authz
+	audit    *service.Audit
+	admin    service.HostAdmin
+	apps     service.AppRegistry
+	mcp      *mcp.Server
+	viewers  service.ViewerSessions // viewer_id の発行・検証（/viewer と /ws/screen）
+	ws       *ws.Handler
+	web      *webremote.Handler // リモートの Web UI（/viewer）
 	// connStates は未登録デバイスのブラウザに返す待機・拒否・失効のページの選択に使う、接続要求の状態の読み取り専用の参照。
 	connStates service.ConnRequestStates
 	tracker    *service.StatusTracker
@@ -160,6 +165,8 @@ func (c Config) validate() error {
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
 		p.Hotkey == nil, p.Power == nil:
 		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey and Power")
+	case c.Windows == nil:
+		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
 		return errors.New("app: Watcher and WhoIs are required")
 	case c.Static == nil:
@@ -174,14 +181,26 @@ func (a *App) build(ctx context.Context) error {
 	cfg := a.cfg
 	settings := cfg.Repo.Settings()
 
-	audit, err := service.NewAudit(service.AuditConfig{Store: cfg.Repo.Audit(), Clock: cfg.Clock, Logger: a.log})
+	// 接続要求の変化を GUI へ通知する。Authz と HostAdmin の両方へ同じラッパーを渡す。
+	connRequests := service.NewNotifyingConnRequests(cfg.Repo.ConnRequests(), a.bus)
+
+	// 保守は、サムネイルを保存するたびの容量の確認（PurgeThumbsOverCap）を Audit へ渡すため、Audit より先に作る。
+	var err error
+	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{
+		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Settings: settings, Clock: cfg.Clock, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("maintenance: %w", err)
+	}
+
+	audit, err := service.NewAudit(service.AuditConfig{
+		Store: cfg.Repo.Audit(), Clock: cfg.Clock, Logger: a.log,
+		Thumbs: cfg.Repo.Thumbs(), IDs: cfg.IDs, Settings: settings, PurgeOverCap: a.maint.PurgeThumbsOverCap,
+	})
 	if err != nil {
 		return fmt.Errorf("audit: %w", err)
 	}
 	a.audit = audit
-
-	// 接続要求の変化を GUI へ通知する。Authz と HostAdmin の両方へ同じラッパーを渡す。
-	connRequests := service.NewNotifyingConnRequests(cfg.Repo.ConnRequests(), a.bus)
 
 	killMgr, err := service.NewKillSwitch(ctx, service.KillSwitchConfig{Settings: settings, Clock: cfg.Clock, Audit: audit, Logger: a.log})
 	if err != nil {
@@ -191,7 +210,17 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lease idle timeout: %w", err)
 	}
-	a.leases, err = service.NewLeaseManager(service.LeaseConfig{Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log})
+	// 承認待ちの要求（FR-L07）。要求のたびに Bus へ approval を出し、終わるたびに approval-closed を出す。ダイアログを開閉するのは
+	// 購読側の approvalDialogs（Start が動かす）、Resolve を呼ぶのは GUI ルーター（/approvals/{id}/allow・deny）。
+	a.approval, err = service.NewApproval(service.ApprovalConfig{Clock: cfg.Clock, IDs: cfg.IDs, Bus: a.bus})
+	if err != nil {
+		return fmt.Errorf("approval: %w", err)
+	}
+	a.dialogs = newApprovalDialogs(cfg.Windows, a.approval, a.bus, a.log)
+	a.leases, err = service.NewLeaseManager(service.LeaseConfig{
+		Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log,
+		Approval: a.approval, Clients: cfg.Repo.Clients(),
+	})
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
 	}
@@ -269,7 +298,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.settings, err = service.NewHostSettings(service.HostSettingsConfig{
-		Settings: settings, Autostart: p.Autostart, Audit: audit, Clock: cfg.Clock, OnChange: a.onSettingsChange,
+		Settings: settings, Autostart: p.Autostart, Audit: audit, Clock: cfg.Clock, Logger: a.log, OnChange: a.onSettingsChange,
 	})
 	if err != nil {
 		return fmt.Errorf("host settings: %w", err)
@@ -281,11 +310,6 @@ func (a *App) build(ctx context.Context) error {
 	a.port.Store(int32(initial.Port))
 	a.initialKey = initial.KillSwitchHotkey
 	a.hotkey = NewKillSwitchHotkey(p.Hotkey, func() { a.triggerKillSwitch("hotkey") })
-
-	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{ConnRequests: connRequests, Clock: cfg.Clock, Logger: a.log})
-	if err != nil {
-		return fmt.Errorf("maintenance: %w", err)
-	}
 
 	a.connStates, err = service.NewConnRequestStates(connRequests, cfg.Clock)
 	if err != nil {
@@ -332,8 +356,8 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
-		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin,
-		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin, Approval: a.approval,
+		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)

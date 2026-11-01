@@ -138,7 +138,9 @@ func (a *authz) audit(ctx context.Context, e repository.AuditEntry, detail map[s
 	}
 	e.TS = a.cfg.Clock.Now()
 	e.Kind = "auth"
-	e.Result = "denied"
+	if e.Result == "" {
+		e.Result = auditDenied // 認証の失敗・超過が既定。接続要求の作成のような成功は呼び出し側が ok を渡す
+	}
 	e.DetailJSON = raw
 	a.cfg.Audit.Record(ctx, e)
 }

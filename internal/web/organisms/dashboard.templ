@@ -82,7 +82,12 @@ templ SessionList(v view.Sessions) {
 
 // LeaseDisplay はリース保持者の表示だけ（操作は無い）。SSE の lease イベントの data（`/events` は M2 でも変えない）。
 templ LeaseDisplay(v view.Lease) {
-	@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
+	if v.Pending {
+		@molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel)
+		<p class="mt-2 text-xs text-slate-500">{ v.Since } から ・ ホストの承認を待っています（承認ダイアログで許可・拒否します）</p>
+	} else {
+		@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
+	}
 	if v.Held {
 		<p class="mt-2 text-xs text-slate-500">{ v.Since } から ・ アイドル解放まで { v.IdleRemaining }</p>
 	}

@@ -5,13 +5,20 @@
 // 本番のバイナリには入らない。使い方:
 //
 //	task frontend:build && go run ./internal/router/internal/guidemo -addr 127.0.0.1:8899
+//
+// -lease で操作権の状態（idle / pending_approval / held。既定 held）を選べる。pending_approval ではダッシュボードに「承認待ち」を出し、
+// 承認ダイアログのページ（/approvals/ap-demo-001。残り時間は固定の偽の時計で 60 秒のまま）が開ける。
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"log"
 	"log/slog"
 	"net"
@@ -31,13 +38,24 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8899", "待ち受けるアドレス（loopback のみ）")
+	lease := flag.String("lease", leaseHeld, "操作権の状態（idle / pending_approval / held）")
 	flag.Parse()
-	if err := run(*addr); err != nil {
+	if err := run(*addr, *lease); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(addr string) error {
+// 操作権の状態（-lease）。
+const (
+	leaseIdle    = "idle"
+	leasePending = "pending_approval"
+	leaseHeld    = "held"
+)
+
+func run(addr, lease string) error {
+	if lease != leaseIdle && lease != leasePending && lease != leaseHeld {
+		return fmt.Errorf("guidemo: -lease は idle / pending_approval / held のどれか（%q）", lease)
+	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return err
@@ -46,7 +64,7 @@ func run(addr string) error {
 		return fmt.Errorf("guidemo は loopback でだけ待ち受ける（-addr %q）", addr)
 	}
 
-	f := seed()
+	f := seed(lease)
 	deps := f.Deps()
 	h, err := gui.New(deps)
 	if err != nil {
@@ -82,7 +100,7 @@ func run(addr string) error {
 }
 
 // seed は見た目の確認用の架空のデータ（実在しないホスト名・ユーザー・IP）を入れる。
-func seed() *guitest.Fakes {
+func seed(lease string) *guitest.Fakes {
 	f := guitest.New()
 	now := time.Now()
 	f.Clock.T = now
@@ -99,15 +117,23 @@ func seed() *guitest.Fakes {
 	f.Sessions.Items = []service.SessionInfo{
 		{ID: "s1", ClientID: "client-001", Label: "demo-desktop", Kind: domain.ActorMCP, Since: now.Add(-12 * time.Minute)},
 	}
-	f.Leases.Held = true
-	f.Leases.H = service.Holder{
-		LeaseID: "lease-1", Actor: domain.Actor{Kind: domain.ActorMCP, ClientID: "client-001", Label: "demo-desktop", SessionID: "s1"},
-		Since: now.Add(-3 * time.Minute), IdleRemaining: 4*time.Minute + 20*time.Second,
+	demoActor := domain.Actor{Kind: domain.ActorMCP, ClientID: "client-001", Label: "demo-desktop", SessionID: "s1"}
+	switch lease {
+	case leaseHeld:
+		f.Leases.Held = true
+		f.Leases.H = service.Holder{LeaseID: "lease-1", Actor: demoActor, Since: now.Add(-3 * time.Minute), IdleRemaining: 4*time.Minute + 20*time.Second}
+	case leasePending:
+		// 承認待ち（FR-L07）: ダッシュボードに「承認待ち」、/approvals/ap-demo-001 に承認ダイアログ。
+		f.Leases.HasPending = true
+		f.Leases.PendingLease = service.PendingLease{LeaseID: "lease-1", Actor: demoActor, Since: now.Add(-5 * time.Second)}
+		f.Approval.Reqs = []service.ApprovalRequest{{ID: "ap-demo-001", Kind: service.ApprovalKindLease, Who: demoActor, ExpiresAt: now.Add(service.DefaultApprovalTimeout)}}
 	}
 
+	approvedAt := now.Add(-26 * time.Hour)
 	f.Admin.Cs = []domain.Client{
 		{ID: "client-001", StableNodeID: "node-demo-1", LoginName: "demo-user@example.com", DisplayName: "demo-desktop", WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAlways},
-		{ID: "client-002", StableNodeID: "node-demo-2", LoginName: "demo-user@example.com", DisplayName: "demo-laptop", WebEnabled: true, MCPEnabled: false, ApprovalMode: domain.ApprovalAlways},
+		{ID: "client-002", StableNodeID: "node-demo-2", LoginName: "demo-user@example.com", DisplayName: "demo-laptop", WebEnabled: true, MCPEnabled: false, ApprovalMode: domain.ApprovalFirstTime, ApprovedAt: &approvedAt},
+		{ID: "client-003", StableNodeID: "node-demo-5", LoginName: "demo-user@example.com", DisplayName: "demo-notebook", WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAuto},
 	}
 	f.Admin.Requests = []service.ConnRequest{
 		{ID: "req-001", StableNodeID: "node-demo-3", LoginName: "guest@example.com", DisplayName: "demo-phone", RemoteIP: "100.64.0.21", Status: service.ConnPending,
@@ -117,6 +143,7 @@ func seed() *guitest.Fakes {
 	}
 	f.Admin.Requests = append(f.Admin.Requests, demoRequestHistory(now)...)
 	f.Logs.Items = demoLogs(now)
+	seedAudit(f, now)
 	expires := now.Add(60 * 24 * time.Hour)
 	used := now.Add(-time.Hour)
 	revoked := now.Add(-24 * time.Hour)
@@ -207,4 +234,88 @@ func demoLogs(now time.Time) []service.AppLogEntry {
 	}
 	slices.SortStableFunc(entries, func(x, y service.AppLogEntry) int { return y.Time.Compare(x.Time) })
 	return entries
+}
+
+// seedAudit は監査ログ画面（Issue #72）の見た目の確認用。成功・拒否・失敗が混ざった 60 件を新しい順に入れる（1 ページ 50 件を
+// 超えるのでページ送りが出る）。サムネイルは、架空の画面（グラデーション）を 320×180 の JPEG にしたもの。削除済みのクライアントの行
+// （client_id なし。名前のスナップショットだけ）と、引数に HTML の断片・トークンの形が入った行（エスケープ・伏せ字の確認）を含む。
+func seedAudit(f *guitest.Fakes, now time.Time) {
+	thumb := demoThumbnail()
+	type spec struct {
+		kind, event string
+		actor       domain.ActorKind
+		client      string
+		clientID    string
+		result      string
+		code        string
+		ms          int64
+		thumb       bool
+	}
+	specs := []spec{
+		{"tool", "tool.left_click", domain.ActorMCP, "demo-desktop", "client-001", "ok", "", 14, true},
+		{"tool", "tool.type", domain.ActorMCP, "demo-desktop", "client-001", "ok", "", 41, true},
+		{"input", "tool.key_down", domain.ActorWeb, "demo-laptop", "client-002", "ok", "", 3, false},
+		{"lease", "lease.acquire", domain.ActorMCP, "demo-desktop", "client-001", "ok", "", 2, false},
+		{"lease", "lease.acquire", domain.ActorMCP, "demo-laptop", "client-002", "denied", "lease_held", 1, false},
+		{"tool", "tool.focus_window", domain.ActorMCP, "demo-desktop", "client-001", "error", "window_not_found", 9, false},
+		{"auth", "auth.bearer_failed", domain.ActorMCP, "unknown-phone", "", "denied", "unauthorized", 0, false},
+		{"tool", "tool.scroll", domain.ActorMCP, "retired-tablet", "", "ok", "", 18, true},
+		{"killswitch", "killswitch.trigger", domain.ActorHost, "(host)", "", "ok", "", 5, false},
+		{"settings", "settings.update", domain.ActorHost, "(host)", "", "ok", "", 7, false},
+	}
+	f.Audit.Thumbs = map[int64][]byte{}
+	f.Audit.Details = map[int64]service.AuditDetail{}
+	n := 60
+	for i := range n {
+		sp := specs[i%len(specs)]
+		id := int64(n - i)
+		e := service.AuditEntry{
+			ID: id, TS: now.Add(-time.Duration(i)*90*time.Second - 20*time.Second), Kind: sp.kind, Event: sp.event, ActorType: sp.actor,
+			ClientID: sp.clientID, ClientLabel: sp.client, SessionID: "session-demo", Tool: sp.event[len(sp.kind)+1:], Result: sp.result, ErrorCode: sp.code,
+		}
+		ms := sp.ms
+		e.DurationMS = &ms
+		args := []service.AuditArg{{Key: "monitor", Value: "0"}}
+		switch sp.event {
+		case "tool.left_click":
+			args = []service.AuditArg{{Key: "button", Value: "left"}, {Key: "count", Value: "1"}, {Key: "monitor", Value: "0"}, {Key: "x", Value: "640"}, {Key: "y", Value: "360"}}
+		case "tool.type":
+			args = []service.AuditArg{{Key: "text_len", Value: "24"}}
+		case "auth.bearer_failed":
+			args = []service.AuditArg{{Key: "reason", Value: "unknown token"}, {Key: "token", Value: "[REDACTED]"}}
+		case "tool.focus_window":
+			args = []service.AuditArg{{Key: "id", Value: "<script>alert('demo')</script>"}}
+		}
+		if sp.thumb {
+			e.Thumb = &service.AuditThumb{RelPath: fmt.Sprintf("2026/11/02/demo-%d.jpg", id), SizeBytes: int64(len(thumb)), Width: 320, Height: 180}
+			f.Audit.Thumbs[id] = thumb
+		}
+		f.Audit.Items = append(f.Audit.Items, e)
+		f.Audit.Details[id] = service.AuditDetail{AuditEntry: e, Args: args}
+	}
+}
+
+// demoThumbnail は架空の画面（グラデーションと矩形）を 320×180・品質 60 の JPEG にして返す。
+func demoThumbnail() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	for y := range 180 {
+		for x := range 320 {
+			img.SetRGBA(x, y, color.RGBA{R: uint8(30 + x/4), G: uint8(60 + y/3), B: 160, A: 255})
+		}
+	}
+	for y := 20; y < 60; y++ {
+		for x := 20; x < 300; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 240, G: 240, B: 245, A: 255})
+		}
+	}
+	for y := 80; y < 160; y++ {
+		for x := 40; x < 170; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 250, G: 250, B: 250, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 60}); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
 }

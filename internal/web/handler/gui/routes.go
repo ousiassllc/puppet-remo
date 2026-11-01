@@ -18,6 +18,10 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/requests", h.Requests)
 	r.GET("/requests/history", h.RequestsHistory)
 	r.GET("/logs", h.Logs)
+	// 監査ログの閲覧（M3。FR-AU05、FR-H08）。GUI ルーターだけにあり、リモートのルーターには同名の経路を作らない
+	r.GET("/audit", h.Audit)
+	r.GET("/audit/:id", h.AuditDetail)
+	r.GET("/audit/:id/thumbnail", h.AuditThumbnail)
 	r.GET("/clients", h.Clients)
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
@@ -32,6 +36,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.POST("/requests/:id/approve", h.ApproveRequest)
 	r.POST("/requests/:id/deny", h.DenyRequest)
 	r.PATCH("/clients/:id", h.UpdateClient)
+	r.POST("/clients/:id/approval/reset", h.ResetApproval)
 	r.DELETE("/clients/:id", h.DeleteClient)
 	r.POST("/clients/:id/tokens", h.IssueToken)
 	r.DELETE("/clients/:id/tokens/:token_id", h.RevokeToken)
@@ -47,6 +52,11 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.PUT("/apps/:id", h.UpdateApp)
 	r.DELETE("/apps/:id", h.DeleteApp)
 	r.POST("/apps/pick-file", h.PickAppFile)
+
+	// 承認ダイアログ（M3。FR-H05）。専用の Wails ウィンドウの中身と、許可・拒否
+	r.GET("/approvals/:id", h.ApprovalDialog)
+	r.POST("/approvals/:id/allow", h.AllowApproval)
+	r.POST("/approvals/:id/deny", h.DenyApproval)
 
 	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
 	r.POST("/lease/revoke", h.RevokeLease)

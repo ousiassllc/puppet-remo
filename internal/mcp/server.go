@@ -56,7 +56,9 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"Every tool that sends input or reads the clipboard or the UI tree needs the control lease; " +
 	"it is acquired implicitly on first use (acquire_control and release_control do it explicitly) " +
 	"and is released when you release it, when the session ends, after an idle period, or when the host stops all control. " +
-	"Only one session holds the lease at a time; others get lease_held_by_other. " +
+	"Only one session holds the lease at a time (it is also unavailable while another session waits for the host's approval); others get lease_held_by_other. " +
+	"When the host requires approval for this client, acquiring the lease waits for the host's answer and fails with " +
+	"approval_denied (the host denied) or approval_timeout (no answer in time). " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
 	"you can pass only an app_id, never a path or arguments, and it needs the lease like input tools. " +
 	"Some apps only bring an already open window forward when launched instead of opening a new one (tabbed single-window apps " +

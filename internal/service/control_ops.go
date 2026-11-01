@@ -371,6 +371,53 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 	return "unknown", map[string]any{"type": fmt.Sprintf("%T", op)}
 }
 
+// recordedTextMaxRunes は audit.record_text が true のとき detail_json に入れる本文の上限（文字数）。
+// type は 10,000 文字、クリップボードは 1 MiB まで受け付けるが、監査の行を肥大させないため切り詰める。
+const recordedTextMaxRunes = 4096
+
+// addRecordedText は、設定 audit.record_text（既定 false）が true のとき、type の本文とクリップボードの内容（clipboard_read の結果を含む）
+// を args["text"] に足す（FR-AU03、FR-S07）。トークン（prm_…）・Bearer の形の文字列は、本文の中にあっても先に伏せる（トークンはどの設定でも記録しない。NFR-S13）。
+// 伏せたあとの文字列が recordedTextMaxRunes を超えるときは切り詰めて args["text_truncated"] = true を付ける（text_len は元の長さ）。
+// 設定が読めない・真偽値でないときは記録しない側に倒す。
+func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result, args map[string]any) {
+	var text string
+	switch o := op.(type) {
+	case domain.TypeText:
+		text = o.Text
+	case domain.ClipboardWrite:
+		text = o.Text
+	case domain.ClipboardRead:
+		text = res.Text
+	default:
+		return
+	}
+	if text == "" {
+		return
+	}
+	if on, err := loadBool(ctx, c.settings, settingAuditRecordText, false); err != nil || !on {
+		return
+	}
+	// 伏せてから切り詰める。先に切ると、境界をまたぐトークンが形の最小長を割って伏せられずに残る（NFR-S13）。
+	text = auditRedactString(text)
+	if cut, ok := cutAtRunes(text, recordedTextMaxRunes); ok {
+		text = cut
+		args["text_truncated"] = true
+	}
+	args["text"] = text
+}
+
+// cutAtRunes は s の先頭 limit ルーンを返す。切り詰めたときだけ ok が true。s 全体のルーン列は作らない。
+func cutAtRunes(s string, limit int) (string, bool) {
+	n := 0
+	for i := range s {
+		if n == limit {
+			return s[:i], true
+		}
+		n++
+	}
+	return s, false
+}
+
 // clickToolName は FR-M05 のツール名（left_click / right_click / middle_click / double_click / triple_click）。
 func clickToolName(o domain.Click) string {
 	if o.Button == domain.ButtonLeft {

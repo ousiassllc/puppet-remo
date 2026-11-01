@@ -124,6 +124,10 @@ func (*memClients) Update(context.Context, string, repository.ClientPatch) error
 }
 func (*memClients) Delete(context.Context, string) error               { return errors.New("unused") }
 func (*memClients) TouchSeen(context.Context, string, time.Time) error { return errors.New("unused") }
+func (*memClients) MarkApproved(context.Context, string, time.Time) error {
+	return errors.New("unused")
+}
+func (*memClients) ResetApproval(context.Context, string) error { return errors.New("unused") }
 
 // memTokens は repository.Tokens のメモリ実装。
 type memTokens struct {

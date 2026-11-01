@@ -75,9 +75,10 @@ type holderBody struct {
 	Label string `json:"label"`
 }
 
-// leaseBody は ready の lease と、lease メッセージの本体。holder は idle のとき省く。
+// leaseBody は ready の lease と、lease メッセージの本体。holder は idle のときだけ省く（API 仕様 §5.3）。
+// pending_approval では holder が承認待ちの要求者、mine が要求者本人かを表す（held では保持者）。
 type leaseBody struct {
-	State  string      `json:"state"` // idle | held（pending_approval は M3）
+	State  string      `json:"state"` // idle | pending_approval | held
 	Holder *holderBody `json:"holder,omitempty"`
 	Mine   bool        `json:"mine"`
 }

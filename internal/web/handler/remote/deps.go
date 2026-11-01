@@ -25,6 +25,8 @@ type Leases interface {
 	Release(who domain.Actor)
 	Revoke(by domain.Actor) error
 	Holder() (service.Holder, bool)
+	// Pending は承認待ち（pending_approval。FR-L07）の要求者。承認待ちでなければ false。
+	Pending() (service.PendingLease, bool)
 }
 
 // Control は入力の唯一の入口（クリップボード・ショートカット）とモニター一覧。実体は service.Control。

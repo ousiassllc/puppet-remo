@@ -281,12 +281,22 @@ type envOption func(*ws.Config)
 
 func newEnv(t *testing.T, opts ...envOption) *env {
 	t.Helper()
+	return newEnvWithLeases(t, nil, opts...)
+}
+
+// newEnvWithLeases は newEnv の LeaseManager の設定を leaseMutate で変える版（承認の経路のテスト用）。
+func newEnvWithLeases(t *testing.T, leaseMutate func(*env, *service.LeaseConfig), opts ...envOption) *env {
+	t.Helper()
 	e := &env{t: t, streamer: newFakeStreamer(5), kill: &fakeKill{}, bus: service.NewBus()}
 	c := alice
 	e.client = &c
 
 	var err error
-	e.leases, err = service.NewLeaseManager(service.LeaseConfig{Clock: fixedClock{}, IDs: &seqIDs{}, IdleTimeout: time.Hour, Kill: e.kill})
+	leaseCfg := service.LeaseConfig{Clock: fixedClock{}, IDs: &seqIDs{}, IdleTimeout: time.Hour, Kill: e.kill}
+	if leaseMutate != nil {
+		leaseMutate(e, &leaseCfg)
+	}
+	e.leases, err = service.NewLeaseManager(leaseCfg)
 	if err != nil {
 		t.Fatal(err)
 	}

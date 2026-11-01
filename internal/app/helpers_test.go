@@ -189,6 +189,7 @@ type env struct {
 	listens   *listenLog
 	hotkey    *platformtest.FakeHotkey
 	windows   *platformtest.FakeWindows
+	dialogs   *FakeWindows // 承認ダイアログなどのウィンドウ（app.Windows の偽物）
 	power     *platformtest.FakePower
 	input     *platformtest.FakeInput
 	autostart *platformtest.FakeAutostart
@@ -251,7 +252,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 	t.Helper()
 	windows := platformtest.NewFakeWindows()
 	e := &env{
-		t: t, db: db, windows: windows,
+		t: t, db: db, windows: windows, dialogs: NewFakeWindows(),
 		watcher: &fakeWatcher{},
 		whois:   &fakeWhoIs{id: tailnet.Identity{LoginName: "alice@example.com", StableNodeID: "nodeA", NodeName: "alice-laptop"}},
 		listens: &listenLog{}, hotkey: platformtest.NewFakeHotkey(), power: platformtest.NewFakePower(), input: platformtest.NewFakeInput(),
@@ -259,7 +260,8 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 		launcher: platformtest.NewFakeAppLauncher(), picker: platformtest.NewFakeFilePicker(),
 	}
 	cfg := Config{
-		Repo: db,
+		Repo:    db,
+		Windows: e.dialogs,
 		Platform: Platform{
 			Capturer: platformtest.NewFakeCapturer(), Input: e.input, Windows: windows,
 			Clipboard: platformtest.NewFakeClipboard(), UI: platformtest.NewFakeUIAutomation(windows),
@@ -310,7 +312,8 @@ func (e *env) waitListening(count int) {
 func (e *env) registerClient() (clientID, token string) {
 	e.t.Helper()
 	ctx := context.Background()
-	c := domain.Client{ID: "client-1", StableNodeID: "nodeA", LoginName: "alice@example.com", DisplayName: "alice-laptop", MCPEnabled: true, WebEnabled: true}
+	c := domain.Client{ID: "client-1", StableNodeID: "nodeA", LoginName: "alice@example.com", DisplayName: "alice-laptop", MCPEnabled: true, WebEnabled: true,
+		ApprovalMode: domain.ApprovalAuto} // 既定は承認なしでリースを取らせる（承認の動きは approval_dialogs_test.go と service のテストで確かめる）
 	if err := e.db.Clients().Create(ctx, c); err != nil {
 		e.t.Fatal(err)
 	}

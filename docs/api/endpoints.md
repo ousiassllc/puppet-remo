@@ -229,9 +229,9 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 | ツール | 出力 |
 |--------|------|
-| `acquire_control` | `get_control_status` と同じ。M1 は承認なしで取得できる（`idle → held`）。承認が必要な場合（承認モード。M3 から）は承認を待つ（最大 60 秒） |
+| `acquire_control` | `get_control_status` と同じ（成功すると `held`）。承認が必要でなければ `idle → held`。承認が必要な場合（承認モード。M3 から）は `idle → pending_approval` にして、ホストの結果を待つ（最大 60 秒）。拒否は 403 `approval_denied`、60 秒の無応答は 408 `approval_timeout`（§2。ツールエラー。どちらも `idle` に戻る）。他者が保持中、または他者が承認待ちなら `lease_held_by_other`。暗黙の取得（入力系のツール・`launch_app`）も同じに承認を待ち、同じコードで失敗する |
 | `release_control` | `{ "ok": true }`。保持者でなければ何もしない |
-| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M2 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` / `web`（M2 から）。強制剥奪された直後は `idle`。`pending_approval` は M3、`agent`（と `task_id`）は M4 から |
+| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` と `idle_remaining_sec` は `held` のときだけ）。`pending_approval`（M3）は承認待ちで、`holder` は出さず、`mine` は承認待ちの要求者が自分のセッションかどうか。`state` が `held` のとき `mine` は保持者が自分かどうか。`holder.kind` は `mcp` / `web`（M2 から）。強制剥奪された直後は `idle`。`agent`（と `task_id`）は M4 から |
 
 #### アプリ起動（M1.5）
 
@@ -372,7 +372,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | GET | `/` | `/viewer` へリダイレクト | 302 |
 | GET | `/viewer` | ビューアのページ（ツールバー、リースパネル、`<remo-screen-viewer>`） | 200 HTML（`viewer_id` を埋め込む） |
 | GET | `/viewer/lease` | リースパネルのフラグメント | 200 HTML。保持者種別・名前・状態と、状態に応じたボタンのみ |
-| POST | `/viewer/lease/acquire` | 操作権を取得 | 200 リースパネル。承認待ちなら承認待ちのパネル（ホストの承認後に WebSocket の `lease` で更新）。他者が保持なら 409 `lease_held_by_other` |
+| POST | `/viewer/lease/acquire` | 操作権を取得 | 200 リースパネル。承認待ちなら承認待ちのパネル（ホストの承認後に WebSocket の `lease` で更新）。他者が保持中・承認待ちなら 409 `lease_held_by_other`。ホストの拒否は 403 `approval_denied`、60 秒の無応答は 408 `approval_timeout`（トースト。パネルは空きのまま）。**M3 の実装は、承認を待つあいだ応答を返さず（最大 60 秒）、許可で 200 のリースパネル、拒否・タイムアウトでトーストを返す**（承認待ちのパネルを 200 で即座に返す窓口は未決。§7.5） |
 | POST | `/viewer/lease/release` | 操作権を解放 | 200 リースパネル |
 | POST | `/viewer/lease/revoke` | 他者のリースを強制剥奪（保持者が `agent` ならそのタスクを中断。FR-L06） | 200 リースパネル（保持者は `idle` になる）。自身が取得するには改めて `acquire` する |
 | POST | `/viewer/settings` | このビューアのモニター・品質・FPS | フォーム `monitor`, `quality`（1〜100）, `fps`（1〜30）。200 ツールバーのフラグメント。WebSocket の `config` に反映される |
@@ -428,9 +428,9 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 |------|------|
 | `ready` | 接続直後に 1 回（画面フレームより前）。`{ "monitors": [...], "monitor": 0, "width": 2560, "height": 1440, "quality": 70, "fps": 10, "lease": {…} }`。`width` / `height` はストリームの座標空間（選択モニターの物理ピクセル）。`monitors[]` の各要素は `get_screen_info`（§3.3）から縮小に関する項目（`scale`・`scaled`）を除いた `{ "index", "name", "primary", "origin": { "x", "y" }, "physical": { "width", "height" }, "dpi_scale" }`。`lease` は下の `lease` メッセージと同じ形 |
 | `config` | 設定の反映結果。`{ "monitor", "width", "height", "quality", "fps" }`。モニター変更時はキーフレームが続く。WebSocket の `config` だけでなく、`POST /viewer/settings` で変えたときにも届く |
-| `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のとき省く（`pending_approval` は M3）。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
+| `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のときだけ省く（M3: `pending_approval` では承認待ちの要求者の `holder` を付け、`mine` は要求者が自分のビューアかどうか。承認待ちでは入力が許されない）。リースの変化は、承認待ちの開始（`pending_approval`）・許可（`held`）・拒否・タイムアウト・取り下げ（`idle`）のたびに全ビューアへ送る。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
 | `killswitch` | `{ "active": true }`。続けて 4503 で閉じる。以降の接続も 4503 で閉じられる |
-| `error` | `{ "code", "message" }`。入力の拒否。`code` は §2 のコードで、`lease_required` / `lease_held_by_other` / `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`。`internal` の `message` は詳細を含まない固定文。切断はしない |
+| `error` | `{ "code", "message" }`。入力の拒否。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`。`internal` の `message` は詳細を含まない固定文。切断はしない |
 
 **クライアント → サーバー**
 
@@ -500,8 +500,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/logs` | アプリのログ（運用ログ。NFR-O01）。日時・レベル・内容（属性つき）の表で、新しい順に 1 ページ 50 件、読み取り専用。画面にログファイルのパスを出す。クエリ `level`（`all`（既定）・`warn`（WARN 以上）・`error`（ERROR のみ）。大文字小文字を区別せず、無い・未知の値は `all`）、`page`（1 始まり。無い・数値でない・1 未満は 1、100 を超える値は 100 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出て、`level` を保つ。範囲外のページは空の表示（200）。ログファイルが無ければ空の表示。`HX-Request` ならフラグメント（`#app-log`。絞り込みとページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ログの読み出しに失敗したら 500（理由は画面に出さない）。監査ログの閲覧（FR-AU01）とは別。FR-H13 | M1 |
 | `/clients` | クライアント一覧。`/clients/{id}`: 詳細（有効化・承認モード・トークン）。FR-H04 | M1 |
 | `/apps` | 起動許可アプリの一覧・追加フォーム（`HX-Request` なら一覧のフラグメント）。`/apps/new`: 追加フォーム、`/apps/{id}/edit`: 編集フォーム（`HX-Request` ならフォームのフラグメント。フルページは一覧の該当行が編集フォーム。対象が無ければ 404）。FR-H12 | M1.5 |
-| `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウ）。FR-H05 | M3 |
-| `/audit` | 監査ログ一覧。`/audit/{id}`: 詳細（引数、サムネイル）。FR-AU05 | M3 |
+| `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウの中身。サイドバー・ヘッダーの無い簡素なレイアウト）。クライアント名・種別・要求の内容（`lease`: 「操作権（リース）の取得」）・残り時間（60 秒のカウントダウン）・許可 / 拒否のボタンだけを出し、秘密・パス・引数は出さない。残り時間は HTMX が 1 秒ごとに `GET /approvals/{id}`（`HX-Request`）で再取得して `#approval-remaining` だけを差し替える（ボタンは差し替えない）。`id` が失効・解決済み・存在しない・`kind` が `lease` 以外（M4）なら 410 `approval_timeout`（フルページは終了した旨の表示、HTMX の応答は `data-error-code` 付きのトースト）。応答は `Cache-Control: no-store`。FR-H05 | M3 |
+| `/audit` | 監査ログ一覧（ホスト GUI だけ。リモートのルーターには無い）。日時（`from` / `to`。RFC 3339 のテキスト入力）・クライアント・種別・結果・イベント名で絞り込み、`ts` 降順の表（日時はホストのローカル時刻・クライアント名（スナップショット）・種別・イベント・結果バッジ（`ok` は ok、`denied` は warn、`error` は danger）・所要時間・サムネイルの有無）と「次へ」（`cursor`。前へは無い）。`HX-Request` なら `#audit-list` のフラグメント。`/audit/{id}`: 詳細（日時・種別・イベント・操作主体・クライアント名・セッション・リース・ツール・結果・エラーコード・所要時間・引数のキー・値の表・サムネイルの `<img src="/audit/{id}/thumbnail">`）。サイドバーの「監査ログ」。FR-AU05 | M3（#72） |
 | `/settings` | 設定。FR-S | M1〜 |
 | `/update` | 更新の確認・適用。FR-H09 | M3 |
 | `/tasks` | タスク一覧。`/tasks/{id}`: 詳細（ステップ、使用トークン、最終回答。ステップごとの経路 `route`（`fast` / `openai`）と、高速パスから OpenAI へ引き継いだ理由 `handoff_reason`、`fast_steps` / `openai_steps`）。FR-H10 | M4 |
@@ -513,10 +513,10 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト（フォーム） | 応答 |
 |---------|------|-----------------------|------|
-| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。**M3 から**。M1 のフォームには出さず、`always` で保存して M3 まで参照しない。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off。M1 のフォームにも出して保存するが、**M1 では効果がなく**、`run_task` の可否に効くのは M4 から。FR-A09）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
+| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。空は `always`。定義外は 422 `invalid_argument`。**M3 から**選べる（M1・M2 のフォームは `always` だけ）。許可した時点で `clients.approval_mode` に保存する。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off。M1 のフォームにも出して保存するが、**M1 では効果がなく**、`run_task` の可否に効くのは M4 から。FR-A09）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
 | POST | `/requests/{id}/deny` | なし | 200 一覧フラグメント（`denied`。24 時間は同デバイスの再要求を作らない） |
-| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`（M1 でも受け付けて保存するが、**M1 では効果がない**。`run_task` の可否に効くのは M4 から。FR-A09）、`approval_mode`（M3 から）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻す） | 200 クライアントのフラグメント。Web / MCP を無効にしたクライアントのセッションは即時に切断（タスクの中断は M4 から。`agent_enabled` の変更ではセッションを切断しない） |
-| POST | `/clients/{id}/approval/reset` | なし | 200（`first_time` の承認済みを取り消す） |
+| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`（M1 でも受け付けて保存するが、**M1 では効果がない**。`run_task` の可否に効くのは M4 から。FR-A09）、`approval_mode`（M3 から。`always` / `first_time` / `auto`、定義外は 422 `invalid_argument`）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻し、監査 `client.update` の `detail` に `approval_mode_before`・`approval_mode` を入れる。同じ値の保存では戻さない） | 200 クライアントのフラグメント。Web / MCP を無効にしたクライアントのセッションは即時に切断（タスクの中断は M4 から。`agent_enabled` の変更ではセッションを切断しない） |
+| POST | `/clients/{id}/approval/reset` | なし | 200 クライアントのフラグメント（`first_time` で承認済みのときだけ。`approved_at` を NULL に戻し、次のリース取得から再び承認が要る。破壊的ではないので確認モーダルは挟まない。詳細ページからは `?view=detail`）。`first_time` でない・承認済みでなければ 409 `conflict`、クライアントが無ければ 404。**監査のイベント名が未決のため、この操作の監査は記録しない**（運用ログ `client approval reset` だけ） |
 | DELETE | `/clients/{id}` | なし | 200（許可リストから除外。トークンは `CASCADE` で削除、セッション・タスクは切断・中断） |
 | POST | `/clients/{id}/tokens` | `label`\*、`expires_in_days`（既定 90、`never` で無期限） | 200 **トークン平文を一度だけ表示するフラグメント**。`Cache-Control: no-store`。ラベル重複は 409。以後は `token_prefix` のみ表示 |
 | DELETE | `/clients/{id}/tokens/{token_id}` | なし | 200 トークン一覧のフラグメント（`revoked_at` を設定。当該トークンの MCP セッションは切断） |
@@ -549,8 +549,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む。画面の更新は `GET /poll`（§7.4）が OOB で差し替える |
 | GET | `/killswitch/release/confirm` | なし | 200 解除の確認モーダル（フラグメント）。発動中でなければ 409 `conflict` |
 | GET | `/clients/{id}/delete/confirm`、`/clients/{id}/tokens/{token_id}/revoke/confirm` | なし | 200 確認モーダル（破壊的な操作は、サーバーが描画したモーダルの確定ボタンだけが実際の `DELETE` を送る。frontend.md §5.4）。対象が無ければ 404 |
-| POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`）。`id` が失効（60 秒）・解決済みなら 410 `approval_timeout` |
-| POST | `/approvals/{id}/deny` | なし | 同上（拒否） |
+| POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`。本文は「許可しました。」）。`Approval.Resolve(id, true)` を呼び、リースの取得が `held` になる。`id` が失効（60 秒）・解決済み・存在しないなら 410 `approval_timeout`（`HX-Trigger` なし。トースト） |
+| POST | `/approvals/{id}/deny` | なし | 同上（拒否。`Approval.Resolve(id, false)`。取得は `approval_denied`） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクのフラグメント。終了済みなら現在の状態を返す |
 | PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`update.apply_mode`、`log.level`、`autostart`（OS のスタートアップ登録） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
 | PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック）、`model`、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`keep_screenshots`（1〜10。FR-S19）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。API キー未登録で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
@@ -559,8 +559,9 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | PUT | `/agent/fastpath` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック。エージェントの `consent` とは別）、`model`（既定 `jev-1.13`。FR-S15）、`min_confidence`（0〜1、既定 0.7。FR-S16）、`max_steps`（1〜500、既定 15。FR-S17）、`excluded_labels`（改行区切り。FR-S18） | 200 フラグメント。TypeSafe API キー未登録で `enabled` にしようとすると 409 `conflict`、同意なしは 422（項目別メッセージ）。on にしたとき `agent.fastpath.consent_at`（UTC ミリ秒）を記録し、off にしたとき削除する。どちらも高速パス用の別の監査イベントを残す（FR-G22）。エージェント自体の有効・無効とは独立 |
 | PUT | `/agent/fastpath/api-key` | `api_key`（伏せ字の入力） | 200 「登録済み」のフラグメント。**値は応答・ログ・監査に出さず、登録後は表示しない**。資格情報マネージャーの `puppet-remo/typesafe` に保存し、保存に失敗したら 500 `internal`。登録だけでは高速パスは有効にならない（`enabled` と同意が別に要る） |
 | DELETE | `/agent/fastpath/api-key` | なし | 200（資格情報を削除し、`agent.fastpath.enabled` を off、`consent_at` を削除する。実行中のタスクは失敗させず、以後の高速ステップを行わず OpenAI で続行する） |
-| GET | `/audit` | クエリ: `from`, `to`（RFC 3339）、`client_id`, `kind`, `result`, `q`（イベント名の部分一致）、`cursor`, `limit`（既定 50、最大 200） | 200 一覧フラグメント（`ts` 降順。`cursor` は最後の `id`） |
-| GET | `/audit/{id}/thumbnail` | なし | 200 `image/jpeg`（`audit_thumbnails.rel_path` を `thumbs/` 配下に限定して配信。パスの走査を拒否）。無ければ 404 |
+| GET | `/audit` | クエリ: `from`, `to`（RFC 3339）、`client_id`, `kind`, `result`, `q`（イベント名の部分一致）、`cursor`, `limit`（既定 50、最大 200） | 200 一覧フラグメント（`ts` 降順。`cursor` は最後の `id`）。**M3（#72）の実装**: `HX-Request`（履歴の復元を除く）は `#audit-list` のフラグメント、`HX-Boosted` とそれ以外（履歴の復元を含む）はフルページ。範囲外・結果なしは空の表示（200）。不正な値（RFC 3339 でない `from` / `to`・未知の `kind`（`auth` / `client` / `token` / `lease` / `tool` / `input` / `agent` / `killswitch` / `settings` / `update`）・未知の `result`（`ok` / `denied` / `error`）・数値でない・負の `limit` / `cursor`）は 422（同じフラグメントを項目別のメッセージ（`data-field-error`）付きで描き直し、読み出しはしない）。`limit` は 200 を超えると 200。`from` / `to` は RFC 3339 のテキスト入力で、URL にもそのまま出る（ブラウザの日時入力欄への変換・ホストのタイムゾーンの補完はしない）。「次へ」の URL は今の絞り込みと次の `cursor` を持つ |
+| GET | `/audit/{id}` | なし | 200 詳細のページ（`HX-Request` は `#main` の中身）。対象が無い・`id` が正の整数でないときは 404（`data-error-code="not_found"`）。引数は `AuditReader` が秘密を伏せた値だけを、キーの昇順で出す（HTML エスケープ。M3・#72） |
+| GET | `/audit/{id}/thumbnail` | なし | 200 `image/jpeg`（`audit_thumbnails.rel_path` を `thumbs/` 配下に限定して配信。パスの走査を拒否）。無ければ 404。**M3（#72）の実装**: `Cache-Control: no-store`・`X-Content-Type-Options: nosniff`。パスはユーザー入力ではなく DB の `rel_path` で、`ThumbStore` が `thumbs/` の外を指すパスを拒否したとき（`ErrInvalidArgument`）も画像は返さず 404（運用ログに警告）。サムネイルの無い行・ファイルの無い行・`id` が正の整数でない場合も 404。読み出しの失敗は 500 |
 | POST | `/update/check` | なし | 200 フラグメント（新版の有無） |
 | POST | `/update/apply` | なし | 200（署名検証に成功した更新を適用して再起動。リース保持中・接続中・タスク実行中は 409 `conflict`） |
 
@@ -596,7 +597,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `sessions` | 接続中セッション一覧のフラグメント | ダッシュボード |
 | `lease` | リース保持者のフラグメント（種別付き。M2 から強制剥奪ボタンを含む） | ダッシュボード |
 | `connection-requests` | サイドバーの件数バッジのフラグメント | 接続要求、トレイ通知 |
-| `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く | （ウィンドウ生成） |
+| `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く（M3 は `lease` だけ） | （ウィンドウ生成。DOM は更新しない） |
+| `approval-closed` | `{ "id": "…" }`（M3・#68）。承認待ちが終わった（許可・拒否・60 秒の失効・取り下げ）。受信したアプリが開いているダイアログを閉じる | （ウィンドウを閉じる。DOM は更新しない） |
 | `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由。M4） | ダッシュボード、タスク |
 | `killswitch` | ヘッダーのキルスイッチ状態バッジのフラグメント | 全画面のヘッダー |
 | `toast` | 通知メッセージ（更新の通知、DB 破損の隔離、TypeSafe が 401 を返して高速パスを無効にした通知など） | 全画面 |
@@ -610,17 +612,19 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
 | リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp`・`GET /ws/screen`（M2。#61）・Web UI（`GET /`・`/viewer*`。M2。#62）・`GET /static/*`（M2。#62）**。それ以外のパスは 404。`/api/v1`（Huma）は M2 以降の別の段階 |
-| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`・`/lease/revoke`（M2）、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
-| `PUT /settings` の項目（§7.3） | 13 項目 | `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目（M1）に、M2 で `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を足した 7 項目。他は各段階で足す |
+| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`・`/lease/revoke`（M2）、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。M3 の監査ログの閲覧（#72）: `GET /audit`・`/audit/{id}`・`/audit/{id}/thumbnail`（読み取りだけ。ホスト GUI のルーターだけ）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
+| `PUT /settings` の項目（§7.3） | 13 項目 | `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目（M1）に、M2 で `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を足した 7 項目。M3 の #73 で `audit.thumbnails_enabled`・`audit.record_text`（チェックボックス。外れていると値が送られず、off として保存する）・`audit.retention_days`（1〜36500）・`audit.thumbs_max_bytes`（1〜2^53。単位はバイトのまま表示する）・`update.apply_mode`（`confirm` / `auto_idle`。保存するだけで、読む側は #74）を足した 12 項目。`log.level` は未実装（未決）。検証エラーは 422 のフラグメントで項目別に出す（`audit.retention_days` と `audit.thumbs_max_bytes` の範囲は `Maintenance` の読み取りと同じ。範囲・単位は所有者の確認待ち）。保存済みの `audit.*` の数値が範囲外のときは、フォームは既定値を表示する（`Maintenance` が実際に使う値）。他は各段階で足す |
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
 | GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン・起動許可アプリ）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
 | 接続要求の許可（§7.2） | `pending` なら登録して `approved` | 期限切れの `pending` は一覧に出ず、許可もできない（409 `conflict`）。同じ `stable_node_id` の登録済みクライアントがあるとき（ログイン名の変更後の再許可）は、古いクライアントを置き換える（トークンは CASCADE で削除、セッションは切断、リースは解放）。このとき監査に `client.replace` を記録する。古いクライアントの切断（ツール呼び出しの完了待ち）は、他の許可・GUI の操作を止めないよう、許可の直列化のロックの外で行う。同じデバイスの `pending` を 5 秒以内に更新済みなら、DB に書かない |
-| Web 入力の監査（§5.3・M2） | Web UI 入力を記録（FR-AU01） | 入力の `kind` は `input`（`actor_type = web`、`session_id = viewer_id`）。`input.mouse` の `move` は連続するため記録せず、`down` / `up` / `wheel` と `input.key`（キーの名前は入れない）・`input.text`（文字数のみ）・クリップボード（文字数のみ）を記録する |
+| Web 入力の監査（§5.3・M2） | Web UI 入力を記録（FR-AU01） | 入力の `kind` は `input`（`actor_type = web`、`session_id = viewer_id`）。`input.mouse` の `move` は連続するため記録せず、`down` / `up` / `wheel` と `input.key`（キーの名前は入れない）・`input.text`（既定は文字数のみ）・クリップボード（既定は文字数のみ）を記録する。設定 `audit.record_text`（FR-S07）が true のときは `input.text` とクリップボードの本文も `detail_json` の `text` に記録する（4,096 文字まで。ER「イベントのカタログ」。M3・#71）。サムネイルの保存は M3 で `Audit` に実装済みだが、Web 入力への結線は未決のため未実装 |
 | 監査（§7 の冒頭） | ホスト操作は `actor_type = host` | `client_id` は、クライアントの行がすでに無いとき（`client.delete` の直後など）NULL で記録する（`client_label` は残る） |
 | MCP ツールの監査（§3.3） | — | `Control` を通らないツール（`get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status`）の呼び出しは、`mcp` のツール登録で `kind = tool` として監査する。入力系などは `Control` が記録する |
 | HTTP サーバー（§1） | — | tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒、`IdleTimeout` 120 秒、`MaxHeaderBytes` 64 KiB。`WriteTimeout` は付けない。WhoIs の LocalAPI 呼び出しは 5 秒で打ち切り、失敗は 403 `whois_failed`（fail closed） |
 | MCP の keepalive（§3.1・NFR-A04） | — | 既定で ping しない（§3.1） |
-| WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のとき省く。`ready` の `monitors[]` の形は §5.3 |
+| Web の承認待ち（§4.2・M3。#67） | `POST /viewer/lease/acquire` は承認待ちなら承認待ちのパネルを 200 で返す | 承認が要るクライアントでは、`LeaseManager.Acquire` が最大 60 秒ブロックするため、ハンドラはその間応答を返さない（リモートの `http.Server` に `WriteTimeout` は無い）。許可なら 200 のリースパネル、拒否は 403 `approval_denied`・無応答は 408 `approval_timeout` のトースト。承認待ちのあいだ、ほかのビューア（と、WebSocket の `lease` で更新された本人のパネル）は「承認待ち: <名前>（種別）」を見る。承認待ちを即座に返す窓口（`Acquire` の非同期版など）は、docs に決まりが無いため実装していない（未決。#66 の未決事項）。ブラウザが接続を切ると `Acquire` の ctx がキャンセルされ、承認待ちは取り下げられる |
+| 承認ダイアログ（§7.1〜§7.4・M3。#68） | `/approvals/{id}` は専用の Wails ウィンドウ。許可 / 拒否は `Approval.Resolve` | `gui.Deps.Approval`（`Resolve`・`Pending`。`service.Approval` が満たす）。ウィンドウは `app` の `approvalDialogs` が `Bus` の `approval` / `approval-closed` を購読して開閉する（`Approval.Pending` を真実の源にする。`Windows.OpenApproval(id)`）。ダイアログが同時に開くのは 1 つで、開いている間に来た別の要求は開かず、60 秒で失効して拒否になる（`Approval.Pending` が複数を返すときの扱いは docs に無く未決のため、順番に開くなどはしていない）。許可も拒否もせずウィンドウを閉じても承認待ちは続き、60 秒の失効で拒否になる（再度は開かない。docs に定めが無いため、承認が勝手に通らない保守的な動き）。ウィンドウを閉じる `HX-Trigger: closeWindow` は `static/src/app/app.ts` が受け、Wails のランタイム（`/wails/runtime.js`）の `Window.Close` を呼ぶ（`app` 側も承認の終了で閉じるので、これが失敗しても承認の結果に影響しない）。`kind` が `lease` 以外（M4）は開かず 410 |
+| WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のときだけ省く（M3: `pending_approval` は承認待ちの要求者の `holder` と、要求者本人かの `mine`）。`ready` の `monitors[]` の形は §5.3 |
 | Web UI（§4・M2。#62） | §4.2 のとおり | ハンドラは `web/handler/remote`（Gin。`router.NewRemote` が `/`・`/viewer`・`/viewer/` のパターンでマウントする）。未登録デバイスのページの選択は `middleware.RemoteConfig.ConnStates`（`service.ConnRequestStates`。読み取り専用。nil なら常に待機）。ページは `pages.Pending` / `Denied` / `Expired`（アクションルートにも同じページを返す）。ミドルウェアの HTML の拒否（`invalid_host` など）は `pages.RemoteError`（ページ）と `atoms.Alert`（アクションルートのフラグメント）。存在しない `monitor` の検証エラーは、ホスト GUI の検証エラーと同じ 422 `invalid_argument` のフォーム再描画（§4.2）。`<remo-screen-viewer>` の `dist/js/screen-viewer.js` はレイアウトが読み込むが、成果物は別の子 Issue（#63）が出す（それまでは 404 で、ライブ画面は出ない） |
 
 ## 8. 決定事項と実装時の検証事項
@@ -674,3 +678,8 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.22 | 2026-11-01 | §5.1 にハンドシェイク前後の拒否の分け方・既定の配信・終了時の 1001、§5.2 の 4400 / 4401 の範囲、§5.3 の `ready` の `monitors[]`・`lease` の `holder`・`error` の `code` の一覧・メッセージの上限、§7.5 に WebSocket の差分とリモートルーターの提供物（`GET /ws/screen`）を追記 | #61 |
 | 1.23 | 2026-11-01 | §5.3 の押下中のボタン・キーを、WebSocket の終わり（切断・置き換え・クライアントの削除・無効化）でも、リースの解放の前に `up` で離すと改めた（「切断では離さない」を撤回） | #61 |
 | 1.24 | 2026-11-01 | §4.2 に待機ページの出し分け（接続要求の状態を読み取り専用で引く）・Web UI の入力とエラー（`X-Viewer-Id`・本文 1 MiB・検証エラーの 422・トースト）・ショートカット送信メニューの一覧を、§7.5 に Web UI の実装と `/`・`/viewer*`・`/static/*` を追記 | #62 |
+| 1.25 | 2026-11-02 | §7.5 の「Web 入力の監査」に `audit.record_text` が true のときの本文の記録（`text`）を追記 | #71 |
+| 1.26 | 2026-11-02 | §7.1 の `/audit`・§7.3 の `GET /audit`・`/audit/{id}`・`/audit/{id}/thumbnail` に M3 の実装（フラグメントとフルページの出し分け、不正な値の 422、日時の入力形式、サムネイルの 404）、§7.5 の「未実装」から `/audit*` を除いた | #72 |
+| 1.27 | 2026-11-02 | §7.5 の `PUT /settings` の項目に M3 の 5 項目（`audit.thumbnails_enabled`・`audit.record_text`・`audit.retention_days`・`audit.thumbs_max_bytes`・`update.apply_mode`）と検証・保存の扱いを追記 | #73 |
+| 1.28 | 2026-11-02 | §3.3 の `acquire_control`・`get_control_status` に承認待ち（`pending_approval`・`approval_denied` 403・`approval_timeout` 408・`holder` は `held` のときだけ・`mine`）、§4.2 の `POST /viewer/lease/acquire` の承認待ち・拒否・タイムアウト、§5.3 の `lease` の `pending_approval`（`holder` は `idle` のときだけ省く）と承認待ち中の入力の拒否、§7.5 に Web の承認待ちの実装を追記 | #67 |
+| 1.29 | 2026-11-02 | §7.1 の `/approvals/{id}`（レイアウト・表示内容・残り時間の再取得・410）、§7.2 の許可フォームと `PATCH /clients/{id}` の承認モード（`approval_mode` の検証・`client.update` の `detail`）と `POST /clients/{id}/approval/reset`（409・監査は未決）、§7.3 の `allow` / `deny`、§7.4 の `approval-closed`、§7.5 に承認ダイアログの実装を追記 | #68 |
