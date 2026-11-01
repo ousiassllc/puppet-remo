@@ -65,9 +65,17 @@ var clicks = []struct {
 	{"triple_click", "Triple left-click at a point (default: the current cursor position).", domain.ButtonLeft, 3},
 }
 
+// pointerBlockedNote は座標を取る入力ツールの説明に付ける、puppet-remo 自身のウィンドウの注意（NFR-S06）。
+const pointerBlockedNote = " puppet-remo's own windows are not shown in screenshots but input there fails with input_blocked (own_window); " +
+	"the error's detail.own_windows (and screenshot's own_windows) gives their rects in scaled coordinates, so avoid those areas."
+
+// focusBlockedNote は前面のウィンドウへ送る入力ツールの説明に付ける注意。
+const focusBlockedNote = " Fails with input_blocked (own_window) when the foreground window is one of puppet-remo's own windows, " +
+	"which screenshots do not show; detail.own_windows gives where they are."
+
 // addInputTools は入力系のツールを登録する: FR-M04〜M10。
 func (s *Server) addInputTools() {
-	addTool(s, "mouse_move", "Move the mouse cursor to a point. Needs the control lease (acquired implicitly).",
+	addTool(s, "mouse_move", "Move the mouse cursor to a point. Needs the control lease (acquired implicitly)."+pointerBlockedNote,
 		false, func(ctx context.Context, who domain.Actor, in mouseMoveIn) (toolResult, error) {
 			monitor, err := monitorArg(in.Monitor)
 			if err != nil {
@@ -77,7 +85,7 @@ func (s *Server) addInputTools() {
 		})
 
 	for _, c := range clicks {
-		addTool(s, c.name, c.desc+" Needs the control lease (acquired implicitly).",
+		addTool(s, c.name, c.desc+" Needs the control lease (acquired implicitly)."+pointerBlockedNote,
 			false, func(ctx context.Context, who domain.Actor, in clickIn) (toolResult, error) {
 				monitor, err := monitorArg(in.Monitor)
 				if err != nil {
@@ -94,7 +102,7 @@ func (s *Server) addInputTools() {
 	}
 
 	addTool(s, "left_click_drag",
-		"Press the left button at from, move to to and release. Needs the control lease (acquired implicitly).",
+		"Press the left button at from, move to to and release. Needs the control lease (acquired implicitly)."+pointerBlockedNote,
 		false, func(ctx context.Context, who domain.Actor, in dragIn) (toolResult, error) {
 			monitor, err := monitorArg(in.Monitor)
 			if err != nil {
@@ -108,7 +116,7 @@ func (s *Server) addInputTools() {
 			})
 		})
 
-	addTool(s, "scroll", "Turn the mouse wheel at a point, in notches. Needs the control lease (acquired implicitly).",
+	addTool(s, "scroll", "Turn the mouse wheel at a point, in notches. Needs the control lease (acquired implicitly)."+pointerBlockedNote,
 		false, func(ctx context.Context, who domain.Actor, in scrollIn) (toolResult, error) {
 			monitor, err := monitorArg(in.Monitor)
 			if err != nil {
@@ -122,7 +130,7 @@ func (s *Server) addInputTools() {
 			})
 		})
 
-	addTool(s, "key", "Press a key combination such as ctrl+shift+t or enter. Needs the control lease (acquired implicitly).",
+	addTool(s, "key", "Press a key combination such as ctrl+shift+t or enter. Needs the control lease (acquired implicitly)."+focusBlockedNote,
 		false, func(ctx context.Context, who domain.Actor, in keyIn) (toolResult, error) {
 			keys, err := domain.ParseKeyCombo(in.Keys)
 			if err != nil {
@@ -131,7 +139,7 @@ func (s *Server) addInputTools() {
 			return s.do(ctx, who, domain.KeyPress{Keys: keys})
 		})
 
-	addTool(s, "type", "Type Unicode text, including Japanese, into the focused window. Needs the control lease (acquired implicitly).",
+	addTool(s, "type", "Type Unicode text, including Japanese, into the focused window. Needs the control lease (acquired implicitly)."+focusBlockedNote,
 		false, func(ctx context.Context, who domain.Actor, in typeIn) (toolResult, error) {
 			return s.do(ctx, who, domain.TypeText{Text: in.Text})
 		})

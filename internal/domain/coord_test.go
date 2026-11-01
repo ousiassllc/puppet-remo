@@ -268,3 +268,30 @@ func abs(n int) int {
 	}
 	return n
 }
+
+func TestScaledRect(t *testing.T) {
+	tests := []struct {
+		name   string
+		m      domain.Monitor
+		r      domain.Rect
+		want   domain.Rect
+		wantOK bool
+	}{
+		{"縮小あり", fhd, domain.Rect{X: 960, Y: 540, W: 960, H: 540}, domain.Rect{X: 784, Y: 441, W: 784, H: 441}, true},
+		{"縮小なしの 2 台目はモニターの原点を引く", hd, domain.Rect{X: 1920 + 100, Y: 50, W: 200, H: 100}, domain.Rect{X: 100, Y: 50, W: 200, H: 100}, true},
+		{"負の原点", left, domain.Rect{X: -2560, Y: -200, W: 1280, H: 720}, domain.Rect{X: 0, Y: 0, W: 784, H: 441}, true},
+		{"モニターからはみ出す部分は切り詰める", fhd, domain.Rect{X: 1800, Y: 1000, W: 500, H: 500}, domain.Rect{X: 1470, Y: 817, W: 98, H: 65}, true},
+		{"重ならない", fhd, domain.Rect{X: 1920, Y: 0, W: 100, H: 100}, domain.Rect{}, false},
+		{"別のモニターの左", hd, domain.Rect{X: 0, Y: 0, W: 1920, H: 1080}, domain.Rect{}, false},
+		{"最小化の位置", fhd, domain.Rect{X: -32000, Y: -32000, W: 160, H: 28}, domain.Rect{}, false},
+		{"空の矩形", fhd, domain.Rect{X: 10, Y: 10}, domain.Rect{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := tt.m.ScaledRect(tt.r, defaultMaxDim)
+			if ok != tt.wantOK || got != tt.want {
+				t.Errorf("ScaledRect(%v) = %v, %v; want %v, %v", tt.r, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}

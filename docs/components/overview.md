@@ -324,7 +324,7 @@ type Power interface { // スリープ抑止
 
 ### InputGuard は platform ではなく service にある
 
-`InputGuard`（NFR-S06）は `WindowManager` と `domain` を使う純粋な判定なので `service` に置く（§5.4）。`platform` は事実（座標上のウィンドウ、自プロセスか、昇格しているか）を返すだけで、許可・拒否を決めない。
+`InputGuard`（NFR-S06）は `WindowManager` と `domain` を使う純粋な判定なので `service` に置く（§5.4）。`platform` は事実（座標上のウィンドウ、自プロセスか、昇格しているか）を返すだけで、許可・拒否を決めない。拒否の理由（`domain.InputBlockReason`）は `InputGuard` と `list_windows` の `blocked` で共通で、自ウィンドウの範囲の縮小座標への変換（`domain.Monitor.ScaledRect`・`domain.OwnWindowRegions`）も `domain` の純粋な関数にあり、`Control.Screenshot` は `Shot.OwnWindows` に、MCP は `list_windows` の `rect` と同じ変換で、同じ範囲を返す（FR-M20）。スクリーンショットの画像には印を描かない（キャプチャの経路は `Grab` → 縮小 → 符号化のままで、NFR-S06 のキャプチャ除外は `app` が設定する）。
 
 ## 4. repository・tailnet・openai・typesafe
 
@@ -588,7 +588,7 @@ type Control interface {
 
 1. `KillSwitch.Active()` → `ErrKillSwitchActive`
 2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる）
-3. `InputGuard.Check(op)` → 自ウィンドウ・昇格ウィンドウ・SAS を `ErrInputBlocked` で拒否（NFR-S06、UIPI）
+3. `InputGuard.Check(op)` → 自ウィンドウ・昇格ウィンドウ・SAS を `ErrInputBlocked` で拒否（NFR-S06、UIPI）。`own_window` の拒否には、`Control` が `WindowManager.List` と `Capturer.Monitors` から `domain.OwnWindowRegions` で求めた puppet-remo のウィンドウの範囲（モニターごとの縮小座標の矩形）を `Detail[DetailOwnWindows]`（値は `[]domain.OwnRegion`）に付ける（FR-M20。取れなければ付けず、拒否は変えない）
 4. `who.Kind == agent` のとき `Judge.Assess` → `Deny` は `ErrJudgeDenied`、`RequireApproval` は `Approval.Request`（拒否・失効は `ErrApprovalDenied`）
 5. `platform` の注入を実行
 6. `Audit.Append`（引数、結果、所要時間。`type` の本文は既定で文字数のみ。FR-AU03）。M1 はここまで（DB への追記のみ）。設定が有効ならサムネイル保存は M3（FR-AU02）
@@ -1078,3 +1078,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.16 | 2026-11-01 | §13.4 に接続要求の履歴（`ListHistory`・マイグレーション v3 の索引）、§13.5 に `HostAdmin.RequestHistory` を追加 | #44 |
 | 1.17 | 2026-11-01 | §13.5 に `AppLog`（運用ログの閲覧。`app.LogReader`・`app.Config.Logs`・伏せ字の安全網）と、運用ログに足した行（認証の失敗・接続要求・トークン・リース・ツールの実行・キルスイッチ・tailscaled の状態・待ち受け）を追加 | #45 |
 | 1.18 | 2026-11-01 | §5.4.1 の `LaunchResult` に `Window`・`ReusedExistingWindow` を追加し、`Launch` の検査の順序に起動後のウィンドウの観測（5b。200 ミリ秒間隔・最大 16 回、`Sleep` で待つ）と監査の `reused_existing_window` を追記。`FakeAppLauncher.OnLaunch`（起動に伴うウィンドウの出現を再現するテスト用の関数）を追記 | #46 |
+| 1.19 | 2026-11-01 | §5.4 の `Do` の検査順序の 3 に `own_window` の範囲（`Detail[DetailOwnWindows]`）、「InputGuard は platform ではなく service にある」に `InputBlockReason`・`ScaledRect`・`OwnWindowRegions` と `Shot.OwnWindows` を追記 | #47（FR-M20） |

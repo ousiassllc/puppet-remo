@@ -67,6 +67,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | I12 | 管理者として起動したメモ帳へ入力する（アプリは標準権限） | `list_windows` で `Elevated` が真。入力は UIPI で届かない。`service.InputGuard` が `input_blocked` で先に拒否する（platform 単体では SendInput が成功を返すことがある） |
 | I13 | `Ctrl+Alt+Del` | platform は送れない（SAS）。`service.InputGuard` が拒否する（NFR-S06）。platform の `Key` に渡しても OS が受け付けないことだけ確認する |
 | I14 | ロック画面・UAC のセキュアデスクトップ・RDP の切断中 | `SendInput` の失敗が `desktop_unavailable`（`input_blocked` ではない） |
+| I15 | ホスト GUI を開いたまま、MCP クライアントから `list_windows`・`screenshot`、GUI の上の点へ `mouse_move`（#47、FR-M20） | `list_windows` に puppet-remo のウィンドウが `blocked: true`・`blocked_reason: "own_window"` で出る。`screenshot` の画像には GUI が写らず（NFR-S06）、`own_windows` にその範囲（縮小座標の `rect`、`monitor`）が出る。GUI の範囲内への `mouse_move` は `input_blocked`（`own_window`）で、`detail.own_windows` の `rect` が `screenshot` の `own_windows` と一致する。2 台目のモニターと、縮小されるモニターでも同じ |
 
 ### 3.3 WindowManager（FR-M11・FR-M12）
 
@@ -255,3 +256,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-10-30 | §4.8 の A6 を、スキーマ違反が JSON-RPC の `invalid params` ではなく `isError` のツール結果で返る実装に合わせて訂正 | #22 の実装（go-sdk の挙動の実測） |
 | — | 2026-10-30 | §4.8 の A2 に、ファイル選択ダイアログの親ウィンドウ（Wails のメインウィンドウの結線。`WailsHost.MainWindowHandle`）の確認を追記。§4.8 の確認は未確認のまま | #23 の実装 |
 | — | 2026-11-01 | §4.8 に A5b（Windows 11 のメモ帳で既存のウィンドウが前に出ただけのときの `launch_app` の結果）を追加。実機の確認は未確認 | #46 |
+| — | 2026-11-01 | §3.2 に I15（自ウィンドウの範囲 `own_windows`・`blocked` の確認）を追加。実機の確認は未確認 | #47 |

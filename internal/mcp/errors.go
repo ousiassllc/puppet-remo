@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
 // errorBody はツール失敗の structuredContent（API 仕様 §3.4）。
@@ -35,7 +37,7 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 		if body.Message == "" {
 			body.Message = string(de.Code)
 		}
-		body.Detail = de.Detail
+		body.Detail = errorDetail(de)
 		if de.Code == domain.CodeLaunchFailed {
 			body.Detail, body.Reason = nil, launchReason(de)
 		}
@@ -58,6 +60,17 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 		Content:           []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("%s: %s", body.Code, body.Message)}},
 		StructuredContent: body,
 	}
+}
+
+// errorDetail は de.Detail を出力の形にする。own_windows（[]domain.OwnRegion）は rect の JSON 名（x, y, width, height）に直す。
+func errorDetail(de *domain.Error) map[string]any {
+	regions, ok := de.Detail[service.DetailOwnWindows].([]domain.OwnRegion)
+	if !ok {
+		return de.Detail
+	}
+	detail := maps.Clone(de.Detail)
+	detail[service.DetailOwnWindows] = ownWindowBodies(regions)
+	return detail
 }
 
 // logToolCall はツール実行の結果を運用ログに出す（監査とは別。引数・結果の中身は出さない。FR-AU03、NFR-S13）。

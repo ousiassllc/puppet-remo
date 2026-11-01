@@ -54,14 +54,28 @@ func (c *control) Screenshot(ctx context.Context, monitor int, format string) (S
 	if err != nil {
 		return Shot{}, err
 	}
+	// 自ウィンドウの範囲は手がかりなので、取れなくてもスクリーンショットは返す。
+	own, _ := c.ownRegionsOn(ctx, mons, maxDim)
 	return Shot{
-		Data:     data,
-		MIME:     mime,
-		Monitor:  mon.Index,
-		Physical: mon.Size,
-		Scaled:   scaled,
-		Scale:    mon.Scale(maxDim),
+		Data:       data,
+		MIME:       mime,
+		Monitor:    mon.Index,
+		Physical:   mon.Size,
+		Scaled:     scaled,
+		Scale:      mon.Scale(maxDim),
+		OwnWindows: regionsOnMonitor(own, mon.Index),
 	}, nil
+}
+
+// regionsOnMonitor は regions のうち monitor 上のものだけを返す。
+func regionsOnMonitor(regions []domain.OwnRegion, monitor int) []domain.OwnRegion {
+	var out []domain.OwnRegion
+	for _, r := range regions {
+		if r.Monitor == monitor {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // CursorPosition は現在のカーソル位置を、そのモニターの縮小座標で返す（FR-M03）。

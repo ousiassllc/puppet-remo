@@ -125,7 +125,7 @@ M1・M2 は承認が不要なので `idle → held` に直接入る（`pending_a
 | ID | ツール | 引数 | 戻り値 | リース | 優先度 |
 |----|-------|------|--------|-------|--------|
 | FR-M01 | `get_screen_info` | なし | モニター一覧（index、名称、プライマリか、物理サイズ、原点、DPI スケール、スクリーンショット縮小率） | 不要 | M1 |
-| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター） | 不要 | M1 |
+| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター、`own_windows`＝puppet-remo 自身のウィンドウの範囲。FR-M20） | 不要 | M1 |
 | FR-M03 | `cursor_position` | なし | カーソル座標（縮小座標系）とモニター | 不要 | M1 |
 | FR-M04 | `mouse_move` | `x`, `y`, `monitor?` | OK | 必要 | M1 |
 | FR-M05 | `left_click` / `right_click` / `middle_click` / `double_click` / `triple_click` | `x?`, `y?`（省略時は現在位置）, `modifiers?`（`ctrl` / `shift` / `alt` / `win` の配列）, `monitor?` | OK | 必要 | M1 |
@@ -134,7 +134,7 @@ M1・M2 は承認が不要なので `idle → held` に直接入る（`pending_a
 | FR-M08 | `key` | `keys`（例: `ctrl+shift+t`、`Enter`） | OK | 必要 | M1 |
 | FR-M09 | `type` | `text`（Unicode 全般。日本語を含む） | OK | 必要 | M1 |
 | FR-M10 | `wait` | `ms`（上限 10,000） | OK | 不要 | M1 |
-| FR-M11 | `list_windows` | なし | ウィンドウ一覧（id、タイトル、プロセス名、PID、矩形、モニター、前面か、最小化か、管理者権限か） | 不要 | M1 |
+| FR-M11 | `list_windows` | なし | ウィンドウ一覧（id、タイトル、プロセス名、PID、矩形、モニター、前面か、最小化か、管理者権限か、入力を拒否するか `blocked` とその理由 `blocked_reason`。FR-M20） | 不要 | M1 |
 | FR-M12 | `focus_window` | `id` | OK | 必要 | M1 |
 | FR-M13 | `clipboard_read` / `clipboard_write` | `text`（書き込み時） | テキスト（読み取り時） | 必要 | M1 |
 | FR-M14 | `get_ui_tree` | `window_id?`, `max_depth?`（既定 5、最大 20）, `max_nodes?`（既定 500、最大 5000）。上限を超える指定は `invalid_argument` | UI Automation ツリー（role、name、value、矩形、有効状態、ノード id）。パスワード欄の値は含めない | 必要 | M1 |
@@ -161,7 +161,7 @@ FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 �
 | `kill_switch_active` | キルスイッチで受付停止中 |
 | `invalid_coordinates` / `invalid_argument` | 引数が不正 |
 | `window_not_found` | `focus_window` / `get_ui_tree` の対象が存在しない |
-| `input_blocked` | 管理者権限ウィンドウなど OS 制約で入力できない（UIPI） |
+| `input_blocked` | 管理者権限ウィンドウなど OS 制約で入力できない（UIPI）、または puppet-remo 自身のウィンドウが対象（NFR-S06。`detail.reason` は `own_window`・`elevated_window`・`secure_attention_sequence`）。`own_window` には `detail.own_windows` を付ける（FR-M20） |
 | `desktop_unavailable` | ロック画面・UAC セキュアデスクトップ等でキャプチャ・入力できない |
 | `agent_disabled` | エージェントが無効、API キー未登録、またはクライアントに利用許可が無い状態で `run_task` を呼んだ |
 | `task_not_found` | `get_task` / `cancel_task` の対象が存在しない、または他のクライアントのタスク |
@@ -340,6 +340,16 @@ stateDiagram-v2
 | ブラウザが先取りするショートカット | 専用の送信メニューで補う（FR-W06） |
 | 管理者権限を要求するアプリの起動（マニフェストが `requireAdministrator`） | `CreateProcess` は昇格できないため `launch_failed`（UAC のダイアログは出さない。NFR-S08）。管理者として動いているウィンドウへの入力は `input_blocked` |
 
+**自ウィンドウの手がかり（FR-M20。#47）**
+
+puppet-remo 自身のウィンドウ（ホスト GUI・承認ダイアログ・オーバーレイ）は、NFR-S06 によりキャプチャから外れてスクリーンショットに写らず、入力は `input_blocked`（`reason: own_window`）で拒否される。AI から見るとスクリーンショットでは別のアプリが見えている場所で入力が止まるため、避ける場所を事前と事後の両方で伝える。写らないこと自体は変えない。
+
+- **事後（エラー）**: `own_window` の `input_blocked` の `structuredContent.detail.own_windows` に、いま見えている puppet-remo のウィンドウの範囲を `[{ "monitor": <index>, "rect": {x, y, width, height} }]` で付ける。`rect` は**そのモニターの縮小スクリーンショットの座標**（FR-M16。左上が原点、1 単位が縮小画像の 1 px。物理座標ではない）で、`list_windows` の `rect` と同じ丸め・名前。複数のモニターにまたがるウィンドウはモニターごとに 1 件へ切り詰め、最小化されたウィンドウとどのモニターとも重ならないウィンドウ（縮小座標に対応づけられないもの）は含めない。含められるものが無い・ウィンドウの一覧を読めないときは、`own_windows` は空配列か無い（拒否そのものは変えない）。ウィンドウのタイトル・プロセス・ID・内容は載せない。`get_ui_tree`・`focus_window` の `own_window` にも同じ `own_windows` を付ける
+- **事前（スクリーンショットの結果）**: `screenshot` のメタ情報に `own_windows`（そのモニター上の範囲。同じ形で、無ければ空配列）を付ける。画像には何も描かない
+- **事前（一覧）**: `list_windows` に puppet-remo 自身のウィンドウを `blocked: true`・`blocked_reason: "own_window"` 付きで出す（昇格ウィンドウは `blocked: true`・`blocked_reason: "elevated_window"`、入力できるものは `blocked: false`）。`blocked` は InputGuard の規則（`domain.InputBlockReason`）と同じ判定
+- **事前（説明）**: MCP の `instructions` と、`screenshot`・`list_windows`・座標を取る入力ツール・`key`・`type` のツールの説明に、「puppet-remo のウィンドウはスクリーンショットに写らず、入力は `input_blocked`（`own_window`）になる。範囲は `own_windows` と `blocked` で分かる」旨を書く
+- **採らなかった案**: スクリーンショットの該当範囲への塗りつぶし・枠の描画は、(1) キャプチャの経路（`Capturer.Grab` → 縮小 → 符号化）に、ウィンドウの一覧との同時性（撮影の直後にウィンドウが動く）を前提にした描画を足すことになり、ずれた印が誤った安全の手がかりになる、(2) 印が画像上の他のアプリの内容を隠し、AI が背後を読めなくなる、(3) 同じ情報は `own_windows`（機械可読）で足りる、ため行わない。NFR-S06 のキャプチャ除外（`WDA_EXCLUDEFROMCAPTURE`）は変更しない
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -362,3 +372,4 @@ stateDiagram-v2
 | 1.15 | 2026-11-01 | FR-H03 に接続要求の履歴（「接続要求」画面の「履歴」タブ。許可・拒否・失効・未処理を新しい順に 1 ページ 20 件）を追加し、FR-AU01 に監査ログの閲覧 UI との違いを追記。FR-A06 の集約は変更なし | #44（過去の接続要求を GUI で見られるようにする） |
 | 1.16 | 2026-11-01 | FR-H13（ホスト GUI の「ログ」画面。運用ログを新しい順・レベルの絞り込み・ページ送りで読み取り専用に出す）を追加し、FR-AU01 に運用ログとの違いを追記 | #45（アプリのログを GUI で見られるようにする） |
 | 1.17 | 2026-11-01 | FR-M19 の結果に、起動後に前面にあったウィンドウ `window`（`id`・`title`・`pid`・`process_name`）と `reused_existing_window` を追加（pid のウィンドウが見つからず別のプロセスのウィンドウが前面にあるとき `true`。観測は 200 ミリ秒間隔・最大 16 回、前面を確かめられないときの扱い）。「待たない」を「起動後のウィンドウの観測」に改め、`instructions`・ツールの説明に入力の前に対象を確かめる旨を追記。FR-H12 の許可リスト・登録の規則は変更なし | #46（Windows 11 のメモ帳で既存のウィンドウが前に出ただけなのに、新しいウィンドウと見分けられなかった） |
+| 1.18 | 2026-11-01 | FR-M20（自ウィンドウの手がかり）を追加: `own_window` の `input_blocked` に `detail.own_windows`（モニターと縮小座標の `rect`）、`screenshot` に `own_windows`、`list_windows` に `blocked`・`blocked_reason`、`instructions` とツールの説明に注意を追記。FR-M02・M11・M17 の表を更新。スクリーンショットへの塗りつぶし・枠の描画は採らない理由を記録 | #47（写らない自ウィンドウで入力が止まる場所を AI が分かるようにする） |
