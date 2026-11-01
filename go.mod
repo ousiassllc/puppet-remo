@@ -3,6 +3,7 @@ module github.com/ousiassllc/puppet-remo
 go 1.26.10
 
 require (
+	aead.dev/minisign v0.3.0
 	github.com/a-h/templ v0.3.1001
 	github.com/coder/websocket v1.8.15
 	github.com/gin-gonic/gin v1.12.0
@@ -11,6 +12,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/wailsapp/wails/v3 v3.0.0
+	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.47.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	tailscale.com v1.102.0
@@ -77,7 +79,6 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.24.0 // indirect

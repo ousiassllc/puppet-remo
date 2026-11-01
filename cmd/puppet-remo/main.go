@@ -138,6 +138,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 			UI: ui, Hotkey: hotkey, Power: power, Autostart: autostart,
 			// ファイル選択ダイアログ（ホスト GUI の /apps。FR-H12）は、Wails のメインウィンドウを親にしたモーダルにする。
 			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(host.MainWindowHandle),
+			// 署名検証済みの更新のインストーラは、NSIS を `/S` で起動する（UAC の確認つき。FR-H09）。
+			Installer: windows.NewInstaller(),
 		},
 		// 承認ダイアログ（FR-H05）は専用の Wails ウィンドウ（キャプチャ除外）で開く。
 		Windows: host.Windows(),

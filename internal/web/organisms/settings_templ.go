@@ -26,6 +26,14 @@ func updateApplyModeOptions(current string) []atoms.SelectOption {
 	}
 }
 
+// updateChannelOptions は更新のチャネル（FR-S09）の選択肢。current が未知の値なら、どれも選ばない（検証エラーの再描画）。
+func updateChannelOptions(current string) []atoms.SelectOption {
+	return []atoms.SelectOption{
+		{Value: "stable", Label: "正式版（既定）", Selected: current == "stable"},
+		{Value: "nightly", Label: "ナイトリー（開発中の版。不安定なことがあります）", Selected: current == "nightly"},
+	}
+}
+
 // SettingsForm は設定画面のフォーム（FR-S01〜S04、FR-S06〜S09）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
 // 自動起動のチェックは、OS の登録手段があるときだけ描画する。
 // 「監査ログ」のグループには、サムネイルと本文が平文で保存される旨（NFR-S11）を常に出す（確認ダイアログは作らない）。
@@ -281,13 +289,35 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = atoms.Select("set-update-channel", "update.channel", updateChannelOptions(f.Values.UpdateChannel)).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = molecules.FormField("set-update-channel", "更新のチャネル", "追いかける版です。署名を検証できた更新だけを適用します。ナイトリーから正式版へは、新しい正式版が出たときに切り替わります。", f.Errors.UpdateChannel).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
 			templ_7745c5c3_Err = atoms.Select("set-update-mode", "update.apply_mode", updateApplyModeOptions(f.Values.UpdateApplyMode)).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = molecules.FormField("set-update-mode", "更新の適用方法", "更新の確認と適用は今後の版で有効になります。それまでは設定だけが保存されます。", f.Errors.UpdateApplyMode).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = molecules.FormField("set-update-mode", "更新の適用方法", "新しい版は 6 時間ごとに確認します。自動で適用するのは、操作権の保持・接続・実行中のタスクがないときだけです。", f.Errors.UpdateApplyMode).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

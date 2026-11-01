@@ -20,14 +20,18 @@ var AuditCatalog = []AuditRequirement{
 	{Item: "認証失敗", Events: []string{"auth.bearer_failed", "auth.rate_limited", "auth.connreq_rate_limited"}},
 	{Item: "トークン発行・失効", Events: []string{"token.issue", "token.revoke"}},
 	{Item: "リースの取得・解放・剥奪", Events: []string{"lease.acquire", "lease.release", "lease.revoke"}},
-	{Item: "リースの取得要求・承認・拒否（承認モード）", Pending: "#66"},
+	{Item: "リースの取得要求・承認・拒否（承認モード）", Events: []string{
+		"approval.requested", "approval.granted", "approval.denied", "approval.timeout", "approval.withdrawn", "approval.reset",
+	}},
 	{Item: "MCP ツール呼び出し・Web UI からの入力操作", Events: []string{AuditToolEventPrefix + "*"}},
 	{Item: "キルスイッチ発動・解除", Events: []string{"killswitch.trigger", "killswitch.release"}},
 	{Item: "設定変更", Events: []string{
 		"settings.update", "settings.launchable_app.create", "settings.launchable_app.update", "settings.launchable_app.delete",
 		"client.replace", "client.update", "client.delete",
 	}},
-	{Item: "更新の確認・適用（kind = update）", Pending: "#74"},
+	{Item: "更新の確認・適用（kind = update）", Events: []string{
+		UpdateDetectedAuditEvent, UpdateVerifyFailedAuditEvent, UpdateDowngradeRejectedAuditEvent, UpdateApplyStartedAuditEvent, UpdateApplyFailedAuditEvent,
+	}},
 }
 
 // auditCatalogEvents は AuditCatalog の具体的なイベント名（tool.* の族を除く）の集合。

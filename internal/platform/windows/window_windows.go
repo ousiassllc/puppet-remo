@@ -52,14 +52,16 @@ func (wm *WindowManager) List(ctx context.Context) ([]domain.WindowInfo, error) 
 	return windowsOut, nil
 }
 
-// At は p 上の最前面のウィンドウを返す。タイトルのないウィンドウ（オーバーレイなど）も対象にする。最小化されたウィンドウは含めない。
+// At は p 上の最前面のウィンドウを返す。タイトルのないウィンドウも対象にする。最小化されたウィンドウは含めない。
+// 操作中オーバーレイ（クリックスルーの自ウィンドウ。全モニターを覆う）は入力が下へ通るので飛ばし、その下の実ウィンドウを返す
+// （下にある承認ダイアログなどが own_window の判定から漏れないようにする。#69）。
 func (wm *WindowManager) At(p domain.Point) (domain.WindowInfo, bool, error) {
 	all, err := wm.snapshot()
 	if err != nil {
 		return domain.WindowInfo{}, false, err
 	}
 	for _, w := range all {
-		if !w.Minimized && w.Rect.Contains(p) {
+		if !w.Minimized && !w.Overlay && w.Rect.Contains(p) {
 			return w, true, nil
 		}
 	}
@@ -134,10 +136,15 @@ func bringToForeground(hwnd uintptr) bool {
 }
 
 var (
+	w32GetWindowLongPtr = w32User32.NewProc("GetWindowLongPtrW")
+
 	enumWindowsMu       sync.Mutex
 	enumWindowsResult   []uintptr
 	enumWindowsCallback = sync.OnceValue(func() uintptr { return windows.NewCallback(windowEnumProc) })
 )
+
+// gwlExStyle は GWL_EXSTYLE（-20）。
+const gwlExStyle = ^uintptr(19)
 
 func windowEnumProc(hwnd, _ uintptr) uintptr {
 	enumWindowsResult = append(enumWindowsResult, hwnd)
@@ -176,6 +183,7 @@ func (wm *WindowManager) info(hwnd, fg uintptr, monitors []domain.Monitor, cache
 	proc := cache.lookup(pid)
 	minimized, _, _ := w32IsIconic.Call(hwnd)
 	rect := windowRect(hwnd)
+	own := pid == wm.selfPID
 	return domain.WindowInfo{
 		ID:         formatWindowID(hwnd),
 		Title:      windowTitle(hwnd),
@@ -186,8 +194,15 @@ func (wm *WindowManager) info(hwnd, fg uintptr, monitors []domain.Monitor, cache
 		Foreground: hwnd == fg,
 		Minimized:  minimized != 0,
 		Elevated:   proc.elevated,
-		Own:        pid == wm.selfPID,
+		Own:        own,
+		Overlay:    own && isOverlayStyle(windowExStyle(hwnd)),
 	}
+}
+
+// windowExStyle は hwnd の拡張ウィンドウスタイル（GWL_EXSTYLE）。取れなければ 0。
+func windowExStyle(hwnd uintptr) uintptr {
+	r, _, _ := w32GetWindowLongPtr.Call(hwnd, gwlExStyle)
+	return r
 }
 
 func windowTitle(hwnd uintptr) string {

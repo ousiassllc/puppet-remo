@@ -258,6 +258,7 @@ type SettingsValues struct {
 	AuditRetentionDays  string
 	AuditThumbsMaxBytes string
 	UpdateApplyMode     string // confirm | auto_idle（FR-S09）
+	UpdateChannel       string // stable | nightly（FR-S09）
 	Autostart           bool
 }
 
@@ -273,6 +274,7 @@ type SettingsErrors struct {
 	AuditRetentionDays  string
 	AuditThumbsMaxBytes string
 	UpdateApplyMode     string
+	UpdateChannel       string
 }
 
 // SettingsForm は設定フォーム。
@@ -621,4 +623,9 @@ type ApprovalDone struct {
 type ApprovalGone struct {
 	Code    string
 	Message string
+}
+
+// Overlay は操作中オーバーレイ（GET /overlay。#69）。画面の枠と短い文言だけを出す（秘密・パス・引数は持たない）。
+type Overlay struct {
+	Label string // 「操作中: <クライアント名>（<種別>）」。長さは制限済み
 }

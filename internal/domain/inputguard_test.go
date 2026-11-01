@@ -16,6 +16,7 @@ func TestCheckInputTarget(t *testing.T) {
 		{name: "通常のウィンドウ", w: domain.WindowInfo{ID: "1"}},
 		{name: "前面・最小化は無関係", w: domain.WindowInfo{ID: "1", Foreground: true, Minimized: true}},
 		{name: "自ウィンドウ", w: domain.WindowInfo{ID: "2", Own: true}, wantReason: "own_window"},
+		{name: "クリックスルーのオーバーレイは自ウィンドウでも許可", w: domain.WindowInfo{ID: "5", Own: true, Overlay: true}},
 		{name: "昇格ウィンドウ", w: domain.WindowInfo{ID: "3", Elevated: true}, wantReason: "elevated_window"},
 		{name: "自ウィンドウかつ昇格は自ウィンドウを優先", w: domain.WindowInfo{ID: "4", Own: true, Elevated: true}, wantReason: "own_window"},
 	}
@@ -35,6 +36,7 @@ func TestCheckObserveTarget(t *testing.T) {
 		{name: "通常のウィンドウ", w: domain.WindowInfo{ID: "1"}},
 		{name: "昇格ウィンドウは読み取りのみなので許可", w: domain.WindowInfo{ID: "3", Elevated: true}},
 		{name: "自ウィンドウ", w: domain.WindowInfo{ID: "2", Own: true}, wantReason: "own_window"},
+		{name: "オーバーレイでも読み取りは自ウィンドウとして拒否", w: domain.WindowInfo{ID: "5", Own: true, Overlay: true}, wantReason: "own_window"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

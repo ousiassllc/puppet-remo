@@ -44,6 +44,7 @@ type Fakes struct {
 	Apps       *Apps
 	Logs       *Logs
 	Audit      *Audit
+	Updates    *Updates
 }
 
 // New は空の状態の Fakes を返す。時計は 2026-10-30 12:00 UTC。
@@ -61,9 +62,12 @@ func New() *Fakes {
 		Approval:   &Approval{},
 		Apps:       &Apps{},
 		Audit:      &Audit{},
-		Logs:       &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
+		Updates: &Updates{Current: service.UpdateStatus{
+			CurrentVersion: "0.1.0", Channel: domain.ChannelStable, ApplyMode: service.UpdateApplyConfirm, Updatable: true, KeyConfigured: true,
+		}},
+		Logs: &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
 		Settings: &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
-			AuditThumbnailsEnabled: true, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: service.UpdateApplyConfirm}, CanAutostart: true},
+			AuditThumbnailsEnabled: true, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: service.UpdateApplyConfirm, UpdateChannel: "stable"}, CanAutostart: true},
 	}
 }
 
@@ -71,7 +75,7 @@ func New() *Fakes {
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
 		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin, Approval: f.Approval,
-		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
+		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Updates: f.Updates, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
 
@@ -641,4 +645,43 @@ func (a *Audit) Thumbnail(_ context.Context, id int64) (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(b)), nil
 	}
 	return nil, fmt.Errorf("thumbnail of audit log %d: %w", id, service.ErrNotFound)
+}
+
+// Updates は gui.Updates の偽実装。Current が今の状態で、CheckResult が nil でなければ Check の結果に差し替える。
+// Apply は ApplyErr を返し、成功したら Applied に積む。
+type Updates struct {
+	mu       sync.Mutex
+	Current  service.UpdateStatus
+	Checked  []domain.ActorKind
+	Applied  []domain.ActorKind
+	ApplyErr error
+	// CheckResult が非 nil なら、Check は Current をこの値に差し替える。
+	CheckResult *service.UpdateStatus
+}
+
+func (u *Updates) Status(context.Context) service.UpdateStatus {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.Current
+}
+
+func (u *Updates) Check(_ context.Context, by domain.ActorKind) service.UpdateStatus {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.Checked = append(u.Checked, by)
+	if u.CheckResult != nil {
+		u.Current = *u.CheckResult
+	}
+	return u.Current
+}
+
+func (u *Updates) Apply(_ context.Context, by domain.ActorKind) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.ApplyErr != nil {
+		return u.ApplyErr
+	}
+	u.Applied = append(u.Applied, by)
+	u.Current.Applying = true
+	return nil
 }

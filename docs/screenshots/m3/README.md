@@ -38,14 +38,19 @@ google-chrome --headless=new --no-sandbox --no-first-run --ozone-platform=headle
 | `viewer-lease-pending.png` | 取得ボタンを押したあとの承認待ちのパネル（`LeasePendingBadge`:「承認待ち」・`demo-laptop`・`web`・「あなた」・「ホストの承認を待っています。」）。クリップボードとショートカットのパネルは出ない |
 | `viewer-lease-approved.png` | ホストが許可した後（保持中・「あなた」・解放ボタン。クリップボードとショートカットのパネルが出る） |
 
+### M3 の続き（#69・#67・#68）で足した画像
+
+`go run ./internal/app/internal/remotedemo -approval always`（偽の platform。`-addr` の loopback）に、Host / Origin と WebSocket の URL を書き換える使い捨ての中継（headless Chrome を 127.0.0.1 へ向けるだけのもの。リポジトリには入れない）を通して撮った。クライアント名などは架空。
+
+| ファイル | 内容 |
+|---------|------|
+| `overlay.png` | 操作中オーバーレイ（`GET /overlay`。枠線とラベル「操作中: demo-desktop（mcp）」だけを描き、背景は透明）。撮影のため、背後に架空のデスクトップ（メモ帳）を敷いてある（実機のオーバーレイは透過ウィンドウで、下のアプリがそのまま見え・操作できる）。**Wails のウィンドウとしての実表示（クリック透過・キャプチャ除外・全モニター）は Linux では撮れていない** |
+| `viewer-lease-pending-202.png` | Web の「操作権を取得」を押した直後。POST は待たずに 202 を返し、パネルが承認待ち（「ホストの承認を待っています。」）になっている（取得ボタンを押してから約 150 ms） |
+| `approval-dialog-queue.png` | 承認ダイアログ（`/approvals/{id}`）。要求が重なったときは届いた順に 1 つずつ開き、残り時間は各要求の届いた時刻から数える |
+| `viewer-lease-denied-toast.png` | ホストが拒否したあと。WebSocket の `error`（`approval_denied`）がこのビューアだけにトースト（右下「ホストが操作権の取得を拒否しました。」）で届き、パネルは空きに戻っている。直後 30 秒は同じクライアントの取得がダイアログなしで `approval_denied` になる（クールダウン） |
+
 ### 撮れていない状態
 
-- **拒否後のトースト（403 `approval_denied`）**: 撮れなかった。サーバーは 403 のトースト断片を返す（ネットワークで確認）が、ブラウザには出ない。承認待ちの間に
-  WebSocket の `lease` で `#lease-panel` が差し替わり、取得ボタン（リクエストを出した要素）が DOM から無くなる。応答が戻っても `#toast-root` に何も出なかった
-  （要素が無くなったあとの応答を htmx が反映せず、`htmx:responseError` も document まで伝わらないためと見られる。コードでは確かめていない）。拒否のあとのパネルは「空き」に戻るだけ。HTML を加工して
-  載せることはしていない。
-- **タイムアウト後のトースト（408 `approval_timeout`）**: 撮れなかった。60 秒でサーバーは 408 を返すが、ブラウザのネットワーク記録に 408 の応答は現れず、
-  **同じ `acquire` が再送されて新しい承認要求ができた**（ログで確認: `approval_timeout` の直後に別の `approval requested`。パネルは承認待ちのまま）。
-  Chrome が 408 を自動で再送したためと見られる（推測）。どう直すか（ステータスの選択・取得の応答の返し方）は docs に決まりが無いので、ここでは決めていない。
-- 承認待ちを即座に返す窓口（非同期の取得）は未実装（docs 未決）。
-- 監査ログの Web（リモート）画面は M3 には無い（リモートルーターでは `/audit*` は 404）。オーバーレイも未実装なので撮っていない。
+- **タイムアウト（`approval_timeout`）のトースト**: 撮っていない（60 秒待つ必要があるため。`error` メッセージの経路は拒否と同じで、サービスと ws のテストで確認している）。
+- **Windows 実機の承認ダイアログ・オーバーレイ**（`WDA_EXCLUDEFROMCAPTURE`・`WS_EX_TRANSPARENT`・マルチモニター・DPI 混在）: CI・Linux では確かめられない（`docs/operations/smoke-windows.md`）。
+- 監査ログの Web（リモート）画面は M3 には無い（リモートルーターでは `/audit*` は 404）。

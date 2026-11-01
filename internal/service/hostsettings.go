@@ -20,6 +20,8 @@ const (
 	settingViewerDefaultQuality = "viewer.default_quality"
 	settingViewerDefaultFPS     = "viewer.default_fps"
 	settingUpdateApplyMode      = "update.apply_mode"
+	settingUpdateChannel        = "update.channel"
+	settingUpdateLastCheckedAt  = "update.last_checked_at"
 	defaultServerPort           = 8765
 	defaultKillHotkey           = "Ctrl+Alt+Shift+K"
 	defaultViewerQuality        = 70
@@ -58,9 +60,10 @@ type HostSettings struct {
 	AuditRetentionDays     int   // audit.retention_days（1〜36500。既定 30。FR-AU04）
 	AuditThumbsMaxBytes    int64 // audit.thumbs_max_bytes（1〜2^53。既定 1 GiB。単位はバイト。FR-AU04）
 	// UpdateApplyMode は update.apply_mode（UpdateApplyConfirm / UpdateApplyAutoIdle。既定 confirm。FR-S09）。
-	// 読む側（更新の適用）は #74 で入る。それまでは保存するだけ。
 	UpdateApplyMode string
-	Autostart       bool // ログオン時の自動起動（OS が真実の源。DB には持たない）
+	// UpdateChannel は update.channel（domain.ChannelStable / domain.ChannelNightly の文字列。既定 stable。FR-S09）。
+	UpdateChannel string
+	Autostart     bool // ログオン時の自動起動（OS が真実の源。DB には持たない）
 }
 
 // 設定の項目名（ValidationError.Fields のキー。API 仕様 §7.3 のフォームのキー）。
@@ -76,6 +79,7 @@ const (
 	FieldAuditRetentionDays     = "audit.retention_days"
 	FieldAuditThumbsMaxBytes    = "audit.thumbs_max_bytes"
 	FieldUpdateApplyMode        = "update.apply_mode"
+	FieldUpdateChannel          = "update.channel"
 	fieldAutostart              = "autostart"
 )
 
@@ -121,6 +125,9 @@ func (s HostSettings) Validate() error {
 	}
 	if s.UpdateApplyMode != UpdateApplyConfirm && s.UpdateApplyMode != UpdateApplyAutoIdle {
 		bad[FieldUpdateApplyMode] = "「ホストが確認して適用」か「アイドル時に自動で適用」を選んでください。"
+	}
+	if !domain.Channel(s.UpdateChannel).Valid() {
+		bad[FieldUpdateChannel] = "「正式版」か「ナイトリー」を選んでください。"
 	}
 	if msg := validateHotkey(s.KillSwitchHotkey); msg != "" {
 		bad[FieldKillSwitchHotkey] = msg
@@ -236,6 +243,10 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 	if err != nil {
 		return HostSettings{}, err
 	}
+	channel, err := loadUpdateChannel(ctx, h.cfg.Settings)
+	if err != nil {
+		return HostSettings{}, err
+	}
 	hotkey := defaultKillHotkey
 	raw, ok, err := h.cfg.Settings.Get(ctx, settingKillHotkey)
 	if err != nil {
@@ -256,7 +267,7 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 		Port: port, KillSwitchHotkey: hotkey, ScreenshotMaxDimension: dim,
 		LeaseIdleTimeoutSec: idle, ViewerDefaultQuality: quality, ViewerDefaultFPS: fps,
 		AuditThumbnailsEnabled: thumbsOn, AuditRecordText: recordText, AuditRetentionDays: int(retention),
-		AuditThumbsMaxBytes: thumbsMax, UpdateApplyMode: applyMode, Autostart: autostart,
+		AuditThumbsMaxBytes: thumbsMax, UpdateApplyMode: applyMode, UpdateChannel: string(channel), Autostart: autostart,
 	}, nil
 }
 
@@ -284,6 +295,22 @@ func loadUpdateApplyMode(ctx context.Context, settings repository.Settings) (str
 		return "", domain.ErrInvalidArgument.WithMsg("setting " + settingUpdateApplyMode + " must be \"confirm\" or \"auto_idle\"")
 	}
 	return mode, nil
+}
+
+// loadUpdateChannel は update.channel（既定 stable）を読む。未知の値は domain.ErrInvalidArgument。
+func loadUpdateChannel(ctx context.Context, settings repository.Settings) (domain.Channel, error) {
+	raw, ok, err := settings.Get(ctx, settingUpdateChannel)
+	if err != nil {
+		return "", fmt.Errorf("read setting %s: %w", settingUpdateChannel, err)
+	}
+	if !ok {
+		return domain.ChannelStable, nil
+	}
+	var ch domain.Channel
+	if err := json.Unmarshal(raw, &ch); err != nil || !ch.Valid() {
+		return "", domain.ErrInvalidArgument.WithMsg("setting " + settingUpdateChannel + " must be \"stable\" or \"nightly\"")
+	}
+	return ch, nil
 }
 
 // ViewerDefaults は設定 viewer.default_quality・viewer.default_fps（既定 70・10。FR-S06）を読む。
@@ -334,6 +361,7 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		{settingAuditRetentionDays, s.AuditRetentionDays, func(a *HostSettings) { a.AuditRetentionDays = s.AuditRetentionDays }},
 		{settingAuditThumbsMaxBytes, s.AuditThumbsMaxBytes, func(a *HostSettings) { a.AuditThumbsMaxBytes = s.AuditThumbsMaxBytes }},
 		{settingUpdateApplyMode, s.UpdateApplyMode, func(a *HostSettings) { a.UpdateApplyMode = s.UpdateApplyMode }},
+		{settingUpdateChannel, s.UpdateChannel, func(a *HostSettings) { a.UpdateChannel = s.UpdateChannel }},
 	} {
 		raw, err := json.Marshal(kv.val)
 		if err != nil {
@@ -387,6 +415,7 @@ func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
 		{FieldAuditRetentionDays, old.AuditRetentionDays != updated.AuditRetentionDays, updated.AuditRetentionDays},
 		{FieldAuditThumbsMaxBytes, old.AuditThumbsMaxBytes != updated.AuditThumbsMaxBytes, updated.AuditThumbsMaxBytes},
 		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode, updated.UpdateApplyMode},
+		{FieldUpdateChannel, old.UpdateChannel != updated.UpdateChannel, updated.UpdateChannel},
 		{fieldAutostart, old.Autostart != updated.Autostart, updated.Autostart},
 	} {
 		if f.diff {

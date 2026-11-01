@@ -195,6 +195,7 @@ type env struct {
 	autostart *platformtest.FakeAutostart
 	launcher  *platformtest.FakeAppLauncher
 	picker    *platformtest.FakeFilePicker
+	installer *platformtest.FakeInstaller
 	closers   *closeLog
 }
 
@@ -257,7 +258,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 		whois:   &fakeWhoIs{id: tailnet.Identity{LoginName: "alice@example.com", StableNodeID: "nodeA", NodeName: "alice-laptop"}},
 		listens: &listenLog{}, hotkey: platformtest.NewFakeHotkey(), power: platformtest.NewFakePower(), input: platformtest.NewFakeInput(),
 		autostart: platformtest.NewFakeAutostart(), closers: &closeLog{},
-		launcher: platformtest.NewFakeAppLauncher(), picker: platformtest.NewFakeFilePicker(),
+		launcher: platformtest.NewFakeAppLauncher(), picker: platformtest.NewFakeFilePicker(), installer: platformtest.NewFakeInstaller(),
 	}
 	cfg := Config{
 		Repo:    db,
@@ -265,7 +266,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 		Platform: Platform{
 			Capturer: platformtest.NewFakeCapturer(), Input: e.input, Windows: windows,
 			Clipboard: platformtest.NewFakeClipboard(), UI: platformtest.NewFakeUIAutomation(windows),
-			Launcher: e.launcher, FilePicker: e.picker,
+			Launcher: e.launcher, FilePicker: e.picker, Installer: e.installer,
 			Hotkey: e.hotkey, Power: e.power, Autostart: e.autostart,
 		},
 		Watcher:     e.watcher,

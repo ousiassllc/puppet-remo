@@ -54,6 +54,19 @@ func (a *App) triggerKillSwitch(source string) {
 	}
 }
 
+// SetQuit はアプリを終える関数を設定する（Wails の起動後。更新の適用の開始後に呼ばれる）。
+func (a *App) SetQuit(quit func()) { a.quit.Store(&quit) }
+
+// requestQuit は更新の適用の開始後にアプリを終える。呼び出し元（適用の HTTP ハンドラ）の応答を妨げないよう、別の goroutine で終える。
+// SetQuit が済んでいなければ何もしない（インストーラは動いているので、ユーザーが手で終了する）。
+func (a *App) requestQuit() {
+	if q := a.quit.Load(); q != nil {
+		go (*q)()
+		return
+	}
+	a.log.Warn("the installer was started, but no quit function is set; quit the app manually")
+}
+
 // toast は GUI へ通知を出す（購読者がいなければ捨てられる）。
 func (a *App) toast(level, msg string) {
 	a.bus.Publish(service.Event{Topic: service.TopicToast, Data: service.Toast{Level: level, Message: msg}})
@@ -99,12 +112,17 @@ func (a *App) Start(ctx context.Context) error {
 	// 開いているダイアログを閉じてから戻る。
 	dialogsDone := a.dialogs.Watch(runCtx)
 	a.spawn(func() { <-dialogsDone })
+	// 操作中オーバーレイ（#69）。購読は Watch の中で済む。runCtx の終了（Shutdown）で、出しているオーバーレイを隠してから戻る。
+	overlayDone := a.overlay.Watch(runCtx)
+	a.spawn(func() { <-overlayDone })
 	a.spawn(func() {
 		if err := a.tracker.Run(runCtx); err != nil {
 			a.log.Error("tailscaled status tracker stopped", "err", err)
 		}
 	})
 	a.spawn(func() { a.maint.Run(runCtx) })
+	// 起動の 1 分後と 6 時間ごとに新版を確認する（dev ビルドは何もしない）。止めるのは Shutdown。
+	a.updater.Start()
 	a.spawn(func() { _ = a.listen.Run(runCtx) }) // 異常終了は supervisor がログに残す
 
 	// ホットキーの登録に失敗しても（他のアプリが同じキーを使っているなど）、アプリは動かす。
@@ -148,6 +166,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if err := waitGroup(ctx, &a.running); err != nil {
 		errs = append(errs, fmt.Errorf("stop background tasks: %w", err))
 	}
+	a.updater.Close()
 	if err := a.mcp.CloseSessions(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("close mcp sessions: %w", err))
 	}

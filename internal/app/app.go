@@ -60,6 +60,22 @@ type Platform struct {
 	Power platform.Power
 	// Autostart はログオン時の自動起動の登録（FR-S08）。nil なら設定画面に項目を出さない。
 	Autostart service.Autostart
+	// Installer は署名検証済みの更新のインストーラの起動（FR-H09。#74）。service.Updater が唯一の呼び出し元。
+	Installer platform.Installer
+}
+
+// UpdateOptions は更新（service.Updater。#74）の設定の上書き。ゼロ値なら本番の既定（埋め込みの公開鍵・GitHub・6 時間ごと）。
+// テストが偽の GitHub・テスト専用の鍵・偽のタイマーを差し込むためのもの。
+type UpdateOptions struct {
+	PublicKey    []byte // nil なら service.EmbeddedUpdatePublicKey()
+	APIBase      string
+	DownloadBase string
+	HTTPClient   *http.Client
+	TempDir      string
+	StartDelay   time.Duration
+	Interval     time.Duration
+	IdlePoll     time.Duration
+	AfterFunc    service.AfterFunc
 }
 
 // Config は New の設定。Repo・Platform（Autostart 以外）・Windows・Watcher・WhoIs・Static・Logs は必須。
@@ -80,6 +96,8 @@ type Config struct {
 	IDs     domain.IDGen  // nil なら ULID
 	Version string
 	Logger  *slog.Logger // nil なら slog.Default()
+	// Update は更新の設定の上書き（テスト用）。
+	Update UpdateOptions
 
 	// ListenFunc は Listener の Listen 関数。nil なら net.Listen（テストが差し替える）。
 	ListenFunc tailnet.ListenFunc
@@ -104,8 +122,9 @@ type App struct {
 	kill service.HostKillSwitch
 
 	leases   service.LeaseManager
-	approval service.Approval // リース取得の承認待ち（FR-L07）
-	dialogs  *approvalDialogs // 承認待ちごとのダイアログの開閉（FR-H05）
+	approval service.Approval   // リース取得の承認待ち（FR-L07）
+	dialogs  *approvalDialogs   // 承認待ちごとのダイアログの開閉（FR-H05）
+	overlay  *overlayController // リース保持中の操作中オーバーレイの出し入れ（#69）
 	authz    service.Authz
 	audit    *service.Audit
 	admin    service.HostAdmin
@@ -121,6 +140,8 @@ type App struct {
 	listen     *listenSupervisor
 	hotkey     *KillSwitchHotkey
 	settings   service.HostSettingsService
+	updater    service.Updater        // 更新の確認・適用（FR-H09）
+	quit       atomic.Pointer[func()] // アプリを終える関数（Wails の起動後に SetQuit で入る）
 
 	gui    http.Handler
 	remote http.Handler
@@ -163,8 +184,8 @@ func (c Config) validate() error {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
-		p.Hotkey == nil, p.Power == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey and Power")
+		p.Hotkey == nil, p.Power == nil, p.Installer == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power and Installer")
 	case c.Windows == nil:
 		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
@@ -219,11 +240,12 @@ func (a *App) build(ctx context.Context) error {
 	a.dialogs = newApprovalDialogs(cfg.Windows, a.approval, a.bus, a.log)
 	a.leases, err = service.NewLeaseManager(service.LeaseConfig{
 		Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log,
-		Approval: a.approval, Clients: cfg.Repo.Clients(),
+		Approval: a.approval, Clients: cfg.Repo.Clients(), Bus: a.bus,
 	})
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
 	}
+	a.overlay = newOverlayController(cfg.Windows, a.leases, cfg.Platform.Capturer, a.bus, a.log)
 	killMgr.BindLeases(a.leases)
 
 	p := cfg.Platform
@@ -237,7 +259,7 @@ func (a *App) build(ctx context.Context) error {
 	control, err := service.NewControl(service.ControlConfig{
 		Capturer: p.Capturer, Input: p.Input, Windows: p.Windows, Clipboard: p.Clipboard, UI: p.UI,
 		Launcher: p.Launcher, Apps: a.apps,
-		Leases: a.leases, Kill: killMgr, Settings: settings, Audit: audit, Clock: cfg.Clock,
+		Leases: a.leases, Kill: killMgr, Settings: settings, Audit: audit, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("control: %w", err)
@@ -311,6 +333,22 @@ func (a *App) build(ctx context.Context) error {
 	a.initialKey = initial.KillSwitchHotkey
 	a.hotkey = NewKillSwitchHotkey(p.Hotkey, func() { a.triggerKillSwitch("hotkey") })
 
+	// 更新（FR-H09）。確認は Start が定期的に始める。適用の可否はリース・MCP の接続（ダッシュボードと同じ一覧）で見る。
+	// 適用の開始後にアプリを終える（quit は Wails の起動後に SetQuit で入る）。
+	u := cfg.Update
+	if u.PublicKey == nil {
+		u.PublicKey = service.EmbeddedUpdatePublicKey()
+	}
+	a.updater, err = service.NewUpdater(service.UpdaterConfig{
+		Settings: settings, Audit: audit, Clock: cfg.Clock, Installer: p.Installer, Leases: a.leases, Sessions: a.mcp, Bus: a.bus,
+		Quit: a.requestQuit, CurrentVersion: cfg.Version, PublicKey: u.PublicKey, APIBase: u.APIBase, DownloadBase: u.DownloadBase,
+		HTTPClient: u.HTTPClient, TempDir: u.TempDir, StartDelay: u.StartDelay, Interval: u.Interval, IdlePoll: u.IdlePoll,
+		AfterFunc: u.AfterFunc, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("updater: %w", err)
+	}
+
 	a.connStates, err = service.NewConnRequestStates(connRequests, cfg.Clock)
 	if err != nil {
 		return fmt.Errorf("connection request states: %w", err)
@@ -357,7 +395,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin, Approval: a.approval,
-		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Updates: a.updater, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)

@@ -34,7 +34,12 @@ func (c *control) Launch(ctx context.Context, who domain.Actor, appID string) (L
 	start := c.clock.Now()
 	res, label, leaseID, err := c.launch(ctx, who, appID)
 	if c.audit != nil {
-		c.audit.Record(ctx, ToolAuditEntry(who, "launch_app", launchAuditDetail(appID, label, res, err), leaseID, err, c.clock.Now().Sub(start)))
+		entry := ToolAuditEntry(who, "launch_app", launchAuditDetail(appID, label, res, err), leaseID, err, c.clock.Now().Sub(start))
+		var shot *thumbTarget
+		if err == nil {
+			shot = &thumbTarget{monitor: domain.MonitorPrimary} // 起動したウィンドウのモニターは問わず、プライマリを撮る
+		}
+		c.recordAudit(ctx, entry, shot)
 	}
 	return res, err
 }

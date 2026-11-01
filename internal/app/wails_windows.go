@@ -45,6 +45,8 @@ type WailsHost struct {
 	shell atomic.Pointer[Shell]
 	// main はメインウィンドウ。ファイル選択ダイアログ（FilePicker）の親にする（MainWindowHandle）。Run が作る。
 	main atomic.Pointer[application.WebviewWindow]
+	// overlay は操作中オーバーレイ（#69）のウィンドウ。出し入れは Windows.ShowOverlay・HideOverlay（wails_overlay_windows.go）。
+	overlay wailsOverlay
 }
 
 // NewWailsHost は Wails のアプリを作る。すでに別のインスタンスが動いていれば、そのインスタンスのウィンドウを
@@ -88,7 +90,7 @@ func (h *WailsHost) serveGUI(w http.ResponseWriter, r *http.Request) {
 	(*g).ServeHTTP(w, r)
 }
 
-// Windows は承認ダイアログなどを開く Windows を返す（app.Config.Windows に渡す）。ウィンドウの生成は Run が Wails を動かしたあとに起きる。
+// Windows は承認ダイアログ・オーバーレイを開く Windows を返す（app.Config.Windows に渡す）。ウィンドウの生成は Run が Wails を動かしたあとに起きる。
 func (h *WailsHost) Windows() Windows { return wailsWindows{h} }
 
 // 承認ダイアログのウィンドウの大きさ（固定。クライアント名・種別・要求の内容・残り時間・許可 / 拒否が収まる大きさ）。
@@ -174,6 +176,8 @@ func (h *WailsHost) Run(a *App) error {
 	shell := NewShell(a, h.Windows().Main(), tray, h.wails.Quit, h.log)
 	h.shell.Store(shell)
 	tray.bind(shell)
+	// 更新の適用の開始後（インストーラを起動したあと）にアプリを終える。トレイの「終了」と同じ経路（以後の「閉じる」は取り消さない）。
+	a.SetQuit(shell.Quit)
 
 	// 「閉じる」はトレイへ隠す。終了はトレイメニューの「終了」から。
 	win.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) { shell.WindowClosing(e.Cancel) })

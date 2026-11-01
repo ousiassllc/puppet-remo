@@ -15,7 +15,7 @@ func validSettings() url.Values {
 		"server.port": {"9000"}, "killswitch.hotkey": {"Ctrl+Alt+Shift+Q"},
 		"screenshot.max_dimension": {"2048"}, "lease.idle_timeout_sec": {"120"}, "viewer.default_quality": {"85"}, "viewer.default_fps": {"24"}, "autostart": {"on"},
 		"audit.thumbnails_enabled": {"on"}, "audit.record_text": {"on"}, "audit.retention_days": {"7"},
-		"audit.thumbs_max_bytes": {"536870912"}, "update.apply_mode": {"auto_idle"},
+		"audit.thumbs_max_bytes": {"536870912"}, "update.apply_mode": {"auto_idle"}, "update.channel": {"nightly"},
 	}
 }
 
@@ -32,7 +32,8 @@ func TestSettingsPage(t *testing.T) {
 	contains(t, res, `data-settings-group="audit"`, `data-settings-group="update"`,
 		`name="audit.thumbnails_enabled"`, `name="audit.record_text"`,
 		`name="audit.retention_days"`, `value="30"`, `name="audit.thumbs_max_bytes"`, `value="1073741824"`,
-		`name="update.apply_mode"`, `<option value="confirm" selected>`, `<option value="auto_idle">`)
+		`name="update.apply_mode"`, `<option value="confirm" selected>`, `<option value="auto_idle">`,
+		`name="update.channel"`, `<option value="stable" selected>`, `<option value="nightly">`)
 	if got := strings.Count(res.Body, "checked"); got != 1 {
 		t.Errorf("only audit.thumbnails_enabled is checked by default (autostart is off); checked count = %d", got)
 	}
@@ -65,10 +66,10 @@ func TestSaveSettings(t *testing.T) {
 	res := r.do(http.MethodPut, "/settings", validSettings(), hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="settings-form"`, `value="9000"`, `value="Ctrl+Alt+Shift+Q"`, `value="2048"`, `value="120"`, `value="85"`, `value="24"`, "checked", "設定を保存しました。", `hx-swap-oob="beforeend:#toast-root"`,
-		`name="audit.retention_days"`, `value="7"`, `value="536870912"`, `<option value="auto_idle" selected>`)
+		`name="audit.retention_days"`, `value="7"`, `value="536870912"`, `<option value="auto_idle" selected>`, `<option value="nightly" selected>`)
 	lacks(t, res, "data-field-error", "<html")
 	want := service.HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Alt+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24,
-		AuditThumbnailsEnabled: true, AuditRecordText: true, AuditRetentionDays: 7, AuditThumbsMaxBytes: 536870912, UpdateApplyMode: service.UpdateApplyAutoIdle, Autostart: true}
+		AuditThumbnailsEnabled: true, AuditRecordText: true, AuditRetentionDays: 7, AuditThumbsMaxBytes: 536870912, UpdateApplyMode: service.UpdateApplyAutoIdle, UpdateChannel: "nightly", Autostart: true}
 	if len(r.f.Settings.Saves) != 1 || r.f.Settings.Saves[0] != want {
 		t.Errorf("saves = %+v, want [%+v]", r.f.Settings.Saves, want)
 	}
@@ -109,6 +110,8 @@ func TestSaveSettingsValidation(t *testing.T) {
 		{"thumbs cap beyond int64", func(v url.Values) { v.Set("audit.thumbs_max_bytes", "99999999999999999999") }, []string{"set-audit-cap"}, `value="99999999999999999999"`},
 		{"thumbs cap not a number", func(v url.Values) { v.Set("audit.thumbs_max_bytes", "1GiB") }, []string{"set-audit-cap"}, `value="1GiB"`},
 		{"apply mode unknown", func(v url.Values) { v.Set("update.apply_mode", "always") }, []string{"set-update-mode"}, ``},
+		{"channel unknown", func(v url.Values) { v.Set("update.channel", "beta") }, []string{"set-update-channel"}, ``},
+		{"channel missing", func(v url.Values) { v.Del("update.channel") }, []string{"set-update-channel"}, ``},
 		{"apply mode missing", func(v url.Values) { v.Del("update.apply_mode") }, []string{"set-update-mode"}, ``},
 		{"several at once", func(v url.Values) {
 			v.Set("server.port", "1")

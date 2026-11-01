@@ -11,6 +11,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/router"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
@@ -67,6 +68,8 @@ func TestEveryResponseCarriesCSP(t *testing.T) {
 		{http.MethodGet, "/clients", nil},
 		{http.MethodGet, "/clients/unknown", nil},
 		{http.MethodGet, "/settings", nil},
+		{http.MethodGet, "/update", nil},
+		{http.MethodPost, "/update/check", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/apps", nil},
 		{http.MethodGet, "/apps/new", nil},
 		{http.MethodGet, "/apps/unknown/edit", nil},
@@ -119,7 +122,7 @@ func TestStaticAssetsUseNoCacheAndETag(t *testing.T) {
 // 動的な応答（トークンの平文を含みうる）はキャッシュさせない。
 func TestDynamicResponsesAreNoStore(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/", "/requests", "/clients", "/settings", "/apps", "/nope"} {
+	for _, p := range []string{"/", "/requests", "/clients", "/settings", "/update", "/apps", "/nope"} {
 		if got := do(h, http.MethodGet, p).Header().Get("Cache-Control"); got != "no-store" {
 			t.Errorf("GET %s: Cache-Control = %q, want no-store", p, got)
 		}
@@ -141,10 +144,33 @@ func TestGUIServesTheAuditRoutes(t *testing.T) {
 	}
 }
 
+// 更新（M3。FR-H09）の経路は GUI にある。確認・適用は POST で、GET では動かない。
+func TestGUIServesTheUpdateRoutes(t *testing.T) {
+	h, f := newGUI(t)
+	f.Updates.ApplyErr = service.ErrUpdateUnavailable
+	if rec := do(h, http.MethodGet, "/update"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="update-panel"`) {
+		t.Errorf("GET /update: status %d", rec.Code)
+	}
+	if rec := do(h, http.MethodPost, "/update/check", "HX-Request", "true"); rec.Code != http.StatusOK {
+		t.Errorf("POST /update/check: status %d, want 200", rec.Code)
+	}
+	if rec := do(h, http.MethodPost, "/update/apply", "HX-Request", "true"); rec.Code != http.StatusConflict { // 適用できる更新が無い
+		t.Errorf("POST /update/apply: status %d, want 409", rec.Code)
+	}
+	for _, p := range []string{"/update/check", "/update/apply"} {
+		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s: status %d, want 404 (actions are POST only)", p, rec.Code)
+		}
+	}
+	if len(f.Updates.Applied) != 0 {
+		t.Error("an update was applied without a verified release")
+	}
+}
+
 // ホスト専用の経路だけがあり、/wails/* は予約され、M1 に無いものと、リモート向けの経路は存在しない。
 func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks", "/agent", "/update"} {
+	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks", "/agent"} {
 		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
 		}

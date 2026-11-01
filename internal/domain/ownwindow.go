@@ -13,12 +13,12 @@ type OwnRegion struct {
 
 // OwnWindowRegions は windows のうち自ウィンドウ（Own）が占める範囲を、モニターごとに縮小座標で返す。
 // 複数のモニターにまたがるウィンドウはモニターごとに 1 件ずつ（各モニターの範囲へ切り詰めて）返す。
-// 最小化されたウィンドウ、どのモニターとも重ならないウィンドウ（座標を対応づけられないもの）は含めない。
+// 最小化されたウィンドウ、クリックスルーのオーバーレイ（Overlay。全モニターを覆うが入力を拒否せず、避ける範囲ではない）、どのモニターとも重ならないウィンドウ（座標を対応づけられないもの）は含めない。
 // 順序は windows の順（Z オーダー）で、同じウィンドウ内ではモニターの順。該当がなければ nil。
 func OwnWindowRegions(windows []WindowInfo, monitors []Monitor, maxDim int) []OwnRegion {
 	var out []OwnRegion
 	for _, w := range windows {
-		if !w.Own || w.Minimized {
+		if !w.Own || w.Overlay || w.Minimized {
 			continue
 		}
 		for _, m := range monitors {

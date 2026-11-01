@@ -216,8 +216,8 @@ func (c *conn) serve() {
 	c.sess.OnEnd(c.releasePressed)
 	defer c.sess.Close() // 閲覧者の登録を外し、web のリースを解放する（FR-L05）
 
-	// 先に購読して、ready の後にリースが変わっても取りこぼさない。
-	leaseEvents, unsubscribe := c.h.cfg.Events.Subscribe(service.TopicLease)
+	// 先に購読して、ready の後にリースが変わっても取りこぼさない。lease-result は、このビューアの承認待ちの失敗（拒否・タイムアウト）。
+	leaseEvents, unsubscribe := c.h.cfg.Events.Subscribe(service.TopicLease, service.TopicLeaseResult)
 	defer unsubscribe()
 
 	if err := c.sendReady(); err != nil {
@@ -344,8 +344,8 @@ func (c *conn) writeLoop(leaseEvents <-chan service.Event) {
 				c.finish(0, "")
 				return
 			}
-		case <-leaseEvents:
-			if err := c.writeJSON(leaseMessage{Type: typeLease, leaseBody: c.leaseBody()}); err != nil {
+		case ev := <-leaseEvents:
+			if err := c.writeLeaseEvent(ev); err != nil {
 				c.finish(0, "")
 				return
 			}
@@ -354,6 +354,19 @@ func (c *conn) writeLoop(leaseEvents <-chan service.Event) {
 			return
 		}
 	}
+}
+
+// writeLeaseEvent は lease トピックでは現在のリースの状態（lease）を、lease-result トピックではこのビューアの承認待ちの失敗
+// （拒否・タイムアウト）を error メッセージで送る。他のビューアの lease-result は送らない（API 仕様 §5.3）。
+func (c *conn) writeLeaseEvent(ev service.Event) error {
+	if ev.Topic == service.TopicLeaseResult {
+		res, ok := ev.Data.(service.LeaseResult)
+		if !ok || !res.Who.SameSession(c.sess.Actor()) {
+			return nil
+		}
+		return c.writeJSON(errorFor(res.Err))
+	}
+	return c.writeJSON(leaseMessage{Type: typeLease, leaseBody: c.leaseBody()})
 }
 
 func (c *conn) sendConfig(cfg service.ViewerConfig) error {

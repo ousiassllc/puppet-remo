@@ -18,6 +18,14 @@ func updateApplyModeOptions(current string) []atoms.SelectOption {
 	}
 }
 
+// updateChannelOptions は更新のチャネル（FR-S09）の選択肢。current が未知の値なら、どれも選ばない（検証エラーの再描画）。
+func updateChannelOptions(current string) []atoms.SelectOption {
+	return []atoms.SelectOption{
+		{Value: "stable", Label: "正式版（既定）", Selected: current == "stable"},
+		{Value: "nightly", Label: "ナイトリー（開発中の版。不安定なことがあります）", Selected: current == "nightly"},
+	}
+}
+
 // SettingsForm は設定画面のフォーム（FR-S01〜S04、FR-S06〜S09）。検証エラーは 422 で、入力値とメッセージ付きで再描画する。
 // 自動起動のチェックは、OS の登録手段があるときだけ描画する。
 // 「監査ログ」のグループには、サムネイルと本文が平文で保存される旨（NFR-S11）を常に出す（確認ダイアログは作らない）。
@@ -83,7 +91,10 @@ templ SettingsForm(f view.SettingsForm) {
 		</fieldset>
 		<fieldset class="space-y-4 border-t border-slate-200 pt-4" data-settings-group="update">
 			<legend class="pr-2 text-sm font-semibold text-slate-800">更新</legend>
-			@molecules.FormField("set-update-mode", "更新の適用方法", "更新の確認と適用は今後の版で有効になります。それまでは設定だけが保存されます。", f.Errors.UpdateApplyMode) {
+			@molecules.FormField("set-update-channel", "更新のチャネル", "追いかける版です。署名を検証できた更新だけを適用します。ナイトリーから正式版へは、新しい正式版が出たときに切り替わります。", f.Errors.UpdateChannel) {
+				@atoms.Select("set-update-channel", "update.channel", updateChannelOptions(f.Values.UpdateChannel))
+			}
+			@molecules.FormField("set-update-mode", "更新の適用方法", "新しい版は 6 時間ごとに確認します。自動で適用するのは、操作権の保持・接続・実行中のタスクがないときだけです。", f.Errors.UpdateApplyMode) {
 				@atoms.Select("set-update-mode", "update.apply_mode", updateApplyModeOptions(f.Values.UpdateApplyMode))
 			}
 		</fieldset>

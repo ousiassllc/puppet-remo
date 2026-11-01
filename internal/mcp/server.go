@@ -39,6 +39,9 @@ const (
 	DefaultSessionTimeout = 30 * time.Minute
 	// DefaultToolTimeout は同期のツール呼び出しのタイムアウト（NFR-S09）。
 	DefaultToolTimeout = 30 * time.Second
+	// DefaultLeaseToolTimeout はリースを取得しうるツール（acquire_control と、暗黙に取得するツール。leaseAcquiringTools）の
+	// タイムアウト。承認待ち（60 秒。DefaultApprovalTimeout）が approval_timeout で終わるまで待てるよう、それより長くする（FR-L07）。
+	DefaultLeaseToolTimeout = 90 * time.Second
 	// DefaultMaxSessions は同時セッションの上限（NFR-C02）。
 	DefaultMaxSessions = 5
 
@@ -94,6 +97,8 @@ type Config struct {
 	// 以下は 0 なら既定値。テストが短くする。
 	SessionTimeout time.Duration
 	ToolTimeout    time.Duration
+	// LeaseToolTimeout はリースを取得しうるツールのタイムアウト。0 なら DefaultLeaseToolTimeout。
+	LeaseToolTimeout time.Duration
 	// KeepAlive は SDK の keepalive の ping 間隔。0（既定）なら ping しない。
 	// SDK はサーバーからの ping を standalone の GET SSE ストリームにしか流さないため、GET ストリームを張らない
 	// （POST だけの）クライアントは ping に応えられず、有効にすると 3 回の失敗でセッションとリースを失う。
@@ -112,8 +117,9 @@ type Server struct {
 	onSessions func()
 	audit      service.AuditRecorder
 
-	toolTimeout time.Duration
-	maxSessions int
+	toolTimeout      time.Duration
+	leaseToolTimeout time.Duration
+	maxSessions      int
 
 	sdk     *mcpsdk.Server
 	handler http.Handler
@@ -140,16 +146,17 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("mcp: Principal is required")
 	}
 	s := &Server{
-		control:     cfg.Control,
-		leases:      cfg.Leases,
-		principal:   cfg.Principal,
-		onSessions:  cfg.OnSessionsChange,
-		audit:       cfg.Audit,
-		log:         cfg.Logger,
-		toolTimeout: cmp.Or(cfg.ToolTimeout, DefaultToolTimeout),
-		maxSessions: cmp.Or(cfg.MaxSessions, DefaultMaxSessions),
-		watched:     make(map[string]struct{}),
-		sessions:    make(map[string]*sessionRecord),
+		control:          cfg.Control,
+		leases:           cfg.Leases,
+		principal:        cfg.Principal,
+		onSessions:       cfg.OnSessionsChange,
+		audit:            cfg.Audit,
+		log:              cfg.Logger,
+		toolTimeout:      cmp.Or(cfg.ToolTimeout, DefaultToolTimeout),
+		leaseToolTimeout: cmp.Or(cfg.LeaseToolTimeout, DefaultLeaseToolTimeout),
+		maxSessions:      cmp.Or(cfg.MaxSessions, DefaultMaxSessions),
+		watched:          make(map[string]struct{}),
+		sessions:         make(map[string]*sessionRecord),
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -229,11 +236,16 @@ func (s *Server) abortInFlightTools() {
 }
 
 // toolContext はツール 1 回の ctx を返す: タイムアウトつきで、CloseSessions の取り消しにも従う。
-func (s *Server) toolContext(ctx context.Context) (context.Context, context.CancelFunc) {
+// リースを取得しうるツールは、承認待ちの失効まで待てる長いタイムアウト（leaseToolTimeout）にする。
+func (s *Server) toolContext(ctx context.Context, tool string) (context.Context, context.CancelFunc) {
 	s.mu.Lock()
 	aborted := s.toolsCtx
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, s.toolTimeout)
+	timeout := s.toolTimeout
+	if leaseAcquiringTools[tool] {
+		timeout = s.leaseToolTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	stop := context.AfterFunc(aborted, cancel)
 	return ctx, func() { stop(); cancel() }
 }

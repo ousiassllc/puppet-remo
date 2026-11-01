@@ -13,8 +13,13 @@ const (
 
 // InputBlockReason は w への入力を拒否する理由（ReasonOwnWindow / ReasonElevatedWindow）を返す。拒否しないウィンドウは空文字。
 // 自ウィンドウかつ昇格のときは自ウィンドウを優先する。CheckInputTarget と list_windows の blocked の印が同じ規則を使う。
+// 自ウィンドウでも、クリックスルーの操作中オーバーレイ（Overlay）だけは拒否しない（入力は下のウィンドウへ通るため。#69）。
+// ダイアログなどそのほかの自ウィンドウは、オーバーレイの下にあっても own_window のまま拒否する
+// （そのため WindowManager.At はオーバーレイを飛ばして、下の実ウィンドウを返す）。
 func InputBlockReason(w WindowInfo) string {
 	switch {
+	case w.Own && w.Overlay:
+		return ""
 	case w.Own:
 		return ReasonOwnWindow
 	case w.Elevated:
@@ -24,7 +29,7 @@ func InputBlockReason(w WindowInfo) string {
 }
 
 // CheckInputTarget は、入力の宛先ウィンドウに対する InputGuard の判定規則（NFR-S06）。
-// 自プロセスのウィンドウ（ホスト GUI・承認ダイアログ・オーバーレイ）と、昇格ウィンドウ（UIPI で入力できない）を
+// 自プロセスのウィンドウ（ホスト GUI・承認ダイアログ。クリックスルーのオーバーレイを除く）と、昇格ウィンドウ（UIPI で入力できない）を
 // ErrInputBlocked で拒否する。ウィンドウの事実（Own・Elevated）は platform が返す。
 func CheckInputTarget(w WindowInfo) error {
 	switch InputBlockReason(w) {

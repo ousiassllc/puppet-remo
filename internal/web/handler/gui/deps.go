@@ -104,6 +104,13 @@ type Audit interface {
 	Thumbnail(ctx context.Context, id int64) (io.ReadCloser, error)
 }
 
+// Updates は更新の確認と適用（FR-H09。画面は /update）。実体は service.Updater。監査（kind = update）は実体が記録するため、ハンドラは記録しない。
+type Updates interface {
+	Status(ctx context.Context) service.UpdateStatus
+	Check(ctx context.Context, by domain.ActorKind) service.UpdateStatus
+	Apply(ctx context.Context, by domain.ActorKind) error
+}
+
 // Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
@@ -121,6 +128,7 @@ type Deps struct {
 	Apps       Apps
 	Logs       Logs
 	Audit      Audit
+	Updates    Updates
 	Events     Events
 	Clock      domain.Clock
 
@@ -150,7 +158,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

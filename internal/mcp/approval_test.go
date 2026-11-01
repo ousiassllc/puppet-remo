@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,5 +197,56 @@ func TestApprovalRequestErrorFallsBackToIdle(t *testing.T) {
 	}
 	if s := status(t, cs); s.State != "idle" {
 		t.Errorf("status = %+v, want idle", s)
+	}
+}
+
+// リースを取得しうるツールは、承認待ち（60 秒）の失効まで待てる 90 秒、それ以外は 30 秒のタイムアウトになる（FR-L07）。
+func TestLeaseAcquiringToolsHaveALongerTimeout(t *testing.T) {
+	if DefaultLeaseToolTimeout != 90*time.Second || DefaultLeaseToolTimeout <= service.DefaultApprovalTimeout {
+		t.Fatalf("DefaultLeaseToolTimeout = %v, want 90s (longer than the approval timeout %v)", DefaultLeaseToolTimeout, service.DefaultApprovalTimeout)
+	}
+	e := newEnv(t)
+	deadlineOf := func(tool string) time.Duration {
+		ctx, cancel := e.srv.toolContext(context.Background(), tool)
+		defer cancel()
+		d, ok := ctx.Deadline()
+		if !ok {
+			t.Fatalf("%s: no deadline", tool)
+		}
+		return time.Until(d)
+	}
+	for _, tool := range []string{"acquire_control", "left_click", "type", "launch_app"} {
+		if got := deadlineOf(tool); got <= DefaultToolTimeout || got > DefaultLeaseToolTimeout {
+			t.Errorf("%s timeout = %v, want about %v", tool, got, DefaultLeaseToolTimeout)
+		}
+	}
+	for _, tool := range []string{"cursor_position", "screenshot", "get_control_status", "release_control", "wait"} {
+		if got := deadlineOf(tool); got > DefaultToolTimeout {
+			t.Errorf("%s timeout = %v, want about %v", tool, got, DefaultToolTimeout)
+		}
+	}
+}
+
+// 登録された全ツールのうち、説明に「acquired implicitly」とあるもの（と acquire_control）が leaseAcquiringTools に入っている。
+// 逆に、入っているのに登録のないツールは無い（名前の食い違いで 30 秒に戻るのを防ぐ）。
+func TestLeaseAcquiringToolsMatchTheToolDescriptions(t *testing.T) {
+	e := newEnv(t)
+	cs := e.connect("c1")
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered := map[string]bool{}
+	for _, tool := range list.Tools {
+		registered[tool.Name] = true
+		want := tool.Name == "acquire_control" || strings.Contains(tool.Description, "acquired implicitly")
+		if leaseAcquiringTools[tool.Name] != want {
+			t.Errorf("%s: leaseAcquiringTools = %v, but the description says acquires = %v", tool.Name, leaseAcquiringTools[tool.Name], want)
+		}
+	}
+	for name := range leaseAcquiringTools {
+		if !registered[name] {
+			t.Errorf("leaseAcquiringTools has %q, which is not a registered tool", name)
+		}
 	}
 }

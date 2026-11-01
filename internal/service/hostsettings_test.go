@@ -56,7 +56,7 @@ func newSettingsEnv(t *testing.T, withAutostart bool) *settingsEnv {
 
 var defaultHostSettings = HostSettings{
 	Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
-	AuditThumbnailsEnabled: true, AuditRecordText: false, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: UpdateApplyConfirm,
+	AuditThumbnailsEnabled: true, AuditRecordText: false, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: UpdateApplyConfirm, UpdateChannel: "stable",
 }
 
 func TestHostSettingsDefaults(t *testing.T) {
@@ -76,7 +76,7 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	want := HostSettings{
 		Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24,
 		AuditThumbnailsEnabled: false, AuditRecordText: true, AuditRetentionDays: 7, AuditThumbsMaxBytes: 536870912, UpdateApplyMode: UpdateApplyAutoIdle,
-		Autostart: true,
+		UpdateChannel: "nightly", Autostart: true,
 	}
 
 	saved, err := e.svc.Save(ctx, want)
@@ -92,7 +92,7 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 		t.Errorf("LeaseIdleTimeout = %v, %v", d, err)
 	}
 	for key, raw := range map[string]string{"server.port": "9000", "killswitch.hotkey": `"Ctrl+Shift+Q"`, "screenshot.max_dimension": "2048", "lease.idle_timeout_sec": "120", "viewer.default_quality": "85", "viewer.default_fps": "24",
-		"audit.thumbnails_enabled": "false", "audit.record_text": "true", "audit.retention_days": "7", "audit.thumbs_max_bytes": "536870912", "update.apply_mode": `"auto_idle"`} {
+		"audit.thumbnails_enabled": "false", "audit.record_text": "true", "audit.retention_days": "7", "audit.thumbs_max_bytes": "536870912", "update.apply_mode": `"auto_idle"`, "update.channel": `"nightly"`} {
 		if got := string(e.store.values[key]); got != raw {
 			t.Errorf("%s = %s, want %s", key, got, raw)
 		}
@@ -113,9 +113,9 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 		t.Fatalf("audit = %+v", a)
 	}
 	var detail map[string]any
-	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 12 || detail["server.port"] != float64(9000) || detail["autostart"] != true ||
+	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 13 || detail["server.port"] != float64(9000) || detail["autostart"] != true ||
 		!hasKey(detail, "audit.record_text") || detail["audit.record_text"] != nil || detail["audit.thumbnails_enabled"] != false || detail["audit.retention_days"] != float64(7) ||
-		detail["audit.thumbs_max_bytes"] != float64(536870912) || detail["update.apply_mode"] != "auto_idle" {
+		detail["audit.thumbs_max_bytes"] != float64(536870912) || detail["update.apply_mode"] != "auto_idle" || detail["update.channel"] != "nightly" {
 		t.Errorf("detail = %s (%v)", a[0].DetailJSON, err)
 	}
 }
@@ -152,7 +152,7 @@ func TestHostSettingsAuditDefaultsWhenRowsAreMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.AuditThumbnailsEnabled || got.AuditRecordText || got.AuditRetentionDays != 30 || got.AuditThumbsMaxBytes != 1<<30 || got.UpdateApplyMode != "confirm" {
+	if !got.AuditThumbnailsEnabled || got.AuditRecordText || got.AuditRetentionDays != 30 || got.AuditThumbsMaxBytes != 1<<30 || got.UpdateApplyMode != "confirm" || got.UpdateChannel != "stable" {
 		t.Errorf("defaults = %+v", got)
 	}
 }
@@ -229,12 +229,16 @@ func TestHostSettingsValidation(t *testing.T) {
 		{"apply mode auto_idle", func(s *HostSettings) { s.UpdateApplyMode = "auto_idle" }, nil},
 		{"apply mode unknown", func(s *HostSettings) { s.UpdateApplyMode = "auto" }, []string{FieldUpdateApplyMode}},
 		{"apply mode empty", func(s *HostSettings) { s.UpdateApplyMode = "" }, []string{FieldUpdateApplyMode}},
+		{"channel nightly", func(s *HostSettings) { s.UpdateChannel = "nightly" }, nil},
+		{"channel unknown", func(s *HostSettings) { s.UpdateChannel = "beta" }, []string{FieldUpdateChannel}},
+		{"channel empty", func(s *HostSettings) { s.UpdateChannel = "" }, []string{FieldUpdateChannel}},
+		{"channel wrong case", func(s *HostSettings) { s.UpdateChannel = "Stable" }, []string{FieldUpdateChannel}},
 		{"hotkey empty", func(s *HostSettings) { s.KillSwitchHotkey = "" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey without modifier", func(s *HostSettings) { s.KillSwitchHotkey = "K" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey unknown modifier", func(s *HostSettings) { s.KillSwitchHotkey = "Hyper+K" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey too long", func(s *HostSettings) { s.KillSwitchHotkey = "Ctrl+" + string(make([]byte, 100)) }, []string{FieldKillSwitchHotkey}},
 		{"hotkey case-insensitive", func(s *HostSettings) { s.KillSwitchHotkey = "ctrl+alt+k" }, nil},
-		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldViewerDefaultQuality, FieldViewerDefaultFPS, FieldKillSwitchHotkey, FieldAuditRetentionDays, FieldAuditThumbsMaxBytes, FieldUpdateApplyMode}},
+		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldViewerDefaultQuality, FieldViewerDefaultFPS, FieldKillSwitchHotkey, FieldAuditRetentionDays, FieldAuditThumbsMaxBytes, FieldUpdateApplyMode, FieldUpdateChannel}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -315,7 +319,7 @@ func TestHostSettingsFailures(t *testing.T) {
 	})
 	t.Run("corrupt stored value", func(t *testing.T) {
 		for key, raw := range map[string]string{"server.port": `"x"`, "screenshot.max_dimension": "0", "lease.idle_timeout_sec": "1.5", "killswitch.hotkey": "7", "viewer.default_quality": "0", "viewer.default_fps": `"x"`,
-			"audit.thumbnails_enabled": `"yes"`, "audit.record_text": "1", "update.apply_mode": `"auto"`} {
+			"audit.thumbnails_enabled": `"yes"`, "audit.record_text": "1", "update.apply_mode": `"auto"`, "update.channel": `"beta"`} {
 			e := newSettingsEnv(t, true)
 			e.store.put(key, raw)
 			if _, err := e.svc.Load(ctx); !errors.Is(err, domain.ErrInvalidArgument) {

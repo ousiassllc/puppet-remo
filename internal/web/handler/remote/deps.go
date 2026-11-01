@@ -21,7 +21,8 @@ type Sessions interface {
 
 // Leases は操作権（リース）の取得・解放・強制剥奪と、保持者の読み取り。実体は service.LeaseManager。
 type Leases interface {
-	Acquire(ctx context.Context, who domain.Actor) (service.Lease, error)
+	// RequestAcquire は承認を待たない取得（service.LeaseManager.RequestAcquire）。承認が要れば pending = true ですぐ返る。
+	RequestAcquire(ctx context.Context, who domain.Actor) (l service.Lease, pending bool, err error)
 	Release(who domain.Actor)
 	Revoke(by domain.Actor) error
 	Holder() (service.Holder, bool)

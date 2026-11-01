@@ -125,7 +125,7 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode) error {
 		Platform: app.Platform{
 			Capturer: newCapturer(sc), Input: &input{FakeInput: platformtest.NewFakeInput(), scene: sc, log: logger},
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
-			Launcher: platformtest.NewFakeAppLauncher(), FilePicker: platformtest.NewFakeFilePicker(),
+			Launcher: platformtest.NewFakeAppLauncher(), FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
 			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
 		},
 		Watcher: watcher, WhoIs: whois,

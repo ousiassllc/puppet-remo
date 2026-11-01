@@ -76,8 +76,75 @@ func marshalDetail(detail map[string]any) json.RawMessage {
 	return b
 }
 
-// leaseAuditEntry はリースの遷移を監査エントリにする（kind = lease）。
+// 承認の監査のイベント名（kind = lease。docs/architecture/er.md のカタログ）。approval.reset は HostAdmin.ResetApproval が記録する。
+const (
+	approvalRequestedAuditEvent = "approval.requested"
+	approvalGrantedAuditEvent   = "approval.granted"
+	approvalDeniedAuditEvent    = "approval.denied"
+	approvalTimeoutAuditEvent   = "approval.timeout"
+	approvalWithdrawnAuditEvent = "approval.withdrawn"
+)
+
+// leaseAuditEntries はリースの遷移を監査エントリにする（kind = lease）。ほとんどは 1 件で、承認の遷移は approval.* を足す:
+//
+//	idle → pending_approval              approval.requested
+//	pending_approval → held              approval.granted と lease.acquire（この順）
+//	pending_approval → idle（理由別）    approval.denied / approval.timeout / approval.withdrawn（取り下げ。detail.reason に理由）
+//
 // 強制剥奪（lease.revoke）の操作主体は剥奪した側（ホスト GUI なら host）で、剥奪された保持者は detail に残す。
+func leaseAuditEntries(ev domain.LeaseEvent) []repository.AuditEntry {
+	switch {
+	case ev.To == domain.LeasePendingApproval:
+		return []repository.AuditEntry{approvalAuditEntry(ev, approvalRequestedAuditEvent, auditOK, nil)}
+	case ev.From == domain.LeasePendingApproval && ev.To == domain.LeaseHeld:
+		return []repository.AuditEntry{approvalAuditEntry(ev, approvalGrantedAuditEvent, auditOK, nil), leaseAuditEntry(ev)}
+	case ev.From == domain.LeasePendingApproval && ev.To == domain.LeaseIdle:
+		return []repository.AuditEntry{approvalEndAuditEntry(ev)}
+	}
+	return []repository.AuditEntry{leaseAuditEntry(ev)}
+}
+
+// approvalEndAuditEntry は承認待ちが held にならずに終わった遷移（pending_approval → idle）を、理由で
+// approval.denied（ホストの拒否）・approval.timeout（60 秒の失効）・approval.withdrawn（それ以外の取り下げ）にする。
+func approvalEndAuditEntry(ev domain.LeaseEvent) repository.AuditEntry {
+	switch ev.Reason {
+	case domain.ReleaseApprovalDenied:
+		return approvalAuditEntry(ev, approvalDeniedAuditEvent, auditDenied, domain.ErrApprovalDenied)
+	case domain.ReleaseApprovalTimeout:
+		return approvalAuditEntry(ev, approvalTimeoutAuditEvent, auditDenied, domain.ErrApprovalTimeout)
+	}
+	return approvalAuditEntry(ev, approvalWithdrawnAuditEvent, auditOK, nil)
+}
+
+// approvalAuditEntry は承認の遷移の監査エントリ。操作主体は承認を求めたセッション。detail は client_id・lease_id と、
+// 求めた側の種別・表示名だけ（資格情報・パス・引数は入れない）。理由があれば reason を足す。
+func approvalAuditEntry(ev domain.LeaseEvent, event, result string, err error) repository.AuditEntry {
+	h := ev.Lease.Holder
+	detail := map[string]any{
+		"client_id": h.ClientID, "lease_id": ev.Lease.ID, "holder_kind": string(h.Kind), "holder_label": h.Label,
+	}
+	if ev.Reason != "" {
+		detail["reason"] = string(ev.Reason)
+	}
+	e := repository.AuditEntry{
+		TS:          ev.At,
+		Kind:        "lease",
+		Event:       event,
+		ActorType:   h.Kind,
+		ClientID:    h.ClientID,
+		ClientLabel: h.Label,
+		SessionID:   h.SessionID,
+		LeaseID:     ev.Lease.ID,
+		Result:      result,
+		DetailJSON:  marshalDetail(detail),
+	}
+	if err != nil {
+		e.ErrorCode = string(domain.CodeOf(err))
+	}
+	return e
+}
+
+// leaseAuditEntry はリースの取得・解放・剥奪の遷移を監査エントリにする（kind = lease）。
 func leaseAuditEntry(ev domain.LeaseEvent) repository.AuditEntry {
 	if ev.Reason == domain.ReleaseRevoked {
 		return leaseRevokeAuditEntry(ev)

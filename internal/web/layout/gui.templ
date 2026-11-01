@@ -79,3 +79,20 @@ templ Dialog(title string) {
 		</body>
 	</html>
 }
+
+// Overlay は操作中オーバーレイ（#69）のウィンドウのページの外枠。透明なウィンドウの上に枠と文言だけを描くので、背景色は付けず、
+// htmx・app.js・ポーリングも読み込まない（入力を受けず、状態の更新はアプリがウィンドウの URL を差し替える）。CSP: NFR-S19。
+templ Overlay(title string) {
+	<!DOCTYPE html>
+	<html lang="ja" class="bg-transparent">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } - puppet-remo</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body class="m-0 h-screen overflow-hidden bg-transparent antialiased">
+			{ children... }
+		</body>
+	</html>
+}

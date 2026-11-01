@@ -354,6 +354,7 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 		AuditRetentionDays:  strings.TrimSpace(c.PostForm(service.FieldAuditRetentionDays)),
 		AuditThumbsMaxBytes: strings.TrimSpace(c.PostForm(service.FieldAuditThumbsMaxBytes)),
 		UpdateApplyMode:     strings.TrimSpace(c.PostForm(service.FieldUpdateApplyMode)),
+		UpdateChannel:       strings.TrimSpace(c.PostForm(service.FieldUpdateChannel)),
 		Autostart:           current.Autostart,
 	}
 	if h.d.Settings.AutostartAvailable() {
@@ -363,7 +364,7 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 	var errs view.SettingsErrors
 	s := service.HostSettings{
 		KillSwitchHotkey: in.Hotkey, Autostart: in.Autostart,
-		AuditThumbnailsEnabled: in.AuditThumbnails, AuditRecordText: in.AuditRecordText, UpdateApplyMode: in.UpdateApplyMode,
+		AuditThumbnailsEnabled: in.AuditThumbnails, AuditRecordText: in.AuditRecordText, UpdateApplyMode: in.UpdateApplyMode, UpdateChannel: in.UpdateChannel,
 	}
 	s.Port, errs.Port = parseInt(in.Port)
 	s.ScreenshotMaxDimension, errs.ScreenshotMaxDim = parseInt(in.ScreenshotMaxDim)
@@ -413,6 +414,7 @@ func mergeFieldErrors(errs view.SettingsErrors, verr *service.ValidationError) v
 	fill(&errs.AuditRetentionDays, service.FieldAuditRetentionDays)
 	fill(&errs.AuditThumbsMaxBytes, service.FieldAuditThumbsMaxBytes)
 	fill(&errs.UpdateApplyMode, service.FieldUpdateApplyMode)
+	fill(&errs.UpdateChannel, service.FieldUpdateChannel)
 	return errs
 }
 
