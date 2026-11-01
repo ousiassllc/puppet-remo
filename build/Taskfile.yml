@@ -12,15 +12,15 @@ tasks:
       - ../appicon-small.svg
       - render.mjs
       - package.json
-      - package-lock.json
+      - bun.lock
     generates:
       - ../appicon.png
       - ../windows/icon.ico
       - ../../internal/app/tray.png
       - ../../docs/screenshots/icon/app-icon-sizes.png
     cmds:
-      - npm ci --no-audit --no-fund
-      - node render.mjs
+      - bun install --frozen-lockfile
+      - bun render.mjs
 
   update:build-assets:
     summary: config.yml の info から windows/ の資産（info.json・manifest・wails_tools.nsh）を作り直す（project.nsi は手で調整済み。差分を確認すること）

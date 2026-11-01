@@ -1,6 +1,6 @@
 // build/appicon.svg（大きいサイズ）と build/appicon-small.svg（小さいサイズ）から、アイコンの生成物を作る。
 // 出力: build/appicon.png（512px）・build/windows/icon.ico（7 サイズ）・internal/app/tray.png（64px）・見本 docs/screenshots/icon/app-icon-sizes.png
-// 使い方: cd build/icons && npm ci && node render.mjs（task common:generate:icons）
+// 使い方: cd build/icons && bun install --frozen-lockfile && bun render.mjs（task common:generate:icons）
 import { Resvg } from "@resvg/resvg-js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";

@@ -1,7 +1,7 @@
 {
   "name": "puppet-remo-icons",
   "private": true,
-  "description": "アイコン（build/appicon.svg・build/appicon-small.svg）から PNG・ICO・トレイ・見本を作る。node render.mjs",
+  "description": "アイコン（build/appicon.svg・build/appicon-small.svg）から PNG・ICO・トレイ・見本を作る。bun render.mjs",
   "type": "module",
   "dependencies": {
     "@resvg/resvg-js": "2.6.2"
