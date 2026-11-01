@@ -1,0 +1,12 @@
+name: setup-bun
+description: >-
+  フロントエンド（static/）のパッケージマネージャ兼ランタイムの bun を、sudo なしで用意する。
+  版と SHA-256 は scripts/ci/install-bun.sh に固定してある。
+  呼び出す側が先に actions/checkout を済ませておくこと（リポジトリのスクリプトを使う）。
+
+runs:
+  using: composite
+  steps:
+    - name: bun を導入（版は scripts/ci/install-bun.sh の固定値）
+      shell: bash
+      run: ./scripts/ci/install-bun.sh

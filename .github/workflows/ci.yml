@@ -15,8 +15,8 @@ concurrency:
 # push では main と develop だけ、作業ブランチは pull_request でだけ走らせる（同じコミットで二重に走らない）。
 # すべてのジョブはセルフホストの Linux ランナー（[self-hosted, Linux, X64]）で走らせる。
 # Windows 向けの検査は GOOS=windows のクロスコンパイル（build と vet）だけで、Windows の実機は使わない。
-# ツール（Go・Node・golangci-lint・templ）はランナーに入っている前提にせず、setup アクションで導入する。
-# Go・npm のキャッシュはジョブ専用の一時領域（RUNNER_TEMP）に置き、ランナーのホームや他ジョブへ状態を残さない。
+# ツール（Go・bun・golangci-lint・templ）はランナーに入っている前提にせず、setup アクションで導入する（bun は ./.github/actions/setup-bun）。
+# Go・bun のキャッシュはジョブ専用の一時領域（RUNNER_TEMP）に置き、ランナーのホームや他ジョブへ状態を残さない。
 # Lit のテスト・Playwright の E2E は M2（Web UI）で足す。
 # 配信（nightly.yml・release.yml。docs/operations/release.md）の検査として、installer ジョブでインストーラをビルドだけして
 # （公開はしない）runner の道具の導入を確かめ、release-scripts ジョブで配信スクリプトのテストとワークフローの検査をする。
@@ -113,12 +113,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Go・npm のキャッシュをジョブ専用の領域にする
+      - name: Go・bun のキャッシュをジョブ専用の領域にする
         run: |
           {
             echo "GOPATH=$RUNNER_TEMP/go"
             echo "GOCACHE=$RUNNER_TEMP/go-build"
-            echo "npm_config_cache=$RUNNER_TEMP/npm"
+            echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun"
           } >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
 
@@ -127,9 +127,7 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
+      - uses: ./.github/actions/setup-bun
 
       - name: templ を導入（go.mod の版）
         run: go install "github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ)"
@@ -144,17 +142,17 @@ jobs:
             exit 1
           fi
 
-      - name: 依存の導入（package-lock.json のとおり）
+      - name: 依存の導入（bun.lock のとおり）
         working-directory: static
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: フロントエンドのビルド（esbuild・Tailwind・htmx の同梱）
         working-directory: static
-        run: npm run build
+        run: bun run build
 
       - name: TypeScript の型検査
         working-directory: static
-        run: npx tsc -p .
+        run: bunx tsc -p .
 
       - name: go build (production。dist を go:embed)
         run: go build -tags production ./...

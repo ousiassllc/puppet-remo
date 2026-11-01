@@ -82,7 +82,7 @@ Windows 向けのインストーラ（NSIS）は、GitHub Actions が GitHub Rel
 
 ## ビルドと開発
 
-必要なもの: Go（`go.mod` の `go` 行の版）、Node.js、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。
+必要なもの: Go（`go.mod` の `go` 行の版）、[bun](https://bun.sh/)（フロントエンドのパッケージマネージャ。版は `scripts/ci/install-bun.sh` に固定）、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。フロントエンドの依存は `task frontend:install`（`bun install --frozen-lockfile`）で入ります。
 
 ```sh
 task               # 利用できるタスクの一覧

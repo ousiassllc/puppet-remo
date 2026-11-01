@@ -109,36 +109,31 @@ tasks:
           fi
 
   frontend:install:
-    desc: フロントエンドの依存を package-lock.json のとおりに導入する
+    desc: フロントエンドの依存を bun.lock のとおりに導入する（導入済みなら bun がすぐ終える）
     dir: static
-    sources:
-      - package.json
-      - package-lock.json
-    generates:
-      - node_modules/.package-lock.json
     cmds:
-      - npm ci
+      - bun install --frozen-lockfile
 
   frontend:build:
     desc: esbuild と Tailwind CLI で static/dist を作る（htmx と拡張を同梱。毎回作り直す）
     deps: [frontend:install]
     dir: static
     cmds:
-      - npm run build
+      - bun run build
 
   frontend:typecheck:
     desc: TypeScript の型検査
     deps: [frontend:install]
     dir: static
     cmds:
-      - npx tsc -p .
+      - bunx tsc -p .
 
   frontend:dev:
     desc: esbuild と Tailwind のウォッチ（WAILS_VITE_PORT で serve。wails3 dev が呼ぶ）
     deps: [frontend:install]
     dir: static
     cmds:
-      - npm run dev
+      - bun run dev
 
   gui:demo:
     desc: GUI ルーターを偽の service で loopback に起動する（スクリーンショット・見た目の確認用。本番のバイナリには入らない）
