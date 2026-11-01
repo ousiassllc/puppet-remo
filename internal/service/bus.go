@@ -8,9 +8,10 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
-// Bus のイベントの種類（docs/components/overview.md §5.10、API 仕様 §7.4）。M1 で使うものだけ。
+// Bus のイベントの種類（docs/components/overview.md §5.10、API 仕様 §7.4）。
 const (
 	TopicLease              = "lease"
+	TopicApproval           = "approval"
 	TopicConnectionRequests = "connection-requests"
 	TopicKillSwitch         = "killswitch"
 	TopicServerStatus       = "server-status"
