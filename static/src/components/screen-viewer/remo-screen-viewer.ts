@@ -320,8 +320,9 @@ export class RemoScreenViewer extends LitElement {
       log.warn("dropped a malformed frame", error);
       return;
     }
-    // 連番が古いフレームは捨てる。
-    if (frame.seq <= this.lastSeq) {
+    // 連番が古い差分フレームは捨てる。キーフレームは全面の置き換えなので常に採用し、連番を引き継ぐ
+    // （モニター・品質・FPS を変えると、サーバーは新しいプロファイルの連番を 1 から数え直すため）。
+    if (!frame.keyframe && frame.seq <= this.lastSeq) {
       return;
     }
     this.lastSeq = frame.seq;
