@@ -113,14 +113,14 @@ func TestAuditReaderRedactsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := argMap(d.Args)
-	for _, k := range []string{"token", "access_token", "api_key", "Password", "token_hash", "text", "clipboard", "content", "label_text"} {
+	for _, k := range []string{"token", "access_token", "api_key", "Password", "token_hash", "clipboard", "content", "label_text"} {
 		if got[k] != "[REDACTED]" {
 			t.Errorf("%s = %q, want [REDACTED]", k, got[k])
 		}
 	}
-	for k, want := range map[string]string{"text_len": "16", "token_id": "01HX", "task_id": "t1"} {
+	for k, want := range map[string]string{"text_len": "16", "token_id": "01HX", "task_id": "t1", "text": "my secret typing"} {
 		if got[k] != want {
-			t.Errorf("%s = %q, want %q (IDs and counts are not secrets)", k, got[k], want)
+			t.Errorf("%s = %q, want %q (IDs, counts and the text recorded by audit.record_text are shown as recorded)", k, got[k], want)
 		}
 	}
 	if got["note"] != "auth [REDACTED] end" || got["hdr"] != "Bearer [REDACTED]" || got["h"] != "[REDACTED]" {
@@ -130,7 +130,7 @@ func TestAuditReaderRedactsSecrets(t *testing.T) {
 		t.Errorf("nest = %s", got["nest"])
 	}
 	for _, a := range d.Args {
-		for _, secret := range []string{"hunter2", "sk-123", "prm_abc", hash, "my secret typing", "prm_zzz"} {
+		for _, secret := range []string{"hunter2", "sk-123", "prm_abc", hash, "prm_zzz"} {
 			if strings.Contains(a.Value, secret) {
 				t.Errorf("arg %s leaks %q: %s", a.Key, secret, a.Value)
 			}
@@ -234,4 +234,18 @@ func (a tamperedAudit) Get(ctx context.Context, id int64) (repository.AuditEntry
 	e, err := a.Audit.Get(ctx, id)
 	e.Thumb = &repository.ThumbMeta{RelPath: "../secret", SizeBytes: 1, Width: 1, Height: 1}
 	return e, err
+}
+
+// audit.record_text が記録した text は見せるが、本文の中のトークンの形は伏せる。
+func TestAuditReaderShowsRecordedTextButRedactsTokensInIt(t *testing.T) {
+	e := newReaderEnv(t)
+	id := e.add(t, `{"text":"hello prm_abcdefgh12345678 <b>","text_len":30,"text_truncated":true}`, nil)
+	d, err := e.reader.Get(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := argMap(d.Args)
+	if got["text"] != "hello [REDACTED] <b>" || got["text_len"] != "30" || got["text_truncated"] != "true" {
+		t.Fatalf("args = %v", got)
+	}
 }
