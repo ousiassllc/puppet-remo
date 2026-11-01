@@ -1,0 +1,63 @@
+# Git フック（Lefthook）。導入は README.md「ビルドと開発」、Taskfile.yml の hooks:* を参照。
+# pre-commit は CI（.github/workflows/ci.yml）で落ちる検査のうち軽いものを、触ったファイルに関係するものだけ手元で先に走らせる。
+# pre-push で go test ./... を走らせる（CI の -race、GOOS=windows の build・vet・lint、本番ビルドは task ci で確認する）。
+# ジョブは順に実行し（piped: true）、1 つ落ちたら残りは飛ばす。ツール（golangci-lint・templ・bun）は PATH に要る。
+
+pre-commit:
+  piped: true
+  jobs:
+    - name: gofmt
+      glob: "*.go"
+      run: |
+        out=$(gofmt -l {staged_files})
+        if [ -n "$out" ]; then
+          echo "gofmt が必要なファイル（gofmt -w で整形すること）:"
+          echo "$out"
+          exit 1
+        fi
+
+    - name: golangci-lint
+      glob:
+        - "*.go"
+        - go.mod
+        - go.sum
+        - .golangci.yml
+      run: golangci-lint run ./...
+
+    - name: check-imports
+      glob:
+        - "*.go"
+        - go.mod
+        - scripts/check-imports.sh
+      run: ./scripts/check-imports.sh
+
+    # CI の「templ generate の差分チェック」と同じ。ただしコミット前なので、生成物がインデックス（ステージ済みの内容）と
+    # 一致するかを見る（task templ:check は HEAD との差分を見るため、.templ と _templ.go を一緒にステージした正しいコミットでも落ちる）。
+    - name: templ-generate
+      glob:
+        - "*.templ"
+        - "*_templ.go"
+        - go.mod
+      run: |
+        templ generate
+        if ! git diff --quiet -- '*_templ.go' || [ -n "$(git ls-files --others --exclude-standard -- '*_templ.go')" ]; then
+          echo "_templ.go が .templ と一致していない。task templ:generate を実行して git add すること:"
+          git status --short -- '*_templ.go'
+          exit 1
+        fi
+
+    # CI のフロントエンドの型検査（static/ で bunx tsc -p .）と同じ。
+    - name: frontend-typecheck
+      root: static/
+      glob:
+        - "static/src/**/*.ts"
+        - static/tsconfig.json
+        - static/package.json
+        - static/bun.lock
+      run: bun install --frozen-lockfile && bunx tsc -p .
+
+pre-push:
+  piped: true
+  jobs:
+    - name: go-test
+      run: go test ./...

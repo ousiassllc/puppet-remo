@@ -82,7 +82,7 @@ Windows 向けのインストーラ（NSIS）は、GitHub Actions が GitHub Rel
 
 ## ビルドと開発
 
-必要なもの: Go（`go.mod` の `go` 行の版）、[bun](https://bun.sh/)（フロントエンドのパッケージマネージャ。版は `scripts/ci/install-bun.sh` に固定）、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。フロントエンドの依存は `task frontend:install`（`bun install --frozen-lockfile`）で入ります。
+必要なもの: Go（`go.mod` の `go` 行の版）、[bun](https://bun.sh/)（フロントエンドのパッケージマネージャ。版は `scripts/ci/install-bun.sh` に固定）、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）、[golangci-lint](https://golangci-lint.run/)（版は CI と同じ v2.15.0）、[Lefthook](https://lefthook.dev/)（Git フック。`task tools:lefthook` で導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。フロントエンドの依存は `task frontend:install`（`bun install --frozen-lockfile`）で入ります。
 
 ```sh
 task               # 利用できるタスクの一覧
@@ -99,6 +99,24 @@ task dev           # wails3 dev で開発する（Windows。別ターミナル�
 ```
 
 Linux / macOS では、Windows 専用のコードを除いてビルド・テストできます（`GOOS=windows go build ./...` でクロスビルドも確認できます）。実機でしか確かめられない項目は、[Windows 実機スモーク手順](docs/operations/smoke-windows.md) にまとめています。
+
+### Git フック（Lefthook）
+
+コミットとプッシュの前に、CI で落ちる検査を手元で先に走らせます。設定は [`lefthook.yml`](lefthook.yml) です。clone したら、フックを入れてください（clone ごとに一度）。
+
+```sh
+task tools:lefthook   # lefthook を導入する（go install github.com/evilmartians/lefthook/v2@v2.1.17。$(go env GOPATH)/bin を PATH に通す）
+task hooks:install    # Git フックを入れる（lefthook install と同じ）
+```
+
+- pre-commit: ステージしたファイルに関係する検査だけを順に走らせます（落ちたらコミットされず、残りは飛ばします）。
+  - gofmt（ステージした `*.go`。差分があれば失敗）
+  - golangci-lint（ホスト OS）と `scripts/check-imports.sh`（`*.go`・`go.mod` などの変更時）
+  - templ generate の差分チェック（`.templ`・`_templ.go` の変更時。生成物がステージした内容と一致すること）
+  - フロントエンドの型検査（`static/` の変更時。`bun install --frozen-lockfile` のあと `bunx tsc -p .`）
+- pre-push: `go test ./...`。
+
+フックを入れずに手元で実行する（`.git/hooks` には触れません）には `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使います。CI の残り（`go test -race`、`GOOS=windows` の build・vet・lint、本番ビルド）は `task ci` で確認します。
 
 ## ドキュメント
 
