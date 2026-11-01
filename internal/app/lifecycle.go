@@ -95,6 +95,10 @@ func (a *App) Start(ctx context.Context) error {
 
 	bridgeDone := service.BridgeLeaseEvents(runCtx, a.leases, a.bus)
 	a.spawn(func() { <-bridgeDone })
+	// 承認ダイアログ（FR-H05）。購読は Watch の中で済む（ここより後の承認要求は取りこぼさない）。runCtx の終了（Shutdown）で、
+	// 開いているダイアログを閉じてから戻る。
+	dialogsDone := a.dialogs.Watch(runCtx)
+	a.spawn(func() { <-dialogsDone })
 	a.spawn(func() {
 		if err := a.tracker.Run(runCtx); err != nil {
 			a.log.Error("tailscaled status tracker stopped", "err", err)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync/atomic"
 	"time"
 
@@ -87,6 +88,52 @@ func (h *WailsHost) serveGUI(w http.ResponseWriter, r *http.Request) {
 	(*g).ServeHTTP(w, r)
 }
 
+// Windows は承認ダイアログなどを開く Windows を返す（app.Config.Windows に渡す）。ウィンドウの生成は Run が Wails を動かしたあとに起きる。
+func (h *WailsHost) Windows() Windows { return wailsWindows{h} }
+
+// 承認ダイアログのウィンドウの大きさ（固定。クライアント名・種別・要求の内容・残り時間・許可 / 拒否が収まる大きさ）。
+const (
+	approvalWidth  = 440
+	approvalHeight = 340
+)
+
+// wailsWindows は Windows の Wails 実装。
+type wailsWindows struct{ h *WailsHost }
+
+// Main はメインウィンドウ（Run が作ったもの）。Run の前は nil を返す（Shell は Run の中で作るので問題にならない）。
+func (w wailsWindows) Main() MainWindow {
+	win := w.h.main.Load()
+	if win == nil {
+		return nil
+	}
+	return wailsWindow{win}
+}
+
+// OpenApproval は承認ダイアログのウィンドウを開く（FR-H05）。メインウィンドウと同じ serveGUI が /approvals/{id} を配信する。
+//   - 固定サイズ・最前面・センタリング・最小化 / 最大化なし
+//   - ContentProtectionEnabled: true（WDA_EXCLUDEFROMCAPTURE）。スクリーンショットにもライブ画面にも写さない（NFR-S06）
+//   - プロセス内のウィンドウなので、platform.WindowManager の Own（プロセス ID の一致）で入力拒否（own_window）になる
+//
+// 許可も拒否も押さずに閉じられた場合は、承認待ちが 60 秒の失効で拒否になる（approvalDialogs の判断）。トレイのメニューに項目は足さない。
+func (w wailsWindows) OpenApproval(id string) Window {
+	win := w.h.wails.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "approval-" + id,
+		Title:            "puppet-remo 承認",
+		Width:            approvalWidth,
+		Height:           approvalHeight,
+		DisableResize:    true,
+		AlwaysOnTop:      true,
+		InitialPosition:  application.WindowCentered,
+		URL:              "/approvals/" + url.PathEscape(id),
+		BackgroundColour: application.NewRGB(241, 245, 249),
+		// 承認ダイアログは AI の入力を受けず、画面にも写さない（NFR-S06）。
+		ContentProtectionEnabled: true,
+		MinimiseButtonState:      application.ButtonHidden,
+		MaximiseButtonState:      application.ButtonHidden,
+	})
+	return wailsWindow{win}
+}
+
 // MainWindowHandle はメインウィンドウの HWND を返す。ウィンドウがまだ無い（Run の前）か、破棄済みなら 0。
 // platform/windows.NewFilePicker の owner に渡し、ファイル選択ダイアログをメインウィンドウに対するモーダルにする（FR-H12）。
 // ダイアログは別のスレッドから開かれるが、親ウィンドウは Wails の UI スレッドのものでよい。
@@ -124,7 +171,7 @@ func (h *WailsHost) Run(a *App) error {
 	h.main.Store(win)
 
 	tray := newWailsTray(h.wails, h.opts.Icon)
-	shell := NewShell(a, wailsWindow{win}, tray, h.wails.Quit, h.log)
+	shell := NewShell(a, h.Windows().Main(), tray, h.wails.Quit, h.log)
 	h.shell.Store(shell)
 	tray.bind(shell)
 
@@ -167,6 +214,9 @@ func (w wailsWindow) Show(path string) {
 }
 
 func (w wailsWindow) Hide() { w.w.Hide() }
+
+// Close は承認ダイアログを閉じる（Window）。破棄済みなら Wails が何もしない。
+func (w wailsWindow) Close() { w.w.Close() }
 
 func (w wailsWindow) Visible() bool { return w.w.IsVisible() }
 

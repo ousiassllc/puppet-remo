@@ -62,10 +62,12 @@ type Platform struct {
 	Autostart service.Autostart
 }
 
-// Config は New の設定。Repo・Platform（Autostart 以外）・Watcher・WhoIs・Static・Logs は必須。
+// Config は New の設定。Repo・Platform（Autostart 以外）・Windows・Watcher・WhoIs・Static・Logs は必須。
 type Config struct {
 	Repo     Repo
 	Platform Platform
+	// Windows はウィンドウの生成・破棄（承認ダイアログ。§7）。本番は Wails（WailsHost.Windows）、テストは FakeWindows。
+	Windows Windows
 	// Watcher と WhoIs は tailscaled の LocalAPI の上に作る（tailnet.NewWatcher / NewWhoIs）。
 	Watcher tailnet.Watcher
 	WhoIs   tailnet.WhoIs
@@ -103,6 +105,7 @@ type App struct {
 
 	leases   service.LeaseManager
 	approval service.Approval // リース取得の承認待ち（FR-L07）
+	dialogs  *approvalDialogs // 承認待ちごとのダイアログの開閉（FR-H05）
 	authz    service.Authz
 	audit    *service.Audit
 	admin    service.HostAdmin
@@ -162,6 +165,8 @@ func (c Config) validate() error {
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
 		p.Hotkey == nil, p.Power == nil:
 		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey and Power")
+	case c.Windows == nil:
+		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
 		return errors.New("app: Watcher and WhoIs are required")
 	case c.Static == nil:
@@ -193,11 +198,13 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lease idle timeout: %w", err)
 	}
-	// 承認待ちの要求（FR-L07）。要求のたびに Bus へ approval を出す。ダイアログを開く購読側と Resolve を呼ぶ GUI ルーターは別の作業（#68）。
+	// 承認待ちの要求（FR-L07）。要求のたびに Bus へ approval を出し、終わるたびに approval-closed を出す。ダイアログを開閉するのは
+	// 購読側の approvalDialogs（Start が動かす）、Resolve を呼ぶのは GUI ルーター（/approvals/{id}/allow・deny）。
 	a.approval, err = service.NewApproval(service.ApprovalConfig{Clock: cfg.Clock, IDs: cfg.IDs, Bus: a.bus})
 	if err != nil {
 		return fmt.Errorf("approval: %w", err)
 	}
+	a.dialogs = newApprovalDialogs(cfg.Windows, a.approval, a.bus, a.log)
 	a.leases, err = service.NewLeaseManager(service.LeaseConfig{
 		Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log,
 		Approval: a.approval, Clients: cfg.Repo.Clients(),
@@ -344,7 +351,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
-		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin,
+		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin, Approval: a.approval,
 		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {

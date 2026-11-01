@@ -92,7 +92,7 @@ func run(remoteAddr, guiAddr string) error {
 
 	if err := db.Clients().Create(ctx, domain.Client{
 		ID: registeredID, StableNodeID: "node-demo-1", LoginName: "demo-user@example.com", DisplayName: "demo-laptop",
-		WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAuto, // 承認ダイアログ（#68）が入るまで、デモは承認を待たずにリースを取る
+		WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAuto, // デモは承認ダイアログを開けない（Wails が無い）ので、承認を待たずにリースを取る
 	}); err != nil {
 		return err
 	}
@@ -110,7 +110,8 @@ func run(remoteAddr, guiAddr string) error {
 	watcher := &staticWatcher{st: tailnet.Status{LoggedIn: true, DNSName: demoDNSName, IPs: []netip.Addr{netip.MustParseAddr(demoTailnet)}}}
 
 	a, err := app.New(ctx, app.Config{
-		Repo: db,
+		Repo:    db,
+		Windows: app.NewFakeWindows(), // デモは Wails を使わない（承認ダイアログは開かない。リースは承認なしで取る）
 		Platform: app.Platform{
 			Capturer: newCapturer(sc), Input: &input{FakeInput: platformtest.NewFakeInput(), scene: sc, log: logger},
 			Windows: windows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(windows),
