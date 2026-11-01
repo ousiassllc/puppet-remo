@@ -5,6 +5,9 @@
 // 本番のバイナリには入らない。使い方:
 //
 //	task frontend:build && go run ./internal/router/internal/guidemo -addr 127.0.0.1:8899
+//
+// -lease で操作権の状態（idle / pending_approval / held。既定 held）を選べる。pending_approval ではダッシュボードに「承認待ち」を出し、
+// 承認ダイアログのページ（/approvals/ap-demo-001。残り時間は固定の偽の時計で 60 秒のまま）が開ける。
 package main
 
 import (
@@ -31,13 +34,24 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8899", "待ち受けるアドレス（loopback のみ）")
+	lease := flag.String("lease", leaseHeld, "操作権の状態（idle / pending_approval / held）")
 	flag.Parse()
-	if err := run(*addr); err != nil {
+	if err := run(*addr, *lease); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(addr string) error {
+// 操作権の状態（-lease）。
+const (
+	leaseIdle    = "idle"
+	leasePending = "pending_approval"
+	leaseHeld    = "held"
+)
+
+func run(addr, lease string) error {
+	if lease != leaseIdle && lease != leasePending && lease != leaseHeld {
+		return fmt.Errorf("guidemo: -lease は idle / pending_approval / held のどれか（%q）", lease)
+	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return err
@@ -46,7 +60,7 @@ func run(addr string) error {
 		return fmt.Errorf("guidemo は loopback でだけ待ち受ける（-addr %q）", addr)
 	}
 
-	f := seed()
+	f := seed(lease)
 	deps := f.Deps()
 	h, err := gui.New(deps)
 	if err != nil {
@@ -82,7 +96,7 @@ func run(addr string) error {
 }
 
 // seed は見た目の確認用の架空のデータ（実在しないホスト名・ユーザー・IP）を入れる。
-func seed() *guitest.Fakes {
+func seed(lease string) *guitest.Fakes {
 	f := guitest.New()
 	now := time.Now()
 	f.Clock.T = now
@@ -99,15 +113,23 @@ func seed() *guitest.Fakes {
 	f.Sessions.Items = []service.SessionInfo{
 		{ID: "s1", ClientID: "client-001", Label: "demo-desktop", Kind: domain.ActorMCP, Since: now.Add(-12 * time.Minute)},
 	}
-	f.Leases.Held = true
-	f.Leases.H = service.Holder{
-		LeaseID: "lease-1", Actor: domain.Actor{Kind: domain.ActorMCP, ClientID: "client-001", Label: "demo-desktop", SessionID: "s1"},
-		Since: now.Add(-3 * time.Minute), IdleRemaining: 4*time.Minute + 20*time.Second,
+	demoActor := domain.Actor{Kind: domain.ActorMCP, ClientID: "client-001", Label: "demo-desktop", SessionID: "s1"}
+	switch lease {
+	case leaseHeld:
+		f.Leases.Held = true
+		f.Leases.H = service.Holder{LeaseID: "lease-1", Actor: demoActor, Since: now.Add(-3 * time.Minute), IdleRemaining: 4*time.Minute + 20*time.Second}
+	case leasePending:
+		// 承認待ち（FR-L07）: ダッシュボードに「承認待ち」、/approvals/ap-demo-001 に承認ダイアログ。
+		f.Leases.HasPending = true
+		f.Leases.PendingLease = service.PendingLease{LeaseID: "lease-1", Actor: demoActor, Since: now.Add(-5 * time.Second)}
+		f.Approval.Reqs = []service.ApprovalRequest{{ID: "ap-demo-001", Kind: service.ApprovalKindLease, Who: demoActor, ExpiresAt: now.Add(service.DefaultApprovalTimeout)}}
 	}
 
+	approvedAt := now.Add(-26 * time.Hour)
 	f.Admin.Cs = []domain.Client{
 		{ID: "client-001", StableNodeID: "node-demo-1", LoginName: "demo-user@example.com", DisplayName: "demo-desktop", WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAlways},
-		{ID: "client-002", StableNodeID: "node-demo-2", LoginName: "demo-user@example.com", DisplayName: "demo-laptop", WebEnabled: true, MCPEnabled: false, ApprovalMode: domain.ApprovalAlways},
+		{ID: "client-002", StableNodeID: "node-demo-2", LoginName: "demo-user@example.com", DisplayName: "demo-laptop", WebEnabled: true, MCPEnabled: false, ApprovalMode: domain.ApprovalFirstTime, ApprovedAt: &approvedAt},
+		{ID: "client-003", StableNodeID: "node-demo-5", LoginName: "demo-user@example.com", DisplayName: "demo-notebook", WebEnabled: true, MCPEnabled: true, ApprovalMode: domain.ApprovalAuto},
 	}
 	f.Admin.Requests = []service.ConnRequest{
 		{ID: "req-001", StableNodeID: "node-demo-3", LoginName: "guest@example.com", DisplayName: "demo-phone", RemoteIP: "100.64.0.21", Status: service.ConnPending,

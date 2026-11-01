@@ -50,7 +50,7 @@ templ ClientCard(c view.Client) {
 				hx-swap="outerHTML"
 				hx-disabled-elt="find select"
 			>
-				<label for={ "mode-" + c.ID } class="text-sm text-slate-700">承認モード</label>
+				<label for={ "mode-" + c.ID } class="shrink-0 whitespace-nowrap text-sm text-slate-700">承認モード</label>
 				@atoms.Select("mode-"+c.ID, "approval_mode", approvalOptions(c.Modes))
 			</form>
 			if c.FirstTimeStatus != "" {
