@@ -16,12 +16,13 @@ import (
 
 // ctlAuditStore は repository.Audit の偽物。block を設定すると Append がそのチャネルを待つ。
 type ctlAuditStore struct {
-	mu      sync.Mutex
-	entries []repository.AuditEntry
-	err     error
-	block   chan struct{}
-	entered chan struct{} // block 中の最初の Append で閉じられる
-	once    sync.Once
+	repository.Audit // Append 以外は呼ばれない（nil）
+	mu               sync.Mutex
+	entries          []repository.AuditEntry
+	err              error
+	block            chan struct{}
+	entered          chan struct{} // block 中の最初の Append で閉じられる
+	once             sync.Once
 }
 
 func (s *ctlAuditStore) Append(_ context.Context, e repository.AuditEntry) (int64, error) {
