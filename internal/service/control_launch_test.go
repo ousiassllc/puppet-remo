@@ -98,8 +98,8 @@ func TestControlLaunchStartsTheRegisteredApp(t *testing.T) {
 		t.Errorf("entry = %+v", en)
 	}
 	d := auditDetail(t, en)
-	if len(d) != 3 || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["pid"] != float64(res.PID) {
-		t.Errorf("detail = %v, want exactly app_id, label and pid", d)
+	if len(d) != 4 || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["pid"] != float64(res.PID) || d["reused_existing_window"] != true {
+		t.Errorf("detail = %v, want exactly app_id, label, pid and reused_existing_window", d)
 	}
 	assertNoSecrets(t, en, nil)
 }
@@ -789,8 +789,8 @@ func TestControlLaunchByLeaseHoldingAgentSucceeds(t *testing.T) {
 		t.Errorf("entry = %+v", en)
 	}
 	d := auditDetail(t, en)
-	if len(d) != 3 || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["pid"] != float64(res.PID) {
-		t.Errorf("detail = %v, want exactly app_id, label and pid", d)
+	if len(d) != 4 || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["pid"] != float64(res.PID) || d["reused_existing_window"] != true {
+		t.Errorf("detail = %v, want exactly app_id, label, pid and reused_existing_window", d)
 	}
 	assertNoSecrets(t, en, nil)
 

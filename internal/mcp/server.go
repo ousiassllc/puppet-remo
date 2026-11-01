@@ -59,6 +59,10 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"Only one session holds the lease at a time; others get lease_held_by_other. " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
 	"you can pass only an app_id, never a path or arguments, and it needs the lease like input tools. " +
+	"Some apps only bring an already open window forward when launched instead of opening a new one (tabbed single-window apps " +
+	"such as Windows 11 Notepad, browsers, Windows Terminal), and that window may hold the user's unsaved work: " +
+	"launch_app reports the foreground window and sets reused_existing_window when no window of the returned pid was found, " +
+	"but always confirm the target with a screenshot or list_windows before typing or clicking. " +
 	"Tool failures are returned with isError and structuredContent {code, message}."
 
 // PrincipalFunc は連鎖（web/middleware）を通ったリクエストの主体を返す。

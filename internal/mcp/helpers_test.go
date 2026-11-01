@@ -71,6 +71,9 @@ type fakeControl struct {
 	// launches は Launch が受けた app_id の記録。launchErr が非 nil なら、検査（キルスイッチ・リース・許可リスト）の後に Launch がこれを返す。
 	launches  []string
 	launchErr error
+	// launchWindow・launchReused は Launch が返す、起動後の前面のウィンドウと再利用の印。
+	launchWindow *domain.WindowInfo
+	launchReused bool
 
 	// err が非 nil なら、Do・Screenshot・Monitors・Windows・CursorPosition がこれを返す（リースの確認の後）。
 	err error
@@ -172,7 +175,7 @@ func (f *fakeControl) Launch(ctx context.Context, who domain.Actor, appID string
 	if f.launchErr != nil {
 		return service.LaunchResult{}, f.launchErr
 	}
-	return service.LaunchResult{AppID: appID, PID: f.launchPID}, nil
+	return service.LaunchResult{AppID: appID, PID: f.launchPID, Window: f.launchWindow, ReusedExistingWindow: f.launchReused}, nil
 }
 
 // launchRequests は Launch が受けた app_id を順に返す。

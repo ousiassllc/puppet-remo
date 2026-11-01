@@ -269,6 +269,7 @@ sequenceDiagram
     participant L as LeaseManager
     participant R as AppRegistry
     participant P as platform.AppLauncher
+    participant W as platform.WindowManager
     participant AU as Audit
     C->>M: tools/call launch_app(app_id)
     M->>K: Active()
@@ -289,8 +290,10 @@ sequenceDiagram
                 M->>P: Launch(絶対パス, 固定の引数, 作業ディレクトリ)
                 alt CreateProcess 成功
                     P-->>M: pid
-                    M->>AU: 記録 (ok: app_id, label, pid)
-                    M-->>C: { ok, app_id, pid }
+                    M->>W: Foreground / List（pid のウィンドウが前面に出るまで最大およそ 3 秒）
+                    W-->>M: 前面のウィンドウ
+                    M->>AU: 記録 (ok: app_id, label, pid, reused_existing_window)
+                    M-->>C: { ok, app_id, pid, window?, reused_existing_window }
                 else 失敗
                     P-->>M: LaunchError(reason)
                     M->>AU: 記録 (error: launch_failed, reason)
@@ -662,3 +665,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.10 | 2026-10-30 | 起動許可リスト（M1.5）を追加: 構成図（`AppLauncher`・`FilePicker`・許可リスト）、レイヤー表の `platform`、GUI ルーターの提供物、主要フロー「アプリ起動」、ディレクトリ構成（`launcher`・`filepicker`） | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.11 | 2026-10-30 | 許可リストの読み取りを `AppReader` に分け、`Control` には読み取り専用の面だけを渡すことを反映 | #16 の独立レビュー指摘 |
 | 1.12 | 2026-11-01 | 「運用ログと監査ログ」（違いと、ログ画面の読み方・選んだ理由）を追加し、GUI ルーターの画面に「ログ」を追記 | #45 |
+| 1.13 | 2026-11-01 | 「アプリ起動」の流れ図に、起動後のウィンドウの観測（`WindowManager`。最大およそ 3 秒）と、応答の `window`・`reused_existing_window` を追記 | #46 |

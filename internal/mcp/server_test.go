@@ -54,7 +54,8 @@ func TestInitializeAndToolList(t *testing.T) {
 	if init.ServerInfo.Name != "puppet-remo" || init.ServerInfo.Version != "9.9.9-test" {
 		t.Errorf("ServerInfo = %+v", init.ServerInfo)
 	}
-	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id"} {
+	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id",
+		"already open window forward", "reused_existing_window", "screenshot or list_windows before typing"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}
@@ -76,6 +77,14 @@ func TestInitializeAndToolList(t *testing.T) {
 		got[tool.Name] = tool.Annotations.ReadOnlyHint
 		if tool.Description == "" {
 			t.Errorf("%s has no description", tool.Name)
+		}
+		// 既存のウィンドウが前に出るだけのアプリがあるので、入力の前に対象を確かめるよう促す（FR-M19）。
+		if tool.Name == "launch_app" {
+			for _, want := range []string{"reused_existing_window", "already open window forward", "confirm the target window with a screenshot or list_windows"} {
+				if !strings.Contains(tool.Description, want) {
+					t.Errorf("launch_app description lacks %q: %s", want, tool.Description)
+				}
+			}
 		}
 	}
 	if len(got) != len(list.Tools) {
