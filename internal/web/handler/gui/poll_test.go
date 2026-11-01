@@ -137,3 +137,15 @@ func TestPollLeaksNoSecrets(t *testing.T) {
 	// トークン（平文・接頭辞）・ハッシュ・Bearer は、どの領域にも出ない。
 	lacks(t, res, "prm_", "Bearer", "token", "secret", "hash", "password")
 }
+
+// 承認待ちは、ダッシュボードの #lease の OOB（ポーリングのたびに現在の状態で描く）に出る。
+func TestPollShowsPendingApprovalInTheLeasePanel(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		f.Leases.HasPending = true
+		f.Leases.PendingLease = service.PendingLease{LeaseID: "l1", Actor: domain.Actor{Kind: domain.ActorMCP, ClientID: "c1", Label: "claude-desktop"}, Since: f.Clock.T}
+	})
+	res := r.get(pollURL(url.Values{"rev_killswitch": {"stale"}}), hx...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `id="lease" hx-swap-oob="innerHTML"`, "承認待ち", "claude-desktop", "MCP")
+	lacks(t, res, "強制剥奪", "/lease/revoke")
+}

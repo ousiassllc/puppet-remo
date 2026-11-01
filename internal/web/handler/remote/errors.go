@@ -27,6 +27,8 @@ var failureMessages = map[domain.Code]string{
 	domain.CodeLeaseRequired:      "操作権がありません。先に「操作権を取得」を押してください。",
 	domain.CodeLeaseHeldByOther:   "ほかのセッションが操作権を保持しています。",
 	domain.CodeLeaseRevoked:       "操作権が強制的に外されました。改めて取得してください。",
+	domain.CodeApprovalDenied:     "ホストが操作権の取得を拒否しました。",
+	domain.CodeApprovalTimeout:    "ホストから時間内に応答がなく、操作権を取得できませんでした。",
 	domain.CodeInvalidArgument:    "入力内容を確認してください。",
 	domain.CodeConflict:           "現在の状態と合わないため実行できませんでした。",
 	domain.CodeKillSwitchActive:   "キルスイッチが発動中です。",

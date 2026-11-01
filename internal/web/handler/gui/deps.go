@@ -27,6 +27,8 @@ type SessionLister interface {
 // 剥奪の監査（lease.revoke）は実体が記録するため、ハンドラは記録しない。
 type LeaseControl interface {
 	Holder() (service.Holder, bool)
+	// Pending は承認待ち（pending_approval）の要求者。承認待ちでなければ false。
+	Pending() (service.PendingLease, bool)
 	Revoke(by domain.Actor) error
 }
 

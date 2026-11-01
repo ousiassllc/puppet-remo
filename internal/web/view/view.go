@@ -73,8 +73,11 @@ type Session struct {
 type Sessions struct{ Items []Session }
 
 // Lease はリース保持者の表示。CanRevoke のときだけ強制剥奪のボタンを出す（状態駆動）。
+// Pending（承認待ち。pending_approval）のときは HolderLabel・KindLabel が要求者で、Held は false・CanRevoke も false
+// （強制剥奪は held のときだけ。docs に承認待ちの剥奪の記述が無いため現行の動きを変えない）。
 type Lease struct {
 	Held          bool
+	Pending       bool // 承認待ち（FR-L07）。「承認待ち: <名前>（種別）」を出す
 	CanRevoke     bool // 剥奪できる保持者（mcp・web）がいる（FR-L06。agent の剥奪は M4）
 	HolderLabel   string
 	KindLabel     string // 保持者の種別（mcp など）
@@ -448,11 +451,15 @@ type ViewerToolbar struct {
 
 // ViewerLease はビューアのリースパネル（FR-W08）。保持者の種別・名前・状態は常に出し、操作は Can* が true のものだけを描画する（状態駆動）。
 // CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web）が保持しているとき。
+// Pending は承認待ち（pending_approval。FR-L07）で、HolderLabel・KindLabel が要求者、PendingMine が要求者本人。承認待ちの間は
+// Held・Mine・Can* がすべて false（操作権を持たず、取得も解放も強制剥奪もできない）。
 type ViewerLease struct {
 	Held        bool
 	Mine        bool
+	Pending     bool
+	PendingMine bool
 	HolderLabel string
-	KindLabel   string // 保持者の種別（mcp / web）
+	KindLabel   string // 保持者（承認待ちなら要求者）の種別（mcp / web）
 	CanAcquire  bool
 	CanRelease  bool
 	CanRevoke   bool

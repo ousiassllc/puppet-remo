@@ -244,3 +244,28 @@ func TestRevokeLease(t *testing.T) {
 		}
 	})
 }
+
+// 承認待ち（pending_approval。FR-L07）: 「承認待ち: <名前>（種別）」を出す。保持中ではないので強制剥奪のボタンは出さない
+// （docs に承認待ちの剥奪の記述が無く、held のときだけ出す現行の動きを変えない）。
+func TestDashboardShowsPendingApproval(t *testing.T) {
+	pending := func(f *guitest.Fakes) {
+		f.Leases.HasPending = true
+		f.Leases.PendingLease = service.PendingLease{LeaseID: "l1", Actor: domain.Actor{Kind: domain.ActorWeb, ClientID: "c1", Label: "alice-laptop"}, Since: f.Clock.T}
+	}
+	res := newRig(t, pending).get("/")
+	status(t, res, http.StatusOK)
+	contains(t, res, "承認待ち", "alice-laptop", "Web", "ホストの承認を待っています", "data-lease-pending")
+	lacks(t, res, "/lease/revoke", "強制剥奪", "保持中", "アイドル解放まで")
+
+	// ラベルが空ならクライアント ID を出す。
+	res = newRig(t, pending, func(f *guitest.Fakes) { f.Leases.PendingLease.Actor.Label = "" }).get("/")
+	contains(t, res, "承認待ち", "c1")
+
+	// 保持者がいれば、承認待ちより保持を優先して出す（同時にはならない）。
+	res = newRig(t, pending, func(f *guitest.Fakes) {
+		f.Leases.Held = true
+		f.Leases.H = service.Holder{LeaseID: "l2", Actor: domain.Actor{Kind: domain.ActorMCP, ClientID: "c2", Label: "claude"}, Since: f.Clock.T, IdleRemaining: time.Minute}
+	}).get("/")
+	contains(t, res, "保持中", "claude")
+	lacks(t, res, "承認待ち")
+}

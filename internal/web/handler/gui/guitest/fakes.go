@@ -79,9 +79,13 @@ type Sessions struct{ Items []service.SessionInfo }
 func (s *Sessions) Sessions() []service.SessionInfo { return s.Items }
 
 // Leases は gui.LeaseControl の偽実装。Revoke は呼び出しを記録し、保持者を外す（RevokeErr があればそのエラーを返して外さない）。
+// 承認待ち（pending_approval）は PendingLease・HasPending で表す。
 type Leases struct {
 	H    service.Holder
 	Held bool
+
+	PendingLease service.PendingLease
+	HasPending   bool
 
 	RevokeErr   error
 	RevokeCalls int
@@ -89,6 +93,8 @@ type Leases struct {
 }
 
 func (l *Leases) Holder() (service.Holder, bool) { return l.H, l.Held }
+
+func (l *Leases) Pending() (service.PendingLease, bool) { return l.PendingLease, l.HasPending }
 
 func (l *Leases) Revoke(by domain.Actor) error {
 	l.RevokeCalls++

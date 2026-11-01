@@ -122,3 +122,61 @@ func TestLeaseRoutesNeedAValidViewerID(t *testing.T) {
 		t.Error("an invalid viewer_id must not reach the lease manager")
 	}
 }
+
+// 承認待ち（pending_approval。FR-L07）: 要求者本人には「ホストの承認を待っています」、他のビューアには要求者の表示。
+// どちらも操作（取得・解放・強制剥奪）のボタンと #viewer-ops の中身は無い（操作権を持たない）。
+func TestLeasePanelPendingApproval(t *testing.T) {
+	r := newRig(t)
+	id, h := r.viewer()
+	r.f.Leases.SetPending(actor(id))
+
+	res := r.get("/viewer/lease", h...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `id="lease-panel"`, `data-lease-state="pending_approval"`, "承認待ち", "alice-laptop", ">web<", "あなた", "ホストの承認を待っています",
+		`id="viewer-ops"`, `hx-swap-oob="true"`)
+	lacks(t, res, "/viewer/lease/acquire", "/viewer/lease/release", "/viewer/lease/revoke", `id="clipboard-panel"`, `id="key-menu"`, "<html")
+
+	// 別のビューアから見ると、要求者の表示だけで「あなた」「待っています」は無い。
+	_, other := r.viewer()
+	r.f.Leases.SetPending(domain.Actor{Kind: domain.ActorMCP, ClientID: "c9", Label: "agent-x", SessionID: "s1"})
+	res = r.get("/viewer/lease", other...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `data-lease-state="pending_approval"`, "承認待ち", "agent-x", ">mcp<")
+	lacks(t, res, "あなた", "ホストの承認を待っています", "/viewer/lease/acquire", "/viewer/lease/release", "/viewer/lease/revoke", `id="clipboard-panel"`)
+}
+
+// 承認待ちの間の取得は、本人でも 409 lease_held_by_other（LeaseManager の規則）。
+func TestLeaseAcquireDuringPendingApprovalIs409(t *testing.T) {
+	r := newRig(t)
+	id, h := r.viewer()
+	r.f.Leases.SetPending(actor(id))
+	failed(t, r.post("/viewer/lease/acquire", nil, h...), http.StatusConflict, "lease_held_by_other")
+}
+
+// ホストの拒否は 403 approval_denied、タイムアウトは 408 approval_timeout のトースト。リースは取れず、パネルは空きのまま。
+func TestLeaseAcquireApprovalFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code string
+		want int
+	}{
+		{"denied", domain.ErrApprovalDenied, "approval_denied", http.StatusForbidden},
+		{"timeout", domain.ErrApprovalTimeout, "approval_timeout", http.StatusRequestTimeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t)
+			r.f.Leases.AcquireErr = tt.err
+			_, h := r.viewer()
+			res := r.post("/viewer/lease/acquire", nil, h...)
+			failed(t, res, tt.want, tt.code)
+			lacks(t, res, "id=\"lease-panel\"")
+			if _, ok := r.f.Leases.Holding(); ok {
+				t.Error("the lease must not be held after a failed approval")
+			}
+			// 失敗のあとのパネルは空き（取得できる）。
+			contains(t, r.get("/viewer/lease", h...), `data-lease-state="idle"`, `hx-post="/viewer/lease/acquire"`)
+		})
+	}
+}

@@ -133,16 +133,26 @@ func (h *Handler) sessionsView() view.Sessions {
 func (h *Handler) leaseView() view.Lease {
 	holder, ok := h.d.Leases.Holder()
 	if !ok {
+		if p, pending := h.d.Leases.Pending(); pending {
+			return view.Lease{
+				Pending: true, HolderLabel: actorLabel(p.Actor), KindLabel: kindLabel(p.Actor.Kind), Since: h.formatTime(p.Since),
+			}
+		}
 		return view.Lease{}
 	}
-	label := holder.Actor.Label
-	if label == "" {
-		label = holder.Actor.ClientID
-	}
+	label := actorLabel(holder.Actor)
 	return view.Lease{
 		Held: true, CanRevoke: holder.Actor.Kind.CanHoldLease(), HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
 		Since: h.formatTime(holder.Since), IdleRemaining: formatDuration(holder.IdleRemaining),
 	}
+}
+
+// actorLabel は操作主体の表示名。ラベルが空なら ClientID。
+func actorLabel(a domain.Actor) string {
+	if a.Label == "" {
+		return a.ClientID
+	}
+	return a.Label
 }
 
 // killSwitchView は発動中なら解除だけ、そうでなければ発動だけを出す。

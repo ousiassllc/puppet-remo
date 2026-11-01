@@ -45,21 +45,33 @@ func (h *Handler) viewerContext(c *gin.Context) (domain.Client, domain.Actor, bo
 
 // leaseView は who から見たリースパネルの表示。操作は状態に合うものだけを許す（状態駆動）:
 // 空きなら取得、自分が保持なら解放、他者（mcp・web）が保持なら強制剥奪（agent の剥奪は M4）。
+// 承認待ち（pending_approval）は、要求者の表示だけで操作は無い（他者の取得は 409 になるので取得も出さない。承認待ちの
+// 強制剥奪・取り下げは docs に記述が無く、実装していない）。
 func (h *Handler) leaseView(who domain.Actor) view.ViewerLease {
 	holder, ok := h.d.Leases.Holder()
 	if !ok {
+		if p, pending := h.d.Leases.Pending(); pending {
+			return view.ViewerLease{
+				Pending: true, PendingMine: p.Actor.SameSession(who), HolderLabel: actorLabel(p.Actor), KindLabel: string(p.Actor.Kind),
+			}
+		}
 		return view.ViewerLease{CanAcquire: true}
 	}
-	label := holder.Actor.Label
-	if label == "" {
-		label = holder.Actor.ClientID
-	}
+	label := actorLabel(holder.Actor)
 	mine := holder.Actor.SameSession(who)
 	return view.ViewerLease{
 		Held: true, Mine: mine, HolderLabel: label, KindLabel: string(holder.Actor.Kind),
 		CanRelease: mine,
 		CanRevoke:  !mine && holder.Actor.Kind.CanHoldLease() && who.Kind.CanRevokeLease(),
 	}
+}
+
+// actorLabel は操作主体の表示名。ラベルが空なら ClientID。
+func actorLabel(a domain.Actor) string {
+	if a.Label == "" {
+		return a.ClientID
+	}
+	return a.Label
 }
 
 // opsView は操作権を持つときだけ、クリップボードとショートカット送信を出す。
