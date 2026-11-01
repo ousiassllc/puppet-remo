@@ -1,7 +1,7 @@
 // <remo-screen-viewer>: ホスト画面のライブ表示と、操作権を持つときのマウス・キーボード・IME 入力の送信
 // （docs/architecture/frontend.md §6.2、docs/api/endpoints.md §5）。
 // スタイルは Shadow DOM の `css`（constructable stylesheets）だけで、`style` 属性・`<style>` は使わない（CSP。§6.3・§7.1）。
-import { LitElement, css, html, nothing, type PropertyValues } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 import { createLogger } from "../lib/logger";
 import { MessageTooLargeError, NO_RECONNECT_CLOSE_CODES, WsClient, type WsMessage } from "../lib/ws";
 import { isImeKeyEvent, keyModifiers, mouseButtonName, toStreamPoint, wheelNotches, type MouseButtonName, type StreamPoint } from "./input";
@@ -132,9 +132,11 @@ export class RemoScreenViewer extends LitElement {
     this.closeCode = 0;
   }
 
-  // 入力が有効: readonly が無く、最後に受信した lease が mine: true（サーバー側でも入力は常に検査される）。
+  // 入力が有効: 最後に受信した lease が mine: true（サーバー側でも入力は常に検査される）。
+  // readonly は描画時の操作権の有無を表す初期のヒントにすぎない。HTMX はこのコンポーネントを差し替えないので、
+  // 操作権の取得・解放・剥奪で属性は更新されない。入力の可否は WebSocket の lease だけで決める（ready で現在の状態が届く）。
   private get inputEnabled(): boolean {
-    return !this.readonly && this.leaseMine;
+    return this.leaseMine;
   }
 
   connectedCallback(): void {
@@ -163,12 +165,6 @@ export class RemoScreenViewer extends LitElement {
     sink.addEventListener("keyup", this.onKeyUp);
     sink.addEventListener("compositionend", this.onCompositionEnd);
     sink.addEventListener("blur", this.onBlur);
-  }
-
-  protected updated(changed: PropertyValues): void {
-    if (changed.has("readonly")) {
-      this.syncInput();
-    }
   }
 
   protected render() {
@@ -399,7 +395,7 @@ export class RemoScreenViewer extends LitElement {
     return canvas ? toStreamPoint(clientX, clientY, canvas.getBoundingClientRect(), canvas.width, canvas.height) : null;
   }
 
-  // 入力が無効になったとき（readonly の付与、リースの喪失）は、押下中の状態を送らずに捨てる（サーバーが解放する）。
+  // 入力が無効になったとき（リースの喪失）は、押下中の状態を送らずに捨てる（サーバーが解放する）。
   private syncInput(): void {
     if (!this.inputEnabled) {
       this.releaseInput(false);
