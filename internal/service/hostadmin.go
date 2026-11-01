@@ -41,19 +41,23 @@ type RequestHistoryPage struct {
 }
 
 // ApproveInput は接続要求を許可するときの入力（FR-H03）。
-// M1 の承認モードは常に always（DB の既定値）で、M3 まで参照しない。
 type ApproveInput struct {
 	DisplayName  string // 空なら要求の端末名
 	WebEnabled   bool
 	MCPEnabled   bool
 	AgentEnabled bool
+	// ApprovalMode は clients.approval_mode に保存するリース取得時の承認モード（FR-H03、FR-L07）。空なら always（既定）。
+	// 定義外の値は ErrInvalidArgument。
+	ApprovalMode domain.ApprovalMode
 }
 
-// ClientUpdate はクライアントの部分更新（FR-H04）。nil の項目は変えない。承認モードは M3 から。
+// ClientUpdate はクライアントの部分更新（FR-H04）。nil の項目は変えない。
 type ClientUpdate struct {
 	WebEnabled   *bool
 	MCPEnabled   *bool
 	AgentEnabled *bool
+	// ApprovalMode を変えると clients.approved_at を NULL に戻す（repository.Clients.Update の規則）。定義外の値は ErrInvalidArgument。
+	ApprovalMode *domain.ApprovalMode
 }
 
 // SessionCloser は、クライアントの無効化・削除・トークン失効のときに、該当するセッションを切断する窓口
@@ -84,8 +88,14 @@ type HostAdmin interface {
 
 	Clients(ctx context.Context) ([]domain.Client, error)
 	Client(ctx context.Context, id string) (domain.Client, error)
-	// UpdateClient は有効化の切り替えを保存する。無効にした機能のセッションは切断し、リースは解放する。
+	// UpdateClient は有効化の切り替えと承認モードを保存する。無効にした機能のセッションは切断し、リースは解放する。
+	// 承認モードを変えたときは approved_at を NULL に戻す。監査（client.update）の detail に承認モードの変更前後（approval_mode_before・
+	// approval_mode）を入れる。
 	UpdateClient(ctx context.Context, id string, u ClientUpdate) (domain.Client, error)
+	// ResetApproval は first_time のクライアントの承認済み（approved_at）を取り消す（FR-H04、FR-S05）。次のリース取得から再び承認が要る。
+	// first_time でない、または承認済みでなければ conflict。更新後のクライアントを返す。
+	// 監査のイベント名は docs に無く未決のため、監査は記録しない（運用ログだけに残す。docs/components/overview.md §13.5）。
+	ResetApproval(ctx context.Context, id string) (domain.Client, error)
 	// DeleteClient はクライアントを許可リストから外す（トークンは CASCADE で消える）。セッションを切断し、リースを解放する。
 	DeleteClient(ctx context.Context, id string) error
 
@@ -115,6 +125,11 @@ type hostAdmin struct {
 	cfg HostAdminConfig
 	// approveMu は ApproveRequest を直列にする（既存クライアントの置き換えと要求の確定を並行させない）。
 	approveMu sync.Mutex
+}
+
+// invalidApprovalMode は定義外の承認モードを ErrInvalidArgument にする。
+func invalidApprovalMode(m domain.ApprovalMode) error {
+	return domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("approval_mode %q is not one of always, first_time, auto", m))
 }
 
 // NewHostAdmin は HostAdmin を作る。
@@ -172,6 +187,9 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 	// 置き換えた古いクライアントの切断は approveMu の外で行う。CloseClient は進行中のツール呼び出し（最長でツールの
 	// タイムアウト）を待つので、ロックを持ったままだと他の許可や GUI の操作が止まる。defer は後入れ先出しなので、
 	// Unlock のあとに走る。置き換えは済んでいる（トークンは消えている）ので、確定に失敗しても切断は行う。
+	if in.ApprovalMode != "" && !in.ApprovalMode.Valid() {
+		return domain.Client{}, invalidApprovalMode(in.ApprovalMode)
+	}
 	var replacedID string
 	defer func() {
 		if replacedID != "" {
@@ -189,6 +207,10 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 	if name == "" {
 		name = req.DisplayName
 	}
+	mode := in.ApprovalMode
+	if mode == "" {
+		mode = domain.ApprovalAlways
+	}
 	c := domain.Client{
 		ID:           h.cfg.IDs.NewID(),
 		StableNodeID: req.StableNodeID,
@@ -197,7 +219,7 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 		WebEnabled:   in.WebEnabled,
 		MCPEnabled:   in.MCPEnabled,
 		AgentEnabled: in.AgentEnabled,
-		ApprovalMode: domain.ApprovalAlways,
+		ApprovalMode: mode,
 	}
 	// 同じデバイス（stable_node_id）の登録済みクライアントがあれば置き換える（ログイン名の変更後の再許可。FR-A06）。
 	// 古いクライアントのトークンは CASCADE で消え、セッションとリースは切断・解放するので、権限は引き継がない。
@@ -234,6 +256,7 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 	h.audit(ctx, "auth", "auth.connreq_approve", c, map[string]any{
 		"request_id": requestID, "stable_node_id": c.StableNodeID, "login_name": c.LoginName,
 		"web_enabled": c.WebEnabled, "mcp_enabled": c.MCPEnabled, "agent_enabled": c.AgentEnabled,
+		"approval_mode": string(c.ApprovalMode),
 	})
 	return c, nil
 }
@@ -277,12 +300,15 @@ func (h *hostAdmin) Client(ctx context.Context, id string) (domain.Client, error
 }
 
 func (h *hostAdmin) UpdateClient(ctx context.Context, id string, u ClientUpdate) (domain.Client, error) {
+	if u.ApprovalMode != nil && !u.ApprovalMode.Valid() {
+		return domain.Client{}, invalidApprovalMode(*u.ApprovalMode)
+	}
 	before, err := h.Client(ctx, id)
 	if err != nil {
 		return domain.Client{}, err
 	}
 	err = h.cfg.Clients.Update(ctx, id, repository.ClientPatch{
-		WebEnabled: u.WebEnabled, MCPEnabled: u.MCPEnabled, AgentEnabled: u.AgentEnabled,
+		WebEnabled: u.WebEnabled, MCPEnabled: u.MCPEnabled, AgentEnabled: u.AgentEnabled, ApprovalMode: u.ApprovalMode,
 	})
 	if err != nil {
 		return domain.Client{}, mapRepoErr(err, "client")
@@ -298,11 +324,28 @@ func (h *hostAdmin) UpdateClient(ctx context.Context, id string, u ClientUpdate)
 		h.disconnect(id, domain.ActorWeb)
 	}
 	h.cfg.Logger.Info("client updated", "client_id", id, "device", after.DisplayName,
-		"web_enabled", after.WebEnabled, "mcp_enabled", after.MCPEnabled, "agent_enabled", after.AgentEnabled)
+		"web_enabled", after.WebEnabled, "mcp_enabled", after.MCPEnabled, "agent_enabled", after.AgentEnabled,
+		"approval_mode", string(after.ApprovalMode))
 	h.audit(ctx, "client", "client.update", after, map[string]any{
 		"web_enabled": after.WebEnabled, "mcp_enabled": after.MCPEnabled, "agent_enabled": after.AgentEnabled,
+		"approval_mode_before": string(before.ApprovalMode), "approval_mode": string(after.ApprovalMode),
 	})
 	return after, nil
+}
+
+func (h *hostAdmin) ResetApproval(ctx context.Context, id string) (domain.Client, error) {
+	c, err := h.Client(ctx, id)
+	if err != nil {
+		return domain.Client{}, err
+	}
+	if c.ApprovalMode != domain.ApprovalFirstTime || c.ApprovedAt == nil {
+		return domain.Client{}, domain.NewError(domain.CodeConflict, "the client has no first_time approval to reset", nil)
+	}
+	if err := h.cfg.Clients.ResetApproval(ctx, id); err != nil {
+		return domain.Client{}, mapRepoErr(err, "client")
+	}
+	h.cfg.Logger.Info("client approval reset", "client_id", id, "device", c.DisplayName)
+	return h.Client(ctx, id)
 }
 
 func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
