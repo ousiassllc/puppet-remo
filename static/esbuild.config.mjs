@@ -1,6 +1,7 @@
 // esbuild のビルド設定（docs/architecture/frontend.md §8.1）。
 // - htmx-config.ts: IIFE（classic スクリプト。htmx の直後に同期で読み込む）
 // - app.ts: ES モジュール
+// - components/screen-viewer: ES モジュール（Lit の Web Component。出力名は screen-viewer.js。レイアウトが type=module で読み込む）
 // 本番は minify、--watch のときは sourcemap と、`wails3 dev` の起動前確認のための serve（§8.3）。
 import * as esbuild from "esbuild";
 
@@ -13,11 +14,18 @@ const common = {
   logLevel: "info",
   minify: !watch,
   sourcemap: watch,
+  // lib/logger.ts が本番でデバッグ・情報のログを出さないための定数（src/globals.d.ts）。
+  define: { __DEBUG__: String(watch) },
 };
 
 const builds = [
   { ...common, entryPoints: ["src/app/htmx-config.ts"], format: "iife" },
   { ...common, entryPoints: ["src/app/app.ts"], format: "esm" },
+  {
+    ...common,
+    entryPoints: { "screen-viewer": "src/components/screen-viewer/remo-screen-viewer.ts" },
+    format: "esm",
+  },
 ];
 
 if (!watch) {
