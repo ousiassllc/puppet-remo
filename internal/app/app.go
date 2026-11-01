@@ -6,7 +6,7 @@
 // wails_windows.go だけにあり、cmd/puppet-remo が本物の部品を渡して動かす。
 //
 // 公開面は 2 つに分かれる: GUI ルーター（GUIHandler。Wails の AssetOptions.Handler に渡す。ソケットは開かない）と、
-// リモートルーター（tailnet の IP だけで Listen。M1 は /mcp のみ）。
+// リモートルーター（tailnet の IP だけで Listen。/mcp と /ws/screen）。
 package app
 
 import (
@@ -29,6 +29,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/tailnet"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
+	"github.com/ousiassllc/puppet-remo/internal/ws"
 )
 
 // Repo は永続化の入口（*repository.DB が満たす）。
@@ -104,6 +105,8 @@ type App struct {
 	admin    service.HostAdmin
 	apps     service.AppRegistry
 	mcp      *mcp.Server
+	viewers  service.ViewerSessions // viewer_id の発行・検証（/ws/screen。/viewer は別の子 Issue）
+	ws       *ws.Handler
 	tracker  *service.StatusTracker
 	maint    *service.Maintenance
 	listen   *listenSupervisor
@@ -228,9 +231,34 @@ func (a *App) build(ctx context.Context) error {
 	killMgr.RegisterCloser("mcp-sessions", a.mcp.CloseSessions)
 	a.kill = service.NewNotifyingKillSwitch(killMgr, a.bus)
 
+	// 画面配信とビューアのセッション（viewer_id）。キルスイッチの発動で全ビューアを閉じるクローザー（web-sessions）は
+	// NewViewerSessions が登録する。WebSocket は閉じた理由から閉じコード 4503 で閉じる。
+	streamer, err := service.NewStreamer(service.StreamerConfig{
+		Capturer: p.Capturer, Clock: cfg.Clock, IDs: cfg.IDs, Settings: settings, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("streamer: %w", err)
+	}
+	a.viewers, err = service.NewViewerSessions(service.ViewerSessionsConfig{
+		Streamer: streamer, Leases: a.leases, Kill: killMgr, Clock: cfg.Clock, IDs: cfg.IDs,
+	})
+	if err != nil {
+		return fmt.Errorf("viewer sessions: %w", err)
+	}
+	a.ws, err = ws.New(ws.Config{
+		Sessions: a.viewers, Control: control, Leases: a.leases, Events: a.bus,
+		// 連鎖（web/middleware）が認可したクライアントを渡す。ws は web を import できない。
+		ClientFrom: middleware.ClientFrom,
+		Logger:     a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("websocket: %w", err)
+	}
+
 	a.admin, err = service.NewHostAdmin(service.HostAdminConfig{
 		Clients: cfg.Repo.Clients(), Tokens: cfg.Repo.Tokens(), ConnRequests: connRequests, Authz: a.authz,
-		Leases: a.leases, Sessions: a.mcp, Audit: audit, Bus: a.bus, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
+		// クライアントの削除・無効化・トークンの失効で、MCP のセッションと WebSocket のビューアの両方を閉じる。
+		Leases: a.leases, Sessions: sessionClosers{a.mcp, a.viewers}, Audit: audit, Bus: a.bus, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("host admin: %w", err)
@@ -261,10 +289,11 @@ func (a *App) build(ctx context.Context) error {
 func (a *App) buildRouters(kill service.KillSwitchState) error {
 	cfg := a.cfg
 
-	// リモートルーター: tailnet の IP だけで Listen する。M1 が配信するのは /mcp だけ。
+	// リモートルーター: tailnet の IP だけで Listen する。配信するのは /mcp と /ws/screen。
 	remote, err := router.NewRemote(router.RemoteConfig{
 		Chain: middleware.RemoteConfig{Hosts: a.allowedHosts, KillSwitch: kill, WhoIs: cfg.WhoIs, Authz: a.authz},
 		MCP:   a.mcp.Handler(),
+		WS:    a.ws,
 	})
 	if err != nil {
 		return fmt.Errorf("remote router: %w", err)
@@ -295,4 +324,19 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 		return fmt.Errorf("gui router: %w", err)
 	}
 	return nil
+}
+
+// sessionClosers は複数のセッションの表（MCP・WebSocket のビューア）を、1 つの service.SessionCloser として扱う。
+type sessionClosers []service.SessionCloser
+
+func (cs sessionClosers) CloseClient(clientID string, kind domain.ActorKind) {
+	for _, c := range cs {
+		c.CloseClient(clientID, kind)
+	}
+}
+
+func (cs sessionClosers) CloseToken(tokenID string) {
+	for _, c := range cs {
+		c.CloseToken(tokenID)
+	}
 }

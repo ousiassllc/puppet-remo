@@ -123,7 +123,7 @@ func (a *App) spawn(fn func()) {
 }
 
 // Shutdown はアプリを止める（docs/components/overview.md §9 の終了順）: ホットキーの解除 → Listener の停止 →
-// MCP セッションを閉じる → リースの解放 → 押下中の入力の解放 → 監査のキューの書き切り → 資源（DB など）を閉じる。
+// MCP セッション・WebSocket を閉じる → リースの解放 → 押下中の入力の解放 → 監査のキューの書き切り → 資源（DB など）を閉じる。
 // 各段の失敗は後続を止めず、まとめて返す。複数回呼んでもよい（2 回目以降は何もしない）。
 func (a *App) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
@@ -147,6 +147,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if err := a.mcp.CloseSessions(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("close mcp sessions: %w", err))
 	}
+	a.ws.Close()
 	a.leases.ReleaseAll(string(domain.ReleaseDisconnect))
 	if err := a.cfg.Platform.Input.ReleaseAll(); err != nil {
 		errs = append(errs, fmt.Errorf("release held input: %w", err))
