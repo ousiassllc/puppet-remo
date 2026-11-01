@@ -626,7 +626,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`。承認ダイアログとオーバーレイは M3 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
 | `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`）と `e2e/` は M2 |
-| 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
+| 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/environment/setup.md`（環境構築）、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
 | Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など |
 
 ### 依存の向き
@@ -667,3 +667,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.12 | 2026-11-01 | 「運用ログと監査ログ」（違いと、ログ画面の読み方・選んだ理由）を追加し、GUI ルーターの画面に「ログ」を追記 | #45 |
 | 1.13 | 2026-11-01 | 「アプリ起動」の流れ図に、起動後のウィンドウの観測（`WindowManager`。最大およそ 3 秒）と、応答の `window`・`reused_existing_window` を追記 | #46 |
 | 1.14 | 2026-11-01 | 「入力注入と自己保護」に、自ウィンドウの範囲と印を AI へ伝える旨（FR-M20。画像には描かない）を追記 | #47 |
+| 1.15 | 2026-11-01 | M1 実装での差分の「追加のファイル」に `docs/environment/setup.md` を追加 | #40 |

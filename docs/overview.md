@@ -103,6 +103,7 @@ graph TD
 | ER / データモデル | [`docs/architecture/er.md`](architecture/er.md) | SQLite のテーブル定義（clients、client_tokens、connection_requests、settings、launchable_apps、agent_tasks、audit_logs、audit_thumbnails）と保守処理 |
 | API 仕様 | [`docs/api/endpoints.md`](api/endpoints.md) | MCP ツール、Web UI のルート、WebSocket のプロトコル、JSON API、ホスト GUI のルートと更新の配信（`/poll`・SSE）、エラー形式 |
 | コンポーネント設計 | [`docs/components/overview.md`](components/overview.md) | パッケージの責務・依存、Go インターフェース、goroutine と状態の所有者、起動・終了順序、テスト方針（モックと実機スモーク） |
+| 環境構築 | [`docs/environment/setup.md`](environment/setup.md) | 開発環境のセットアップ、CI/CD、Lint、Format、Git フック、OpenAPI の方針、Linterly の状況 |
 
 ## マイルストーン / リリース計画
 
@@ -156,3 +157,4 @@ graph TD
 | 1.10 | 2026-10-30 | スコープの認証・認可と M1 の範囲に、`agent_enabled` が M1 では保存・編集のみで効果は M4 からであることを追記 | M1 の実装と FR-A09 の食い違いの解消（オーナー決定） |
 | 1.11 | 2026-10-30 | 起動許可リストと MCP の `launch_app` / `list_launchable_apps`（M1.5）を追加: スコープ（含む・含まない）、マイルストーン M1.5、用語集、ドキュメントマップの ER の表 | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.12 | 2026-11-01 | 起動許可リストの説明に、`launch_app` が起動後の前面のウィンドウと `reused_existing_window` を返すことを追記 | #46 |
+| 1.13 | 2026-11-01 | ドキュメントマップに環境構築（`docs/environment/setup.md`）を追加 | #40 |

@@ -84,6 +84,8 @@ Windows 向けのインストーラ（NSIS）は、GitHub Actions が GitHub Rel
 
 必要なもの: Go（`go.mod` の `go` 行の版）、[bun](https://bun.sh/)（フロントエンドのパッケージマネージャ。版は `scripts/ci/install-bun.sh` に固定）、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）、[golangci-lint](https://golangci-lint.run/)（版は CI と同じ v2.15.0）、[Lefthook](https://lefthook.dev/)（Git フック。`task tools:lefthook` で導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。フロントエンドの依存は `task frontend:install`（`bun install --frozen-lockfile`）で入ります。
 
+開発環境・CI/CD・Lint・Format・Git フックの構成は [環境構築](docs/environment/setup.md) にまとめています。
+
 ```sh
 task               # 利用できるタスクの一覧
 task build         # Go のビルド（ホスト OS）
@@ -131,3 +133,4 @@ task hooks:install    # Git フックを入れる（lefthook install と同じ�
 | [API 仕様](docs/api/endpoints.md) | MCP・ルート・エラー形式 |
 | [Windows 実機スモーク手順](docs/operations/smoke-windows.md) | CI で動かせない項目の手動確認 |
 | [配信の運用](docs/operations/release.md) | ナイトリー・正式版の配信、版・タグの決め方 |
+| [環境構築](docs/environment/setup.md) | 開発環境のセットアップ、CI/CD、Lint、Format、Git フック |
