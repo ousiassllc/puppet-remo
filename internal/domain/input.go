@@ -19,6 +19,17 @@ func (b Button) Valid() bool {
 	return b == ButtonLeft || b == ButtonRight || b == ButtonMiddle
 }
 
+// ButtonAction はマウスボタンの押下か解放か。
+type ButtonAction string
+
+const (
+	ButtonActionDown ButtonAction = "down"
+	ButtonActionUp   ButtonAction = "up"
+)
+
+// Valid は a が既知の操作かを返す。
+func (a ButtonAction) Valid() bool { return a == ButtonActionDown || a == ButtonActionUp }
+
 // Modifier は修飾キー（API 仕様 §3.3）。
 type Modifier string
 
@@ -66,7 +77,7 @@ const (
 // Valid は a が既知の操作かを返す。
 func (a KeyAction) Valid() bool { return a == KeyDown || a == KeyUp }
 
-// KeyEvent はキー 1 つの down / up（Web UI の input.key。API 仕様 §5.3）。
+// KeyEvent はキー 1 つの down / up（Web UI の input.key。API 仕様 §5.3）。Op でもある（Web 保持者の入力）。
 type KeyEvent struct {
 	Action KeyAction
 	Code   string // ブラウザの KeyboardEvent.code（例: "KeyA"）

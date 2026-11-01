@@ -359,8 +359,9 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 - `GET /viewer` のレンダリング時に発行する。値は、接続元クライアント（node ID）と発行時刻に束縛される
 - `<remo-screen-viewer>` の `ws-url` に埋め込み、HTMX のリクエストには `hx-headers` で `X-Viewer-Id` として付ける
-- 有効期間: WebSocket の接続中、および発行から 5 分（接続前）。束縛と異なるクライアントからの利用は 400 `invalid_argument`
-- リース保持者（種別 `web`）は `viewer_id` で識別する。WebSocket の切断でリースを解放する
+- 有効期間: WebSocket の接続中、および発行から 5 分（接続前）。**切断後も 5 分間は有効**で、同じ `viewer_id` で再接続できる（[フロントエンド設計 §6.4](../architecture/frontend.md) の再接続）。束縛と異なるクライアントからの利用、未知・期限切れの `viewer_id` は 400 `invalid_argument`（WebSocket は閉じコード 4401）
+- 同時接続は 1 つの `viewer_id` につき 1 本。同じ `viewer_id` の新しい接続は、古い接続を閉じて置き換える（古い接続のリースは解放される）
+- リース保持者（種別 `web`）は `viewer_id` で識別する。WebSocket の切断でリースを解放する（置き換えられた古い接続・クライアントの削除・無効化・キルスイッチによる切断も同じ）
 
 ### 4.2 ルート
 
@@ -428,6 +429,8 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | `ping` | `{ "type": "ping" }` → サーバーが `pong` を返す |
 
 入力メッセージはリース（保持者が自身の `viewer_id`）が必要で、InputGuard を通る。拒否は `error` で返し、入力は破棄する。
+
+`input.mouse` の `down` / `up` はカーソルを `x` / `y` へ動かしてからボタンを押す・離す（`move` は動かすだけ。ブラウザ側で `Click` / `Drag` にまとめず、1 つずつ注入する）。押したままのボタン・キーを離すのは、`up` の入力（ブラウザ側が、フォーカスを失ったときなどに送る）とキルスイッチ（`ReleaseAll`）。WebSocket の切断では離さない。`input.key` の `code` と `key` は、監査ログに記録しない（`type` の本文と同じ扱い）。`Ctrl+Alt+Delete`（`Delete` に `ctrl` と `alt`）は `input_blocked` の `error` で返す
 
 **`wheel` の単位と変換**（FR-M07 / FR-W）:
 
@@ -598,6 +601,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
 | GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン・起動許可アプリ）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
 | 接続要求の許可（§7.2） | `pending` なら登録して `approved` | 期限切れの `pending` は一覧に出ず、許可もできない（409 `conflict`）。同じ `stable_node_id` の登録済みクライアントがあるとき（ログイン名の変更後の再許可）は、古いクライアントを置き換える（トークンは CASCADE で削除、セッションは切断、リースは解放）。このとき監査に `client.replace` を記録する。古いクライアントの切断（ツール呼び出しの完了待ち）は、他の許可・GUI の操作を止めないよう、許可の直列化のロックの外で行う。同じデバイスの `pending` を 5 秒以内に更新済みなら、DB に書かない |
+| Web 入力の監査（§5.3・M2） | Web UI 入力を記録（FR-AU01） | 入力の `kind` は `input`（`actor_type = web`、`session_id = viewer_id`）。`input.mouse` の `move` は連続するため記録せず、`down` / `up` / `wheel` と `input.key`（キーの名前は入れない）・`input.text`（文字数のみ）・クリップボード（文字数のみ）を記録する |
 | 監査（§7 の冒頭） | ホスト操作は `actor_type = host` | `client_id` は、クライアントの行がすでに無いとき（`client.delete` の直後など）NULL で記録する（`client_label` は残る） |
 | MCP ツールの監査（§3.3） | — | `Control` を通らないツール（`get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status`）の呼び出しは、`mcp` のツール登録で `kind = tool` として監査する。入力系などは `Control` が記録する |
 | HTTP サーバー（§1） | — | tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒、`IdleTimeout` 120 秒、`MaxHeaderBytes` 64 KiB。`WriteTimeout` は付けない。WhoIs の LocalAPI 呼び出しは 5 秒で打ち切り、失敗は 403 `whois_failed`（fail closed） |
@@ -650,3 +654,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.18 | 2026-11-01 | §3.4 に `own_window` の `detail.own_windows`（モニターと縮小座標の `rect`）を追加し、§3.3 の `screenshot` に `own_windows`、`list_windows` に `blocked`・`blocked_reason` を追加。§2 の `input_blocked` の行と §3.1 の `instructions` を更新 | #47（FR-M20） |
 | 1.19 | 2026-11-01 | §2 の `lease_revoked` に「次の `acquire` まで返し続ける」、§3.3 の `get_control_status` の `holder.kind` に `web`（M2）、§7.1 のダッシュボードと §7.3 の `POST /lease/revoke`（冪等・`host` で監査・`agent` は M4）、§7.5 の GUI ルートに `/lease/revoke` を反映 | #58（M2 の強制剥奪の実装） |
 | 1.20 | 2026-11-01 | §7.3 の `PUT /settings` に `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を M2 で扱う旨を追記（§7.5） | #59 |
+| 1.21 | 2026-11-01 | §4.1 に切断後 5 分の有効期間・同時接続 1 本（置き換え）・切断以外の終わり方でのリース解放、§5.3 に `input.mouse` の `down` / `up`（移動してから押す・離す）・`input.key` の監査・SAS の `input_blocked`、§7.5 に Web 入力の監査を追記 | #60 |

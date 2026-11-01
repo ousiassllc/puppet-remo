@@ -145,3 +145,16 @@ func divRound(a, b int) int {
 	}
 	return q
 }
+
+// StreamToPhysical はストリームの座標 p（このモニターの物理ピクセル。モニターの左上が原点。API 仕様 §5.3）を、
+// 仮想デスクトップ上の物理座標へ変換する。モニターの外は ErrInvalidCoordinates。
+func (m Monitor) StreamToPhysical(p Point) (Point, error) {
+	if p.X < 0 || p.X >= m.Size.W || p.Y < 0 || p.Y >= m.Size.H {
+		return Point{}, ErrInvalidCoordinates.
+			WithMsg(fmt.Sprintf("(%d, %d) is outside the %dx%d stream of monitor %d", p.X, p.Y, m.Size.W, m.Size.H, m.Index)).
+			WithDetail("monitor", m.Index).
+			WithDetail("width", m.Size.W).
+			WithDetail("height", m.Size.H)
+	}
+	return Point{X: m.Origin.X + p.X, Y: m.Origin.Y + p.Y}, nil
+}

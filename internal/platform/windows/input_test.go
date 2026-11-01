@@ -387,6 +387,72 @@ func TestKeyEventTracksHeldKeysAndReleaseAll(t *testing.T) {
 	}
 }
 
+func TestButtonSendsOneStepAndReleaseAllReleasesHeldButtons(t *testing.T) {
+	in, d := newTestInput(t)
+	ctx := context.Background()
+	for _, c := range []struct {
+		b domain.Button
+		a domain.ButtonAction
+	}{
+		{domain.ButtonLeft, domain.ButtonActionDown},
+		{domain.ButtonLeft, domain.ButtonActionDown}, // 二重に記録しない
+		{domain.ButtonRight, domain.ButtonActionDown},
+		{domain.ButtonRight, domain.ButtonActionUp},
+		{domain.ButtonMiddle, domain.ButtonActionDown},
+	} {
+		if err := in.Button(ctx, c.b, c.a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls := d.sent()
+	if got, want := calls[2], []inputStep{mustButtonStep(t, domain.ButtonRight, false)}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("right down sent %+v, want %+v", got, want)
+	}
+	before := len(calls)
+	if err := in.ReleaseAll(); err != nil {
+		t.Fatal(err)
+	}
+	calls = d.sent()
+	if len(calls) != before+1 {
+		t.Fatalf("ReleaseAll sent %d calls, want 1", len(calls)-before)
+	}
+	want := []inputStep{mustButtonStep(t, domain.ButtonMiddle, true), mustButtonStep(t, domain.ButtonLeft, true)}
+	if got := calls[len(calls)-1]; !reflect.DeepEqual(got, want) {
+		t.Errorf("ReleaseAll sent %+v, want %+v (reverse press order, right already released)", got, want)
+	}
+	if err := in.ReleaseAll(); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.sent()) != len(calls) {
+		t.Error("a second ReleaseAll must not send anything")
+	}
+}
+
+func TestButtonRejectsInvalidArguments(t *testing.T) {
+	in, d := newTestInput(t)
+	ctx := context.Background()
+	for name, err := range map[string]error{
+		"unknown button": in.Button(ctx, "x", domain.ButtonActionDown),
+		"unknown action": in.Button(ctx, domain.ButtonLeft, "hold"),
+	} {
+		if !errors.Is(err, domain.ErrInvalidArgument) {
+			t.Errorf("%s: error = %v, want invalid_argument", name, err)
+		}
+	}
+	if len(d.sent()) != 0 {
+		t.Error("nothing should be sent")
+	}
+}
+
+func mustButtonStep(t *testing.T, b domain.Button, up bool) inputStep {
+	t.Helper()
+	step, ok := buttonStep(b, up)
+	if !ok {
+		t.Fatalf("buttonStep(%s) failed", b)
+	}
+	return step
+}
+
 func TestKeyEventUnknownCode(t *testing.T) {
 	in, d := newTestInput(t)
 	err := in.KeyEvent(context.Background(), domain.KeyEvent{Action: domain.KeyDown, Code: "NoSuchCode"})

@@ -44,6 +44,8 @@ type ViewerConfig struct {
 type Viewer struct {
 	// ID は Configure に渡す識別子（Streamer が発行する。ws の viewer_id とは別）。
 	ID string
+	// Config は登録時の設定（0 の品質・FPS は既定値で埋めた後）。Configure で変えた後の値は呼び出し側が持つ。
+	Config ViewerConfig
 	// Frames はバイナリフレーム（API 仕様 §5.4）。容量 2 で、詰まったら古いものを捨てて次のキーフレームで復帰する。
 	// 受け手は読んだ []byte を書き換えない（同じプロファイルの閲覧者で共有する）。
 	Frames <-chan []byte
@@ -157,7 +159,7 @@ func (s *streamer) Subscribe(ctx context.Context, c ViewerConfig) (*Viewer, erro
 	s.viewers[v.id] = v
 	v.stop = context.AfterFunc(ctx, func() { s.remove(v) })
 	s.wakeLocked(c.Monitor)
-	return &Viewer{ID: v.id, Frames: v.out, Done: v.done}, nil
+	return &Viewer{ID: v.id, Config: c, Frames: v.out, Done: v.done}, nil
 }
 
 func (s *streamer) Configure(id string, c ViewerConfig) error {

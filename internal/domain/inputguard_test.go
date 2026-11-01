@@ -84,3 +84,27 @@ func assertBlocked(t *testing.T, err error, wantReason string) {
 		t.Fatalf("want reason %q, got %+v", wantReason, err)
 	}
 }
+
+func TestCheckKeyEvent(t *testing.T) {
+	ctrlAlt := []domain.Modifier{domain.ModCtrl, domain.ModAlt}
+	tests := []struct {
+		name       string
+		e          domain.KeyEvent
+		wantReason string
+	}{
+		{name: "通常のキー", e: domain.KeyEvent{Action: domain.KeyDown, Code: "KeyA", Key: "a", Mods: ctrlAlt}},
+		{name: "Delete 単独", e: domain.KeyEvent{Action: domain.KeyDown, Code: "Delete", Key: "Delete"}},
+		{name: "Ctrl+Delete", e: domain.KeyEvent{Action: domain.KeyDown, Code: "Delete", Key: "Delete", Mods: []domain.Modifier{domain.ModCtrl}}},
+		{name: "Alt+Delete", e: domain.KeyEvent{Action: domain.KeyDown, Code: "Delete", Key: "Delete", Mods: []domain.Modifier{domain.ModAlt}}},
+		{name: "Ctrl+Alt+Delete の down", e: domain.KeyEvent{Action: domain.KeyDown, Code: "Delete", Key: "Delete", Mods: ctrlAlt}, wantReason: "secure_attention_sequence"},
+		{name: "Ctrl+Alt+Delete の up", e: domain.KeyEvent{Action: domain.KeyUp, Code: "Delete", Key: "Delete", Mods: ctrlAlt}, wantReason: "secure_attention_sequence"},
+		{name: "code だけでも判定する", e: domain.KeyEvent{Action: domain.KeyDown, Code: "Delete", Mods: ctrlAlt}, wantReason: "secure_attention_sequence"},
+		{name: "key だけでも判定する（大文字小文字を区別しない）", e: domain.KeyEvent{Action: domain.KeyDown, Key: "DELETE", Mods: ctrlAlt}, wantReason: "secure_attention_sequence"},
+		{name: "NumpadDecimal の Del は code が別（key が Delete）", e: domain.KeyEvent{Action: domain.KeyDown, Code: "NumpadDecimal", Key: "Delete", Mods: ctrlAlt}, wantReason: "secure_attention_sequence"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertBlocked(t, domain.CheckKeyEvent(tt.e), tt.wantReason)
+		})
+	}
+}
