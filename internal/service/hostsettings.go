@@ -364,32 +364,33 @@ func (h *hostSettings) committed(ctx context.Context, old, updated HostSettings)
 	}
 }
 
-// audit は変更した項目の名前だけを記録する（`detail_json` は変えたキー名の配列。docs/architecture/er.md）。
-// 値は入れない（audit.record_text など、設定の中身を監査ログの経路へ流さない）。
+// audit は変更した項目の名前と新しい値を記録する（値は範囲内の数値・真偽値・列挙・ホットキーで、秘密ではない。
+// audit.record_text の変更は、本文の記録の有無の切り替えとして残す価値があるため値ごと残す）。
 func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
 	if h.cfg.Audit == nil {
 		return
 	}
-	changed := []string{}
+	changed := map[string]any{}
 	for _, f := range []struct {
 		key  string
 		diff bool
+		val  any
 	}{
-		{FieldPort, old.Port != updated.Port},
-		{FieldKillSwitchHotkey, old.KillSwitchHotkey != updated.KillSwitchHotkey},
-		{FieldScreenshotMaxDimension, old.ScreenshotMaxDimension != updated.ScreenshotMaxDimension},
-		{FieldLeaseIdleTimeoutSec, old.LeaseIdleTimeoutSec != updated.LeaseIdleTimeoutSec},
-		{FieldViewerDefaultQuality, old.ViewerDefaultQuality != updated.ViewerDefaultQuality},
-		{FieldViewerDefaultFPS, old.ViewerDefaultFPS != updated.ViewerDefaultFPS},
-		{FieldAuditThumbnails, old.AuditThumbnailsEnabled != updated.AuditThumbnailsEnabled},
-		{FieldAuditRecordText, old.AuditRecordText != updated.AuditRecordText},
-		{FieldAuditRetentionDays, old.AuditRetentionDays != updated.AuditRetentionDays},
-		{FieldAuditThumbsMaxBytes, old.AuditThumbsMaxBytes != updated.AuditThumbsMaxBytes},
-		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode},
-		{fieldAutostart, old.Autostart != updated.Autostart},
+		{FieldPort, old.Port != updated.Port, updated.Port},
+		{FieldKillSwitchHotkey, old.KillSwitchHotkey != updated.KillSwitchHotkey, updated.KillSwitchHotkey},
+		{FieldScreenshotMaxDimension, old.ScreenshotMaxDimension != updated.ScreenshotMaxDimension, updated.ScreenshotMaxDimension},
+		{FieldLeaseIdleTimeoutSec, old.LeaseIdleTimeoutSec != updated.LeaseIdleTimeoutSec, updated.LeaseIdleTimeoutSec},
+		{FieldViewerDefaultQuality, old.ViewerDefaultQuality != updated.ViewerDefaultQuality, updated.ViewerDefaultQuality},
+		{FieldViewerDefaultFPS, old.ViewerDefaultFPS != updated.ViewerDefaultFPS, updated.ViewerDefaultFPS},
+		{FieldAuditThumbnails, old.AuditThumbnailsEnabled != updated.AuditThumbnailsEnabled, updated.AuditThumbnailsEnabled},
+		{FieldAuditRecordText, old.AuditRecordText != updated.AuditRecordText, updated.AuditRecordText},
+		{FieldAuditRetentionDays, old.AuditRetentionDays != updated.AuditRetentionDays, updated.AuditRetentionDays},
+		{FieldAuditThumbsMaxBytes, old.AuditThumbsMaxBytes != updated.AuditThumbsMaxBytes, updated.AuditThumbsMaxBytes},
+		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode, updated.UpdateApplyMode},
+		{fieldAutostart, old.Autostart != updated.Autostart, updated.Autostart},
 	} {
 		if f.diff {
-			changed = append(changed, f.key)
+			changed[f.key] = f.val
 		}
 	}
 	if len(changed) == 0 {

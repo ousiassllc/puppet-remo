@@ -112,16 +112,16 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	if len(a) != 1 || a[0].Event != "settings.update" || a[0].ActorType != domain.ActorHost || a[0].Kind != "settings" {
 		t.Fatalf("audit = %+v", a)
 	}
-	// 監査の detail は変えたキー名の配列だけ（値は入れない。er.md）。
-	wantKeys := `["server.port","killswitch.hotkey","screenshot.max_dimension","lease.idle_timeout_sec","viewer.default_quality","viewer.default_fps",` +
-		`"audit.thumbnails_enabled","audit.record_text","audit.retention_days","audit.thumbs_max_bytes","update.apply_mode","autostart"]`
-	if string(a[0].DetailJSON) != wantKeys {
-		t.Errorf("detail = %s, want %s", a[0].DetailJSON, wantKeys)
+	var detail map[string]any
+	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 12 || detail["server.port"] != float64(9000) || detail["autostart"] != true ||
+		detail["audit.record_text"] != true || detail["audit.thumbnails_enabled"] != false || detail["audit.retention_days"] != float64(7) ||
+		detail["audit.thumbs_max_bytes"] != float64(536870912) || detail["update.apply_mode"] != "auto_idle" {
+		t.Errorf("detail = %s (%v)", a[0].DetailJSON, err)
 	}
 }
 
-// 変更した項目のキー名だけが監査に残り、audit.record_text の値（true / false）は detail に入らない。
-func TestHostSettingsAuditListsOnlyChangedKeyNames(t *testing.T) {
+// 変更した項目だけが監査に残る（戻したときも、変わった項目だけ）。
+func TestHostSettingsAuditListsOnlyChangedKeys(t *testing.T) {
 	ctx := context.Background()
 	e := newSettingsEnv(t, true)
 	s := defaultHostSettings
@@ -130,18 +130,17 @@ func TestHostSettingsAuditListsOnlyChangedKeyNames(t *testing.T) {
 	if _, err := e.svc.Save(ctx, s); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.audit.entries) != 1 {
-		t.Fatalf("audit = %+v", e.audit.entries)
-	}
-	if got, want := string(e.audit.entries[0].DetailJSON), `["audit.record_text","audit.retention_days"]`; got != want {
-		t.Errorf("detail = %s, want %s", got, want)
-	}
-	// 元に戻しても同じ。値は出ない。
 	if _, err := e.svc.Save(ctx, defaultHostSettings); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(e.audit.entries[1].DetailJSON); strings.Contains(got, "true") || strings.Contains(got, "false") || strings.Contains(got, "90") {
-		t.Errorf("detail must not carry values: %s", got)
+	if len(e.audit.entries) != 2 {
+		t.Fatalf("audit = %+v", e.audit.entries)
+	}
+	if got, want := string(e.audit.entries[0].DetailJSON), `{"audit.record_text":true,"audit.retention_days":90}`; got != want {
+		t.Errorf("detail = %s, want %s", got, want)
+	}
+	if got, want := string(e.audit.entries[1].DetailJSON), `{"audit.record_text":false,"audit.retention_days":30}`; got != want {
+		t.Errorf("detail = %s, want %s", got, want)
 	}
 }
 
@@ -384,8 +383,9 @@ func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
 	if len(audit.entries) != 1 {
 		t.Fatalf("audit = %+v", audit.entries)
 	}
-	if got, want := string(audit.entries[0].DetailJSON), `["server.port","killswitch.hotkey"]`; got != want {
-		t.Errorf("audit detail = %s, want %s", got, want)
+	var detail map[string]any
+	if err := json.Unmarshal(audit.entries[0].DetailJSON, &detail); err != nil || len(detail) != 2 || detail["server.port"] != float64(9000) {
+		t.Errorf("audit detail = %s (%v)", audit.entries[0].DetailJSON, err)
 	}
 }
 
