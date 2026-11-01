@@ -8,3 +8,4 @@
 /cmd/puppet-remo/*.syso
 /build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 /build/windows/info.generated.json
+/build/icons/node_modules/
