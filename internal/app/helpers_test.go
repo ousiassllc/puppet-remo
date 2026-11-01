@@ -310,7 +310,8 @@ func (e *env) waitListening(count int) {
 func (e *env) registerClient() (clientID, token string) {
 	e.t.Helper()
 	ctx := context.Background()
-	c := domain.Client{ID: "client-1", StableNodeID: "nodeA", LoginName: "alice@example.com", DisplayName: "alice-laptop", MCPEnabled: true, WebEnabled: true}
+	c := domain.Client{ID: "client-1", StableNodeID: "nodeA", LoginName: "alice@example.com", DisplayName: "alice-laptop", MCPEnabled: true, WebEnabled: true,
+		ApprovalMode: domain.ApprovalAuto} // 承認ダイアログ（#68）が無いので、リースは承認なしで取らせる（承認の動きは service のテストで確かめる）
 	if err := e.db.Clients().Create(ctx, c); err != nil {
 		e.t.Fatal(err)
 	}

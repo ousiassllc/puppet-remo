@@ -320,7 +320,7 @@ func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
 	return nil
 }
 
-// disconnect は clientID の kind のセッションを切断し、そのリースを解放する。
+// disconnect は clientID の kind のセッションを切断し、そのリースを解放する（承認待ちの取得は取り下げる）。
 func (h *hostAdmin) disconnect(clientID string, kind domain.ActorKind) {
 	if h.cfg.Sessions != nil {
 		h.cfg.Sessions.CloseClient(clientID, kind)
@@ -328,6 +328,10 @@ func (h *hostAdmin) disconnect(clientID string, kind domain.ActorKind) {
 	if h.cfg.Leases != nil {
 		if holder, ok := h.cfg.Leases.Holder(); ok && holder.Actor.ClientID == clientID && holder.Actor.Kind == kind {
 			h.cfg.Leases.ReleaseSession(holder.Actor)
+		}
+		// 承認待ちの取得も取り下げて idle に戻す（承認待ちの Acquire は待ち続けない）。
+		if p, ok := h.cfg.Leases.Pending(); ok && p.Actor.ClientID == clientID && p.Actor.Kind == kind {
+			h.cfg.Leases.ReleaseSession(p.Actor)
 		}
 	}
 	if h.cfg.Bus != nil {

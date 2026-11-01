@@ -22,6 +22,11 @@ type Clients interface {
 	// Replace は oldID のクライアントを消して c を登録する（同一トランザクション）。stable_node_id が同じ
 	// ログイン名変更後の再許可に使う。oldID が無ければ ErrNotFound。失敗したら oldID は残る。
 	Replace(ctx context.Context, oldID string, c domain.Client) error
+	// MarkApproved は first_time のクライアントが承認された時刻 approved_at を記録する（FR-L07）。無ければ ErrNotFound。
+	MarkApproved(ctx context.Context, id string, at time.Time) error
+	// ResetApproval は承認済みの記録（approved_at）を NULL に戻す（承認の取り消し。次のリース取得から再び承認が要る）。無ければ ErrNotFound。
+	// approval_mode の変更で NULL に戻す規則は Update が持つ。
+	ResetApproval(ctx context.Context, id string) error
 	TouchSeen(ctx context.Context, id string, at time.Time) error
 }
 
@@ -183,4 +188,14 @@ func (s clientStore) Replace(ctx context.Context, oldID string, c domain.Client)
 func (s clientStore) TouchSeen(ctx context.Context, id string, at time.Time) error {
 	return requireOne(s.db.sql.ExecContext(ctx,
 		`UPDATE clients SET last_seen_at = ? WHERE id = ?`, toMS(at), id))
+}
+
+func (s clientStore) MarkApproved(ctx context.Context, id string, at time.Time) error {
+	return requireOne(s.db.sql.ExecContext(ctx,
+		`UPDATE clients SET approved_at = ?, updated_at = ? WHERE id = ?`, toMS(at), toMS(s.db.clock.Now()), id))
+}
+
+func (s clientStore) ResetApproval(ctx context.Context, id string) error {
+	return requireOne(s.db.sql.ExecContext(ctx,
+		`UPDATE clients SET approved_at = NULL, updated_at = ? WHERE id = ?`, toMS(s.db.clock.Now()), id))
 }

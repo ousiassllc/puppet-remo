@@ -189,6 +189,67 @@ func TestClientsTouchSeen(t *testing.T) {
 	}
 }
 
+func TestClientsApproval(t *testing.T) {
+	ctx := context.Background()
+	db, clock := openTestDB(t)
+	cs := db.Clients()
+	c := newClient("c1", "node1")
+	c.ApprovalMode = domain.ApprovalFirstTime
+	if err := cs.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	approvedAt := func() *time.Time {
+		t.Helper()
+		got, err := cs.Get(ctx, "c1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.ApprovedAt
+	}
+	if got := approvedAt(); got != nil {
+		t.Fatalf("approved_at before approval = %v, want nil", got)
+	}
+
+	at := clock.Now().Add(time.Hour)
+	if err := cs.MarkApproved(ctx, "c1", at); err != nil {
+		t.Fatal(err)
+	}
+	if got := approvedAt(); got == nil || !got.Equal(at) {
+		t.Errorf("approved_at after MarkApproved = %v, want %v", got, at)
+	}
+	// 承認済みの記録を取り消す。承認モードは変わらない。
+	if err := cs.ResetApproval(ctx, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := approvedAt(); got != nil {
+		t.Errorf("approved_at after ResetApproval = %v, want nil", got)
+	}
+	if got, _ := cs.Get(ctx, "c1"); got.ApprovalMode != domain.ApprovalFirstTime {
+		t.Errorf("approval_mode after ResetApproval = %q, want first_time", got.ApprovalMode)
+	}
+
+	// approval_mode の変更でも NULL に戻る（既存の規則）。
+	if err := cs.MarkApproved(ctx, "c1", at); err != nil {
+		t.Fatal(err)
+	}
+	auto := domain.ApprovalAuto
+	if err := cs.Update(ctx, "c1", ClientPatch{ApprovalMode: &auto}); err != nil {
+		t.Fatal(err)
+	}
+	if got := approvedAt(); got != nil {
+		t.Errorf("approved_at after approval_mode change = %v, want nil", got)
+	}
+
+	for name, fn := range map[string]func() error{
+		"MarkApproved":  func() error { return cs.MarkApproved(ctx, "nope", at) },
+		"ResetApproval": func() error { return cs.ResetApproval(ctx, "nope") },
+	} {
+		if err := fn(); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s missing: err = %v, want ErrNotFound", name, err)
+		}
+	}
+}
+
 // 実行時に生成する偽のトークン（形式のみ prm_ + base64url の 32 バイト）。
 func fakeToken(t *testing.T) string {
 	t.Helper()
