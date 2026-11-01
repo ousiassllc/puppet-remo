@@ -2,8 +2,8 @@ package domain
 
 import "time"
 
-// ApprovalMode はクライアント別の承認モード（FR-L07）。
-// M1 は承認なしでリースを取得するため参照せず、既定値 always で保存するだけ。適用は M3。
+// ApprovalMode はクライアント別の承認モード（FR-L07）。リース取得時の承認の要否は NeedsApproval が決める。
+// 新規クライアントの既定は always。
 type ApprovalMode string
 
 const (
