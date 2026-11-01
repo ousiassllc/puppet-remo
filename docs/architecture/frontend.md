@@ -316,7 +316,7 @@ func (h *Handler) Clients(c *gin.Context) {
 | 属性 | 型 | 内容 |
 |------|----|------|
 | `ws-url` | string | `ws://<host>:<port>/ws/screen?viewer_id=<ULID>`。サーバーが描画時に埋め込む |
-| `readonly` | boolean | 描画時にサーバーが判定した入力の可否。操作権を持たなければ付与する |
+| `readonly` | boolean | 描画時にサーバーが判定した操作権の有無（持たなければ付与する）。**初期描画のヒントにすぎず、入力の可否は決めない**（下の「入力」。HTMX はコンポーネントを swap しないので、取得・解放・剥奪で更新されない） |
 | `monitor` / `quality` / `fps` | number | **初期値**。接続後はサーバーの `config` メッセージが正で、HTMX のツールバー（Lit の外）からの変更はサーバー経由で反映される |
 
 ```go
@@ -339,7 +339,7 @@ func (h *Handler) Clients(c *gin.Context) {
 | イベント | `detail` | 用途 |
 |---------|---------|------|
 | `remo:lease-changed` | WebSocket の `lease` メッセージの内容 | HTMX がリースパネルを再取得する（`hx-trigger`） |
-| `remo:error` | `{ code, message }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラがトーストを出す |
+| `remo:error` | `{ code, message }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がトーストを出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、トーストは `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
 
 **状態とライフサイクル**
 
@@ -366,11 +366,11 @@ stateDiagram-v2
 - `ready` / `config` の `width` / `height` で `canvas` のサイズを決める（ストリームの座標空間 = モニターの物理ピクセル）。CSS で表示サイズに縮小する
 - バイナリフレーム（API 仕様 §5.4）を受信したら、各タイルの JPEG を `createImageBitmap` で復号し、`(x, y)` に描画する。連番（`seq`）が古いフレームは捨てる。キーフレーム（bit0）は全面を置き換える。復号中に新しいフレームが来ても、描画は連番の順に行う
 - `width` / `height` が変わったら `canvas` を作り直し、次のキーフレームまで描画を保留する
-- 閲覧のみ（`readonly` または非保持）でも描画は行う
+- 閲覧のみ（非保持）でも描画は行う
 
 **入力（操作権を持つときだけ）**
 
-「入力が有効」とは、`readonly` が付いておらず、かつ最後に受信した `lease` メッセージで `mine: true` であること。`readonly` は描画時のサーバー判定で、その後の変化は WebSocket の `lease`（サーバーが判定した `mine`）で切り替える。HTMX はコンポーネントを swap しないため、属性の再描画に頼らない。サーバー側でも入力は常に検査される（リース・InputGuard）。
+「入力が有効」とは、最後に受信した `lease`（`ready` の `lease` を含む）が `mine: true` であること。`mine: false`（他者の保持・空き・剥奪）では閲覧のみで、`mine` が `false` になった時点で押下中のキー・ボタンを送らずに捨てる（サーバーが解放する）。`readonly` 属性は描画時のサーバー判定を表す初期のヒントで、入力の可否には使わない（HTMX はコンポーネントを swap しないため、取得・解放・剥奪の後も属性は描画時のままで、これに頼ると操作権を取得しても入力が送られない）。サーバー側でも入力は常に検査される（リース・InputGuard）。
 
 | 入力 | 送るメッセージ（API 仕様 §5.3） | 備考 |
 |------|------------------------------|------|
@@ -499,7 +499,7 @@ graph LR
 |---------|------|---------|
 | Go ハンドラ（GUI・リモート） | `httptest` + HTML アサーション | ページルートの `HX-Request` 分岐（フルページに `<html>` が有る / フラグメントに無い）、アクションルートが常にフラグメント、ステータスコード、`/api/v1` が JSON、ミドルウェアの拒否（Host / Origin / ヘッダー / 未登録 / キルスイッチ）、エラーのフラグメントの `data-error-code`、**すべての HTML レスポンス（エラーページ・キルスイッチの 503 を含む）に §7.1 の CSP ヘッダーが付くこと** |
 | Templ | Go のテストで `Render()` → HTML 文字列のアサーション | **状態駆動レンダリング**: 権限・状態ごとに、押せないボタンが**描画されていない**こと（`CanRevoke = false` なら強制剥奪のボタンが HTML に無い）。キルスイッチ中は操作系が無い。**CSP 適合**: 描画した HTML に、`src` の無い `<script>`、`<style>`、`style=` 属性、`on*` 属性、`hx-on` 系の属性、`js:` 接頭辞、`hx-trigger` の `[...]` フィルターが無いこと |
-| Lit（`<remo-screen-viewer>`。M2） | `@open-wc/testing` + `@web/test-runner`（ヘッドレス Chromium） | タイルの描画（偽の WebSocket から画像を流す）、座標変換、連番の古いフレームの破棄、キーフレームでの置換、`readonly` と `lease.mine` による入力の有効・無効、フォーカスを失ったときの `up` 送信、再接続の方針（再接続しない閉じコード）、`remo:lease-changed` の発火 |
+| Lit（`<remo-screen-viewer>`。M2） | `@open-wc/testing` + `@web/test-runner`（ヘッドレス Chromium） | タイルの描画（偽の WebSocket から画像を流す）、座標変換、連番の古いフレームの破棄、キーフレームでの置換、`lease.mine` による入力の有効・無効（`readonly` 属性が付いたままでも、`mine: true` の `lease` で入力が送られること）、フォーカスを失ったときの `up` 送信、再接続の方針（再接続しない閉じコード）、`remo:lease-changed` の発火 |
 | E2E（M2） | Playwright（Chromium。Linux のセルフホストランナー） | **偽の `platform` と偽の tailnet（`Listener` / `WhoIs` のテスト用実装）で起動したテスト専用のサーバー**（ビルドタグ `e2e`。本番のバイナリには含めない）に対して、リモートの Web UI を操作する: 未登録デバイスの待機ページ → ホスト側で許可 → ビューアの表示 → 操作権の取得 → クリックが偽の injector に届く → 強制剥奪 → キルスイッチ。全ページで CSP 違反（`securitypolicyviolation`）が 0 件であること（§7.1） |
 | GUI ルーターの E2E | `httptest` で足りる範囲に限る | Wails のウィンドウ自体（トレイ、承認ダイアログのウィンドウ、オーバーレイ）の動作は実機スモーク（コンポーネント設計 §10） |
 
@@ -567,3 +567,5 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.13 | 2026-11-01 | §10 のトレースの GUI の強制剥奪ボタン（M2。`CanRevoke` のときだけ描画、`POST /lease/revoke`）を実装に合わせて更新 | #58 |
 | 1.14 | 2026-11-01 | §12 に Web UI（`/viewer`。`handler/remote`・`layout/remote`・`organisms/viewer_*`・`pages/viewer`・待機・拒否・失効のページ）の実装と、`<remo-screen-viewer>` の成果物は #63 が出すこと、`app.ts` のスライダーの数値の追従を追記 | #62 |
 | 1.15 | 2026-11-01 | §6.2 に IME とキー入力を受ける見えない入力要素、§6.4 に再接続の試行の数え直しを追記。§12 の差分表（`lit`・`lib/ws.ts`・`lib/logger.ts`・`components/`・esbuild のエントリー・Lit のテストと E2E を作らないこと）を更新 | #63 |
+| 1.16 | 2026-11-01 | §6.2 の `readonly` を初期描画のヒントに限定し、入力の有効・無効は WebSocket の `lease`（`mine`）だけで決めると明記（操作権の取得後も `readonly` が残って入力が送られない不具合の修正） | #63 |
+| 1.17 | 2026-11-01 | §6.2 の `remo:error` のトーストを、`code` から日本語にする（文言は HTMX のアクション失敗と揃え、表に無い `code` はサーバーの `message`。WebSocket の契約は変えない） | #63 |
