@@ -54,6 +54,10 @@ type ConnRequests interface {
 	Decide(ctx context.Context, id string, status string, clientID *string) error
 	// stable_node_id に、まだ有効（expires_at > now）な denied があるか。
 	DeniedActive(ctx context.Context, stableNodeID string, now time.Time) (bool, error)
+	// 状態を問わず（pending・approved・denied・expired）、first_seen_at の新しい順（同時刻は id の新しい順）に
+	// offset 件を飛ばして limit 件返す（接続要求の履歴。GUI のページ送り）。limit < 1・offset < 0 は ErrInvalidArgument。
+	// 期限切れだが Expire 前の pending も pending のまま返す（表示側が失効として扱う）。
+	ListHistory(ctx context.Context, limit, offset int) ([]ConnRequest, error)
 	// 期限内（expires_at > 現在時刻）の pending を first_seen_at 順に返す。期限切れは Expire 前でも含めない。
 	ListPending(ctx context.Context) ([]ConnRequest, error)
 	// expires_at を過ぎた pending を expired にし、last_seen_at から ConnRequestRetention を
@@ -181,6 +185,28 @@ func (s connRequestStore) ListPending(ctx context.Context) ([]ConnRequest, error
 	rows, err := s.db.sql.QueryContext(ctx,
 		`SELECT `+connRequestColumns+` FROM connection_requests
 		WHERE status = 'pending' AND expires_at > ? ORDER BY first_seen_at, id`, toMS(s.db.clock.Now()))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []ConnRequest
+	for rows.Next() {
+		r, err := scanConnRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s connRequestStore) ListHistory(ctx context.Context, limit, offset int) ([]ConnRequest, error) {
+	if limit < 1 || offset < 0 {
+		return nil, fmt.Errorf("%w: history limit %d offset %d", domain.ErrInvalidArgument, limit, offset)
+	}
+	rows, err := s.db.sql.QueryContext(ctx,
+		`SELECT `+connRequestColumns+` FROM connection_requests
+		ORDER BY first_seen_at DESC, id DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}

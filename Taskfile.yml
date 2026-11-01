@@ -87,6 +87,26 @@ tasks:
     cmds:
       - cmd: go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{"{{"}}.Version{{"}}"}}' github.com/a-h/templ)
 
+  tools:lefthook:
+    desc: 固定した版の lefthook を導入する（Git フックの実行ツール。lefthook.yml の構文はこの版に合わせる）
+    cmds:
+      - go install github.com/evilmartians/lefthook/v2@v2.1.17
+
+  hooks:install:
+    desc: Git フック（pre-commit・pre-push）を .git/hooks に入れる（clone ごとに一度。lefthook が要る）
+    cmds:
+      - lefthook install
+
+  hooks:pre-commit:
+    desc: pre-commit のフックをステージ済みのファイルに対して手元で実行する（gofmt・golangci-lint・templ・型検査）
+    cmds:
+      - lefthook run pre-commit --no-auto-install
+
+  hooks:pre-push:
+    desc: pre-push のフック（go test ./...）を手元で実行する
+    cmds:
+      - lefthook run pre-push --no-auto-install --force
+
   templ:generate:
     desc: .templ から _templ.go を生成する（生成物はコミットする）
     cmds:
@@ -109,36 +129,31 @@ tasks:
           fi
 
   frontend:install:
-    desc: フロントエンドの依存を package-lock.json のとおりに導入する
+    desc: フロントエンドの依存を bun.lock のとおりに導入する（導入済みなら bun がすぐ終える）
     dir: static
-    sources:
-      - package.json
-      - package-lock.json
-    generates:
-      - node_modules/.package-lock.json
     cmds:
-      - npm ci
+      - bun install --frozen-lockfile
 
   frontend:build:
     desc: esbuild と Tailwind CLI で static/dist を作る（htmx と拡張を同梱。毎回作り直す）
     deps: [frontend:install]
     dir: static
     cmds:
-      - npm run build
+      - bun run build
 
   frontend:typecheck:
     desc: TypeScript の型検査
     deps: [frontend:install]
     dir: static
     cmds:
-      - npx tsc -p .
+      - bunx tsc -p .
 
   frontend:dev:
     desc: esbuild と Tailwind のウォッチ（WAILS_VITE_PORT で serve。wails3 dev が呼ぶ）
     deps: [frontend:install]
     dir: static
     cmds:
-      - npm run dev
+      - bun run dev
 
   gui:demo:
     desc: GUI ルーターを偽の service で loopback に起動する（スクリーンショット・見た目の確認用。本番のバイナリには入らない）

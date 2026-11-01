@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +39,7 @@ type Fakes struct {
 	Admin      *Admin
 	Settings   *Settings
 	Apps       *Apps
+	Logs       *Logs
 }
 
 // New は空の状態の Fakes を返す。時計は 2026-10-30 12:00 UTC。
@@ -52,6 +55,7 @@ func New() *Fakes {
 		KillSwitch: &KillSwitch{bus: bus},
 		Admin:      &Admin{clock: clock, bus: bus},
 		Apps:       &Apps{},
+		Logs:       &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
 		Settings:   &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300}, CanAutostart: true},
 	}
 }
@@ -60,7 +64,7 @@ func New() *Fakes {
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
 		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin,
-		Settings: f.Settings, Apps: f.Apps, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
+		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
 
@@ -198,6 +202,7 @@ type Admin struct {
 	Updates  []service.ClientUpdate
 	// 注入するエラー。nil でなければ、該当の操作がこれを返す。
 	PendingErr error
+	HistoryErr error
 	IssueErr   error
 }
 
@@ -233,6 +238,27 @@ func (a *Admin) PendingRequests(context.Context) ([]service.ConnRequest, error) 
 	return out, nil
 }
 
+// RequestHistory は Requests を、届いた日時（FirstSeenAt）の新しい順（同時刻は ID の新しい順）に 1 ページ返す（本物と同じ規則）。
+func (a *Admin) RequestHistory(_ context.Context, page int) (service.RequestHistoryPage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.HistoryErr != nil {
+		return service.RequestHistoryPage{}, a.HistoryErr
+	}
+	page = max(page, 1)
+	all := slices.Clone(a.Requests)
+	slices.SortStableFunc(all, func(x, y service.ConnRequest) int {
+		if c := y.FirstSeenAt.Compare(x.FirstSeenAt); c != 0 {
+			return c
+		}
+		return strings.Compare(y.ID, x.ID)
+	})
+	size := service.RequestHistoryPageSize
+	start := min((page-1)*size, len(all))
+	end := min(start+size, len(all))
+	return service.RequestHistoryPage{Items: all[start:end], Page: page, HasPrev: page > 1, HasNext: end < len(all)}, nil
+}
+
 func (a *Admin) decide(id, status string, clientID *string) error {
 	for i := range a.Requests {
 		if a.Requests[i].ID != id {
@@ -243,6 +269,8 @@ func (a *Admin) decide(id, status string, clientID *string) error {
 		}
 		a.Requests[i].Status = status
 		a.Requests[i].ClientID = clientID
+		decided := a.clock.Now()
+		a.Requests[i].DecidedAt = &decided
 		return nil
 	}
 	return domain.NewError(domain.CodeConflict, "connection request is not pending", nil)
@@ -403,4 +431,32 @@ func (a *Admin) RevokeToken(_ context.Context, clientID, tokenID string) error {
 		}
 	}
 	return fmt.Errorf("token: %w", service.ErrNotFound)
+}
+
+// Logs は gui.Logs の偽実装。Items は新しい順に並べて入れる（本物のファイルと同じ順序。絞り込みとページ分けは本物と同じ規則）。
+type Logs struct {
+	Items    []service.AppLogEntry
+	FilePath string
+	Err      error
+}
+
+// Path は表示するログファイルのパス。
+func (l *Logs) Path() string { return l.FilePath }
+
+// Entries は Items を filter で絞って 1 ページ返す。
+func (l *Logs) Entries(_ context.Context, filter service.AppLogFilter, page int) (service.AppLogPage, error) {
+	if l.Err != nil {
+		return service.AppLogPage{}, l.Err
+	}
+	page = service.ClampAppLogPage(page)
+	var all []service.AppLogEntry
+	for _, e := range l.Items {
+		if e.Severity >= filter.MinLevel() {
+			all = append(all, e)
+		}
+	}
+	size := service.AppLogPageSize
+	start := min((page-1)*size, len(all))
+	end := min(start+size, len(all))
+	return service.AppLogPage{Items: all[start:end], Page: page, HasPrev: page > 1, HasNext: end < len(all)}, nil
 }

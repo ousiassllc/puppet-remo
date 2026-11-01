@@ -59,7 +59,16 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"Only one session holds the lease at a time; others get lease_held_by_other. " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
 	"you can pass only an app_id, never a path or arguments, and it needs the lease like input tools. " +
-	"Tool failures are returned with isError and structuredContent {code, message}."
+	"Some apps only bring an already open window forward when launched instead of opening a new one (tabbed single-window apps " +
+	"such as Windows 11 Notepad, browsers, Windows Terminal), and that window may hold the user's unsaved work: " +
+	"launch_app reports the foreground window and sets reused_existing_window when no window of the returned pid was found, " +
+	"but always confirm the target with a screenshot or list_windows before typing or clicking. " +
+	"puppet-remo's own windows (its host GUI and dialogs) are never captured in screenshots, so they do not appear there, " +
+	"and input into them is blocked: the input tools fail with input_blocked (detail.reason own_window) when the target point or the " +
+	"foreground window is one of them. screenshot lists them as own_windows, and the error carries detail.own_windows, " +
+	"as {monitor, rect} in the scaled coordinates of that monitor's screenshot, so you can avoid those areas; " +
+	"list_windows marks them with blocked: true and blocked_reason own_window. " +
+	"Tool failures are returned with isError and structuredContent {code, message, detail?}."
 
 // PrincipalFunc は連鎖（web/middleware）を通ったリクエストの主体を返す。
 // S11 が middleware.PrincipalFrom(r.Context()) を包んで渡す（mcp は web を import できない）。

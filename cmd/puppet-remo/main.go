@@ -141,6 +141,7 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		Watcher: tailnet.NewWatcher(tailnet.WatcherConfig{API: api}),
 		WhoIs:   tailnet.NewWhoIs(tailnet.WhoIsConfig{API: api}),
 		Static:  staticHandler,
+		Logs:    app.NewLogReader(dataDir),
 		Version: version,
 		Logger:  log,
 		Closers: closers,

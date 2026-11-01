@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
 func status(t *testing.T, cs *mcpsdk.ClientSession) statusBody {
@@ -292,6 +295,42 @@ func TestKillSwitchActive(t *testing.T) {
 				t.Errorf("code = %s, want kill_switch_active", got)
 			}
 		})
+	}
+}
+
+// own_window の入力拒否は、puppet-remo のウィンドウの範囲（縮小座標の monitor と rect）を detail.own_windows に載せる。
+func TestErrorOwnWindowDetailIsSerialized(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.err = domain.ErrInputBlocked.
+		WithMsg("the target is a puppet-remo window").
+		WithDetail("reason", domain.ReasonOwnWindow).
+		WithDetail(service.DetailOwnWindows, []domain.OwnRegion{
+			{Monitor: 0, Rect: domain.Rect{X: 784, Y: 0, W: 393, H: 442}},
+			{Monitor: 1, Rect: domain.Rect{X: 0, Y: 10, W: 20, H: 30}},
+		})
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "mouse_move", map[string]any{"x": 900, "y": 100})
+	if got := res.errCode(t); got != domain.CodeInputBlocked {
+		t.Fatalf("code = %s", got)
+	}
+	const want = `{"code":"input_blocked","message":"the target is a puppet-remo window","detail":{"reason":"own_window","own_windows":[` +
+		`{"monitor":0,"rect":{"x":784,"y":0,"width":393,"height":442}},` +
+		`{"monitor":1,"rect":{"x":0,"y":10,"width":20,"height":30}}]}}`
+	var wantBody any
+	if err := json.Unmarshal([]byte(want), &wantBody); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(res.StructuredContent, wantBody) {
+		t.Errorf("structuredContent =\n %#v\nwant\n %#v", res.StructuredContent, wantBody)
+	}
+	// 元のエラーの Detail は書き換えない。
+	var de *domain.Error
+	if !errors.As(e.ctl.err, &de) {
+		t.Fatal("not a domain error")
+	}
+	if _, ok := de.Detail[service.DetailOwnWindows].([]domain.OwnRegion); !ok {
+		t.Errorf("source detail was modified: %#v", de.Detail[service.DetailOwnWindows])
 	}
 }
 

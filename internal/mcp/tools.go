@@ -70,6 +70,7 @@ func registerTool[In any](s *Server, name, description string, readOnly bool, au
 		defer cancel()
 		start := time.Now()
 		res, err := fn(ctx, who, in)
+		s.logToolCall(ctx, name, who, readOnly, time.Since(start), err)
 		if auditArgs != nil && s.audit != nil {
 			detail := auditArgs(in)
 			if len(res.AuditDetail) > 0 {

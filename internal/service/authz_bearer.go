@@ -39,6 +39,7 @@ func (a *authz) VerifyBearer(ctx context.Context, remoteAddr string, p Principal
 	now := a.cfg.Clock.Now()
 	if ok, first, retry := a.bearerFailures.check(device, now, false); !ok {
 		if first {
+			a.log.Warn("bearer authentication is rate limited", "device", p.Client.DisplayName, "remote_ip", remoteIP(remoteAddr))
 			a.audit(ctx, bearerAudit("auth.rate_limited", domain.CodeRateLimited, p.Client),
 				map[string]any{"remote_ip": remoteIP(remoteAddr)})
 		}
@@ -50,6 +51,8 @@ func (a *authz) VerifyBearer(ctx context.Context, remoteAddr string, p Principal
 	}
 	if reason != "" {
 		a.bearerFailures.check(device, now, true)
+		// 理由（reason）だけを出す。Authorization ヘッダー・トークン・ハッシュは出さない（NFR-S13）。
+		a.log.Warn("bearer authentication failed", "reason", reason, "device", p.Client.DisplayName, "remote_ip", remoteIP(remoteAddr))
 		a.audit(ctx, bearerAudit("auth.bearer_failed", domain.CodeUnauthorized, p.Client),
 			map[string]any{"reason": reason, "remote_ip": remoteIP(remoteAddr)})
 		return nil, ErrUnauthorized

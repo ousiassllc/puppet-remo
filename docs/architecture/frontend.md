@@ -71,7 +71,7 @@ graph TD
 | Lit は編集系のリッチ UI | ライブ画面ビューア 1 つのみ | 要件が 1 画面に限られる |
 | Huma で JSON API（アクションも含む） | `/api/v1/*` は読み取り専用（状態・モニター・リース）のみ。**アクションはすべて HTML を返す HTMX のルート**。MCP と WebSocket は Huma の対象外 | 状態を変更する操作の利用者は HTMX だけ。JSON の変更 API は不要 |
 | 静的ファイルは Gin の `Static`、本番は `max-age=31536000` | `go:embed` した `dist/` を両ルーターで配信し、**`Cache-Control: no-cache` + `ETag`（ビルド ID）**。開発は `!production` ビルドでディスクから配信（**ユーザー承認済み**） | 単一バイナリ配布。ファイル名にハッシュを付けないため、アプリの更新後に利用者のブラウザが古い JS を長期保持する事故を避ける |
-| 開発は `air` + `templ generate --watch` + `npm run dev` | **`wails3 dev`**（Go の再ビルドと再起動は Wails が行う）+ `templ generate --watch` + `frontend:dev`（esbuild のウォッチ + `WAILS_VITE_PORT` での待ち受け、Tailwind のウォッチ。§8.3） | Wails の開発サーバーとホットリロードが二重にならないようにする。`wails3 dev` は `frontend:dev` が待ち受けることを前提にする（§8.3） |
+| 開発は `air` + `templ generate --watch` + `bun run dev` | **`wails3 dev`**（Go の再ビルドと再起動は Wails が行う）+ `templ generate --watch` + `frontend:dev`（esbuild のウォッチ + `WAILS_VITE_PORT` での待ち受け、Tailwind のウォッチ。§8.3） | Wails の開発サーバーとホットリロードが二重にならないようにする。`wails3 dev` は `frontend:dev` が待ち受けることを前提にする（§8.3） |
 | `lib/api.ts` を共通ライブラリに含める | **初版では作らない**（**ユーザー承認済み**）。Lit から HTTP を呼ぶ箇所が無いため。必要になった時点で追加する（§6.1） | 呼び出し元が無い共通コードは持たない |
 | CSP は任意（HALT 標準は規定なし） | **両ルーターの全 HTML レスポンスに CSP ヘッダーを付ける**（`script-src 'self'` / `style-src 'self'`。インラインのスクリプト・スタイル・イベント属性は禁止。§7.1。NFR-S19） | API キーの入力画面を持つホスト GUI が主な対象。共有テンプレートなので Web UI も同じ規約にする |
 | `lib/ws.ts` は JSON メッセージ前提 | **バイナリフレーム（画面）と JSON テキストフレーム（制御・入力）の両方を扱う**（§6.2） | `/ws/screen` の形式（API 仕様 §5） |
@@ -252,6 +252,10 @@ func (h *Handler) Clients(c *gin.Context) {
 - ルートの応答（`handler/gui/apps.go`）: `GET /apps` は `HX-Request` なら一覧（`#app-list`）、`GET /apps/new` は追加フォーム、`GET /apps/{id}/edit` は編集フォームのフラグメント（`HX-Boosted` とそれ以外はフルページ。`/apps/{id}/edit` のフルページは一覧の該当行が編集フォームになる。対象が無ければ 404）。`POST /apps` の 200 は一覧（`#app-list` を差し替え）に、追加フォームを空に戻す OOB（`#app-form-new`）とトーストを添える。`PUT /apps/{id}` の 200 は行のカード（編集フォームを差し替え）とトースト。422 はどちらもフォーム自身（`hx-target-422="this"`）を、入力値（引数は入力どおりの複数行）と項目別のメッセージ付きで再描画する。50 件到達の 409 `conflict` と、想定外のエラーはトーストのフラグメント（`HX-Retarget: #toast-root`）。`DELETE /apps/{id}` の 200 は一覧に、モーダルを閉じる OOB とトーストを添える
 - 引数は、入力欄の文字列をそのまま（LF・CRLF どちらも）`domain.ParseArgsLines` で 1 行 1 引数に分け、空行は捨てる。編集フォームは保存済みの引数を改行でつないで出す
 - 実装は `organisms/app_list.templ`（`AppList`・`AppCard`）・`organisms/app_form.templ`（`AppForm`・`AppExePathField`）・`pages/apps.templ`・アトム `textarea`。ハンドラは `service.AppRegistry` を `gui.Deps.Apps`（利用者側のインターフェース `gui.Apps`）で受け、`platform` を import しない
+
+**接続要求の履歴（`/requests/history`。FR-H03）**: 「接続要求」画面の「未処理」と「履歴」を `RequestsTabs` organism のタブで切り替える（どちらも `hx-boost`・`hx-target="#main"`・`hx-target-error="#main"`。サイドバーの強調は「接続要求」のまま）。履歴は `ConnectionRequestHistory` organism（`#request-history`）で、届いた日時・デバイス名・tailnet IP・ユーザー・結果（許可・拒否・失効・未処理のバッジ）・処理した日時の表を、読み取り専用で出す。件数が増えても重くならないよう、**1 ページ 20 件の固定のページ送り**にする（全件の読み込みも件数の上限による打ち切りもしない）。ページはクエリ `page` で、前へ・次へのリンクは `hx-get`・`hx-target="#request-history"`・`hx-swap="outerHTML"`・`hx-push-url="true"` で表だけを差し替える（`href` も持つため、JS なしや履歴の復元でも同じ URL でフルページが開く）。履歴は `#request-list` と違い `data-poll-rev` を持たず、`/poll` の対象にしない（表示中の表を勝手に差し替えない）。実装は `organisms/request_history.templ`・`pages/request_history.templ`
+
+**ログ画面（`/logs`。FR-H13）**: サイドバーの「ログ」（`navItems`・`view.NavLogs`）。アプリの運用ログ（NFR-O01。ファイル）を、日時・レベル（`atoms.Badge`。ERROR は danger・WARN は warn・INFO は ok・DEBUG は neutral）・内容（メッセージと属性の `キー 値`）の表で新しい順に出す。`AppLog` organism（`#app-log`）が、レベルの絞り込み（「すべて」「WARN 以上」「ERROR のみ」のリンク。クエリ `level`）・表・ページ送り（クエリ `page`。1 ページ 50 件の固定。「接続要求の履歴」と同じ理由）を持ち、リンクは `hx-get`・`hx-target="#app-log"`・`hx-swap="outerHTML"`・`hx-push-url="true"` で `#app-log` だけを差し替えて URL を更新する（絞り込みのリンクはページを 1 に戻し、ページ送りは `level` を保つ）。ログファイルのパスはページ（`pages/logs.templ`）の見出しの下に出す（フラグメントには含めない）。ホストのファイルマネージャーで開くボタンは持たない（M1 の GUI にフォルダーを開く仕組みがなく、パスが分かれば足りるため。Issue #45）。読み取り専用で、`/poll` の対象ではない（手動の再読み込み。絞り込みのリンクのクリックでも最新になる）。ハンドラは `gui.Deps.Logs`（利用者側のインターフェース `gui.Logs`。実体は `app.LogReader`）で受ける。ログの文字列はすべて templ がエスケープする。ログに秘密が出ないこと（NFR-S13）は、書き込み側の `ReplaceAttr` と読み出し側の `redactString` で守る（[アーキテクチャ「運用ログと監査ログ」](overview.md)）
 
 ### 5.5 HTMX 拡張の採否
 
@@ -446,7 +450,7 @@ graph LR
 
 - esbuild: エントリーポイントは各 Web Component（`screen-viewer`）と `src/app/` の 2 ファイル。出力形式は下記。本番は minify、開発は sourcemap
 - Tailwind CLI: `src/css/app.css` → `dist/css/app.css`（minify）。Templ のファイルをコンテンツとして走査する
-- HTMX: `htmx.min.js`、`response-targets`、`sse` を `dist/js/` にコピーする（HTMX の拡張は別パッケージ）。**版の固定の手順**: 実装の着手時に `npm install htmx.org@2 htmx-ext-response-targets@2 htmx-ext-sse@2` で最新の 2.x を入れ、`package-lock.json` をコミットして固定する。以降の更新は意図的に行い、E2E の CSP 違反の検査（§7.1）を通す
+- HTMX: `htmx.min.js`、`response-targets`、`sse` を `dist/js/` にコピーする（HTMX の拡張は別パッケージ）。**版の固定の手順**: 実装の着手時に `bun add htmx.org@2 htmx-ext-response-targets@2 htmx-ext-sse@2` で最新の 2.x を入れ、`bun.lock` をコミットして固定する。以降の更新は意図的に行い、E2E の CSP 違反の検査（§7.1）を通す
 - esbuild の出力形式: `htmx-config.ts` は IIFE（classic スクリプト。htmx の直後に同期で読み込む）、`app.ts` と Web Component は ES モジュール。Templ の `<script>` タグは外部ファイルの参照のみ（§7.1）で、モジュールには `type="module"` を付ける
 - 成果物は両ルーターが同じ `dist/` から配信する。`Cache-Control: no-cache` + `ETag`（ビルド ID。§2）
 
@@ -455,14 +459,15 @@ graph LR
 ```json
 {
   "scripts": {
-    "build": "npm run build:css && npm run build:js && npm run copy:htmx",
-    "build:js": "node esbuild.config.mjs",
-    "build:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
-    "copy:htmx": "node scripts/copy-htmx.mjs",
-    "dev": "concurrently \"npm run dev:css\" \"npm run dev:js\"",
-    "dev:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
-    "dev:js": "node esbuild.config.mjs --watch",
-    "test": "web-test-runner \"src/**/*.test.ts\" --node-resolve"
+    "build": "bun run clean && bun run build:css && bun run build:js && bun run copy:htmx",
+    "clean": "bun scripts/clean.mjs",
+    "build:js": "bun esbuild.config.mjs",
+    "build:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
+    "copy:htmx": "bun scripts/copy-htmx.mjs",
+    "dev": "bun --bun concurrently \"bun run dev:css\" \"bun run dev:js\"",
+    "dev:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
+    "dev:js": "bun esbuild.config.mjs --watch",
+    "test": "bun --bun web-test-runner \"src/**/*.test.ts\" --node-resolve"
   }
 }
 ```
@@ -477,7 +482,7 @@ graph LR
 |---------|-------|------|
 | アプリ（Go） | `wails3 dev` | `.go` の変更で再ビルド・再起動。ホスト GUI は WebView で確認 |
 | Templ 生成 | `templ generate --watch` | `.templ` の変更で `_templ.go` を再生成（Wails がそれを検知して再ビルド） |
-| フロントエンド | Taskfile の `frontend:dev`（`npm run dev` = esbuild のウォッチ + `serve`、Tailwind のウォッチ） | `static/dist/` を更新し、**`WAILS_VITE_PORT` で待ち受ける**（下記） |
+| フロントエンド | Taskfile の `frontend:dev`（`bun run dev` = esbuild のウォッチ + `serve`、Tailwind のウォッチ） | `static/dist/` を更新し、**`WAILS_VITE_PORT` で待ち受ける**（下記） |
 
 - 開発ビルド（`!production`）の静的ファイルはディスク（`static/dist`）から配信する。ブラウザの再読み込みで反映される。ディスクの場所はカレントから親へ辿って `static/dist` を探す（`-trimpath` でソースの位置が使えないため）。別の場所は環境変数 `PUPPET_REMO_STATIC_DIR` で指す。ビルド ID（`ETag`）は `dist` 全体の内容のハッシュ（本番は起動後の最初の 1 回、開発は毎回）本番ビルド（`-tags production`。`wails3 build` / `package` が付与）は `go:embed` を使う
 - **`wails3 dev` は常に `FRONTEND_DEVSERVER_URL=http://<host>:$WAILS_VITE_PORT`（`WAILS_VITE_PORT` の既定は 9245）を設定し、アプリの起動前処理（preRun）がその URL を 500 ms 間隔で 10 回確認して、何も待ち受けていなければ致命的エラーで終了する**（Wails v3.0.0 のソースで確認）。したがってこの変数を未設定にして運用することはできない。`frontend:dev` タスクは、`WAILS_VITE_PORT` で待ち受けるプロセスを起動する必要がある。本プロジェクトでは esbuild の `serve` がその役目を担う
@@ -500,7 +505,7 @@ graph LR
 
 テスト専用サーバーは tailnet の IP ではなくループバックで Listen するが、これは**テスト用のビルドタグ（`e2e`）に限る**（NFR-S01）。本番のビルドは常に tailnet の IP だけで Listen する。
 
-**CI の手順**（すべて Linux のセルフホストランナー。ジョブは `go`・`windows-cross`・`frontend`・`lint`）: `go` ジョブ: gofmt → `go build` / `go vet` → import 規則 → `go test`。`windows-cross` ジョブ: `GOOS=windows` の `go build` / `go vet`（と import 規則）。`frontend` ジョブ: `templ generate` の差分チェック → `npm ci` → フロントエンドのビルド → TypeScript の型検査 → 本番ビルド（Windows 向けを含む）→ 同梱した `dist` のテスト。`lint` ジョブ: golangci-lint（Linux と `GOOS=windows`）。M2 で、Lit のテスト（`npm test`）と、テスト専用サーバー（`-tags e2e`）をビルドしての Playwright を足す。
+**CI の手順**（すべて Linux のセルフホストランナー。ジョブは `go`・`windows-cross`・`frontend`・`lint`）: `go` ジョブ: gofmt → `go build` / `go vet` → import 規則 → `go test`。`windows-cross` ジョブ: `GOOS=windows` の `go build` / `go vet`（と import 規則）。`frontend` ジョブ: bun の導入（`./.github/actions/setup-bun`。sudo 不要、版と SHA-256 は `scripts/ci/install-bun.sh` に固定）→ `templ generate` の差分チェック → `bun install --frozen-lockfile` → フロントエンドのビルド（`bun run build`）→ TypeScript の型検査（`bunx tsc -p .`）→ 本番ビルド（Windows 向けを含む）→ 同梱した `dist` のテスト。`lint` ジョブ: golangci-lint（Linux と `GOOS=windows`）。M2 で、Lit のテスト（`bun run test`）と、テスト専用サーバー（`-tags e2e`）をビルドしての Playwright を足す。
 
 ## 10. 要件とのトレース
 
@@ -555,3 +560,6 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.7 | 2026-10-30 | §12「M1 実装での差分」を新設（リモートの UI・Lit・E2E が M2、`internal/web` の構成、GUI のページ、`htmx-ext-sse` の同梱と未使用、`static/package.json`、`gui:demo`・スクリーンショット・スモーク手順）。§3 のハンドラの依存規則に `tailnet` を追記 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.8 | 2026-10-30 | 起動許可アプリの画面（M1.5。FR-H12）を追加: §3 のディレクトリ構成（`apps`・`app_list`・`app_form`）、§5.4 のファイル選択のパターン（`hx-post="/apps/pick-file"`）、§5 の画面の方針（フォーム・注意書き・削除の確認・`/poll` の対象外・パスはホスト GUI だけに出す）、§10 のトレース | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.9 | 2026-10-30 | 起動許可アプリの画面の実装（#23）に合わせて、§5.4 のファイル選択の `hx-target` と `form_id`、§5 の `/apps` の応答（フラグメント・OOB・422・409）と構成、§10 のトレース、§12 のアトム（`textarea`）・ページを追記 | #23 の実装との整合 |
+| 1.10 | 2026-11-01 | フロントエンド（`static/`）のパッケージマネージャを npm から bun に変更（§8.1・§8.2・§8.3・§9）。ロックファイルは `package-lock.json` から `bun.lock`、スクリプトは `bun run`・`bunx`、CI は `bun install --frozen-lockfile`。runner への bun の導入手順（sudo なし）を CI の中に持つ | TS/JS のパッケージマネージャは bun に固定する方針（#42） |
+| 1.11 | 2026-11-01 | §5.4 に接続要求の履歴（「未処理」「履歴」のタブと、1 ページ 20 件のページ送り。固定の件数のページ分けを選んだ理由と `hx-get` の差し替え）を追加 | #44 |
+| 1.12 | 2026-11-01 | §5.4 にログ画面（サイドバーの「ログ」。レベルの絞り込みと 1 ページ 50 件のページ送り、`#app-log` の差し替え、ファイルを開くボタンを持たない理由）を追加 | #45 |

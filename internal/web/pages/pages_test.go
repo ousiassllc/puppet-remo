@@ -47,21 +47,25 @@ func TestLayoutLoadsOnlyLocalExternalScriptsInOrder(t *testing.T) {
 func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 	chrome := view.Chrome{Active: view.NavClients}
 	forms := map[string]string{
-		"dashboard": webtest.Render(t, pages.Dashboard(view.Dashboard{Chrome: chrome})),
-		"requests":  webtest.Render(t, pages.Requests(view.Requests{Chrome: chrome})),
-		"clients":   webtest.Render(t, pages.Clients(view.Clients{Chrome: chrome})),
-		"detail":    webtest.Render(t, pages.ClientDetail(view.ClientDetail{Chrome: chrome, BackURL: "/clients", Form: view.TokenForm{ActionURL: "/clients/c1/tokens"}})),
-		"settings":  webtest.Render(t, pages.Settings(view.Settings{Chrome: chrome})),
-		"apps":      webtest.Render(t, pages.Apps(view.Apps{Chrome: chrome, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}})),
-		"error":     webtest.Render(t, pages.Error(view.ErrorPage{Chrome: chrome, Code: "not_found", Title: "x"})),
+		"dashboard":        webtest.Render(t, pages.Dashboard(view.Dashboard{Chrome: chrome})),
+		"requests":         webtest.Render(t, pages.Requests(view.Requests{Chrome: chrome})),
+		"requests history": webtest.Render(t, pages.RequestsHistory(view.RequestsHistory{Chrome: chrome})),
+		"logs":             webtest.Render(t, pages.Logs(view.AppLogPage{Chrome: chrome, Path: `C:\x\puppet-remo.log`})),
+		"clients":          webtest.Render(t, pages.Clients(view.Clients{Chrome: chrome})),
+		"detail":           webtest.Render(t, pages.ClientDetail(view.ClientDetail{Chrome: chrome, BackURL: "/clients", Form: view.TokenForm{ActionURL: "/clients/c1/tokens"}})),
+		"settings":         webtest.Render(t, pages.Settings(view.Settings{Chrome: chrome})),
+		"apps":             webtest.Render(t, pages.Apps(view.Apps{Chrome: chrome, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}})),
+		"error":            webtest.Render(t, pages.Error(view.ErrorPage{Chrome: chrome, Code: "not_found", Title: "x"})),
 
-		"dashboard boosted": webtest.Render(t, pages.DashboardBoosted(view.Dashboard{Chrome: chrome})),
-		"requests boosted":  webtest.Render(t, pages.RequestsBoosted(view.Requests{Chrome: chrome})),
-		"clients boosted":   webtest.Render(t, pages.ClientsBoosted(view.Clients{Chrome: chrome})),
-		"detail boosted":    webtest.Render(t, pages.ClientDetailBoosted(view.ClientDetail{Chrome: chrome, BackURL: "/clients"})),
-		"settings boosted":  webtest.Render(t, pages.SettingsBoosted(view.Settings{Chrome: chrome})),
-		"apps boosted":      webtest.Render(t, pages.AppsBoosted(view.Apps{Chrome: chrome, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}})),
-		"error boosted":     webtest.Render(t, pages.ErrorBoosted(view.ErrorPage{Chrome: chrome, Code: "not_found"})),
+		"dashboard boosted":        webtest.Render(t, pages.DashboardBoosted(view.Dashboard{Chrome: chrome})),
+		"requests boosted":         webtest.Render(t, pages.RequestsBoosted(view.Requests{Chrome: chrome})),
+		"requests history boosted": webtest.Render(t, pages.RequestsHistoryBoosted(view.RequestsHistory{Chrome: chrome})),
+		"logs boosted":             webtest.Render(t, pages.LogsBoosted(view.AppLogPage{Chrome: chrome})),
+		"clients boosted":          webtest.Render(t, pages.ClientsBoosted(view.Clients{Chrome: chrome})),
+		"detail boosted":           webtest.Render(t, pages.ClientDetailBoosted(view.ClientDetail{Chrome: chrome, BackURL: "/clients"})),
+		"settings boosted":         webtest.Render(t, pages.SettingsBoosted(view.Settings{Chrome: chrome})),
+		"apps boosted":             webtest.Render(t, pages.AppsBoosted(view.Apps{Chrome: chrome, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}})),
+		"error boosted":            webtest.Render(t, pages.ErrorBoosted(view.ErrorPage{Chrome: chrome, Code: "not_found"})),
 	}
 	for name, out := range forms {
 		t.Run(name, func(t *testing.T) {

@@ -1,7 +1,7 @@
 name: build-installer
 description: >-
   Wails の Windows 向け NSIS インストーラを、セルフホストの Linux runner で作る。
-  道具（Go・Node・task・wails3・makensis）はこのアクションの中で入れる。署名はしない。
+  道具（Go・bun・task・wails3・makensis）はこのアクションの中で入れる。署名はしない。
   呼び出す側が先に actions/checkout を済ませておくこと（リポジトリの内容を使う）。
 
 inputs:
@@ -23,14 +23,14 @@ outputs:
 runs:
   using: composite
   steps:
-    # Go・npm のキャッシュと、入れた道具は、ジョブ専用の一時領域（RUNNER_TEMP）に置く。runner のホームや他ジョブへ状態を残さない。
+    # Go・bun のキャッシュと、入れた道具は、ジョブ専用の一時領域（RUNNER_TEMP）に置く。runner のホームや他ジョブへ状態を残さない。
     - name: キャッシュと道具の置き場をジョブ専用の領域にする
       shell: bash
       run: |
         {
           echo "GOPATH=$RUNNER_TEMP/go"
           echo "GOCACHE=$RUNNER_TEMP/go-build"
-          echo "npm_config_cache=$RUNNER_TEMP/npm"
+          echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun"
         } >> "$GITHUB_ENV"
         echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
 
@@ -39,9 +39,7 @@ runs:
         go-version-file: go.mod
         cache: false
 
-    - uses: actions/setup-node@v7
-      with:
-        node-version: 24
+    - uses: ./.github/actions/setup-bun
 
     # wails3 の CLI は、cgo が有効だと Linux では gtk4・webkitgtk-6.0 を要求して導入に失敗する。CLI の導入だけ cgo を切る。
     - name: task と wails3 を導入（wails3 は go.mod の版）

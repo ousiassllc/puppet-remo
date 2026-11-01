@@ -209,6 +209,10 @@ type ctlEnv struct {
 	leases    LeaseManager
 	control   Control
 	slept     []time.Duration
+	// onSleep は Sleep のたびに（slept に足したあとで）呼ばれる。待ちの間のウィンドウの出現などを再現する。
+	// sleepErr が非 nil なら、Sleep はそれを返す（待ちの中断）。
+	onSleep  func()
+	sleepErr error
 }
 
 var ctlMonitor = domain.Monitor{Index: 0, Name: "m0", Primary: true, Size: domain.Size{W: 3200, H: 1800}, DPI: 96}
@@ -265,7 +269,13 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
 		Launcher: e.launcher, Apps: e.apps,
 		Leases: e.leases, Kill: kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
-		Sleep: func(_ context.Context, d time.Duration) error { e.slept = append(e.slept, d); return nil },
+		Sleep: func(_ context.Context, d time.Duration) error {
+			e.slept = append(e.slept, d)
+			if e.onSleep != nil {
+				e.onSleep()
+			}
+			return e.sleepErr
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

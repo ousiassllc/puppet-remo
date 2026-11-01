@@ -19,7 +19,7 @@ type Control interface {
 	//  1. KillSwitch → ErrKillSwitchActive
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
 	//  3. 引数の検査と縮小座標 → 物理座標の変換（FR-M16。範囲外は ErrInvalidCoordinates）
-	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI）
+	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI。own_window には puppet-remo のウィンドウの範囲を DetailOwnWindows で付ける）
 	//  5. platform の実行
 	//  6. Audit（引数・結果・所要時間。type の本文・クリップボードは文字数のみ。FR-AU03）
 	//
@@ -45,6 +45,7 @@ type Control interface {
 	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
 	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
+	//  5b. 起動後のウィンドウの観測（LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
 	//  6. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
 	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
 }
@@ -53,6 +54,12 @@ type Control interface {
 type LaunchResult struct {
 	AppID string
 	PID   uint32
+	// Window は起動後に前面にあったウィンドウ（プロセスの作成後、pid のウィンドウが前面に出るまで最大およそ 3 秒待って観測する）。
+	// 前面のウィンドウを確かめられなかったときは nil。pid のウィンドウとは限らない（Window.PID が PID と違うことがある）。
+	Window *domain.WindowInfo
+	// ReusedExistingWindow は、pid のトップレベルウィンドウが見つからないまま、別のプロセスのウィンドウが前面にあるとき true
+	// （タブ式の単一ウィンドウのアプリなどで、既存のウィンドウが前に出ただけの可能性がある）。Window が nil のときは false。
+	ReusedExistingWindow bool
 }
 
 // Result は Do の結果。入力系は空。
@@ -69,6 +76,9 @@ type Shot struct {
 	Physical domain.Size // 元のサイズ
 	Scaled   domain.Size // 縮小後のサイズ（Data の画像の大きさ）
 	Scale    float64
+	// OwnWindows は撮影時点で、このモニター上にある puppet-remo のウィンドウの範囲（縮小座標）。
+	// ウィンドウは画像に写らない（NFR-S06）ため、入力を拒否される場所の手がかりとして返す。取れなかったときは nil。
+	OwnWindows []domain.OwnRegion
 }
 
 // Cursor は縮小座標のカーソル位置。
@@ -206,7 +216,7 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op) (Resul
 		return Result{}, leaseID, err
 	}
 	if err := c.guard.Check(ctx, p.op, p.monitors); err != nil {
-		return Result{}, leaseID, err
+		return Result{}, leaseID, c.withOwnWindows(ctx, err)
 	}
 	// リースの検査から実行までの間に発動したキルスイッチを取りこぼさない（Trigger は状態を先に立てる）。
 	if c.kill.Active() {

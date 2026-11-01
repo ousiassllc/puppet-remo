@@ -59,7 +59,7 @@ type Platform struct {
 	Autostart service.Autostart
 }
 
-// Config は New の設定。Repo・Platform（Autostart 以外）・Watcher・WhoIs・Static は必須。
+// Config は New の設定。Repo・Platform（Autostart 以外）・Watcher・WhoIs・Static・Logs は必須。
 type Config struct {
 	Repo     Repo
 	Platform Platform
@@ -68,6 +68,8 @@ type Config struct {
 	WhoIs   tailnet.WhoIs
 	// Static は /static/* を配信するハンドラ（static.Handler）。
 	Static http.Handler
+	// Logs はホスト GUI のログ画面が読むアプリのログ（NewLogReader。FR-H13）。
+	Logs service.AppLog
 
 	Clock   tailnet.Clock // nil なら tailnet.SystemClock
 	IDs     domain.IDGen  // nil なら ULID
@@ -155,6 +157,8 @@ func (c Config) validate() error {
 		return errors.New("app: Watcher and WhoIs are required")
 	case c.Static == nil:
 		return errors.New("app: Static is required")
+	case c.Logs == nil:
+		return errors.New("app: Logs is required")
 	}
 	return nil
 }
@@ -180,7 +184,7 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lease idle timeout: %w", err)
 	}
-	a.leases, err = service.NewLeaseManager(service.LeaseConfig{Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power})
+	a.leases, err = service.NewLeaseManager(service.LeaseConfig{Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log})
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
 	}
@@ -270,18 +274,18 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	a.listen = newListenSupervisor(func() tailnet.Listener {
 		return tailnet.NewListener(tailnet.ListenerConfig{
 			Watcher: cfg.Watcher, Clock: cfg.Clock, RetryInterval: cfg.ListenRetry, ListenFunc: cfg.ListenFunc,
-			OnChange: func(tailnet.ListenState) { a.tracker.Notify() },
+			OnChange: func(st tailnet.ListenState) { logListenState(a.log, st); a.tracker.Notify() },
 		})
 	}, a.remote, func() int { return int(a.port.Load()) }, a.log)
 
 	a.tracker = service.NewStatusTracker(service.StatusTrackerConfig{
-		Watcher: cfg.Watcher, Listener: a.listen, Port: func() int { return int(a.port.Load()) }, Bus: a.bus,
+		Watcher: cfg.Watcher, Listener: a.listen, Port: func() int { return int(a.port.Load()) }, Bus: a.bus, Logger: a.log,
 	})
 
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin,
-		Settings: a.settings, Apps: a.apps, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)

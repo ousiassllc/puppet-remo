@@ -46,6 +46,18 @@ var wantTools = map[string]bool{ // 値は readOnlyHint
 	"launch_app":           false,
 }
 
+// ownWindowHints は、puppet-remo 自身のウィンドウについて説明に含めるべき語（ツール名 → 語）。
+var ownWindowHints = map[string][]string{
+	"screenshot":      {"never captured", "own_windows"},
+	"list_windows":    {"blocked", "own_window", "not captured"},
+	"mouse_move":      {"own_window", "own_windows"},
+	"left_click":      {"own_window", "own_windows"},
+	"left_click_drag": {"own_window", "own_windows"},
+	"scroll":          {"own_window", "own_windows"},
+	"key":             {"own_window", "own_windows"},
+	"type":            {"own_window", "own_windows"},
+}
+
 func TestInitializeAndToolList(t *testing.T) {
 	e := newEnv(t)
 	cs := e.connect("c1")
@@ -54,7 +66,9 @@ func TestInitializeAndToolList(t *testing.T) {
 	if init.ServerInfo.Name != "puppet-remo" || init.ServerInfo.Version != "9.9.9-test" {
 		t.Errorf("ServerInfo = %+v", init.ServerInfo)
 	}
-	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id"} {
+	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id",
+		"already open window forward", "reused_existing_window", "screenshot or list_windows before typing",
+		"never captured in screenshots", "input_blocked", "own_window", "own_windows", "blocked: true"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}
@@ -76,6 +90,20 @@ func TestInitializeAndToolList(t *testing.T) {
 		got[tool.Name] = tool.Annotations.ReadOnlyHint
 		if tool.Description == "" {
 			t.Errorf("%s has no description", tool.Name)
+		}
+		// puppet-remo 自身のウィンドウは写らないが入力は拒否される。事前の手がかり（NFR-S06）。
+		for _, hint := range ownWindowHints[tool.Name] {
+			if !strings.Contains(tool.Description, hint) {
+				t.Errorf("%s description lacks %q: %s", tool.Name, hint, tool.Description)
+			}
+		}
+		// 既存のウィンドウが前に出るだけのアプリがあるので、入力の前に対象を確かめるよう促す（FR-M19）。
+		if tool.Name == "launch_app" {
+			for _, want := range []string{"reused_existing_window", "already open window forward", "confirm the target window with a screenshot or list_windows"} {
+				if !strings.Contains(tool.Description, want) {
+					t.Errorf("launch_app description lacks %q: %s", want, tool.Description)
+				}
+			}
 		}
 	}
 	if len(got) != len(list.Tools) {

@@ -68,7 +68,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 
 `.github/actions/build-installer`（composite action）が、ジョブの中で次を行います。
 
-1. Go・Node を setup アクションで入れる（キャッシュは `RUNNER_TEMP`）。
+1. Go を setup アクションで、bun を [`./.github/actions/setup-bun`](../../.github/actions/setup-bun/action.yml)（[`scripts/ci/install-bun.sh`](../../scripts/ci/install-bun.sh)。版と SHA-256 を固定して `RUNNER_TEMP` に展開する。sudo 不要）で入れる（キャッシュは `RUNNER_TEMP`）。
 2. `task`（版固定）と `wails3`（`go.mod` の版）を `go install` で入れる。`wails3` は `CGO_ENABLED=0` で入れる（cgo が有効だと Linux では gtk4・webkitgtk-6.0 が要る）。
 3. `makensis` が PATH に無ければ、`apt-get download nsis nsis-common` と `dpkg -x` で `RUNNER_TEMP` に展開する（sudo 不要。[`scripts/ci/install-nsis.sh`](../../scripts/ci/install-nsis.sh)）。runner に apt が無いときは失敗するので、NSIS を runner に入れること。
 4. `task windows:package RELEASE_VERSION=<X.Y.Z> APP_VERSION=<main.version>` を実行する。

@@ -110,6 +110,40 @@ func TestConnectionRequestListApprovalModeOnlyShowsAvailableModes(t *testing.T) 
 	hasNot(t, empty, "<button", "/approve")
 }
 
+// 接続要求の履歴: 6 列の表・結果のバッジ・読み取り専用（操作なし）。前後のページへのリンクは、その向きのページがあるときだけ出る。
+func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
+	rows := []view.HistoryRow{
+		{ID: "r1", DisplayName: "bob", LoginName: "bob@example.com", RemoteIP: "100.64.0.9", ReceivedAt: "2026-11-01 10:00",
+			Result: "許可", ResultTone: view.ToneOK, ResultCode: "approved", DecidedAt: "2026-11-01 10:05"},
+		{ID: "r2", DisplayName: "carol", LoginName: "carol@example.com", RemoteIP: "100.64.0.10", ReceivedAt: "2026-11-01 09:00",
+			Result: "拒否", ResultTone: view.ToneDanger, ResultCode: "denied", DecidedAt: "2026-11-01 09:01"},
+		{ID: "r3", DisplayName: "dave", LoginName: "dave@example.com", RemoteIP: "100.64.0.11", ReceivedAt: "2026-11-01 08:00",
+			Result: "未処理", ResultTone: view.ToneWarn, ResultCode: "pending", DecidedAt: "-"},
+	}
+	out := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3"}))
+	has(t, out, `id="request-history"`, "届いた日時", "処理した日時", `data-history-request="r1" data-result="approved"`, "許可", "拒否", "未処理",
+		"100.64.0.9", "bob@example.com", "2026-11-01 10:05",
+		`hx-get="/requests/history?page=1"`, `hx-get="/requests/history?page=3"`, `hx-target="#request-history"`, `hx-push-url="true"`,
+		"data-pager-prev", "data-pager-next", "2 ページ目")
+	hasNot(t, out, "<button", "hx-post", "name=\"rev_requests\"")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	first := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1, NextURL: "/requests/history?page=2"}))
+	has(t, first, "data-pager-next")
+	hasNot(t, first, "data-pager-prev")
+	single := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1}))
+	hasNot(t, single, "data-pager")
+	empty := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1}))
+	has(t, empty, `data-empty="request-history"`)
+	hasNot(t, empty, "<table", "data-pager")
+
+	tabs := webtest.Render(t, organisms.RequestsTabs(view.RequestsTabHistory))
+	has(t, tabs, `href="/requests"`, `href="/requests/history"`, `hx-boost="true"`, `hx-target-error="#main"`, "data-requests-tabs")
+	if got := strings.Count(tabs, `aria-current="page"`); got != 1 || !strings.Contains(tabs[strings.Index(tabs, `aria-current`):], "履歴") {
+		t.Errorf("exactly the history tab must be current:\n%s", tabs)
+	}
+}
+
 func TestSettingsFormErrorsAndAutostart(t *testing.T) {
 	form := view.SettingsForm{
 		Values: view.SettingsValues{Port: "80", Hotkey: "K", ScreenshotMaxDim: "1568", LeaseIdleSec: "300"},
@@ -220,6 +254,10 @@ func TestUserControlledValuesAreEscaped(t *testing.T) {
 	}}}))
 	hasNot(t, out, "<script>alert")
 	webtest.AssertCSPCompliantHTML(t, out)
+	out = webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: []view.HistoryRow{{
+		ID: "r1", DisplayName: evil, LoginName: evil, RemoteIP: evil, ReceivedAt: evil, Result: evil, DecidedAt: evil,
+	}}}))
+	hasNot(t, out, "<script>alert")
 	out = webtest.Render(t, organisms.SessionListBody(view.Sessions{Items: []view.Session{{ClientLabel: evil, KindLabel: "MCP"}}}))
 	hasNot(t, out, "<script>alert")
 }
@@ -249,4 +287,70 @@ func TestPollFragmentsAreOOBSwaps(t *testing.T) {
 	// ページ内の通常の描画（OOB ではない）には hx-swap-oob を付けない。
 	hasNot(t, webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{})), "hx-swap-oob")
 	hasNot(t, webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{})), "hx-swap-oob")
+}
+
+// サーバー状態: 長い IPv4/IPv6・[IPv6]:ポート・長い MagicDNS 名は、カードの幅を超えず折り返せる
+// （<dd> が縮められ、<code> が文字の途中でも改行できる）。Issue #43。
+func TestServerStatusBodyWrapsLongValues(t *testing.T) {
+	const (
+		ipv4   = "100.64.0.1"
+		ipv6   = "fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6"
+		dns    = "demo-host-with-a-very-long-machine-name-for-overflow-0123456789.tail-demo-example-network.ts.net"
+		listen = "[fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6]:8765"
+	)
+	out := webtest.Render(t, organisms.ServerStatusBody(view.ServerStatus{
+		TailscaledLabel: "稼働中", TailnetIPs: []string{ipv4, ipv6}, DNSName: dns, Port: 8765,
+		ListenLabel: "待ち受け中", ListenAddrs: []string{ipv4 + ":8765", listen},
+	}))
+	// <dd> ごとの断片に分け、値を含む <code> と、それを囲む <dd> の class を調べる。
+	ddOpen := regexp.MustCompile(`<dd[^>]*class="([^"]*)"`)
+	codeOpen := regexp.MustCompile(`<code class="([^"]*)">([^<]*)</code>`)
+	wrapped := map[string]bool{}
+	for _, dd := range strings.Split(out, "</dd>") {
+		open := ddOpen.FindStringSubmatch(dd)
+		for _, c := range codeOpen.FindAllStringSubmatch(dd, -1) {
+			if open == nil || !strings.Contains(" "+open[1]+" ", " min-w-0 ") {
+				t.Errorf("<dd> of %q lacks min-w-0 (grid/flex item cannot shrink): %s", c[2], dd)
+			}
+			if !strings.Contains(" "+c[1]+" ", " break-all ") {
+				t.Errorf("<code> of %q lacks break-all: %s", c[2], c[0])
+			}
+			wrapped[c[2]] = true
+		}
+	}
+	for _, v := range []string{ipv4, ipv6, dns, ipv4 + ":8765", listen} {
+		if !wrapped[v] {
+			t.Errorf("%q is not rendered inside a <code>: %s", v, out)
+		}
+	}
+}
+
+// アプリのログ: 3 列の表・レベルのバッジ（成功の INFO・WARN・ERROR）・属性・絞り込みのリンク。HTML は CSP に適合する。
+func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
+	v := view.AppLog{
+		Page: 2, Filter: "warn",
+		Filters: []view.LogFilterLink{
+			{Code: "all", Label: "すべて", URL: "/logs"},
+			{Code: "warn", Label: "WARN 以上", URL: "/logs?level=warn", Active: true},
+			{Code: "error", Label: "ERROR のみ", URL: "/logs?level=error"},
+		},
+		Rows: []view.LogRow{
+			{Time: "2026-11-01 09:00:03", Level: "ERROR", LevelTone: view.ToneDanger, Message: "mcp tool failed", Attrs: []view.LogAttr{{Key: "tool", Value: "screenshot"}}},
+			{Time: "2026-11-01 09:00:02", Level: "WARN", LevelTone: view.ToneWarn, Message: "auth failed <b>"},
+			{Time: "2026-11-01 09:00:01", Level: "INFO", LevelTone: view.ToneOK, Message: "lease acquired"},
+		},
+		PrevURL: "/logs?level=warn", NextURL: "/logs?level=warn&page=3",
+	}
+	out := webtest.Render(t, organisms.AppLog(v))
+	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
+		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<",
+		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
+		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
+	has(t, out, "auth failed &lt;b&gt;")
+	hasNot(t, out, "auth failed <b>", "<form", "hx-post")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	empty := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1}))
+	has(t, empty, `data-empty="app-log"`)
+	hasNot(t, empty, "<tbody", "data-pager")
 }

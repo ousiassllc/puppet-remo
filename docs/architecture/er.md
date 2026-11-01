@@ -194,6 +194,9 @@ erDiagram
 |------|------|------|------|
 | `ux_connreq_pending_node` | `(stable_node_id) WHERE status = 'pending'` | UNIQUE（部分） | 1 デバイス 1 件への集約（FR-A06） |
 | `ix_connreq_status_expires` | `(status, expires_at)` | 通常 | 失効処理、`denied` の再要求抑止の判定 |
+| `ix_connreq_first_seen` | `(first_seen_at DESC, id DESC)` | 通常 | 接続要求の履歴（GUI。FR-H03）を新しい順にページ分けして読む（v3 のマイグレーション `0003_connreq_history_index.sql`） |
+
+履歴: 許可・拒否した要求は行を削除せず、`status`（結果）と `decided_at`（処理した日時）を保ったまま残す（v1 から同じ。履歴のために列は足さない）。ホスト GUI の接続要求の履歴は、この表を `first_seen_at DESC, id DESC` の順に `LIMIT` / `OFFSET` で読む（1 ページ 20 件）。1 行は 1 回の要求のまとまり（FR-A06 の集約の単位）で、同じデバイスの許可・拒否・失効のあとに来た新しい要求は別の行になる。履歴に見えるのは保守で削除されるまでの行で、保持期間は次の保守のとおり。これは監査ログ（`audit_logs`。FR-AU01、M3 の閲覧 UI）とは別のもので、履歴は要求の現在の結果を見るためのもの。
 
 保守: `last_seen_at` から 7 日を過ぎた行を定期削除する。`pending` で `expires_at` を過ぎた行は `expired` に更新する。レート制限（FR-A07）は件数カウントをメモリで行うため、DB には持たない。
 
@@ -417,7 +420,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 
 | event | kind | actor_type | result | `detail_json` |
 |-------|------|------------|--------|---------------|
-| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・入力スキーマ違反）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument` |
+| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・入力スキーマ違反）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reused_existing_window"（ok のみ。起動後に既存のウィンドウが前に出ただけと見られるか。FR-M19。前面のウィンドウのタイトル・id は記録しない）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument` |
 | `tool.list_launchable_apps` | `tool` | `mcp` | `ok` | `{ "count" }` |
 | `settings.launchable_app.create` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count" }` |
 | `settings.launchable_app.update` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count", "changed": ["label", "exe_path", "args", "working_dir"] }`。`changed` は変わった項目だけ。更新前の行が読めない行（`Corrupt`）のときは、壊れていた引数が破棄されたことを残すため `args` を必ず含める |
@@ -512,3 +515,5 @@ erDiagram
 | 1.9 | 2026-10-30 | `launchable_apps.label` の `COLLATE NOCASE` が ASCII のみの畳み込みであることを明記 | #16 のレビュー指摘 |
 | 1.10 | 2026-10-30 | `launchable_apps` の `exe_path` / `working_dir` のパスの規則（代替データストリーム・使えない文字・制御文字・予約デバイス名・32,767 文字）と、読めない `args_json` の行（`Corrupt`。一覧・削除は成功、起動は拒否）を追記 | #16 の独立レビュー指摘 |
 | 1.11 | 2026-10-30 | `launchable_apps` の予約デバイス名に上付き数字を追加、パスの上限を終端の NUL を含めて 32,767（32,766 文字）に訂正、`settings.launchable_app.update` の `changed` が読めない行の更新で `args` を必ず含むことを追記 | #16 の再レビュー指摘 |
+| 1.12 | 2026-11-01 | `connection_requests` に接続要求の履歴の読み方（新しい順・ページ分け・保持期間）と索引 `ix_connreq_first_seen`（マイグレーション v3）を追加。結果と処理日時の列は v1 からあるため足さない | #44 |
+| 1.13 | 2026-11-01 | `tool.launch_app` の `detail` に `reused_existing_window`（ok のみ）を追加 | #46 |

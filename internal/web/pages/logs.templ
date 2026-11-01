@@ -1,0 +1,32 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const logsTitle = "ログ"
+
+templ logsBody(v view.AppLogPage) {
+	<div class="space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">ログ</h1>
+		<p class="text-sm text-slate-600">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p>
+		<p class="text-sm text-slate-600">ログファイル: <code class="break-all rounded bg-slate-100 px-1 py-0.5 text-xs" data-log-path>{ v.Path }</code></p>
+		@organisms.AppLog(v.Log)
+	</div>
+}
+
+// Logs はアプリのログのフルページ（FR-H13）。
+templ Logs(v view.AppLogPage) {
+	@layout.GUI(logsTitle, v.Chrome) {
+		@logsBody(v)
+	}
+}
+
+// LogsBoosted は hx-boost の遷移への応答。
+templ LogsBoosted(v view.AppLogPage) {
+	@layout.Boosted(logsTitle, v.Chrome) {
+		@logsBody(v)
+	}
+}
