@@ -377,7 +377,7 @@ stateDiagram-v2
 | マウス移動 | `input.mouse` `move` | 座標は `canvas` の表示座標からストリームの物理座標へ変換（`round((clientX − rect.left) × canvas.width ÷ rect.width)`）。1 アニメーションフレームにつき最大 1 回に間引く |
 | ボタン・ホイール | `input.mouse` `down` / `up` / `wheel` | `contextmenu` を抑止する。**`wheel` の `dx` / `dy` の単位は「ノッチ」**（数値。小数可。MCP `scroll.amount` と同じ単位）。ブラウザの `WheelEvent` を `deltaMode` に応じて換算する: `DOM_DELTA_PIXEL` は `delta ÷ 100`、`DOM_DELTA_LINE` は `delta ÷ 3`、`DOM_DELTA_PAGE` は `delta × 10`。符号は API 仕様の `scroll` の方向の規約に従う（`dy > 0` = 下。`WheelEvent.deltaY` と同じ）。サーバーが `ノッチ × 120`（Win32 の `WHEEL_DELTA`）を丸めて OS へ渡し、丸めの余りは次回へ繰り越す。Win32 側の符号の向きもサーバーが吸収する |
 | キー | `input.key` `down` / `up`（`code`、`key`、`modifiers`） | キャンバスにフォーカスがあるときだけ捕捉し、`preventDefault` する。ブラウザが先取りするショートカットは送れない（専用メニュー。FR-W06）。フォーカスを失ったら押下中のキーすべてに `up` を送る |
-| IME 確定 | `input.text` | `compositionend` の文字列を Unicode で送る |
+| IME 確定 | `input.text` | `compositionend` の文字列を Unicode で送る。`canvas` は IME を受けないため、Shadow DOM 内の見えない `<textarea>`（`tabindex="-1"`。`css` で不可視にする）が IME とキー入力を受ける。`canvas` の `mousedown` でこの要素にフォーカスを移し（「`canvas` にフォーカスがある」とは、この要素にフォーカスがあること）、`keydown` / `keyup` / `compositionend` / `blur` はこの要素で受ける。IME の処理中のキー（`isComposing`・`keyCode` 229）は `input.key` で送らない |
 
 ### 6.3 Shadow DOM とスタイル
 
@@ -393,7 +393,7 @@ stateDiagram-v2
 | `binaryType` | `arraybuffer` |
 | 受信 | テキストフレームは JSON をパースして `{ kind: "text", message }`、バイナリは `{ kind: "binary", data: ArrayBuffer }` として渡す |
 | 送信 | `send(obj)`（JSON）。64 KiB を超えるメッセージは送らずエラーにする（NFR-S09） |
-| 再接続 | 指数バックオフ（500 ms から、上限 15 s）で最大 10 回。**再接続しない閉じコード**: 4400 / 4401 / 4429 / 4503 / 4510。再接続した後は `onOpen` が再度呼ばれる |
+| 再接続 | 指数バックオフ（500 ms から、上限 15 s）で最大 10 回。**再接続しない閉じコード**: 4400 / 4401 / 4429 / 4503 / 4510。再接続した後は `onOpen` が再度呼ばれる。試行の数は、接続のたびにサーバーから 1 つでもメッセージを受け取ったら 0 に戻る（接続して直ぐ閉じる繰り返しは数え続けて、上限で止まる） |
 | コールバック | `onOpen`、`onMessage`、`onClose(code)`、`onGiveUp` |
 
 ## 7. セキュリティとスタイル
@@ -538,14 +538,14 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
-| リモートの UI（§1.3・§3・§6） | Web UI（`/viewer`）、Lit の `<remo-screen-viewer>`、`lib/ws.ts`、`handler/remote`、`organisms/remote`・`pages/remote` | Web UI のページ・ハンドラは M2 の #62 で作った（`/`・`/viewer`・リース・設定・クリップボード・ショートカット・待機ページ。API 仕様 §4.2・§7.5）。`<remo-screen-viewer>`・`lib/ws.ts`・`lib/logger.ts`・`src/components/`・Lit のテスト・`web-test-runner` は #63、`e2e/`（Playwright）は別の子 Issue。レイアウトは `/static/js/screen-viewer.js` を読み込むが、成果物は #63 が出すまで無い（404） |
+| リモートの UI（§1.3・§3・§6） | Web UI（`/viewer`）、Lit の `<remo-screen-viewer>`、`lib/ws.ts`、`handler/remote`、`organisms/remote`・`pages/remote` | Web UI のページ・ハンドラは M2 の #62 で作った（`/`・`/viewer`・リース・設定・クリップボード・ショートカット・待機ページ。API 仕様 §4.2・§7.5）。`<remo-screen-viewer>`・`lib/ws.ts`・`lib/logger.ts`・`src/components/` は #63 で作った（esbuild が `dist/js/screen-viewer.js` を出し、レイアウトが読み込む。`screen-viewer/` は `remo-screen-viewer.ts`・`protocol.ts`（メッセージ・バイナリフレームの復号）・`input.ts`（座標・ホイール・キーの変換））。Lit のテスト・`web-test-runner`・`e2e/`（Playwright）は作らない（下の「ビルドと CI」） |
 | `internal/web` の構成（§3） | `organisms/{gui,remote}/`・`pages/{gui,remote}/`、`handler/{gui,remote}/`、`layout/{gui,remote}` | `organisms/`・`pages/` は平ら（`gui/` / `remote/` のサブディレクトリを作らない。ビューアは `organisms/viewer_*.templ`、待機・エラーは `pages/remote_notice.templ`、ページは `pages/viewer.templ`）。`handler/gui/` と `handler/remote/`（M2。偽の依存は `handler/remote/remotetest/`）。`layout/` は `gui.templ` と `remote.templ`（`Remote` がビューアの外枠、`RemoteNotice` が待機・拒否・失効・ミドルウェアのエラーの簡素な外枠）。`webtest/`（ハンドラのテスト補助）と `handler/gui/guitest/`（偽の service）を追加した。`view/` は設計どおり（ビューアは `Viewer`・`ViewerToolbar`・`ViewerLease`・`ViewerOps`・`KeyMenuItem`・`RemoteError`）。アトムは `alert`・`badge`・`button`・`checkbox`・`input`・`select`・`spinner`・`textarea`・`toast`、モレキュールは `card`・`form_field`・`lease_badge`・`modal`・`status_pill`・`token_reveal` |
 | リモートのリースパネル・ビューアの組み立て（§4.3・§6.2） | `lease_panel`・`viewer_toolbar`・`clipboard_panel`・`key_menu` の各 organism を `<main id="viewer-root">` に並べる | `ViewerLeasePanel`（`#lease-panel`。`remo:lease-changed from:#viewer-root` で `GET /viewer/lease` を再取得して `outerHTML` で差し替える）・`ViewerToolbar`（`#viewer-toolbar`。`change` で `POST /viewer/settings`、422 は `hx-target-422="this"`）・`ViewerOps`（`#viewer-ops`。操作権を持つときだけ `ClipboardPanel` と `KeyMenu` を描画し、リース系の応答に OOB で添えて更新する）・`ViewerRoot`（`<remo-screen-viewer>` を HTMX の対象の外に置き、`readonly` は描画時の操作権の有無）。エラーはホスト GUI と同じく `HX-Retarget: #toast-root` のトースト。スライダー（画質・FPS）の横の数値は `app.ts` が `input` イベントで追従させる |
 | GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。M1.5 で apps（起動許可アプリ。`handler/gui/apps.go`）を足した。承認・タスク・エージェント・監査・更新は M3・M4 |
 | ホスト GUI の更新（§5.3） | `GET /poll`（本書のとおり） | 同じ。`GET /events`（SSE）は残すが GUI は購読しない。`htmx-ext-sse` は `static/package.json` に入れて `dist/js/sse.min.js` へコピーするが、レイアウトは読み込まない（未使用。ビルドの対象としては残る） |
-| `static/package.json`（§8.2） | `lit`・`htmx-ext-*`・`@open-wc/testing`・`@web/test-runner`、`test` スクリプト | M1 は `htmx.org`・`htmx-ext-response-targets`・`htmx-ext-sse`、開発依存は `tailwindcss`・`@tailwindcss/cli`・`esbuild`・`typescript`・`concurrently`。スクリプトに `clean` を足し（`build` の先頭で `dist` を消す）、`test` は無い。esbuild のエントリーは `src/app/` の 2 ファイル |
+| `static/package.json`（§8.2） | `lit`・`htmx-ext-*`・`@open-wc/testing`・`@web/test-runner`、`test` スクリプト | 依存は `htmx.org`・`htmx-ext-response-targets`・`htmx-ext-sse`・`lit`（#63。版は固定）、開発依存は `tailwindcss`・`@tailwindcss/cli`・`esbuild`・`typescript`・`concurrently`。`@open-wc/testing`・`@web/test-runner` は入れず、`test` スクリプトは無い（Lit のテストを CI に足さないというオーナーの決定。#64）。スクリプトに `clean` を足した（`build` の先頭で `dist` を消す）。esbuild のエントリーは `src/app/` の 2 ファイルと `screen-viewer`（`src/components/screen-viewer/remo-screen-viewer.ts` → `dist/js/screen-viewer.js`。ES モジュール）。`define` の `__DEBUG__`（`--watch` のとき true）で、`lib/logger.ts` の本番のログをエラー・警告だけにする |
 | 開発タスク名（§8.3） | `frontend:dev` | 同じ。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service を loopback で配信）を足した。スクリーンショットは `docs/screenshots/m1/` |
-| ビルドと CI（§8・§9） | Playwright の E2E・Lit のテスト | M1 の CI は Go のビルド・vet・lint・test・import 規則・templ 生成の差分・フロントエンドのビルド。E2E と Lit のテストは M2。Windows 実機の確認は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) の手動手順 |
+| ビルドと CI（§8・§9） | Playwright の E2E・Lit のテスト | M1 の CI は Go のビルド・vet・lint・test・import 規則・templ 生成の差分・フロントエンドのビルド。Lit のテストと E2E（Playwright）は足さない（オーナーの決定。#64）。型検査（`bunx tsc -p .`）とビルドで `<remo-screen-viewer>` を検査する。Windows 実機の確認は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) の手動手順 |
 
 ## 改訂履歴
 
@@ -566,3 +566,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.12 | 2026-11-01 | §5.4 にログ画面（サイドバーの「ログ」。レベルの絞り込みと 1 ページ 50 件のページ送り、`#app-log` の差し替え、ファイルを開くボタンを持たない理由）を追加 | #45 |
 | 1.13 | 2026-11-01 | §10 のトレースの GUI の強制剥奪ボタン（M2。`CanRevoke` のときだけ描画、`POST /lease/revoke`）を実装に合わせて更新 | #58 |
 | 1.14 | 2026-11-01 | §12 に Web UI（`/viewer`。`handler/remote`・`layout/remote`・`organisms/viewer_*`・`pages/viewer`・待機・拒否・失効のページ）の実装と、`<remo-screen-viewer>` の成果物は #63 が出すこと、`app.ts` のスライダーの数値の追従を追記 | #62 |
+| 1.15 | 2026-11-01 | §6.2 に IME とキー入力を受ける見えない入力要素、§6.4 に再接続の試行の数え直しを追記。§12 の差分表（`lit`・`lib/ws.ts`・`lib/logger.ts`・`components/`・esbuild のエントリー・Lit のテストと E2E を作らないこと）を更新 | #63 |

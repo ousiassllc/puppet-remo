@@ -5,6 +5,7 @@
 //   3. トースト（サーバーが OOB で追加する）の閉じる操作と自動消去
 //   4. 確認モーダルのキャンセル・トークン表示を閉じる（data-clear）
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
+//   6. <remo-screen-viewer> の remo:error（入力の拒否など）をトーストにする
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 const TOAST_ROOT = "toast-root";
@@ -89,6 +90,12 @@ async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<
     }
   }
 }
+
+// 6. <remo-screen-viewer> が発火する remo:error（bubbles / composed。detail は { code, message }）のトースト。
+document.addEventListener("remo:error", (event) => {
+  const message = (event as CustomEvent<{ message?: unknown }>).detail?.message;
+  showErrorToast(typeof message === "string" && message !== "" ? message : "操作を実行できませんでした。");
+});
 
 // 5. スライダー（画質・FPS）の値の表示。送信は離したとき（change）にサーバーへ送られ、サーバーが再描画する。
 document.addEventListener("input", (event) => {
