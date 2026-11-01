@@ -341,7 +341,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin,
-		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)

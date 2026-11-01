@@ -27,7 +27,7 @@ func TestSettingsPage(t *testing.T) {
 		`name="viewer.default_quality"`, `value="70"`, `name="viewer.default_fps"`, `value="10"`, `name="autostart"`)
 	lacks(t, res, "data-field-error", "checked")
 	// M1 に無い設定（エージェント・監査・更新）は出さない。
-	lacks(t, res, "agent", "audit", "update.", "OpenAI", "api_key")
+	lacks(t, res, "agent", `name="audit.`, "update.", "OpenAI", "api_key") // サイドバーの /audit のリンクは出る（設定の入力欄は #73）
 }
 
 // 自動起動の登録手段が無い環境では、チェックボックスを描画しない（状態駆動）。

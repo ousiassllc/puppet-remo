@@ -1,0 +1,55 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const (
+	auditTitle       = "監査ログ"
+	auditDetailTitle = "監査ログの詳細"
+)
+
+templ auditBody(v view.AuditListPage) {
+	<div class="space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">監査ログ</h1>
+		<p class="text-sm text-slate-600">認証・クライアント・トークン・リース・ツールの実行・Web の入力・キルスイッチ・設定の変更の記録です。新しい順に表示し、日時・クライアント・種別・結果で絞り込めます。<code class="rounded bg-slate-100 px-1 py-0.5 text-xs">type</code> の本文とクリップボードの本文は、設定で有効にしない限り記録されません（文字数のみ）。接続要求の履歴（接続要求画面）・アプリのログ（ログ画面）とは別のものです。</p>
+		@organisms.AuditList(v.List)
+	</div>
+}
+
+// Audit は監査ログの一覧のフルページ（FR-AU05、FR-H08）。
+templ Audit(v view.AuditListPage) {
+	@layout.GUI(auditTitle, v.Chrome) {
+		@auditBody(v)
+	}
+}
+
+// AuditBoosted は hx-boost の遷移への応答。
+templ AuditBoosted(v view.AuditListPage) {
+	@layout.Boosted(auditTitle, v.Chrome) {
+		@auditBody(v)
+	}
+}
+
+templ auditDetailBody(v view.AuditDetail) {
+	<div class="space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">監査ログの詳細</h1>
+		@organisms.AuditDetail(v)
+	</div>
+}
+
+// AuditDetail は監査ログ 1 件の詳細のフルページ。
+templ AuditDetail(v view.AuditDetail) {
+	@layout.GUI(auditDetailTitle, v.Chrome) {
+		@auditDetailBody(v)
+	}
+}
+
+// AuditDetailBoosted は hx-boost の遷移への応答。
+templ AuditDetailBoosted(v view.AuditDetail) {
+	@layout.Boosted(auditDetailTitle, v.Chrome) {
+		@auditDetailBody(v)
+	}
+}
