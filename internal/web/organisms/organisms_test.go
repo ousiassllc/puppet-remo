@@ -250,3 +250,39 @@ func TestPollFragmentsAreOOBSwaps(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{})), "hx-swap-oob")
 	hasNot(t, webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{})), "hx-swap-oob")
 }
+
+// サーバー状態: 長い IPv4/IPv6・[IPv6]:ポート・長い MagicDNS 名は、カードの幅を超えず折り返せる
+// （<dd> が縮められ、<code> が文字の途中でも改行できる）。Issue #43。
+func TestServerStatusBodyWrapsLongValues(t *testing.T) {
+	const (
+		ipv4   = "100.64.0.1"
+		ipv6   = "fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6"
+		dns    = "demo-host-with-a-very-long-machine-name-for-overflow-0123456789.tail-demo-example-network.ts.net"
+		listen = "[fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6]:8765"
+	)
+	out := webtest.Render(t, organisms.ServerStatusBody(view.ServerStatus{
+		TailscaledLabel: "稼働中", TailnetIPs: []string{ipv4, ipv6}, DNSName: dns, Port: 8765,
+		ListenLabel: "待ち受け中", ListenAddrs: []string{ipv4 + ":8765", listen},
+	}))
+	// <dd> ごとの断片に分け、値を含む <code> と、それを囲む <dd> の class を調べる。
+	ddOpen := regexp.MustCompile(`<dd[^>]*class="([^"]*)"`)
+	codeOpen := regexp.MustCompile(`<code class="([^"]*)">([^<]*)</code>`)
+	wrapped := map[string]bool{}
+	for _, dd := range strings.Split(out, "</dd>") {
+		open := ddOpen.FindStringSubmatch(dd)
+		for _, c := range codeOpen.FindAllStringSubmatch(dd, -1) {
+			if open == nil || !strings.Contains(" "+open[1]+" ", " min-w-0 ") {
+				t.Errorf("<dd> of %q lacks min-w-0 (grid/flex item cannot shrink): %s", c[2], dd)
+			}
+			if !strings.Contains(" "+c[1]+" ", " break-all ") {
+				t.Errorf("<code> of %q lacks break-all: %s", c[2], c[0])
+			}
+			wrapped[c[2]] = true
+		}
+	}
+	for _, v := range []string{ipv4, ipv6, dns, ipv4 + ":8765", listen} {
+		if !wrapped[v] {
+			t.Errorf("%q is not rendered inside a <code>: %s", v, out)
+		}
+	}
+}
