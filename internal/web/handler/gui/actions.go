@@ -44,11 +44,16 @@ func (h *Handler) requestListResponse(c *gin.Context, toast string) {
 	)
 }
 
+// invalidApprovalModeMessage は定義外の承認モードを 422 にするときの文言。
+const invalidApprovalModeMessage = "承認モードは「常時承認」「初回のみ承認」「自動許可」から選んでください。"
+
 // ApproveRequest は POST /requests/:id/approve（クライアントとして登録し、要求を許可する）。
-// 承認モードは M1 では「常時承認」だけ（空・always 以外は 422）。要求が pending でなければ 409。
+// 承認モード approval_mode（always / first_time / auto。空は always。定義外は 422）で clients.approval_mode を保存する（FR-H03）。
+// 要求が pending でなければ 409。
 func (h *Handler) ApproveRequest(c *gin.Context) {
-	if mode := domain.ApprovalMode(c.PostForm("approval_mode")); mode != "" && mode != domain.ApprovalAlways {
-		h.failMessage(c, http.StatusUnprocessableEntity, string(domain.CodeInvalidArgument), "承認モードは「常時承認」だけを選べます。")
+	mode := domain.ApprovalMode(c.PostForm("approval_mode"))
+	if mode != "" && !mode.Valid() {
+		h.failMessage(c, http.StatusUnprocessableEntity, string(domain.CodeInvalidArgument), invalidApprovalModeMessage)
 		return
 	}
 	_, err := h.d.Admin.ApproveRequest(c.Request.Context(), c.Param("id"), service.ApproveInput{
@@ -56,6 +61,7 @@ func (h *Handler) ApproveRequest(c *gin.Context) {
 		WebEnabled:   checked(c, "web_enabled"),
 		MCPEnabled:   checked(c, "mcp_enabled"),
 		AgentEnabled: checked(c, "agent_enabled"),
+		ApprovalMode: mode,
 	})
 	if err != nil {
 		h.fail(c, err)
@@ -73,11 +79,21 @@ func (h *Handler) DenyRequest(c *gin.Context) {
 	h.requestListResponse(c, "接続要求を拒否しました。")
 }
 
-// UpdateClient は PATCH /clients/:id（web_enabled / mcp_enabled / agent_enabled のいずれか）。
+// UpdateClient は PATCH /clients/:id（web_enabled / mcp_enabled / agent_enabled / approval_mode のいずれか）。
+// approval_mode（always / first_time / auto。定義外は 422）を変えると approved_at が NULL に戻る（FR-H04）。
 // 応答はクライアントのカード。詳細ページからは ?view=detail が付き、削除・詳細への導線を出さないカードを返す。
 func (h *Handler) UpdateClient(c *gin.Context) {
 	var u service.ClientUpdate
 	set := 0
+	if raw, ok := c.GetPostForm("approval_mode"); ok {
+		mode := domain.ApprovalMode(raw)
+		if !mode.Valid() {
+			h.failMessage(c, http.StatusUnprocessableEntity, string(domain.CodeInvalidArgument), invalidApprovalModeMessage)
+			return
+		}
+		u.ApprovalMode = &mode
+		set++
+	}
 	for field, dst := range map[string]**bool{"web_enabled": &u.WebEnabled, "mcp_enabled": &u.MCPEnabled, "agent_enabled": &u.AgentEnabled} {
 		raw, ok := c.GetPostForm(field)
 		if !ok {
@@ -101,6 +117,18 @@ func (h *Handler) UpdateClient(c *gin.Context) {
 		return
 	}
 	h.render(c, http.StatusOK, organisms.ClientCard(h.clientView(updated, c.Query("view") != "detail")))
+}
+
+// ResetApproval は POST /clients/:id/approval/reset（first_time の承認済みを取り消す。FR-H04、FR-S05）。応答はクライアントのカード。
+// first_time で承認済みでなければ 409。破壊的ではないので確認モーダルは挟まない。監査のイベント名は docs に無く、記録しない
+// （docs/components/overview.md §13.5）。
+func (h *Handler) ResetApproval(c *gin.Context) {
+	updated, err := h.d.Admin.ResetApproval(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	h.render(c, http.StatusOK, organisms.ClientCard(h.clientView(updated, c.Query("view") != "detail")), organisms.ToastOOB(infoToast("承認を取り消しました。次のリース取得から承認が必要です。")))
 }
 
 // DeleteClient は DELETE /clients/:id。応答は一覧のフラグメント。

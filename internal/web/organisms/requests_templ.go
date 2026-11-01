@@ -25,7 +25,7 @@ func approvalOptions(opts []view.ApprovalModeOption) []atoms.SelectOption {
 }
 
 // ConnectionRequestList は接続要求の一覧（許可 / 拒否。FR-H03）。
-// 承認モードは M1 では「常時承認」だけを選択肢に出す。許可・拒否の応答と GET /poll の応答（ConnectionRequestListOOB）で差し替える。
+// 承認モードは常時承認（既定）・初回のみ承認・自動許可から選ぶ（FR-H03）。許可・拒否の応答と GET /poll の応答（ConnectionRequestListOOB）で差し替える。
 func ConnectionRequestList(v view.RequestList) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

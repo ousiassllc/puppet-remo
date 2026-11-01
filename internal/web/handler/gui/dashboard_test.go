@@ -163,7 +163,7 @@ func TestKillSwitchErrors(t *testing.T) {
 
 func TestUnknownRoutes(t *testing.T) {
 	r := newRig(t)
-	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/audit", "/tasks", "/agent", "/approvals/x"} {
+	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/audit", "/tasks", "/agent"} {
 		res := r.get(target)
 		status(t, res, http.StatusNotFound)
 		contains(t, res, "<html", `data-error-code="not_found"`, "ページが見つかりません")

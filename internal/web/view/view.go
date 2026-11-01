@@ -105,7 +105,7 @@ type Dashboard struct {
 	KillSwitch KillSwitch
 }
 
-// ApprovalModeOption は承認モードの選択肢。M1 は「常時承認」だけを出す（他は M3 で選択肢を足す）。
+// ApprovalModeOption は承認モードの選択肢（常時承認・初回のみ承認・自動許可。FR-H03）。
 type ApprovalModeOption struct {
 	Value    string
 	Label    string
@@ -146,8 +146,16 @@ type Client struct {
 	LoginName   string
 	NodeID      string
 	Approved    string // 承認モードの表示（「常時承認」など）
-	Flags       []ClientFlag
-	DetailURL   string
+	// Modes は承認モードの選択肢（現在の値が Selected）。変更は UpdateURL へ PATCH する（approved_at が NULL に戻る。FR-H04）。
+	Modes     []ApprovalModeOption
+	UpdateURL string
+	// FirstTimeStatus は first_time のときだけ、承認済み（日時）・未承認の表示。それ以外は空。
+	FirstTimeStatus string
+	// CanResetApproval は first_time で承認済みのときだけ true（承認の取り消しのボタン。確認は要らない）。
+	CanResetApproval bool
+	ResetApprovalURL string
+	Flags            []ClientFlag
+	DetailURL        string
 	// CanDelete / CanOpenDetail は、一覧のカードだけが true（詳細ページでは出さない）。
 	CanDelete     bool
 	CanOpenDetail bool
@@ -493,5 +501,35 @@ type Viewer struct {
 type RemoteError struct {
 	Code    string
 	Title   string
+	Message string
+}
+
+// ApprovalDialog は承認ダイアログ（/approvals/{id}。専用の Wails ウィンドウの中身。FR-H05）。表示するのはクライアント名・種別・
+// 要求の内容・残り時間だけで、秘密・パス・引数は持たない。
+type ApprovalDialog struct {
+	ID          string
+	ClientLabel string
+	KindLabel   string // クライアントの種別（mcp / web）
+	Summary     string // 要求の内容（lease: 「操作権（リース）の取得」）
+	Remaining   ApprovalRemaining
+	AllowURL    string
+	DenyURL     string
+}
+
+// ApprovalRemaining は承認ダイアログの残り時間（HTMX が 1 秒ごとに再取得して差し替える）。
+type ApprovalRemaining struct {
+	ID         string
+	Seconds    int    // 残り秒数（切り上げ。0 未満は 0）
+	RefreshURL string // GET /approvals/{id}
+}
+
+// ApprovalDone は許可・拒否を受け付けたあとのダイアログの表示（ウィンドウは closeWindow で閉じる）。
+type ApprovalDone struct {
+	Allowed bool
+}
+
+// ApprovalGone は承認要求が終わっている（失効・解決済み・存在しない）ときのダイアログの表示。
+type ApprovalGone struct {
+	Code    string
 	Message string
 }
