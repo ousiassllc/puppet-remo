@@ -175,14 +175,26 @@ func (a *App) build(ctx context.Context) error {
 	cfg := a.cfg
 	settings := cfg.Repo.Settings()
 
-	audit, err := service.NewAudit(service.AuditConfig{Store: cfg.Repo.Audit(), Clock: cfg.Clock, Logger: a.log})
+	// 接続要求の変化を GUI へ通知する。Authz と HostAdmin の両方へ同じラッパーを渡す。
+	connRequests := service.NewNotifyingConnRequests(cfg.Repo.ConnRequests(), a.bus)
+
+	// 保守は、サムネイルを保存するたびの容量の確認（PurgeThumbsOverCap）を Audit へ渡すため、Audit より先に作る。
+	var err error
+	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{
+		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Settings: settings, Clock: cfg.Clock, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("maintenance: %w", err)
+	}
+
+	audit, err := service.NewAudit(service.AuditConfig{
+		Store: cfg.Repo.Audit(), Clock: cfg.Clock, Logger: a.log,
+		Thumbs: cfg.Repo.Thumbs(), IDs: cfg.IDs, Settings: settings, PurgeOverCap: a.maint.PurgeThumbsOverCap,
+	})
 	if err != nil {
 		return fmt.Errorf("audit: %w", err)
 	}
 	a.audit = audit
-
-	// 接続要求の変化を GUI へ通知する。Authz と HostAdmin の両方へ同じラッパーを渡す。
-	connRequests := service.NewNotifyingConnRequests(cfg.Repo.ConnRequests(), a.bus)
 
 	killMgr, err := service.NewKillSwitch(ctx, service.KillSwitchConfig{Settings: settings, Clock: cfg.Clock, Audit: audit, Logger: a.log})
 	if err != nil {
@@ -282,13 +294,6 @@ func (a *App) build(ctx context.Context) error {
 	a.port.Store(int32(initial.Port))
 	a.initialKey = initial.KillSwitchHotkey
 	a.hotkey = NewKillSwitchHotkey(p.Hotkey, func() { a.triggerKillSwitch("hotkey") })
-
-	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{
-		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Settings: settings, Clock: cfg.Clock, Logger: a.log,
-	})
-	if err != nil {
-		return fmt.Errorf("maintenance: %w", err)
-	}
 
 	a.connStates, err = service.NewConnRequestStates(connRequests, cfg.Clock)
 	if err != nil {
