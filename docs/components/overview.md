@@ -831,6 +831,7 @@ type ViewerSession interface {
     ConfigChanged() <-chan ViewerConfig // 設定が変わるたび（WebSocket の config と POST /viewer/settings のどちらから変えても）。容量 1、最新を残す
     Configure(c ViewerConfig) error
     Done() <-chan struct{}; Reason() ViewerCloseReason // disconnect | replaced | client_removed | kill_switch
+    OnEnd(fn func())                  // 終わるとき（どの理由でも）、web のリースの解放の前に fn を 1 度呼ぶ。終わった後の登録はその場で呼ぶ
     Close()
 }
 ```
@@ -838,7 +839,7 @@ type ViewerSession interface {
 - `viewer_id` は接続元クライアント（登録済みクライアント ID）に束縛する。未知・期限切れ・別のクライアントからの利用は `ErrInvalidArgument`（どれかを区別して知らせない。HTTP は 400 `invalid_argument`、WebSocket は閉じコード 4401）
 - 有効期間: WebSocket の接続中は期限なし。接続していないあいだは**発行から、または切断から `ViewerIDTTL`（5 分）**（再接続の猶予。[frontend §6.4](../architecture/frontend.md)）
 - 同時接続は 1 つの `viewer_id` につき 1 本。新しい `Open` は古い接続を `replaced` で閉じ（`web` のリースを `ReleaseSession` し、`Streamer` の登録を外し）、外れてから `Subscribe` する（同時閲覧者の上限に、置き換える古い接続を数えさせない）
-- セッションの終わり（WebSocket の切断・`Open` の `ctx` の取り消し・`Streamer` が閲覧者を外した・置き換え・クライアントの削除・無効化・キルスイッチ）で、`web` のリースを `ReleaseSession` で解放し（FR-L05。保持者でなければ何もしない）、`Streamer` の登録を外す。切断した `viewer_id` は 5 分のあいだ再接続できる。押下中のボタン・キー（`Button`・`KeyEvent`）は切断では離さない（離すのは `up` の入力とキルスイッチの `ReleaseAll`。`Control` に解放の窓口は無い）
+- セッションの終わり（WebSocket の切断・`Open` の `ctx` の取り消し・`Streamer` が閲覧者を外した・置き換え・クライアントの削除・無効化・キルスイッチ）で、`web` のリースを `ReleaseSession` で解放し（FR-L05。保持者でなければ何もしない）、`Streamer` の登録を外す。切断した `viewer_id` は 5 分のあいだ再接続できる。押下中のボタン・キー（`Button`・`KeyEvent`）は、セッションの終わりでも離す: `ws` が接続ごとに押下中の入力を覚え、`ViewerSession.OnEnd` に登録した関数から、リースを解放する前に、`Control.Do(ViewerSession.Actor(), up)` で離す（ボタンは最後のポインタの位置。ベストエフォートで、失敗はログに残すだけ。キルスイッチは `ReleaseAll` が離す。`Control` に解放専用の窓口は足さない）
 - `NewViewerSessions` はキルスイッチのクローザー `web-sessions` を登録し、発動時に全セッションを `kill_switch` で閉じる。発動中の `Open` は `ErrKillSwitchActive`。`SessionCloser` として `HostAdmin` に渡すとクライアントの削除・無効化（`web_enabled` の無効化）でセッションを閉じ、その `viewer_id` を無効にする
 - `lease` メッセージ（リースの変化）は `Bus` の `lease` イベント（`BridgeLeaseEvents`）を購読して WebSocket ごとに組み立てる。`LeaseManager.Subscribe` は拡張しない
 
@@ -1097,7 +1098,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 項目 | M1 の実装 |
 |------|----------|
 | リモートルーター | `/mcp` と `GET /ws/screen`（M2。`router.RemoteConfig.WS`）を提供する（`/` などは 404）。`/viewer`・`/api/v1`・静的ファイルは M2 の続き以降 |
-| `ws`（M2。#61） | `ws.Handler`（`http.Handler`）。`web/middleware` を import できないため、連鎖が認可したクライアントは `Config.ClientFrom`（`app` が `middleware.ClientFrom` を渡す）で受け取る。`Config.Events` は `Bus` の `lease`（リースの変化の通知）の購読元。ハンドシェイク前の拒否（サブプロトコル不一致）は problem+json、`viewer_id` の不正・上限・キルスイッチ中はハンドシェイク後に 4401 / 4429 / 4503 で閉じる。モニターはプライマリで始める。入力は `Control.Do(ViewerSession.Actor(), op)`。`error` の `message` は、ドメインエラーの文言、想定外は固定文。keepalive は `Config.PingInterval` / `PongTimeout`（既定 15 秒 / 45 秒。テストが短くする）。`Handler.Close` はアプリの `Shutdown` が呼び、接続を 1001 で閉じる。**押下中のボタン・キーは切断では離さない**（§5.4・API 仕様 §5.3。`Control` に解放の窓口が無い） |
+| `ws`（M2。#61） | `ws.Handler`（`http.Handler`）。`web/middleware` を import できないため、連鎖が認可したクライアントは `Config.ClientFrom`（`app` が `middleware.ClientFrom` を渡す）で受け取る。`Config.Events` は `Bus` の `lease`（リースの変化の通知）の購読元。ハンドシェイク前の拒否（サブプロトコル不一致）は problem+json、`viewer_id` の不正・上限・キルスイッチ中はハンドシェイク後に 4401 / 4429 / 4503 で閉じる。モニターはプライマリで始める。入力は `Control.Do(ViewerSession.Actor(), op)`。`error` の `message` は、ドメインエラーの文言、想定外は固定文。keepalive は `Config.PingInterval` / `PongTimeout`（既定 15 秒 / 45 秒。テストが短くする）。`Handler.Close` はアプリの `Shutdown` が呼び、接続を 1001 で閉じる。**押下中のボタン・キーはセッションの終わり（切断・置き換えなど）で離す**（§5.7.1・API 仕様 §5.3。`conn` が押下の状態を覚え、`ViewerSession.OnEnd` から、リースの解放の前に `Control.Do` で `up` を注入する） |
 | `web/handler` | `handler/gui` だけ（`remote` は M2）。`organisms` / `pages` は `gui/` のサブディレクトリに分けず、平らに置く。GUI のエラー応答は、`not_found`（対象なし。API 仕様 §2 のコード表に無い GUI 内のコード）を 404 で、`invalid_argument` を 422 で返す |
 | ホスト GUI の更新 | SSE ではなく `GET /poll`（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。トースト（`Bus` の `toast`）は `gui.Handler` が購読して待ち行列にし、`/poll` が取り出す）。SSE の `GET /events` は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが、M1 の GUI は読み込まない（未使用） |
 | `app` | `Windows` インターフェース（承認ダイアログ・オーバーレイ。§7）は M3 のため無い。M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Platform.Power` は必須。M1.5 で `Platform.Launcher`・`Platform.FilePicker` も必須にし、`AppRegistry` を組み立てて `Control`（読み取りと起動）と、ホスト GUI の `web/handler/gui`（`Deps.Apps`。登録・編集・削除とファイル選択。`/apps`）へ渡す（`mcp` と、`router` の設定には渡さない）。`cmd/puppet-remo` は `FilePicker` を `NewFilePicker(host.MainWindowHandle)` で作る（`WailsHost.MainWindowHandle` が Wails のメインウィンドウの HWND を返し、ウィンドウが無い間は 0 = 親なし）。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
@@ -1134,3 +1135,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.22 | 2026-11-01 | §5.7 の `Streamer` に `Viewer.ID`・`ViewerConfig`・既定値・上限・差分と間引きの規則、§13.5 に `Streamer` と FR-S06 の設定（`viewer.default_quality`・`viewer.default_fps`）を追記 | #59 |
 | 1.23 | 2026-11-01 | §2 に Web 入力の Op（`PointerMove`・`MouseButton`・`Wheel`・`KeyEvent`）、§3 に `InputInjector.Button`、§5.4 に Web 入力の `Do`（座標・ホイールの上限・SAS・監査）、§5.7.1 に `ViewerSessions`（`viewer_id` の束縛・有効期間・単一接続・切断でのリース解放・`SessionCloser`）を追記。§13.2・§13.3・§13.5 の差分を更新 | #60 |
 | 1.24 | 2026-11-01 | §6 の `ws`（`Config`・3 本の goroutine・keepalive）、§13.1 の `ws` の存在、§13.5 の `app` への組み込み（`sessionClosers`・`web-sessions`）、§13.6 のリモートルーターの `GET /ws/screen` と `ws` の実装判断を追記 | #61 |
+| 1.25 | 2026-11-01 | §5.7.1 の `ViewerSession` に `OnEnd` を追加し、押下中のボタン・キーをセッションの終わりで（リースの解放の前に）離すと改めた（「切断では離さない」「`Control` に解放の窓口は無い」を撤回）。§6 の `ws` の注記も更新 | #61 |

@@ -72,6 +72,11 @@ type ViewerSession interface {
 	// Done はセッションが終わったときに閉じる。Reason は Done が閉じた後に読む。
 	Done() <-chan struct{}
 	Reason() ViewerCloseReason
+	// OnEnd は、セッションが終わるとき（どの理由でも）、web のリースを解放する前に fn を 1 度だけ呼ぶよう登録する
+	// （WebSocket が押下中のボタン・キーを、まだ保持しているリースのうちに離すため。Control.Do は未保持のリースを拒む）。
+	// 登録は 1 つだけで、後の登録が前を置き換える。fn は Control を呼んでよいが、ViewerSessions を呼ばない。
+	// すでに終わったセッションには、その場で fn を呼ぶ（リースは解放済み）。
+	OnEnd(fn func())
 	// Close はセッションを終える（閲覧者の登録を外し、web のリースを解放する）。何度呼んでもよい。
 	// viewer_id はこの後 ViewerIDTTL の間、再接続に使える。
 	Close()
@@ -301,6 +306,11 @@ type viewerSession struct {
 	once   sync.Once
 	reason ViewerCloseReason // once の中で done を閉じる前に書く
 
+	// hookMu は onEnd と ended を守る。
+	hookMu sync.Mutex
+	onEnd  func()
+	ended  bool // finish が onEnd を取り出した
+
 	// cfgMu は Configure を直列化し、cfg を守る。
 	cfgMu   sync.Mutex
 	cfg     ViewerConfig
@@ -324,6 +334,17 @@ func (c *viewerSession) Reason() ViewerCloseReason {
 	}
 }
 func (c *viewerSession) Close() { c.finish(ViewerClosedDisconnect) }
+
+func (c *viewerSession) OnEnd(fn func()) {
+	c.hookMu.Lock()
+	if c.ended {
+		c.hookMu.Unlock()
+		fn()
+		return
+	}
+	c.onEnd = fn
+	c.hookMu.Unlock()
+}
 
 func (c *viewerSession) Config() ViewerConfig {
 	c.cfgMu.Lock()
@@ -361,12 +382,20 @@ func (c *viewerSession) Configure(req ViewerConfig) error {
 }
 
 // finish はセッションを 1 度だけ終える: 閲覧者の登録を外し、viewer_id を ViewerIDTTL の再接続の猶予に戻し、
-// web のリースを解放する（FR-L05）。
+// OnEnd の fn を呼んでから web のリースを解放する（FR-L05）。
 func (c *viewerSession) finish(reason ViewerCloseReason) {
 	c.once.Do(func() {
 		c.reason = reason
 		c.cancel()
 		close(c.done)
+
+		c.hookMu.Lock()
+		fn := c.onEnd
+		c.onEnd, c.ended = nil, true
+		c.hookMu.Unlock()
+		if fn != nil {
+			fn() // 押下中の入力を、リースを保持しているうちに離す
+		}
 
 		s := c.owner
 		s.mu.Lock()
