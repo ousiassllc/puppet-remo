@@ -1,6 +1,9 @@
 package domain
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // 入力を拒否する宛先の reason（ErrInputBlocked の Detail["reason"]。API 仕様 §3.4）。
 const (
@@ -56,6 +59,15 @@ func CheckKeyCombo(k KeyCombo) error {
 		return ErrInputBlocked.
 			WithMsg("ctrl+alt+delete (secure attention sequence) cannot be sent").
 			WithDetail("reason", "secure_attention_sequence")
+	}
+	return nil
+}
+
+// CheckKeyEvent は、Web UI のキー 1 つの down / up に対する CheckKeyCombo 相当の規則。
+// Ctrl と Alt が押された状態の Delete（SAS）は ErrInputBlocked とする。Delete は KeyboardEvent の code か key で判定する。
+func CheckKeyEvent(e KeyEvent) error {
+	if e.Code == "Delete" || strings.EqualFold(e.Key, "delete") {
+		return CheckKeyCombo(KeyCombo{Mods: e.Mods, Key: "delete"})
 	}
 	return nil
 }

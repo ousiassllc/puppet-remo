@@ -100,6 +100,10 @@ type KeyPress struct{ Keys KeyCombo }
 type TypeText struct{ Text string }
 type FocusWindow struct{ ID string }
 type Wheel struct{ At Point; DX, DY float64; Monitor int } // ホイール。単位はノッチ（小数可。dy > 0 が下、dx > 0 が右。API 仕様 §5.3）。WebSocket の input.mouse wheel 用
+// Web UI の WebSocket（input.*）用。座標は縮小座標ではなく**ストリームの座標**（Monitor の物理ピクセル。Monitor の左上が原点）。
+type PointerMove struct{ At Point; Monitor int }                                       // input.mouse move
+type MouseButton struct{ At Point; Button Button; Action ButtonAction; Monitor int }   // input.mouse down / up（ButtonAction = "down" | "up"）
+// KeyEvent（Action = KeyDown | KeyUp。Code・Key・Mods）も Op。input.key
 // ... ClipboardRead / ClipboardWrite / GetUITree / Wait
 
 // エージェントが 1 件ずつ検査を受ける対象。OpenAI のアクションを Op へ写像したもの。
@@ -251,13 +255,14 @@ type Frame struct{ Image *image.RGBA; Dirty []image.Rectangle; Seq uint32 }
 type InputInjector interface {
     MoveTo(ctx context.Context, p domain.Point) error // 仮想デスクトップの物理座標
     Click(ctx context.Context, b domain.Button, count int, mods []domain.Modifier) error
+    Button(ctx context.Context, b domain.Button, a domain.ButtonAction) error // 現在のカーソル位置でボタンを押す・離す（Web UI の input.mouse down / up）。押したままのボタンは ReleaseAll が離す
     Drag(ctx context.Context, from, to domain.Point, mods []domain.Modifier) error
     Scroll(ctx context.Context, at domain.Point, dir domain.Direction, amount int) error
     Wheel(ctx context.Context, at domain.Point, dx, dy float64) error // ノッチ単位（小数可）。× 120（WHEEL_DELTA）を丸めて注入し、端数は実装が持ち越す。縦は Win32 の正が上向きのため dy の符号を反転する
     Key(ctx context.Context, k domain.KeyCombo) error
     KeyEvent(ctx context.Context, e domain.KeyEvent) error // Web UI の down / up
     Text(ctx context.Context, s string) error // KEYEVENTF_UNICODE
-    ReleaseAll() error // 押下中のキー・ボタンをすべて解放（中断・キルスイッチ時）
+    ReleaseAll() error // 押下中のキー・ボタン（KeyEvent・Button で押したもの）をすべて解放（中断・キルスイッチ時）
     CursorPos() (domain.Point, error)
 }
 
@@ -595,6 +600,8 @@ type Control interface {
 5. `platform` の注入を実行
 6. `Audit.Append`（引数、結果、所要時間。`type` の本文は既定で文字数のみ。FR-AU03）。M1 はここまで（DB への追記のみ）。設定が有効ならサムネイル保存は M3（FR-AU02）
 
+**Web UI（保持者種別 `web`）の入力**も同じ順序で `Do` を通る。`WebSocket` の `input.mouse` は `PointerMove`（move）・`MouseButton`（down / up。カーソルを動かしてから押す・離す）・`Wheel`（wheel）に、`input.key` は `KeyEvent` に、`input.text` は `TypeText` に、ショートカット送信（`POST /viewer/keys/send`）は `KeyPress` に、クリップボード（`POST /viewer/clipboard/send` / `fetch`）は `ClipboardWrite` / `ClipboardRead` に写す。`web` は暗黙にリースを取らず、未保持は `ErrLeaseRequired`（FR-L04）。3 では `PointerMove`・`MouseButton`・`Wheel` の座標（ストリームの座標）を、選択モニターの原点を足して仮想デスクトップの物理座標にする（モニターの外は `ErrInvalidCoordinates`。縮小しない）。`Wheel` の `DX` / `DY` は有限で絶対値 50 ノッチまで（超過は `ErrInvalidArgument`）。`ctrl+alt+delete`（SAS）は `KeyPress` も `KeyEvent`（`Delete` に `ctrl` と `alt`）も `ErrInputBlocked`（`secure_attention_sequence`）で、Web UI からも送れない。
+
 ```go
 // InputGuard は事実（platform）から判定する純粋なロジック。状態を持たない。
 type InputGuard struct{ Windows platform.WindowManager }
@@ -807,6 +814,34 @@ type ViewerConfig struct{ Monitor, Quality, FPS int } // 品質 1〜100、FPS 1�
 - FPS はプロファイルごとの間引きで守り、キャプチャはそのモニターの閲覧者の最大の FPS で動かす（閲覧者の増減で FPS の最大が変わったら `Watch` をやり直す）
 - 満杯の閲覧者へは、最古を捨てて新しいものを入れ、その閲覧者にだけ次のキーフレームを送る（同じプロファイルのほかの閲覧者には差分のまま）。接続直後と設定の変更のあともキーフレームから始まる。キーフレームの間隔が来たら、そのプロファイルの全員に送る
 
+### 5.7.1 ViewerSessions（ビューアのセッション。`viewer_id`）
+
+```go
+type ViewerSessions interface {
+    Issue(client domain.Client) string                                                // GET /viewer のレンダリング時に viewer_id（ULID）を発行する
+    Actor(viewerID string, client domain.Client) (domain.Actor, error)                // 検証して web の保持者を返す（X-Viewer-Id。接続の有無は問わない）
+    Open(ctx context.Context, viewerID string, client domain.Client, c ViewerConfig) (ViewerSession, error) // WebSocket の接続時
+    Configure(viewerID string, client domain.Client, c ViewerConfig) error             // POST /viewer/settings。接続中のセッションの config へ届く
+    SessionCloser                                                                      // CloseClient(clientID, web) / CloseToken（何もしない）
+}
+type ViewerSession interface {
+    Actor() domain.Actor              // {Kind: web, ClientID, Label, SessionID: viewer_id}
+    Viewer() *Viewer                  // Streamer の閲覧者（Frames・Done）
+    Config() ViewerConfig
+    ConfigChanged() <-chan ViewerConfig // 設定が変わるたび（WebSocket の config と POST /viewer/settings のどちらから変えても）。容量 1、最新を残す
+    Configure(c ViewerConfig) error
+    Done() <-chan struct{}; Reason() ViewerCloseReason // disconnect | replaced | client_removed | kill_switch
+    Close()
+}
+```
+
+- `viewer_id` は接続元クライアント（登録済みクライアント ID）に束縛する。未知・期限切れ・別のクライアントからの利用は `ErrInvalidArgument`（どれかを区別して知らせない。HTTP は 400 `invalid_argument`、WebSocket は閉じコード 4401）
+- 有効期間: WebSocket の接続中は期限なし。接続していないあいだは**発行から、または切断から `ViewerIDTTL`（5 分）**（再接続の猶予。[frontend §6.4](../architecture/frontend.md)）
+- 同時接続は 1 つの `viewer_id` につき 1 本。新しい `Open` は古い接続を `replaced` で閉じ（`web` のリースを `ReleaseSession` し、`Streamer` の登録を外し）、外れてから `Subscribe` する（同時閲覧者の上限に、置き換える古い接続を数えさせない）
+- セッションの終わり（WebSocket の切断・`Open` の `ctx` の取り消し・`Streamer` が閲覧者を外した・置き換え・クライアントの削除・無効化・キルスイッチ）で、`web` のリースを `ReleaseSession` で解放し（FR-L05。保持者でなければ何もしない）、`Streamer` の登録を外す。切断した `viewer_id` は 5 分のあいだ再接続できる。押下中のボタン・キー（`Button`・`KeyEvent`）は切断では離さない（離すのは `up` の入力とキルスイッチの `ReleaseAll`。`Control` に解放の窓口は無い）
+- `NewViewerSessions` はキルスイッチのクローザー `web-sessions` を登録し、発動時に全セッションを `kill_switch` で閉じる。発動中の `Open` は `ErrKillSwitchActive`。`SessionCloser` として `HostAdmin` に渡すとクライアントの削除・無効化（`web_enabled` の無効化）でセッションを閉じ、その `viewer_id` を無効にする
+- `lease` メッセージ（リースの変化）は `Bus` の `lease` イベント（`BridgeLeaseEvents`）を購読して WebSocket ごとに組み立てる。`LeaseManager.Subscribe` は拡張しない
+
 ### 5.8 KillSwitch
 
 ```go
@@ -1009,7 +1044,8 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `Monitor` | `Name`（`get_screen_info` の `name`）を追加。`ScaledSize`・`DPIScale`・`ContainsPhysical`・`MonitorAt` を足した。`Op` の `Monitor` は `int` で、`domain.MonitorPrimary`（-1）が「省略（プライマリ）」 |
 | エラー（§2 の `Error`） | `Code` 型（`string` の別名。`domain.CodeXxx`）を導入し、`Error.Code` は `Code`。`Error.Is` は `Code` の一致で判定する（`Msg`・`Detail` は比較しない）。`NewError`・`WithMsg`・`WithDetail`・`CodeOf`・`Code.HTTPStatus`・`Code.Valid` を足した。§2 の `ErrXxx` は `NewError(CodeXxx, …)` で作った `*Error`。`conflict` は `CodeConflict` だけでエラー値は持たない |
 | リース | `LeaseMachine`（`NewLeaseMachine`。I/O もタイマーも持たない idle → held → idle の状態機械）、`Lease`、`LeaseEvent`、`LeaseState`、`ReleaseReason`、`DefaultLeaseIdleTimeout`、`ActorKind.CanHoldLease`、`Actor.SameSession`、`Clock`、`IDGen` を足した |
-| 未実装（M2〜M4） | `Wheel`（M2）。`Action`・`Verdict`・`Stricter`・`TaskStatus`・`ErrJudgeDenied`・`ErrUnsupportedAction`、高速パスの `RoleClass`・`Candidate`・`CandidateTable`・`HandoffReason`・`ErrInvalidChoice` とその関数（M4） |
+| M2 で追加した Op（#60） | `PointerMove`・`MouseButton`（`ButtonAction` = `ButtonActionDown` / `ButtonActionUp`）・`Wheel`（座標はストリームの座標。`Monitor.StreamToPhysical` で仮想デスクトップの物理座標へ）。`KeyEvent` も `Op` になった（`CheckKeyEvent` が SAS を拒否する）。MCP は使わない（ツールの公開面は変わらない） |
+| 未実装（M3〜M4） | `Action`・`Verdict`・`Stricter`・`TaskStatus`・`ErrJudgeDenied`・`ErrUnsupportedAction`、高速パスの `RoleClass`・`Candidate`・`CandidateTable`・`HandoffReason`・`ErrInvalidChoice` とその関数（M4） |
 
 ### 13.3 platform（§3）
 
@@ -1017,6 +1053,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 |------|----------|
 | `Capturer` | M1 は GDI BitBlt だけ（DXGI は M2）。`Watch` と `Frame` は宣言だけで、M1 では呼ばない。Windows 実装の `Capturer.Watch` はスタブで、常に `windows: Capturer.Watch is not available in M1` のエラーを返す |
 | `SecretStore`・`SecretOpenAI`・`SecretTypeSafe`・`platform.ErrNotFound` | 宣言と偽実装・契約テスト（`platformtest`）だけ。M1 には Windows 実装も呼び出しもない（API キー管理は M4） |
+| `InputInjector.Button`（M2。#60） | `Button(ctx, b, a)` は、現在のカーソル位置でボタンを押す・離す（Web UI の `input.mouse` の `down` / `up` を `Click` / `Drag` にまとめず、1 つずつ注入する）。Windows 実装は押下中のボタンを覚え、`ReleaseAll` がキーと一緒に離す（ボタン、キーの順に 1 回の `SendInput`）。偽実装（`FakeInput.HeldButtons`）と共通の契約テスト（押す・離す、不正な引数、取り消し済みの ctx、`ReleaseAll`）を足した。ブラウザ側で `Click` / `Drag` にまとめない（ボタンを押したままの移動・選択をそのまま再現する） |
 | `Power` | `app.Config` の `Platform.Power` は**必須**（nil なら起動に失敗する）。リース保持中のスリープ・画面オフの抑止（NFR-A05）に使う |
 | UI Automation のワーカー | 専用スレッドへの呼び出し（`Do(ctx, fn)`）は、`ctx` が取り消し済みなら `fn` を実行せず `ctx.Err()` を返し、実行中に `ctx` が終わったら `fn` の終了を待たずに `ctx.Err()` を返す |
 | 追加 | 偽実装と共通の契約テストを `internal/platform/platformtest` に置く（Windows 実装は `windows && smoke` のビルドタグで同じ契約を実機で流す）。ログオン時の自動起動（FR-S08）は `service.Autostart` の実装を `internal/platform/windows` に置く（HKCU の Run キー） |
@@ -1048,6 +1085,8 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 運用ログの行（FR-H13・NFR-O01） | 一部の失敗だけ | 主な処理の成功と失敗を、次のレベルで `slog` に出す（ポーリングやフレームごとには出さない。秘密は渡さない）。起動 `puppet-remo starting`（INFO。`main`）・終了 `puppet-remo is shutting down`（INFO）。tailscaled の状態が変わったとき `tailscaled is running`（INFO）・`is not logged in` / `is not reachable`（WARN。`StatusTracker`）。待ち受けの状態が変わったとき `tailnet listener is listening`（INFO）・`is not listening`・一部のアドレスだけ（WARN。`app`）。接続要求 `connection request received`（INFO。新しい要求ができたときだけ）・`approved` / `denied`（INFO。`HostAdmin`）・レート制限 `connection requests are rate limited`（WARN）。認証 `bearer authentication failed`（WARN。理由・デバイス・IP だけ）・`bearer authentication is rate limited`（WARN）・WhoIs の失敗 `whois failed; the request was rejected`（WARN）。トークン `token issued` / `token revoked`（INFO。ID とラベルだけ）。クライアント `client updated` / `client deleted`（INFO）。リース `lease acquired` / `lease released`（INFO。理由つき）・`lease acquire denied`（INFO）。ツール `mcp tool succeeded`（状態を変えるものは INFO、読み取りだけは DEBUG）・`mcp tool was rejected`（WARN。コードつき）・想定外の失敗 `mcp tool failed`（ERROR）・`mcp tool timed out`（WARN）。キルスイッチ `kill switch triggered`（WARN）・`released`（INFO）・失敗（ERROR）。設定の反映 `server port changed`・`kill switch hotkey registered`（INFO）。ツールの引数・結果、トークンの平文・ハッシュ、Authorization ヘッダーは出さない。リリースの更新確認（FR-H09）は `Updater` が M1 に無いため、まだ出さない（`Updater` を実装するときに、確認・適用・失敗を同じ規則で足す） |
 | MCP ツールの監査 | `Control` が記録する（§5.4） | `Control.Do` を通る入力系・`focus_window`・クリップボード・UI ツリー・`wait` と、`Control.Launch` を通る `launch_app`（M1.5）は `Control` が監査する。`list_launchable_apps` は `mcp` のツール登録（`addAuditedTool`）が `{count}` で記録する（件数は結果から決まるため、`toolResult.AuditDetail` で足す）。`Do` を通らない `get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status` は、`mcp` のツール登録（`addAuditedTool`）が `service.ToolAuditEntry` で記録する。拒否（リース・InputGuard・キルスイッチ）は `denied`、それ以外の失敗は `error` |
 | `Control` の直列化（§5.4） | ステートレス | 入力の実行（マウス・キーボード）は 1 度に 1 つへ直列化する（容量 1 のセマフォ。「移動してからクリック」の間に別の入力を割り込ませない）。検査の順序は設計のとおり（キルスイッチ → リース → 引数検査・縮小座標の変換 → InputGuard → platform → 監査。`Judge` は M4）。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000（既定 5・500）で、超えると `invalid_argument` |
+| `Control` の Web 入力（§5.4。M2・#60） | `Do` は MCP の入力が中心 | `web` の入力（`PointerMove`・`MouseButton`・`Wheel`・`KeyEvent`・`KeyPress`・`TypeText`・`ClipboardRead`・`ClipboardWrite`）も `Do` が同じ順序（キルスイッチ → リース → 引数検査と座標変換 → InputGuard → platform → 監査）で処理する。判断: (1) `web` は暗黙にリースを取らず、他者の保持と剥奪は `ErrLeaseHeldByOther` / `ErrLeaseRevoked`、(2) ストリームの座標は縮小せず、選択モニターの原点を足す（外は `ErrInvalidCoordinates`）、(3) `Wheel` は有限・絶対値 50 ノッチまで、(4) `PointerMove`（連続するカーソル移動）は監査しない。クリック・ホイール・キー・テキスト・クリップボードは監査する（`web` の `kind` は `input`、イベントは `tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up` など）、(5) `KeyEvent` の監査にはキーの名前（`code`・`key`）を入れず、`action` と修飾キーだけを残す（パスワードの入力を監査ログに残さない。FR-AU03 の `type` と同じ扱い）。SAS は `KeyPress`・`KeyEvent` とも `input_blocked`（`secure_attention_sequence`）。キルスイッチは `ReleaseAll` で押下中のボタンとキーを離す |
+| `ViewerSessions`（§5.7.1。M2・#60） | なし | `service.NewViewerSessions(ViewerSessionsConfig{Streamer, Leases, Kill, Clock, IDs})`。`viewer_id` の発行・検証（クライアントへの束縛）・WebSocket の接続（`Open`）・切断でのリース解放・置き換え・`SessionCloser`・キルスイッチのクローザー（`web-sessions`）・設定の経路（`Configure` → `ConfigChanged`）。判断: (1) 切断した `viewer_id` は 5 分のあいだ再接続できる、(2) 同時接続は 1 本で、新しい接続が古い接続を閉じて置き換える（ユーザー確定）、(3) `ViewerIDTTL` は 5 分。`Viewer` に `Config`（登録時の設定）を足した。`app` への組み込み（`HostAdmin.Sessions` へ MCP のセッション表と合わせて渡す）と `/ws/screen`・`/viewer/*` は別の子 Issue |
 | `LeaseManager`（§5.2） | `Acquire`・`Release`・`ReleaseSession`・`Check`・`Holder`・`ReleaseAll`・`Subscribe` | `SetIdleTimeout`（設定変更の即時反映）を追加。`Revoke(by)` は M2 で実装した（#58）: `by` は host / web だけ、idle なら何もしない（冪等）、剥奪された保持者は次の `Acquire` の成功まで `Check` が `ErrLeaseRevoked`（`LeaseMachine` が剥奪された保持者を 1 件覚える。ほかの保持者が取得すると忘れる）。解放の理由は `revoked`（`domain.ReleaseRevoked`）、`LeaseEvent.By` に剥奪した側が入り、監査は `lease.revoke`（`actor_type` は `by`、`detail` に剥奪された保持者の `holder_kind`・`holder_client_id`・`holder_label`）。ホスト GUI は `service.HostActor`（`host`）で呼ぶ。`LeaseConfig.Power` でスリープ・画面オフを抑止する |
 | `KillSwitch`（§5.8） | `Trigger` は (1) 永続化 → (2) リース剥奪 → … → (7) 監査の順で、1 秒以内（NFR-P05） | 実装は、メモリ上の状態を先に `active` にして（以後のリクエストは 503）、(1) `settings` に永続化 → (2) `LeaseManager.ReleaseAll` → (3) 登録済みのクローザーを**並行**に実行（MCP セッションの切断、押下中の入力の解放）→ 監査の順。`Agent`（M4）・WebSocket（M2）・オーバーレイ（M3）はまだ無い。永続化とクローザーはそれぞれ自分の期限（`KillSwitchConfig.Timeout`。既定 1 秒）を持つ。**既知の制限**: 永続化が遅い（遅いディスクなど）と、永続化が最大 1 期限、クローザーが最大 1 期限を使い、`Trigger` が戻るまで最大 2 × `Timeout`（既定で 2 秒）かかり、NFR-P05 の 1 秒を超えうる。メモリ上の状態は先頭で `active` になるので受付停止は直ちに効くが、全セッションの切断・入力の解放の完了は遅れうる。この点は未解決で、1 秒を保証していない |
 | `Streamer`（§5.7）・FR-S06（M2） | `Subscribe`・`Configure`、`Viewer{Frames, Done}` | `service.NewStreamer(StreamerConfig{Capturer, Clock, IDs, Settings, KeyframeInterval, Logger})`。`Viewer` に `ID` を足し、`ViewerConfig{Monitor, Quality, FPS}` を置く（0 は既定値 / 今の値）。バイナリフレームの符号化（`encodeFrame`）と 64×64 の差分（`changedRects`）は `service` が持つ（標準ライブラリの `image/jpeg`）。連番はプロファイルごとに 1 から数え、同じ回のキーフレームと差分は同じ連番を持つ。`app` への組み込みと `/ws/screen` は別の子 Issue。設定 `viewer.default_quality`（1〜100、既定 70）・`viewer.default_fps`（1〜30、既定 10）は `HostSettings`（`ViewerDefaultQuality`・`ViewerDefaultFPS`）で `Load` / `Save` し、`service.ViewerDefaults` が `Streamer` 用に読む |
@@ -1092,3 +1131,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.19 | 2026-11-01 | §5.4 の `Do` の検査順序の 3 に `own_window` の範囲（`Detail[DetailOwnWindows]`）、「InputGuard は platform ではなく service にある」に `InputBlockReason`・`ScaledRect`・`OwnWindowRegions` と `Shot.OwnWindows` を追記 | #47（FR-M20） |
 | 1.21 | 2026-11-01 | §5.2 の `LeaseManager.Revoke`（`by` は host / web、idle は冪等、剥奪された保持者は次の `Acquire` まで `ErrLeaseRevoked`、保持者種別 `web`）と §13.5 の `LeaseManager` 行を M2 の実装に更新 | #58 |
 | 1.22 | 2026-11-01 | §5.7 の `Streamer` に `Viewer.ID`・`ViewerConfig`・既定値・上限・差分と間引きの規則、§13.5 に `Streamer` と FR-S06 の設定（`viewer.default_quality`・`viewer.default_fps`）を追記 | #59 |
+| 1.23 | 2026-11-01 | §2 に Web 入力の Op（`PointerMove`・`MouseButton`・`Wheel`・`KeyEvent`）、§3 に `InputInjector.Button`、§5.4 に Web 入力の `Do`（座標・ホイールの上限・SAS・監査）、§5.7.1 に `ViewerSessions`（`viewer_id` の束縛・有効期間・単一接続・切断でのリース解放・`SessionCloser`）を追記。§13.2・§13.3・§13.5 の差分を更新 | #60 |

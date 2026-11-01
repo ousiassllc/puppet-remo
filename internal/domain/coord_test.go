@@ -295,3 +295,34 @@ func TestScaledRect(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamToPhysical(t *testing.T) {
+	m := domain.Monitor{Index: 1, Origin: domain.Point{X: -1920, Y: 100}, Size: domain.Size{W: 1920, H: 1080}}
+	tests := []struct {
+		name    string
+		in      domain.Point
+		want    domain.Point
+		wantErr bool
+	}{
+		{name: "左上", in: domain.Point{X: 0, Y: 0}, want: domain.Point{X: -1920, Y: 100}},
+		{name: "右下の最後の画素", in: domain.Point{X: 1919, Y: 1079}, want: domain.Point{X: -1, Y: 1179}},
+		{name: "右端の外", in: domain.Point{X: 1920, Y: 0}, wantErr: true},
+		{name: "下端の外", in: domain.Point{X: 0, Y: 1080}, wantErr: true},
+		{name: "負の x", in: domain.Point{X: -1, Y: 0}, wantErr: true},
+		{name: "負の y", in: domain.Point{X: 0, Y: -1}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := m.StreamToPhysical(tt.in)
+			if tt.wantErr {
+				if !errors.Is(err, domain.ErrInvalidCoordinates) {
+					t.Fatalf("want ErrInvalidCoordinates, got %v", err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("StreamToPhysical(%v) = %v, %v; want %v", tt.in, got, err, tt.want)
+			}
+		})
+	}
+}

@@ -133,6 +133,32 @@ func TestFakeInputTracksHeldKeys(t *testing.T) {
 	}
 }
 
+func TestFakeInputTracksHeldButtons(t *testing.T) {
+	in := platformtest.NewFakeInput()
+	ctx := context.Background()
+	for _, c := range []struct {
+		b domain.Button
+		a domain.ButtonAction
+	}{
+		{domain.ButtonLeft, domain.ButtonActionDown},
+		{domain.ButtonRight, domain.ButtonActionDown},
+		{domain.ButtonLeft, domain.ButtonActionUp},
+	} {
+		if err := in.Button(ctx, c.b, c.a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, want := in.HeldButtons(), []domain.Button{domain.ButtonRight}; !reflect.DeepEqual(got, want) {
+		t.Errorf("HeldButtons() = %v, want %v", got, want)
+	}
+	if err := in.ReleaseAll(); err != nil {
+		t.Fatal(err)
+	}
+	if got := in.HeldButtons(); len(got) != 0 {
+		t.Errorf("HeldButtons() after ReleaseAll = %v, want none", got)
+	}
+}
+
 func TestFakeWindowsAtAndFocus(t *testing.T) {
 	w := seededWindows()
 	ctx := context.Background()

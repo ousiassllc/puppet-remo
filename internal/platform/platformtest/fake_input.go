@@ -16,13 +16,26 @@ var _ platform.InputInjector = (*FakeInput)(nil)
 type FakeInput struct {
 	Recorder
 
-	mu     sync.Mutex
-	cursor domain.Point
-	held   map[string]bool // KeyEvent で押下中のキー（Code）
+	mu      sync.Mutex
+	cursor  domain.Point
+	held    map[string]bool        // KeyEvent で押下中のキー（Code）
+	buttons map[domain.Button]bool // Button で押下中のボタン
 }
 
 func NewFakeInput() *FakeInput {
-	return &FakeInput{held: make(map[string]bool)}
+	return &FakeInput{held: make(map[string]bool), buttons: make(map[domain.Button]bool)}
+}
+
+// HeldButtons は Button で押下中のボタンを昇順で返す。
+func (f *FakeInput) HeldButtons() []domain.Button {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	buttons := make([]domain.Button, 0, len(f.buttons))
+	for b := range f.buttons {
+		buttons = append(buttons, b)
+	}
+	slices.Sort(buttons)
+	return buttons
 }
 
 // SetCursor はカーソル位置を設定する。
@@ -78,6 +91,26 @@ func (f *FakeInput) Click(ctx context.Context, b domain.Button, count int, mods 
 		return domain.ErrInvalidArgument.WithMsg("click count must be 1 to 3")
 	}
 	return checkMods(mods)
+}
+
+func (f *FakeInput) Button(ctx context.Context, b domain.Button, a domain.ButtonAction) error {
+	if err := f.enter(ctx, "Button", b, a); err != nil {
+		return err
+	}
+	if !b.Valid() {
+		return domain.ErrInvalidArgument.WithMsg("unknown button: " + string(b))
+	}
+	if !a.Valid() {
+		return domain.ErrInvalidArgument.WithMsg("unknown button action: " + string(a))
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if a == domain.ButtonActionDown {
+		f.buttons[b] = true
+	} else {
+		delete(f.buttons, b)
+	}
+	return nil
 }
 
 func (f *FakeInput) Drag(ctx context.Context, from, to domain.Point, mods []domain.Modifier) error {
@@ -158,6 +191,7 @@ func (f *FakeInput) ReleaseAll() error {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	clear(f.buttons)
 	clear(f.held)
 	return nil
 }

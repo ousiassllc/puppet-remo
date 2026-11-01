@@ -90,6 +90,9 @@ func TestEnumValid(t *testing.T) {
 	if !domain.KeyUp.Valid() || domain.KeyAction("hold").Valid() {
 		t.Error("KeyAction.Valid")
 	}
+	if !domain.ButtonActionDown.Valid() || !domain.ButtonActionUp.Valid() || domain.ButtonAction("hold").Valid() || domain.ButtonAction("").Valid() {
+		t.Error("ButtonAction.Valid")
+	}
 }
 
 func TestRectContains(t *testing.T) {
