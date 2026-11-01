@@ -150,6 +150,25 @@ func TestLogReaderPagesAreFixedSizeAndCoverEveryEntryAcrossChunks(t *testing.T) 
 	}
 }
 
+// 上限のページ（MaxAppLogPage）には、この先にまだ記録があっても「次」は無い（丸められて同じページに戻るため）。
+func TestLogReaderHasNoNextPageAtTheMaximumPage(t *testing.T) {
+	r := NewLogReader(t.TempDir())
+	const total = service.AppLogPageSize*service.MaxAppLogPage + 10
+	lines := make([]string, total)
+	for i := range lines {
+		lines[i] = logLine(i, "INFO", fmt.Sprintf("m%05d", i))
+	}
+	writeLogFile(t, r.Path(), lines...)
+
+	if p := entries(t, r, service.AppLogAll, service.MaxAppLogPage-1); !p.HasNext {
+		t.Errorf("page %d must have a next page: %+v", service.MaxAppLogPage-1, p)
+	}
+	p := entries(t, r, service.AppLogAll, service.MaxAppLogPage)
+	if p.HasNext || !p.HasPrev || p.Page != service.MaxAppLogPage || len(p.Items) != service.AppLogPageSize {
+		t.Errorf("page %d = HasNext %v HasPrev %v page %d items %d, want no next", service.MaxAppLogPage, p.HasNext, p.HasPrev, p.Page, len(p.Items))
+	}
+}
+
 // 途中で切れた行（書き込み中・クラッシュ）、JSON でない行、time・level の無い行、空行は読み飛ばし、前後の行は読める。
 func TestLogReaderSkipsPartialAndGarbageLines(t *testing.T) {
 	r := NewLogReader(t.TempDir())
@@ -247,6 +266,19 @@ func TestLogReaderContinuesIntoRotatedFilesNewestFirst(t *testing.T) {
 	}
 	if got := strings.Join(messages(entries(t, r, service.AppLogError, 1)), "|"); got != "m05" {
 		t.Errorf("the error filter must reach the oldest rotated file: %q", got)
+	}
+}
+
+// データディレクトリ名に glob の特殊文字（[ ]）があっても、ローテーション済みのファイルを読める。
+func TestLogReaderReadsRotatedFilesInADirWithGlobMetacharacters(t *testing.T) {
+	r := NewLogReader(filepath.Join(t.TempDir(), "logs[1]"))
+	dir := filepath.Dir(r.Path())
+	writeLogFile(t, filepath.Join(dir, "puppet-remo-2026-11-01T08-00-00.000.log"), logLine(0, "INFO", "rotated-old"))
+	writeLogFile(t, filepath.Join(dir, "puppet-remo-2026-11-01T08-30-00.000.log"), logLine(1, "INFO", "rotated-new"))
+	writeLogFile(t, r.Path(), logLine(2, "INFO", "current"))
+
+	if got := strings.Join(messages(entries(t, r, service.AppLogAll, 1)), "|"); got != "current|rotated-new|rotated-old" {
+		t.Errorf("messages = %q", got)
 	}
 }
 

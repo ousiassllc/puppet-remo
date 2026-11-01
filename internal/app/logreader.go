@@ -74,7 +74,8 @@ func (r *LogReader) Entries(ctx context.Context, filter service.AppLogFilter, pa
 	}
 	out := service.AppLogPage{Page: page, HasPrev: page > 1}
 	if len(items) > service.AppLogPageSize {
-		out.HasNext = true
+		// 上限のページの「次」は、丸められて同じページになるので出さない。
+		out.HasNext = page < service.MaxAppLogPage
 		items = items[:service.AppLogPageSize]
 	}
 	out.Items = items
@@ -84,8 +85,18 @@ func (r *LogReader) Entries(ctx context.Context, filter service.AppLogFilter, pa
 // files は読む順（今のファイル → ローテーション済みを新しい順）のパス。名前の時刻が辞書順で時刻順になる。
 func (r *LogReader) files() []string {
 	dir, base := filepath.Split(r.path)
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	backups, _ := filepath.Glob(filepath.Join(dir, stem+"-*"+filepath.Ext(base)))
+	ext := filepath.Ext(base)
+	prefix := strings.TrimSuffix(base, ext) + "-"
+	var backups []string
+	// filepath.Glob はディレクトリ名の [ ? * を式として扱うので、ディレクトリを直接読んで名前で選ぶ。
+	if dirEntries, err := os.ReadDir(filepath.Clean(dir)); err == nil {
+		for _, e := range dirEntries {
+			name := e.Name()
+			if !e.IsDir() && strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ext) {
+				backups = append(backups, filepath.Join(dir, name))
+			}
+		}
+	}
 	slices.Sort(backups)
 	slices.Reverse(backups)
 	return append([]string{r.path}, backups...)
