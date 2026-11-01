@@ -40,6 +40,7 @@ type Repo interface {
 	Tokens() repository.Tokens
 	ConnRequests() repository.ConnRequests
 	Audit() repository.Audit
+	Thumbs() repository.ThumbStore
 	LaunchableApps() repository.LaunchableApps
 }
 
@@ -282,7 +283,9 @@ func (a *App) build(ctx context.Context) error {
 	a.initialKey = initial.KillSwitchHotkey
 	a.hotkey = NewKillSwitchHotkey(p.Hotkey, func() { a.triggerKillSwitch("hotkey") })
 
-	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{ConnRequests: connRequests, Clock: cfg.Clock, Logger: a.log})
+	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{
+		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Settings: settings, Clock: cfg.Clock, Logger: a.log,
+	})
 	if err != nil {
 		return fmt.Errorf("maintenance: %w", err)
 	}
