@@ -238,6 +238,8 @@ type SettingsValues struct {
 	Hotkey           string
 	ScreenshotMaxDim string
 	LeaseIdleSec     string
+	ViewerQuality    string
+	ViewerFPS        string
 	Autostart        bool
 }
 
@@ -247,6 +249,8 @@ type SettingsErrors struct {
 	Hotkey           string
 	ScreenshotMaxDim string
 	LeaseIdleSec     string
+	ViewerQuality    string
+	ViewerFPS        string
 }
 
 // SettingsForm は設定フォーム。

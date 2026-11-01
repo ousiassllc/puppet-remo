@@ -12,7 +12,7 @@ import (
 func validSettings() url.Values {
 	return url.Values{
 		"server.port": {"9000"}, "killswitch.hotkey": {"Ctrl+Alt+Shift+Q"},
-		"screenshot.max_dimension": {"2048"}, "lease.idle_timeout_sec": {"120"}, "autostart": {"on"},
+		"screenshot.max_dimension": {"2048"}, "lease.idle_timeout_sec": {"120"}, "viewer.default_quality": {"85"}, "viewer.default_fps": {"24"}, "autostart": {"on"},
 	}
 }
 
@@ -23,7 +23,8 @@ func TestSettingsPage(t *testing.T) {
 	// ブラウザの入力検証でサーバーの 422 を迂回させない。
 	contains(t, res, "<html", ` novalidate`, `hx-put="/settings"`, `hx-target-422="this"`,
 		`name="server.port"`, `value="8765"`, `name="killswitch.hotkey"`, `value="Ctrl+Alt+Shift+K"`,
-		`name="screenshot.max_dimension"`, `value="1568"`, `name="lease.idle_timeout_sec"`, `value="300"`, `name="autostart"`)
+		`name="screenshot.max_dimension"`, `value="1568"`, `name="lease.idle_timeout_sec"`, `value="300"`,
+		`name="viewer.default_quality"`, `value="70"`, `name="viewer.default_fps"`, `value="10"`, `name="autostart"`)
 	lacks(t, res, "data-field-error", "checked")
 	// M1 に無い設定（エージェント・監査・更新）は出さない。
 	lacks(t, res, "agent", "audit", "update.", "OpenAI", "api_key")
@@ -50,9 +51,9 @@ func TestSaveSettings(t *testing.T) {
 	r := newRig(t)
 	res := r.do(http.MethodPut, "/settings", validSettings(), hx...)
 	status(t, res, http.StatusOK)
-	contains(t, res, `id="settings-form"`, `value="9000"`, `value="Ctrl+Alt+Shift+Q"`, `value="2048"`, `value="120"`, "checked", "設定を保存しました。", `hx-swap-oob="beforeend:#toast-root"`)
+	contains(t, res, `id="settings-form"`, `value="9000"`, `value="Ctrl+Alt+Shift+Q"`, `value="2048"`, `value="120"`, `value="85"`, `value="24"`, "checked", "設定を保存しました。", `hx-swap-oob="beforeend:#toast-root"`)
 	lacks(t, res, "data-field-error", "<html")
-	want := service.HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Alt+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, Autostart: true}
+	want := service.HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Alt+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24, Autostart: true}
 	if len(r.f.Settings.Saves) != 1 || r.f.Settings.Saves[0] != want {
 		t.Errorf("saves = %+v, want [%+v]", r.f.Settings.Saves, want)
 	}
@@ -79,6 +80,10 @@ func TestSaveSettingsValidation(t *testing.T) {
 		{"port empty", func(v url.Values) { v.Set("server.port", "") }, []string{"set-port"}, ``},
 		{"max dimension out of range", func(v url.Values) { v.Set("screenshot.max_dimension", "100") }, []string{"set-maxdim"}, `value="100"`},
 		{"idle timeout out of range", func(v url.Values) { v.Set("lease.idle_timeout_sec", "5") }, []string{"set-idle"}, `value="5"`},
+		{"quality out of range", func(v url.Values) { v.Set("viewer.default_quality", "101") }, []string{"set-vquality"}, `value="101"`},
+		{"quality not a number", func(v url.Values) { v.Set("viewer.default_quality", "high") }, []string{"set-vquality"}, `value="high"`},
+		{"fps out of range", func(v url.Values) { v.Set("viewer.default_fps", "0") }, []string{"set-vfps"}, `value="0"`},
+		{"fps too high", func(v url.Values) { v.Set("viewer.default_fps", "31") }, []string{"set-vfps"}, `value="31"`},
 		{"hotkey without modifier", func(v url.Values) { v.Set("killswitch.hotkey", "K") }, []string{"set-hotkey"}, `value="K"`},
 		{"hotkey garbage", func(v url.Values) { v.Set("killswitch.hotkey", "Ctrl+Nope+??") }, []string{"set-hotkey"}, `value="Ctrl+Nope+??"`},
 		{"several at once", func(v url.Values) {

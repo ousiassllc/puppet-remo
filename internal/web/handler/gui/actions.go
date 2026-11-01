@@ -318,6 +318,8 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 		Hotkey:           strings.TrimSpace(c.PostForm(service.FieldKillSwitchHotkey)),
 		ScreenshotMaxDim: strings.TrimSpace(c.PostForm(service.FieldScreenshotMaxDimension)),
 		LeaseIdleSec:     strings.TrimSpace(c.PostForm(service.FieldLeaseIdleTimeoutSec)),
+		ViewerQuality:    strings.TrimSpace(c.PostForm(service.FieldViewerDefaultQuality)),
+		ViewerFPS:        strings.TrimSpace(c.PostForm(service.FieldViewerDefaultFPS)),
 		Autostart:        current.Autostart,
 	}
 	if h.d.Settings.AutostartAvailable() {
@@ -329,6 +331,8 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 	s.Port, errs.Port = parseInt(in.Port)
 	s.ScreenshotMaxDimension, errs.ScreenshotMaxDim = parseInt(in.ScreenshotMaxDim)
 	s.LeaseIdleTimeoutSec, errs.LeaseIdleSec = parseInt(in.LeaseIdleSec)
+	s.ViewerDefaultQuality, errs.ViewerQuality = parseInt(in.ViewerQuality)
+	s.ViewerDefaultFPS, errs.ViewerFPS = parseInt(in.ViewerFPS)
 
 	// 数値に読めなかった項目のほかにも、範囲・書式の不備を同時に示す（読めなかった項目は 0 として検証し、メッセージは上書きしない）。
 	var verr *service.ValidationError
@@ -365,6 +369,8 @@ func mergeFieldErrors(errs view.SettingsErrors, verr *service.ValidationError) v
 	fill(&errs.Hotkey, service.FieldKillSwitchHotkey)
 	fill(&errs.ScreenshotMaxDim, service.FieldScreenshotMaxDimension)
 	fill(&errs.LeaseIdleSec, service.FieldLeaseIdleTimeoutSec)
+	fill(&errs.ViewerQuality, service.FieldViewerDefaultQuality)
+	fill(&errs.ViewerFPS, service.FieldViewerDefaultFPS)
 	return errs
 }
 

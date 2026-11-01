@@ -318,7 +318,8 @@ func (h *Handler) settingsFormView(values view.SettingsValues, errs view.Setting
 func settingsValues(s service.HostSettings) view.SettingsValues {
 	return view.SettingsValues{
 		Port: strconv.Itoa(s.Port), Hotkey: s.KillSwitchHotkey, ScreenshotMaxDim: strconv.Itoa(s.ScreenshotMaxDimension),
-		LeaseIdleSec: strconv.Itoa(s.LeaseIdleTimeoutSec), Autostart: s.Autostart,
+		LeaseIdleSec: strconv.Itoa(s.LeaseIdleTimeoutSec), ViewerQuality: strconv.Itoa(s.ViewerDefaultQuality),
+		ViewerFPS: strconv.Itoa(s.ViewerDefaultFPS), Autostart: s.Autostart,
 	}
 }
 
