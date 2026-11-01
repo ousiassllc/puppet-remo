@@ -188,19 +188,28 @@ func (m *Maintenance) thumbsMaxBytes(ctx context.Context) (int64, error) {
 // positiveIntSetting は settings の key を 1〜upper の整数として読む。読み出し自体の失敗はエラー、
 // 値が不正（数値でない・小数・範囲外）なら警告を出して def を返す（保守を止めない）。
 func (m *Maintenance) positiveIntSetting(ctx context.Context, key string, def, upper int64) (int64, error) {
-	raw, ok, err := m.cfg.Settings.Get(ctx, key)
+	v, invalid, err := readBoundedInt(ctx, m.cfg.Settings, key, def, upper)
+	if invalid {
+		m.cfg.Logger.Warn("invalid audit retention setting; using the default", "key", key, "default", def)
+	}
+	return v, err
+}
+
+// readBoundedInt は settings の key を 1〜upper の整数として読む（audit.retention_days・audit.thumbs_max_bytes の共通の規則）。
+// 行が無ければ def。値が不正（数値でない・小数・範囲外）なら def と invalid = true。読み出し自体の失敗は err。
+func readBoundedInt(ctx context.Context, settings repository.Settings, key string, def, upper int64) (v int64, invalid bool, err error) {
+	raw, ok, err := settings.Get(ctx, key)
 	if err != nil {
-		return 0, fmt.Errorf("read setting %s: %w", key, err)
+		return 0, false, fmt.Errorf("read setting %s: %w", key, err)
 	}
 	if !ok {
-		return def, nil
+		return def, false, nil
 	}
 	var f float64
 	if err := json.Unmarshal(raw, &f); err != nil || f != math.Trunc(f) || f < 1 || f > float64(upper) {
-		m.cfg.Logger.Warn("invalid audit retention setting; using the default", "key", key, "default", def)
-		return def, nil
+		return def, true, nil
 	}
-	return int64(f), nil
+	return int64(f), false, nil
 }
 
 // Run は起動時に孤児の掃除と保守を 1 回、以後 Interval ごとに保守を行い、ctx の終了で戻る。失敗はログに残して続ける。

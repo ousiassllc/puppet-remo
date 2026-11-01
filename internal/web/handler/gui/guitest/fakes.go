@@ -60,7 +60,8 @@ func New() *Fakes {
 		Apps:       &Apps{},
 		Audit:      &Audit{},
 		Logs:       &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
-		Settings:   &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}, CanAutostart: true},
+		Settings: &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
+			AuditThumbnailsEnabled: true, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: service.UpdateApplyConfirm}, CanAutostart: true},
 	}
 }
 

@@ -291,7 +291,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.settings, err = service.NewHostSettings(service.HostSettingsConfig{
-		Settings: settings, Autostart: p.Autostart, Audit: audit, Clock: cfg.Clock, OnChange: a.onSettingsChange,
+		Settings: settings, Autostart: p.Autostart, Audit: audit, Clock: cfg.Clock, Logger: a.log, OnChange: a.onSettingsChange,
 	})
 	if err != nil {
 		return fmt.Errorf("host settings: %w", err)
