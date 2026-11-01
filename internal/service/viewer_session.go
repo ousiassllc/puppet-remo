@@ -382,12 +382,12 @@ func (c *viewerSession) Configure(req ViewerConfig) error {
 }
 
 // finish はセッションを 1 度だけ終える: 閲覧者の登録を外し、viewer_id を ViewerIDTTL の再接続の猶予に戻し、
-// OnEnd の fn を呼んでから web のリースを解放する（FR-L05）。
+// OnEnd の fn を呼んでから web のリースを解放する（FR-L05）。Done は、これらがすべて済んでから閉じる
+// （Done を待った側が、リースの解放前の状態を見ない）。
 func (c *viewerSession) finish(reason ViewerCloseReason) {
 	c.once.Do(func() {
 		c.reason = reason
 		c.cancel()
-		close(c.done)
 
 		c.hookMu.Lock()
 		fn := c.onEnd
@@ -405,5 +405,6 @@ func (c *viewerSession) finish(reason ViewerCloseReason) {
 		}
 		s.mu.Unlock()
 		s.cfg.Leases.ReleaseSession(c.actor)
+		close(c.done)
 	})
 }
