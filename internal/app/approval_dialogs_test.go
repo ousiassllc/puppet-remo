@@ -185,8 +185,9 @@ func TestApprovalDialogClosesOnTimeoutAndWithdrawal(t *testing.T) {
 	})
 }
 
-// ダイアログが同時に開くのは 1 つだけ。開いている間の別の要求は、最初のダイアログが閉じたあとに（まだ承認待ちなら）開く。
-// 待つ間に失効した要求は開かない。購読の goroutine を介さず sync を直接呼び、開閉の順序を決定的にする。
+// ダイアログが同時に開くのは 1 つだけ。開いている間に来た別の要求は、最初のダイアログが閉じたあとでも開かず、失効で拒否になる
+// （複数の要求の扱いは未決のため、順番に開くことはしない）。閉じたあとの新しい要求は開く。購読の goroutine を介さず sync を直接呼び、
+// 開閉の順序を決定的にする。
 func TestOnlyOneApprovalDialogIsOpenAtATime(t *testing.T) {
 	windows, timers, bus := NewFakeWindows(), &dialogTimers{}, service.NewBus()
 	approval, err := service.NewApproval(service.ApprovalConfig{Clock: &dialogClock{now: time.Unix(1_700_000_000, 0)}, IDs: &dialogIDs{}, Bus: bus, AfterFunc: timers.after})
@@ -209,42 +210,31 @@ func TestOnlyOneApprovalDialogIsOpenAtATime(t *testing.T) {
 		t.Fatalf("dialogs opened = %d while one is open, want 1", got)
 	}
 
-	// 最初が終われば閉じ、まだ待っている 2 つ目を開く。
+	// 最初が終わればそのダイアログは閉じるが、見送った 2 つ目のためのダイアログは開かない。
 	if err := approval.Resolve(w1.ID(), true); err != nil {
 		t.Fatal(err)
 	}
 	awaitResult(t, first)
 	d.sync()
-	select {
-	case <-w1.Closed():
-	default:
-		t.Error("the first dialog must be closed before the next one opens")
+	k.expectClosed(w1)
+	if got := len(windows.ApprovalWindows()); got != 1 {
+		t.Fatalf("dialogs opened = %d, want 1 (the skipped request is not shown later)", got)
 	}
-	w2 := k.nextWindow()
-	if w2.ID() == w1.ID() {
-		t.Error("the second dialog must be for the second request")
+	timers.fireAll()
+	if r := awaitResult(t, second); !errors.Is(r.err, domain.ErrApprovalTimeout) {
+		t.Errorf("second request: err = %v, want approval_timeout", r.err)
 	}
-	_ = approval.Resolve(w2.ID(), false)
-	awaitResult(t, second)
 	d.sync()
-	k.expectClosed(w2)
 
-	// 待つ間に失効した要求は、開かない。
+	// 閉じたあとの新しい要求は開く。
 	third := k.request(context.Background(), dialogWho)
 	eventually(t, "the third request", func() bool { return len(approval.Pending()) == 1 })
 	d.sync()
 	w3 := k.nextWindow()
-	fourth := k.request(context.Background(), other)
-	eventually(t, "the fourth request", func() bool { return len(approval.Pending()) == 2 })
-	d.sync()
-	timers.fireAll() // 3 つ目も 4 つ目も失効
+	_ = approval.Resolve(w3.ID(), false)
 	awaitResult(t, third)
-	awaitResult(t, fourth)
 	d.sync()
 	k.expectClosed(w3)
-	if got := len(windows.ApprovalWindows()); got != 3 {
-		t.Errorf("dialogs opened = %d, want 3 (the expired fourth request is not shown)", got)
-	}
 }
 
 // 利用者がウィンドウを閉じても（許可も拒否もしない）、承認待ちは続き、60 秒で拒否になる。ダイアログは開き直さない。

@@ -31,8 +31,8 @@ type Windows interface {
 //
 // 判断（docs に定めが無い部分は、拒否側に倒す保守的な動きにした）:
 //   - ダイアログは同時に 1 つだけ開く（M3 の kind は lease だけで、pending_approval の間は他者の取得が断られるため、同時に 2 つは出ない）。
-//     開いている間に来た別の要求は、そのダイアログが終わるまで開かない。まだ承認待ちなら、終わったあとに要求した順に開く。
-//     待つ間に 60 秒が過ぎれば失効して拒否になる（Approval.Pending が複数を返すときの扱いは docs に無く、この動きは暫定）。
+//     開いている間に来た別の要求は開かず（あとからも開かず）、60 秒で失効して拒否になる（承認が勝手に通らない保守的な動き）。
+//     Approval.Pending が複数を返すときの扱いは docs に無く未決のため、順番に開くなどはしていない（#68 の未決事項）。
 //   - 利用者が許可も拒否もせずにウィンドウを閉じても、承認待ちは続き、60 秒の失効で拒否になる（再度は開かない）。
 type approvalDialogs struct {
 	windows  Windows
@@ -40,12 +40,13 @@ type approvalDialogs struct {
 	bus      *service.Bus
 	log      *slog.Logger
 
-	mu   sync.Mutex
-	open map[string]Window // 承認要求の ID → 開いているダイアログ
+	mu      sync.Mutex
+	open    map[string]Window // 承認要求の ID → 開いているダイアログ
+	skipped map[string]bool   // 別のダイアログが開いていたため開かなかった要求の ID（終わったら外す）
 }
 
 func newApprovalDialogs(w Windows, approval service.Approval, bus *service.Bus, log *slog.Logger) *approvalDialogs {
-	return &approvalDialogs{windows: w, approval: approval, bus: bus, log: log, open: map[string]Window{}}
+	return &approvalDialogs{windows: w, approval: approval, bus: bus, log: log, open: map[string]Window{}, skipped: map[string]bool{}}
 }
 
 // Watch は購読を（戻る前に）済ませて、承認イベントに従ってダイアログを開閉する goroutine を始める。ctx の終了で、開いている
@@ -71,7 +72,8 @@ func (d *approvalDialogs) Watch(ctx context.Context) <-chan struct{} {
 	return done
 }
 
-// sync は承認待ちの今の状態に開閉を合わせる: 終わった要求のダイアログは閉じ、まだ開いていない lease の要求は開く。
+// sync は承認待ちの今の状態に開閉を合わせる: 終わった要求のダイアログは閉じ、まだ見ていない lease の要求は、ほかのダイアログが
+// 開いていなければ開く（開いていれば開かず、skipped に覚える）。
 // Bus は遅い購読者のイベントを捨てうるので、イベントの種類や ID ではなく、Pending を真実の源にする。
 func (d *approvalDialogs) sync() {
 	pending := d.approval.Pending()
@@ -88,7 +90,11 @@ func (d *approvalDialogs) sync() {
 			delete(d.open, id)
 		}
 	}
-	busy := len(d.open) > 0
+	for id := range d.skipped {
+		if !live[id] {
+			delete(d.skipped, id)
+		}
+	}
 	d.mu.Unlock()
 	for _, w := range stale {
 		w.Close()
@@ -100,19 +106,23 @@ func (d *approvalDialogs) sync() {
 		}
 		d.mu.Lock()
 		_, shown := d.open[r.ID]
+		busy := len(d.open) > 0
+		seen := shown || d.skipped[r.ID]
+		if !seen && busy {
+			d.skipped[r.ID] = true
+		}
 		d.mu.Unlock()
-		if shown {
+		if seen {
 			continue
 		}
 		if busy {
-			d.log.Warn("approval dialog is already open; this request waits for it to end", "approval_id", r.ID)
+			d.log.Warn("approval dialog is already open; this request is not shown and expires as denied", "approval_id", r.ID)
 			continue
 		}
 		w := d.windows.OpenApproval(r.ID)
 		d.mu.Lock()
 		d.open[r.ID] = w
 		d.mu.Unlock()
-		busy = true
 	}
 }
 
