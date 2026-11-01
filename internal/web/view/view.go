@@ -31,6 +31,7 @@ const (
 	NavApps      Nav = "apps"
 	NavSettings  Nav = "settings"
 	NavLogs      Nav = "logs"
+	NavAudit     Nav = "audit"
 )
 
 // Chrome は全画面共通の枠（ヘッダー・サイドバー）の表示。
@@ -251,7 +252,13 @@ type SettingsValues struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
-	Autostart        bool
+	// 監査ログ（FR-S07）。保持期間は日、容量の上限はバイト（単位は未決のため、保存値のまま表示する）。
+	AuditThumbnails     bool
+	AuditRecordText     bool
+	AuditRetentionDays  string
+	AuditThumbsMaxBytes string
+	UpdateApplyMode     string // confirm | auto_idle（FR-S09）
+	Autostart           bool
 }
 
 // SettingsField は設定の項目別のエラー。
@@ -262,6 +269,10 @@ type SettingsErrors struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
+	// 監査ログ・更新の項目別のエラー（チェックボックスは検証エラーにならない）。
+	AuditRetentionDays  string
+	AuditThumbsMaxBytes string
+	UpdateApplyMode     string
 }
 
 // SettingsForm は設定フォーム。
@@ -430,6 +441,84 @@ type AppLogPage struct {
 	Chrome Chrome
 	Path   string
 	Log    AppLog
+}
+
+// AuditFilterOption は監査ログの絞り込みの選択肢 1 つ。
+type AuditFilterOption struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+// AuditFilterErrors は絞り込みの項目別のエラーメッセージ（空なら正常）。Paging は limit・cursor の不備（入力欄が無いので、まとめて出す）。
+type AuditFilterErrors struct {
+	From, To, Kind, Result, Paging string
+}
+
+// Any は、どれかの項目にエラーがあるか。
+func (e AuditFilterErrors) Any() bool { return e != (AuditFilterErrors{}) }
+
+// AuditFilters は絞り込みフォームの入力値（URL のクエリそのまま）と選択肢。Limit は既定以外を指定したときだけ入る。
+type AuditFilters struct {
+	From, To, Q, Limit string
+	Clients            []AuditFilterOption // 先頭は「すべて」
+	Kinds              []AuditFilterOption // 先頭は「すべて」
+	Results            []AuditFilterOption // 先頭は「すべて」
+	Errors             AuditFilterErrors
+}
+
+// AuditRow は監査ログの一覧の 1 行。Client はクライアント名のスナップショット（削除済みでも残る）。
+type AuditRow struct {
+	ID         int64
+	DetailURL  string
+	Time       string
+	Client     string
+	Kind       string
+	Event      string
+	Result     string
+	ResultTone BadgeTone
+	Duration   string // 無いときは "-"
+	HasThumb   bool
+}
+
+// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・「次へ」）。NextURL が空なら次のページは無い。
+type AuditList struct {
+	Filters AuditFilters
+	Rows    []AuditRow
+	NextURL string
+}
+
+// AuditListPage は監査ログ画面のページ。
+type AuditListPage struct {
+	Chrome Chrome
+	List   AuditList
+}
+
+// AuditArg は詳細の引数 1 つ（キーと、秘密を伏せ終えた文字列の値）。
+type AuditArg struct{ Key, Value string }
+
+// AuditDetail は監査ログ 1 件の詳細ページ。ThumbURL が空ならサムネイルは無い（ThumbNote が理由）。
+type AuditDetail struct {
+	Chrome     Chrome
+	ID         int64
+	Time       string
+	Kind       string
+	Event      string
+	Actor      string
+	Client     string
+	SessionID  string
+	LeaseID    string
+	Tool       string
+	Result     string
+	ResultTone BadgeTone
+	ErrorCode  string
+	Duration   string
+	Args       []AuditArg
+	ThumbURL   string
+	ThumbW     string
+	ThumbH     string
+	ThumbNote  string
+	BackURL    string
 }
 
 // 以下はリモートの Web UI（ビューア。docs/architecture/frontend.md §3・§4.3）の表示モデル。

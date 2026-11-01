@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
@@ -40,6 +41,29 @@ func TestRecordConnectionRequestAggregates(t *testing.T) {
 	}
 	if a.DisplayName != "host-"+testNodeA || a.LoginName != testUser {
 		t.Fatalf("row A = %+v", a)
+	}
+}
+
+// 接続要求の作成は auth.connreq_create を ok で記録し、既存の pending への集約は記録しない（FR-AU01）。
+func TestRecordConnectionRequestAuditsCreationOnly(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	for range 3 {
+		if err := e.authz.RecordConnectionRequest(ctx, ident(testNodeA), "100.64.0.5"); err != nil {
+			t.Fatal(err)
+		}
+		e.clock.Advance(time.Minute)
+	}
+	if got := e.audit.events(); len(got) != 1 || got[0] != "auth.connreq_create" {
+		t.Fatalf("audit = %v, want one auth.connreq_create", got)
+	}
+	en := e.audit.entries[0]
+	if en.Kind != "auth" || en.Result != "ok" || en.ActorType != domain.ActorSystem || en.ClientLabel != "host-"+testNodeA {
+		t.Fatalf("entry = %+v", en)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(en.DetailJSON, &detail); err != nil || detail["stable_node_id"] != testNodeA || detail["request_id"] == "" {
+		t.Fatalf("detail = %v (%v)", detail, err)
 	}
 }
 
@@ -94,12 +118,13 @@ func TestRecordConnectionRequestRateLimit(t *testing.T) {
 	if n := len(e.reqs.snapshot()); n != connRequestLimit {
 		t.Fatalf("rows = %d, want %d（超過分は GUI に出さない）", n, connRequestLimit)
 	}
-	// 超過は窓ごとに 1 回だけ記録する。
-	if got := e.audit.events(); len(got) != 1 || got[0] != "auth.connreq_rate_limited" {
+	// 超過は窓ごとに 1 回だけ記録する（作成の記録 connRequestLimit 件のあと）。
+	got := e.audit.events()
+	if len(got) != connRequestLimit+1 || got[connRequestLimit] != "auth.connreq_rate_limited" {
 		t.Fatalf("audit = %v", got)
 	}
 	var detail map[string]any
-	if err := json.Unmarshal(e.audit.entries[0].DetailJSON, &detail); err != nil || detail["stable_node_id"] != node(connRequestLimit) {
+	if err := json.Unmarshal(e.audit.entries[connRequestLimit].DetailJSON, &detail); err != nil || detail["stable_node_id"] != node(connRequestLimit) {
 		t.Fatalf("detail = %v (%v)", detail, err)
 	}
 

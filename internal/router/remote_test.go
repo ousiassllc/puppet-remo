@@ -233,6 +233,7 @@ func TestRemoteExposesNothingButTheDocumentedRoutes(t *testing.T) {
 	paths := []string{
 		"/ws/screen/", "/ws/other", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
 		"/mcp/", "/mcp/extra", "/viewer/nope", "/viewer/lease/", "/viewer/clipboard", "/viewer/keys",
+		"/audit", "/audit/1", "/audit/1/thumbnail", // 監査ログの閲覧（FR-AU05）はホスト GUI だけ
 		"/apps", "/apps/new", "/apps/pick", "/apps/pick-file", "/apps/a1/edit", "/apps/a1/delete/confirm", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
 	}
 	for _, p := range paths {

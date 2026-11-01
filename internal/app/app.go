@@ -181,14 +181,26 @@ func (a *App) build(ctx context.Context) error {
 	cfg := a.cfg
 	settings := cfg.Repo.Settings()
 
-	audit, err := service.NewAudit(service.AuditConfig{Store: cfg.Repo.Audit(), Clock: cfg.Clock, Logger: a.log})
+	// 接続要求の変化を GUI へ通知する。Authz と HostAdmin の両方へ同じラッパーを渡す。
+	connRequests := service.NewNotifyingConnRequests(cfg.Repo.ConnRequests(), a.bus)
+
+	// 保守は、サムネイルを保存するたびの容量の確認（PurgeThumbsOverCap）を Audit へ渡すため、Audit より先に作る。
+	var err error
+	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{
+		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Settings: settings, Clock: cfg.Clock, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("maintenance: %w", err)
+	}
+
+	audit, err := service.NewAudit(service.AuditConfig{
+		Store: cfg.Repo.Audit(), Clock: cfg.Clock, Logger: a.log,
+		Thumbs: cfg.Repo.Thumbs(), IDs: cfg.IDs, Settings: settings, PurgeOverCap: a.maint.PurgeThumbsOverCap,
+	})
 	if err != nil {
 		return fmt.Errorf("audit: %w", err)
 	}
 	a.audit = audit
-
-	// 接続要求の変化を GUI へ通知する。Authz と HostAdmin の両方へ同じラッパーを渡す。
-	connRequests := service.NewNotifyingConnRequests(cfg.Repo.ConnRequests(), a.bus)
 
 	killMgr, err := service.NewKillSwitch(ctx, service.KillSwitchConfig{Settings: settings, Clock: cfg.Clock, Audit: audit, Logger: a.log})
 	if err != nil {
@@ -286,7 +298,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.settings, err = service.NewHostSettings(service.HostSettingsConfig{
-		Settings: settings, Autostart: p.Autostart, Audit: audit, Clock: cfg.Clock, OnChange: a.onSettingsChange,
+		Settings: settings, Autostart: p.Autostart, Audit: audit, Clock: cfg.Clock, Logger: a.log, OnChange: a.onSettingsChange,
 	})
 	if err != nil {
 		return fmt.Errorf("host settings: %w", err)
@@ -298,13 +310,6 @@ func (a *App) build(ctx context.Context) error {
 	a.port.Store(int32(initial.Port))
 	a.initialKey = initial.KillSwitchHotkey
 	a.hotkey = NewKillSwitchHotkey(p.Hotkey, func() { a.triggerKillSwitch("hotkey") })
-
-	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{
-		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Settings: settings, Clock: cfg.Clock, Logger: a.log,
-	})
-	if err != nil {
-		return fmt.Errorf("maintenance: %w", err)
-	}
 
 	a.connStates, err = service.NewConnRequestStates(connRequests, cfg.Clock)
 	if err != nil {
@@ -352,7 +357,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin, Approval: a.approval,
-		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)

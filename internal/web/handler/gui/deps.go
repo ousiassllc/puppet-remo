@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"time"
 
@@ -94,6 +95,15 @@ type Logs interface {
 	Path() string
 }
 
+// Audit は監査ログの閲覧（読み取り専用。FR-AU05、FR-H08）。実体は service.AuditReader。
+// 表示に使う値は、実体が秘密を伏せたものだけ（Get の引数）。操作の記録は実体の別の経路（service.Audit）が行う。
+type Audit interface {
+	Query(ctx context.Context, q service.AuditQuery) (service.AuditPage, error)
+	Get(ctx context.Context, id int64) (service.AuditDetail, error)
+	// Thumbnail は id のサムネイル（JPEG）を開く。呼び出し側が Close する。無ければ service.ErrNotFound。
+	Thumbnail(ctx context.Context, id int64) (io.ReadCloser, error)
+}
+
 // Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
@@ -110,6 +120,7 @@ type Deps struct {
 	Settings   Settings
 	Apps       Apps
 	Logs       Logs
+	Audit      Audit
 	Events     Events
 	Clock      domain.Clock
 
@@ -139,7 +150,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

@@ -371,6 +371,39 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 	return "unknown", map[string]any{"type": fmt.Sprintf("%T", op)}
 }
 
+// recordedTextMaxRunes は audit.record_text が true のとき detail_json に入れる本文の上限（文字数）。
+// type は 10,000 文字、クリップボードは 1 MiB まで受け付けるが、監査の行を肥大させないため切り詰める。
+const recordedTextMaxRunes = 4096
+
+// addRecordedText は、設定 audit.record_text（既定 false）が true のとき、type の本文とクリップボードの内容（clipboard_read の結果を含む）
+// を args["text"] に足す（FR-AU03、FR-S07）。recordedTextMaxRunes を超える分は切り詰めて args["text_truncated"] = true を付ける。
+// トークン（prm_…）・Bearer の形の文字列は、本文の中にあっても伏せる（トークンはどの設定でも記録しない。NFR-S13）。
+// 設定が読めない・真偽値でないときは記録しない側に倒す。
+func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result, args map[string]any) {
+	var text string
+	switch o := op.(type) {
+	case domain.TypeText:
+		text = o.Text
+	case domain.ClipboardWrite:
+		text = o.Text
+	case domain.ClipboardRead:
+		text = res.Text
+	default:
+		return
+	}
+	if text == "" {
+		return
+	}
+	if on, err := loadBool(ctx, c.settings, settingAuditRecordText, false); err != nil || !on {
+		return
+	}
+	if utf8.RuneCountInString(text) > recordedTextMaxRunes {
+		text = string([]rune(text)[:recordedTextMaxRunes])
+		args["text_truncated"] = true
+	}
+	args["text"] = auditRedactString(text)
+}
+
 // clickToolName は FR-M05 のツール名（left_click / right_click / middle_click / double_click / triple_click）。
 func clickToolName(o domain.Click) string {
 	if o.Button == domain.ButtonLeft {

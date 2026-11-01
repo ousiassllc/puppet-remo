@@ -18,6 +18,10 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/requests", h.Requests)
 	r.GET("/requests/history", h.RequestsHistory)
 	r.GET("/logs", h.Logs)
+	// 監査ログの閲覧（M3。FR-AU05、FR-H08）。GUI ルーターだけにあり、リモートのルーターには同名の経路を作らない
+	r.GET("/audit", h.Audit)
+	r.GET("/audit/:id", h.AuditDetail)
+	r.GET("/audit/:id/thumbnail", h.AuditThumbnail)
 	r.GET("/clients", h.Clients)
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
