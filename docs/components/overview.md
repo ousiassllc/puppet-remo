@@ -523,7 +523,7 @@ func New(key func(ctx context.Context) (string, error), cfg Config) Chooser
 
 ```go
 type LeaseManager interface {
-    // 取得。M1 は承認なしで idle → held（保持者種別は mcp のみ）。M3 から、承認が必要なら Approval に問い合わせて待つ（最大 60 秒）。他者が保持中は ErrLeaseHeldByOther。
+    // 取得。M1・M2 は承認なしで idle → held（保持者種別は mcp と web）。M3 から、承認が必要なら Approval に問い合わせて待つ（最大 60 秒）。他者が保持中は ErrLeaseHeldByOther。
     Acquire(ctx context.Context, who domain.Actor) (Lease, error)
     // 保持者のみ。保持していなければ何もしない。
     Release(who domain.Actor)
@@ -658,7 +658,7 @@ type LaunchResult struct {
 - `LaunchableApps` は `AppRegistry.List` のうち、起動できない行（`domain.CheckLaunchTarget` が拒否する行。読めない `Corrupt` の行を含む）を除いて `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
 - 起動後のプロセスは管理しない。`platform` は `CreateProcess` が返したハンドル（プロセス・スレッド）をすぐ閉じる（リークしない）。ジョブオブジェクトに入れない（本アプリの終了・キルスイッチで子プロセスは終了しない）
 - `Control` の `AppReader` が「無い」以外のエラーを返したときは、起動せず、そのエラーを返す（監査は `error` / `internal`。メッセージにパスを含めない）
-- リースの保持者は M1 では `mcp` だけ（`domain.ActorKind.CanHoldLease`）。`agent` は暗黙の取得もできず、保持者になれる M4 まで `lease_required` で拒否される（監査の `actor_type` は `agent`）
+- リースの保持者は M2 では `mcp` と `web`（`domain.ActorKind.CanHoldLease`）。`agent` は暗黙の取得もできず、保持者になれる M4 まで `lease_required` で拒否される（監査の `actor_type` は `agent`）
 
 `AppRegistry` の実装（`NewAppRegistry`）は `repository.LaunchableApps`・`platform.AppLauncher`（`Inspect` だけ。`Launch` は `Control` だけが呼ぶ）・`platform.FilePicker` を受け取る。`Create` / `Update` は表示名の前後の空白を除いて検証し、実行ファイルの存在 → 作業ディレクトリの存在の順に `Inspect` する（`Inspect` はどちらが無いかを区別しないため、作業ディレクトリは実行ファイルがあるときだけ確かめる。形が不正な項目のパスは渡さない）。`Inspect` 自体の失敗（`ErrNotFound` 以外）は項目エラーにせずそのまま返す。`Update` の監査の `changed` は変わった項目だけを `label`・`exe_path`・`args`・`working_dir` の順に並べる。
 
@@ -1052,7 +1052,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 
 | 項目 | M1 の実装 |
 |------|----------|
-| `Capturer` | M1 は GDI BitBlt だけ（DXGI は M2）。`Watch` と `Frame` は宣言だけで、M1 では呼ばない。Windows 実装の `Capturer.Watch` はスタブで、常に `windows: Capturer.Watch is not available in M1` のエラーを返す |
+| `Capturer` | M1 は GDI BitBlt だけで、`Watch` と `Frame` は宣言だけだった（Windows 実装の `Watch` は常にエラーを返すスタブ）。M2（#57）で `Watch` を実装した: DXGI Desktop Duplication（`kirides/go-d3d`）を主、GDI をフォールバックとし、`Frame.Dirty` は常に全面（差分は `Streamer` の 64×64 比較）。`ACCESS_LOST` は 200 ms 間隔で最大 5 回再初期化し、戻らなければ `ErrDesktopUnavailable` を `errs` に 1 回流して GDI に切り替える（GDI から DXGI へは戻らない） |
 | `SecretStore`・`SecretOpenAI`・`SecretTypeSafe`・`platform.ErrNotFound` | 宣言と偽実装・契約テスト（`platformtest`）だけ。M1 には Windows 実装も呼び出しもない（API キー管理は M4） |
 | `InputInjector.Button`（M2。#60） | `Button(ctx, b, a)` は、現在のカーソル位置でボタンを押す・離す（Web UI の `input.mouse` の `down` / `up` を `Click` / `Drag` にまとめず、1 つずつ注入する）。Windows 実装は押下中のボタンを覚え、`ReleaseAll` がキーと一緒に離す（ボタン、キーの順に 1 回の `SendInput`）。偽実装（`FakeInput.HeldButtons`）と共通の契約テスト（押す・離す、不正な引数、取り消し済みの ctx、`ReleaseAll`）を足した。ブラウザ側で `Click` / `Drag` にまとめない（ボタンを押したままの移動・選択をそのまま再現する） |
 | `Power` | `app.Config` の `Platform.Power` は**必須**（nil なら起動に失敗する）。リース保持中のスリープ・画面オフの抑止（NFR-A05）に使う |
@@ -1108,7 +1108,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `cmd/puppet-remo` | Windows 以外では `puppet-remo: Windows only` を出して非ゼロで終了するスタブ（`main_other.go`）。`go build ./...` を Linux の CI で通すため |
 | 開発・補助 | 開発タスクは `frontend:dev`（`dev:frontend` ではない）。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service、loopback）がある。スクリーンショットは `docs/screenshots/m1/`、実機スモークの手順は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) |
 
-**M1 では実装していない `Approval`・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`、`Capturer.Watch` / `Frame`（§13.3）。
+**M1 では実装していない `Approval`・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
 
 ## 改訂履歴
 
