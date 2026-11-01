@@ -500,7 +500,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/logs` | アプリのログ（運用ログ。NFR-O01）。日時・レベル・内容（属性つき）の表で、新しい順に 1 ページ 50 件、読み取り専用。画面にログファイルのパスを出す。クエリ `level`（`all`（既定）・`warn`（WARN 以上）・`error`（ERROR のみ）。大文字小文字を区別せず、無い・未知の値は `all`）、`page`（1 始まり。無い・数値でない・1 未満は 1、100 を超える値は 100 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出て、`level` を保つ。範囲外のページは空の表示（200）。ログファイルが無ければ空の表示。`HX-Request` ならフラグメント（`#app-log`。絞り込みとページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ログの読み出しに失敗したら 500（理由は画面に出さない）。監査ログの閲覧（FR-AU01）とは別。FR-H13 | M1 |
 | `/clients` | クライアント一覧。`/clients/{id}`: 詳細（有効化・承認モード・トークン）。FR-H04 | M1 |
 | `/apps` | 起動許可アプリの一覧・追加フォーム（`HX-Request` なら一覧のフラグメント）。`/apps/new`: 追加フォーム、`/apps/{id}/edit`: 編集フォーム（`HX-Request` ならフォームのフラグメント。フルページは一覧の該当行が編集フォーム。対象が無ければ 404）。FR-H12 | M1.5 |
-| `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウ）。FR-H05 | M3 |
+| `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウの中身。サイドバー・ヘッダーの無い簡素なレイアウト）。クライアント名・種別・要求の内容（`lease`: 「操作権（リース）の取得」）・残り時間（60 秒のカウントダウン）・許可 / 拒否のボタンだけを出し、秘密・パス・引数は出さない。残り時間は HTMX が 1 秒ごとに `GET /approvals/{id}`（`HX-Request`）で再取得して `#approval-remaining` だけを差し替える（ボタンは差し替えない）。`id` が失効・解決済み・存在しない・`kind` が `lease` 以外（M4）なら 410 `approval_timeout`（フルページは終了した旨の表示、HTMX の応答は `data-error-code` 付きのトースト）。応答は `Cache-Control: no-store`。FR-H05 | M3 |
 | `/audit` | 監査ログ一覧。`/audit/{id}`: 詳細（引数、サムネイル）。FR-AU05 | M3 |
 | `/settings` | 設定。FR-S | M1〜 |
 | `/update` | 更新の確認・適用。FR-H09 | M3 |
@@ -513,10 +513,10 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト（フォーム） | 応答 |
 |---------|------|-----------------------|------|
-| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。**M3 から**。M1 のフォームには出さず、`always` で保存して M3 まで参照しない。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off。M1 のフォームにも出して保存するが、**M1 では効果がなく**、`run_task` の可否に効くのは M4 から。FR-A09）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
+| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。空は `always`。定義外は 422 `invalid_argument`。**M3 から**選べる（M1・M2 のフォームは `always` だけ）。許可した時点で `clients.approval_mode` に保存する。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off。M1 のフォームにも出して保存するが、**M1 では効果がなく**、`run_task` の可否に効くのは M4 から。FR-A09）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
 | POST | `/requests/{id}/deny` | なし | 200 一覧フラグメント（`denied`。24 時間は同デバイスの再要求を作らない） |
-| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`（M1 でも受け付けて保存するが、**M1 では効果がない**。`run_task` の可否に効くのは M4 から。FR-A09）、`approval_mode`（M3 から）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻す） | 200 クライアントのフラグメント。Web / MCP を無効にしたクライアントのセッションは即時に切断（タスクの中断は M4 から。`agent_enabled` の変更ではセッションを切断しない） |
-| POST | `/clients/{id}/approval/reset` | なし | 200（`first_time` の承認済みを取り消す） |
+| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`（M1 でも受け付けて保存するが、**M1 では効果がない**。`run_task` の可否に効くのは M4 から。FR-A09）、`approval_mode`（M3 から。`always` / `first_time` / `auto`、定義外は 422 `invalid_argument`）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻し、監査 `client.update` の `detail` に `approval_mode_before`・`approval_mode` を入れる。同じ値の保存では戻さない） | 200 クライアントのフラグメント。Web / MCP を無効にしたクライアントのセッションは即時に切断（タスクの中断は M4 から。`agent_enabled` の変更ではセッションを切断しない） |
+| POST | `/clients/{id}/approval/reset` | なし | 200 クライアントのフラグメント（`first_time` で承認済みのときだけ。`approved_at` を NULL に戻し、次のリース取得から再び承認が要る。破壊的ではないので確認モーダルは挟まない。詳細ページからは `?view=detail`）。`first_time` でない・承認済みでなければ 409 `conflict`、クライアントが無ければ 404。**監査のイベント名が未決のため、この操作の監査は記録しない**（運用ログ `client approval reset` だけ） |
 | DELETE | `/clients/{id}` | なし | 200（許可リストから除外。トークンは `CASCADE` で削除、セッション・タスクは切断・中断） |
 | POST | `/clients/{id}/tokens` | `label`\*、`expires_in_days`（既定 90、`never` で無期限） | 200 **トークン平文を一度だけ表示するフラグメント**。`Cache-Control: no-store`。ラベル重複は 409。以後は `token_prefix` のみ表示 |
 | DELETE | `/clients/{id}/tokens/{token_id}` | なし | 200 トークン一覧のフラグメント（`revoked_at` を設定。当該トークンの MCP セッションは切断） |
@@ -549,8 +549,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む。画面の更新は `GET /poll`（§7.4）が OOB で差し替える |
 | GET | `/killswitch/release/confirm` | なし | 200 解除の確認モーダル（フラグメント）。発動中でなければ 409 `conflict` |
 | GET | `/clients/{id}/delete/confirm`、`/clients/{id}/tokens/{token_id}/revoke/confirm` | なし | 200 確認モーダル（破壊的な操作は、サーバーが描画したモーダルの確定ボタンだけが実際の `DELETE` を送る。frontend.md §5.4）。対象が無ければ 404 |
-| POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`）。`id` が失効（60 秒）・解決済みなら 410 `approval_timeout` |
-| POST | `/approvals/{id}/deny` | なし | 同上（拒否） |
+| POST | `/approvals/{id}/allow` | なし | 200 ダイアログを閉じる指示（`HX-Trigger: closeWindow`。本文は「許可しました。」）。`Approval.Resolve(id, true)` を呼び、リースの取得が `held` になる。`id` が失効（60 秒）・解決済み・存在しないなら 410 `approval_timeout`（`HX-Trigger` なし。トースト） |
+| POST | `/approvals/{id}/deny` | なし | 同上（拒否。`Approval.Resolve(id, false)`。取得は `approval_denied`） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクのフラグメント。終了済みなら現在の状態を返す |
 | PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`update.apply_mode`、`log.level`、`autostart`（OS のスタートアップ登録） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
 | PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック）、`model`、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`keep_screenshots`（1〜10。FR-S19）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。API キー未登録で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
@@ -596,7 +596,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `sessions` | 接続中セッション一覧のフラグメント | ダッシュボード |
 | `lease` | リース保持者のフラグメント（種別付き。M2 から強制剥奪ボタンを含む） | ダッシュボード |
 | `connection-requests` | サイドバーの件数バッジのフラグメント | 接続要求、トレイ通知 |
-| `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く | （ウィンドウ生成） |
+| `approval` | `{ "id": "…", "kind": "lease" \| "safety_check" \| "judge_action" }`。受信したアプリが承認ダイアログのウィンドウを開く（M3 は `lease` だけ） | （ウィンドウ生成。DOM は更新しない） |
+| `approval-closed` | `{ "id": "…" }`（M3・#68）。承認待ちが終わった（許可・拒否・60 秒の失効・取り下げ）。受信したアプリが開いているダイアログを閉じる | （ウィンドウを閉じる。DOM は更新しない） |
 | `tasks` | 実行中タスクのフラグメント（ステップ数・状態・現在の経路 `fast` / `openai` と引き継ぎ理由。M4） | ダッシュボード、タスク |
 | `killswitch` | ヘッダーのキルスイッチ状態バッジのフラグメント | 全画面のヘッダー |
 | `toast` | 通知メッセージ（更新の通知、DB 破損の隔離、TypeSafe が 401 を返して高速パスを無効にした通知など） | 全画面 |
@@ -621,6 +622,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | HTTP サーバー（§1） | — | tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒、`IdleTimeout` 120 秒、`MaxHeaderBytes` 64 KiB。`WriteTimeout` は付けない。WhoIs の LocalAPI 呼び出しは 5 秒で打ち切り、失敗は 403 `whois_failed`（fail closed） |
 | MCP の keepalive（§3.1・NFR-A04） | — | 既定で ping しない（§3.1） |
 | Web の承認待ち（§4.2・M3。#67） | `POST /viewer/lease/acquire` は承認待ちなら承認待ちのパネルを 200 で返す | 承認が要るクライアントでは、`LeaseManager.Acquire` が最大 60 秒ブロックするため、ハンドラはその間応答を返さない（リモートの `http.Server` に `WriteTimeout` は無い）。許可なら 200 のリースパネル、拒否は 403 `approval_denied`・無応答は 408 `approval_timeout` のトースト。承認待ちのあいだ、ほかのビューア（と、WebSocket の `lease` で更新された本人のパネル）は「承認待ち: <名前>（種別）」を見る。承認待ちを即座に返す窓口（`Acquire` の非同期版など）は、docs に決まりが無いため実装していない（未決。#66 の未決事項）。ブラウザが接続を切ると `Acquire` の ctx がキャンセルされ、承認待ちは取り下げられる |
+| 承認ダイアログ（§7.1〜§7.4・M3。#68） | `/approvals/{id}` は専用の Wails ウィンドウ。許可 / 拒否は `Approval.Resolve` | `gui.Deps.Approval`（`Resolve`・`Pending`。`service.Approval` が満たす）。ウィンドウは `app` の `approvalDialogs` が `Bus` の `approval` / `approval-closed` を購読して開閉する（`Approval.Pending` を真実の源にする。`Windows.OpenApproval(id)`）。ダイアログが同時に開くのは 1 つで、開いている間の別の要求は、そのダイアログが終わってもまだ承認待ちなら続けて開く（`Approval.Pending` が複数を返すときの扱いは docs に無く、この動きは暫定）。許可も拒否もせずウィンドウを閉じても承認待ちは続き、60 秒の失効で拒否になる（再度は開かない。docs に定めが無いため、承認が勝手に通らない保守的な動き）。ウィンドウを閉じる `HX-Trigger: closeWindow` は `static/src/app/app.ts` が受け、Wails のランタイム（`/wails/runtime.js`）の `Window.Close` を呼ぶ（`app` 側も承認の終了で閉じるので、これが失敗しても承認の結果に影響しない）。`kind` が `lease` 以外（M4）は開かず 410 |
 | WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のときだけ省く（M3: `pending_approval` は承認待ちの要求者の `holder` と、要求者本人かの `mine`）。`ready` の `monitors[]` の形は §5.3 |
 | Web UI（§4・M2。#62） | §4.2 のとおり | ハンドラは `web/handler/remote`（Gin。`router.NewRemote` が `/`・`/viewer`・`/viewer/` のパターンでマウントする）。未登録デバイスのページの選択は `middleware.RemoteConfig.ConnStates`（`service.ConnRequestStates`。読み取り専用。nil なら常に待機）。ページは `pages.Pending` / `Denied` / `Expired`（アクションルートにも同じページを返す）。ミドルウェアの HTML の拒否（`invalid_host` など）は `pages.RemoteError`（ページ）と `atoms.Alert`（アクションルートのフラグメント）。存在しない `monitor` の検証エラーは、ホスト GUI の検証エラーと同じ 422 `invalid_argument` のフォーム再描画（§4.2）。`<remo-screen-viewer>` の `dist/js/screen-viewer.js` はレイアウトが読み込むが、成果物は別の子 Issue（#63）が出す（それまでは 404 で、ライブ画面は出ない） |
 
@@ -676,3 +678,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.23 | 2026-11-01 | §5.3 の押下中のボタン・キーを、WebSocket の終わり（切断・置き換え・クライアントの削除・無効化）でも、リースの解放の前に `up` で離すと改めた（「切断では離さない」を撤回） | #61 |
 | 1.24 | 2026-11-01 | §4.2 に待機ページの出し分け（接続要求の状態を読み取り専用で引く）・Web UI の入力とエラー（`X-Viewer-Id`・本文 1 MiB・検証エラーの 422・トースト）・ショートカット送信メニューの一覧を、§7.5 に Web UI の実装と `/`・`/viewer*`・`/static/*` を追記 | #62 |
 | 1.25 | 2026-11-02 | §3.3 の `acquire_control`・`get_control_status` に承認待ち（`pending_approval`・`approval_denied` 403・`approval_timeout` 408・`holder` は `held` のときだけ・`mine`）、§4.2 の `POST /viewer/lease/acquire` の承認待ち・拒否・タイムアウト、§5.3 の `lease` の `pending_approval`（`holder` は `idle` のときだけ省く）と承認待ち中の入力の拒否、§7.5 に Web の承認待ちの実装を追記 | #67 |
+| 1.26 | 2026-11-02 | §7.1 の `/approvals/{id}`（レイアウト・表示内容・残り時間の再取得・410）、§7.2 の許可フォームと `PATCH /clients/{id}` の承認モード（`approval_mode` の検証・`client.update` の `detail`）と `POST /clients/{id}/approval/reset`（409・監査は未決）、§7.3 の `allow` / `deny`、§7.4 の `approval-closed`、§7.5 に承認ダイアログの実装を追記 | #68 |
