@@ -86,6 +86,41 @@ func TestControlRecordTextTruncatesAndNeverKeepsTokens(t *testing.T) {
 	}
 }
 
+// 切り詰めの境界をまたぐ秘密も伏せる。先に切り詰めると、残った断片が形の最小長を割って伏せられずに残る（NFR-S13）。
+func TestControlRecordTextRedactsSecretsStraddlingTruncationBoundary(t *testing.T) {
+	const (
+		bearerToken = "FAKETOKENFAKETOKENFAKETOKENFAKETOKEN"
+		hexSecret   = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	)
+	tests := []struct {
+		name   string
+		secret string
+		kept   int // 切り詰め前の本文で、境界の手前に残る秘密の文字数
+		marker string
+	}{
+		{"bearer", "Bearer " + bearerToken, len("Bearer ") + 13, "FAKETOKEN"},
+		{"hex64", hexSecret, 30, "deadbeef"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newCtlEnv(t)
+			e.settings.put(settingAuditRecordText, "true")
+			text := strings.Repeat("あ", recordedTextMaxRunes-tt.kept) + tt.secret + strings.Repeat("あ", 100)
+			d := recordTextDetail(t, e, ctlAlice, domain.TypeText{Text: text})
+			got, _ := d["text"].(string)
+			if strings.Contains(got, tt.marker) {
+				t.Fatalf("secret fragment leaked across the truncation boundary: %q", string([]rune(got)[recordedTextMaxRunes-60:]))
+			}
+			if n := len([]rune(got)); n > recordedTextMaxRunes {
+				t.Fatalf("recorded text runes = %d, want <= %d", n, recordedTextMaxRunes)
+			}
+			if d["text_truncated"] != true || d["text_len"] != float64(len([]rune(text))) {
+				t.Fatalf("text_truncated = %v, text_len = %v, want true and %d", d["text_truncated"], d["text_len"], len([]rune(text)))
+			}
+		})
+	}
+}
+
 // 設定が真偽値でない・false のときは本文を記録しない（記録しない側に倒す）。
 func TestControlRecordTextIgnoresInvalidSetting(t *testing.T) {
 	e := newCtlEnv(t)
