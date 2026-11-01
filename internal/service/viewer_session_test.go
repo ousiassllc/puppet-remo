@@ -189,6 +189,19 @@ func TestViewerDisconnectKeepsOthersLease(t *testing.T) {
 	}
 }
 
+// 同じクライアントの旧ビューア（別の viewer_id）を切っても、新しいビューアが取ったばかりのリースは残る。
+func TestClosingAnOlderViewerOfTheSameClientKeepsTheNewerViewersLease(t *testing.T) {
+	e := newViewerEnv(t)
+	older, _ := e.open(t, e.sessions.Issue(viewerClientA), viewerClientA)
+	newer, _ := e.open(t, e.sessions.Issue(viewerClientA), viewerClientA)
+	mustAcquire(t, e.ctlEnv, newer.Actor())
+	older.Close()
+	waitClosed(t, older)
+	if h, held := e.leases.Holder(); !held || !h.Actor.SameSession(newer.Actor()) {
+		t.Fatalf("holder = %+v, %v; want the newer viewer", h, held)
+	}
+}
+
 func TestViewerSessionIsSingleConnectionAndReplacesTheOldOne(t *testing.T) {
 	e := newViewerEnv(t)
 	id := e.sessions.Issue(viewerClientA)
