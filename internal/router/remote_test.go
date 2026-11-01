@@ -55,6 +55,7 @@ type remoteKit struct {
 	kill    *remoteKill
 	auth    *remoteAuth
 	mcpHits int
+	wsHits  int
 	handler http.Handler
 }
 
@@ -68,6 +69,13 @@ func newRemote(t *testing.T) *remoteKit {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	ws := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k.wsHits++
+		if _, ok := middleware.ClientFrom(r.Context()); !ok {
+			t.Error("the WebSocket handler must run behind the chain, with the client in the context")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	h, err := router.NewRemote(router.RemoteConfig{
 		Chain: middleware.RemoteConfig{
 			Hosts:      func() ([]string, int) { return []string{remoteIP}, remotePort },
@@ -76,6 +84,7 @@ func newRemote(t *testing.T) *remoteKit {
 			Authz:      k.auth,
 		},
 		MCP: mcp,
+		WS:  ws,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,12 +118,49 @@ func TestRemoteServesMCPBehindTheChain(t *testing.T) {
 	}
 }
 
-// M1 の tailnet 公開面は /mcp だけ（Web UI・WebSocket・API は M2 から）。連鎖を通っても、ほかの経路は 404 で、
+func TestRemoteServesWebSocketBehindTheChainForGETOnly(t *testing.T) {
+	k := newRemote(t)
+	if rec := k.do(http.MethodGet, "/ws/screen"); rec.Code != http.StatusNoContent || k.wsHits != 1 {
+		t.Errorf("GET /ws/screen = %d (handler hits %d), want 204 via the WebSocket handler", rec.Code, k.wsHits)
+	}
+	// 状態を変更するメソッドは、連鎖（X-Puppet-Remo）で止まるか、経路に届かない。
+	for _, hdr := range []bool{false, true} {
+		rec := k.do(http.MethodPost, "/ws/screen", func(r *http.Request) {
+			if hdr {
+				r.Header.Set(middleware.CSRFHeader, "1")
+			}
+		})
+		if rec.Code == http.StatusNoContent {
+			t.Errorf("POST /ws/screen (csrf header %v) reached the WebSocket handler", hdr)
+		}
+	}
+	if k.wsHits != 1 {
+		t.Errorf("WebSocket handler hits = %d, want 1 (GET only)", k.wsHits)
+	}
+}
+
+func TestRemoteWebSocketRejectionsAreProblemJSON(t *testing.T) {
+	k := newRemote(t)
+	k.auth.registered = false
+	rec := k.do(http.MethodGet, "/ws/screen")
+	if rec.Code != http.StatusForbidden || rec.Header().Get("Content-Type") != "application/problem+json" || k.wsHits != 0 {
+		t.Errorf("unregistered GET /ws/screen = %d %q (hits %d), want 403 problem+json before the handler",
+			rec.Code, rec.Header().Get("Content-Type"), k.wsHits)
+	}
+	k = newRemote(t)
+	rec = k.do(http.MethodGet, "/ws/screen", func(r *http.Request) { r.Header.Set("Origin", "http://evil.example") })
+	if rec.Code != http.StatusForbidden || rec.Header().Get("Content-Type") != "application/problem+json" || k.wsHits != 0 {
+		t.Errorf("foreign Origin = %d %q (hits %d), want 403 problem+json before the handler",
+			rec.Code, rec.Header().Get("Content-Type"), k.wsHits)
+	}
+}
+
+// tailnet 公開面は /mcp と GET /ws/screen だけ（Web UI・API は M2 の続き）。連鎖を通っても、ほかの経路は 404 で、
 // ホスト GUI の経路は存在しない。
-func TestRemoteExposesNothingButMCP(t *testing.T) {
+func TestRemoteExposesNothingButMCPAndWebSocket(t *testing.T) {
 	k := newRemote(t)
 	paths := []string{
-		"/", "/viewer", "/ws/screen", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
+		"/", "/viewer", "/ws/screen/", "/ws/other", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
 		"/mcp/", "/mcp/extra", "/static/js/app.js",
 		"/apps", "/apps/new", "/apps/pick", "/apps/pick-file", "/apps/a1/edit", "/apps/a1/delete/confirm", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
 	}
@@ -135,8 +181,8 @@ func TestRemoteExposesNothingButMCP(t *testing.T) {
 			t.Errorf("%s %s = %d, want 404 (host-only operations must not be reachable remotely)", tc.method, tc.path, rec.Code)
 		}
 	}
-	if k.mcpHits != 0 {
-		t.Errorf("the MCP handler was reached %d times by non-/mcp paths", k.mcpHits)
+	if k.mcpHits != 0 || k.wsHits != 0 {
+		t.Errorf("the MCP handler was reached %d times and the WebSocket handler %d times by other paths", k.mcpHits, k.wsHits)
 	}
 }
 
