@@ -123,7 +123,7 @@ func TestRemoteExposesNothingButMCP(t *testing.T) {
 			t.Errorf("GET %s = %d, want 404", p, rec.Code)
 		}
 	}
-	for _, p := range []string{"/killswitch/trigger", "/killswitch/release", "/clients/c1", "/requests/r1/approve", "/apps", "/apps/a1", "/apps/pick", "/apps/pick-file"} {
+	for _, p := range []string{"/killswitch/trigger", "/killswitch/release", "/lease/revoke", "/clients/c1", "/requests/r1/approve", "/apps", "/apps/a1", "/apps/pick", "/apps/pick-file"} {
 		rec := k.do(http.MethodPost, p, func(r *http.Request) { r.Header.Set(middleware.CSRFHeader, "1") })
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("POST %s = %d, want 404 (host-only operations must not be reachable remotely)", p, rec.Code)

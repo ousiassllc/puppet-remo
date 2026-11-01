@@ -437,3 +437,81 @@ func TestKeepAliveFailureReleasesTheLease(t *testing.T) {
 		t.Errorf("reason = %q, want %q", ev.Reason, domain.ReleaseDisconnect)
 	}
 }
+
+// 強制剥奪（FR-L06）された MCP セッションの操作系ツールは、取得し直すまで lease_revoked（409）を返す（FR-M17）。
+// 暗黙には取得し直さない。get_control_status は idle を見せ、acquire_control で戻れる。
+func TestRevokedSessionGetsLeaseRevokedUntilItAcquiresAgain(t *testing.T) {
+	e := newEnv(t)
+	a, b := e.connect("a"), e.connect("b")
+	if res := callTool(t, a, "mouse_move", map[string]any{"x": 1, "y": 1}); res.IsError {
+		t.Fatal(res.text())
+	}
+
+	if err := e.leases.Revoke(service.HostActor); err != nil {
+		t.Fatal(err)
+	}
+
+	res := callTool(t, a, "left_click", nil)
+	if got := res.errCode(t); got != domain.CodeLeaseRevoked {
+		t.Fatalf("code = %s, want lease_revoked", got)
+	}
+	if !strings.HasPrefix(res.text(), "lease_revoked: ") {
+		t.Errorf("text = %q, want the code as a prefix (API 仕様 §3.4)", res.text())
+	}
+	if got := domain.CodeLeaseRevoked.HTTPStatus(); got != 409 {
+		t.Errorf("lease_revoked HTTP status = %d, want 409", got)
+	}
+	if got := callTool(t, a, "type", map[string]any{"text": "x"}).errCode(t); got != domain.CodeLeaseRevoked {
+		t.Errorf("second call code = %s, want lease_revoked (it lasts until the next Acquire)", got)
+	}
+	if s := status(t, a); s.State != "idle" || s.Holder != nil || s.Mine {
+		t.Errorf("status after the revoke = %+v, want idle", s)
+	}
+	if _, held := e.leases.Holder(); held {
+		t.Error("a revoked session re-acquired the lease implicitly")
+	}
+	// 他のセッションは影響を受けず、暗黙に取得できる。
+	if res := callTool(t, b, "mouse_move", map[string]any{"x": 1, "y": 1}); res.IsError {
+		t.Fatalf("other session: %s", res.text())
+	}
+	callTool(t, b, "release_control", nil)
+
+	// 取得し直せば戻る。
+	if res := callTool(t, a, "acquire_control", nil); res.IsError {
+		t.Fatalf("acquire_control after the revoke: %s", res.text())
+	}
+	if res := callTool(t, a, "left_click", nil); res.IsError {
+		t.Errorf("left_click after acquiring again: %s", res.text())
+	}
+}
+
+// get_control_status は保持者種別 web も見せる（FR-L06。web のリースを取得するのは viewer の子 Issue）。
+func TestControlStatusShowsAWebHolder(t *testing.T) {
+	e := newEnv(t)
+	cs := e.connect("c1")
+	viewer := domain.Actor{Kind: domain.ActorWeb, ClientID: "client-v", Label: "laptop", SessionID: "viewer-1"}
+	if _, err := e.leases.Acquire(context.Background(), viewer); err != nil {
+		t.Fatal(err)
+	}
+	s := status(t, cs)
+	if s.State != "held" || s.Mine || s.Holder == nil || *s.Holder != (holderBody{Kind: "web", Label: "laptop"}) {
+		t.Errorf("status = %+v, want held by web 'laptop', not mine", s)
+	}
+	res := callTool(t, cs, "mouse_move", map[string]any{"x": 1, "y": 1})
+	if got := res.errCode(t); got != domain.CodeLeaseHeldByOther {
+		t.Fatalf("code = %s, want lease_held_by_other", got)
+	}
+	var body errorBody
+	res.decode(t, &body)
+	if body.Holder == nil || body.Holder.Kind != "web" {
+		t.Errorf("holder = %+v, want kind web", body.Holder)
+	}
+
+	// ホストが剥奪すれば、web の保持者は消え、mcp は暗黙に取得できる。
+	if err := e.leases.Revoke(service.HostActor); err != nil {
+		t.Fatal(err)
+	}
+	if res := callTool(t, cs, "mouse_move", map[string]any{"x": 1, "y": 1}); res.IsError {
+		t.Errorf("after revoking the web lease: %s", res.text())
+	}
+}

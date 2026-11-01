@@ -30,7 +30,7 @@
 | tailnet 連携 | `tailscale.com/client/local` | LocalAPI の `WhoIs`、`WatchIPNBus`（IP 変化監視）、`StatusWithoutPeers`。Windows では名前付きパイプ経由でライブラリが接続する |
 | WebSocket | `github.com/coder/websocket` v1.8.15（ISC） | context 対応・バイナリフレーム・軽量 |
 | 永続化 | SQLite（`modernc.org/sqlite`、純 Go）+ 埋め込み SQL マイグレーション | cgo なし。WAL モード（[NFR-A06](../requirements/non-functional.md)） |
-| 画面キャプチャ | DXGI Desktop Duplication（主、`github.com/kirides/go-d3d` v1.0.1・MIT・cgo なし）、GDI BitBlt（フォールバック） | DXGI は変更矩形を OS から取得でき低 CPU。失敗時は GDI へ切り替え。`go-d3d` は M2 のキャプチャスパイクの結果を見て採用を確定し、スパイクが失敗した場合は自前の syscall 実装に切り替える |
+| 画面キャプチャ | DXGI Desktop Duplication（主、`github.com/kirides/go-d3d` v1.0.1・MIT・cgo なし）、GDI BitBlt（フォールバック） | DXGI は画面が変化したときだけコマを返し低 CPU。失敗時は GDI へ切り替え。`go-d3d` は M2 のキャプチャスパイク（#57）で採用を確定した（実機の安定性は未確認。成立しなければ自前の syscall 実装に切り替える）。`go-d3d` は変更矩形を公開しないため `Frame.Dirty` は全面で、差分はタイルハッシュ（Streamer）が求める |
 | 入力注入 | Win32 `SendInput`（`golang.org/x/sys/windows`） | cgo 不要。`type` は `KEYEVENTF_UNICODE` で日本語を直接送る |
 | UI Automation | COM `IUIAutomation`（`github.com/go-ole/go-ole` v1.3.0・MIT。IUIAutomation の vtable バインディングは自前で書く） | `get_ui_tree` と高速パスの候補表（スナップショット）用 |
 | 画像エンコード | 標準 `image/jpeg` | 純 Go 制約のため JPEG のみ |
@@ -480,7 +480,7 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    CAP["Capturer<br/>DXGI Desktop Duplication / GDI"] --> DIFF["差分検出<br/>DXGI 変更矩形 + タイルハッシュ"]
+    CAP["Capturer<br/>DXGI Desktop Duplication / GDI"] --> DIFF["差分検出<br/>タイルハッシュ（Dirty は全面）"]
     DIFF --> ENC["エンコード<br/>JPEG (標準 image/jpeg)<br/>プロファイル単位で共有"]
     ENC --> FAN["ファンアウト<br/>閲覧者ごとの送信キュー"]
     FAN --> WS["WebSocket バイナリフレーム"]
@@ -490,7 +490,7 @@ graph TD
 - キャプチャ・差分検出は**モニターごとに 1 つの goroutine**。閲覧者がゼロなら停止する（FR-W09、NFR-P04）
 - 差分は 64×64 px のタイル単位。変化したタイルを矩形にまとめて JPEG で送る。接続直後と一定間隔（既定 5 秒）で全面キーフレームを送る
 - エンコードは (モニター, 品質, FPS) のプロファイル単位に 1 回だけ行い、同じプロファイルの閲覧者で共有する（NFR-P07）。閲覧者ごとの送信キューが詰まったら古いフレームを捨てる（遅延の累積を防ぐ）
-- DXGI は `ACCESS_LOST`（ロック画面・UAC・解像度変更など）で再初期化する。復旧できなければ `desktop_unavailable` とし、GDI にフォールバックする
+- DXGI は `ACCESS_LOST`（ロック画面・UAC・解像度変更など）で再初期化する（200 ms 間隔で最大 5 回）。復旧できなければ `desktop_unavailable` を `errs` に流し、GDI にフォールバックする。DXGI は画面が変化したときだけコマを返し、GDI は `fps` の間隔で撮って前のコマと内容を比べる
 - `screenshot` ツールは配信とは独立に 1 回だけ撮り、縮小（FR-M16 の縮小率）して返す
 
 ## 入力注入と自己保護
@@ -606,7 +606,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | Huma（JSON API） | `/api/v1` を提供 | 使わない（`go.mod` に無い）。`/api/v1` は M2 以降 |
 | WebSocket | `github.com/coder/websocket` v1.8.15 | 直接依存ではない（`go.mod` では v1.8.14 の間接依存。Wails の依存）。直接依存にするのは `ws` を作る M2 |
 | 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | 依存に無い。M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけで、Windows 実装も呼び出しも無い（API キー管理は M4） |
-| DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | 依存に無い。M1 は GDI BitBlt だけで、`Capturer.Watch` は Windows 実装でエラーを返すスタブ |
+| DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | M2（#57）で直接依存に追加し採用を確定した（`internal/platform/windows` の `dxgi_windows.go`）。`Capturer.Watch` は DXGI を主、GDI をフォールバックとして実装した。変更矩形は使わず `Frame.Dirty` は全面 |
 | OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | 依存に無く、`internal/openai`・`internal/typesafe` も無い（M4） |
 | MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |
 | ULID | `oklog/ulid/v2` | 同じ（`internal/app` の `ULIDGen`）。`domain.IDGen` として注入する |
@@ -668,3 +668,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.13 | 2026-11-01 | 「アプリ起動」の流れ図に、起動後のウィンドウの観測（`WindowManager`。最大およそ 3 秒）と、応答の `window`・`reused_existing_window` を追記 | #46 |
 | 1.14 | 2026-11-01 | 「入力注入と自己保護」に、自ウィンドウの範囲と印を AI へ伝える旨（FR-M20。画像には描かない）を追記 | #47 |
 | 1.15 | 2026-11-01 | M1 実装での差分の「追加のファイル」に `docs/environment/setup.md` を追加 | #40 |
+| 1.16 | 2026-11-01 | 技術スタックの画面キャプチャと「M1 実装での差分」の DXGI の行を、M2 の `Capturer.Watch` の実装（`go-d3d` の採用、`Frame.Dirty` は全面）に更新 | #57 |

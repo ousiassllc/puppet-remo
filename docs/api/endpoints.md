@@ -78,7 +78,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `kill_switch_active` | 503 | 共通 | キルスイッチで受付停止中 |
 | `lease_required` | 409 | 操作系 | リース無しで、暗黙取得もできない |
 | `lease_held_by_other` | 409 | 操作系 | 他のセッションがリースを保持 |
-| `lease_revoked` | 409 | 操作系 | 自身のリースが剥奪された |
+| `lease_revoked` | 409 | 操作系 | 自身のリースが強制剥奪された（FR-L06）。剥奪された保持者の操作は、**次の `acquire`（取得の成功）まで**返し続ける（暗黙の取得もしない。別の保持者が現れた間は `lease_held_by_other`） |
 | `approval_denied` | 403 | リース取得 | ホストが拒否した |
 | `approval_timeout` | 408 | リース取得 | 60 秒で応答が無かった |
 | `invalid_coordinates` | 400 | 操作系 | 座標がモニターの範囲外 |
@@ -231,7 +231,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |--------|------|
 | `acquire_control` | `get_control_status` と同じ。M1 は承認なしで取得できる（`idle → held`）。承認が必要な場合（承認モード。M3 から）は承認を待つ（最大 60 秒） |
 | `release_control` | `{ "ok": true }`。保持者でなければ何もしない |
-| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M1 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` のみ。`pending_approval` は M3、`web` は M2、`agent`（と `task_id`）は M4 から |
+| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` は `held` のとき）。M2 の `state` は `idle` / `held` のみ、`holder.kind` は `mcp` / `web`（M2 から）。強制剥奪された直後は `idle`。`pending_approval` は M3、`agent`（と `task_id`）は M4 から |
 
 #### アプリ起動（M1.5）
 
@@ -477,7 +477,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | パス | 画面 | 優先度 |
 |------|------|--------|
-| `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（表示のみ）、キルスイッチ、接続要求・クライアント管理への導線。リース強制剥奪ボタンは M2（FR-L06）、実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1 |
+| `/` | ダッシュボード。M1: サーバー状態、接続中セッション、リース保持者（種別付き。M2 から他者が保持中のときだけ強制剥奪ボタンを出す。FR-L06）、キルスイッチ、接続要求・クライアント管理への導線。実行中タスクと中断ボタンは M4（FR-H10）で追加する。FR-H02 | M1（強制剥奪ボタンは M2） |
 | `/requests` | 接続要求の一覧（許可 / 拒否）。「未処理」と「履歴」のタブを持つ。FR-H03 | M1 |
 | `/requests/history` | 接続要求の履歴（許可・拒否・失効・未処理のすべて）。届いた日時の新しい順に 1 ページ 20 件の表（届いた日時・デバイス名・tailnet IP・ユーザー・結果・処理した日時）で、読み取り専用。クエリ `page`（1 始まり。無い・数値でない・1 未満は 1、10000 を超える値は 10000 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出る。範囲外のページは空の表示（200）。`HX-Request` ならフラグメント（`#request-history`。ページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ポーリング（`/poll`）の対象ではない。監査ログの閲覧（`/audit`）とは別。FR-H03 | M1 |
 | `/logs` | アプリのログ（運用ログ。NFR-O01）。日時・レベル・内容（属性つき）の表で、新しい順に 1 ページ 50 件、読み取り専用。画面にログファイルのパスを出す。クエリ `level`（`all`（既定）・`warn`（WARN 以上）・`error`（ERROR のみ）。大文字小文字を区別せず、無い・未知の値は `all`）、`page`（1 始まり。無い・数値でない・1 未満は 1、100 を超える値は 100 とみなす）。前へ・次へのリンクは、その向きのページがあるときだけ出て、`level` を保つ。範囲外のページは空の表示（200）。ログファイルが無ければ空の表示。`HX-Request` ならフラグメント（`#app-log`。絞り込みとページ送りのリンクが `hx-get` で差し替えて URL を更新する）、`HX-Boosted` とそれ以外はフルページ（履歴の復元もフルページ）。ログの読み出しに失敗したら 500（理由は画面に出さない）。監査ログの閲覧（FR-AU01）とは別。FR-H13 | M1 |
@@ -526,7 +526,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト | 応答 |
 |---------|------|-----------|------|
-| POST | `/lease/revoke` | なし | 200 リースのフラグメント（保持者を剥奪。`agent` ならタスクを中断）。**M2 から**（M1 のダッシュボードに強制剥奪ボタンは無い。FR-H02）。`agent` の剥奪は M4 |
+| POST | `/lease/revoke` | なし | 200 リースのフラグメント（`#lease` の中身。保持者を剥奪して空きにする。`agent` ならタスクを中断）。**M2 から**（FR-H02、FR-L06）。操作主体は `host` で、監査は `lease.revoke`（`actor_type = host`）。**保持者がいなければ何もせず 200**（冪等。トーストも出さない）。剥奪できるのは `mcp` / `web` の保持者で、`agent` の剥奪（タスクの中断）は M4。成功すると「操作権を剥奪しました。」のトーストを OOB で添える |
 | POST | `/killswitch/trigger` | なし | 200 ダッシュボードのフラグメント（FR-H06 の手順。1 秒以内） |
 | POST | `/killswitch/release` | なし | 200（解除。受付を再開）。ダッシュボードのキルスイッチのパネルを返し、ヘッダーのバッジの更新・確認モーダルを閉じる・トーストを OOB で添える |
 | GET | `/killswitch` | なし | 200 キルスイッチのパネルのフラグメント。発動中は解除のボタンだけ、そうでなければ発動のボタンだけを含む。画面の更新は `GET /poll`（§7.4）が OOB で差し替える |
@@ -593,7 +593,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
 | リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp` だけ**。それ以外のパス（`/` を含む）は 404。`/viewer`・`/ws/screen`・静的ファイル・`/api/v1`（Huma）は M2 以降 |
-| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
+| GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`・`/lease/revoke`（M2）、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。**未実装**（それぞれ表の段階で足す）: `/approvals/*`・`/audit*`・`/update*`・`/tasks*`・`/agent*`・`/lease/revoke`・`/clients/{id}/approval/reset` |
 | `PUT /settings` の項目（§7.3） | 13 項目 | M1 は `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目だけ。他は各段階で足す |
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
 | GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン・起動許可アプリ）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
@@ -648,3 +648,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.16 | 2026-11-01 | §7.1 に `GET /logs`（アプリのログ。`level`・`page` クエリ、1 ページ 50 件、フラグメントの応答）を追加 | #45 |
 | 1.17 | 2026-11-01 | §3.3 の `launch_app` の出力に `window`・`reused_existing_window` を追加（起動後に前面にあったウィンドウの観測と、既存のウィンドウが前に出ただけのときの印）、§3.1 の `instructions` に入力の前に確かめる旨を追記 | #46 |
 | 1.18 | 2026-11-01 | §3.4 に `own_window` の `detail.own_windows`（モニターと縮小座標の `rect`）を追加し、§3.3 の `screenshot` に `own_windows`、`list_windows` に `blocked`・`blocked_reason` を追加。§2 の `input_blocked` の行と §3.1 の `instructions` を更新 | #47（FR-M20） |
+| 1.19 | 2026-11-01 | §2 の `lease_revoked` に「次の `acquire` まで返し続ける」、§3.3 の `get_control_status` の `holder.kind` に `web`（M2）、§7.1 のダッシュボードと §7.3 の `POST /lease/revoke`（冪等・`host` で監査・`agent` は M4）、§7.5 の GUI ルートに `/lease/revoke` を反映 | #58（M2 の強制剥奪の実装） |

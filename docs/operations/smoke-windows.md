@@ -1,6 +1,6 @@
-# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8）
+# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8。M2: 継続キャプチャ `Capturer.Watch` は §3.9）
 
-CI はセルフホストの Linux ランナーで動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。DXGI・オーバーレイは M2 以降の手順で確認する。
+CI はセルフホストの Linux ランナーで動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。継続キャプチャ（DXGI・`Capturer.Watch`）は §3.9、オーバーレイは M3 以降の手順で確認する。
 
 ## 1. 準備
 
@@ -31,7 +31,7 @@ $env:PUPPET_REMO_SMOKE_INPUT = "1"; $env:PUPPET_REMO_SMOKE_CLIPBOARD = "1"
 go test -tags smoke -v -count=1 ./internal/platform/windows/
 ```
 
-`TestSmokeCapturer` と `TestSmokeWindowManager` は画面を読むだけで、副作用はない。`go test` は成功（`PASS`）し、`SKIP` が出た項目は上の環境変数を設定して再実行する。
+`TestSmokeCapturer`（`Grab` と `Watch` の契約）、`TestSmokeCapturerWatchAllMonitors`（全モニターの `Watch` を同時に開く）、`TestSmokeWindowManager` は画面を読むだけで、副作用はない。`go test` は成功（`PASS`）し、`SKIP` が出た項目は上の環境変数を設定して再実行する。
 
 ## 3. 機能ごとの確認項目（手動）
 
@@ -140,6 +140,21 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | L8 | 標準権限のまま起動する | 起動したプロセスのトークンが本アプリと同じ整合性レベル（昇格していない） |
 | L9 | `FilePicker.PickExecutable`（`go test -tags smoke -run TestSmokeFilePicker -v ./internal/platform/windows/`。`PUPPET_REMO_SMOKE_PICKER=1` のときだけ走る。手動操作が要る） | `.exe` のフィルターのダイアログが開き、選択でパスが返る。キャンセルで `ok=false`。3 秒後の `ctx` の取り消し（操作しない）でダイアログが閉じ `context.DeadlineExceeded` が返る |
 
+### 3.9 Capturer.Watch（DXGI Desktop Duplication・GDI フォールバック。M2。#57。FR-W01・W09、NFR-P02・P04）
+
+契約テストは `TestSmokeCapturer`（各モニターの最初の 1 コマの大きさ・原点・`Dirty`・`Seq`、`ctx` の取り消しで 2 つのチャネルが閉じる）と `TestSmokeCapturerWatchAllMonitors`（全モニターを同時に開く）。以下は契約テストが見ない確認項目で、**実機で確かめるまで「未確認」**。経路（DXGI か GDI か）は、`errs` に `desktop_unavailable` が流れたかどうか（流れたら GDI に切り替わっている）で分かる。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| W1 | 単一モニターで `Watch`（10 fps）。画面を動かす（ウィンドウをドラッグ、動画を再生） | 画面が変化している間だけ `frames` に流れ、`Seq` が 1 から 1 ずつ増える。画像の大きさがモニターの物理ピクセルと同じ。色が R と B で入れ替わっておらず、アルファが不透明 |
+| W2 | 画面を静止させる | `frames` に何も流れない（CPU がほぼ 0）。マウスを動かすだけでは流れない（カーソルは写さない。`Grab` と同じ） |
+| W3 | マルチモニター（左・上に副モニター、モニターごとにスケールが違う） | 各 `Watch` がそのモニターの内容だけを写す。`Index` ごとの画像の大きさが `Size`（物理）と一致。DXGI で開けたモニターと GDI になったモニター（別 GPU など）が混在してもコマが来る |
+| W4 | 表示スケール 150% / 200%、実行中に解像度・スケールを変える | 変更後は新しい大きさでコマが流れる（`ACCESS_LOST` から再初期化。解像度が変わった `Monitors` に合わせて出力を探し直す）。ぼやけない |
+| W5 | 画面をロック（Win+L）し、UAC（セキュアデスクトップ）を出す | `errs` に `desktop_unavailable` が流れ、GDI に切り替わる（ロック中は GDI も失敗して同じエラーが 1 回だけ流れる）。解除後はコマが流れる。黒い画像を成功として流さない |
+| W6 | `ctx` を取り消す | 1 秒以内に 2 つのチャネルが閉じ、キャプチャが止まる（タスクマネージャーで CPU が下がる。FR-W09・NFR-P04 の土台） |
+| W7 | 10 fps で 1 時間以上 `Watch` し続ける（GPU メモリ・ハンドルのリークがない） | プロセスのメモリとハンドル数が増え続けない。`ACCESS_LOST` を繰り返し起こしても（ロック・解除を 20 回）同じ |
+| W8 | 表示遅延（NFR-P02 は #59 以降の経路全体で測る） | `Watch` のコマは画面の変化から 1 フレーム間隔（100 ms）以内に届く |
+
 ## 4. Wails のシェルと結線（S11。実機のみ）
 
 `task windows:build`（または Windows で `go build -tags production -ldflags "-H windowsgui" ./cmd/puppet-remo`）で作った `puppet-remo.exe` を、**tailscaled が動いていて tailnet にログイン済み**の対話デスクトップで実行する。WebView2 ランタイムが要る（インストーラが導入する）。通信相手になる tailnet 上の別端末（MCP クライアント）を 1 台用意する。
@@ -239,7 +254,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 ## 5. 既知の制約（M1）
 
-- キャプチャは GDI `BitBlt` のみ。DXGI（Desktop Duplication）と継続キャプチャ（`Watch`）は M2。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
+- キャプチャ: 1 枚撮り（`Grab`）は GDI `BitBlt`、継続キャプチャ（`Watch`）は DXGI（Desktop Duplication）で、使えなければ GDI（M2。§3.9）。DXGI は既定のアダプターに接続されたモニターだけを複製する（別 GPU のモニターは GDI になる）。`Frame.Dirty` は常に全面。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
 - UIPI: 管理者権限のウィンドウへは標準権限のプロセスから入力できない。`SendInput` は UIPI に捨てられても成功を返すことがあるため、`WindowInfo.Elevated` を `service.InputGuard` が先に見て `input_blocked` にする。
 - `Key` の記号キーは現在のキーボード配列に依存する（`VkKeyScanEx`）。Ctrl / Alt（AltGr）が要る文字は `invalid_argument`。文字そのものを入力したいときは `Text` を使う。
 - **アプリ起動（M1.5）**: `launch_app` は起動したプロセスを終了・監視しない。キルスイッチ・リースの解放・セッションの切断・本アプリの終了でも、起動済みのプロセスは残る（FR-M19）。
@@ -257,3 +272,4 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-10-30 | §4.8 の A2 に、ファイル選択ダイアログの親ウィンドウ（Wails のメインウィンドウの結線。`WailsHost.MainWindowHandle`）の確認を追記。§4.8 の確認は未確認のまま | #23 の実装 |
 | — | 2026-11-01 | §4.8 に A5b（Windows 11 のメモ帳で既存のウィンドウが前に出ただけのときの `launch_app` の結果）を追加。実機の確認は未確認 | #46 |
 | — | 2026-11-01 | §3.2 に I15（自ウィンドウの範囲 `own_windows`・`blocked` の確認）を追加。実機の確認は未確認 | #47 |
+| — | 2026-11-01 | §3.9（`Capturer.Watch`: DXGI・GDI フォールバックの確認 W1〜W8。未確認）を追加し、§2 に `TestSmokeCapturerWatchAllMonitors`、§5 のキャプチャの制約を M2 の実装に更新 | #57 |

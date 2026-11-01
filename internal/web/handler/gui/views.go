@@ -140,7 +140,7 @@ func (h *Handler) leaseView() view.Lease {
 		label = holder.Actor.ClientID
 	}
 	return view.Lease{
-		Held: true, HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
+		Held: true, CanRevoke: holder.Actor.Kind.CanHoldLease(), HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
 		Since: h.formatTime(holder.Since), IdleRemaining: formatDuration(holder.IdleRemaining),
 	}
 }
