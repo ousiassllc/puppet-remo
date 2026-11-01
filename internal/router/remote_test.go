@@ -5,11 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/router"
 	"github.com/ousiassllc/puppet-remo/internal/service"
+	"github.com/ousiassllc/puppet-remo/internal/web/handler/remote"
+	"github.com/ousiassllc/puppet-remo/internal/web/handler/remote/remotetest"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 )
 
@@ -56,7 +59,10 @@ type remoteKit struct {
 	auth    *remoteAuth
 	mcpHits int
 	wsHits  int
-	handler http.Handler
+	// staticPaths は /static ハンドラに届いたパス（/static を外したあと）。
+	staticPaths []string
+	fakes       *remotetest.Fakes
+	handler     http.Handler
 }
 
 func newRemote(t *testing.T) *remoteKit {
@@ -76,6 +82,17 @@ func newRemote(t *testing.T) *remoteKit {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	k.fakes = remotetest.New()
+	web, err := remote.New(k.fakes.Deps())
+	if err != nil {
+		t.Fatal(err)
+	}
+	static := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k.staticPaths = append(k.staticPaths, r.URL.Path)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", `"build"`)
+		_, _ = w.Write([]byte("asset"))
+	})
 	h, err := router.NewRemote(router.RemoteConfig{
 		Chain: middleware.RemoteConfig{
 			Hosts:      func() ([]string, int) { return []string{remoteIP}, remotePort },
@@ -83,8 +100,10 @@ func newRemote(t *testing.T) *remoteKit {
 			WhoIs:      remoteWhoIs{},
 			Authz:      k.auth,
 		},
-		MCP: mcp,
-		WS:  ws,
+		MCP:    mcp,
+		WS:     ws,
+		Web:    web,
+		Static: static,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +158,58 @@ func TestRemoteServesWebSocketBehindTheChainForGETOnly(t *testing.T) {
 	}
 }
 
+func TestRemoteServesTheWebUIBehindTheChain(t *testing.T) {
+	k := newRemote(t)
+	if rec := k.do(http.MethodGet, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/viewer" {
+		t.Errorf("GET / = %d (Location %q), want 302 /viewer", rec.Code, rec.Header().Get("Location"))
+	}
+	rec := k.do(http.MethodGet, "/viewer")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<remo-screen-viewer") {
+		t.Errorf("GET /viewer = %d %q, want the viewer page", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got != middleware.CSPValue {
+		t.Errorf("CSP on /viewer = %q", got)
+	}
+	// 連鎖が認可したクライアントを、ハンドラが viewer_id の束縛に使う。
+	if !strings.Contains(rec.Body.String(), "VIEWER01") {
+		t.Errorf("no viewer_id in the page: %q", rec.Body.String())
+	}
+	post := k.do(http.MethodPost, "/viewer/lease/acquire", func(r *http.Request) {
+		r.Header.Set(middleware.CSRFHeader, "1")
+		r.Header.Set("X-Viewer-Id", "VIEWER01")
+	})
+	if post.Code != http.StatusOK || !strings.Contains(post.Body.String(), "/viewer/lease/release") {
+		t.Errorf("POST /viewer/lease/acquire = %d %q", post.Code, post.Body.String())
+	}
+	if noHeader := k.do(http.MethodPost, "/viewer/lease/acquire"); noHeader.Code != http.StatusForbidden {
+		t.Errorf("POST without X-Puppet-Remo = %d, want 403", noHeader.Code)
+	}
+}
+
+// /static/* は、連鎖を通ったあと、/static を外して static の handler へ渡す（GET と HEAD。ほかのメソッドは届かない）。
+func TestRemoteServesStaticFilesBehindTheChain(t *testing.T) {
+	k := newRemote(t)
+	rec := k.do(http.MethodGet, "/static/js/screen-viewer.js")
+	if rec.Code != http.StatusOK || rec.Body.String() != "asset" || rec.Header().Get("Cache-Control") != "no-cache" || rec.Header().Get("ETag") == "" {
+		t.Errorf("GET /static/js/screen-viewer.js = %d %q (Cache-Control %q, ETag %q)", rec.Code, rec.Body.String(), rec.Header().Get("Cache-Control"), rec.Header().Get("ETag"))
+	}
+	if rec := k.do(http.MethodHead, "/static/css/app.css"); rec.Code != http.StatusOK {
+		t.Errorf("HEAD /static/css/app.css = %d, want 200", rec.Code)
+	}
+	if want := []string{"/js/screen-viewer.js", "/css/app.css"}; !reflect.DeepEqual(k.staticPaths, want) {
+		t.Errorf("static handler paths = %v, want %v", k.staticPaths, want)
+	}
+	if rec := k.do(http.MethodPost, "/static/js/app.js", func(r *http.Request) { r.Header.Set(middleware.CSRFHeader, "1") }); rec.Code == http.StatusOK {
+		t.Errorf("POST /static/js/app.js = %d, want it not served", rec.Code)
+	}
+	// 未登録デバイスには配信しない。
+	k = newRemote(t)
+	k.auth.registered = false
+	if rec := k.do(http.MethodGet, "/static/js/app.js"); rec.Code != http.StatusForbidden || len(k.staticPaths) != 0 {
+		t.Errorf("unregistered GET /static/js/app.js = %d (static hits %v), want 403 before the handler", rec.Code, k.staticPaths)
+	}
+}
+
 func TestRemoteWebSocketRejectionsAreProblemJSON(t *testing.T) {
 	k := newRemote(t)
 	k.auth.registered = false
@@ -155,13 +226,13 @@ func TestRemoteWebSocketRejectionsAreProblemJSON(t *testing.T) {
 	}
 }
 
-// tailnet 公開面は /mcp と GET /ws/screen だけ（Web UI・API は M2 の続き）。連鎖を通っても、ほかの経路は 404 で、
-// ホスト GUI の経路は存在しない。
-func TestRemoteExposesNothingButMCPAndWebSocket(t *testing.T) {
+// tailnet 公開面は /mcp・GET /ws/screen・Web UI（/ と /viewer*）・GET /static/* だけ（/api/v1 は M2 以降の別の段階）。
+// 連鎖を通っても、ほかの経路は 404 で、ホスト GUI の経路は存在しない。
+func TestRemoteExposesNothingButTheDocumentedRoutes(t *testing.T) {
 	k := newRemote(t)
 	paths := []string{
-		"/", "/viewer", "/ws/screen/", "/ws/other", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
-		"/mcp/", "/mcp/extra", "/static/js/app.js",
+		"/ws/screen/", "/ws/other", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
+		"/mcp/", "/mcp/extra", "/viewer/nope", "/viewer/lease/", "/viewer/clipboard", "/viewer/keys",
 		"/apps", "/apps/new", "/apps/pick", "/apps/pick-file", "/apps/a1/edit", "/apps/a1/delete/confirm", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
 	}
 	for _, p := range paths {

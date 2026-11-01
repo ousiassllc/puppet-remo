@@ -58,6 +58,9 @@ type ConnRequests interface {
 	// offset 件を飛ばして limit 件返す（接続要求の履歴。GUI のページ送り）。limit < 1・offset < 0 は ErrInvalidArgument。
 	// 期限切れだが Expire 前の pending も pending のまま返す（表示側が失効として扱う）。
 	ListHistory(ctx context.Context, limit, offset int) ([]ConnRequest, error)
+	// stable_node_id の最新の要求（first_seen_at の新しい順、同時刻は id の新しい順で先頭の 1 件。状態は問わない）。
+	// 無ければ ErrNotFound。読み取り専用で、待機ページの出し分け（FR-W02）に使う。
+	LatestByNode(ctx context.Context, stableNodeID string) (ConnRequest, error)
 	// 期限内（expires_at > 現在時刻）の pending を first_seen_at 順に返す。期限切れは Expire 前でも含めない。
 	ListPending(ctx context.Context) ([]ConnRequest, error)
 	// expires_at を過ぎた pending を expired にし、last_seen_at から ConnRequestRetention を
@@ -179,6 +182,16 @@ func (s connRequestStore) DeniedActive(ctx context.Context, stableNodeID string,
 			WHERE stable_node_id = ? AND status = 'denied' AND expires_at > ?)`,
 		stableNodeID, toMS(now)).Scan(&active)
 	return active, err
+}
+
+func (s connRequestStore) LatestByNode(ctx context.Context, stableNodeID string) (ConnRequest, error) {
+	r, err := scanConnRequest(s.db.sql.QueryRowContext(ctx,
+		`SELECT `+connRequestColumns+` FROM connection_requests
+		WHERE stable_node_id = ? ORDER BY first_seen_at DESC, id DESC LIMIT 1`, stableNodeID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ConnRequest{}, ErrNotFound
+	}
+	return r, err
 }
 
 func (s connRequestStore) ListPending(ctx context.Context) ([]ConnRequest, error) {

@@ -272,6 +272,20 @@ func (m *memConnRequests) ListHistory(context.Context, int, int) ([]repository.C
 	return nil, errors.New("unused")
 }
 
+func (m *memConnRequests) LatestByNode(_ context.Context, node string) (repository.ConnRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return repository.ConnRequest{}, m.err
+	}
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		if m.rows[i].StableNodeID == node {
+			return m.rows[i], nil
+		}
+	}
+	return repository.ConnRequest{}, repository.ErrNotFound
+}
+
 func (m *memConnRequests) snapshot() []repository.ConnRequest {
 	m.mu.Lock()
 	defer m.mu.Unlock()

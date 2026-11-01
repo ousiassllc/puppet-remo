@@ -2,19 +2,26 @@ package middleware
 
 import (
 	"encoding/json"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/a-h/templ"
+
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/pages"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
 // reject は連鎖が拒否したときの応答の内容。
 type reject struct {
 	code       domain.Code
 	retryAfter time.Duration // rate_limited の Retry-After
+	// connState は device_not_registered のときの接続要求の状態（HTML の待機ページの出し分け。空なら待機）。
+	connState service.ConnRequestState
 }
 
 // 連鎖が返すコードの題名（problem+json の title）と、利用者向けの説明。
@@ -54,7 +61,7 @@ func writeReject(w http.ResponseWriter, r *http.Request, kind routeKind, rj reje
 		writeProblem(w, status, rj.code, text.title, text.detail)
 		return
 	}
-	writeHTML(w, r, status, rj.code, text.htmlMsg)
+	writeHTML(w, r, status, rj, text.title, text.htmlMsg)
 }
 
 // problemBody は RFC 9457 の problem+json（API 仕様 §2）。
@@ -77,39 +84,35 @@ func writeProblem(w http.ResponseWriter, status int, code domain.Code, title, de
 }
 
 // HTML の応答。インラインのスクリプト・スタイル・イベント属性は使わない（CSP。NFR-S19）。
-var (
-	errorPageTmpl = template.Must(template.New("error").Parse(
-		`<!doctype html>
-<html lang="ja">
-<head><meta charset="utf-8"><title>{{.Title}}</title></head>
-<body><main data-error-code="{{.Code}}"><h1>{{.Title}}</h1><p>{{.Message}}</p></main></body>
-</html>
-`))
-	errorFragmentTmpl = template.Must(template.New("fragment").Parse(
-		`<div role="alert" data-error-code="{{.Code}}">{{.Message}}</div>
-`))
-)
-
-type htmlBody struct {
-	Code    domain.Code
-	Title   string
-	Message string
-}
+// ページは pages（Templ）、状態変更のリクエスト（アクションルート）のフラグメントは atoms.Alert。
 
 // writeHTML は Web UI の拒否を HTML で返す。状態変更のリクエスト（アクションルート）はフラグメント、
-// それ以外はエラーページ。未登録デバイスは待機ページ（FR-W02。M2 の Web UI が差し替えるまでは簡易ページ）。
-func writeHTML(w http.ResponseWriter, r *http.Request, status int, code domain.Code, msg string) {
+// それ以外はエラーページ。未登録デバイスは、接続要求の状態（rj.connState）に応じた待機・拒否・失効のページ（FR-W02）で、
+// アクションルートにもページを返す。
+func writeHTML(w http.ResponseWriter, r *http.Request, status int, rj reject, title, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	body := htmlBody{Code: code, Message: msg, Title: rejectText[code].title}
-	if code == domain.CodeDeviceNotRegistered {
-		body.Title = "接続要求を送信しました"
+	var comp templ.Component
+	switch {
+	case rj.code == domain.CodeDeviceNotRegistered:
+		comp = notRegisteredPage(rj.connState)
+	case stateChanging(r):
+		comp = atoms.Alert(string(rj.code), msg)
+	default:
+		comp = pages.RemoteError(view.RemoteError{Code: string(rj.code), Title: title, Message: msg})
 	}
-	tmpl := errorPageTmpl
-	if stateChanging(r) && code != domain.CodeDeviceNotRegistered {
-		tmpl = errorFragmentTmpl
-	}
-	if err := tmpl.Execute(w, body); err != nil {
+	if err := comp.Render(r.Context(), w); err != nil {
 		slog.Debug("write error response failed", "error", err)
 	}
+}
+
+// notRegisteredPage は未登録デバイスのページ。状態が分からないとき（空・pending・読めなかったとき）は待機ページ。
+func notRegisteredPage(state service.ConnRequestState) templ.Component {
+	switch state {
+	case service.ConnRequestDenied:
+		return pages.Denied()
+	case service.ConnRequestExpired:
+		return pages.Expired()
+	}
+	return pages.Pending()
 }

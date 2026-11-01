@@ -12,6 +12,9 @@ type RemoteConfig struct {
 	KillSwitch KillSwitchState
 	WhoIs      service.WhoIs
 	Authz      service.Authenticator
+	// ConnStates は未登録デバイスのブラウザに返すページ（待機・拒否・失効。FR-W02）を選ぶための、接続要求の状態の読み取り専用の参照。
+	// nil なら常に待機ページ。応答のステータス・エラーコードと接続要求の作成（FR-A06）には関わらない。
+	ConnStates service.ConnRequestStates
 }
 
 // Remote は API 仕様 §1 の連鎖を、hostcheck → csrfheader → killswitch → whois → allowlist → bearer の順で
@@ -22,7 +25,7 @@ func Remote(cfg RemoteConfig, h http.Handler) http.Handler {
 		RequireCSRFHeader(),
 		KillSwitch(cfg.KillSwitch),
 		WhoIs(cfg.WhoIs),
-		Allowlist(cfg.Authz),
+		Allowlist(cfg.Authz, cfg.ConnStates),
 		Bearer(cfg.Authz),
 	}
 	for i := len(chain) - 1; i >= 0; i-- {

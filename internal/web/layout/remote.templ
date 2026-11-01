@@ -1,0 +1,52 @@
+package layout
+
+import "github.com/ousiassllc/puppet-remo/internal/web/organisms"
+
+// Remote はリモートの Web UI（ビューア）のページの外枠。
+//
+// スクリプトは外部ファイルだけ（CSP: NFR-S19）。読み込み順は htmx → htmx-config（classic）→ 拡張 → app・screen-viewer（module）。
+// <body hx-headers> が全リクエストに X-Puppet-Remo: 1 を付ける（NFR-S03）。X-Viewer-Id は #viewer-root が付ける。
+// ホスト GUI と違って /poll は無く、状態の更新は <remo-screen-viewer> の remo:lease-changed が起こす（frontend.md §5.3・§6.2）。
+templ Remote(title string) {
+	<!DOCTYPE html>
+	<html lang="ja">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } - puppet-remo</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+			<script src="/static/js/htmx.min.js"></script>
+			<script src="/static/js/htmx-config.js"></script>
+			<script src="/static/js/response-targets.min.js"></script>
+			<script type="module" src="/static/js/app.js"></script>
+			<script type="module" src="/static/js/screen-viewer.js"></script>
+		</head>
+		<body
+			class="min-h-screen bg-slate-100 text-slate-900 antialiased"
+			hx-ext="response-targets"
+			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
+		>
+			<header class="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">puppet-remo</header>
+			<div class="mx-auto max-w-7xl space-y-4 p-4">
+				{ children... }
+			</div>
+			@organisms.ToastRoot()
+		</body>
+	</html>
+}
+
+// RemoteNotice は、ビューアを開けない状態（未登録デバイスの待機・拒否・失効、ミドルウェアの拒否）の簡素なページの外枠。
+// 未登録のデバイスは /static/* も 403 になるため、スタイル・スクリプトを読み込まない（意味のある HTML だけで読める作りにする）。
+templ RemoteNotice(title string) {
+	<!DOCTYPE html>
+	<html lang="ja">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title }</title>
+		</head>
+		<body>
+			{ children... }
+		</body>
+	</html>
+}

@@ -4,6 +4,7 @@
 //   2. トークンのコピー
 //   3. トースト（サーバーが OOB で追加する）の閉じる操作と自動消去
 //   4. 確認モーダルのキャンセル・トークン表示を閉じる（data-clear）
+//   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 const TOAST_ROOT = "toast-root";
@@ -88,6 +89,18 @@ async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<
     }
   }
 }
+
+// 5. スライダー（画質・FPS）の値の表示。送信は離したとき（change）にサーバーへ送られ、サーバーが再描画する。
+document.addEventListener("input", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.type !== "range") {
+    return;
+  }
+  const output = document.getElementById(target.dataset.rangeOutput ?? "");
+  if (output) {
+    output.textContent = target.value;
+  }
+});
 
 // 3. サーバーが追加したトーストを一定時間後に消す。
 const toastRoot = document.getElementById(TOAST_ROOT);
