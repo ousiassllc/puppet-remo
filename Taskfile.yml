@@ -161,6 +161,12 @@ tasks:
     cmds:
       - go run ./internal/router/internal/guidemo -addr 127.0.0.1:8899
 
+  remote:demo:
+    desc: リモート Web UI（/viewer）とホスト GUI を偽の platform・tailnet で loopback に起動する（スクリーンショット・手動確認用。本番のバイナリには入らない）
+    deps: [frontend:build]
+    cmds:
+      - go run ./internal/app/internal/remotedemo -addr 127.0.0.1:8765 -gui-addr 127.0.0.1:8899
+
   build:production:
     desc: 本番ビルド（static/dist を go:embed する。先に frontend:build が要る）
     deps: [frontend:build]
