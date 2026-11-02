@@ -79,6 +79,9 @@ func TestEveryResponseCarriesCSP(t *testing.T) {
 		{http.MethodGet, "/poll", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/killswitch/trigger", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/lease/revoke", []string{"HX-Request", "true"}},
+		{http.MethodGet, "/tasks", nil},
+		{http.MethodGet, "/tasks/unknown", nil},
+		{http.MethodPost, "/tasks/unknown/cancel", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/requests/x/approve", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/static/js/app.js", nil},
 		{http.MethodGet, "/static/missing.js", nil},
@@ -170,10 +173,21 @@ func TestGUIServesTheUpdateRoutes(t *testing.T) {
 // ホスト専用の経路だけがあり、/wails/* は予約され、M1 に無いものと、リモート向けの経路は存在しない。
 func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks"} {
+	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks/", "/tasks/t1/cancel"} {
 		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
 		}
+	}
+	// エージェントのタスク（M4。FR-H10）は GUI ルーターにある。一覧は 200、無い id の詳細は 404（ハンドラの応答）、
+	// 中断は POST だけ（GET は経路なしの 404）、無い id の中断は 404（エラーのトースト）。
+	if rec := do(h, http.MethodGet, "/tasks"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="task-list"`) {
+		t.Errorf("GET /tasks: status %d", rec.Code)
+	}
+	if rec := do(h, http.MethodGet, "/tasks/nope"); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `data-error-code="not_found"`) {
+		t.Errorf("GET /tasks/nope: status %d, want 404 with data-error-code=not_found", rec.Code)
+	}
+	if rec := do(h, http.MethodPost, "/tasks/nope/cancel", "HX-Request", "true"); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `data-error-code="not_found"`) {
+		t.Errorf("POST /tasks/nope/cancel: status %d, want 404 with data-error-code=not_found", rec.Code)
 	}
 	// 承認ダイアログ（M3。#68）は GUI ルーターにある。承認要求が無い id は 410 approval_timeout。
 	if rec := do(h, http.MethodGet, "/approvals/a"); rec.Code != http.StatusGone {

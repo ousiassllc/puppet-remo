@@ -930,7 +930,7 @@ type Window interface{ Close() } // 閉じる操作。すでに閉じていれ�
 ```
 
 - **メイン**: ホスト GUI（GUI ルーターを `AssetOptions.Handler` に渡す）。閉じてもトレイに残る。多重起動は Wails の単一インスタンスで 1 つに制限（FR-H01）
-- **承認ダイアログ**: `Bus` の `approval` を購読して開く。`ContentProtectionEnabled`（キャプチャ除外）を必ず有効にする。`approval-closed`（許可・拒否・失効・取り下げ）とシャットダウンで閉じる。同時に開くのは 1 つ。重なった要求（M3 の `kind` は `lease` だけだが、複数クライアントが同時に取得を要求しうる）は到着順（`Approval.Pending` の順）に待たせ、今の要求が終わったら（`approval-closed`）、まだ承認待ちの次の要求のダイアログを開く。各要求の 60 秒はその要求自身の到着時刻から数える（`ExpiresAt`）ので、待たされている間に失効した要求のダイアログは開かない。許可も拒否もせずウィンドウを閉じた場合は、承認待ちが続き、60 秒の失効で拒否になる（ダイアログは開き直さない。待たされている次の要求も、この要求が終わるまで開かない。§13.6）
+- **承認ダイアログ**: `Bus` の `approval` を購読して開く。`ContentProtectionEnabled`（キャプチャ除外）を必ず有効にする。`approval-closed`（許可・拒否・失効・取り下げ）とシャットダウンで閉じる。同時に開くのは 1 つ。重なった要求（`kind` は `lease`・`safety_check`・`judge_action` のどれでも同じ。複数クライアントの取得や、エージェントの承認が重なりうる）は到着順（`Approval.Pending` の順）に待たせ、今の要求が終わったら（`approval-closed`）、まだ承認待ちの次の要求のダイアログを開く。各要求の 60 秒はその要求自身の到着時刻から数える（`ExpiresAt`）ので、待たされている間に失効した要求のダイアログは開かない。許可も拒否もせずウィンドウを閉じた場合は、承認待ちが続き、60 秒の失効で拒否になる（ダイアログは開き直さない。待たされている次の要求も、この要求が終わるまで開かない。§13.6）
 - **オーバーレイ**（FR-H07。#69）: リースが `held` の間、**全モニター**に 1 モニター 1 ウィンドウで出す（枠なし・透過背景・最前面・クリック透過 = `IgnoreMouseEvents`（`WS_EX_TRANSPARENT` + `WS_EX_LAYERED`）・タスクバー非表示・フォーカスを奪わない（`WS_EX_NOACTIVATE`）・キャプチャ除外（`ContentProtectionEnabled`））。各ウィンドウは `domain.Monitor` の**物理座標**の原点・大きさに合わせる（Wails の DIP ではなく `SetPhysicalBounds`。DPI の異なるモニターが混在してもずれない）。中身は GUI ルーターの `GET /overlay?label=…`（枠と「操作中: <クライアント名>（種別）」の札だけ。背景は透明で画面の内容を隠さない）。`app` の `overlayController`（`overlay.go`）が `Bus` の `lease` を購読し、`LeaseManager.Holder` の今の状態を真実の源にして出し入れする: `held` → 表示（保持者が変われば隠さずに label を更新）、解放・アイドル解放・強制剥奪・キルスイッチ・切断・`pending_approval` → 消去、`Shutdown` でも消去。モニター一覧が取れない・0 台のときはログに残してオーバーレイを出さないだけで、リースは妨げない。出している間のモニター構成の変化（抜き差し・解像度・DPI）は追わず、次に出すとき（`ShowOverlay`。構成が違えばウィンドウを作り直す）に反映する。`agent` のときの指示の要約の併記は M4（`agent` の保持者種別と同時）
 - **トレイ**: キルスイッチ、ダッシュボードを開く、終了。`connection-requests` の件数で通知
 - **ホットキー**: `Hotkey.Register(killswitch.hotkey, killSwitch.Trigger)`。設定変更時は登録し直す
@@ -1151,6 +1151,17 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `web/handler/gui` の監査ログ（M3・#72。FR-AU05、FR-H08） | `/audit*` | `handler/gui/audit.go`。`Deps.Audit`（利用者側のインターフェース `gui.Audit`: `Query`・`Get`・`Thumbnail`。実体は `service.AuditReader`。`app` が `NewAuditReader(repo.Audit(), repo.Thumbs())` を渡す）。`GET /audit`（絞り込み・`cursor`・`limit`。`HX-Request` は `#audit-list` のフラグメント、不正な値は 422）・`GET /audit/:id`（404: 無い・数値でない）・`GET /audit/:id/thumbnail`（`image/jpeg`・`no-store`・`nosniff`。`ErrInvalidArgument`（パスの走査）・`ErrNotFound` は 404）。GUI ルーターだけで、リモートのルーターには無い。偽の `AuditReader` は `guitest.Audit`。`web` は `repository` / `platform` を import しない |
 | 開発・補助 | 開発タスクは `frontend:dev`（`dev:frontend` ではない）。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service、loopback）がある。スクリーンショットは `docs/screenshots/m1/`、実機スモークの手順は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) |
 
+#### GUI（タスク・承認・オーバーレイ）（M4・Issue #19。FR-H02・H05・H07・H10）
+
+| 項目 | 実装 |
+|------|------|
+| タスク画面 | `handler/gui/tasks.go`。`gui.Deps.Tasks`（利用者側のインターフェース。メソッド集合は `service.TaskAdmin` と同じ `List`・`Detail`・`Running`・`CancelByHost`）。`GET /tasks`（`cursor`。50 件）・`GET /tasks/{id}`・`POST /tasks/{id}/cancel`。無いタスク（`domain.ErrTaskNotFound`）は GUI の 404 `not_found`。中断・取得の監査（操作主体 `host`）は `TaskAdmin` が記録し、ハンドラは記録しない。指示・最終回答・ステップの文字列は templ が HTML エスケープし、入力した文字列の本文・要素の値は表示しない（`TaskStep` に含まれない。FR-G23）。`completed` の最終回答にはモデルの申告である旨を添える（FR-G13） |
+| ダッシュボード | `Tasks.Running`（実行中・承認待ち）が空でなければ、指示の先頭 80 文字・状態・ステップ数 / 上限・経過時間・中断ボタンのパネル。`#running-tasks` は常に描画し、`GET /poll` の `rev_tasks` で差し替える。強制剥奪のボタンは保持者の種別（`mcp` / `web` / `agent`。`hostCanRevoke`）から決め、`agent` には「タスクが中断される」旨を添える（ドメインの `CanHoldLease` には依存しない） |
+| 承認ダイアログ | `kind` は `lease` / `safety_check` / `judge_action`。`approvalTexts` が種類ごとの見出し・要求の内容・結果の説明を返し、`ApprovalRequest.Detail`（サービスが秘密・入力した文字列の本文・パスを除く）を HTML エスケープして出す（念のため 500 文字で切る）。`safety_check` は「自動許可でも省略されない・拒否と 60 秒の無応答はタスクの失敗（`safety_check_denied`）」を明示する。許可・拒否の経路は 3 種で同じ（`Approval.Resolve`）。未知の `kind` は 410 `approval_timeout` |
+| ウィンドウ | `approvalDialogs.sync` は種類を問わず到着順にダイアログを 1 つずつ開く。`Windows.OpenApproval(id, kind)` は `kind` で高さを選ぶ（`lease` 340・`safety_check`・`judge_action` 560。幅は 440。`Detail` と結果の説明の分） |
+| オーバーレイ | `overlayController` は保持者が `agent` のとき、`Actor.SessionID`（= task_id）で `TaskAdmin.Detail` を引き、`label` の 2 行目に「エージェント実行中: <指示の要約>」を付ける（空白をたたんで 40 文字。タスクが読めない・読み取り元が無ければ「エージェント実行中」だけ）。`GET /overlay` は `label` を改行で 2 行に分け、各行を 80 文字に切り詰めて別の行（`data-overlay-detail`）に描く。ウィンドウはこれまでどおり入力を受けない（クリック透過）。`TaskAdmin` を `overlayController` へ渡す結線は、`Agent`・`TaskAdmin` を結線するスライスが行う |
+| デモ・スクリーンショット | `guidemo` の `-lease held_agent`・`-approval safety_check|judge_action`。`docs/screenshots/m4/`（`tasks-*`・`approval-*`・`overlay-*`・`dashboard-*`） |
+
 **M1 では実装していない `Approval`（M3 の #66 で実装した。§13.5）・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`（M3 の #74 で実装した。§13.5）、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
 
 ### 13.7 M4 の domain の実装差分（#19。§2）
@@ -1262,3 +1273,4 @@ M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tool
 | 1.38 | 2026-11-02 | §13.x に typesafe（§4.4）の M4 の実装差分（公開 OpenAPI に沿った要求・応答の形式、エラーの分類、`Config` の既定、キーの扱い、実 API とのスモークが未実施であること）を追記 | #19 |
 | 1.38 | 2026-11-02 | §13.8 に `openai`（§4.3）の実装を追記（アクションの写像・スクロールの換算の暫定値・古いスクリーンショットの置き換え・`include` の既定・キーとエラーの扱い） | #19 |
 | 1.38 | 2026-11-02 | §13.9 に `mcp` の `run_task` / `get_task` / `cancel_task`（引数の検査・出力の null・監査の `detail`・`Config.Agent` が `nil` のときの `agent_disabled`・`get_control_status` の `holder.task_id`）を追記 | #19 |
+| 1.38 | 2026-11-02 | §13.6 に「GUI（タスク・承認・オーバーレイ）」（M4。タスク画面・ダッシュボードの実行中タスク・承認ダイアログの 3 種・ウィンドウの高さ・agent のオーバーレイの 2 行目）を追加し、§7 の承認ダイアログの待ち行列の記述から「`kind` は `lease` だけ」を除いた | #19（M4 ホスト GUI・タスク） |

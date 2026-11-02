@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -59,7 +60,7 @@ func newOverlayKit(t *testing.T) *overlayKit {
 	k := &overlayKit{
 		t: t, windows: NewFakeWindows(), leases: &holderLeases{}, capture: platformtest.NewFakeCapturer(overlayMonitors...), bus: service.NewBus(),
 	}
-	k.c = newOverlayController(k.windows, k.leases, k.capture, k.bus, discardLogger())
+	k.c = newOverlayController(k.windows, k.leases, k.capture, k.bus, nil, discardLogger())
 	return k
 }
 
@@ -272,5 +273,58 @@ func TestAppShowsTheOverlayWhileTheLeaseIsHeld(t *testing.T) {
 	}
 	if c := next(); !c.Hide {
 		t.Fatalf("call = %+v, want HideOverlay after the kill switch", c)
+	}
+}
+
+// agentTasks は Detail だけを持つ偽の taskReader（指示だけを返す）。
+type agentTasks struct {
+	prompts map[string]string
+}
+
+func (a agentTasks) Detail(_ context.Context, id string) (service.TaskDetail, error) {
+	p, ok := a.prompts[id]
+	if !ok {
+		return service.TaskDetail{}, domain.ErrTaskNotFound
+	}
+	return service.TaskDetail{Task: domain.Task{ID: id, Prompt: p}}, nil
+}
+
+// agent のオーバーレイは、1 行目が通常のラベル、2 行目が「エージェント実行中」と指示の要約（FR-H07）。
+// 指示は空白をたたんで 40 文字に切る。タスクが読めない・読み取り元が無いときは「エージェント実行中」だけ。
+func TestOverlayAgentLabelHasTheRunningNoteAndPromptSummary(t *testing.T) {
+	agent := domain.Actor{Kind: domain.ActorAgent, ClientID: "c1", Label: "claude-desktop", SessionID: "task-1"}
+	const first = "操作中: claude-desktop（エージェント）"
+	long := strings.Repeat("あ", 100)
+	tests := []struct {
+		name  string
+		tasks taskReader
+		want  string
+	}{
+		{"summary", agentTasks{map[string]string{"task-1": "メモ帳を開いて\n  「こんにちは」と書く"}}, first + "\nエージェント実行中: メモ帳を開いて 「こんにちは」と書く"},
+		{"long prompt is cut", agentTasks{map[string]string{"task-1": long}}, first + "\nエージェント実行中: " + strings.Repeat("あ", 39) + "…"},
+		{"task unreadable", agentTasks{}, first + "\nエージェント実行中"},
+		{"no reader", nil, first + "\nエージェント実行中"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k := newOverlayKit(t)
+			k.c.tasks = tt.tasks
+			k.leases.hold(agent)
+			k.sync()
+			if shown, label := k.windows.OverlayShown(); !shown || label != tt.want {
+				t.Errorf("shown = %v, label = %q, want %q", shown, label, tt.want)
+			}
+		})
+	}
+}
+
+// mcp・web・host はこれまでどおり 1 行（タスクは読まない）。
+func TestOverlayNonAgentLabelStaysOneLine(t *testing.T) {
+	k := newOverlayKit(t)
+	k.c.tasks = agentTasks{map[string]string{"s1": "must-not-be-read"}}
+	k.leases.hold(aliceMCP)
+	k.sync()
+	if _, label := k.windows.OverlayShown(); label != "操作中: alice-laptop（MCP）" {
+		t.Errorf("label = %q", label)
 	}
 }

@@ -248,7 +248,8 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
 	}
-	a.overlay = newOverlayController(cfg.Windows, a.leases, cfg.Platform.Capturer, a.bus, a.log)
+	// 5 つ目の引数は agent のオーバーレイの 2 行目（指示の要約）を読む service.TaskAdmin。M4 で TaskAdmin を結線するときに渡す（nil の間は「エージェント実行中」だけ）。
+	a.overlay = newOverlayController(cfg.Windows, a.leases, cfg.Platform.Capturer, a.bus, nil, a.log)
 	killMgr.BindLeases(a.leases)
 
 	p := cfg.Platform
@@ -398,7 +399,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin, Approval: a.approval,
-		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Updates: a.updater, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Updates: a.updater, Tasks: noTasks{}, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)

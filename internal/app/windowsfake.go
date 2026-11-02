@@ -38,8 +38,8 @@ func NewFakeWindows() *FakeWindows {
 
 func (f *FakeWindows) Main() MainWindow { return f.main }
 
-func (f *FakeWindows) OpenApproval(id string) Window {
-	w := &FakeApprovalWindow{id: id, closed: make(chan struct{})}
+func (f *FakeWindows) OpenApproval(id, kind string) Window {
+	w := &FakeApprovalWindow{id: id, kind: kind, closed: make(chan struct{})}
 	f.mu.Lock()
 	f.approved = append(f.approved, w)
 	f.mu.Unlock()
@@ -112,6 +112,7 @@ func (f *FakeWindows) OverlayShown() (shown bool, label string) {
 // FakeApprovalWindow は偽の承認ダイアログ。
 type FakeApprovalWindow struct {
 	id     string
+	kind   string
 	once   sync.Once
 	closed chan struct{}
 
@@ -121,6 +122,9 @@ type FakeApprovalWindow struct {
 
 // ID は承認要求の ID。
 func (w *FakeApprovalWindow) ID() string { return w.id }
+
+// Kind は承認要求の種類（service.ApprovalKind*）。
+func (w *FakeApprovalWindow) Kind() string { return w.kind }
 
 // Close は Window。何度呼んでもよい（回数は Closes）。
 func (w *FakeApprovalWindow) Close() {

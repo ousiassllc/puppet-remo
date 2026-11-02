@@ -11,6 +11,8 @@ import (
 // approvalDialogs は Bus の approval を購読して承認ダイアログを開き、承認が終わったら（許可・拒否・60 秒の失効・取り下げ）閉じる（FR-H05）。
 //
 // 振る舞い（docs/components/overview.md §7、§13.6）:
+//   - 種類（lease・safety_check・judge_action。FR-H05）にかかわらず、承認要求ごとにダイアログを開く。safety_check・judge_action は内容の説明（Detail）の
+//     分だけ背が高いウィンドウにする（Windows.OpenApproval の kind）。
 //   - ダイアログは同時に 1 つだけ開く。重なった要求は到着順（Approval.Pending の順）に待たせ、今の要求が終わったら（approval-closed）、
 //     まだ承認待ちの次の要求のダイアログを開く。待たされた要求の 60 秒は、その要求自身の到着時刻から数える
 //     （ExpiresAt。待っている間に失効した要求は Pending に残らないので開かない）。
@@ -56,7 +58,7 @@ func (d *approvalDialogs) Watch(ctx context.Context) <-chan struct{} {
 }
 
 // sync は承認待ちの今の状態に開閉を合わせる: 今の要求が終わっていればそのダイアログを閉じ、ダイアログが空いていれば、
-// まだ開いていない承認待ちの lease の要求のうち到着が最も早いものを開く。
+// まだ開いていない承認待ちの要求のうち到着が最も早いものを開く。
 // Bus は遅い購読者のイベントを捨てうるので、イベントの種類や ID ではなく、Pending を真実の源にする。
 // 呼び出しは Watch の goroutine だけ（テストは直接呼んで開閉の順序を決定的にする）。
 func (d *approvalDialogs) sync() {
@@ -89,16 +91,13 @@ func (d *approvalDialogs) sync() {
 		return
 	}
 	for _, r := range pending {
-		if r.Kind != service.ApprovalKindLease { // safety_check・judge_action は M4
-			continue
-		}
 		d.mu.Lock()
 		seen := d.opened[r.ID]
 		d.mu.Unlock()
 		if seen {
 			continue
 		}
-		w := d.windows.OpenApproval(r.ID)
+		w := d.windows.OpenApproval(r.ID, r.Kind)
 		d.mu.Lock()
 		d.current, d.window = r.ID, w
 		d.opened[r.ID] = true

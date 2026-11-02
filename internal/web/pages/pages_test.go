@@ -46,6 +46,19 @@ func TestLayoutLoadsOnlyLocalExternalScriptsInOrder(t *testing.T) {
 	}
 }
 
+var sampleTaskList = view.TaskList{
+	Rows:    []view.TaskRow{{ShortID: "00RUN001", DetailURL: "/tasks/t1", Client: "c", PromptExcerpt: "p", Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "1 / 50", Created: "2026-11-02 12:00", Elapsed: "5秒"}},
+	NextURL: "/tasks?cursor=abc",
+}
+
+func sampleTaskDetail(chrome view.Chrome) view.TaskDetail {
+	return view.TaskDetail{
+		Chrome: chrome, ID: "t1", Prompt: "p", BackURL: "/tasks", ResultText: "r", ResultNote: "n",
+		Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "1 / 50", Elapsed: "5秒", CancelURL: "/tasks/t1/cancel"},
+		Steps:  []view.TaskStepRow{{No: 1, Route: "fast", RouteLabel: "高速パス", Summary: "s", Result: "ok", AuditURL: "/audit/1", ThumbURL: "/audit/1/thumbnail", Args: []view.AuditArg{{Key: "k", Value: "v"}}}},
+	}
+}
+
 func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 	chrome := view.Chrome{Active: view.NavClients}
 	forms := map[string]string{
@@ -59,6 +72,8 @@ func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 		"apps":             webtest.Render(t, pages.Apps(view.Apps{Chrome: chrome, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}})),
 		"agent":            webtest.Render(t, pages.AgentSettings(view.AgentSettings{Chrome: chrome})),
 		"error":            webtest.Render(t, pages.Error(view.ErrorPage{Chrome: chrome, Code: "not_found", Title: "x"})),
+		"tasks":            webtest.Render(t, pages.Tasks(view.TaskListPage{Chrome: chrome, List: sampleTaskList})),
+		"task detail":      webtest.Render(t, pages.TaskDetail(sampleTaskDetail(chrome))),
 
 		"dashboard boosted":        webtest.Render(t, pages.DashboardBoosted(view.Dashboard{Chrome: chrome})),
 		"requests boosted":         webtest.Render(t, pages.RequestsBoosted(view.Requests{Chrome: chrome})),
@@ -70,6 +85,8 @@ func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 		"apps boosted":             webtest.Render(t, pages.AppsBoosted(view.Apps{Chrome: chrome, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}})),
 		"agent boosted":            webtest.Render(t, pages.AgentSettingsBoosted(view.AgentSettings{Chrome: chrome})),
 		"error boosted":            webtest.Render(t, pages.ErrorBoosted(view.ErrorPage{Chrome: chrome, Code: "not_found"})),
+		"tasks boosted":            webtest.Render(t, pages.TasksBoosted(view.TaskListPage{Chrome: chrome, List: sampleTaskList})),
+		"task detail boosted":      webtest.Render(t, pages.TaskDetailBoosted(sampleTaskDetail(chrome))),
 	}
 	for name, out := range forms {
 		t.Run(name, func(t *testing.T) {
