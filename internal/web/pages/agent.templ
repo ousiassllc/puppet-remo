@@ -1,0 +1,31 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const agentTitle = "エージェント"
+
+templ agentBody(v view.AgentSettings) {
+	<div class="max-w-3xl space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">エージェント</h1>
+		<p class="text-sm text-slate-600" data-notice="agent-default-off">ホストに内蔵のエージェントは、既定では無効です。有効にしたときだけ、依頼を受けたタスクを OpenAI のモデルが画面を見て実行します。API キーと同意はこの画面（ホストの GUI）でだけ設定できます。</p>
+		@organisms.AgentSections(v)
+	</div>
+}
+
+// AgentSettings はエージェント設定のフルページ（FR-H11）。
+templ AgentSettings(v view.AgentSettings) {
+	@layout.GUI(agentTitle, v.Chrome) {
+		@agentBody(v)
+	}
+}
+
+// AgentSettingsBoosted は hx-boost の遷移への応答。
+templ AgentSettingsBoosted(v view.AgentSettings) {
+	@layout.Boosted(agentTitle, v.Chrome) {
+		@agentBody(v)
+	}
+}

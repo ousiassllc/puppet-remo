@@ -78,8 +78,9 @@ type Sessions struct{ Items []Session }
 // （強制剥奪は held のときだけ。docs に承認待ちの剥奪の記述が無いため現行の動きを変えない）。
 type Lease struct {
 	Held          bool
-	Pending       bool // 承認待ち（FR-L07）。「承認待ち: <名前>（種別）」を出す
-	CanRevoke     bool // 剥奪できる保持者（mcp・web）がいる（FR-L06。agent の剥奪は M4）
+	Pending       bool   // 承認待ち（FR-L07）。「承認待ち: <名前>（種別）」を出す
+	CanRevoke     bool   // 剥奪できる保持者（mcp・web・agent。FR-L06・L08）がいる
+	RevokeHint    string // 強制剥奪のボタンに添える説明（agent は「タスクが中断される」）。空なら出さない
 	HolderLabel   string
 	KindLabel     string // 保持者の種別（mcp など）
 	Since         string
@@ -104,6 +105,7 @@ type Dashboard struct {
 	Sessions   Sessions
 	Lease      Lease
 	KillSwitch KillSwitch
+	Tasks      RunningTasks // 実行中のタスク（M4。FR-H02）。空ならパネルは中身を出さない
 }
 
 // ApprovalModeOption は承認モードの選択肢（常時承認・初回のみ承認・自動許可。FR-H03）。
@@ -549,19 +551,32 @@ type ViewerToolbar struct {
 }
 
 // ViewerLease はビューアのリースパネル（FR-W08）。保持者の種別・名前・状態は常に出し、操作は Can* が true のものだけを描画する（状態駆動）。
-// CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web）が保持しているとき。
+// CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web・agent）が保持しているとき。
 // Pending は承認待ち（pending_approval。FR-L07）で、HolderLabel・KindLabel が要求者、PendingMine が要求者本人。承認待ちの間は
 // Held・Mine・Can* がすべて false（操作権を持たず、取得も解放も強制剥奪もできない）。
+// Task は保持者が agent のとき、実行中のタスクの要約（FR-W08。読めたときだけ）。
 type ViewerLease struct {
 	Held        bool
 	Mine        bool
 	Pending     bool
 	PendingMine bool
 	HolderLabel string
-	KindLabel   string // 保持者（承認待ちなら要求者）の種別（mcp / web）
+	KindLabel   string // 保持者（承認待ちなら要求者）の種別（mcp / web / agent）
 	CanAcquire  bool
 	CanRelease  bool
 	CanRevoke   bool
+	Task        *ViewerTask
+}
+
+// ViewerTask はビューアのリースパネルに出す、実行中のエージェントのタスクの要約（FR-W08）。ビューアはタスクの依頼元とは別の
+// クライアントなので、指示（prompt）と最終回答は持たない（状態・ステップ数・上限・開始時刻・依頼元の表示名だけ）。
+type ViewerTask struct {
+	Status    string // 状態の表示（承認待ち / 実行中）
+	Steps     string // 「3 / 50」（実行したステップ数 / 上限）
+	Elapsed   string // 経過時間（開始から。承認待ちは「-」）
+	MaxTime   string // 実行時間の上限の表示
+	StartedAt string // 開始時刻（HH:MM:SS。承認待ちは空）
+	Requester string // 依頼元のクライアントの表示名
 }
 
 // KeyMenuItem はショートカット送信メニューの 1 項目。Keys は API 仕様 §3.3 の `keys` の書式。
@@ -596,12 +611,17 @@ type RemoteError struct {
 }
 
 // ApprovalDialog は承認ダイアログ（/approvals/{id}。専用の Wails ウィンドウの中身。FR-H05）。表示するのはクライアント名・種別・
-// 要求の内容・残り時間だけで、秘密・パス・引数は持たない。
+// 要求の内容・残り時間だけで、秘密・パス・引数は持たない。M4 の safety_check・judge_action は、サービスが秘密・入力した文字列の本文・
+// パスを除いて渡す Detail（短い説明）を出す。
 type ApprovalDialog struct {
 	ID          string
+	Kind        string // lease | safety_check | judge_action（data-approval-type）
+	Heading     string // ダイアログの見出し（種類ごと）
 	ClientLabel string
-	KindLabel   string // クライアントの種別（mcp / web）
-	Summary     string // 要求の内容（lease: 「操作権（リース）の取得」）
+	KindLabel   string // 要求元の種別（mcp / web / エージェント）
+	Summary     string // 要求の内容（種類ごとの 1 文）
+	Detail      string // safety_check の安全チェックの文面・judge_action の対象アクションの要約。lease は空
+	Note        string // 結果の説明（safety_check は「自動許可でも省略できない」と、拒否・時間切れでタスクが失敗すること）
 	Remaining   ApprovalRemaining
 	AllowURL    string
 	DenyURL     string
@@ -627,5 +647,6 @@ type ApprovalGone struct {
 
 // Overlay は操作中オーバーレイ（GET /overlay。#69）。画面の枠と短い文言だけを出す（秘密・パス・引数は持たない）。
 type Overlay struct {
-	Label string // 「操作中: <クライアント名>（<種別>）」。長さは制限済み
+	Label  string // 「操作中: <クライアント名>（<種別>）」。長さは制限済み
+	Detail string // 補足（agent の「エージェント実行中: <指示の要約>」。FR-H07）。無ければ空。長さは制限済み
 }

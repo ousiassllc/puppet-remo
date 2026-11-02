@@ -354,7 +354,7 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 		}
 		return "key_" + string(o.Action), args
 	case domain.KeyPress:
-		return "key", map[string]any{"keys": o.Keys.String()}
+		return "key", keyPressArgs(o.Keys)
 	case domain.TypeText:
 		return "type", map[string]any{"text_len": utf8.RuneCountInString(o.Text)}
 	case domain.FocusWindow:
@@ -375,8 +375,28 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 // type は 10,000 文字、クリップボードは 1 MiB まで受け付けるが、監査の行を肥大させないため切り詰める。
 const recordedTextMaxRunes = 4096
 
+// keyPressRedacted は監査の keys に、表示できる 1 文字のキーの代わりに入れる印。
+const keyPressRedacted = "[char]"
+
+// isTypedCharacterKey は k のキーが表示できる 1 文字（文字・数字・記号）か。パスワードなどを 1 文字ずつ key で打てるので、
+// type の本文と同じく監査には残さない（FR-AU03）。enter・tab・escape・方向キー・f1 などの名前つきのキーと、修飾キーは名前を残す。
+func isTypedCharacterKey(k domain.KeyCombo) bool {
+	return utf8.RuneCountInString(k.Key) == 1
+}
+
+// keyPressArgs は key の監査の引数。表示できる 1 文字のキーは keys にその文字を入れず（`ctrl+[char]`）、文字数 text_len = 1 だけを残す。
+// 本文は設定 audit.record_text が true のときだけ addRecordedText が text に足す。
+func keyPressArgs(k domain.KeyCombo) map[string]any {
+	if !isTypedCharacterKey(k) {
+		return map[string]any{"keys": k.String()}
+	}
+	masked := k
+	masked.Key = keyPressRedacted
+	return map[string]any{"keys": masked.String(), "text_len": 1}
+}
+
 // addRecordedText は、設定 audit.record_text（既定 false）が true のとき、type の本文とクリップボードの内容（clipboard_read の結果を含む）
-// を args["text"] に足す（FR-AU03、FR-S07）。トークン（prm_…）・Bearer の形の文字列は、本文の中にあっても先に伏せる（トークンはどの設定でも記録しない。NFR-S13）。
+// と、key の表示できる 1 文字（keyPressArgs が伏せたもの）を args["text"] に足す（FR-AU03、FR-S07）。トークン（prm_…）・Bearer の形の文字列は、本文の中にあっても先に伏せる（トークンはどの設定でも記録しない。NFR-S13）。
 // 伏せたあとの文字列が recordedTextMaxRunes を超えるときは切り詰めて args["text_truncated"] = true を付ける（text_len は元の長さ）。
 // 設定が読めない・真偽値でないときは記録しない側に倒す。
 func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result, args map[string]any) {
@@ -388,6 +408,11 @@ func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result,
 		text = o.Text
 	case domain.ClipboardRead:
 		text = res.Text
+	case domain.KeyPress:
+		if !isTypedCharacterKey(o.Keys) {
+			return
+		}
+		text = o.Keys.Key
 	default:
 		return
 	}

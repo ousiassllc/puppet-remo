@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -14,6 +15,8 @@ import (
 //
 // 振る舞い（docs/components/overview.md §7・§13.6）:
 //   - リースが held になったら、全モニターにオーバーレイを出す。ラベルは「操作中: <クライアント名>（<種別>）」。保持者が変われば更新する。
+//     保持者が agent（内蔵エージェントのタスク）のときは、2 行目に「エージェント実行中: <指示の要約>」を添える（FR-H07）。
+//     指示はタスク（Actor.SessionID = task_id）から読む。読めなければ「エージェント実行中」だけ。
 //   - held でなくなったら（解放・アイドル解放・強制剥奪・キルスイッチ・切断）、または承認待ち（pending_approval）の間は隠す。
 //   - モニター一覧が取れない・0 台のときはログに残すだけで、リースの取得は妨げない（オーバーレイは出さない）。
 //
@@ -23,14 +26,20 @@ type overlayController struct {
 	leases  service.LeaseManager
 	capture platform.Capturer
 	bus     *service.Bus
+	tasks   taskReader // agent の指示の要約を読む。nil なら要約は添えない
 	log     *slog.Logger
 
 	mu    sync.Mutex
 	shown string // 今出しているオーバーレイのラベル（出していなければ空）
 }
 
-func newOverlayController(w Windows, leases service.LeaseManager, capture platform.Capturer, bus *service.Bus, log *slog.Logger) *overlayController {
-	return &overlayController{windows: w, leases: leases, capture: capture, bus: bus, log: log}
+// taskReader はタスクの読み取り（service.TaskAdmin が満たす）。
+type taskReader interface {
+	Detail(ctx context.Context, id string) (service.TaskDetail, error)
+}
+
+func newOverlayController(w Windows, leases service.LeaseManager, capture platform.Capturer, bus *service.Bus, tasks taskReader, log *slog.Logger) *overlayController {
+	return &overlayController{windows: w, leases: leases, capture: capture, bus: bus, tasks: tasks, log: log}
 }
 
 // Watch は購読を（戻る前に）済ませて、リースの変化に従ってオーバーレイを出し入れする goroutine を始める。ctx の終了で、
@@ -62,7 +71,7 @@ func (o *overlayController) sync(ctx context.Context) {
 		o.hide()
 		return
 	}
-	label := overlayLabel(h.Actor)
+	label := o.label(ctx, h.Actor)
 	o.mu.Lock()
 	same := o.shown == label
 	o.mu.Unlock()
@@ -91,6 +100,26 @@ func (o *overlayController) hide() {
 	}
 }
 
+// overlaySummaryMaxRunes は agent のオーバーレイに添える指示の要約の長さの上限（文字数）。
+const overlaySummaryMaxRunes = 40
+
+// label は h の保持者のオーバーレイの文言。agent のときは指示の要約を 2 行目に添える。
+func (o *overlayController) label(ctx context.Context, a domain.Actor) string {
+	if a.Kind != domain.ActorAgent {
+		return overlayLabel(a)
+	}
+	var prompt string
+	if o.tasks != nil && a.SessionID != "" {
+		d, err := o.tasks.Detail(ctx, a.SessionID)
+		if err != nil {
+			o.log.Debug("operation overlay: cannot read the agent task", "err", err)
+		} else {
+			prompt = d.Prompt
+		}
+	}
+	return overlayAgentLabel(a, prompt)
+}
+
 // overlayLabel はオーバーレイに添える文言「操作中: <クライアント名>（<種別>）」。名前が空ならクライアント ID を使う。
 // 長さの制限と HTML のエスケープは、描画する側（GET /overlay）が行う。
 func overlayLabel(a domain.Actor) string {
@@ -99,6 +128,25 @@ func overlayLabel(a domain.Actor) string {
 		name = a.ClientID
 	}
 	return "操作中: " + name + "（" + overlayKindLabel(a.Kind) + "）"
+}
+
+// overlayAgentLabel は agent のオーバーレイの文言（FR-H07）: 1 行目は overlayLabel、2 行目は「エージェント実行中」と指示の要約
+// （空白をたたんで 40 文字まで。指示が無ければ「エージェント実行中」だけ）。2 行は改行で区切る（GET /overlay が分ける）。
+func overlayAgentLabel(a domain.Actor, prompt string) string {
+	line := "エージェント実行中"
+	if summary := summarizePrompt(prompt, overlaySummaryMaxRunes); summary != "" {
+		line += ": " + summary
+	}
+	return overlayLabel(a) + "\n" + line
+}
+
+// summarizePrompt は指示の空白（改行を含む）を 1 つにたたみ、max 文字を超えれば末尾を「…」にする。
+func summarizePrompt(s string, max int) string {
+	r := []rune(strings.Join(strings.Fields(s), " "))
+	if len(r) <= max {
+		return string(r)
+	}
+	return string(r[:max-1]) + "…"
 }
 
 func overlayKindLabel(k domain.ActorKind) string {

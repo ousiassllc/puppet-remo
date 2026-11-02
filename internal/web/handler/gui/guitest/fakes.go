@@ -45,6 +45,9 @@ type Fakes struct {
 	Logs       *Logs
 	Audit      *Audit
 	Updates    *Updates
+
+	AgentSettings *AgentSettings
+	Tasks         *Tasks
 }
 
 // New は空の状態の Fakes を返す。時計は 2026-10-30 12:00 UTC。
@@ -62,9 +65,12 @@ func New() *Fakes {
 		Approval:   &Approval{},
 		Apps:       &Apps{},
 		Audit:      &Audit{},
+		Tasks:      &Tasks{clock: clock},
 		Updates: &Updates{Current: service.UpdateStatus{
 			CurrentVersion: "0.1.0", Channel: domain.ChannelStable, ApplyMode: service.UpdateApplyConfirm, Updatable: true, KeyConfigured: true,
 		}},
+		AgentSettings: NewAgentSettings(clock),
+
 		Logs: &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
 		Settings: &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
 			AuditThumbnailsEnabled: true, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: service.UpdateApplyConfirm, UpdateChannel: "stable"}, CanAutostart: true},
@@ -75,7 +81,7 @@ func New() *Fakes {
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
 		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin, Approval: f.Approval,
-		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Updates: f.Updates, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
+		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Updates: f.Updates, AgentSettings: f.AgentSettings, Tasks: f.Tasks, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
 

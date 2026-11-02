@@ -33,6 +33,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 `TestSmokeInstaller`（`platform.Installer` の契約。`whoami.exe` の複製を `/S` で起動する。本物のインストーラは動かさない。§4.13）は、画面にも設定にも触れない。
 
+`TestSmokeSecretStore`（`platform.SecretStore` の契約。資格情報マネージャーへ、実行ごとに変わる専用の名前 `puppet-remo/contract-<乱数>` で保存・上書き・削除する。終了時に消すので、本物のターゲット名 `puppet-remo/openai:puppet-remo`・`puppet-remo/typesafe:puppet-remo` には触れない。M4・#19）は、画面にも設定にも触れない。実際のターゲット名は `<名前>:puppet-remo`（[components §13.3](../components/overview.md)）。
+
 `TestSmokeCapturer`（`Grab` と `Watch` の契約）、`TestSmokeCapturerWatchAllMonitors`（全モニターの `Watch` を同時に開く）、`TestSmokeWindowManager` は画面を読むだけで、副作用はない。`go test` は成功（`PASS`）し、`SKIP` が出た項目は上の環境変数を設定して再実行する。
 
 ## 3. 機能ごとの確認項目（手動）

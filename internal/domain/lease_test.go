@@ -166,8 +166,8 @@ func TestLeaseAcquire(t *testing.T) {
 		}
 	})
 
-	t.Run("保持者種別は mcp と web のみ（agent は M4）", func(t *testing.T) {
-		for _, kind := range []domain.ActorKind{domain.ActorAgent, domain.ActorHost, domain.ActorSystem, ""} {
+	t.Run("保持者種別は mcp・web・agent のみ", func(t *testing.T) {
+		for _, kind := range []domain.ActorKind{domain.ActorHost, domain.ActorSystem, ""} {
 			m, _ := newMachine(t, domain.DefaultLeaseIdleTimeout)
 			who := domain.Actor{Kind: kind, SessionID: "s"}
 			if _, events, err := m.Acquire(who); !errors.Is(err, domain.ErrInvalidArgument) || len(events) != 0 {
@@ -175,6 +175,28 @@ func TestLeaseAcquire(t *testing.T) {
 			}
 			if m.State() != domain.LeaseIdle {
 				t.Errorf("kind %q: state = %s, want idle", kind, m.State())
+			}
+		}
+	})
+
+	t.Run("agent は保持者になれ、他の種別は lease_held_by_other になる（FR-L08）", func(t *testing.T) {
+		m, _ := newMachine(t, domain.DefaultLeaseIdleTimeout)
+		agent := domain.Actor{Kind: domain.ActorAgent, ClientID: "client-a", Label: "task", SessionID: "task-1"}
+		l := mustAcquire(t, m, agent)
+		if l.Holder != agent {
+			t.Errorf("holder = %+v, want %+v", l.Holder, agent)
+		}
+		if _, err := m.Check(agent); err != nil {
+			t.Errorf("Check(agent) = %v, want nil", err)
+		}
+		for name, who := range map[string]domain.Actor{"mcp": mcpActor("m"), "web": webActor("w")} {
+			_, _, err := m.Acquire(who)
+			var de *domain.Error
+			if !errors.Is(err, domain.ErrLeaseHeldByOther) || !errors.As(err, &de) || de.Detail["holder_kind"] != "agent" {
+				t.Errorf("%s: Acquire err = %v, want ErrLeaseHeldByOther with holder_kind agent", name, err)
+			}
+			if _, err := m.Check(who); !errors.Is(err, domain.ErrLeaseHeldByOther) {
+				t.Errorf("%s: Check err = %v, want ErrLeaseHeldByOther", name, err)
 			}
 		}
 	})
@@ -409,7 +431,7 @@ func TestActorKindCanHoldLease(t *testing.T) {
 	}{
 		{domain.ActorMCP, true},
 		{domain.ActorWeb, true},
-		{domain.ActorAgent, false},
+		{domain.ActorAgent, true},
 		{domain.ActorHost, false},
 		{domain.ActorSystem, false},
 		{"", false},
@@ -486,6 +508,20 @@ func TestLeaseRevoke(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertEvents(t, events, wantEvent{domain.LeaseHeld, domain.LeaseIdle, domain.ReleaseRevoked, "viewer"})
+	})
+
+	t.Run("agent の保持者を剥奪でき、そのタスクの次の Check は ErrLeaseRevoked（FR-L08）", func(t *testing.T) {
+		m, _ := newMachine(t, time.Minute)
+		agent := domain.Actor{Kind: domain.ActorAgent, SessionID: "task-1"}
+		mustAcquire(t, m, agent)
+		events, err := m.Revoke(hostActor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertEvents(t, events, wantEvent{domain.LeaseHeld, domain.LeaseIdle, domain.ReleaseRevoked, "task-1"})
+		if err := checkOnly(m, agent); !errors.Is(err, domain.ErrLeaseRevoked) {
+			t.Errorf("Check by the revoked agent = %v, want ErrLeaseRevoked", err)
+		}
 	})
 
 	t.Run("保持者がいなければ何もしない（冪等）", func(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 //	ヘッダーのキルスイッチのバッジ・サイドバーの接続要求の件数  → 常に
 //	ダッシュボードの #server-status・#sessions・#lease            → クエリ rev_killswitch があるとき（ダッシュボードを表示中）
 //	キルスイッチのパネル                                         → rev_killswitch があり、版が違うとき
+//	ダッシュボードの実行中タスク（#running-tasks）                 → rev_tasks があり、版が違うとき（M4）
 //	接続要求の一覧                                               → rev_requests があり、版が違うとき
 //	トースト                                                     → 前回の呼び出し以降に溜まった分
 //
@@ -38,6 +39,11 @@ func (h *Handler) Poll(c *gin.Context) {
 	if rev, shown := c.GetQuery("rev_requests"); shown && pendingErr == nil {
 		if list := h.requestListView(pending); list.Rev != rev {
 			comps = append(comps, organisms.ConnectionRequestListOOB(list))
+		}
+	}
+	if rev, shown := c.GetQuery("rev_tasks"); shown {
+		if tasks := h.runningTasksView(c.Request.Context()); tasks.Rev != rev {
+			comps = append(comps, organisms.RunningTasksOOB(tasks))
 		}
 	}
 	if rev, shown := c.GetQuery("rev_killswitch"); shown {

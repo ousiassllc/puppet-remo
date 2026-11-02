@@ -12,6 +12,24 @@
 // ホスト GUI（ダッシュボード）は別のポートで配信する。接続元のデバイスは、ホスト GUI のポートの
 // /__demo/identity?as=registered|unregistered で切り替える（未登録なら待機ページになる）。
 //
+// -agent-demo で、内蔵エージェント（run_task / get_task / cancel_task）をオフラインで最後まで動かせる。OpenAI も TypeSafe も呼ばない:
+// app.Config.OpenAIModel（テスト・デモ専用の差し替え口）に台本つきの偽のモデル（クリック → 文字入力 → 最終回答。1 ステップ約 1.5 秒）を渡し、
+// 偽の SecretStore には「登録済み」を示すだけのダミーのキーを入れる。設定でエージェントを有効にして同意を記録し、デモのクライアントの
+// agent_enabled を有効にし、Bearer トークン（明らかなダミー。ログにも出る）を作る。タスクの実行中は、オーバーレイ（偽のウィンドウのログ）・
+// ダッシュボードの実行中のタスク・/tasks が見られ、ホスト GUI の中断ボタンやキルスイッチで中断できる。-agent-safety-check を足すと、
+// 台本の 2 ステップ目に OpenAI の安全チェックが付き、承認要求（kind=safety_check）の id がログに出る（-approval always のときはリース承認も同じ要領）。
+//
+// run_task の呼び出し（MCP の Streamable HTTP。Host は偽の tailnet IP。応答は JSON か SSE のどちらでもよい）:
+//
+//	T=prm_DEMO-dummy-token-not-a-secret-0123456789xxA
+//	H='-H Host:100.64.0.1:8765 -H Authorization:Bearer'" $T"' -H Content-Type:application/json -H Accept:application/json,text/event-stream'
+//	SID=$(curl -si $H -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' //	  http://127.0.0.1:8765/mcp | tr -d '\r' | sed -n 's/^[Mm]cp-[Ss]ession-[Ii]d: //p')
+//	curl -s $H -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' http://127.0.0.1:8765/mcp
+//	curl -s $H -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_task","arguments":{"prompt":"Type a greeting into Notes"}}}' http://127.0.0.1:8765/mcp
+//	curl -s $H -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_task","arguments":{"task_id":"<task_id>"}}}' http://127.0.0.1:8765/mcp
+//
+// （リモートのルーターへ直接 curl する。ブラウザと違い、ホスト名の解決は要らない: Host ヘッダーだけを偽の tailnet IP にする。）
+//
 // -approval always にすると、デモのクライアントは毎回承認が要る（既定の auto は承認なしでリースを取る）。ビューアの取得ボタンは
 // 決まるまで応答せず、承認要求の id がログに出る。ホスト GUI の /approvals/{id} で許可・拒否する（60 秒放置するとタイムアウト）。
 package main
@@ -37,6 +55,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform/platformtest"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/tailnet"
 	"github.com/ousiassllc/puppet-remo/static"
 )
@@ -52,9 +71,11 @@ const (
 func main() {
 	remoteAddr := flag.String("addr", "127.0.0.1:"+demoPort, "リモートルーターの待ち受けアドレス（loopback のみ。ポートは "+demoPort+" 固定）")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:8899", "ホスト GUI の待ち受けアドレス（loopback のみ）")
+	agentDemo := flag.Bool("agent-demo", false, "内蔵エージェントをオフラインで動かす（台本つきの偽のモデル。OpenAI・TypeSafe は呼ばない。使い方はこのファイルの先頭のコメント）")
+	agentSafety := flag.Bool("agent-safety-check", false, "-agent-demo の台本の 2 ステップ目に OpenAI の安全チェック（承認ダイアログ）を付ける")
 	approval := flag.String("approval", string(domain.ApprovalAuto), "デモのクライアントの承認モード（auto: 承認なしでリースを取る / always: 毎回承認。承認要求の id はログに出る）")
 	flag.Parse()
-	if err := run(*remoteAddr, *guiAddr, domain.ApprovalMode(*approval)); err != nil {
+	if err := run(*remoteAddr, *guiAddr, domain.ApprovalMode(*approval), *agentDemo, *agentSafety); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -73,7 +94,7 @@ func checkLoopback(flagName, addr, wantPort string) error {
 	return nil
 }
 
-func run(remoteAddr, guiAddr string, approval domain.ApprovalMode) error {
+func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, agentSafety bool) error {
 	if approval != domain.ApprovalAuto && approval != domain.ApprovalAlways {
 		return fmt.Errorf("remotedemo: -approval は auto / always のどちらか（%q）", approval)
 	}
@@ -99,9 +120,18 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode) error {
 
 	if err := db.Clients().Create(ctx, domain.Client{
 		ID: registeredID, StableNodeID: "node-demo-1", LoginName: "demo-user@example.com", DisplayName: "demo-laptop",
-		WebEnabled: true, MCPEnabled: true, ApprovalMode: approval, // 既定の auto は承認を待たずにリースを取る。always は承認ダイアログ（偽のウィンドウ）を開き、ホスト GUI の /approvals/{id} で決める
+		WebEnabled: true, MCPEnabled: true, AgentEnabled: agentDemo, ApprovalMode: approval, // 既定の auto は承認を待たずにリースを取る。always は承認ダイアログ（偽のウィンドウ）を開き、ホスト GUI の /approvals/{id} で決める
 	}); err != nil {
 		return err
+	}
+
+	secrets := platformtest.NewFakeSecretStore()
+	var model service.AgentModel // nil なら本物（デモではキーが無いので呼ばれない）
+	if agentDemo {
+		if err := registerAgentDemo(ctx, db, secrets, registeredID); err != nil {
+			return err
+		}
+		model = &demoModel{safetyCheck: agentSafety}
 	}
 
 	sc := newScene()
@@ -126,14 +156,22 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode) error {
 			Capturer: newCapturer(sc), Input: &input{FakeInput: platformtest.NewFakeInput(), scene: sc, log: logger},
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
 			Launcher: platformtest.NewFakeAppLauncher(), FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
-			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
+			Secrets: secrets,
+			Hotkey:  platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
 		},
 		Watcher: watcher, WhoIs: whois,
 		Static: mustStatic(), Logs: app.NewLogReader(dir),
-		Version: "demo", Logger: logger,
+		Version: "demo", Logger: logger, OpenAIModel: model,
 		// tailnet の IP の代わりに、-addr の loopback で待ち受ける（IPv4 の 1 本だけ）。
-		ListenFunc: func(_ context.Context, _, _ string) (net.Listener, error) { return net.Listen("tcp4", remoteAddr) },
-		Closers:    []io.Closer{db},
+		// 接続の LocalAddr は偽の tailnet アドレスに見せる（MCP の SDK は loopback 宛ての Host 検査をするため。agentdemo.go）。
+		ListenFunc: func(_ context.Context, _, addr string) (net.Listener, error) {
+			ln, err := net.Listen("tcp4", remoteAddr)
+			if err != nil {
+				return nil, err
+			}
+			return tailnetFacade{Listener: ln, local: addr}, nil
+		},
+		Closers: []io.Closer{db},
 	})
 	if err != nil {
 		return err
@@ -151,6 +189,9 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode) error {
 		return err
 	}
 	log.Printf("remotedemo: viewer http://%s:%s/viewer (Host は %s: --host-resolver-rules=\"MAP %s %s\")", demoTailnet, demoPort, demoTailnet, demoTailnet, "127.0.0.1")
+	if agentDemo {
+		logAgentDemo(remoteAddr)
+	}
 	log.Printf("remotedemo: host GUI http://%s/  identity switch http://%s/__demo/identity?as=unregistered", ln.Addr(), ln.Addr())
 
 	go func() {

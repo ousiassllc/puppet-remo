@@ -59,7 +59,7 @@ var codeStatus = map[Code]int{
 	CodeWindowNotFound:      404,
 	CodeInputBlocked:        409,
 	CodeDesktopUnavailable:  503,
-	CodeAgentDisabled:       403,
+	CodeAgentDisabled:       409,
 	CodeTaskNotFound:        404,
 	CodeAppNotFound:         404,
 	CodeLaunchFailed:        409,

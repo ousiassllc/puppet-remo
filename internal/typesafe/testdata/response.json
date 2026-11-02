@@ -1,0 +1,18 @@
+{
+  "model": "jev-1.13",
+  "answers": {
+    "next": {
+      "type": "choice",
+      "choice": "b1c2d3e4f5a60718",
+      "confidence": 0.91,
+      "probabilities": {
+        "b1c2d3e4f5a60718": 0.93,
+        "0a1b2c3d4e5f6071": 0.03,
+        "reobserve": 0.02,
+        "abstain": 0.02
+      }
+    },
+    "goal_maybe_done": {"type": "noul", "noul": 0.12}
+  },
+  "usage": {"input_tokens": 310, "output_tokens": 14}
+}

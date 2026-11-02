@@ -130,3 +130,80 @@ func TestControlRecordTextIgnoresInvalidSetting(t *testing.T) {
 		t.Fatalf("detail = %v", d)
 	}
 }
+
+// key の監査（FR-AU03）: 表示できる 1 文字のキーは keys に残さない（パスワードを 1 文字ずつ key で打てるため、type の本文と同じ扱い）。
+// 名前つきのキー（enter・tab・escape・方向キー・f1）と修飾キーの名前は残す。本文は audit.record_text が true の mcp / web だけ text に入る。
+func TestControlKeyPressAuditRedactsTypedCharacters(t *testing.T) {
+	keys := func(s string) domain.Op {
+		k, err := domain.ParseKeyCombo(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return domain.KeyPress{Keys: k}
+	}
+	tests := []struct {
+		keys    string
+		want    string // detail の keys
+		textLen bool   // text_len = 1 が付くか（伏せたとき）
+	}{
+		{"a", "[char]", true},
+		{"7", "[char]", true},
+		{"!", "[char]", true},
+		{"あ", "[char]", true},
+		{"shift+a", "shift+[char]", true},
+		{"ctrl+shift+t", "ctrl+shift+[char]", true},
+		{"enter", "enter", false},
+		{"tab", "tab", false},
+		{"escape", "escape", false},
+		{"space", "space", false},
+		{"left", "left", false},
+		{"f5", "f5", false},
+		{"ctrl+alt+tab", "ctrl+alt+tab", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.keys+" default", func(t *testing.T) {
+			e := newCtlEnv(t)
+			d := recordTextDetail(t, e, ctlAlice, keys(tt.keys))
+			if d["keys"] != tt.want {
+				t.Fatalf("keys = %v, want %q (detail %v)", d["keys"], tt.want, d)
+			}
+			if _, ok := d["text"]; ok {
+				t.Fatalf("the default must not record the character: %v", d)
+			}
+			if _, ok := d["text_len"]; ok != tt.textLen {
+				t.Fatalf("text_len presence = %v, want %v (detail %v)", ok, tt.textLen, d)
+			}
+		})
+		t.Run(tt.keys+" record_text", func(t *testing.T) {
+			e := newCtlEnv(t)
+			e.settings.put(settingAuditRecordText, "true")
+			d := recordTextDetail(t, e, ctlAlice, keys(tt.keys))
+			_, hasText := d["text"]
+			if hasText != tt.textLen {
+				t.Fatalf("text presence = %v, want %v (detail %v)", hasText, tt.textLen, d)
+			}
+			if d["keys"] != tt.want {
+				t.Fatalf("keys = %v, want %q", d["keys"], tt.want)
+			}
+		})
+	}
+
+	t.Run("web and agent never keep the character by default", func(t *testing.T) {
+		e := newCtlEnv(t)
+		mustAcquire(t, e, ctlViewer)
+		d := recordTextDetail(t, e, ctlViewer, keys("x"))
+		if d["keys"] != "[char]" {
+			t.Fatalf("web keys = %v", d["keys"])
+		}
+		je := newJudgeEnv(t, domain.ApprovalAuto, &stubJudge{v: domain.VerdictAllow})
+		je.settings.put(settingAuditRecordText, "true")
+		if _, err := je.control.Do(context.Background(), ctlAgent, keys("q")); err != nil {
+			t.Fatal(err)
+		}
+		for _, en := range je.audit.Entries() {
+			if strings.Contains(string(en.DetailJSON), `"q"`) || strings.Contains(string(en.DetailJSON), `"text"`) {
+				t.Errorf("agent audit keeps the character: %s", en.DetailJSON)
+			}
+		}
+	})
+}

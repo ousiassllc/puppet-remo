@@ -1,0 +1,55 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const (
+	tasksTitle      = "タスク"
+	taskDetailTitle = "タスクの詳細"
+)
+
+templ tasksBody(v view.TaskListPage) {
+	<div class="space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">タスク</h1>
+		<p class="text-sm text-slate-600">MCP クライアントが <code class="rounded bg-slate-100 px-1 py-0.5 text-xs">run_task</code> で依頼した、ホスト内蔵エージェントのタスクです。新しい順に表示します。実行中のタスクは詳細の画面（またはダッシュボード）から中断できます。ステップごとの操作と画像は、タスクの詳細と監査ログで確認できます。</p>
+		@organisms.TaskList(v.List)
+	</div>
+}
+
+// Tasks はタスク一覧のフルページ（FR-H10）。
+templ Tasks(v view.TaskListPage) {
+	@layout.GUI(tasksTitle, v.Chrome) {
+		@tasksBody(v)
+	}
+}
+
+// TasksBoosted は hx-boost の遷移への応答。
+templ TasksBoosted(v view.TaskListPage) {
+	@layout.Boosted(tasksTitle, v.Chrome) {
+		@tasksBody(v)
+	}
+}
+
+templ taskDetailBody(v view.TaskDetail) {
+	<div class="space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">タスクの詳細</h1>
+		@organisms.TaskDetail(v)
+	</div>
+}
+
+// TaskDetail はタスク 1 件の詳細のフルページ。
+templ TaskDetail(v view.TaskDetail) {
+	@layout.GUI(taskDetailTitle, v.Chrome) {
+		@taskDetailBody(v)
+	}
+}
+
+// TaskDetailBoosted は hx-boost の遷移への応答。
+templ TaskDetailBoosted(v view.TaskDetail) {
+	@layout.Boosted(taskDetailTitle, v.Chrome) {
+		@taskDetailBody(v)
+	}
+}

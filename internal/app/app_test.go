@@ -30,6 +30,8 @@ func TestNewRequiresDependencies(t *testing.T) {
 		"FilePicker": func(c *Config) { c.Platform.FilePicker = nil },
 		"Hotkey":     func(c *Config) { c.Platform.Hotkey = nil },
 		"Power":      func(c *Config) { c.Platform.Power = nil },
+		"Installer":  func(c *Config) { c.Platform.Installer = nil },
+		"Secrets":    func(c *Config) { c.Platform.Secrets = nil },
 		"Watcher":    func(c *Config) { c.Watcher = nil },
 		"WhoIs":      func(c *Config) { c.WhoIs = nil },
 		"Static":     func(c *Config) { c.Static = nil },

@@ -20,6 +20,9 @@ const (
 	MaxAuditLimit     = 200
 )
 
+// MaxTaskStepEntries は ListByTask が返す件数の上限（タスク 1 件のステップ数は agent.max_steps で抑えられるので、通常は届かない）。
+const MaxTaskStepEntries = 1000
+
 // AuditQuery は Query の絞り込み。空・ゼロの項目は絞り込まない。API 仕様 §7.3 の `GET /audit` のクエリに 1 対 1 で対応する。
 type AuditQuery struct {
 	From     time.Time // ts >= From
@@ -27,6 +30,7 @@ type AuditQuery struct {
 	ClientID string
 	Kind     string
 	Result   string
+	TaskID   string // task_id の完全一致（M4。タスクの詳細画面）
 	Q        string // event の部分一致（LIKE のワイルドカードは文字どおりに扱う）
 	Cursor   int64  // 直前のページの最後の id。0 なら先頭から
 	Limit    int    // 0 以下は DefaultAuditLimit、MaxAuditLimit を超える値は MaxAuditLimit
@@ -112,6 +116,9 @@ func (s auditStore) Query(ctx context.Context, q AuditQuery) ([]AuditEntry, int6
 	if q.ClientID != "" {
 		add("l.client_id = ?", q.ClientID)
 	}
+	if q.TaskID != "" {
+		add("l.task_id = ?", q.TaskID)
+	}
 	if q.Kind != "" {
 		add("l.kind = ?", q.Kind)
 	}
@@ -174,6 +181,28 @@ func (s auditStore) Get(ctx context.Context, id int64) (AuditEntry, error) {
 		return AuditEntry{}, ErrNotFound
 	}
 	return e, err
+}
+
+func (s auditStore) ListByTask(ctx context.Context, taskID string) ([]AuditEntry, error) {
+	if taskID == "" {
+		return nil, fmt.Errorf("%w: task id is empty", domain.ErrInvalidArgument)
+	}
+	rows, err := s.db.sql.QueryContext(ctx,
+		`SELECT `+fmt.Sprintf(auditColumns, "l.detail_json")+auditFrom+
+			` WHERE l.task_id = ? ORDER BY l.step_no, l.id LIMIT ?`, taskID, MaxTaskStepEntries)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	entries := []AuditEntry{}
+	for rows.Next() {
+		e, err := scanAuditEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
 }
 
 func (s auditStore) AttachThumb(ctx context.Context, auditID int64, t ThumbMeta) error {

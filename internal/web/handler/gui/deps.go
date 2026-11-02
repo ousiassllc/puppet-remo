@@ -111,6 +111,31 @@ type Updates interface {
 	Apply(ctx context.Context, by domain.ActorKind) error
 }
 
+// AgentSettings はエージェント設定（FR-H11。画面は /agent）の読み書き。実体は service.AgentSettings。
+// 監査（有効化・同意・高速パス。FR-G14・G22）は実体が記録するため、ハンドラは記録しない。API キーの値は、読み出しも戻り値にも無い（登録の有無だけ。NFR-S14）。
+// 項目の不備は *service.ValidationError、条件を満たさない有効化は domain.ErrAgentDisabled。
+type AgentSettings interface {
+	Load(ctx context.Context) (service.AgentSettingsView, error)
+	SaveAgent(ctx context.Context, in service.AgentSettingsInput) error
+	SetOpenAIKey(ctx context.Context, key string) error
+	DeleteOpenAIKey(ctx context.Context) error
+	SaveFastpath(ctx context.Context, in service.FastpathSettingsInput) error
+	SetTypeSafeKey(ctx context.Context, key string) error
+	DeleteTypeSafeKey(ctx context.Context) error
+}
+
+// Tasks はエージェントのタスクの一覧・詳細・実行中のタスクの読み取りと、ホスト所有者による中断（FR-H02・H10。M4）。
+// 実体は service.TaskAdmin。中断の監査（操作主体 host）は実体が記録するため、ハンドラは記録しない。
+type Tasks interface {
+	List(ctx context.Context, q service.TaskListQuery) (service.TaskPage, error)
+	// Detail は無ければ domain.ErrTaskNotFound。
+	Detail(ctx context.Context, id string) (service.TaskDetail, error)
+	// Running は実行中・承認待ちのタスク（高々 1 件）。
+	Running(ctx context.Context) ([]domain.Task, error)
+	// CancelByHost は終了済みなら現在の状態を返す。
+	CancelByHost(ctx context.Context, id string) (domain.Task, error)
+}
+
 // Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
@@ -129,8 +154,12 @@ type Deps struct {
 	Logs       Logs
 	Audit      Audit
 	Updates    Updates
+	Tasks      Tasks
 	Events     Events
 	Clock      domain.Clock
+
+	// AgentSettings はエージェント設定（M4。FR-H11）。
+	AgentSettings AgentSettings
 
 	// Location は表示する時刻のタイムゾーン。nil なら time.Local。
 	Location *time.Location
@@ -158,7 +187,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.AgentSettings == nil, d.Tasks == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

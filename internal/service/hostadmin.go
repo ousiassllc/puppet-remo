@@ -69,6 +69,12 @@ type SessionCloser interface {
 	CloseToken(tokenID string)
 }
 
+// ClientTaskCanceller は、クライアントの削除・無効化で、そのクライアントが依頼した実行中のタスクを中断する窓口（*AgentService が満たす。
+// FR-A09・G10）。reason は監査用（agent.task_end の detail.reason）。
+type ClientTaskCanceller interface {
+	CancelClient(clientID, reason string)
+}
+
 // HostAdmin はホスト所有者が GUI で行う許可リストの管理（FR-H03、FR-H04）。
 // すべて操作主体 host として監査ログに記録する。トークンの平文は監査・ログに出さない。
 //
@@ -102,7 +108,7 @@ type HostAdmin interface {
 	Tokens(ctx context.Context, clientID string) ([]TokenRecord, error)
 	// IssueToken はトークンを発行して平文を返す（平文を得られるのはこのときだけ）。ttl の意味は Authz.IssueToken と同じ。
 	IssueToken(ctx context.Context, clientID, label string, ttl *time.Duration) (plaintext string, err error)
-	// RevokeToken は clientID のトークン tokenID を失効し、そのセッションを切断する。
+	// RevokeToken は clientID のトークン tokenID を失効し、そのセッションを切断して、そのクライアントの実行中のタスクを中断する（FR-G10）。
 	RevokeToken(ctx context.Context, clientID, tokenID string) error
 }
 
@@ -114,11 +120,13 @@ type HostAdminConfig struct {
 	Authz        Authz
 	Leases       LeaseManager  // nil なら無効化・削除でリースを解放しない
 	Sessions     SessionCloser // nil なら切断しない
-	Audit        AuditRecorder // nil なら記録しない
-	Bus          *Bus          // nil なら通知しない
-	Clock        domain.Clock
-	IDs          domain.IDGen
-	Logger       *slog.Logger // nil なら slog.Default()
+	// Tasks は削除・Web / MCP / エージェントの無効化で、そのクライアントのタスクを中断する先（FR-A09・G10）。nil なら中断しない。
+	Tasks  ClientTaskCanceller
+	Audit  AuditRecorder // nil なら記録しない
+	Bus    *Bus          // nil なら通知しない
+	Clock  domain.Clock
+	IDs    domain.IDGen
+	Logger *slog.Logger // nil なら slog.Default()
 }
 
 type hostAdmin struct {
@@ -195,6 +203,7 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 		if replacedID != "" {
 			h.disconnect(replacedID, domain.ActorMCP)
 			h.disconnect(replacedID, domain.ActorWeb)
+			h.cancelTasks(replacedID, "client_replaced")
 		}
 	}()
 	h.approveMu.Lock()
@@ -326,6 +335,10 @@ func (h *hostAdmin) UpdateClient(ctx context.Context, id string, u ClientUpdate)
 	if before.WebEnabled && !after.WebEnabled {
 		h.disconnect(id, domain.ActorWeb)
 	}
+	// 無効化（Web・MCP・エージェント）したクライアントのタスクは中断する（FR-A09・G10。agent_enabled の変更でセッションは切らない）。
+	if before.MCPEnabled && !after.MCPEnabled || before.WebEnabled && !after.WebEnabled || before.AgentEnabled && !after.AgentEnabled {
+		h.cancelTasks(id, "client_disabled")
+	}
 	h.cfg.Logger.Info("client updated", "client_id", id, "device", after.DisplayName,
 		"web_enabled", after.WebEnabled, "mcp_enabled", after.MCPEnabled, "agent_enabled", after.AgentEnabled,
 		"approval_mode", string(after.ApprovalMode))
@@ -371,10 +384,18 @@ func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
 	}
 	h.disconnect(id, domain.ActorMCP)
 	h.disconnect(id, domain.ActorWeb)
+	h.cancelTasks(id, "client_deleted")
 	h.clearApprovalCooldown(id)
 	h.cfg.Logger.Info("client deleted", "client_id", id, "device", c.DisplayName)
 	h.audit(ctx, "client", "client.delete", c, map[string]any{"stable_node_id": c.StableNodeID, "login_name": c.LoginName})
 	return nil
+}
+
+// cancelTasks は clientID のタスクを中断する（Tasks が無ければ何もしない）。
+func (h *hostAdmin) cancelTasks(clientID, reason string) {
+	if h.cfg.Tasks != nil {
+		h.cfg.Tasks.CancelClient(clientID, reason)
+	}
 }
 
 // disconnect は clientID の kind のセッションを切断し、そのリースを解放する（承認待ちの取得は取り下げる）。
@@ -446,6 +467,12 @@ func (h *hostAdmin) RevokeToken(ctx context.Context, clientID, tokenID string) e
 	}
 	if h.cfg.Sessions != nil {
 		h.cfg.Sessions.CloseToken(tokenID)
+	}
+	// 漏れたトークンで始めたタスクを走らせ続けない（FR-G10）。タスクはトークンではなくクライアントに紐づくので、
+	// どのトークンで始めたかによらず、そのクライアントの実行中のタスクを中断する（削除・無効化と同じ cancelled）。
+	// 失効済みへの再実行（冪等。元の失効時刻を保つ）では中断しない: 別の有効なトークンで始めた無関係なタスクを巻き込まないため。
+	if tok.RevokedAt == nil {
+		h.cancelTasks(clientID, "token_revoked")
 	}
 	if h.cfg.Bus != nil {
 		h.cfg.Bus.Publish(Event{Topic: TopicSessions})

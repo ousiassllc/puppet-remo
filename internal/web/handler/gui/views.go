@@ -148,10 +148,24 @@ func (h *Handler) leaseView() view.Lease {
 		return view.Lease{}
 	}
 	label := actorLabel(holder.Actor)
-	return view.Lease{
-		Held: true, CanRevoke: holder.Actor.Kind.CanHoldLease(), HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
+	v := view.Lease{
+		Held: true, CanRevoke: hostCanRevoke(holder.Actor.Kind), HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
 		Since: h.formatTime(holder.Since), IdleRemaining: formatDuration(holder.IdleRemaining),
 	}
+	if v.CanRevoke && holder.Actor.Kind == domain.ActorAgent {
+		v.RevokeHint = "エージェントの操作権を剥奪すると、実行中のタスクが中断されます。"
+	}
+	return v
+}
+
+// hostCanRevoke は、ホスト所有者（このホスト GUI）が保持者の操作権を強制剥奪できるか。保持者になれる種別（mcp・web・agent）は
+// いずれも剥奪できる（FR-L06・L08。agent の剥奪はそのタスクの中断を伴う）。保持者になれない種別（host・system）は保持者にならないので出さない。
+func hostCanRevoke(k domain.ActorKind) bool {
+	switch k {
+	case domain.ActorMCP, domain.ActorWeb, domain.ActorAgent:
+		return true
+	}
+	return false
 }
 
 // actorLabel は操作主体の表示名。ラベルが空なら ClientID。
@@ -192,6 +206,7 @@ func (h *Handler) dashboardView(ctx context.Context) view.Dashboard {
 		Sessions:   h.sessionsView(),
 		Lease:      h.leaseView(),
 		KillSwitch: h.killSwitchView(),
+		Tasks:      h.runningTasksView(ctx),
 	}
 }
 

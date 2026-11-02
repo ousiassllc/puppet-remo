@@ -21,7 +21,7 @@ type KillSwitch interface {
 	Active() bool
 	// Trigger は同期で次の順に実行する: 発動状態の永続化 → LeaseManager.ReleaseAll → クローザー（全セッション・押下中の入力の解放）
 	// → 監査。各段の失敗は後続を止めず、まとめて返す（発動状態は変わらない）。1 秒以内（NFR-P05）。
-	// M4 の Agent.CancelAll と Bus への通知は、それぞれクローザーと購読で足す。
+	// Agent.CancelAll と Bus への通知は、それぞれクローザー（app が登録する agent）と購読（lease・killswitch のトピック）で行う。
 	Trigger(source string) error
 	// Release はホスト GUI からのみ呼ぶ。永続化に失敗したら発動状態のまま。
 	Release() error

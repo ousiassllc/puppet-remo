@@ -15,7 +15,7 @@
 | 永続化しないもの | **リース**（[NFR-A01](../requirements/non-functional.md)）、**接続中セッション**（監査ログに `session_id` を文字列として記録するのみ）、承認待ち要求、WhoIs キャッシュ、Web UI の閲覧設定（モニター・品質・FPS はブラウザセッション単位）、**エージェントの実行状態**（ループ・会話。タスクの記録のみ `agent_tasks` に持つ。[NFR-A08](../requirements/non-functional.md)） |
 | サムネイル | 画像は**ファイル**として `%LOCALAPPDATA%\puppet-remo\thumbs\` に保存し、DB にはパスとサイズを持つ |
 | 改ざん検知 | 設けない（同一ユーザー権限の悪意あるプロセスは脅威モデル外） |
-| シークレット | **OpenAI API キーと TypeSafe API キーは DB に保存しない**。Windows 資格情報マネージャーにのみ置く（TypeSafe のターゲット名は `puppet-remo/typesafe`。[NFR-S14](../requirements/non-functional.md)）。`settings`・ログ・監査ログにも値を書かない |
+| シークレット | **OpenAI API キーと TypeSafe API キーは DB に保存しない**。Windows 資格情報マネージャーにのみ置く（TypeSafe のターゲット名は `puppet-remo/typesafe:puppet-remo`、OpenAI は `puppet-remo/openai:puppet-remo`。[NFR-S14](../requirements/non-functional.md)）。`settings`・ログ・監査ログにも値を書かない |
 
 ## 全体 ER 図
 
@@ -91,7 +91,7 @@ erDiagram
 | `display_name` | TEXT | NO | — | デバイス名。GUI の表示用 |
 | `web_enabled` | INTEGER | NO | 1 | Web UI の利用可否 |
 | `mcp_enabled` | INTEGER | NO | 1 | MCP の利用可否 |
-| `agent_enabled` | INTEGER | NO | 0 | 内蔵エージェント（`run_task`）の利用可否。**既定は無効**（FR-A09）。M1 でも GUI・API から保存・編集できるが、M1 では参照せず効果はない（`run_task` は M4 から） |
+| `agent_enabled` | INTEGER | NO | 0 | 内蔵エージェント（`run_task`）の利用可否。**既定は無効**（FR-A09）。GUI・API から保存・編集でき、`run_task` の可否に効く（FR-G01。M4）。M1 では参照しない |
 | `approval_mode` | TEXT | NO | `'always'` | `always` / `first_time` / `auto`（FR-L07）。M1・M2 は承認なしでリースを取得するため参照せず、既定値 `always` で保存するだけだった。M3 から適用し、選択・変更は GUI（FR-H03・FR-H04）。**v4 のマイグレーション（`0004_existing_clients_auto_approval.sql`）**: M1・M2 の間に登録された既存のクライアントは `always` で保存されており、承認ダイアログはホストの手元でしか押せないため、そのままだと外からの操作がすべて 60 秒で拒否される。そこで v4 は、適用時点の `always` の行を `auto`（自動許可）へ移す（`first_time` の行・`approved_at` は変えない。列の既定値 `always` は変えないので、v4 の後に登録する新しいクライアントは承認モードを選ばなければ `always`（常時承認）。マイグレーションは 1 度だけ適用されるので、あとから `always` に戻した行は書き換わらない）。移行したクライアントを承認制に戻すときは、クライアントのカードで承認モードを変える |
 | `approved_at` | INTEGER | YES | NULL | `first_time` で一度承認された時刻。NULL なら未承認（承認の取り消しは NULL に戻す）。`approval_mode` を変更したときも NULL に戻す。M3 から使う: `first_time` のクライアントのリース取得がホストに許可されたとき `LeaseManager` が `repository.Clients.MarkApproved` で記録し（`always`・`auto` では記録しない。拒否・タイムアウト・取り下げでも記録しない）、承認の取り消しは `repository.Clients.ResetApproval`（NULL に戻す。承認モードは変えない）。承認が要るかの判定は `domain.NeedsApproval`（`first_time` は NULL のときだけ要る） |
 | `created_at` | INTEGER | NO | — | 登録時刻 |
@@ -344,7 +344,7 @@ erDiagram
 | `handoff_reason` | TEXT | YES | NULL | 高速パスから OpenAI へ引き継いだ理由（FR-G20、FR-G23）。`abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable`。引き継ぎが起きなかったとき（高速パスが無効、または高速パス中にキャンセル・失敗で終了）は NULL。一度引き継いだタスクは最後まで OpenAI で続ける（v1 では戻さない）ため、1 タスクにつき理由は 1 つ |
 | `input_tokens` / `output_tokens` | INTEGER | NO | 0 | 使用トークンの累計（金額上限は設けない。FR-G09） |
 | `result_text` | TEXT | YES | NULL | 最終回答（10,000 文字で切り詰め）。`completed` はモデルの申告（FR-G13） |
-| `error_code` | TEXT | YES | NULL | 失敗の理由。`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` など（FR-M17、FR-G） |
+| `error_code` | TEXT | YES | NULL | 失敗の理由。`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` / `invalid_coordinates`（モデルが縮小画像の外の座標を返した）/ `lease_held_by_other`（リース取得の競合負け）など（FR-M17、FR-G）。リースの喪失（剥奪・アイドルタイムアウト）は `failed` ではなく `cancelled`（`error_code` なし） |
 | `created_at` | INTEGER | NO | — | `run_task` の受付時刻 |
 | `started_at` | INTEGER | YES | NULL | `running` になった時刻（承認拒否の `denied` は NULL） |
 | `finished_at` | INTEGER | YES | NULL | 終了状態になった時刻 |
@@ -447,16 +447,23 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | キルスイッチの発動・解除 | `killswitch` | `killswitch.trigger` / `killswitch.release` | `host` |
 | 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete` | `host` |
 | 更新の確認・適用 | `update` | `update.detected`（署名を検証できた新版の検出。`result = ok`）/ `update.verify_failed`（署名・版の束縛・取得の失敗、公開鍵の未設定。`result = denied`、`error_code` に理由: `signature_invalid`・`signature_missing`・`version_mismatch`・`key_unset`・`download_failed`・`verify_error`）/ `update.downgrade_rejected`（現行より古い版・同じ版。`result = denied`）/ `update.apply_started`（インストーラを起動する。`result = ok`）/ `update.apply_failed`（起動に失敗。`result = error`、`error_code` は `start_failed`・`installer_not_found`・`canceled`）。`detail_json` は `{ "version", "tag", "current", "channel", "reason"? }` だけで、URL・署名・パス・OS のエラー文は記録しない。同じ版・理由の `detected` / `verify_failed` / `downgrade_rejected` は繰り返し記録しない | `host`（GUI の「今すぐ確認」「更新する」）/ `system`（定期確認・`auto_idle` の自動適用） |
+| エージェントの各ステップ | `agent` | `agent.step`（`Control.Do` / `Control.Launch` が、`actor_type = agent` のアクション 1 件ごとに 1 行。成功も拒否・失敗も記録する。`tool` はツール名（`left_click` など。MCP と同じ名前で、イベント名に `tool.` は付けない）、`task_id` は `Actor.SessionID`、`step_no` と `detail_json.route` は呼び出し側が `service.WithAgentStep` で渡す。`result = denied` は Judge・InputGuard・リース・キルスイッチ・承認の拒否。Judge の拒否は `error_code = judge_denied`）。`detail_json` は下記「エージェントのステップ」 | `agent` |
+| Judge の判定 | `agent` | `agent.judge`（Judge が `allow` 以外を返したときだけ、判定の直後（承認待ちの前）に 1 行。`result = ok`（`require_approval`）/ `denied`（`deny`。`error_code = judge_denied`）。`detail_json` は `{ "judge", "judge_reason", "processes", "route"? }`。`allow` の判定は個別の行にせず、`agent.step` の `detail_json.judge` に残す） | `agent` |
+| エージェントの有効化と同意 | `agent` | `agent.consent`（`detail_json.state` が `granted`（有効化。`consent_at` を同時に記録）/ `revoked`（無効化・OpenAI キーの削除。`reason` に `api_key_deleted`。OpenAI の HTTP 401 による無効化は `actor_type = system`・`result = error`・`error_code = openai_unauthorized`・`reason = openai_unauthorized`。NFR-S16）。キーの値は入れない） | `host` / `system` |
+| 高速パスの有効化・無効化 | `agent` | `agent.fastpath.enable`（`agent.fastpath.consent_at` の記録と同時）/ `agent.fastpath.disable`（設定での無効化・TypeSafe キーの削除は `host`。TypeSafe の HTTP 401 による無効化は `system`・`result = error`・`error_code = typesafe_unauthorized`。FR-G21）。`agent.consent` とは別のイベント | `host` / `system` |
+| エージェントのタスクの受付・終了 | `agent` | `agent.task_start`（`Agent.Start` が受け付けたとき。`result = ok`。`detail_json` は `{ "prompt_len", "model", "max_steps", "max_duration_sec" }` で、指示の本文は入れない: FR-AU03）/ `agent.task_end`（タスクごとに終了で 1 行。`task_id` を設定。`detail_json` は `{ "status", "step_count", "fast_steps", "openai_steps", "input_tokens", "output_tokens", "reason"?, "handoff_reason"?, "result_len"? }` で、最終回答の本文は入れず、完了のときだけ文字数 `result_len` を入れる。`reason` は中断の理由: `host`（ホスト GUI の中断）/ `cancel_task`（MCP の `cancel_task`）/ `kill_switch` / `lease_<リースの解放の理由>`（`lease_revoked` など）/ `client_disabled` / `client_deleted` / `client_replaced` / `agent_disabled` / `api_key_deleted` / `shutdown`。`result` は、拒否・ブロック（`denied` 状態、`input_blocked`・`judge_denied`・`approval_denied`・`approval_timeout`・`kill_switch_active`・`lease_required`・`lease_held_by_other`・`lease_revoked`・`safety_check_denied` の失敗）が `denied`、それ以外の失敗が `error`、完了・中断・上限（`limit_reached`）が `ok`。`error_code` は `agent_tasks.error_code` と同じ）。`duration_ms` は開始からの時間 | `agent` |
+| OpenAI の安全チェック | `agent` | `agent.safety_check`（OpenAI が返した `pending_safety_checks` をホストの承認に出した結果。1 ステップにつき 1 行。`step_no` はそのステップの番号。`detail_json` は `{ "result", "count", "codes", "route": "openai" }`。`result` は `allowed`（`result = ok`）/ `denied`・`timeout`・`unavailable`（承認の窓口が無い。いずれも `result = denied`、`error_code = safety_check_denied`）/ `canceled`（待っている間にタスクが中断された。`result = error`）。`codes` は OpenAI の安全チェックのコードだけで、文面（ホストの承認ダイアログに出す `code: message`）は監査には入れない。承認ダイアログの文面は制御文字・連続する空白を取り、秘密の形を伏せ、500 文字に切る） | `agent` |
+| タスクの中断（ホスト GUI） | `agent` | `agent.task_cancel`（タスク画面・ダッシュボードの中断ボタン。`actor_type = host`、`task_id` を設定、`result = ok`。`detail_json` は `{ "task_id", "status" }`（中断の結果の状態）。MCP の `cancel_task` は `agent.task_end` の `reason = cancel_task` だけで、この行は書かない） | `host` |
 
 承認の監査（M3・#66）。`kind = lease`、`lease_id` は承認待ちのリースの ID。`approval.requested` / `.granted` / `.withdrawn` は `result = ok`、`approval.denied` / `.timeout` は `result = denied`（`error_code` は `approval_denied` / `approval_timeout`）。`detail_json` は `{ "client_id", "lease_id", "holder_kind", "holder_label", "reason" }` だけで（`reason` は解放の理由: `approval_denied` / `approval_timeout` / `kill_switch` / `disconnect` / `withdrawn`。`approval.requested` は無し）、資格情報・パス・引数は入れない。`approval.reset` は `actor_type = host`・`client_label` は対象クライアント名・`detail_json` は `{ "client_id", "approved_at" }`（取り消した時刻。UTC ミリ秒）。拒否・タイムアウトの直後 30 秒の取得は承認を求めず、`lease.acquire`（`result = denied`・`error_code = approval_denied`・`detail_json` は `{ "cooldown": true }`）だけを記録する（`approval.requested` は記録しない）。
 
-`type` の本文とクリップボードの本文（M3・#71。FR-AU03、FR-S07）。設定 `audit.record_text`（既定 false）が false のあいだは、`detail_json` に文字数 `text_len` だけを入れる（M1 から同じ）。true のとき、`type` / `input.text`（`tool.type`）、クリップボードの書き込み（`tool.clipboard_write`）・読み取りの結果（`tool.clipboard_read`）の `detail_json` に `text`（本文）を足す（`text_len` は残す）。本文の中のトークン（`prm_…`）・`Bearer …` の形は、先に `[REDACTED]` に置き換える（切り詰めの境界をまたぐ秘密を残さないため。トークンと API キーは設定にかかわらず記録しない）。置き換えたあとの本文が 4,096 文字（ルーン）を超えるときは、4,096 文字までに切り詰めて `"text_truncated": true` を付ける（`text_len` は元の長さ）。キーの名前（`key_down` / `key_up` の `code`・`key`）は、この設定でも記録しない。設定が読めない・真偽値でないときは記録しない側に倒す。
+`type` の本文とクリップボードの本文（M3・#71。FR-AU03、FR-S07）。`key` の表示できる 1 文字のキー（`a`・`7`・`!`・`shift+a`）も同じ扱いで、`keys` は `[char]`（`shift+[char]`）、`text_len` は 1、本文は下記の `text` に入る（`enter`・`tab`・`f5` などの名前つきのキーと修飾キーの名前は `keys` に残す。エージェントの行は `text` を入れない）。設定 `audit.record_text`（既定 false）が false のあいだは、`detail_json` に文字数 `text_len` だけを入れる（M1 から同じ）。true のとき、`type` / `input.text`（`tool.type`）、クリップボードの書き込み（`tool.clipboard_write`）・読み取りの結果（`tool.clipboard_read`）の `detail_json` に `text`（本文）を足す（`text_len` は残す）。本文の中のトークン（`prm_…`）・`Bearer …` の形は、先に `[REDACTED]` に置き換える（切り詰めの境界をまたぐ秘密を残さないため。トークンと API キーは設定にかかわらず記録しない）。置き換えたあとの本文が 4,096 文字（ルーン）を超えるときは、4,096 文字までに切り詰めて `"text_truncated": true` を付ける（`text_len` は元の長さ）。キーの名前（`key_down` / `key_up` の `code`・`key`）は、この設定でも記録しない。設定が読めない・真偽値でないときは記録しない側に倒す。
 
 縮小スクリーンショットの保存（M3・#71。FR-AU02）。縮小・符号化は純粋関数 `service.NewThumbnail`（アスペクト比を保って長辺 320 px。拡大しない。短辺は最小 1 px。JPEG 品質 60。`golang.org/x/image/draw` の `CatmullRom`・`image/jpeg`。cgo なし）。保存は `Audit` の書き込み goroutine が 1 件ずつ、`Append` → `ThumbStore.Save`（`YYYY/MM/DD/<ULID>.jpg`。日付はイベントの `ts` の UTC）→ `AttachThumb` → 容量の確認（`Maintenance.PurgeThumbsOverCap`）の順に行う。`Record` は呼び出しを遅らせない（キューが満杯・`Close` 後は、これまでどおりエントリごと捨てて運用ログに残す）。キューにあるサムネイルの件数には別の上限（既定 32）があり、超えた分は画像だけを捨ててエントリは追記する（画像のバイト列でメモリが増え続けない）。`Save` / `AttachThumb` / 容量の確認の失敗は運用ログに残すだけで、ログ行と `Control.Do` の結果は変わらない（`AttachThumb` に失敗したら保存したファイルを消す）。`audit.thumbnails_enabled`（既定 true）は保存のたびに読み、false か真偽値でない値なら保存しない。
 
 **操作の直後のサムネイル（`Control` への結線。M3・#71）**: `Control` は、`result = ok` で画面を変える操作（MCP: クリック・ドラッグ・`scroll`・`key`・`type`・`focus_window`・`launch_app`。Web: ボタンの `down` / `up`・`wheel`・キー・文字入力・ショートカット送信）の直後に、非同期で `Monitors` → `Grab` → `NewThumbnail` を行い、**撮影のあとに**その操作の監査エントリを `Audit.RecordWithThumb` で記録する（`Append` → `Save` → `AttachThumb` → 容量の確認は上のとおり）。エントリを撮影のあとに 1 回だけ記録するので、画像は必ずその操作の行に付き、`Control.Do` は撮影を待たない（`ts` は操作の時刻）。撮らないもの: カーソルの移動だけ（`mouse_move`・Web の `move`）、クリップボード、`get_ui_tree`、`wait`、拒否・失敗した操作。撮るモニターは、`monitor` を明示した操作はそれ、座標のある操作はその座標を含むモニター、座標もモニターも無い操作と Web 入力はプライマリ。Web 入力は全体で 1 秒に 1 枚まで（間引かれた入力はサムネイル無しで記録）。撮影・符号化・保存の失敗は運用ログだけで、操作の結果もログ行も変えない。
 
-エージェントのステップ（`event = 'agent.step'`）の `detail_json`（FR-G19、FR-G23）。**入力した本文（`type` のテキスト）と要素の値は、どちらの経路でも記録しない**。
+エージェントのステップ（`event = 'agent.step'`）の `detail_json`（FR-G19、FR-G23）。**1 行は 1 アクション**（`Control.Do` / `Control.Launch` が記録する）。OpenAI の 1 ステップが複数のアクションを返したときは、同じ `step_no` の行がアクションの順に並ぶ。アクションの引数の要約（座標・ボタン・回数・`text_len` など。MCP の `tool.<名前>` と同じキー）は `detail_json` の直下に入り、呼び出し側が `service.WithAgentStep` の `ExtraDetail` で渡す高速パスのキー（下表）も同じ階層に入る（`route`・`judge`・`judge_reason`・`approval` と引数のキーは `ExtraDetail` では上書きできない）。**入力した本文（`type` のテキスト。`audit.record_text` が true でも）・キーの名前・要素の値は、どちらの経路でも記録しない**。
 
 | キー | 経路 | 内容 |
 |------|------|------|
@@ -466,8 +473,12 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | `chosen_id` | `fast` | Jev が選んだ候補 ID（`reobserve` / `abstain` を含む）。検証で拒否された場合は受け取った値の長さ制限付き文字列 |
 | `confidence` | `fast` | Jev の `confidence`（0〜1） |
 | `goal_maybe_done` | `fast` | Noul の確率（0〜1） |
-| `handoff_reason` | `fast` | OpenAI へ引き継ぐと決めたステップだけに入れる（`agent_tasks.handoff_reason` と同じ列挙値） |
-| `actions` | 両方 | 実行したアクションの順序付き配列（種別・座標等。FR-AU03 に従い本文は文字数のみ） |
+| `handoff_reason` | `fast` | OpenAI へ引き継ぐと決めたステップだけに入れる（`agent_tasks.handoff_reason` と同じ列挙値）。`no_progress`・`fast_step_limit` の行は、最後の観測の `candidate_count`・`dropped_count` を持つ。毎ステップの先頭で高速パスの同意・設定・キーが無くなっていた場合の `chooser_unavailable` は候補数 0 |
+| `pass` | `fast` | `true`: アクションを実行しないパス（引き継ぎ・reobserve）。**行の `step_no` は直前に実行したステップの番号**（まだ実行していなければ NULL）で、次に実行するステップ（`fast`・`openai`）と番号が重ならない。実行したステップの行（`tool` あり）には付けない。ステップ数（`step_count`）に数えるのは `tool` のある行だけ。`agent.judge`・`agent.safety_check` の行は、その後に実行するアクションと同じ `step_no` を持つ補助の行で、タスクの詳細では番号を出さずに種類を示す |
+| アクションの引数 | 両方 | 実行したアクションの引数の要約（`tool` 列がアクション種別。座標・ボタン・回数・`text_len` など。FR-AU03 に従い本文は文字数のみ） |
+| `judge` | 両方 | Judge の判定: `allow` / `require_approval` / `deny`（`Control` が書く。Judge を通る前に拒否された行（キルスイッチ・リース・InputGuard）には無い） |
+| `judge_reason` | 両方 | Judge の理由のコード（`deny_process` / `approve_process` / `judge_error` / `judge_timeout` / `judge_unconfigured` / `judge_invalid_verdict`。`allow` には無い。プロセス名・本文は入れない） |
+| `approval` | 両方 | `require_approval` のときの承認の結果: `granted` / `denied` / `timeout` / `canceled` / `unavailable`（承認の窓口が無い） |
 
 インデックス:
 
@@ -557,3 +568,8 @@ erDiagram
 | 1.21 | 2026-11-02 | 監査イベントのカタログに承認系の 6 イベント（`approval.requested` / `.granted` / `.denied` / `.timeout` / `.withdrawn` / `.reset`。`kind = lease`）を追加し、`detail_json` の形・拒否後 30 秒のクールダウンの記録（`lease.acquire` の `denied` + `cooldown`）を追記。1.16 の「未決」を解消 | #66 |
 | 1.22 | 2026-11-02 | 設定キー `update.channel`（`stable` / `nightly`）と `update.last_checked_at`（UTC ミリ秒。成功・失敗を問わず保存）、監査イベント `update.*` の 5 件（`kind = update`。`error_code` の理由と `detail_json`）をカタログに追記 | #74 |
 | 1.23 | 2026-11-02 | `clients.approval_mode` に v4 のマイグレーション（`0004_existing_clients_auto_approval.sql`）を追記: M1・M2 の間に登録された既存のクライアントを `always` から `auto`（自動許可）へ移す。新しいクライアントの既定は `always` のまま | M3 の続き（所有者の決定） |
+| 1.24 | 2026-11-02 | 監査イベントのカタログに agent の 4 行（`agent.step`: `Control` が agent のアクション 1 件ごとに記録・`tool.` は付けない・Judge の拒否は `error_code = judge_denied` / `agent.judge` / `agent.consent` / `agent.fastpath.enable`・`.disable`）を追加し、エージェントのステップの `detail_json` に `judge`・`judge_reason`・`approval` と「1 行は 1 アクション」の規則を追記 | #19（service の M4） |
+| 1.25 | 2026-11-02 | 監査イベントのカタログの「エージェントのタスク・安全チェック」の予告行を、実装した `agent.task_start`・`agent.task_end`・`agent.safety_check`・`agent.task_cancel` の 4 イベント（`detail_json` の形・`result` の決め方・中断の `reason`）に置き換えた | #19 |
+| 1.26 | 2026-11-02 | `agent.consent` の `system`（OpenAI 401）・`openai_unauthorized`、`error_code` に `invalid_coordinates`、`agent.step` の `pass` と行動しないパスの `step_no` の規則、`agent_enabled` の説明の訂正 | #19 のレビュー指摘 |
+| 1.27 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
+| 1.28 | 2026-11-02 | `key` の監査の `keys` を、表示できる 1 文字のキーは `[char]` に伏せる規則を追記 | #19 |

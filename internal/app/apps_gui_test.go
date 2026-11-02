@@ -225,3 +225,21 @@ func TestGUIAppsPageAndPollIsolation(t *testing.T) {
 		t.Errorf("/poll carries the allow list:\n%s", poll)
 	}
 }
+
+// エージェントを結線するまでの GUI のタスク画面は、タスクが 1 件も無い状態（一覧は空、詳細・中断は 404）で動く。
+func TestGUITasksAreEmptyUntilTheAgentIsWired(t *testing.T) {
+	e := newEnv(t)
+	gui := guiClient{t: t, h: e.app.GUIHandler()}
+	if rec := gui.do(http.MethodGet, "/tasks", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-empty="task-list"`) {
+		t.Errorf("GET /tasks = %d\n%s", rec.Code, rec.Body)
+	}
+	if rec := gui.do(http.MethodGet, "/tasks/nope", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /tasks/nope = %d, want 404", rec.Code)
+	}
+	if rec := gui.do(http.MethodPost, "/tasks/nope/cancel", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("POST /tasks/nope/cancel = %d, want 404", rec.Code)
+	}
+	if rec := gui.do(http.MethodGet, "/", nil); rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "data-running-task") {
+		t.Errorf("GET / = %d", rec.Code)
+	}
+}

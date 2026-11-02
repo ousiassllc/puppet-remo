@@ -30,7 +30,7 @@ var apiErrorTable = map[string]int{
 	"window_not_found":      404,
 	"input_blocked":         409,
 	"desktop_unavailable":   503,
-	"agent_disabled":        403,
+	"agent_disabled":        409,
 	"task_not_found":        404,
 	"app_not_found":         404,
 	"launch_failed":         409,

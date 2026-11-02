@@ -1,7 +1,9 @@
 package gui_test
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,9 +133,9 @@ func TestApprovalGoneIs410(t *testing.T) {
 		contains(t, res, "<html", `data-approval-gone`, `data-error-code="approval_timeout"`, "終了しています")
 		lacks(t, res, "/allow", "/deny")
 	})
-	t.Run("not a lease request (M4)", func(t *testing.T) {
+	t.Run("unknown kind", func(t *testing.T) {
 		r := newRig(t, func(f *guitest.Fakes) {
-			f.Approval.Reqs = append(f.Approval.Reqs, service.ApprovalRequest{ID: "ap-9", Kind: "safety_check", Who: approvalWho, ExpiresAt: f.Clock.T.Add(time.Minute)})
+			f.Approval.Reqs = append(f.Approval.Reqs, service.ApprovalRequest{ID: "ap-9", Kind: "something_new", Who: approvalWho, ExpiresAt: f.Clock.T.Add(time.Minute)})
 		})
 		status(t, r.get("/approvals/ap-9"), http.StatusGone)
 		status(t, r.post("/approvals/ap-9/allow", nil, hx...), http.StatusGone)
@@ -148,4 +150,98 @@ func TestApprovalGoneIs410(t *testing.T) {
 		contains(t, res, `data-error-code="approval_timeout"`)
 		lacks(t, res, "<html")
 	})
+}
+
+var agentWho = domain.Actor{Kind: domain.ActorAgent, ClientID: "c1", Label: "claude-desktop", SessionID: "01JD0000000000000000RUN001"}
+
+func seedKindApproval(f *guitest.Fakes, id, kind, detail string) {
+	f.Approval.Reqs = append(f.Approval.Reqs, service.ApprovalRequest{ID: id, Kind: kind, Who: agentWho, Detail: detail, ExpiresAt: f.Clock.T.Add(42 * time.Second)})
+}
+
+// safety_check（FR-G08）: OpenAI の安全チェックの文面（Detail）を出し、「自動許可」でも省略されないこと、
+// 拒否・時間切れでタスクが失敗することを言う。許可・拒否のボタンと残り時間は lease と同じ。
+func TestApprovalDialogSafetyCheck(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedKindApproval(f, "ap-sc", service.ApprovalKindSafetyCheck, "malicious_instructions: 画面上の文面が指示を含んでいます")
+	})
+	res := r.get("/approvals/ap-sc")
+	status(t, res, http.StatusOK)
+	contains(t, res, `data-approval="ap-sc"`, `data-approval-type="safety_check"`, "OpenAI の安全チェックを確認してください",
+		"pending_safety_checks", "claude-desktop", "エージェント</span>",
+		`data-approval-detail>malicious_instructions: 画面上の文面が指示を含んでいます<`,
+		"data-approval-note", "「自動許可」でも省略されません", "タスクが失敗（safety_check_denied）します",
+		`data-approval-remaining="42"`, `hx-post="/approvals/ap-sc/allow"`, `hx-post="/approvals/ap-sc/deny"`)
+	lacks(t, res, "操作権の取得を許可しますか？", "操作権（リース）の取得")
+}
+
+// judge_action（FR-G12）: 対象アクションの要約（Detail）を出す。
+func TestApprovalDialogJudgeAction(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedKindApproval(f, "ap-ja", service.ApprovalKindJudgeAction, "left_click を notepad.exe のウィンドウへ")
+	})
+	res := r.get("/approvals/ap-ja")
+	status(t, res, http.StatusOK)
+	contains(t, res, `data-approval-type="judge_action"`, "エージェントのアクションを許可しますか？", "承認が必要なプロセス",
+		`data-approval-detail>left_click を notepad.exe のウィンドウへ<`, "そのアクションは実行されず、タスクが失敗します",
+		`hx-post="/approvals/ap-ja/allow"`, `hx-post="/approvals/ap-ja/deny"`)
+	lacks(t, res, "自動許可", "操作権の取得を許可しますか？")
+}
+
+// lease は M3 のまま: Detail の枠も結果の説明も出さない（Detail が入っていても出さない）。
+func TestApprovalDialogLeaseHasNoDetail(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedApproval(f, "ap-1", approvalWho)
+		f.Approval.Reqs[0].Detail = "should-not-appear"
+	})
+	res := r.get("/approvals/ap-1")
+	contains(t, res, `data-approval-type="lease"`, "操作権の取得を許可しますか？", "操作権（リース）の取得")
+	lacks(t, res, "data-approval-detail", "data-approval-note", "should-not-appear")
+}
+
+// Detail は HTML エスケープされ、長ければ 500 文字で切る。
+func TestApprovalDetailIsEscapedAndBounded(t *testing.T) {
+	for _, kind := range []string{service.ApprovalKindSafetyCheck, service.ApprovalKindJudgeAction} {
+		t.Run(kind, func(t *testing.T) {
+			r := newRig(t, func(f *guitest.Fakes) {
+				seedKindApproval(f, "ap-x", kind, `<script>alert(1)</script><img src=x onerror=alert(2)>`+strings.Repeat("あ", 600))
+			})
+			res := r.get("/approvals/ap-x")
+			status(t, res, http.StatusOK)
+			contains(t, res, "&lt;script&gt;alert(1)&lt;/script&gt;")
+			lacks(t, res, "<script>alert", "<img src=x", strings.Repeat("あ", 500))
+			contains(t, res, "…")
+		})
+	}
+}
+
+// どの種類でも許可・拒否は Approval.Resolve を呼ぶ（kind で経路は変わらない）。
+func TestAllowAndDenyAgentApprovals(t *testing.T) {
+	for _, kind := range []string{service.ApprovalKindSafetyCheck, service.ApprovalKindJudgeAction} {
+		for _, allow := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s allow=%v", kind, allow), func(t *testing.T) {
+				r := newRig(t, func(f *guitest.Fakes) { seedKindApproval(f, "ap-k", kind, "d") })
+				path := "deny"
+				if allow {
+					path = "allow"
+				}
+				res := r.post("/approvals/ap-k/"+path, nil, hx...)
+				status(t, res, http.StatusOK)
+				if res.Header.Get("HX-Trigger") != "closeWindow" {
+					t.Errorf("HX-Trigger = %q", res.Header.Get("HX-Trigger"))
+				}
+				if got := r.f.Approval.Resolved; len(got) != 1 || got[0].ID != "ap-k" || got[0].Allow != allow {
+					t.Errorf("Resolve calls = %+v", got)
+				}
+			})
+		}
+	}
+}
+
+// 残り時間の部分更新は kind に関わらず残り時間だけ。
+func TestAgentApprovalRemainingFragment(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) { seedKindApproval(f, "ap-sc", service.ApprovalKindSafetyCheck, "d") })
+	res := r.get("/approvals/ap-sc", hx...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `id="approval-remaining"`, `data-approval-remaining="42"`)
+	lacks(t, res, "<html", `id="approval-dialog"`)
 }

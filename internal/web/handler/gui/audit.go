@@ -20,7 +20,7 @@ import (
 // このファイルは監査ログの閲覧（GET /audit・/audit/:id・/audit/:id/thumbnail。FR-AU05、FR-H08）。
 // すべて読み取りで、GUI ルーターだけにある。ポーリング（/poll）の対象にしない。
 
-// auditKinds は絞り込みの種別（docs/architecture/er.md の audit_logs.kind）。agent は M4 だが、種別の値としては持つ。
+// auditKinds は絞り込みの種別（docs/architecture/er.md の audit_logs.kind）。
 var auditKinds = []struct{ Value, Label string }{
 	{"auth", "auth（認証）"}, {"client", "client（クライアント）"}, {"token", "token（トークン）"}, {"lease", "lease（リース）"},
 	{"tool", "tool（MCP ツール）"}, {"input", "input（Web の入力）"}, {"agent", "agent（エージェント）"},

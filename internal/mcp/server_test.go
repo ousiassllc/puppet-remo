@@ -17,7 +17,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
-// API 仕様 §3.3 のツール一覧（M1・M1.5）。run_task / get_task / cancel_task（M4）は含まない。
+// API 仕様 §3.3 のツール一覧（M1・M1.5・M4）。
 var wantTools = map[string]bool{ // 値は readOnlyHint
 	"get_screen_info":    true,
 	"screenshot":         true,
@@ -44,6 +44,10 @@ var wantTools = map[string]bool{ // 値は readOnlyHint
 	// M1.5
 	"list_launchable_apps": true,
 	"launch_app":           false,
+	// M4
+	"run_task":    false,
+	"get_task":    true,
+	"cancel_task": false,
 }
 
 // ownWindowHints は、puppet-remo 自身のウィンドウについて説明に含めるべき語（ツール名 → 語）。
@@ -68,13 +72,12 @@ func TestInitializeAndToolList(t *testing.T) {
 	}
 	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id",
 		"already open window forward", "reused_existing_window", "screenshot or list_windows before typing",
-		"never captured in screenshots", "input_blocked", "own_window", "own_windows", "blocked: true"} {
+		"never captured in screenshots", "input_blocked", "own_window", "own_windows", "blocked: true",
+		"run_task", "get_task", "cancel_task", "asynchronously", "agent_disabled", "Only one task runs at a time",
+		"untrusted", "only the model's claim"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}
-	}
-	if strings.Contains(init.Instructions, "run_task") {
-		t.Errorf("Instructions mention run_task (M4): %s", init.Instructions)
 	}
 
 	list, err := cs.ListTools(context.Background(), nil)
@@ -123,9 +126,10 @@ func TestInitializeAndToolList(t *testing.T) {
 			t.Errorf("unexpected tool %s", name)
 		}
 	}
+	// 三つのタスクのツールは、ホストの設定にかかわらず常に一覧に載る（有効・無効の判断は Agent が agent_disabled で返す）。
 	for _, m4 := range []string{"run_task", "get_task", "cancel_task"} {
-		if _, ok := got[m4]; ok {
-			t.Errorf("%s must not be registered before M4", m4)
+		if _, ok := got[m4]; !ok {
+			t.Errorf("%s must be registered", m4)
 		}
 	}
 }

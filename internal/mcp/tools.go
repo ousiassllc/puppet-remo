@@ -138,11 +138,12 @@ var leaseAcquiringTools = map[string]bool{
 	"launch_app": true,
 }
 
-// addTools は FR-M01〜M15・M18・M19 の全ツールを登録する。run_task / get_task / cancel_task は M4 のため登録しない。
+// addTools は FR-M01〜M15・M18・M19 と FR-G02（run_task / get_task / cancel_task）の全ツールを登録する。
 func (s *Server) addTools() {
 	s.addViewTools()
 	s.addInputTools()
 	s.addWindowTools()
 	s.addLeaseTools()
 	s.addAppTools()
+	s.addTaskTools()
 }

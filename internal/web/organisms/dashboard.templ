@@ -94,7 +94,8 @@ templ LeaseDisplay(v view.Lease) {
 }
 
 // LeasePanelBody はリース保持者の中身（GET /poll の OOB の中身と、POST /lease/revoke の応答）。
-// 強制剥奪のボタンは、剥奪できる保持者（他者。M2 は mcp・web）がいるときだけ描画する（状態駆動。FR-H02、FR-L06）。
+// 強制剥奪のボタンは、剥奪できる保持者（他者。mcp・web・agent）がいるときだけ描画する（状態駆動。FR-H02、FR-L06、FR-L08）。
+// agent の剥奪はそのタスクを中断するので、その旨（RevokeHint）をボタンの下に添える。
 templ LeasePanelBody(v view.Lease) {
 	@LeaseDisplay(v)
 	if v.CanRevoke {
@@ -102,6 +103,9 @@ templ LeasePanelBody(v view.Lease) {
 			@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 				"hx-post": "/lease/revoke", "hx-target": "#lease", "hx-swap": "innerHTML", "hx-disabled-elt": "this",
 			}})
+			if v.RevokeHint != "" {
+				<p class="mt-1 text-xs text-slate-500" data-revoke-hint>{ v.RevokeHint }</p>
+			}
 		</div>
 	}
 }

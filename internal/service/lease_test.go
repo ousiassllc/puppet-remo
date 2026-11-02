@@ -28,7 +28,10 @@ func TestLeaseAcquireTable(t *testing.T) {
 			setup: func(e *ctlEnv) { mustAcquire(t, e, ctlAlice) }, wantErr: domain.ErrLeaseHeldByOther},
 		{name: "web は保持者になれる（M2）", who: web},
 		{name: "web が保持中は mcp が ErrLeaseHeldByOther", who: ctlAlice, setup: func(e *ctlEnv) { mustAcquire(t, e, web) }, wantErr: domain.ErrLeaseHeldByOther},
-		{name: "agent は M4 まで保持者になれない", who: agent, wantErr: domain.ErrInvalidArgument},
+		{name: "agent は保持者になれる（M4。FR-L08）", who: agent},
+		{name: "agent が保持中は mcp が ErrLeaseHeldByOther", who: ctlAlice, setup: func(e *ctlEnv) { mustAcquire(t, e, agent) }, wantErr: domain.ErrLeaseHeldByOther},
+		{name: "mcp が保持中は agent が ErrLeaseHeldByOther", who: agent, setup: func(e *ctlEnv) { mustAcquire(t, e, ctlAlice) }, wantErr: domain.ErrLeaseHeldByOther},
+		{name: "agent のセッション ID（task_id）が空は不可", who: domain.Actor{Kind: domain.ActorAgent, ClientID: "client-a"}, wantErr: domain.ErrInvalidArgument},
 		{name: "セッション ID が空は不可", who: domain.Actor{Kind: domain.ActorMCP, ClientID: "c"}, wantErr: domain.ErrInvalidArgument},
 		{name: "キルスイッチ中は取得できない", who: ctlAlice, setup: func(e *ctlEnv) { _ = e.kill.Trigger("test") }, wantErr: domain.ErrKillSwitchActive},
 	}

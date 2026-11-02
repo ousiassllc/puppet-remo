@@ -22,6 +22,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/audit", h.Audit)
 	r.GET("/audit/:id", h.AuditDetail)
 	r.GET("/audit/:id/thumbnail", h.AuditThumbnail)
+	// エージェントのタスク（M4。FR-H10）。GUI ルーターだけにある
+	r.GET("/tasks", h.Tasks)
+	r.GET("/tasks/:id", h.TaskDetail)
 	r.GET("/clients", h.Clients)
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
@@ -29,6 +32,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/apps", h.Apps)
 	r.GET("/apps/new", h.AppNew)
 	r.GET("/apps/:id/edit", h.AppEdit)
+	r.GET("/agent", h.AgentSettings)
 	r.GET("/events", h.Events)
 	r.GET("/poll", h.Poll)
 	r.GET("/killswitch", h.KillSwitchPanel)
@@ -45,6 +49,8 @@ func (h *Handler) Register(r gin.IRoutes) {
 	// 破壊的な操作の確認モーダル（サーバーが描画し、確定のボタンだけが実際の操作を送る。§5.4）
 	r.GET("/clients/:id/delete/confirm", h.ConfirmDeleteClient)
 	r.GET("/clients/:id/tokens/:token_id/revoke/confirm", h.ConfirmRevokeToken)
+	r.GET("/agent/api-key/delete/confirm", h.ConfirmDeleteOpenAIKey)
+	r.GET("/agent/fastpath/api-key/delete/confirm", h.ConfirmDeleteTypeSafeKey)
 	r.GET("/killswitch/release/confirm", h.ConfirmReleaseKillSwitch)
 	r.GET("/apps/:id/delete/confirm", h.ConfirmDeleteApp)
 	r.GET("/update/apply/confirm", h.ConfirmApplyUpdate)
@@ -66,6 +72,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
 	r.POST("/lease/revoke", h.RevokeLease)
 
+	// タスクの中断（M4。FR-H02・H10）。ホスト所有者の中断のボタン
+	r.POST("/tasks/:id/cancel", h.CancelTask)
+
 	// キルスイッチ・設定
 	r.POST("/killswitch/trigger", h.TriggerKillSwitch)
 	r.POST("/killswitch/release", h.ReleaseKillSwitch)
@@ -74,4 +83,12 @@ func (h *Handler) Register(r gin.IRoutes) {
 	// 更新（M3。FR-H09）。署名検証済みの新版の確認と適用
 	r.POST("/update/check", h.CheckUpdate)
 	r.POST("/update/apply", h.ApplyUpdate)
+
+	// エージェント設定（M4。FR-H11）。API キーは PUT の本文だけで受け、応答に出さない（NFR-S14）
+	r.PUT("/agent", h.SaveAgent)
+	r.PUT("/agent/api-key", h.SetOpenAIKey)
+	r.DELETE("/agent/api-key", h.DeleteOpenAIKey)
+	r.PUT("/agent/fastpath", h.SaveFastpath)
+	r.PUT("/agent/fastpath/api-key", h.SetTypeSafeKey)
+	r.DELETE("/agent/fastpath/api-key", h.DeleteTypeSafeKey)
 }

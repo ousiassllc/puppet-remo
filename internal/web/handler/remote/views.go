@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -44,15 +45,17 @@ func (h *Handler) viewerContext(c *gin.Context) (domain.Client, domain.Actor, bo
 }
 
 // leaseView は who から見たリースパネルの表示。操作は状態に合うものだけを許す（状態駆動）:
-// 空きなら取得、自分が保持なら解放、他者（mcp・web）が保持なら強制剥奪（agent の剥奪は M4）。
+// 空きなら取得、自分が保持なら解放、他者（mcp・web・agent）が保持なら強制剥奪（agent の剥奪はそのタスクを中断する。FR-L08）。
 // 承認待ち（pending_approval）は、要求者の表示だけで操作は無い（他者の取得は 409 になるので取得も出さない。承認待ちの
-// 強制剥奪・取り下げは docs に記述が無く、実装していない）。
-func (h *Handler) leaseView(who domain.Actor) view.ViewerLease {
+// 強制剥奪・取り下げは docs に記述が無く、実装していない）。保持者（承認待ちなら要求者）が agent のときは、実行中のタスクの
+// 要約（taskView）も付ける。
+func (h *Handler) leaseView(ctx context.Context, who domain.Actor) view.ViewerLease {
 	holder, ok := h.d.Leases.Holder()
 	if !ok {
 		if p, pending := h.d.Leases.Pending(); pending {
 			return view.ViewerLease{
 				Pending: true, PendingMine: p.Actor.SameSession(who), HolderLabel: actorLabel(p.Actor), KindLabel: string(p.Actor.Kind),
+				Task: h.taskView(ctx, p.Actor),
 			}
 		}
 		return view.ViewerLease{CanAcquire: true}
@@ -63,7 +66,71 @@ func (h *Handler) leaseView(who domain.Actor) view.ViewerLease {
 		Held: true, Mine: mine, HolderLabel: label, KindLabel: string(holder.Actor.Kind),
 		CanRelease: mine,
 		CanRevoke:  !mine && holder.Actor.Kind.CanHoldLease() && who.Kind.CanRevokeLease(),
+		Task:       h.taskView(ctx, holder.Actor),
 	}
+}
+
+// taskView は保持者が agent のとき、そのタスク（Actor.SessionID = task_id）の要約を返す。agent 以外・タスクが見つからない・
+// 読めない（ログに残す）ときは nil（パネルはタスクの欄なしで描画する）。要約にはビューアに見せてよい項目だけを写す:
+// 状態・ステップ数と上限・経過と上限・開始時刻・依頼元の表示名。指示と最終回答は写さない（ビューアはタスクの依頼元ではない）。
+func (h *Handler) taskView(ctx context.Context, holder domain.Actor) *view.ViewerTask {
+	if holder.Kind != domain.ActorAgent {
+		return nil
+	}
+	tasks, err := h.d.Tasks.Running(ctx)
+	if err != nil {
+		h.log.Warn("read the running task for the lease panel failed", "error", err)
+		return nil
+	}
+	for _, t := range tasks {
+		if t.ID != holder.SessionID {
+			continue
+		}
+		v := &view.ViewerTask{
+			Status:    taskStatusLabel(t.Status),
+			Steps:     strconv.Itoa(t.StepCount) + " / " + strconv.Itoa(t.MaxSteps),
+			Elapsed:   "-",
+			MaxTime:   formatTaskDuration(time.Duration(t.MaxDurationSec) * time.Second),
+			Requester: taskRequester(t),
+		}
+		if t.StartedAt != nil {
+			v.StartedAt = t.StartedAt.Local().Format("15:04:05")
+			v.Elapsed = formatTaskDuration(max(0, h.d.Clock.Now().Sub(*t.StartedAt)))
+		}
+		return v
+	}
+	return nil
+}
+
+func taskStatusLabel(s domain.TaskStatus) string {
+	if s == domain.TaskPendingApproval {
+		return "承認待ち"
+	}
+	return "実行中"
+}
+
+// taskRequester は依頼元のクライアントの表示名（スナップショット。無ければ ID。どちらも無ければ「（削除済み）」）。
+func taskRequester(t domain.Task) string {
+	switch {
+	case t.ClientLabel != "":
+		return t.ClientLabel
+	case t.ClientID != "":
+		return t.ClientID
+	}
+	return "（削除済み）"
+}
+
+// formatTaskDuration は経過時間・上限の表示（「45秒」「2分30秒」）。1 秒未満は「0秒」。
+func formatTaskDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	m, s := int(d/time.Minute), int(d%time.Minute/time.Second)
+	switch {
+	case m == 0:
+		return fmt.Sprintf("%d秒", s)
+	case s == 0:
+		return fmt.Sprintf("%d分", m)
+	}
+	return fmt.Sprintf("%d分%d秒", m, s)
 }
 
 // actorLabel は操作主体の表示名。ラベルが空なら ClientID。
@@ -125,7 +192,7 @@ func (h *Handler) viewerPage(ctx context.Context, host string, client domain.Cli
 		return view.Viewer{}, err
 	}
 	monitor := primaryMonitor(mons)
-	lease := h.leaseView(actor)
+	lease := h.leaseView(ctx, actor)
 	return view.Viewer{
 		ViewerID: id,
 		WSURL:    "ws://" + host + "/ws/screen?viewer_id=" + url.QueryEscape(id),

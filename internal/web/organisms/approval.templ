@@ -25,11 +25,13 @@ templ ApprovalRemaining(v view.ApprovalRemaining) {
 	</p>
 }
 
-// ApprovalDialog は承認ダイアログの中身（kind = lease。FR-H05）。クライアント名・種別・要求の内容・残り時間・許可 / 拒否だけを出す
-// （秘密・パス・引数は出さない）。二重送信は hx-disabled-elt で両方のボタンを無効にして防ぐ。
+// ApprovalDialog は承認ダイアログの中身（kind = lease・safety_check・judge_action。FR-H05）。見出し・クライアント名・種別・要求の内容・
+// 残り時間・許可 / 拒否を出す。safety_check・judge_action は、サービスが秘密・入力した文字列の本文・パスを除いて渡した Detail と、
+// 結果の説明（Note）も出す（Detail は templ が HTML エスケープする。lease は Detail・Note が空で何も足さない）。
+// 二重送信は hx-disabled-elt で両方のボタンを無効にして防ぐ。
 templ ApprovalDialog(v view.ApprovalDialog) {
-	<section id="approval-dialog" class="space-y-4 rounded-lg border border-amber-300 bg-white p-5 shadow-sm" data-approval={ v.ID }>
-		<h1 class="text-base font-semibold text-slate-900">操作権の取得を許可しますか？</h1>
+	<section id="approval-dialog" class="space-y-4 rounded-lg border border-amber-300 bg-white p-5 shadow-sm" data-approval={ v.ID } data-approval-type={ v.Kind }>
+		<h1 class="text-base font-semibold text-slate-900">{ v.Heading }</h1>
 		<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
 			<dt class="text-slate-500">クライアント</dt>
 			<dd class="font-medium text-slate-900" data-approval-client>{ v.ClientLabel }</dd>
@@ -38,6 +40,12 @@ templ ApprovalDialog(v view.ApprovalDialog) {
 			<dt class="text-slate-500">要求の内容</dt>
 			<dd data-approval-summary>{ v.Summary }</dd>
 		</dl>
+		if v.Detail != "" {
+			<p class="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-800" data-approval-detail>{ v.Detail }</p>
+		}
+		if v.Note != "" {
+			<p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" data-approval-note>{ v.Note }</p>
+		}
 		@ApprovalRemaining(v.Remaining)
 		<div id="approval-actions" class="flex gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "許可", Variant: atoms.ButtonPrimary, Attrs: approvalButtonAttrs(v.AllowURL)})

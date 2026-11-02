@@ -6,6 +6,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
+	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
 // maxAuditAppIDRunes は監査に記録する、呼び出し側が渡した app_id の最大文字数（許可リストに無い値を無制限に残さない）。
@@ -34,7 +35,15 @@ func (c *control) Launch(ctx context.Context, who domain.Actor, appID string) (L
 	start := c.clock.Now()
 	res, label, leaseID, err := c.launch(ctx, who, appID)
 	if c.audit != nil {
-		entry := ToolAuditEntry(who, "launch_app", launchAuditDetail(appID, label, res, err), leaseID, err, c.clock.Now().Sub(start))
+		took := c.clock.Now().Sub(start)
+		detail := launchAuditDetail(appID, label, res, err)
+		var entry repository.AuditEntry
+		if who.Kind == domain.ActorAgent {
+			// agent の起動も、Do のアクションと同じ agent.step の行（Judge は通らないので judge は付かない）。
+			entry = agentStepEntry(ctx, who, "launch_app", detail, leaseID, err, judgeTrace{}, took.Milliseconds())
+		} else {
+			entry = ToolAuditEntry(who, "launch_app", detail, leaseID, err, took)
+		}
 		var shot *thumbTarget
 		if err == nil {
 			shot = &thumbTarget{monitor: domain.MonitorPrimary} // 起動したウィンドウのモニターは問わず、プライマリを撮る
@@ -94,7 +103,7 @@ func launchFailure(err error) error {
 // label は許可リストを引けたときだけ、pid と reused_existing_window は成功のときだけ、reason は launch_failed のときだけ入る。
 // 前面のウィンドウのタイトル・id は記録しない。
 func launchAuditDetail(appID, label string, res LaunchResult, err error) map[string]any {
-	detail := map[string]any{"app_id": truncateRunes(appID, maxAuditAppIDRunes)}
+	detail := map[string]any{"app_id": domain.TruncateRunes(appID, maxAuditAppIDRunes)}
 	if label != "" {
 		detail["label"] = label
 	}
@@ -110,12 +119,4 @@ func launchAuditDetail(appID, label string, res LaunchResult, err error) map[str
 		}
 	}
 	return detail
-}
-
-// truncateRunes は s を最大 n 文字（rune）にする。
-func truncateRunes(s string, n int) string {
-	if r := []rune(s); len(r) > n {
-		return string(r[:n])
-	}
-	return s
 }
