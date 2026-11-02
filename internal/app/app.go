@@ -62,6 +62,9 @@ type Platform struct {
 	Autostart service.Autostart
 	// Installer は署名検証済みの更新のインストーラの起動（FR-H09。#74）。service.Updater が唯一の呼び出し元。
 	Installer platform.Installer
+	// Secrets は API キー（OpenAI・TypeSafe）を置く資格情報マネージャー（NFR-S14。FR-G14）。M4 の消費側（エージェント・高速パス・
+	// ホスト GUI のキー管理）はこれを読む。
+	Secrets platform.SecretStore
 }
 
 // UpdateOptions は更新（service.Updater。#74）の設定の上書き。ゼロ値なら本番の既定（埋め込みの公開鍵・GitHub・6 時間ごと）。
@@ -184,8 +187,8 @@ func (c Config) validate() error {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
-		p.Hotkey == nil, p.Power == nil, p.Installer == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power and Installer")
+		p.Hotkey == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power, Installer and Secrets")
 	case c.Windows == nil:
 		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
