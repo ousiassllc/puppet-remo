@@ -15,7 +15,12 @@
     "dev:js": "bun esbuild.config.mjs --watch"
   },
   "devDependencies": {
+    "@open-wc/testing": "5.0.0",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/cli": "4.3.3",
+    "@web/dev-server-esbuild": "2.0.0",
+    "@web/test-runner": "1.0.0",
+    "@web/test-runner-playwright": "1.0.0",
     "concurrently": "10.0.6",
     "esbuild": "0.28.2",
     "tailwindcss": "4.3.3",
