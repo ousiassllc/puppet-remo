@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// Op はツールの操作（MCP が組み立てる。Web UI・エージェントは M2 / M4 から同じ型を使う）。
+// Op はツールの操作（MCP が組み立てる。Web UI（M2）・エージェント（M4）も同じ型を使う）。
 // 座標を持つ Op の座標は、service.Control.Do に渡す時点では縮小スクリーンショット座標（FR-M16）。
 // Control が Monitor の縮小率で物理座標へ変換してから InputGuard と platform へ渡す。
 type Op interface{ isOp() }
