@@ -23,7 +23,7 @@ func TestEmbeddedDistHasEveryAssetTheLayoutLoads(t *testing.T) {
 		return rec
 	}
 	for _, name := range []string{
-		"css/app.css", "js/htmx.min.js", "js/htmx-config.js", "js/response-targets.min.js", "js/sse.min.js", "js/app.js",
+		"css/app.css", "js/htmx.min.js", "js/htmx-config.js", "js/response-targets.min.js", "js/sse.min.js", "js/app.js", "js/screen-viewer.js",
 	} {
 		rec := get(name)
 		if rec.Code != http.StatusOK || rec.Body.Len() == 0 {

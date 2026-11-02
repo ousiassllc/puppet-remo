@@ -34,6 +34,7 @@ const (
 	CodeTaskNotFound        Code = "task_not_found"
 	CodeAppNotFound         Code = "app_not_found"
 	CodeLaunchFailed        Code = "launch_failed"
+	CodeAuditUnavailable    Code = "audit_unavailable"
 	CodeInternal            Code = "internal"
 )
 
@@ -59,10 +60,11 @@ var codeStatus = map[Code]int{
 	CodeWindowNotFound:      404,
 	CodeInputBlocked:        409,
 	CodeDesktopUnavailable:  503,
-	CodeAgentDisabled:       403,
+	CodeAgentDisabled:       409,
 	CodeTaskNotFound:        404,
 	CodeAppNotFound:         404,
 	CodeLaunchFailed:        409,
+	CodeAuditUnavailable:    503,
 	CodeInternal:            500,
 }
 
@@ -151,4 +153,7 @@ var (
 	ErrAppNotFound        = NewError(CodeAppNotFound, "app not found", nil)
 	// ErrLaunchFailed の reason は NewLaunchFailed で付ける。メッセージにも Detail にもパス・引数は入れない。
 	ErrLaunchFailed = NewError(CodeLaunchFailed, "the app could not be launched", nil)
+	// ErrAuditUnavailable は、起動の試行を監査に書けないために起動しなかったこと（fail-closed。NFR-S20）。
+	// 書き込みの失敗の原因（DB のパス・SQL など）は載せない。原因は運用ログにだけ残す。
+	ErrAuditUnavailable = NewError(CodeAuditUnavailable, "the audit log is unavailable, so the app was not launched", nil)
 )

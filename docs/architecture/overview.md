@@ -10,9 +10,9 @@
 - **OS 依存部はインターフェースの背後に置く**（`platform` パッケージ）。コアは OS 非依存でテストできる（[NFR-O03](../requirements/non-functional.md)）
 - **純 Go（cgo なし）**。画像は JPEG のみ（配信・サムネイルとも）
 - tailnet への参加は**ホストの tailscaled** に任せ、本アプリは LocalAPI クライアントになる
-- **内蔵エージェントは「別の操作主体」であり、安全機構は共通**。OpenAI の `computer` ツールが返すアクションを 1 件ずつ、MCP 直接・Web UI と同じ入力層（キルスイッチ → リース → InputGuard → Judge → 操作 → 監査）に通す。モデルが生成したコードをホストで実行する方式（`exec_py` 等）は採らない。ほかに承認を省略できる経路を作らない（[NFR-S15](../requirements/non-functional.md)）
+- **内蔵エージェントは「別の操作主体」であり、安全機構は共通**。OpenAI の `computer` ツールが返すアクション（ChatGPT のプラン経路では関数ツールの呼び出し。[FR-G27](../requirements/functional.md)）を 1 件ずつ、MCP 直接・Web UI と同じ入力層（キルスイッチ → リース → InputGuard → Judge → 操作 → 監査）に通す。モデルが生成したコードをホストで実行する方式（`exec_py` 等）は採らない。ほかに承認を省略できる経路を作らない（[NFR-S15](../requirements/non-functional.md)）。接続方式（ChatGPT のプラン / API キー）を自動で切り替えない（[NFR-S22](../requirements/non-functional.md)）
 - **高速パス（任意。既定は無効）は「選ぶだけ」の補助**。TypeSafe の Jev は、アプリが UI Automation から作った**不変の候補表から ID を 1 つ選ぶ**だけで、ツール名・座標・引数を生成しない。迷ったら OpenAI の `computer` ツールのループへ引き継ぎ、**タスクの完了宣言は常に OpenAI が行う**。Jev は Judge ではなく、承認を緩めることはない（[FR-G16](../requirements/functional.md)、[NFR-S17](../requirements/non-functional.md)）
-- **外部通信は GitHub（更新）、OpenAI（エージェント有効時のみ）、TypeSafe（高速パス有効時のみ）の 3 つだけ**。OpenAI API キーと TypeSafe API キーは Windows 資格情報マネージャーにだけ置く。OpenAI へは常に `store: false` で送る（[FR-G24](../requirements/functional.md)、[NFR-PR03](../requirements/non-functional.md)）
+- **外部通信は GitHub（更新）、OpenAI（エージェント有効時のみ。ChatGPT のサインインを使うときは `auth.openai.com` も）、TypeSafe（高速パス有効時のみ）だけ**。OpenAI API キー・TypeSafe API キー・ChatGPT の OAuth トークンは Windows 資格情報マネージャーにだけ置く。OpenAI へは常に `store: false` で送る（[FR-G24](../requirements/functional.md)、[NFR-PR03](../requirements/non-functional.md)、ChatGPT のプラン経路は [NFR-PR05](../requirements/non-functional.md)）
 
 ## 技術選定
 
@@ -30,16 +30,16 @@
 | tailnet 連携 | `tailscale.com/client/local` | LocalAPI の `WhoIs`、`WatchIPNBus`（IP 変化監視）、`StatusWithoutPeers`。Windows では名前付きパイプ経由でライブラリが接続する |
 | WebSocket | `github.com/coder/websocket` v1.8.15（ISC） | context 対応・バイナリフレーム・軽量 |
 | 永続化 | SQLite（`modernc.org/sqlite`、純 Go）+ 埋め込み SQL マイグレーション | cgo なし。WAL モード（[NFR-A06](../requirements/non-functional.md)） |
-| 画面キャプチャ | DXGI Desktop Duplication（主、`github.com/kirides/go-d3d` v1.0.1・MIT・cgo なし）、GDI BitBlt（フォールバック） | DXGI は変更矩形を OS から取得でき低 CPU。失敗時は GDI へ切り替え。`go-d3d` は M2 のキャプチャスパイクの結果を見て採用を確定し、スパイクが失敗した場合は自前の syscall 実装に切り替える |
+| 画面キャプチャ | DXGI Desktop Duplication（主、`github.com/kirides/go-d3d` v1.0.1・MIT・cgo なし）、GDI BitBlt（フォールバック） | DXGI は画面が変化したときだけコマを返し低 CPU。失敗時は GDI へ切り替え。`go-d3d` は M2 のキャプチャスパイク（#57）で採用を確定した（実機の安定性は未確認。成立しなければ自前の syscall 実装に切り替える）。`go-d3d` は変更矩形を公開しないため `Frame.Dirty` は全面で、差分はタイルハッシュ（Streamer）が求める |
 | 入力注入 | Win32 `SendInput`（`golang.org/x/sys/windows`） | cgo 不要。`type` は `KEYEVENTF_UNICODE` で日本語を直接送る |
 | UI Automation | COM `IUIAutomation`（`github.com/go-ole/go-ole` v1.3.0・MIT。IUIAutomation の vtable バインディングは自前で書く） | `get_ui_tree` と高速パスの候補表（スナップショット）用 |
 | 画像エンコード | 標準 `image/jpeg` | 純 Go 制約のため JPEG のみ |
-| OpenAI クライアント | `github.com/openai/openai-go/v3` | v3.90.0 で確認済み: `responses.ComputerToolParam`（`{type:"computer"}`）、`ResponseComputerToolCall` の `Actions`（`click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot`）と `PendingSafetyChecks`、`ResponseComputerToolCallOutputItem` の `AcknowledgedSafetyChecks`。旧 `computer_use_preview`（`environment: "windows"` 等を指定する旧方式）は使わない |
-| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` v0.2.8・MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go で、cgo 不要をソースと `go list` で確認済み） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く。OpenAI キーと TypeSafe キー（ターゲット名 `puppet-remo/typesafe`）は同じ SecretStore に置く |
+| OpenAI クライアント | `github.com/openai/openai-go/v3` | v3.90.0 で確認済み: `responses.ComputerToolParam`（`{type:"computer"}`）、`ResponseComputerToolCall` の `Actions`（`click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot`）と `PendingSafetyChecks`、`ResponseComputerToolCallOutputItem` の `AcknowledgedSafetyChecks`。旧 `computer_use_preview`（`environment: "windows"` 等を指定する旧方式）は使わない。ChatGPT のプラン経路（#49）は、アクセストークンを Bearer にしてストリーム（`stream: true`）で呼ぶ。同じ SDK で足りるか（namespace の関数ツールと必須のストリームの型）は実装時に確認する（[非機能要件「ChatGPT プラン経路: 未確認」](../requirements/non-functional.md)）。足りなければ標準 `net/http` と SSE の読み取りで書く |
+| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` v0.2.8・MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go で、cgo 不要をソースと `go list` で確認済み） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く。OpenAI キーと TypeSafe キー（ターゲット名はそれぞれ `puppet-remo/openai:puppet-remo`・`puppet-remo/typesafe:puppet-remo`）は同じ SecretStore に置く。ChatGPT の OAuth トークン（アクセス・リフレッシュ・ID トークン・期限・scope をまとめた 1 件）も同じ SecretStore のターゲット `puppet-remo/chatgpt:puppet-remo` に置く（#49 の設計。実装は未着手） |
 | 高速パス（Jev による候補選択） | TypeSafe API（`POST https://api.typesafe.ai/v1/systemone`、モデル既定 `jev-1.13`）を `internal/typesafe` から直接呼ぶ。Go SDK は無いため標準 `net/http` | 既定は無効（`agent.fastpath.enabled`）。入力はテキストと JSON のみ（スクリーンショットは送らない）。呼び出しは 5 秒タイムアウト・再試行なし。**Jev は Judge ではない**（承認を緩めない）。Judge は既定のルールベース（自前の `RuleJudge`）のまま。品質は自前のタスクで M4 に測定して確認し、仕様書には性能の主張を書かない（[FR-G16](../requirements/functional.md)） |
 | ID 生成 | `github.com/oklog/ulid/v2` v2.1.2（Apache-2.0） | タスク・監査ログなどの ID。時刻順に並ぶ |
 | 検討したが採らない | Cua Driver（`trycua/cua`、Rust 製、MIT） | CLI・MCP・型付き SDK 経由で OS 操作を提供するが、本アプリは同一プロセス・純 Go で InputGuard・リース・監査を一貫して制御するため `platform` 層を自前実装する |
-| 自動更新 | GitHub Releases + Ed25519 署名検証 | [NFR-S10](../requirements/non-functional.md) |
+| 自動更新 | GitHub Releases（認証なし・HTTPS）+ minisign 形式（Ed25519）の署名検証。署名は `aead.dev/minisign`（v0.3.0）で検証する | [NFR-S10](../requirements/non-functional.md) |
 
 ## システム構成図
 
@@ -50,12 +50,12 @@ graph TD
         BR["ブラウザ"]
     end
     subgraph Cloud["インターネット"]
-        OAI["OpenAI API<br/>(Responses / computer ツール)"]
+        OAI["OpenAI API<br/>(Responses / computer ツール または 関数ツール)"]
         TSAFE["TypeSafe API<br/>(Jev・高速パス有効時のみ)"]
     end
     subgraph Host["ホスト (Windows) — 単一プロセス puppet-remo"]
         TS["tailscaled"]
-        subgraph Net["tailnet 公開面 (tailnet IP のみ Listen)"]
+        subgraph Net["tailnet 公開面 (tailnet IP のみ Listen。サインイン中だけ開く 127.0.0.1 のコールバック受信口を除く)"]
             RR["リモートルーター (Gin)<br/>/mcp /ws /viewer /api/v1"]
             MW["ミドルウェア<br/>Host/Origin 検証 → キルスイッチ → WhoIs → 許可リスト → Bearer(/mcp)"]
         end
@@ -169,7 +169,7 @@ graph TD
 | `repository` | SQLite へのアクセス（クライアント、トークン、設定、接続要求、監査ログ） | `domain` |
 | `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree` と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助・アプリ起動（`AppLauncher`。M1.5）・ファイル選択（`FilePicker`。M1.5）のインターフェースと Windows 実装 | `domain` |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs + 10 秒キャッシュ、Listener 管理） | `domain` |
-| `openai` | OpenAI Responses API のクライアント（`computer` ツールの要求・応答、`store: false` 固定、タイムアウト、キーの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
+| `openai` | OpenAI Responses API のクライアント（API キー経路の `computer` ツールの要求・応答、ChatGPT のプラン経路の関数ツールとストリーム（SSE）の読み取り、`store: false` 固定、タイムアウト、キー・アクセストークンの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)）。ChatGPT のサインイン・更新・失効・接続の状態（#49）は `service` が持つ部品とし、ブラウザの起動・コールバック受信口・資格情報は `platform` / `service` の背後に置く（[API 仕様 §7.5・§7.6](../api/endpoints.md)） | `domain` |
 | `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`（`Choose(ctx, ChoiceRequest) (ChoiceResult, error)`）の背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
 | `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、高速パス（`FastPath`。Agent の内部）、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai`、`typesafe` |
 | `web/handler`、`mcp`、`ws` | HTTP / MCP / WebSocket の入口。`repository` と `platform` を直接使わない | `service`、`domain` |
@@ -179,7 +179,7 @@ graph TD
 
 | ルーター | 配信経路 | 提供するもの | 認可 |
 |---------|---------|-------------|------|
-| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、起動許可アプリ、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/poll`（GUI の更新。OOB）、`/events`（SSE。GUI は購読しない） | プロセス内到達のみ。ネットワークからは到達不能 |
+| **GUI ルーター** | Wails `AssetOptions.Handler`（プロセス内。ソケットなし） | ホスト GUI（ダッシュボード、接続要求、クライアント管理、起動許可アプリ、ログ、承認ダイアログ、タスク、エージェント設定（API キー入力）、監査ログ、設定、更新）、`/poll`（GUI の更新。OOB）、`/events`（SSE。GUI は購読しない） | プロセス内到達のみ。ネットワークからは到達不能 |
 | **リモートルーター** | tailnet IP の TCP ポート（FR-S01、既定 8765） | `/mcp`、`/viewer`（Web UI）、`/ws/screen`、`/api/v1/*`、静的ファイル | ミドルウェア連鎖（下図） |
 
 2 つのルーターは `templ` コンポーネント（atoms / molecules）を共有できるが、ハンドラは共有しない（ホスト専用操作がリモートに露出しないことを構造で保証する）。
@@ -269,6 +269,7 @@ sequenceDiagram
     participant L as LeaseManager
     participant R as AppRegistry
     participant P as platform.AppLauncher
+    participant W as platform.WindowManager
     participant AU as Audit
     C->>M: tools/call launch_app(app_id)
     M->>K: Active()
@@ -289,8 +290,10 @@ sequenceDiagram
                 M->>P: Launch(絶対パス, 固定の引数, 作業ディレクトリ)
                 alt CreateProcess 成功
                     P-->>M: pid
-                    M->>AU: 記録 (ok: app_id, label, pid)
-                    M-->>C: { ok, app_id, pid }
+                    M->>W: Foreground / List（pid のウィンドウが前面に出るまで最大およそ 3 秒）
+                    W-->>M: 前面のウィンドウ
+                    M->>AU: 記録 (ok: app_id, label, pid, reused_existing_window)
+                    M-->>C: { ok, app_id, pid, window?, reused_existing_window }
                 else 失敗
                     P-->>M: LaunchError(reason)
                     M->>AU: 記録 (error: launch_failed, reason)
@@ -360,6 +363,7 @@ sequenceDiagram
 - **中断**は、実行中の OpenAI 呼び出しの `context` を取り消し、押下中のキー・ボタンを解放し、リースを解放する。キルスイッチ・リース剥奪・`cancel_task` はすべて同じ経路（FR-G10）
 - **状態の永続化**: タスクは状態遷移のたびに `agent_tasks` を更新する。ステップは監査ログの行として `task_id` と連番付きで保存する（[ER](er.md)）。実行状態（ループ・リース）はメモリのみで、再起動時に `running` / `pending_approval` のタスクを `aborted` にする（NFR-A08）
 - **会話の継続はステートレス**（[FR-G24](../requirements/functional.md)）: すべての Responses API 呼び出しで `store: false` を送り、`previous_response_id` は使わない。毎回、指示・これまでの出力アイテム（原文のまま）・`computer_call_output` アイテムを含む履歴を再送する。スクリーンショットは直近 `agent.keep_screenshots` 枚（既定 3、FR-S19）だけを残し、古いものはテキストのプレースホルダに置き換える。`reasoning` の暗号化コンテンツなど `include` に必要なものは、実装時のスモークテストで実 API に対して確認する
+- **ChatGPT のプラン経路（接続方式 `chatgpt`。既定。FR-G25〜G30）**: 同じ「エージェントのタスク実行」のフローで、モデル呼び出しだけが違う。(1) `run_task` の開始時に、設定 `agent.connection` で接続方式を決めてタスクに固定する。`chatgpt` で接続の状態が `connected` でなければ `agent_disabled`（`detail.reason`）。(2) 呼び出しの直前にアクセストークンの残りを見て、5 分以下なら更新する（排他。失敗の扱いは FR-G29）。(3) `POST https://api.openai.com/v1/responses` を `Authorization: Bearer <アクセストークン>`・`store: false`・`stream: true`・関数ツール（namespace `desktop`。FR-G27）・`input`（履歴）で呼び、ストリームを終端のイベントまで読む（全体で 60 秒。NFR-S16）。`response.completed` の `function_call` だけを取り出す。(4) 各 `function_call` を、API キー経路の `actions[]` と同じく 1 件ずつ入力層（キルスイッチ → リース → InputGuard → RuleJudge → 実行 → 監査）に通し、`function_call_output` と、新しいスクリーンショットの `input_image`（user メッセージ）を次の `input` に足す。(5) `response.failed`（`subscription_sharing_usage_limit_exceeded`）は、部分的な出力を実行せずタスクを `failed`（`chatgpt_usage_limit`）にし、接続を `usage_limited` にする。**API キー経路へは自動で切り替えない**（NFR-S22）。ホスト所有者が GUI の確認モーダルで承認したときだけ `agent.connection` を `openai_api_key` に変える（FR-G30）。(6) API の安全チェック（FR-G08）と高速パス（FR-G16）はこの経路には無い。サインインは、ホスト GUI → 既定のブラウザ（`auth.openai.com`）→ `127.0.0.1` の一時的なコールバック受信口 → コードの交換・ID トークンの検証 → 資格情報マネージャーへ保存、の順（FR-G28・NFR-S21・[API 仕様 §7.6](../api/endpoints.md)）
 - **OpenAI 側のデータ保持**（OpenAI の文書による）: API のデータは既定で学習に使われない。不正利用監視のログは最大 30 日保持される（ゼロデータ保持の承認があれば除く）。`store` を省略または `true` にするとアプリの状態が 30 日以上保持される。画像入力は CSAM のスキャン対象で、ゼロデータ保持でも審査のために保持されうる（[NFR-PR03](../requirements/non-functional.md)）
 - **スクリーンショットの大きさ**: 最大辺の既定は 1568 px（FR-S03）。16:9 では 1568×882 = 49×28 = 1,372 パッチで、文書上の拒否上限 30,000 パッチと、リサイズの予算（10,000 / 2,500 パッチ）を大きく下回る。PNG を `detail: "original"` で送る。測定に基づく調整は設定で行える
 
@@ -446,11 +450,38 @@ sequenceDiagram
 
 発動経路（トレイ、ダッシュボード、グローバルホットキー）はいずれも `KillSwitch.Trigger()` を呼ぶ。処理順は、(1) 状態を `active` に永続化、(2) 全リース剥奪、(3) 実行中のエージェントのタスクを中断（OpenAI・TypeSafe 呼び出しの取り消し、押下中入力の解放）、(4) リモートルーターのリクエストを 503 `kill_switch_active` で拒否、(5) 全 MCP・WebSocket セッションを切断、(6) オーバーレイ消去、(7) 監査記録。順序は NFR-P05（1 秒以内）を満たすため同期で行い、永続化は先頭に置いて再起動後も維持する（[NFR-S07](../requirements/non-functional.md)）。
 
+## 運用ログと監査ログ
+
+この製品には 2 種類の「ログ」があり、目的・置き場所・閲覧の画面が違う。
+
+| | アプリの運用ログ（本節で言う「アプリログ」） | 監査ログ |
+|---|---|---|
+| 目的 | アプリの動作の記録。不具合の調査・動作の確認。成功・失敗・エラーをレベル（DEBUG・INFO・WARN・ERROR）つきで残す | 業務記録。誰が（操作主体）・いつ・何を・どうなったかを、あとから検証できるように残す（FR-AU01） |
+| 置き場所 | ファイル `%LOCALAPPDATA%\puppet-remo\logs\puppet-remo.log`（slog の JSON。10 MiB × 5 世代でローテーション。NFR-O01） | DB の `audit_logs`（`repository.Audit`。保持期間あり。[ER](er.md)） |
+| 書く側 | 各コンポーネントが `slog` で書く（起動・tailscaled の状態・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチ・設定の反映など） | `Audit.Record`（`Control`・`LeaseManager`・`KillSwitch`・`Authz`・`HostAdmin` など。非同期のキュー） |
+| 秘密 | トークンの平文・ハッシュ・API キーなどは出さない（NFR-S13。`slog` の `ReplaceAttr` が安全網） | 同じ（FR-AU03。`type` の本文・クリップボードも既定で記録しない） |
+| 閲覧 | ホスト GUI の「ログ」画面（`/logs`。FR-H13。**M1**）。ログファイルを直接開いてもよい | ホスト GUI の監査ログ画面（FR-AU01。**M3**。M1 は記録だけで、閲覧 UI はない） |
+
+運用ログの画面は、監査ログの代わりにはならない。たとえば認証の失敗は、運用ログには「理由・デバイス・IP」だけを 1 行（WARN）で残し、監査ログには `auth.bearer_failed` のイベントとして構造化して残す。運用ログは、ファイルが 10 MiB を超えて古い世代が消えると見えなくなる（5 世代まで）。長く残す必要のある記録は監査ログ（保持期間の設定による）に置く。
+
+### アプリログの読み方（ログ画面）
+
+「ログ」画面（`service.AppLog` の実装 `app.LogReader`）は、ログファイルを**末尾から一定のブロック（64 KiB）ずつ逆向きに読み**、1 ページ（50 件）に必要な分だけ取り出す。ファイル全体をメモリに載せない。今のファイルを読み切っても足りなければ、ローテーションされた古いファイル（`puppet-remo-<時刻>.log`。名前の時刻の降順）へ続く。選んだ理由:
+
+- **メモリ上のリングバッファ（slog のハンドラから複製）にしなかった**: 再起動で消える。ファイルに残っているログ（起動直後の失敗など）が見えなくなる。ファイルが唯一の真実の源であり続けるほうが、画面とファイルが食い違わない
+- **別の保存先（DB など）に二重に書かなかった**: 書き込みの経路が増え、ログを書く処理がログの保存の失敗に影響される
+- 逆向きの読みは、書き込み中の途中の行・JSON でない行・壊れた行・1 MiB を超える行を読み飛ばすだけで、ローテーション（`lumberjack` の名前の付け替え）にも追従する（1 回の読み出しごとにファイルの一覧を取り直す）
+- 絞り込み（レベル）は読みながら行う。深いページや、まれなレベル（ERROR のみ）では多くを読むが、読むのは保持するファイル（最大 50 MiB）までで、ページは 100 までに丸める。読み出しはファイルを共有つきで開く（Windows は `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`。`internal/app/logfile_windows.go`）。Go の `os.Open` は `FILE_SHARE_DELETE` を付けず、読んでいる間（数ミリ秒）にちょうど `lumberjack` のローテーション（名前の付け替え）が起きると共有違反で失敗し、そのときの 1 行が書けない（#53）ため、読み出しだけ `CreateFile` で開く。実機の確認は [smoke-windows.md](../operations/smoke-windows.md) の §4.15 の F6（未確認）
+- 画面に出すときは、値を 500 文字までに切り詰め、1 件あたり 24 個までの属性だけを出す。値は書き込み時の伏せ字（`redactAttr`）のうえに、読み出し時にも同じ規則（`redactString`）で秘密を伏せる
+
+画面のレベルの絞り込みは「すべて」「WARN 以上」「ERROR のみ」。「すべて」はファイルにあるものをそのまま出すので、環境変数 `PUPPET_REMO_LOG_LEVEL=debug` で起動したときの DEBUG も含む（既定の INFO では DEBUG は書かれない）。ツールの成功のうち読み取りだけのもの（スクリーンショットの取得など。頻繁に呼ばれる）は DEBUG にして、既定のログを埋めない。
+
+
 ## 画面配信パイプライン
 
 ```mermaid
 graph TD
-    CAP["Capturer<br/>DXGI Desktop Duplication / GDI"] --> DIFF["差分検出<br/>DXGI 変更矩形 + タイルハッシュ"]
+    CAP["Capturer<br/>DXGI Desktop Duplication / GDI"] --> DIFF["差分検出<br/>タイルハッシュ（Dirty は全面）"]
     DIFF --> ENC["エンコード<br/>JPEG (標準 image/jpeg)<br/>プロファイル単位で共有"]
     ENC --> FAN["ファンアウト<br/>閲覧者ごとの送信キュー"]
     FAN --> WS["WebSocket バイナリフレーム"]
@@ -460,19 +491,19 @@ graph TD
 - キャプチャ・差分検出は**モニターごとに 1 つの goroutine**。閲覧者がゼロなら停止する（FR-W09、NFR-P04）
 - 差分は 64×64 px のタイル単位。変化したタイルを矩形にまとめて JPEG で送る。接続直後と一定間隔（既定 5 秒）で全面キーフレームを送る
 - エンコードは (モニター, 品質, FPS) のプロファイル単位に 1 回だけ行い、同じプロファイルの閲覧者で共有する（NFR-P07）。閲覧者ごとの送信キューが詰まったら古いフレームを捨てる（遅延の累積を防ぐ）
-- DXGI は `ACCESS_LOST`（ロック画面・UAC・解像度変更など）で再初期化する。復旧できなければ `desktop_unavailable` とし、GDI にフォールバックする
+- DXGI は `ACCESS_LOST`（ロック画面・UAC・解像度変更など）で再初期化する（200 ms 間隔で最大 5 回）。復旧できなければ `desktop_unavailable` を `errs` に流し、GDI にフォールバックする。DXGI は画面が変化したときだけコマを返し、GDI は `fps` の間隔で撮って前のコマと内容を比べる
 - `screenshot` ツールは配信とは独立に 1 回だけ撮り、縮小（FR-M16 の縮小率）して返す
 
 ## 入力注入と自己保護
 
 - **座標変換**: 縮小座標 → `round(x ÷ 縮小率)` → モニター原点を加算 → 仮想デスクトップ座標。`SendInput` は `MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK` で 0〜65535 に正規化して送る。プロセスは Per-Monitor DPI Aware V2 のマニフェストを持つ
 - **`InputGuard`**（すべての注入の前に必ず通る。[NFR-S06](../requirements/non-functional.md)）:
-  1. 注入先の座標にあるトップレベルウィンドウ、またはフォアグラウンドウィンドウが**自プロセスのもの**ならブロック（`input_blocked`）
+  1. 注入先の座標にあるトップレベルウィンドウ、またはフォアグラウンドウィンドウが**自プロセスのもの**ならブロック（`input_blocked`）。ただしクリック透過のオーバーレイ（自プロセスで `WS_EX_TRANSPARENT` かつ `WS_EX_LAYERED`）は例外で、入力は下のウィンドウへ通るため拒否しない。全モニターを覆うオーバーレイの下にある承認ダイアログなどが判定から漏れないよう、座標の問い合わせ（`WindowManager.At`）はオーバーレイを飛ばして下の実ウィンドウを返す
   2. 管理者権限ウィンドウ（UIPI）が対象なら `input_blocked`
   3. キルスイッチ中・リース非保持なら拒否
   4. エージェントの入力は、上記に加えて Judge（次節）を通す。InputGuard はすべての保持者種別（`mcp` / `web` / `agent`）に同じ規則を適用する
-- **自ウィンドウのキャプチャ除外**: ホスト GUI・承認ダイアログ・オーバーレイは Wails の `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）を有効にする。AI のスクリーンショットにも Web UI のライブ画面にも写らない
-- **オーバーレイ**: モニターごとに 1 ウィンドウ。枠なし・透過背景・最前面・`IgnoreMouseEvents`（クリック透過）・タスクバー非表示。リースの保持・解放イベントで表示・消去する
+- **自ウィンドウのキャプチャ除外**: ホスト GUI・承認ダイアログ・オーバーレイは Wails の `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）を有効にする。AI のスクリーンショットにも Web UI のライブ画面にも写らない。AI が入力の止まる場所を避けられるよう、`own_window` のエラー・`screenshot` の `own_windows`・`list_windows` の `blocked`・`instructions` で範囲（縮小座標の矩形）と印を伝える（画像への描画はしない。FR-M20）
+- **オーバーレイ**（[FR-H07](../requirements/functional.md)）: 全モニターに、モニターごとに 1 ウィンドウ（物理座標の原点・大きさに合わせる）。枠なし・透過背景・最前面・`IgnoreMouseEvents`（クリック透過。`WS_EX_TRANSPARENT` + `WS_EX_LAYERED`）・タスクバー非表示・フォーカスを奪わない（`WS_EX_NOACTIVATE`）・キャプチャ除外。リースの保持（`held`）で表示・保持者の変更でラベル更新・解放（アイドル解放・強制剥奪・キルスイッチ・切断を含む）と承認待ちで消去する。中身は GUI ルーターの `GET /overlay`（枠と「操作中: <クライアント名>（種別）」だけ）。出している間のモニター構成の変化は追わず、次に出すときに反映する
 - **承認ダイアログ**: 承認要求ごとに専用の Wails ウィンドウを開く（Go 側でウィンドウ生成）。内容は GUI ルーターが Templ で描画し、「許可 / 拒否」は HTMX の `hx-post` で GUI ルーターへ送る。操作は入力ガードにより AI から押せない
 
 ## Judge（判定インターフェース）
@@ -511,7 +542,7 @@ type Judge interface {
 | 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない）。`wails3 dev` が開発サーバーの待受を要求するため、esbuild の `--serve` を待受として起動する |
 | CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
 | 静的ファイル | `Cache-Control: no-cache` + `ETag`（ビルド ID） |
-| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform。Lit と Playwright は M2 で CI に足す） |
+| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform・偽の tailnet のテスト専用サーバー。ビルドタグ `e2e`。Lit と Playwright は、M2 の受け入れ条件ではなくあとから CI に足した。#64） |
 
 全項目と理由は [フロントエンド設計](frontend.md) §2 を参照。
 
@@ -547,7 +578,7 @@ puppet-remo/
 │   │   │   └── lib/              # ws.ts, logger.ts
 │   │   └── css/
 │   ├── dist/                     # ビルド成果物 (go:embed)
-│   └── e2e/                      # Playwright
+│   └── e2e/                      # Playwright（+ playwright.config.ts）
 ├── build/                        # Wails パッケージング (NSIS、マニフェスト)
 ├── docs/
 └── Taskfile.yml                  # templ / tailwind / esbuild (dev は --serve) / wails3 package
@@ -561,8 +592,8 @@ puppet-remo/
 | フロントエンド | Tailwind CSS ビルド、esbuild（Lit コンポーネント）、`htmx.min.js` のコピー → `static/dist/` |
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
-| 配布・更新 | GitHub Releases。インストーラと署名ファイル（Ed25519）を公開し、アプリが署名検証して適用 |
-| CI | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は M2 で足す（偽の platform と偽の tailnet により OS に依存しない。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
+| 配布・更新 | GitHub Releases（リポジトリは公開が前提）。インストーラ・`.sha256`・署名ファイル `.minisig`（minisign 形式。Ed25519）を公開し、アプリが埋め込みの公開鍵で署名検証して適用する。署名の trusted comment に版とファイル名を入れ、Release との不一致（付け替え）を拒否する。署名の秘密鍵は GitHub Actions の Secret（`MINISIGN_SECRET_KEY`）にだけ置き、Secret が無いときは署名を省いて公開する（アプリは署名のないリリースを適用しない）。チャネルは正式版（既定）とナイトリー。確認は起動の 1 分後と 6 時間ごと。詳細は [リリース運用](../operations/release.md) |
+| CI | GitHub Actions。すべてのジョブを GitHub のランナー（`ubuntu-latest`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は別ジョブ `e2e` で行う（M2 の受け入れ条件ではなく、あとから足した CI の改善。#64。偽の platform と偽の tailnet により OS に依存しない。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
 
 ## M1 実装での差分
@@ -574,14 +605,15 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
 | Huma（JSON API） | `/api/v1` を提供 | 使わない（`go.mod` に無い）。`/api/v1` は M2 以降 |
-| WebSocket | `github.com/coder/websocket` v1.8.15 | 直接依存ではない（`go.mod` では v1.8.14 の間接依存。Wails の依存）。直接依存にするのは `ws` を作る M2 |
-| 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | 依存に無い。M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけで、Windows 実装も呼び出しも無い（API キー管理は M4） |
-| DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | 依存に無い。M1 は GDI BitBlt だけで、`Capturer.Watch` は Windows 実装でエラーを返すスタブ |
-| OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | 依存に無く、`internal/openai`・`internal/typesafe` も無い（M4） |
+| WebSocket | `github.com/coder/websocket` v1.8.15 | M2（#61）で直接依存にした（`internal/ws`。v1.8.14 の間接依存だったものを v1.8.15 に上げた） |
+| 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | M4（#19）で依存に加え、`platform/windows` の `SecretStore` の背後に置いた（M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけだった）。呼び出しは M4 の後続の変更で足す |
+| DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | M2（#57）で直接依存に追加し採用を確定した（`internal/platform/windows` の `dxgi_windows.go`）。`Capturer.Watch` は DXGI を主、GDI をフォールバックとして実装した。変更矩形は使わず `Frame.Dirty` は全面 |
+| OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | `internal/openai`（`openai-go/v3` v3.90.0）・`internal/typesafe`（`net/http`）を M4（#19）で追加した。`app` は import せず、組み立ては `service`（`NewAgentModel`・`NewAgentChooser`）が持つ |
 | MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |
 | ULID | `oklog/ulid/v2` | 同じ（`internal/app` の `ULIDGen`）。`domain.IDGen` として注入する |
 | ホスト GUI の更新 | `GET /poll`（本書の技術選定のとおり） | 同じ。`GET /events`（SSE）と `htmx-ext-sse` の同梱は残すが、M1 の GUI は読み込まない（未使用） |
-| ホスト GUI のウィンドウ | `ContentProtectionEnabled`（キャプチャ除外）を承認ダイアログ・オーバーレイ・ホスト GUI に付ける | M1 はホスト GUI のメインウィンドウだけに `ContentProtectionEnabled` を付ける（承認ダイアログ・オーバーレイは M3） |
+| 自動更新（M3・#74） | 署名検証付きの更新（`service.Updater`・`platform.Installer`。GitHub Releases の認証なしの取得・minisign の署名検証・チャネル・ダウングレード拒否・適用の可否） | M3 で実装した。公開鍵（`internal/service/updater_pubkey.pub`。鍵 ID `4CF72995B5EA6E65`）は埋め込み済みで、このファイルを含むビルドは署名を検証できる。ファイルを空・コメントだけに戻すと、確認だけ行い適用しない（fail closed）。リリース CI の署名は Secret があるときだけ（[リリース運用](../operations/release.md)「署名」）。`internal/app` が `Updater` を組み立て、`Shutdown` で止める（Wails の終了への結線は `wails_windows.go`） |
+| ホスト GUI のウィンドウ | `ContentProtectionEnabled`（キャプチャ除外）を承認ダイアログ・オーバーレイ・ホスト GUI に付ける | 同じ（承認ダイアログは #68、オーバーレイは #69 で付けた） |
 
 ### ディレクトリ構成
 
@@ -590,14 +622,15 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | 項目 | M1 の実装 |
 |------|----------|
 | `internal/openai`・`internal/typesafe`・`internal/ws` | 無い（M4・M4・M2 で作る） |
-| `internal/web` | `handler/gui` だけ（`handler/remote` は M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`（偽の service）を持つ |
+| `internal/web` | `handler/gui` と `handler/remote`（M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`・`handler/remote/remotetest/`（偽の service）を持つ |
 | `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ。`windows/` の `secret`（資格情報）は無い |
 | `internal/router` | `gui.go`・`remote.go` と `internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
-| `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`。承認ダイアログとオーバーレイは M3 |
+| `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`・`wails_overlay_windows.go`。承認ダイアログ（`approval_dialogs.go`。M3・#68）とオーバーレイ（`overlay.go`。M3・#69）の購読側は OS に依存せず、Wails の実装だけが Windows 専用 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
-| `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`）と `e2e/` は M2 |
-| 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
-| Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など |
+| `cmd/puppet-remo-e2e`・`internal/app/e2e.go`・`internal/tailnet/e2e.go`（#64） | Playwright の E2E のテスト専用サーバー。すべて `//go:build e2e`（`go build ./...` は無視し、本番のバイナリに入らない）。偽の platform・偽の tailnet・loopback の待ち受けと、e2e ビルドだけの制御エンドポイント（loopback の IP リテラルにだけ bind）。[コンポーネント設計](../components/overview.md) §13.13 |
+| `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`。M2 の #63）。Lit のテスト（`src/components/**/*.test.ts`・`web-test-runner.config.mjs`）と `e2e/`・`playwright.config.ts`（Playwright の E2E）は、M2 の受け入れ条件ではなくあとから CI の改善として #64 で足した |
+| 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/environment/setup.md`（環境構築）、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
+| Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など。#64 で `frontend:browsers`・`frontend:test`・`frontend:typecheck:e2e`・`test:e2e`・`e2e` を足した |
 
 ### 依存の向き
 
@@ -605,13 +638,13 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 
 ### キルスイッチ（「キルスイッチ」の節）
 
-M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以後のリクエストを 503 にする）から、(1) 永続化、(2) 全リース剥奪、(3) 登録済みクローザーの**並行**実行（MCP セッションの切断・押下中の入力の解放）、監査の順で行う。エージェントの中断・WebSocket の切断・オーバーレイの消去は、それぞれ M4・M2・M3 で足す。永続化とクローザーはそれぞれ自分の期限（既定 1 秒）を持つため、永続化が遅いと `Trigger` が戻るまで最大 2 × 期限かかり、NFR-P05 の 1 秒を超えうる（**既知の制限**。受付停止はメモリ上の状態で直ちに効くが、セッション切断の完了は遅れうる。詳細はコンポーネント設計 §13.5）。
+M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以後のリクエストを 503 にする）から、(1) 永続化、(2) 全リース剥奪、(3) 登録済みクローザーの**並行**実行（MCP セッションの切断・押下中の入力の解放）、監査の順で行う。WebSocket の切断（クローザー `web-sessions`。閉じコード 4503）は M2 で足した。オーバーレイの消去は、`Trigger` が `Bus` に出す `lease`（全リース剥奪の通知）を `app` が受けて行う（M3・#69）。エージェントの中断は M4 で足す。永続化とクローザーはそれぞれ自分の期限（既定 1 秒）を持つため、永続化が遅いと `Trigger` が戻るまで最大 2 × 期限かかり、NFR-P05 の 1 秒を超えうる（**既知の制限**。受付停止はメモリ上の状態で直ちに効くが、セッション切断の完了は遅れうる。詳細はコンポーネント設計 §13.5）。
 
 ### 受付と入力（「ルーターの分離とリクエスト処理」「入力注入と自己保護」の節）
 
 | 項目 | M1 の実装 |
 |------|----------|
-| リモートルーター | `/mcp` だけ（それ以外は 404）。tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒・`IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB（`WriteTimeout` なし） |
+| リモートルーター | `/mcp`・`GET /ws/screen`・Web UI（`/`・`/viewer*`）・`GET /static/*`（それ以外は 404）。未登録デバイスのブラウザへ返すページは、接続要求の状態（待機・拒否・失効）を読み取り専用で引いて選ぶ（FR-W02。ステータスと FR-A06 の挙動は変えない）。tailnet 向けの `http.Server` は `ReadHeaderTimeout` 10 秒・`IdleTimeout` 120 秒・`MaxHeaderBytes` 64 KiB（`WriteTimeout` なし） |
 | WhoIs | LocalAPI の 1 回の呼び出しは 5 秒で打ち切る（失敗は `whois_failed`。fail closed）。結果は IP 単位に最大 10 秒キャッシュ |
 | 接続要求 | 期限切れの `pending` は一覧に出ず、許可もできない。同じデバイスの `pending` を 5 秒以内に更新済みなら DB に書かない。登録済みデバイスのログイン名が変わった要求を許可すると、古いクライアントを置き換える（`client.replace` を監査に記録。トークンは CASCADE で削除、セッションは切断、リースは解放）。古いクライアントの切断は、他の許可を止めないようロックの外で行う |
 | 監査 | クライアントの行がすでに無いときの `client_id` は NULL で保存する（ラベルは残る）。`Control` を通らない MCP ツール（`get_screen_info`・`screenshot` など）は `mcp` のツール登録が記録する |
@@ -634,3 +667,20 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.9 | 2026-10-30 | 「M1 実装での差分」を新設（依存ライブラリ・ディレクトリ構成・依存の向き・キルスイッチ（`Trigger` が最大 2 × 期限かかりうる既知の制限を含む）・受付と入力の実装値）。ディレクトリ構成の冒頭に参照を追加 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.10 | 2026-10-30 | 起動許可リスト（M1.5）を追加: 構成図（`AppLauncher`・`FilePicker`・許可リスト）、レイヤー表の `platform`、GUI ルーターの提供物、主要フロー「アプリ起動」、ディレクトリ構成（`launcher`・`filepicker`） | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.11 | 2026-10-30 | 許可リストの読み取りを `AppReader` に分け、`Control` には読み取り専用の面だけを渡すことを反映 | #16 の独立レビュー指摘 |
+| 1.12 | 2026-11-01 | 「運用ログと監査ログ」（違いと、ログ画面の読み方・選んだ理由）を追加し、GUI ルーターの画面に「ログ」を追記 | #45 |
+| 1.13 | 2026-11-01 | 「アプリ起動」の流れ図に、起動後のウィンドウの観測（`WindowManager`。最大およそ 3 秒）と、応答の `window`・`reused_existing_window` を追記 | #46 |
+| 1.14 | 2026-11-01 | 「入力注入と自己保護」に、自ウィンドウの範囲と印を AI へ伝える旨（FR-M20。画像には描かない）を追記 | #47 |
+| 1.15 | 2026-11-01 | M1 実装での差分の「追加のファイル」に `docs/environment/setup.md` を追加 | #40 |
+| 1.16 | 2026-11-01 | 技術スタックの画面キャプチャと「M1 実装での差分」の DXGI の行を、M2 の `Capturer.Watch` の実装（`go-d3d` の採用、`Frame.Dirty` は全面）に更新 | #57 |
+| 1.17 | 2026-11-01 | 技術選定の WebSocket（`coder/websocket` v1.8.15）を直接依存にしたこと、「M1 実装での差分」の `KillSwitch.Trigger` の記述に WebSocket の切断（`web-sessions`）を M2 で足したことを反映 | #61 |
+| 1.18 | 2026-11-01 | M1 実装での差分の `internal/web`（`handler/remote`・`remotetest`）とリモートルーターの提供物（Web UI・`/static/*`・待機ページの出し分け）を反映 | #62 |
+| 1.19 | 2026-11-02 | 入力注入と自己保護の InputGuard にクリック透過のオーバーレイの例外（`At` は Overlay を飛ばす）、オーバーレイを全モニター・物理座標・保持者の変更・構成変化の扱いに具体化、M1 実装での差分の `internal/app`・キルスイッチ・`ContentProtectionEnabled` の行を #68・#69 の実装に更新 | #69 |
+| 1.20 | 2026-11-02 | 自動更新を具体化: 認証なしの取得（リポジトリは公開が前提）、minisign 形式の署名と trusted comment による版・ファイル名の束縛、公開鍵の埋め込みと未設定時の fail closed、署名鍵を GitHub Actions の Secret に置くこと（Secret が無いときは署名を省く）、チャネル、確認の間隔。M1 実装での差分に自動更新の行を追加 | #74 |
+| 1.21 | 2026-11-02 | 技術選定表の OpenAI / TypeSafe クライアントの行を M4 の実装（`internal/openai`・`internal/typesafe` を追加。`app` は import せず、組み立ては `service.NewAgentModel`・`service.NewAgentChooser`）に更新 | #19 |
+| 1.22 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
+| 1.23 | 2026-11-02 | 「運用ログと監査ログ」のログ画面の読み出しを、Windows で `FILE_SHARE_DELETE` つきで開く実装（`openLogFile`）に更新し、ローテーションとの共有違反の注記を直した | #53 |
+| 1.24 | 2026-11-02 | 技術選定表のテスト・CI の行と、M1 差分の `static/` の行を、#64 の実装（Lit のテストと Playwright の E2E は M2 の受け入れ条件ではなく CI の改善として別ジョブ `e2e` で足す。テスト専用サーバーはビルドタグ `e2e`）に更新 | #64（オーナーの決定） |
+| 1.25 | 2026-11-02 | 技術選定表の自動更新の行を、公開鍵の埋め込み済み（鍵 ID `4CF72995B5EA6E65`）に更新 | 署名鍵の登録 |
+| 1.26 | 2026-11-02 | 技術選定表の CI の行を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更 | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
+| 1.27 | 2026-11-02 | 内蔵エージェントの接続方式を 2 つにした（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 設計方針の外部通信、技術選定の資格情報（ChatGPT の OAuth トークン）、構成図の OpenAI の表記、レイヤーの `openai`、エージェントのタスク実行に ChatGPT のプラン経路（トークンの更新・ストリーム・関数ツール・使用量の上限・API キーへの切り替えの承認・サインインの流れ）を追記 | #49 |
+| 1.28 | 2026-11-02 | 構成図の tailnet 公開面に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |

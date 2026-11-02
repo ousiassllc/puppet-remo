@@ -1,6 +1,6 @@
-# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8）
+# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8。M2: 継続キャプチャ `Capturer.Watch` は §3.9）
 
-CI はセルフホストの Linux ランナーで動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。DXGI・オーバーレイは M2 以降の手順で確認する。
+CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。継続キャプチャ（DXGI・`Capturer.Watch`）は §3.9、操作中オーバーレイは §4.12 で確認する。
 
 ## 1. 準備
 
@@ -25,13 +25,18 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` | 未設定 | `requireAdministrator` のマニフェストを持つ実行ファイルのパス。設定すると `TestSmokeAppLauncher` が `elevation_required` を確かめる（§3.8 L4）。未設定なら飛ばす |
 | `PUPPET_REMO_SMOKE_LAUNCH_DENIED` | 未設定 | 起動を OS に拒否される実行ファイルのパス（ACL で実行を拒否したファイルなど）。設定すると `TestSmokeAppLauncher` が `access_denied` を確かめる（§3.8 L5）。未設定なら飛ばす |
 | `PUPPET_REMO_SMOKE_PICKER` | 未設定 | `1` のときだけファイル選択のテスト（`TestSmokeFilePicker`。§3.8 L9）を走らせる。ダイアログが開くため、手動で選択・キャンセルの操作が要る |
+| `PUPPET_REMO_SMOKE_FOLDER` | 未設定 | `1` のときだけフォルダーを開くテスト（`TestSmokeFolderOpener`。§4.14 F1）を走らせる。一時ディレクトリのエクスプローラーが 1 つ開く（手で閉じる） |
 
 ```powershell
 $env:PUPPET_REMO_SMOKE_INPUT = "1"; $env:PUPPET_REMO_SMOKE_CLIPBOARD = "1"
 go test -tags smoke -v -count=1 ./internal/platform/windows/
 ```
 
-`TestSmokeCapturer` と `TestSmokeWindowManager` は画面を読むだけで、副作用はない。`go test` は成功（`PASS`）し、`SKIP` が出た項目は上の環境変数を設定して再実行する。
+`TestSmokeInstaller`（`platform.Installer` の契約。`whoami.exe` の複製を `/S` で起動する。本物のインストーラは動かさない。§4.13）は、画面にも設定にも触れない。
+
+`TestSmokeSecretStore`（`platform.SecretStore` の契約。資格情報マネージャーへ、実行ごとに変わる専用の名前 `puppet-remo/contract-<乱数>` で保存・上書き・削除する。終了時に消すので、本物のターゲット名 `puppet-remo/openai:puppet-remo`・`puppet-remo/typesafe:puppet-remo` には触れない。M4・#19）は、画面にも設定にも触れない。実際のターゲット名は `<名前>:puppet-remo`（[components §13.3](../components/overview.md)）。
+
+`TestSmokeCapturer`（`Grab` と `Watch` の契約）、`TestSmokeCapturerWatchAllMonitors`（全モニターの `Watch` を同時に開く）、`TestSmokeWindowManager` は画面を読むだけで、副作用はない。`go test` は成功（`PASS`）し、`SKIP` が出た項目は上の環境変数を設定して再実行する。
 
 ## 3. 機能ごとの確認項目（手動）
 
@@ -67,6 +72,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | I12 | 管理者として起動したメモ帳へ入力する（アプリは標準権限） | `list_windows` で `Elevated` が真。入力は UIPI で届かない。`service.InputGuard` が `input_blocked` で先に拒否する（platform 単体では SendInput が成功を返すことがある） |
 | I13 | `Ctrl+Alt+Del` | platform は送れない（SAS）。`service.InputGuard` が拒否する（NFR-S06）。platform の `Key` に渡しても OS が受け付けないことだけ確認する |
 | I14 | ロック画面・UAC のセキュアデスクトップ・RDP の切断中 | `SendInput` の失敗が `desktop_unavailable`（`input_blocked` ではない） |
+| I15 | ホスト GUI を開いたまま、MCP クライアントから `list_windows`・`screenshot`、GUI の上の点へ `mouse_move`（#47、FR-M20） | `list_windows` に puppet-remo のウィンドウが `blocked: true`・`blocked_reason: "own_window"` で出る。`screenshot` の画像には GUI が写らず（NFR-S06）、`own_windows` にその範囲（縮小座標の `rect`、`monitor`）が出る。GUI の範囲内への `mouse_move` は `input_blocked`（`own_window`）で、`detail.own_windows` の `rect` が `screenshot` の `own_windows` と一致する。2 台目のモニターと、縮小されるモニターでも同じ |
 
 ### 3.3 WindowManager（FR-M11・FR-M12）
 
@@ -139,6 +145,21 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | L8 | 標準権限のまま起動する | 起動したプロセスのトークンが本アプリと同じ整合性レベル（昇格していない） |
 | L9 | `FilePicker.PickExecutable`（`go test -tags smoke -run TestSmokeFilePicker -v ./internal/platform/windows/`。`PUPPET_REMO_SMOKE_PICKER=1` のときだけ走る。手動操作が要る） | `.exe` のフィルターのダイアログが開き、選択でパスが返る。キャンセルで `ok=false`。3 秒後の `ctx` の取り消し（操作しない）でダイアログが閉じ `context.DeadlineExceeded` が返る |
 
+### 3.9 Capturer.Watch（DXGI Desktop Duplication・GDI フォールバック。M2。#57。FR-W01・W09、NFR-P02・P04）
+
+契約テストは `TestSmokeCapturer`（各モニターの最初の 1 コマの大きさ・原点・`Dirty`・`Seq`、`ctx` の取り消しで 2 つのチャネルが閉じる）と `TestSmokeCapturerWatchAllMonitors`（全モニターを同時に開く）。以下は契約テストが見ない確認項目で、**実機で確かめるまで「未確認」**。経路（DXGI か GDI か）は、`errs` に `desktop_unavailable` が流れたかどうか（流れたら GDI に切り替わっている）で分かる。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| W1 | 単一モニターで `Watch`（10 fps）。画面を動かす（ウィンドウをドラッグ、動画を再生） | 画面が変化している間だけ `frames` に流れ、`Seq` が 1 から 1 ずつ増える。画像の大きさがモニターの物理ピクセルと同じ。色が R と B で入れ替わっておらず、アルファが不透明 |
+| W2 | 画面を静止させる | `frames` に何も流れない（CPU がほぼ 0）。マウスを動かすだけでは流れない（カーソルは写さない。`Grab` と同じ） |
+| W3 | マルチモニター（左・上に副モニター、モニターごとにスケールが違う） | 各 `Watch` がそのモニターの内容だけを写す。`Index` ごとの画像の大きさが `Size`（物理）と一致。DXGI で開けたモニターと GDI になったモニター（別 GPU など）が混在してもコマが来る |
+| W4 | 表示スケール 150% / 200%、実行中に解像度・スケールを変える | 変更後は新しい大きさでコマが流れる（`ACCESS_LOST` から再初期化。解像度が変わった `Monitors` に合わせて出力を探し直す）。ぼやけない |
+| W5 | 画面をロック（Win+L）し、UAC（セキュアデスクトップ）を出す | `errs` に `desktop_unavailable` が流れ、GDI に切り替わる（ロック中は GDI も失敗して同じエラーが 1 回だけ流れる）。解除後はコマが流れる。黒い画像を成功として流さない |
+| W6 | `ctx` を取り消す | 1 秒以内に 2 つのチャネルが閉じ、キャプチャが止まる（タスクマネージャーで CPU が下がる。FR-W09・NFR-P04 の土台） |
+| W7 | 10 fps で 1 時間以上 `Watch` し続ける（GPU メモリ・ハンドルのリークがない） | プロセスのメモリとハンドル数が増え続けない。`ACCESS_LOST` を繰り返し起こしても（ロック・解除を 20 回）同じ |
+| W8 | 表示遅延（NFR-P02 は #59 以降の経路全体で測る） | `Watch` のコマは画面の変化から 1 フレーム間隔（100 ms）以内に届く |
+
 ## 4. Wails のシェルと結線（S11。実機のみ）
 
 `task windows:build`（または Windows で `go build -tags production -ldflags "-H windowsgui" ./cmd/puppet-remo`）で作った `puppet-remo.exe` を、**tailscaled が動いていて tailnet にログイン済み**の対話デスクトップで実行する。WebView2 ランタイムが要る（インストーラが導入する）。通信相手になる tailnet 上の別端末（MCP クライアント）を 1 台用意する。
@@ -174,12 +195,16 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | WV3 | **GUI の自動更新（`GET /poll`）** | Wails v3.0.0 の Windows の AssetServer は応答をストリーミングしない（`responsewriter_windows.go` は本文を `Finish` まで溜める）ため、GUI は SSE（`/events`）ではなく 3 秒ごとのポーリング（`GET /poll`）で更新する。ダッシュボードを開いたまま、tailnet 側のセッション・接続要求・キルスイッチの変化が約 3 秒以内に、再読み込みなしでウィンドウ内に反映される（セッション・リース・サーバー状態・ヘッダーの状態バッジ・接続要求のバッジと一覧・キルスイッチのパネル）。接続要求のページで許可フォームに入力している間、ポーリングで入力が消えない |
 | WV4 | トークンのクリップボードコピー | 発行直後の「コピー」ボタンでクリップボードにトークンが入る（WebView2 の `navigator.clipboard` が使える）。コピー後、他のアプリへ貼り付けて確認する |
 | WV5 | ウィンドウのキャプチャ除外 | メイン GUI は `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）で、トークン発行画面を出した状態で MCP の `screenshot` を呼んでも、ウィンドウの内容が写らない。また `Own` ウィンドウとして `InputGuard` が入力を拒否する（§3.3 WM5） |
+| WV6 | **監査ログ画面（`/audit`。M3・FR-AU05。未確認）**: 表示・絞り込み・詳細・ページ送り | 画面が表示され、絞り込み（日時・クライアント・種別・結果・イベント名）と「次へ」が再読み込みなしで動き、戻る操作で直前の一覧に戻る（`hx-push-url`）。不正な日時は項目の下にメッセージが出る（422） |
+| WV7 | **サムネイルの表示（未確認）**: 詳細の `<img src="/audit/{id}/thumbnail">` | サムネイルが読み込まれる（WebView2 のコンソールに CSP 違反が出ない。`img-src 'self'`）。サムネイルの無い行は「サムネイルはありません」と出る。件数が多い（数千件）ときも一覧が重くならない（1 ページ 50 件） |
+| WV8 | **監査ログ画面は AI の入力を受けない（未確認。NFR-S06）** | 監査ログ画面を前面にした状態で MCP / Web の入力を送ると、ホスト GUI は自ウィンドウとして拒否される（`input_blocked`） |
+| WV9 | **設定画面の監査ログ・更新のグループ（M3・FR-S07・FR-S09。未確認）**: 保存と検証エラーの再描画 | 「監査ログ」（サムネイル・本文の記録・保持期間・容量の上限）と「更新」（適用方法）のグループが出て、平文の注意書き（BitLocker・サムネイルの無効化）が常に見える。範囲外の保持期間（`0`・`36501`）で保存すると、その項目の下にエラーが出て入力値が残り、他の項目も残る。直して保存するとトーストが出て、再起動後も値が残る。WebView2 のコンソールに CSP 違反が出ない |
 
 ### 4.4 リモートルーターと tailnet（FR-A01〜A02、NFR-S01・A03）
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
-| R1 | 起動後の `netstat -ano \| findstr 8765` | tailnet の IPv4（`100.x`）・IPv6（`fd7a:`）だけで LISTENING。`127.0.0.1`・`0.0.0.0`・`::` では待ち受けない |
+| R1 | 起動後の `netstat -ano \| findstr 8765` | tailnet の IPv4（`100.x`）・IPv6（`fd7a:`）だけで LISTENING。`127.0.0.1`・`0.0.0.0`・`::` では待ち受けない（例外: ChatGPT のサインイン中〔#49 の実装後〕だけ、本アプリが `127.0.0.1` の一時ポートでも LISTENING になる。サインインしていないとき・サインインが終わったあとは出ない。NFR-S01・S21） |
 | R2 | tailnet 上の別端末から `curl http://<tailnet-ip>:8765/mcp` | 未登録なら 403（接続要求が作られ、トレイ・ダッシュボードに出る）。`/viewer`・`/api/v1` は 404（M1 にない） |
 | R3 | 接続要求を許可 → トークン発行 → MCP クライアントで接続 | `initialize` と `tools/list` が通り、ダッシュボードの「接続中セッション」に出る。切断すると消える |
 | R4 | tailscaled を停止・再起動 | 待ち受けが止まり（理由がダッシュボードに出る）、再起動後 10 秒以内に復旧する |
@@ -226,7 +251,9 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | A2 | 「参照…」でファイル選択ダイアログを開き、`notepad.exe` を選ぶ（ダイアログを 1 分以上開いたままにしても確認する） | 入力欄に選んだパスが入り、手で編集できる。ダイアログが Wails のメインウィンドウを親にしたモーダルで開く（`WailsHost.MainWindowHandle` の結線。ダイアログの表示中はメインウィンドウを操作できず、前面に出たままになる）。ダイアログを開いている間も WebView が応答待ちのままタイムアウトしない。キャンセルでは入力欄が変わらない（204） |
 | A3 | 表示名 `メモ帳`・パス・引数なしで保存 | 一覧に行が追加される。同じ表示名（大文字小文字違いを含む）・存在しないパス・相対パス・UNC パス・`.exe` 以外・`..` を含むパスは、項目別のエラーで入力値が残る（422） |
 | A4 | MCP クライアントから `list_launchable_apps` | `{ "apps": [ { "id", "label": "メモ帳" } ] }` だけ。パス・引数は出ない |
-| A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid }` が返る。同じ呼び出しを繰り返すと、毎回新しいメモ帳が増える |
+| A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid, window, reused_existing_window }` が返る。Windows 10 のメモ帳など新しいウィンドウが開くときは `window.pid` が `pid` と一致し `reused_existing_window: false` |
+| A5b | メモ帳（Windows 11。タブ式）を、書きかけのタブを開いたまま起動する（#46。判定は起動前後のウィンドウ一覧の差。#55） | 新しいウィンドウが開かず既存のウィンドウが前に出るだけなら、`window` が既存のウィンドウ（`pid` が返った `pid` と別）で `reused_existing_window: true`。入力の前に `screenshot` / `list_windows` で確かめられる。新しいタブで打つには AI が「＋」を押す必要がある |
+| A5c | メモ帳（Windows 11）を、書きかけのタブがない状態（または新しいウィンドウで開く設定）で起動する（#55） | 返った `pid` が別（起動したプロセスがすぐ終了して別の `pid` の新しいウィンドウを開く）でも、起動の前に無かった新しいウィンドウがあるので `reused_existing_window: false`。`list_windows` で新しいウィンドウが前面か背面かを確かめられる |
 | A6 | 未登録の `app_id`、パスや引数を含む追加の引数（`args`・`path`）を渡す | 未登録は `app_not_found`。追加の引数は引数検査（スキーマ違反。`isError` のツール結果で、`code` は付かない）で拒否される。いずれも何も起動しない |
 | A7 | 別のセッションがリースを保持している状態で `launch_app` | `lease_held_by_other`。起動しない |
 | A8 | キルスイッチ発動中に `launch_app` / `list_launchable_apps` | `kill_switch_active`（HTTP 503）。解除後は起動できる。キルスイッチは起動済みのメモ帳を終了しない |
@@ -235,9 +262,119 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | A11 | 監査（DB の `audit_logs`。閲覧 UI は M3） | `tool.launch_app`（`ok` / `denied` / `error`）、`tool.list_launchable_apps`、`settings.launchable_app.create` / `.update` / `.delete`（`actor_type = host`）が追記される。`launch_app` の記録にパス・引数・作業ディレクトリが無く、登録系にも引数・作業ディレクトリが無い（引数の件数だけ） |
 | A12 | 起動したメモ帳（本アプリの子プロセスではあるがジョブに入れていない）を残したまま、本アプリを終了する | メモ帳は終了しない |
 
+### 4.9 監査のサムネイルの置き場（`thumbs\`。M3・FR-AU02・AU04。NFR-S11）
+
+`repository.ThumbStore`（`%LOCALAPPDATA%\puppet-remo\thumbs\`）の確認。ACL は OS が決めるため、CI（Linux）では確認できない。**これは未確認**（サムネイルを保存する #71 のあとで、実機の確認を別 Issue にまとめる）。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| T1 | サムネイルを保存したあと、エクスプローラーの「プロパティ → セキュリティ」か `icacls %LOCALAPPDATA%\puppet-remo\thumbs` で `thumbs\` のアクセス権を見る | 現在のユーザー・SYSTEM・Administrators だけが読める（親の `%LOCALAPPDATA%\puppet-remo` の ACL を継承）。`Everyone`・`Users` に読み取りが付いていない（NFR-S11） |
+| T2 | `thumbs\` の下の `.jpg` を `icacls` で見る | 親から継承した ACL のまま。別のユーザーのアカウントで開けない |
+| T3 | `thumbs\` の下にディレクトリのジャンクション（`mklink /J`）か、外のファイルへのシンボリックリンクを作ってから、そのパスの `rel_path` を持つサムネイルを `/audit/{id}/thumbnail` で開く | `ErrInvalidArgument` 相当で拒否され（404 や 400 の画面）、外のファイルは読まれない。孤児の掃除（再起動）でリンク自体が消え、リンク先のファイルは残る |
+| T4 | 保存中（`Save` の途中）にアプリを強制終了してから起動する | `thumbs\` に `.tmp-` で始まるファイルが残っていても、1 分を過ぎたあとの起動で孤児として消える |
+
+### 4.10 監査のサムネイルの内容（M3・FR-AU02・NFR-S06）
+
+`service.NewThumbnail`（縮小・JPEG 化）と、`Control` の撮る操作・モニターの選択・Web 入力の 1 秒 1 枚の制限・非同期は、Linux の CI が偽の `Capturer` と偽の時計で検査する。実機でしか確かめられない、**撮った画面の内容**の確認。**これは未確認**。`result = ok` で画面を変える操作（MCP: クリック・ドラッグ・`scroll`・`key`・`type`・`focus_window`・`launch_app`。Web: ボタン・ホイール・キー・文字入力）の直後に撮り、カーソルの移動だけ・クリップボード・拒否・失敗では撮らない。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| S1 | 操作系ツールか Web 入力の直後の監査のサムネイル（`thumbs\` の `.jpg`）を開く | 操作後の実際の画面が、長辺 320 px・JPEG で写っている |
+| S2 | マルチモニター・DPI（100% / 150% / 200%）の混在で、各モニターのサムネイルを開く | 縦横比が保たれ、長辺が 320 px。ずれ・切れがない |
+| S3 | ホスト GUI・承認ダイアログ・オーバーレイを表示した状態で操作し、サムネイルを開く | 自ウィンドウが写っていない（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06） |
+| S4 | `thumbs\` に JPEG が `YYYY\MM\DD\<ULID>.jpg` で保存され、保持期間・容量（`audit.thumbs_max_bytes`）を超えると古い順に消える（#70 と合わせて） | 消えた行のログ行は残り、詳細はサムネイル無しで開く |
+| S5 | Web の `/viewer` で連続して入力する（キーを素早く 10 回押す、ホイールを回し続けるなど） | 監査のサムネイルは 1 秒に 1 枚まで（全ビューアを通して）。間引かれた入力のログ行はサムネイル無しで残る。入力の応答が遅くならない |
+| S6 | マルチモニターで、`left_click`（`monitor` を指定・座標を指定）と `key`・`type`・`launch_app` を実行し、サムネイルを開く | `monitor` を指定した操作・座標を含むモニターで撮れている。`key`・`type`・`launch_app`・Web 入力はプライマリ。`mouse_move` だけではサムネイルが付かない |
+| S7 | 設定の「サムネイルを保存する」を切って操作する | 以後の操作でサムネイルが付かない（`Grab` もしない） |
+
+### 4.11 承認ダイアログ（専用の Wails ウィンドウ。M3・#68。FR-H05・L07、NFR-S06・P06）
+
+`app.WailsHost.Windows().OpenApproval`（`wails_windows.go`）が作るウィンドウの確認。実 Wails・WebView2・`WDA_EXCLUDEFROMCAPTURE` が要るため CI（Linux）では確認できない。CI は偽の `Windows`（`FakeWindows`）で「`approval` → `OpenApproval`」「失効・解決・シャットダウンで閉じる」を確かめている。**これは未確認**。準備: 承認モードが「常時承認」のクライアント（MCP と Web を有効）を登録し、`screenshot` ツールと Web の `/viewer` を使える状態にする。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| P1 | MCP の `acquire_control`（または入力系のツール）を呼ぶ | リース取得要求から 1 秒以内（NFR-P06）に、画面中央に「操作権の取得を許可しますか？」のウィンドウが最前面に開く。クライアント名・種別（MCP）・「操作権（リース）の取得」・残り時間（60 から減る）・「許可」「拒否」が出る。トレイのメニューに項目は増えない。ダッシュボードのリースは「承認待ち: <クライアント名>（MCP）」になる |
+| P2 | 「許可」を押す | ウィンドウが閉じ、`acquire_control` が `held` で成功する。「許可」を連打しても 2 回目は 410 になるだけで、結果は変わらない |
+| P3 | 「拒否」を押す | ウィンドウが閉じ、MCP が `approval_denied`（403）のツールエラー。リースは `idle` |
+| P4 | 何も押さずに 60 秒放置する | ウィンドウが自動で閉じ、MCP が `approval_timeout`（408）のツールエラー。ダッシュボードのリースは空きに戻る |
+| P5 | ウィンドウの「×」で、許可も拒否もせずに閉じる | 承認待ちは続き（ダッシュボードは「承認待ち」のまま）、60 秒で `approval_timeout`。ウィンドウは開き直さない（M3 の実装の判断。docs に定めが無いため、結果が勝手に通らない動き） |
+| P6 | ダイアログを開いたまま、`screenshot` ツールを呼ぶ。Web の `/viewer` も開いておく | **ダイアログが画面にも Web のライブ画面にも写らない**（`ContentProtectionEnabled` = `WDA_EXCLUDEFROMCAPTURE`。NFR-S06）。`screenshot` の `own_windows` にダイアログの範囲が入る |
+| P7 | ダイアログの「許可」ボタンの座標に MCP の `left_click`、Web の `input.mouse`（`down` / `up`）を送る | どちらも `input_blocked`（`detail.reason` = `own_window`）で拒否される。AI は承認ダイアログを押せない（ダイアログ自体の座標は `own_windows` で分かるが、操作はできない） |
+| P8 | フルスクリーンのアプリ（動画・ゲームなど）の前面で P1 を行う | ダイアログが他のアプリ（フルスクリーンを含む）の前面に出る。キーボードフォーカスの扱い（ホスト所有者が Tab / Enter / マウスで操作できること）を記録する |
+| P9 | 承認待ちのままキルスイッチを発動、またはアプリを終了する | ダイアログが閉じる（キルスイッチは承認待ちを取り下げ、MCP は `kill_switch_active`。終了ではシャットダウンで閉じる） |
+| P10 | 承認モードを 3 通りで試す: 「常時承認」（P1〜P4）、「初回のみ承認」（初回はダイアログ → 許可後はダイアログなしで取得。クライアントの「承認を取り消す」またはモード変更のあとはまたダイアログ）、「自動許可」（ダイアログなしで取得） | 各モードのとおりに動く。接続要求の許可フォーム・クライアントのカードで選択・変更でき、`first_time` の承認済みの日時が出て、取り消せる |
+| P11 | Web の `/viewer` から「操作権を取得」を押す（承認が要るクライアント） | ホストの承認を待つあいだ、応答は返らない（最大 60 秒。承認待ちを即座に返す窓口は未決。API 仕様 §7.5）。別のビューア・ダッシュボードには「承認待ち」が出る。許可で 200 のリースパネル、拒否・タイムアウトでトースト（`approval_denied` / `approval_timeout`） |
+| P12 | 承認が要るクライアントを 2 つ用意し、1 つ目のダイアログを開いたまま、2 つ目のクライアントでリース取得を要求する（2 つ目のダイアログは開かない）。1 つ目を「許可」または「拒否」する | 1 つ目のダイアログが閉じ、続けて 2 つ目のダイアログが開く（到着順。同時に 2 つは開かない）。2 つ目の残り時間は 2 つ目の要求から数えて減る（待っていた分も含む）。1 つ目の「×」で閉じたときは、1 つ目が 60 秒で拒否になってから 2 つ目が開く |
+
+### 4.13 更新（署名検証・ダウングレード拒否・適用。M3・#74。FR-H09・S09、NFR-S10・O02）
+
+`service.Updater`・`platform/windows.Installer`（`ShellExecute` で NSIS を `/S` 起動）・GUI の `/update` の確認。署名の検証・版の比較・適用の可否は CI の自動テスト（偽の GitHub・テスト専用の鍵）で済んでいる。ここは実際の GitHub・実際の NSIS・UAC・アプリの終了と再起動の確認（**CI では確認できない**）。確かめていない項目は PR に「未確認」と書く。
+
+**準備**: オーナーの作業（[`release.md`](release.md)「オーナーの作業」: 鍵の生成・公開鍵の置き換え・Secret の登録・リポジトリの公開）が済んでいること。旧版と新版を用意する（ナイトリーを 2 本出す。例: `develop` へ push を 2 回、日付が変わるか、2 本目を別の日に出す。同じ日の 2 本目は「新しくない」ので更新にならない）。旧版は**公開鍵入りのビルド**をインストールしておく。署名の検証の失敗を試すときは、Release のインストーラ・`.minisig` を手元で差し替えた**テスト用のリポジトリ**を使うか、`UpdateOptions` を使うビルドで偽の GitHub を向ける（本番の Release を書き換えない）。
+
+`TestSmokeInstaller`（`go test -tags smoke -run TestSmokeInstaller ./internal/platform/windows/`）は、`whoami.exe` の複製を `/S` つきで起動して `platform.Installer` の契約だけを確かめる（本物のインストーラは動かさない）。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| U1 | 旧版を起動して、サイドバーの「更新」を開く | 現在の版・チャネル（正式版 / ナイトリー）・適用方法が出る。起動の 1 分後の確認のあと「最後の確認」に時刻が入る（運用ログに失敗がない）。`%LOCALAPPDATA%\puppet-remo\` の設定 `update.last_checked_at` が更新される |
+| U2 | 新版のナイトリーを公開して「今すぐ確認」（または 6 時間後の自動確認を待つ） | 「新しい版」と「署名を確認済み」が出て、トーストが 1 度出る。「更新する」が出る。監査ログ（`/audit`、種別「更新」）に `update.detected` が入る |
+| U3 | 「更新する」→ 確認モーダルで「更新する」 | UAC の確認が出る（インストール先が Program Files のとき）。許可すると、インストーラがサイレントで動き、アプリが終了して、**新しい版が自動で起動する**（トレイに戻る）。「更新」の画面の現在の版が新版になる。監査に `update.apply_started` |
+| U4 | U3 の UAC の確認を「いいえ」で取り消す | トーストに「インストーラを起動できませんでした」が出て、アプリは動き続け、旧版のまま。監査に `update.apply_failed`（`error_code = start_failed`）。もう一度「更新する」を押せる |
+| U5 | **署名の検証の失敗（改ざん）**: Release のインストーラの 1 バイトを書き換えた Release（`.minisig` はそのまま）で「今すぐ確認」 | 「署名の検証に失敗しました」と出て「更新する」は出ず、トーストも出ない。インストーラは動かない。監査に `update.verify_failed`（`error_code = signature_invalid`）。`%TEMP%` に `puppet-remo-update-*` が残らない |
+| U6 | **署名が別の鍵**: 別の鍵で署名した `.minisig` に差し替えた Release | U5 と同じ（`signature_invalid`） |
+| U7 | **署名が無い**: `.minisig` を添付していない Release（署名の Secret を外してナイトリーを出す） | 「署名ファイルがありません」と出て、適用できない（`signature_missing`） |
+| U8 | **版の付け替え**: 旧版の署名済みのインストーラ・`.minisig` を、新しい版のタグ・ファイル名で添付した Release | 「署名が、この版・ファイルのものではありません」と出て、適用できない（`version_mismatch`） |
+| U9 | **ダウングレード**: 現行より古い版しか無い状態（例: ナイトリーを使っていて、最新の Release がそれより古い）で「今すぐ確認」 | 「新しい版はありません」。更新の画面に新版は出ない。監査に `update.downgrade_rejected`（同じ状態の繰り返しでは増えない）。同じ版（日付が同じナイトリー）も新版にならない |
+| U10 | **リース・接続中は適用しない**: 新版を検出した状態で、MCP クライアントを接続する（またはリースを取得する）→「更新する」 | 409。トーストに「接続中のクライアントがいます」「操作権（リース）を保持しているクライアントがいます」などの理由が出る。インストーラは動かない |
+| U11 | **`auto_idle`**: 設定の「更新の適用方法」を「アイドル時に自動で適用する」にして保存 → U10 の状態で新版を検出 → クライアントを切断する | 接続中は適用されず、切断してから 30 秒以内に自動で適用される（UAC の確認が出る。監査は `actor_type = system` の `update.apply_started`）。リースの承認待ちの間も適用されない |
+| U12 | **署名鍵が未設定**: 公開鍵が入っていないビルド（`updater_pubkey.pub` を空にするか、`#` で始まるコメント行だけにしてビルドする。リポジトリの既定のビルドは鍵が入っているので、この項目は手で作ったビルドで確かめる） | 確認はできるが、「署名鍵が未設定のため、新しい版があっても適用できません」と出て、「更新する」が出ない。監査に `update.verify_failed`（`key_unset`） |
+| U13 | **非公開のリポジトリ**: リポジトリが private のまま「今すぐ確認」 | 「最新の版を取得できませんでした（… 非公開の可能性があります）」と出る。アプリは止まらない。運用ログ（`%LOCALAPPDATA%\puppet-remo\logs\`）に `update check failed`（`code=http_404` など）が残り、URL・トークンは出ない |
+| U14 | **オフライン**: ネットワークを切って「今すぐ確認」 | 「GitHub に接続できませんでした」。アプリは動き続け、ネットワークが戻れば次の確認（6 時間後か「今すぐ確認」）で直る |
+| U15 | **更新の途中の失敗**: インストーラの実行中（アプリ終了後）にインストーラのプロセスを強制終了する、またはディスクを満杯にする | インストール済みの旧版が壊れない（NSIS の動作。旧版の exe が残り、起動できる）。壊れた場合は PR に書く |
+| U16 | **チャネルの切り替え**: 設定の「更新のチャネル」を「ナイトリー」にして保存 →「今すぐ確認」。正式版へ戻して再確認 | ナイトリーのとき、最新のナイトリー（または新しい正式版）が出る。正式版へ戻すと、ナイトリーの結果は消え、「更新する」を出さない。ナイトリーを使っている状態で、より古い正式版は新版にならない |
+| U17 | 一時ファイルの掃除 | 新版を検出したままアプリを終了すると、`%TEMP%\puppet-remo-update-*` が消える。適用後の次の起動でも古いものが消える |
+
+### 4.12 操作中オーバーレイ（全モニターを覆うクリック透過のウィンドウ。M3・#69。FR-H07、NFR-S06）
+
+`app.WailsHost.Windows().ShowOverlay` / `HideOverlay`（`wails_overlay_windows.go`）が作るウィンドウと、`platform/windows.WindowManager` の `Overlay` 判定（`GetWindowLongPtr(GWL_EXSTYLE)`）の確認。実 Wails・WebView2・`WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE`・`WDA_EXCLUDEFROMCAPTURE` が要るため CI（Linux）では確認できない。CI は偽の `Windows`（`FakeWindows`）で「リースの `held` → `ShowOverlay`（全モニター）、保持者の変更でラベル更新、解放・キルスイッチ・シャットダウンで `HideOverlay`」と、InputGuard の「オーバーレイ上の入力は下の実ウィンドウで判定する」を確かめている。**これは未確認**。準備: 2 枚以上のモニター（表示スケールが異なる構成を含む。100% と 150% / 200% の混在、副モニターが左や上にある負座標の配置）。承認モードを「自動許可」にした MCP クライアントと、Web の `/viewer` を使える状態にする。メモ帳を各モニターに 1 つずつ開いておく。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| O1 | MCP の `acquire_control` でリースを取る | 1 秒以内に**全モニター**の縁に細い枠と、上端中央に「操作中: <クライアント名>（MCP）」の札が出る。枠は各モニターの端にちょうど沿う（混在 DPI でも欠け・はみ出し・隙間がない）。画面の中身（メモ帳など）は隠れない。タスクバー・Alt+Tab にオーバーレイは出ない |
+| O2 | オーバーレイの表示中に、枠・札の上でクリック・ドラッグ・ホイール・右クリックを手動で行う | **すべて下のウィンドウへ通る**（枠の下にあるメモ帳の文字が選べる、ウィンドウの縁を掴める）。オーバーレイは入力を受けず、前面ウィンドウ（キーボードフォーカス）も変わらない |
+| O3 | オーバーレイの表示中に、`screenshot` ツールと Web の `/viewer` のライブ画面を見る | **オーバーレイが写らない**（`ContentProtectionEnabled` = `WDA_EXCLUDEFROMCAPTURE`）。画面の元の内容だけが見える。`screenshot` の `own_windows` にもオーバーレイの範囲は入らない（避ける場所ではないため） |
+| O4 | オーバーレイの表示中に、メモ帳の上へ MCP の `left_click`・`type`、Web の `input.mouse`・`input.text` を送る | **拒否されず**メモ帳に届く（オーバーレイは `own_window` の対象ではない）。`list_windows` にオーバーレイは出ない（タイトルなし）。メモ帳の `blocked` は `false` |
+| O5 | オーバーレイの表示中に（リースが `held`）、ホスト GUI（ダッシュボード）を開いて、そのボタン（キルスイッチなど。押しても実害の無いもの）の座標に MCP の `left_click`、Web の `input.mouse`（`down` / `up`）を送る | **`input_blocked`（`detail.reason` = `own_window`）で拒否される**。全モニターを覆うオーバーレイがホスト GUI の上にあっても、ホスト GUI が入力の判定から漏れない（`WindowManager.At` がオーバーレイを飛ばして下の実ウィンドウを返す）。ホスト GUI を前面にして `key` / `type` を送っても同様 |
+| O6 | 承認が要るクライアントでリース取得を要求し、承認ダイアログが開いている間（`pending_approval`）にオーバーレイが出ていないことを確認する。「許可」を押す | 承認待ちの間はオーバーレイが無い。許可でダイアログが閉じ、リースが `held` になった時点でオーバーレイが出る。ダイアログが閉じる間際にオーバーレイと重なっても、ダイアログへの入力は `own_window` で拒否される |
+| O7 | 前面がオーバーレイになっていないこと: オーバーレイの表示中に、キー入力（`key` / `type`）を送る | 前面のメモ帳に届く（フォーカスがオーバーレイに移っていない。`GetForegroundWindow` がオーバーレイにならない） |
+| O8 | 保持者を替える（`release_control` のあと、Web の `/viewer` でリースを取る） | 札が「操作中: <名前>（Web）」に変わる。解放した瞬間に枠が消え、取得で再び出る |
+| O9 | 解放（`release_control`）、アイドルタイムアウト（`lease.idle_timeout_sec` を短くして放置）、強制剥奪（ダッシュボード）、キルスイッチ、MCP の切断、アプリの終了 | いずれもオーバーレイが消える。承認待ち（`pending_approval`）の間は出ない |
+| O10 | オーバーレイの表示中に、モニターを抜き差しする・解像度や表示スケールを変える | 出ている最中は追従しない（枠がずれてよい）。次にリースを取り直したとき（`held` へ）に、新しい構成で全モニターに合う。クラッシュ・ハングしない |
+| O11 | クライアント名に長い文字列（100 文字以上）と HTML の記号（`<script>` など）を付けたクライアントで O1 を行う | 札は 80 文字で `…` に切り詰められ、記号は文字としてそのまま出る（HTML として解釈されない）。札が画面を覆わない |
+
+### 4.14 ログフォルダーを開く（ホスト GUI の `/logs`。#54。FR-H13）
+
+`platform/windows.FolderOpener`（`ShellExecute` の `open`。シェル・コマンドラインを経由しない）と、ログ画面の「ログフォルダーを開く」ボタン（`POST /logs/open-folder`）の確認。開く場所がログフォルダー（`%LOCALAPPDATA%\puppet-remo\logs\`）に固定され、リクエストで変えられないこと・失敗の文言にパスが出ないことは CI の自動テスト（偽の `FolderOpener`）で済んでいる。ここは実際のエクスプローラーの起動の確認（**CI では確認できない**。**未確認**）。契約テスト `TestSmokeFolderOpener`（一時ディレクトリを開く）は `PUPPET_REMO_SMOKE_FOLDER=1` のときだけ走る。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| F1 | `$env:PUPPET_REMO_SMOKE_FOLDER = "1"; go test -tags smoke -run TestSmokeFolderOpener -v ./internal/platform/windows/` | `PASS`。一時ディレクトリのエクスプローラーが 1 つ開く（手で閉じる）。存在しないパス・相対パス・NUL 入りのパスは開かずに拒否される |
+| F2 | ホスト GUI の「ログ」画面（`/logs`）で「ログフォルダーを開く」を押す | エクスプローラーが `%LOCALAPPDATA%\puppet-remo\logs\` を開く（`puppet-remo.log` が見える）。画面に「ログフォルダーを開きました。」のトーストが出る。ボタンは応答が返るまで無効になり、画面は差し替わらない（絞り込み・ページ位置が変わらない） |
+| F3 | エクスプローラーが既に開いている状態・別のウィンドウが前面にある状態でもう一度押す | エクスプローラーのウィンドウ（既存のウィンドウの再利用でもよい）が前面に出る（開けないままにならない）。何度押しても開く場所は同じ |
+| F4 | ログフォルダーを削除（または名前を変更）してから押す | エクスプローラーは開かず、「ログフォルダーが見つかりません。」のエラーのトースト。フォルダーは作られない。パス・OS のメッセージは画面に出ない（運用ログには出る場合があるが、パスは含まない） |
+| F5 | ログフォルダーの場所（`LOCALAPPDATA`）に空白・日本語を含むユーザー名のプロファイルで F2 を行う | 同じようにそのフォルダーが開く（文字化け・別の場所を開くことがない） |
+
+### 4.15 ログ画面の読み出しとローテーション（#53。FR-H13、NFR-O01）
+
+ログ画面の読み出し（`openLogFile`）は、Windows では `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE` で開く（Go の `os.Open` は `FILE_SHARE_DELETE` を付けない。標準ライブラリ `syscall_windows.go` を読んで確認した）。これにより、読んでいる間に `lumberjack` がローテーション（名前の付け替え）しても共有違反にならない設計だが、**Windows 実機では確認していない（未確認）**。Linux の CI のテストは、Linux では元から成り立つため回帰を検出できない。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| F6 | `go test -run 'TestOpenLogFileDoesNotBlockRenameOrDelete\|TestRotateSucceedsWhileTheLogScreenHasTheFileOpen' -v ./internal/app/` を Windows で実行する（読み出しのために開いたまま、`lumberjack.Logger.Rotate()` と名前の付け替え・削除を行う） | `PASS`。開いたままでも `Rotate()` が共有違反で失敗せず、ローテーションのあとの書き込みも続く |
+
 ## 5. 既知の制約（M1）
 
-- キャプチャは GDI `BitBlt` のみ。DXGI（Desktop Duplication）と継続キャプチャ（`Watch`）は M2。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
+- キャプチャ: 1 枚撮り（`Grab`）は GDI `BitBlt`、継続キャプチャ（`Watch`）は DXGI（Desktop Duplication）で、使えなければ GDI（M2。§3.9）。DXGI は既定のアダプターに接続されたモニターだけを複製する（別 GPU のモニターは GDI になる）。`Frame.Dirty` は常に全面。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
 - UIPI: 管理者権限のウィンドウへは標準権限のプロセスから入力できない。`SendInput` は UIPI に捨てられても成功を返すことがあるため、`WindowInfo.Elevated` を `service.InputGuard` が先に見て `input_blocked` にする。
 - `Key` の記号キーは現在のキーボード配列に依存する（`VkKeyScanEx`）。Ctrl / Alt（AltGr）が要る文字は `invalid_argument`。文字そのものを入力したいときは `Text` を使う。
 - **アプリ起動（M1.5）**: `launch_app` は起動したプロセスを終了・監視しない。キルスイッチ・リースの解放・セッションの切断・本アプリの終了でも、起動済みのプロセスは残る（FR-M19）。
@@ -253,3 +390,17 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-10-30 | §2 の環境変数表に `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` / `PUPPET_REMO_SMOKE_LAUNCH_DENIED` を追加、§3.8 の L1・L2（`TestSmokeAppLauncherArgs` で自動化）・L9 と、テストの構成（`TestSmokeAppLauncherPid`、親なしの `TestSmokeFilePicker`）を実装に合わせた | #21 の実装 |
 | — | 2026-10-30 | §4.8 の A6 を、スキーマ違反が JSON-RPC の `invalid params` ではなく `isError` のツール結果で返る実装に合わせて訂正 | #22 の実装（go-sdk の挙動の実測） |
 | — | 2026-10-30 | §4.8 の A2 に、ファイル選択ダイアログの親ウィンドウ（Wails のメインウィンドウの結線。`WailsHost.MainWindowHandle`）の確認を追記。§4.8 の確認は未確認のまま | #23 の実装 |
+| — | 2026-11-01 | §4.8 に A5b（Windows 11 のメモ帳で既存のウィンドウが前に出ただけのときの `launch_app` の結果）を追加。実機の確認は未確認 | #46 |
+| — | 2026-11-01 | §3.2 に I15（自ウィンドウの範囲 `own_windows`・`blocked` の確認）を追加。実機の確認は未確認 | #47 |
+| — | 2026-11-01 | §3.9（`Capturer.Watch`: DXGI・GDI フォールバックの確認 W1〜W8。未確認）を追加し、§2 に `TestSmokeCapturerWatchAllMonitors`、§5 のキャプチャの制約を M2 の実装に更新 | #57 |
+| — | 2026-11-02 | §4.9（監査のサムネイルの置き場 `thumbs\` の ACL・リンクの拒否・一時ファイルの掃除 T1〜T4。未確認）を追加 | #70 |
+| — | 2026-11-02 | §4.10（監査のサムネイルの内容・自ウィンドウが写らないこと S1〜S4。未確認。`Control` への結線は未実装）を追加 | #71 |
+| — | 2026-11-02 | §4.3 に監査ログ画面（WV6〜WV8。表示・絞り込み・詳細・ページ送り、サムネイルの CSP、自ウィンドウとして拒否。未確認）を追加 | #72 |
+| — | 2026-11-02 | §4.3 に設定画面の監査ログ・更新のグループ（WV9。保存・検証エラーの再描画。未確認）を追加 | #73 |
+| — | 2026-11-02 | §4.11（承認ダイアログ: 開く・許可・拒否・60 秒のタイムアウト・「×」・キャプチャ除外・`own_window` での入力拒否・フルスクリーン・承認モード 3 通り・Web からの取得 P1〜P11。未確認）を追加 | #68 |
+| — | 2026-11-02 | §4.10 を `Control` への結線の実装に更新し（撮る操作・結線の未実装の注記を除去）、S5〜S7（Web 入力の 1 秒 1 枚・マルチモニターの撮影先・設定で無効）を追加 | #71 |
+| — | 2026-11-02 | §4.11 に P12（承認ダイアログの到着順の待ち行列）、§4.12（操作中オーバーレイ O1〜O11: 全モニター・クリック透過・キャプチャ除外・混在 DPI・入力が通ること・下のホスト GUI は拒否のまま・保持者の変更・消える条件・モニター構成の変化・ラベルの切り詰め。未確認）を追加 | #69・#68 |
+| — | 2026-11-02 | §4.13（更新: 検出・署名の検証失敗・ダウングレード・リース / 接続中の拒否・`auto_idle`・UAC・非公開のリポジトリ・オフライン・チャネルの切り替え U1〜U17）を追加。`TestSmokeInstaller` を §2 に追記 | #74 |
+| — | 2026-11-02 | §4.14（ログフォルダーを開く: エクスプローラーの起動・ログ画面のボタン・フォルダーが無いとき・空白や日本語を含むプロファイル F1〜F5。未確認）を追加。§2 の環境変数表に `PUPPET_REMO_SMOKE_FOLDER` を追加 | #54 |
+| — | 2026-11-02 | §4.8 に A5c（Windows 11 のメモ帳で、別の `pid` の新しいウィンドウが開くときの `reused_existing_window: false`）、A5b に起動前後の一覧の差で判定する旨、§4.15（ログ画面の読み出しとローテーション。F6）を追加。実機の確認は未確認 | #55・#53 |
+| — | 2026-11-02 | §R1 の確認に、ChatGPT のサインイン中だけ `127.0.0.1` の一時ポートで LISTENING になる例外を追記（#49 の実装後の確認項目） | #49（レビュー指摘） |

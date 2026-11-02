@@ -1,0 +1,31 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const updateTitle = "更新"
+
+templ updateBody(v view.Update) {
+	<div class="max-w-2xl space-y-4">
+		<h1 class="text-xl font-semibold text-slate-900">更新</h1>
+		<p class="text-sm text-slate-600">GitHub の Release から新しい版を確認し、署名（Ed25519）を検証できたものだけを適用します。適用すると、アプリは一度終了します。</p>
+		@organisms.UpdatePanel(v.Panel)
+	</div>
+}
+
+// Update は更新のフルページ（FR-H09、FR-S09）。
+templ Update(v view.Update) {
+	@layout.GUI(updateTitle, v.Chrome) {
+		@updateBody(v)
+	}
+}
+
+// UpdateBoosted は hx-boost の遷移への応答。
+templ UpdateBoosted(v view.Update) {
+	@layout.Boosted(updateTitle, v.Chrome) {
+		@updateBody(v)
+	}
+}

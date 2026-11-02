@@ -57,16 +57,93 @@ func TestKillSwitchPanelRendersOnlyAvailableAction(t *testing.T) {
 	}
 }
 
-func TestLeasePanelIsDisplayOnly(t *testing.T) {
-	held := webtest.Render(t, organisms.LeasePanel(view.Lease{Held: true, HolderLabel: "claude", KindLabel: "MCP", Since: "2026-10-30 12:00", IdleRemaining: "5分"}))
-	has(t, held, "保持中", "claude", "MCP", "5分")
+// 状態駆動レンダリング（frontend.md §4.3）: 強制剥奪のボタンは、剥奪できる保持者がいる（CanRevoke）ときだけ HTML に出る。
+func TestLeasePanelRendersRevokeOnlyWhenCanRevoke(t *testing.T) {
+	held := view.Lease{Held: true, HolderLabel: "claude", KindLabel: "MCP", Since: "2026-10-30 12:00", IdleRemaining: "5分"}
 	idle := webtest.Render(t, organisms.LeasePanel(view.Lease{}))
 	has(t, idle, "空き")
 	hasNot(t, idle, "保持中", "アイドル解放まで")
-	for _, out := range []string{held, idle} {
+
+	revocable := held
+	revocable.CanRevoke = true
+	canRevoke := webtest.Render(t, organisms.LeasePanel(revocable))
+	has(t, canRevoke, "保持中", "claude", "MCP", "5分", "強制剥奪", `hx-post="/lease/revoke"`, `hx-target="#lease"`, `hx-swap="innerHTML"`, `hx-disabled-elt="this"`)
+
+	// 剥奪できない保持者（view の CanRevoke が false）と、空きのときはボタンが描画されない。
+	cannot := webtest.Render(t, organisms.LeasePanel(held))
+	has(t, cannot, "保持中", "claude")
+	for _, out := range []string{idle, cannot} {
 		hasNot(t, out, "<button", "hx-post", "hx-delete", "revoke", "強制剥奪")
+	}
+	for _, out := range []string{idle, canRevoke, cannot, webtest.Render(t, organisms.LeasePanelBody(revocable))} {
 		webtest.AssertCSPCompliantHTML(t, out)
 	}
+}
+
+// agent の剥奪はタスクを中断するので、その旨（RevokeHint）を添える。ヒントが無ければ何も添えない。
+func TestLeasePanelRevokeHint(t *testing.T) {
+	v := view.Lease{Held: true, CanRevoke: true, HolderLabel: "claude", KindLabel: "エージェント", Since: "2026-10-30 12:00", IdleRemaining: "5分"}
+	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint")
+	v.RevokeHint = "タスクが中断されます"
+	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint>タスクが中断されます<`)
+	// 剥奪できない保持者には、ヒントがあってもボタンごと出さない。
+	v.CanRevoke = false
+	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint", "強制剥奪")
+}
+
+// 状態駆動: 中断のボタンは、中断できる状態（CancelURL がある）のときだけ描画する。
+func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
+	running := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒", CancelURL: "/tasks/t1/cancel"}))
+	has(t, running, `data-task-status="running"`, `hx-post="/tasks/t1/cancel"`, `hx-target="closest [data-task-status]"`, `hx-swap="outerHTML"`, `hx-disabled-elt="this"`, "3 / 50", "10秒", "中断")
+	done := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "completed", Label: "完了", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒"}))
+	has(t, done, `data-task-status="completed"`)
+	hasNot(t, done, "<button", "hx-post", "/cancel")
+	for _, out := range []string{running, done} {
+		webtest.AssertCSPCompliantHTML(t, out)
+	}
+}
+
+// ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
+func TestRunningTasksPanel(t *testing.T) {
+	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Client: "claude", PromptExcerpt: "天気を調べる",
+		Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "1 / 50", Elapsed: "5秒", CancelURL: "/tasks/t1/cancel"}}
+	empty := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Rev: "abc"}))
+	has(t, empty, `id="running-tasks"`, `name="rev_tasks" value="abc" data-poll-rev`)
+	hasNot(t, empty, "data-running-task", "<button", "hx-swap-oob")
+	full := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Items: []view.RunningTask{item}, Rev: "def"}))
+	has(t, full, "data-running-task", "00RUN001", "claude", "天気を調べる", `hx-post="/tasks/t1/cancel"`, `href="/tasks/t1"`)
+	hasNot(t, full, "hx-swap-oob")
+	oob := webtest.Render(t, organisms.RunningTasksOOB(view.RunningTasks{Items: []view.RunningTask{item}, Rev: "def"}))
+	has(t, oob, `id="running-tasks"`, `hx-swap-oob="true"`, "data-running-task")
+	for _, out := range []string{empty, full, oob} {
+		webtest.AssertCSPCompliantHTML(t, out)
+	}
+}
+
+// 承認ダイアログは種類ごとの見出し・内容を出し、Detail・Note が空なら枠を描画しない。
+func TestApprovalDialogKinds(t *testing.T) {
+	base := view.ApprovalDialog{ID: "a1", ClientLabel: "claude", KindLabel: "エージェント", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30, RefreshURL: "/approvals/a1"},
+		AllowURL: "/approvals/a1/allow", DenyURL: "/approvals/a1/deny"}
+	lease := base
+	lease.Kind, lease.Heading, lease.Summary = "lease", "操作権の取得を許可しますか？", "操作権（リース）の取得"
+	out := webtest.Render(t, organisms.ApprovalDialog(lease))
+	has(t, out, `data-approval-type="lease"`, "操作権の取得を許可しますか？")
+	hasNot(t, out, "data-approval-detail", "data-approval-note")
+	sc := base
+	sc.Kind, sc.Heading, sc.Summary, sc.Detail, sc.Note = "safety_check", "安全チェック", "要約", "<b>detail</b>", "note"
+	out2 := webtest.Render(t, organisms.ApprovalDialog(sc))
+	has(t, out2, `data-approval-type="safety_check"`, `data-approval-detail>&lt;b&gt;detail&lt;/b&gt;<`, `data-approval-note>note<`)
+	hasNot(t, out2, "<b>detail</b>")
+	for _, o := range []string{out, out2} {
+		webtest.AssertCSPCompliantHTML(t, o)
+	}
+}
+
+// SSE の lease イベント（M2 でも変えない）は表示だけで、強制剥奪の操作を含まない。
+func TestLeaseDisplayHasNoActions(t *testing.T) {
+	out := webtest.Render(t, organisms.LeaseDisplay(view.Lease{Held: true, CanRevoke: true, HolderLabel: "claude", KindLabel: "MCP", Since: "2026-10-30 12:00", IdleRemaining: "5分"}))
+	has(t, out, "保持中", "claude", "5分")
+	hasNot(t, out, "<button", "hx-post", "revoke", "強制剥奪")
 }
 
 func TestClientCardFlagsAndActions(t *testing.T) {
@@ -108,6 +185,58 @@ func TestConnectionRequestListApprovalModeOnlyShowsAvailableModes(t *testing.T) 
 	empty := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{}))
 	has(t, empty, `data-empty="requests"`)
 	hasNot(t, empty, "<button", "/approve")
+}
+
+// 接続要求の履歴: 6 列の表・結果のバッジ・読み取り専用（操作なし）。前後のページへのリンクは、その向きのページがあるときだけ出る。
+func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
+	rows := []view.HistoryRow{
+		{ID: "r1", DisplayName: "bob", LoginName: "bob@example.com", RemoteIP: "100.64.0.9", ReceivedAt: "2026-11-01 10:00",
+			Result: "許可", ResultTone: view.ToneOK, ResultCode: "approved", DecidedAt: "2026-11-01 10:05"},
+		{ID: "r2", DisplayName: "carol", LoginName: "carol@example.com", RemoteIP: "100.64.0.10", ReceivedAt: "2026-11-01 09:00",
+			Result: "拒否", ResultTone: view.ToneDanger, ResultCode: "denied", DecidedAt: "2026-11-01 09:01"},
+		{ID: "r3", DisplayName: "dave", LoginName: "dave@example.com", RemoteIP: "100.64.0.11", ReceivedAt: "2026-11-01 08:00",
+			Result: "未処理", ResultTone: view.ToneWarn, ResultCode: "pending", DecidedAt: "-"},
+	}
+	out := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3"}))
+	has(t, out, `id="request-history"`, "届いた日時", "処理した日時", `data-history-request="r1" data-result="approved"`, "許可", "拒否", "未処理",
+		"100.64.0.9", "bob@example.com", "2026-11-01 10:05",
+		`hx-get="/requests/history?page=1"`, `hx-get="/requests/history?page=3"`, `hx-target="#request-history"`, `hx-push-url="true"`,
+		"data-pager-prev", "data-pager-next", "2 ページ目")
+	hasNot(t, out, "<button", "hx-post", "name=\"rev_requests\"")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	first := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1, NextURL: "/requests/history?page=2"}))
+	has(t, first, "data-pager-next")
+	hasNot(t, first, "data-pager-prev")
+	single := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1}))
+	hasNot(t, single, "data-pager")
+	empty := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1}))
+	has(t, empty, `data-empty="request-history"`)
+	hasNot(t, empty, "<table", "data-pager")
+
+	tabs := webtest.Render(t, organisms.RequestsTabs(view.RequestsTabHistory))
+	has(t, tabs, `href="/requests"`, `href="/requests/history"`, `hx-boost="true"`, `hx-target-error="#main"`, "data-requests-tabs")
+	if got := strings.Count(tabs, `aria-current="page"`); got != 1 || !strings.Contains(tabs[strings.Index(tabs, `aria-current`):], "履歴") {
+		t.Errorf("exactly the history tab must be current:\n%s", tabs)
+	}
+}
+
+// 監査ログと更新の項目（FR-S07・FR-S09）: 平文の注意書きは常に出る。値は入力のとおり描画し、エラーは項目別に出す。
+func TestSettingsFormAuditAndUpdateFields(t *testing.T) {
+	form := view.SettingsForm{
+		Values: view.SettingsValues{AuditThumbnails: true, AuditRetentionDays: "0", AuditThumbsMaxBytes: "1073741824", UpdateApplyMode: "auto_idle", UpdateChannel: "nightly"},
+		Errors: view.SettingsErrors{AuditRetentionDays: "範囲外", UpdateApplyMode: "選び直し", UpdateChannel: "選び直し 2"},
+	}
+	out := webtest.Render(t, organisms.SettingsForm(form))
+	has(t, out, `data-notice="audit-plaintext"`, "BitLocker", `data-notice="audit-record-text"`,
+		`name="audit.thumbnails_enabled"`, `name="audit.record_text"`, `name="audit.retention_days"`, `value="0"`,
+		`name="audit.thumbs_max_bytes"`, `value="1073741824"`, `<option value="auto_idle" selected>`,
+		`data-field-error="set-audit-days"`, `data-field-error="set-update-mode"`, `data-field-error="set-update-channel"`, `<option value="nightly" selected>`)
+	hasNot(t, out, `data-field-error="set-audit-cap"`, `<option value="confirm" selected>`)
+	if got := strings.Count(out, "checked"); got != 1 {
+		t.Errorf("only audit.thumbnails_enabled must be checked, got %d", got)
+	}
+	webtest.AssertCSPCompliantHTML(t, out)
 }
 
 func TestSettingsFormErrorsAndAutostart(t *testing.T) {
@@ -220,6 +349,10 @@ func TestUserControlledValuesAreEscaped(t *testing.T) {
 	}}}))
 	hasNot(t, out, "<script>alert")
 	webtest.AssertCSPCompliantHTML(t, out)
+	out = webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: []view.HistoryRow{{
+		ID: "r1", DisplayName: evil, LoginName: evil, RemoteIP: evil, ReceivedAt: evil, Result: evil, DecidedAt: evil,
+	}}}))
+	hasNot(t, out, "<script>alert")
 	out = webtest.Render(t, organisms.SessionListBody(view.Sessions{Items: []view.Session{{ClientLabel: evil, KindLabel: "MCP"}}}))
 	hasNot(t, out, "<script>alert")
 }
@@ -249,4 +382,108 @@ func TestPollFragmentsAreOOBSwaps(t *testing.T) {
 	// ページ内の通常の描画（OOB ではない）には hx-swap-oob を付けない。
 	hasNot(t, webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{})), "hx-swap-oob")
 	hasNot(t, webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{})), "hx-swap-oob")
+}
+
+// サーバー状態: 長い IPv4/IPv6・[IPv6]:ポート・長い MagicDNS 名は、カードの幅を超えず折り返せる
+// （<dd> が縮められ、<code> が文字の途中でも改行できる）。Issue #43。
+func TestServerStatusBodyWrapsLongValues(t *testing.T) {
+	const (
+		ipv4   = "100.64.0.1"
+		ipv6   = "fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6"
+		dns    = "demo-host-with-a-very-long-machine-name-for-overflow-0123456789.tail-demo-example-network.ts.net"
+		listen = "[fd7a:115c:a1e0:ab12:4840:3c75:8f2e:91d6]:8765"
+	)
+	out := webtest.Render(t, organisms.ServerStatusBody(view.ServerStatus{
+		TailscaledLabel: "稼働中", TailnetIPs: []string{ipv4, ipv6}, DNSName: dns, Port: 8765,
+		ListenLabel: "待ち受け中", ListenAddrs: []string{ipv4 + ":8765", listen},
+	}))
+	// <dd> ごとの断片に分け、値を含む <code> と、それを囲む <dd> の class を調べる。
+	ddOpen := regexp.MustCompile(`<dd[^>]*class="([^"]*)"`)
+	codeOpen := regexp.MustCompile(`<code class="([^"]*)">([^<]*)</code>`)
+	wrapped := map[string]bool{}
+	for _, dd := range strings.Split(out, "</dd>") {
+		open := ddOpen.FindStringSubmatch(dd)
+		for _, c := range codeOpen.FindAllStringSubmatch(dd, -1) {
+			if open == nil || !strings.Contains(" "+open[1]+" ", " min-w-0 ") {
+				t.Errorf("<dd> of %q lacks min-w-0 (grid/flex item cannot shrink): %s", c[2], dd)
+			}
+			if !strings.Contains(" "+c[1]+" ", " break-all ") {
+				t.Errorf("<code> of %q lacks break-all: %s", c[2], c[0])
+			}
+			wrapped[c[2]] = true
+		}
+	}
+	for _, v := range []string{ipv4, ipv6, dns, ipv4 + ":8765", listen} {
+		if !wrapped[v] {
+			t.Errorf("%q is not rendered inside a <code>: %s", v, out)
+		}
+	}
+}
+
+// アプリのログ: 3 列の表・レベルのバッジ（成功の INFO・WARN・ERROR）・属性・絞り込みのリンク。HTML は CSP に適合する。
+func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
+	v := view.AppLog{
+		Page: 2, Filter: "warn",
+		Filters: []view.LogFilterLink{
+			{Code: "all", Label: "すべて", URL: "/logs"},
+			{Code: "warn", Label: "WARN 以上", URL: "/logs?level=warn", Active: true},
+			{Code: "error", Label: "ERROR のみ", URL: "/logs?level=error"},
+		},
+		Rows: []view.LogRow{
+			{Time: "2026-11-01 09:00:03", Level: "ERROR", LevelTone: view.ToneDanger, Message: "mcp tool failed", Attrs: []view.LogAttr{{Key: "tool", Value: "screenshot"}}},
+			{Time: "2026-11-01 09:00:02", Level: "WARN", LevelTone: view.ToneWarn, Message: "auth failed <b>"},
+			{Time: "2026-11-01 09:00:01", Level: "INFO", LevelTone: view.ToneOK, Message: "lease acquired"},
+		},
+		PrevURL: "/logs?level=warn", NextURL: "/logs?level=warn&page=3",
+	}
+	out := webtest.Render(t, organisms.AppLog(v))
+	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
+		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<",
+		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
+		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
+	has(t, out, "auth failed &lt;b&gt;")
+	hasNot(t, out, "auth failed <b>", "<form", "hx-post")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	empty := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1}))
+	has(t, empty, `data-empty="app-log"`)
+	hasNot(t, empty, "<tbody", "data-pager")
+}
+
+// API キーのパネル（NFR-S14）: 入力欄は伏せ字で value を持たない。登録の有無で状態・ボタンが変わる。エラーは項目別に出す。
+func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
+	p := view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", Target: "puppet-remo/openai", PutURL: "/agent/api-key", ConfirmURL: "/agent/api-key/delete/confirm"}
+	out := webtest.Render(t, organisms.APIKeyPanel(p))
+	has(t, out, `id="agent-key"`, `data-key-state="unregistered"`, "未登録", `type="password"`, `autocomplete="off"`, `name="api_key"`,
+		`hx-put="/agent/api-key"`, `hx-target-422="#agent-key"`, "puppet-remo/openai", "資格情報マネージャー", "表示しません", ">登録<")
+	hasNot(t, out, "value=", "data-key-delete", "削除", "data-field-error")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	p.Registered, p.Error = true, "API キーを入力してください。"
+	out = webtest.Render(t, organisms.APIKeyPanel(p))
+	has(t, out, `data-key-state="registered"`, "登録済み", `data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`,
+		`data-field-error="agent-key-input"`, "入力してください", `aria-invalid`, "置き換える")
+	hasNot(t, out, "value=")
+	webtest.AssertCSPCompliantHTML(t, out)
+}
+
+// エージェントと高速パスのフォームは、別々の同意（別々のチェックボックスと文言）を持つ。既定の値は入力のとおりに描画する。
+func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
+	agent := webtest.Render(t, organisms.AgentForm(view.AgentForm{
+		Values: view.AgentValues{Model: "m", MaxSteps: "50", MaxDurationSec: "600", KeepScreenshots: "3", DenyProcesses: "A.exe\nB.exe"},
+		Errors: view.AgentErrors{Consent: "同意が必要です", General: "全体の不備"},
+	}))
+	has(t, agent, `hx-put="/agent"`, `data-consent="openai"`, "OpenAI に送信される", `data-field-error="agent-consent"`, "同意が必要です",
+		`data-form-error="agent"`, "全体の不備", `<textarea`, "A.exe\nB.exe", `min="1"`, `max="500"`, `min="30"`, `max="7200"`, `max="10"`)
+	hasNot(t, agent, "TypeSafe", "checked", "同意済み")
+
+	fast := webtest.Render(t, organisms.FastpathForm(view.FastpathForm{
+		Values:    view.FastpathValues{Enabled: true, Consent: true, Model: "jev-1.13", MinConfidence: "0.7", MaxSteps: "15", ExcludedLabels: "delete"},
+		ConsentAt: "2026-10-30 12:00",
+	}))
+	has(t, fast, `hx-put="/agent/fastpath"`, `data-consent="typesafe"`, "TypeSafe（api.typesafe.ai）に送信される", "ウィンドウのタイトル", "直近 5 件",
+		"スクリーンショット、要素の値", `data-consent-at="typesafe"`, "2026-10-30 12:00", `step="0.05"`, `max="1"`, "別の同意", "checked")
+	hasNot(t, fast, "OpenAI に送信される", `data-consent="openai"`)
+	webtest.AssertCSPCompliantHTML(t, agent)
+	webtest.AssertCSPCompliantHTML(t, fast)
 }

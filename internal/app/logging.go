@@ -13,7 +13,9 @@ import (
 )
 
 // アプリ運用ログ（NFR-O01）: slog の JSON を logs\ に 10 MiB × 5 世代でローテーションして出力する。
-// 監査ログ（業務記録。repository.Audit）とは別物。トークン・API キーなどの秘密は出力しない。
+// 監査ログ（業務記録。repository.Audit）とは別物。トークン・API キーなどの秘密は出力しない（呼び出し側が渡さないことが原則。
+// 渡してしまったときのために、NewLogger は redactAttr で秘密のキーの値とトークン・ハッシュの形の文字列を隠す）。
+// 閲覧は GUI のログ画面（LogReader。FR-H13）。
 const (
 	logFileName     = "puppet-remo.log"
 	logMaxSizeMiB   = 10
@@ -52,9 +54,14 @@ func NewLogger(dataDir string, level slog.Level) (*slog.Logger, io.Closer, error
 		return nil, nil, fmt.Errorf("create log directory: %w", err)
 	}
 	w := &lumberjack.Logger{
-		Filename:   filepath.Join(dir, logFileName),
+		Filename:   LogFilePath(dataDir),
 		MaxSize:    logMaxSizeMiB,
 		MaxBackups: logMaxBackups,
 	}
-	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})), w, nil
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level, ReplaceAttr: redactAttr})), w, nil
+}
+
+// LogFilePath は今のログファイル（dataDir\logs\puppet-remo.log。ローテーションされた古いものは同じ場所の puppet-remo-<時刻>.log）。
+func LogFilePath(dataDir string) string {
+	return filepath.Join(dataDir, logSubdirectory, logFileName)
 }

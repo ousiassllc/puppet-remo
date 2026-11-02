@@ -1,0 +1,80 @@
+package organisms
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+func leaseButtonAttrs(url string) atoms.Attrs {
+	return atoms.Attrs{"hx-post": url, "hx-target": "#lease-panel", "hx-swap": "outerHTML", "hx-disabled-elt": "this"}
+}
+
+// ViewerLeasePanel はビューアのリースパネル（FR-W08）。保持者の種別・名前・状態は常に出し、操作のボタンは
+// 状態に合うものだけを描画する（状態駆動。frontend.md §4.3）: 空きなら「取得」、自分が保持なら「解放」、他者が保持なら「強制剥奪」。
+// <remo-screen-viewer> が remo:lease-changed を発火すると、#viewer-root からそれを受けて GET /viewer/lease で自分を差し替える。
+templ ViewerLeasePanel(v view.ViewerLease) {
+	<section
+		id="lease-panel"
+		class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+		aria-label="操作権"
+		hx-get="/viewer/lease"
+		hx-trigger="remo:lease-changed from:#viewer-root"
+		hx-target="this"
+		hx-swap="outerHTML"
+	>
+		<h2 class="mb-2 text-sm font-semibold text-slate-700">操作権</h2>
+		<div class="flex flex-wrap items-center gap-3" data-lease-state={ leaseState(v) }>
+			if v.Pending {
+				@molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel)
+				if v.PendingMine {
+					@atoms.Badge(atoms.BadgeWarn, "あなた")
+				}
+			} else {
+				@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
+			}
+			if v.Mine {
+				@atoms.Badge(atoms.BadgeOK, "あなた")
+			}
+			if v.CanAcquire {
+				@atoms.Button(atoms.ButtonProps{Label: "操作権を取得", Variant: atoms.ButtonPrimary, Attrs: leaseButtonAttrs("/viewer/lease/acquire")})
+			}
+			if v.CanRelease {
+				@atoms.Button(atoms.ButtonProps{Label: "解放", Variant: atoms.ButtonSecondary, Attrs: leaseButtonAttrs("/viewer/lease/release")})
+			}
+			if v.CanRevoke {
+				@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Variant: atoms.ButtonDanger, Attrs: leaseButtonAttrs("/viewer/lease/revoke")})
+			}
+		</div>
+		if v.Task != nil {
+			<div class="mt-2 rounded border border-indigo-100 bg-indigo-50 p-2 text-xs text-slate-700" data-lease-task>
+				<p class="font-semibold text-indigo-800">AI エージェントのタスク実行中</p>
+				<dl class="mt-1 space-y-0.5">
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">ステップ</dt><dd class="tabular-nums" data-task-steps>{ v.Task.Steps }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">経過</dt><dd class="tabular-nums" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
+					if v.Task.StartedAt != "" {
+						<div class="flex gap-2"><dt class="w-16 text-slate-500">開始</dt><dd class="tabular-nums" data-task-started>{ v.Task.StartedAt }</dd></div>
+					}
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">依頼元</dt><dd data-task-requester>{ v.Task.Requester }</dd></div>
+				</dl>
+			</div>
+		}
+		if v.PendingMine {
+			<p class="mt-2 text-sm text-amber-700" role="status" data-lease-pending-message>ホストの承認を待っています。</p>
+		}
+		<p class="mt-2 text-xs text-slate-500">この画面から Ctrl+Alt+Del は送れません。</p>
+	</section>
+}
+
+func leaseState(v view.ViewerLease) string {
+	switch {
+	case v.Pending:
+		return "pending_approval"
+	case !v.Held:
+		return "idle"
+	case v.Mine:
+		return "mine"
+	}
+	return "other"
+}

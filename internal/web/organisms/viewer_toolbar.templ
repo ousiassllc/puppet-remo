@@ -1,0 +1,54 @@
+package organisms
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+func selectOptions(opts []view.Option) []atoms.SelectOption {
+	out := make([]atoms.SelectOption, len(opts))
+	for i, o := range opts {
+		out[i] = atoms.SelectOption{Value: o.Value, Label: o.Label, Selected: o.Selected}
+	}
+	return out
+}
+
+func sliderAttrs(out, min, max string) atoms.Attrs {
+	return atoms.Attrs{"min": min, "max": max, "step": "1", "data-range-output": out}
+}
+
+// ViewerToolbar はビューアのツールバー（モニター・画質・FPS。FR-W04・W05）。変更すると POST /viewer/settings を送り、
+// 応答のツールバーに差し替える。検証エラー（422）は入力値とメッセージ付きで再描画する。反映はサーバーが WebSocket の config で行う。
+// ブラウザの入力検証は novalidate で止める（検証はサーバー。frontend.md §5.6）。
+templ ViewerToolbar(v view.ViewerToolbar) {
+	<form
+		id="viewer-toolbar"
+		class="flex flex-wrap items-start gap-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+		novalidate
+		hx-post="/viewer/settings"
+		hx-trigger="change"
+		hx-target="this"
+		hx-swap="outerHTML"
+		hx-target-422="this"
+		hx-indicator="#viewer-toolbar-spinner"
+		{ toolbarErrorAttrs(v)... }
+	>
+		@molecules.FormField("viewer-monitor", "モニター", "", v.Errors.Monitor) {
+			@atoms.Select("viewer-monitor", "monitor", selectOptions(v.Monitors))
+		}
+		@molecules.FormField("viewer-quality", "画質（1〜100）", "", v.Errors.Quality) {
+			<div class="flex items-center gap-2">
+				@atoms.Input(atoms.InputProps{ID: "viewer-quality", Name: "quality", Type: "range", Value: v.Quality, Invalid: v.Errors.Quality != "", Attrs: sliderAttrs("viewer-quality-out", "1", "100")})
+				<output id="viewer-quality-out" for="viewer-quality" class="w-8 text-sm tabular-nums text-slate-700">{ v.Quality }</output>
+			</div>
+		}
+		@molecules.FormField("viewer-fps", "フレームレート（1〜30 fps）", "", v.Errors.FPS) {
+			<div class="flex items-center gap-2">
+				@atoms.Input(atoms.InputProps{ID: "viewer-fps", Name: "fps", Type: "range", Value: v.FPS, Invalid: v.Errors.FPS != "", Attrs: sliderAttrs("viewer-fps-out", "1", "30")})
+				<output id="viewer-fps-out" for="viewer-fps" class="w-8 text-sm tabular-nums text-slate-700">{ v.FPS }</output>
+			</div>
+		}
+		@atoms.Spinner("viewer-toolbar-spinner")
+	</form>
+}

@@ -32,6 +32,17 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 		return g.checkPoints(mon, o.From, o.To)
 	case domain.Scroll:
 		return g.checkPoints(mon, o.At)
+	case domain.PointerMove:
+		return g.checkPoints(mon, o.At)
+	case domain.MouseButton:
+		return g.checkPoints(mon, o.At)
+	case domain.Wheel:
+		return g.checkPoints(mon, o.At)
+	case domain.KeyEvent:
+		if err := domain.CheckKeyEvent(o); err != nil {
+			return err
+		}
+		return g.checkForeground(domain.CheckInputTarget)
 	case domain.KeyPress:
 		if err := domain.CheckKeyCombo(o.Keys); err != nil {
 			return err

@@ -1,11 +1,15 @@
 package guitest
 
 import (
+	"bytes"
 	"context"
 	crand "crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,8 +39,15 @@ type Fakes struct {
 	Leases     *Leases
 	KillSwitch *KillSwitch
 	Admin      *Admin
+	Approval   *Approval
 	Settings   *Settings
 	Apps       *Apps
+	Logs       *Logs
+	Audit      *Audit
+	Updates    *Updates
+
+	AgentSettings *AgentSettings
+	Tasks         *Tasks
 }
 
 // New は空の状態の Fakes を返す。時計は 2026-10-30 12:00 UTC。
@@ -51,16 +62,26 @@ func New() *Fakes {
 		Leases:     &Leases{},
 		KillSwitch: &KillSwitch{bus: bus},
 		Admin:      &Admin{clock: clock, bus: bus},
+		Approval:   &Approval{},
 		Apps:       &Apps{},
-		Settings:   &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300}, CanAutostart: true},
+		Audit:      &Audit{},
+		Tasks:      &Tasks{clock: clock},
+		Updates: &Updates{Current: service.UpdateStatus{
+			CurrentVersion: "0.1.0", Channel: domain.ChannelStable, ApplyMode: service.UpdateApplyConfirm, Updatable: true, KeyConfigured: true,
+		}},
+		AgentSettings: NewAgentSettings(clock),
+
+		Logs: &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
+		Settings: &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
+			AuditThumbnailsEnabled: true, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: service.UpdateApplyConfirm, UpdateChannel: "stable"}, CanAutostart: true},
 	}
 }
 
 // Deps は gui.New に渡す依存先。表示の時刻は UTC。
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
-		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin,
-		Settings: f.Settings, Apps: f.Apps, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
+		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin, Approval: f.Approval,
+		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Updates: f.Updates, AgentSettings: f.AgentSettings, Tasks: f.Tasks, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
 
@@ -74,13 +95,33 @@ type Sessions struct{ Items []service.SessionInfo }
 
 func (s *Sessions) Sessions() []service.SessionInfo { return s.Items }
 
-// Leases は gui.LeaseReader の偽実装。
+// Leases は gui.LeaseControl の偽実装。Revoke は呼び出しを記録し、保持者を外す（RevokeErr があればそのエラーを返して外さない）。
+// 承認待ち（pending_approval）は PendingLease・HasPending で表す。
 type Leases struct {
 	H    service.Holder
 	Held bool
+
+	PendingLease service.PendingLease
+	HasPending   bool
+
+	RevokeErr   error
+	RevokeCalls int
+	LastBy      domain.Actor
 }
 
 func (l *Leases) Holder() (service.Holder, bool) { return l.H, l.Held }
+
+func (l *Leases) Pending() (service.PendingLease, bool) { return l.PendingLease, l.HasPending }
+
+func (l *Leases) Revoke(by domain.Actor) error {
+	l.RevokeCalls++
+	l.LastBy = by
+	if l.RevokeErr != nil {
+		return l.RevokeErr
+	}
+	l.H, l.Held = service.Holder{}, false
+	return nil
+}
 
 // KillSwitch は gui.KillSwitch の偽実装。発動・解除の呼び出しを数える。
 type KillSwitch struct {
@@ -196,8 +237,10 @@ type Admin struct {
 	Approved []service.ApproveInput
 	Issued   []IssueCall
 	Updates  []service.ClientUpdate
+	Resets   []string // ResetApproval に成功したクライアントの ID
 	// 注入するエラー。nil でなければ、該当の操作がこれを返す。
 	PendingErr error
+	HistoryErr error
 	IssueErr   error
 }
 
@@ -233,6 +276,27 @@ func (a *Admin) PendingRequests(context.Context) ([]service.ConnRequest, error) 
 	return out, nil
 }
 
+// RequestHistory は Requests を、届いた日時（FirstSeenAt）の新しい順（同時刻は ID の新しい順）に 1 ページ返す（本物と同じ規則）。
+func (a *Admin) RequestHistory(_ context.Context, page int) (service.RequestHistoryPage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.HistoryErr != nil {
+		return service.RequestHistoryPage{}, a.HistoryErr
+	}
+	page = max(page, 1)
+	all := slices.Clone(a.Requests)
+	slices.SortStableFunc(all, func(x, y service.ConnRequest) int {
+		if c := y.FirstSeenAt.Compare(x.FirstSeenAt); c != 0 {
+			return c
+		}
+		return strings.Compare(y.ID, x.ID)
+	})
+	size := service.RequestHistoryPageSize
+	start := min((page-1)*size, len(all))
+	end := min(start+size, len(all))
+	return service.RequestHistoryPage{Items: all[start:end], Page: page, HasPrev: page > 1, HasNext: end < len(all)}, nil
+}
+
 func (a *Admin) decide(id, status string, clientID *string) error {
 	for i := range a.Requests {
 		if a.Requests[i].ID != id {
@@ -243,6 +307,8 @@ func (a *Admin) decide(id, status string, clientID *string) error {
 		}
 		a.Requests[i].Status = status
 		a.Requests[i].ClientID = clientID
+		decided := a.clock.Now()
+		a.Requests[i].DecidedAt = &decided
 		return nil
 	}
 	return domain.NewError(domain.CodeConflict, "connection request is not pending", nil)
@@ -267,6 +333,12 @@ func (a *Admin) ApproveRequest(_ context.Context, id string, in service.ApproveI
 	c := domain.Client{
 		ID: a.id("client"), StableNodeID: req.StableNodeID, LoginName: req.LoginName, DisplayName: name,
 		WebEnabled: in.WebEnabled, MCPEnabled: in.MCPEnabled, AgentEnabled: in.AgentEnabled, ApprovalMode: domain.ApprovalAlways,
+	}
+	if in.ApprovalMode != "" {
+		if !in.ApprovalMode.Valid() {
+			return domain.Client{}, domain.ErrInvalidArgument.WithMsg("invalid approval_mode")
+		}
+		c.ApprovalMode = in.ApprovalMode
 	}
 	a.Cs = append(a.Cs, c)
 	a.Approved = append(a.Approved, in)
@@ -327,7 +399,32 @@ func (a *Admin) UpdateClient(_ context.Context, id string, u service.ClientUpdat
 	if u.AgentEnabled != nil {
 		a.Cs[i].AgentEnabled = *u.AgentEnabled
 	}
+	if u.ApprovalMode != nil {
+		if !u.ApprovalMode.Valid() {
+			return domain.Client{}, domain.ErrInvalidArgument.WithMsg("invalid approval_mode")
+		}
+		if *u.ApprovalMode != a.Cs[i].ApprovalMode {
+			a.Cs[i].ApprovedAt = nil // 本物（repository.Clients.Update）と同じ: モードの変更で承認済みを取り消す
+		}
+		a.Cs[i].ApprovalMode = *u.ApprovalMode
+	}
 	a.Updates = append(a.Updates, u)
+	return a.Cs[i], nil
+}
+
+// ResetApproval は本物と同じく、first_time で承認済みのときだけ approved_at を NULL に戻す（それ以外は conflict）。
+func (a *Admin) ResetApproval(_ context.Context, id string) (domain.Client, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	i := a.find(id)
+	if i < 0 {
+		return domain.Client{}, fmt.Errorf("client: %w", service.ErrNotFound)
+	}
+	if a.Cs[i].ApprovalMode != domain.ApprovalFirstTime || a.Cs[i].ApprovedAt == nil {
+		return domain.Client{}, domain.NewError(domain.CodeConflict, "the client has no first_time approval to reset", nil)
+	}
+	a.Cs[i].ApprovedAt = nil
+	a.Resets = append(a.Resets, id)
 	return a.Cs[i], nil
 }
 
@@ -403,4 +500,204 @@ func (a *Admin) RevokeToken(_ context.Context, clientID, tokenID string) error {
 		}
 	}
 	return fmt.Errorf("token: %w", service.ErrNotFound)
+}
+
+// Approval は gui.Approval の偽実装。Reqs が承認待ちの要求で、Resolve は本物と同じく、無い・終わった id を ErrApprovalTimeout にする。
+type Approval struct {
+	mu       sync.Mutex
+	Reqs     []service.ApprovalRequest
+	Resolved []ResolveCall
+	// ResolveErr が nil でなければ、Resolve は（要求があっても）これを返す。
+	ResolveErr error
+}
+
+// ResolveCall は Resolve の呼び出し 1 回分。
+type ResolveCall struct {
+	ID    string
+	Allow bool
+}
+
+func (p *Approval) Pending() []service.ApprovalRequest {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.Reqs)
+}
+
+func (p *Approval) Resolve(id string, allow bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ResolveErr != nil {
+		return p.ResolveErr
+	}
+	for i, r := range p.Reqs {
+		if r.ID == id {
+			p.Reqs = append(p.Reqs[:i], p.Reqs[i+1:]...)
+			p.Resolved = append(p.Resolved, ResolveCall{ID: id, Allow: allow})
+			return nil
+		}
+	}
+	return domain.ErrApprovalTimeout
+}
+
+// Logs は gui.Logs の偽実装。Items は新しい順に並べて入れる（本物のファイルと同じ順序。絞り込みとページ分けは本物と同じ規則）。
+// OpenFolder はフォルダーを開かず、呼ばれた回数を OpenFolderCalls に数える（OpenFolderErr があればそれを返す）。
+type Logs struct {
+	Items    []service.AppLogEntry
+	FilePath string
+	Err      error
+
+	OpenFolderErr   error
+	OpenFolderCalls int
+}
+
+// Path は表示するログファイルのパス。
+func (l *Logs) Path() string { return l.FilePath }
+
+// OpenFolder はフォルダーを開いたことにする（記録だけ）。
+func (l *Logs) OpenFolder(context.Context) error {
+	l.OpenFolderCalls++
+	return l.OpenFolderErr
+}
+
+// Entries は Items を filter で絞って 1 ページ返す。
+func (l *Logs) Entries(_ context.Context, filter service.AppLogFilter, page int) (service.AppLogPage, error) {
+	if l.Err != nil {
+		return service.AppLogPage{}, l.Err
+	}
+	page = service.ClampAppLogPage(page)
+	var all []service.AppLogEntry
+	for _, e := range l.Items {
+		if e.Severity >= filter.MinLevel() {
+			all = append(all, e)
+		}
+	}
+	size := service.AppLogPageSize
+	start := min((page-1)*size, len(all))
+	end := min(start+size, len(all))
+	return service.AppLogPage{Items: all[start:end], Page: page, HasPrev: page > 1, HasNext: end < len(all)}, nil
+}
+
+// Audit は gui.Audit の偽実装。Items は新しい順（ts の降順、同時刻は id の降順）に入れる。絞り込みと cursor・limit は本物
+// （repository.Audit.Query）と同じ規則。Details は id ごとの詳細（無ければ Items の行から引数なしで作る）。
+// Thumbs は id ごとのサムネイルの本体（JPEG）、ThumbErr は id ごとの Thumbnail の失敗（service.ErrNotFound や domain.ErrInvalidArgument など）。
+type Audit struct {
+	Items    []service.AuditEntry
+	Details  map[int64]service.AuditDetail
+	Thumbs   map[int64][]byte
+	ThumbErr map[int64]error
+	Err      error
+
+	mu      sync.Mutex
+	Queries []service.AuditQuery // Query が受け取った絞り込み（呼び出し順）
+}
+
+// LastQuery は最後の Query の絞り込み。
+func (a *Audit) LastQuery() service.AuditQuery {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.Queries) == 0 {
+		return service.AuditQuery{}
+	}
+	return a.Queries[len(a.Queries)-1]
+}
+
+// Query は Items を q で絞って 1 ページ返す。
+func (a *Audit) Query(_ context.Context, q service.AuditQuery) (service.AuditPage, error) {
+	a.mu.Lock()
+	a.Queries = append(a.Queries, q)
+	a.mu.Unlock()
+	if a.Err != nil {
+		return service.AuditPage{}, a.Err
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = service.DefaultAuditLimit
+	}
+	limit = min(limit, service.MaxAuditLimit)
+	var out []service.AuditEntry
+	next := int64(0)
+	for _, e := range a.Items {
+		switch {
+		case q.Cursor > 0 && e.ID >= q.Cursor,
+			!q.From.IsZero() && e.TS.Before(q.From),
+			!q.To.IsZero() && e.TS.After(q.To),
+			q.ClientID != "" && e.ClientID != q.ClientID,
+			q.Kind != "" && e.Kind != q.Kind,
+			q.Result != "" && e.Result != q.Result,
+			q.Q != "" && !strings.Contains(e.Event, q.Q):
+			continue
+		}
+		if len(out) == limit {
+			next = out[len(out)-1].ID
+			break
+		}
+		out = append(out, e)
+	}
+	return service.AuditPage{Entries: out, Next: next}, nil
+}
+
+// Get は id の詳細。
+func (a *Audit) Get(_ context.Context, id int64) (service.AuditDetail, error) {
+	if a.Err != nil {
+		return service.AuditDetail{}, a.Err
+	}
+	if d, ok := a.Details[id]; ok {
+		return d, nil
+	}
+	for _, e := range a.Items {
+		if e.ID == id {
+			return service.AuditDetail{AuditEntry: e}, nil
+		}
+	}
+	return service.AuditDetail{}, fmt.Errorf("audit log %d: %w", id, service.ErrNotFound)
+}
+
+// Thumbnail は id のサムネイルを開く。
+func (a *Audit) Thumbnail(_ context.Context, id int64) (io.ReadCloser, error) {
+	if err := a.ThumbErr[id]; err != nil {
+		return nil, err
+	}
+	if b, ok := a.Thumbs[id]; ok {
+		return io.NopCloser(bytes.NewReader(b)), nil
+	}
+	return nil, fmt.Errorf("thumbnail of audit log %d: %w", id, service.ErrNotFound)
+}
+
+// Updates は gui.Updates の偽実装。Current が今の状態で、CheckResult が nil でなければ Check の結果に差し替える。
+// Apply は ApplyErr を返し、成功したら Applied に積む。
+type Updates struct {
+	mu       sync.Mutex
+	Current  service.UpdateStatus
+	Checked  []domain.ActorKind
+	Applied  []domain.ActorKind
+	ApplyErr error
+	// CheckResult が非 nil なら、Check は Current をこの値に差し替える。
+	CheckResult *service.UpdateStatus
+}
+
+func (u *Updates) Status(context.Context) service.UpdateStatus {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.Current
+}
+
+func (u *Updates) Check(_ context.Context, by domain.ActorKind) service.UpdateStatus {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.Checked = append(u.Checked, by)
+	if u.CheckResult != nil {
+		u.Current = *u.CheckResult
+	}
+	return u.Current
+}
+
+func (u *Updates) Apply(_ context.Context, by domain.ActorKind) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.ApplyErr != nil {
+		return u.ApplyErr
+	}
+	u.Applied = append(u.Applied, by)
+	u.Current.Applying = true
+	return nil
 }

@@ -1,18 +1,26 @@
 version: '3'
 
-# wails3 の共通タスク（アイコンの生成）。ビルド・パッケージは windows/Taskfile.yml。
+# wails3 の共通タスクとアイコンの生成（SVG 起点。build/icons の @resvg/resvg-js で描く）。ビルド・パッケージは windows/Taskfile.yml。
 # ルートの Taskfile.yml が `common:` として取り込む。フロントエンドのビルドはルートの `frontend:build`（static/）。
 
 tasks:
   generate:icons:
-    summary: build/appicon.png から Windows のアイコン（.ico）を作る（トレイのアイコン internal/app/tray.png は 64px に縮小して置く）
-    dir: build
+    summary: アイコンの SVG（appicon.svg・appicon-small.svg）から appicon.png・windows/icon.ico・internal/app/tray.png・見本（docs/screenshots/icon）を作る
+    dir: build/icons
     sources:
-      - appicon.png
+      - ../appicon.svg
+      - ../appicon-small.svg
+      - render.mjs
+      - package.json
+      - bun.lock
     generates:
-      - windows/icon.ico
+      - ../appicon.png
+      - ../windows/icon.ico
+      - ../../internal/app/tray.png
+      - ../../docs/screenshots/icon/app-icon-sizes.png
     cmds:
-      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico -macfilename darwin/icons.icns
+      - bun install --frozen-lockfile
+      - bun render.mjs
 
   update:build-assets:
     summary: config.yml の info から windows/ の資産（info.json・manifest・wails_tools.nsh）を作り直す（project.nsi は手で調整済み。差分を確認すること）

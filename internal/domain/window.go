@@ -14,4 +14,7 @@ type WindowInfo struct {
 	Minimized  bool
 	Elevated   bool // 昇格（管理者権限）ウィンドウ。UIPI のため入力できない
 	Own        bool // 自プロセスのウィンドウ
+	// Overlay は自プロセスのクリックスルーのウィンドウ（操作中オーバーレイ。Own かつ WS_EX_TRANSPARENT かつ WS_EX_LAYERED。#69）。
+	// 入力を受けず、下のウィンドウへそのまま通すので、InputGuard は拒否しない（InputBlockReason）。Own のときだけ true になる。
+	Overlay bool
 }

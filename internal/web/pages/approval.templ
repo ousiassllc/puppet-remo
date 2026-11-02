@@ -1,0 +1,30 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const approvalTitle = "承認"
+
+// ApprovalDialog は承認ダイアログのフルページ（GET /approvals/{id}。専用の Wails ウィンドウの中身。サイドバーは無い）。
+templ ApprovalDialog(v view.ApprovalDialog) {
+	@layout.Dialog(approvalTitle) {
+		@organisms.ApprovalDialog(v)
+	}
+}
+
+// ApprovalGone は承認要求がすでに終わっているときのフルページ（410。失効・解決済み）。
+templ ApprovalGone(v view.ApprovalGone) {
+	@layout.Dialog(approvalTitle) {
+		@organisms.ApprovalGone(v)
+	}
+}
+
+// Overlay は操作中オーバーレイのフルページ（GET /overlay。全モニターを覆うクリックスルーの Wails ウィンドウの中身）。
+templ Overlay(v view.Overlay) {
+	@layout.Overlay("操作中") {
+		@organisms.Overlay(v)
+	}
+}

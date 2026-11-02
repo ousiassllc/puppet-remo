@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 )
@@ -29,9 +30,12 @@ func TestNewRequiresDependencies(t *testing.T) {
 		"FilePicker": func(c *Config) { c.Platform.FilePicker = nil },
 		"Hotkey":     func(c *Config) { c.Platform.Hotkey = nil },
 		"Power":      func(c *Config) { c.Platform.Power = nil },
+		"Installer":  func(c *Config) { c.Platform.Installer = nil },
+		"Secrets":    func(c *Config) { c.Platform.Secrets = nil },
 		"Watcher":    func(c *Config) { c.Watcher = nil },
 		"WhoIs":      func(c *Config) { c.WhoIs = nil },
 		"Static":     func(c *Config) { c.Static = nil },
+		"Logs":       func(c *Config) { c.Logs = nil },
 	}
 	for name, clear := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -293,8 +297,8 @@ func TestHostOnlyRoutesAreNotReachableRemotely(t *testing.T) {
 
 	client := &http.Client{Transport: remoteTransport{e: e, token: token}}
 	for _, tc := range []struct{ method, path string }{
-		{http.MethodGet, "/"}, {http.MethodGet, "/settings"}, {http.MethodGet, "/events"}, {http.MethodGet, "/poll"}, {http.MethodGet, "/clients"},
-		{http.MethodPost, "/killswitch/trigger"}, {http.MethodPost, "/killswitch/release"},
+		{http.MethodGet, "/settings"}, {http.MethodGet, "/requests"}, {http.MethodGet, "/events"}, {http.MethodGet, "/poll"}, {http.MethodGet, "/clients"},
+		{http.MethodPost, "/killswitch/trigger"}, {http.MethodPost, "/killswitch/release"}, {http.MethodPost, "/lease/revoke"},
 		{http.MethodPut, "/settings"}, {http.MethodPost, "/clients/client-1/tokens"},
 	} {
 		req, _ := http.NewRequest(tc.method, "http://"+testTailnetIP+":8765"+tc.path, nil)
@@ -469,7 +473,8 @@ func TestChangingTheIdleTimeoutSettingAppliesToTheLeaseManager(t *testing.T) {
 	if _, err := e.app.settings.Save(ctx, s); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.app.leases.Acquire(ctx, domain.Actor{Kind: domain.ActorMCP, ClientID: "c1", Label: "c1", SessionID: "s1"}); err != nil {
+	clientID, _ := e.registerClient()
+	if _, err := e.app.leases.Acquire(ctx, domain.Actor{Kind: domain.ActorMCP, ClientID: clientID, Label: "c1", SessionID: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	h, held := e.holder()
@@ -530,5 +535,47 @@ func TestShutdownBeforeStartStillClosesResources(t *testing.T) {
 	}
 	if err := e.app.Start(t.Context()); err == nil {
 		t.Error("Start after Shutdown must fail")
+	}
+}
+
+func TestLeaseAcquireWaitsForApprovalOfAnAlwaysClient(t *testing.T) {
+	// 組み立て: 承認モード always のクライアントの取得は、Approval を通ってホストの結果を待ち、Bus に approval が出る（FR-L07）。
+	e := newEnv(t)
+	clientID, _ := e.registerClient()
+	always := domain.ApprovalAlways
+	if err := e.db.Clients().Update(t.Context(), clientID, repository.ClientPatch{ApprovalMode: &always}); err != nil {
+		t.Fatal(err)
+	}
+	events, cancel := e.app.bus.Subscribe(service.TopicApproval)
+	defer cancel()
+
+	who := domain.Actor{Kind: domain.ActorMCP, ClientID: clientID, Label: "alice-laptop", SessionID: "s1"}
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.app.leases.Acquire(t.Context(), who)
+		done <- err
+	}()
+	select {
+	case ev := <-events:
+		data, ok := ev.Data.(service.ApprovalEvent)
+		if !ok || data.Kind != service.ApprovalKindLease {
+			t.Fatalf("approval event data = %#v", ev.Data)
+		}
+		if err := e.app.approval.Resolve(data.ID, true); err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("the approval event was not published")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("Acquire did not return after the approval")
+	}
+	if _, held := e.holder(); !held {
+		t.Error("the lease must be held after the approval")
 	}
 }

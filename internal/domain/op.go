@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// Op はツールの操作（MCP が組み立てる。Web UI・エージェントは M2 / M4 から同じ型を使う）。
+// Op はツールの操作（MCP が組み立てる。Web UI（M2）・エージェント（M4）も同じ型を使う）。
 // 座標を持つ Op の座標は、service.Control.Do に渡す時点では縮小スクリーンショット座標（FR-M16）。
 // Control が Monitor の縮小率で物理座標へ変換してから InputGuard と platform へ渡す。
 type Op interface{ isOp() }
@@ -66,6 +66,33 @@ type GetUITree struct {
 // Wait は Duration だけ待つ（FR-M10。上限 10 秒）。
 type Wait struct{ Duration time.Duration }
 
+// 以下は Web UI の WebSocket（input.*。API 仕様 §5.3）が組み立てる Op。MCP の Op と違い、座標は縮小座標ではなく
+// ストリームの座標（Monitor の物理ピクセル。Monitor の左上が原点）で、Control が仮想デスクトップの物理座標へ変換する。
+// Monitor に MonitorPrimary か 0 以上の Index を指定する（MCP の Op と同じ）。
+
+// PointerMove は At（ストリームの座標）へカーソルを動かす（input.mouse の move）。
+type PointerMove struct {
+	At      Point
+	Monitor int
+}
+
+// MouseButton は At（ストリームの座標）へカーソルを動かし、Button を押す・離す（input.mouse の down / up）。
+// 押したボタンは ReleaseAll（キルスイッチ）で離される。
+type MouseButton struct {
+	At      Point
+	Button  Button
+	Action  ButtonAction
+	Monitor int
+}
+
+// Wheel は At（ストリームの座標）へ動かしてホイールを回す（input.mouse の wheel）。
+// 単位はノッチ（小数可。MCP の Scroll.Amount と同じ）。DY > 0 が下、DX > 0 が右。1 回の絶対値は 50 まで。
+type Wheel struct {
+	At      Point
+	DX, DY  float64
+	Monitor int
+}
+
 func (MouseMove) isOp()      {}
 func (Click) isOp()          {}
 func (Drag) isOp()           {}
@@ -77,3 +104,7 @@ func (ClipboardRead) isOp()  {}
 func (ClipboardWrite) isOp() {}
 func (GetUITree) isOp()      {}
 func (Wait) isOp()           {}
+func (PointerMove) isOp()    {}
+func (MouseButton) isOp()    {}
+func (Wheel) isOp()          {}
+func (KeyEvent) isOp()       {}

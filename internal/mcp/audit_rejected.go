@@ -15,6 +15,9 @@ import (
 // 入力スキーマに合わない呼び出し（app_id の欠落・型違い・追加のプロパティ）は、SDK が実行前に拒否する（IsError の結果を返す）ため、
 // ツールの本体にも Control.Launch にも届かず、そのままでは監査に残らない。受信ミドルウェアが、本体に届かなかった launch_app の
 // 呼び出しを tool.launch_app（denied・invalid_argument）として 1 件記録する。本体に届いた呼び出しは Control.Launch が記録する。
+//
+// 記録するのは launch_app だけ。他のツール（mouse_move など）のスキーマ違反は何も実行せず状態を変えないため、FR-AU01 の範囲外とする
+// （決定事項。#38。docs/api/endpoints.md §3.4）。
 
 // auditedWhenRejected は、スキーマ違反の拒否を受信側で記録するツール。
 const auditedWhenRejected = "launch_app"

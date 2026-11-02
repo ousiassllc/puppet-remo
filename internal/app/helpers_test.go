@@ -188,11 +188,14 @@ type env struct {
 	whois     *fakeWhoIs
 	listens   *listenLog
 	hotkey    *platformtest.FakeHotkey
+	windows   *platformtest.FakeWindows
+	dialogs   *FakeWindows // 承認ダイアログなどのウィンドウ（app.Windows の偽物）
 	power     *platformtest.FakePower
 	input     *platformtest.FakeInput
 	autostart *platformtest.FakeAutostart
 	launcher  *platformtest.FakeAppLauncher
 	picker    *platformtest.FakeFilePicker
+	installer *platformtest.FakeInstaller
 	closers   *closeLog
 }
 
@@ -250,24 +253,27 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 	t.Helper()
 	windows := platformtest.NewFakeWindows()
 	e := &env{
-		t: t, db: db,
+		t: t, db: db, windows: windows, dialogs: NewFakeWindows(),
 		watcher: &fakeWatcher{},
 		whois:   &fakeWhoIs{id: tailnet.Identity{LoginName: "alice@example.com", StableNodeID: "nodeA", NodeName: "alice-laptop"}},
 		listens: &listenLog{}, hotkey: platformtest.NewFakeHotkey(), power: platformtest.NewFakePower(), input: platformtest.NewFakeInput(),
 		autostart: platformtest.NewFakeAutostart(), closers: &closeLog{},
-		launcher: platformtest.NewFakeAppLauncher(), picker: platformtest.NewFakeFilePicker(),
+		launcher: platformtest.NewFakeAppLauncher(), picker: platformtest.NewFakeFilePicker(), installer: platformtest.NewFakeInstaller(),
 	}
 	cfg := Config{
-		Repo: db,
+		Repo:    db,
+		Windows: e.dialogs,
 		Platform: Platform{
 			Capturer: platformtest.NewFakeCapturer(), Input: e.input, Windows: windows,
 			Clipboard: platformtest.NewFakeClipboard(), UI: platformtest.NewFakeUIAutomation(windows),
-			Launcher: e.launcher, FilePicker: e.picker,
-			Hotkey: e.hotkey, Power: e.power, Autostart: e.autostart,
+			Launcher: e.launcher, FilePicker: e.picker, Installer: e.installer,
+			Secrets: platformtest.NewFakeSecretStore(),
+			Hotkey:  e.hotkey, Power: e.power, Autostart: e.autostart,
 		},
 		Watcher:     e.watcher,
 		WhoIs:       e.whois,
 		Static:      staticFiles(),
+		Logs:        NewLogReader(t.TempDir()),
 		Version:     "0.0.0-test",
 		Logger:      discardLogger(),
 		ListenFunc:  e.listens.listen,
@@ -308,7 +314,8 @@ func (e *env) waitListening(count int) {
 func (e *env) registerClient() (clientID, token string) {
 	e.t.Helper()
 	ctx := context.Background()
-	c := domain.Client{ID: "client-1", StableNodeID: "nodeA", LoginName: "alice@example.com", DisplayName: "alice-laptop", MCPEnabled: true, WebEnabled: true}
+	c := domain.Client{ID: "client-1", StableNodeID: "nodeA", LoginName: "alice@example.com", DisplayName: "alice-laptop", MCPEnabled: true, WebEnabled: true,
+		ApprovalMode: domain.ApprovalAuto} // 既定は承認なしでリースを取らせる（承認の動きは approval_dialogs_test.go と service のテストで確かめる）
 	if err := e.db.Clients().Create(ctx, c); err != nil {
 		e.t.Fatal(err)
 	}

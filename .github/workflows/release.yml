@@ -4,7 +4,8 @@ name: Release
 # GitHub Releases に公開する。人はタグを打たない。タグ v<X.Y.Z> と Release はこのワークフローが作る。
 # 手動実行（workflow_dispatch）は使わない。CI が成功以外（失敗・キャンセル）のときは何もしない。
 # 版の決め方は scripts/ci/next-version.sh、運用は docs/operations/release.md。
-# すべてのジョブはセルフホストの Linux ランナーで走らせる。使うトークンは GITHUB_TOKEN だけ。署名はしない。
+# すべてのジョブは GitHub のランナー（ubuntu-latest）で走らせる。使うトークンは GITHUB_TOKEN と、署名の Secret（MINISIGN_SECRET_KEY・MINISIGN_PASSWORD。任意）。
+# Authenticode の署名はしない。更新用の minisign 署名は、Secret があるときだけ付ける（docs/operations/release.md「署名」）。
 #
 # workflow_run は既定ブランチ（main）のこのファイルで動く。対象の commit は workflow_run の head_sha（github.sha ではない）。
 on:
@@ -27,7 +28,7 @@ jobs:
     name: release installer
     # push の CI が成功したときだけ。pull_request の CI や、失敗・キャンセルのときは何もしない。
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write
@@ -58,6 +59,19 @@ jobs:
           app-version: ${{ steps.ver.outputs.app_version }}
           asset: ${{ steps.ver.outputs.asset }}
 
+      # 署名鍵（Secret MINISIGN_SECRET_KEY。任意でパスワード MINISIGN_PASSWORD）があるときだけ、インストーラに minisign 形式の署名
+      # （.minisig）を付ける。Secret が無い（フォーク・未設定）ときは通知だけ出して、署名なしで公開する（CI は緑のまま。
+      # アプリは署名の無いリリースを適用しない）。Secret はこのステップの環境にだけ渡す。鍵はステップの中で 0600 の一時ファイルに書き、終了時に消す。
+      - name: インストーラに署名（Secret があるときだけ）
+        if: steps.ver.outputs.action == 'build'
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+          APP_VERSION: ${{ steps.ver.outputs.app_version }}
+          ASSET: ${{ steps.ver.outputs.asset }}
+          ASSETS_DIR: ${{ steps.build.outputs.assets-dir }}
+        run: ./scripts/ci/sign-installer.sh "$APP_VERSION" "$ASSETS_DIR" "$ASSET"
+
       - name: gh を用意
         if: steps.ver.outputs.action == 'build'
         run: ./scripts/ci/install-gh.sh
@@ -71,5 +85,7 @@ jobs:
           ASSETS_DIR: ${{ steps.build.outputs.assets-dir }}
         run: |
           ./scripts/ci/release-notes.sh release "$TAG" "$HEAD_SHA" "$PREV_TAG" > "$RUNNER_TEMP/notes.md"
-          ./scripts/ci/publish-release.sh "$TAG" "$HEAD_SHA" false "puppet-remo $TAG" "$RUNNER_TEMP/notes.md" \
-            "$ASSETS_DIR/$ASSET" "$ASSETS_DIR/$ASSET.sha256"
+          files=("$ASSETS_DIR/$ASSET" "$ASSETS_DIR/$ASSET.sha256")
+          # 署名（.minisig）は、署名したときだけ添付する。
+          if [[ -f "$ASSETS_DIR/$ASSET.minisig" ]]; then files+=("$ASSETS_DIR/$ASSET.minisig"); fi
+          ./scripts/ci/publish-release.sh "$TAG" "$HEAD_SHA" false "puppet-remo $TAG" "$RUNNER_TEMP/notes.md" "${files[@]}"

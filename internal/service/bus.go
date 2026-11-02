@@ -8,9 +8,12 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
-// Bus のイベントの種類（docs/components/overview.md §5.10、API 仕様 §7.4）。M1 で使うものだけ。
+// Bus のイベントの種類（docs/components/overview.md §5.10、API 仕様 §7.4）。
 const (
 	TopicLease              = "lease"
+	TopicLeaseResult        = "lease-result" // RequestAcquire の承認待ちが拒否・タイムアウトで終わった（LeaseResult）。ws が要求者のビューアへ error を送る
+	TopicApproval           = "approval"
+	TopicApprovalClosed     = "approval-closed"
 	TopicConnectionRequests = "connection-requests"
 	TopicKillSwitch         = "killswitch"
 	TopicServerStatus       = "server-status"

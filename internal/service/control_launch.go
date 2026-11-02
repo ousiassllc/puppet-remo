@@ -6,6 +6,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
+	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
 // maxAuditAppIDRunes は監査に記録する、呼び出し側が渡した app_id の最大文字数（許可リストに無い値を無制限に残さない）。
@@ -34,7 +35,20 @@ func (c *control) Launch(ctx context.Context, who domain.Actor, appID string) (L
 	start := c.clock.Now()
 	res, label, leaseID, err := c.launch(ctx, who, appID)
 	if c.audit != nil {
-		c.audit.Record(ctx, ToolAuditEntry(who, "launch_app", launchAuditDetail(appID, label, res, err), leaseID, err, c.clock.Now().Sub(start)))
+		took := c.clock.Now().Sub(start)
+		detail := launchAuditDetail(appID, label, res, err)
+		var entry repository.AuditEntry
+		if who.Kind == domain.ActorAgent {
+			// agent の起動も、Do のアクションと同じ agent.step の行（Judge は通らないので judge は付かない）。
+			entry = agentStepEntry(ctx, who, "launch_app", detail, leaseID, err, judgeTrace{}, took.Milliseconds())
+		} else {
+			entry = ToolAuditEntry(who, "launch_app", detail, leaseID, err, took)
+		}
+		var shot *thumbTarget
+		if err == nil {
+			shot = &thumbTarget{monitor: domain.MonitorPrimary} // 起動したウィンドウのモニターは問わず、プライマリを撮る
+		}
+		c.recordAudit(ctx, entry, shot)
 	}
 	return res, err
 }
@@ -64,11 +78,61 @@ func (c *control) launch(ctx context.Context, who domain.Actor, appID string) (r
 	if c.kill.Active() {
 		return LaunchResult{}, label, leaseID, domain.ErrKillSwitchActive
 	}
+	// 起動の前のウィンドウの一覧（起動後に新しく開いたウィンドウを見分ける。FR-M19。#55）。読めなければ nil（後の判定は新規の有無を使わない）。
+	before := c.windowIDs(ctx)
+	// 起動の「試行」の行を、プロセスを作る前に同期で書く。書けなければ起動しない（fail-closed。NFR-S20）。
+	if err := c.recordLaunchAttempt(ctx, who, appID, label, leaseID); err != nil {
+		return LaunchResult{}, label, leaseID, err
+	}
+	// 同期書き込みは DB のロック待ちなどで伸びうる。その間に発動したキルスイッチを取りこぼさない（試行の行は残るが、起動しない）。
+	if c.kill.Active() {
+		return LaunchResult{}, label, leaseID, domain.ErrKillSwitchActive
+	}
 	pid, err := c.launcher.Launch(ctx, platform.LaunchSpec{ExePath: app.ExePath, Args: app.Args, WorkingDir: app.WorkingDir})
 	if err != nil {
 		return LaunchResult{}, label, leaseID, launchFailure(err)
 	}
-	return LaunchResult{AppID: app.ID, PID: pid}, label, leaseID, nil
+	obs := c.observeLaunchedWindow(ctx, pid, before)
+	return LaunchResult{AppID: app.ID, PID: pid, Window: obs.foreground, ReusedExistingWindow: obs.reusedExistingWindow()}, label, leaseID, nil
+}
+
+// 起動の「試行」の監査のイベント名。結果の行（tool.launch_app・agent.step）とは別の行で、追記だけで更新しない。
+const (
+	launchAttemptAuditEvent      = "tool.launch_app.attempt"
+	agentLaunchAttemptAuditEvent = "agent.launch_attempt"
+)
+
+// recordLaunchAttempt は起動の「試行」の行を同期で書く。書けなければ ErrAuditUnavailable を返し（原因は運用ログにだけ出す）、
+// 呼び出し側は起動しない。audit が nil（テスト用）なら何もしない。
+func (c *control) recordLaunchAttempt(ctx context.Context, who domain.Actor, appID, label, leaseID string) error {
+	if c.audit == nil {
+		return nil
+	}
+	if err := c.audit.RecordSync(ctx, launchAttemptEntry(ctx, who, appID, label, leaseID)); err != nil {
+		c.log.Error("launch_app refused: the attempt could not be written to the audit log", "client", who.Label, "err", err)
+		return domain.ErrAuditUnavailable
+	}
+	return nil
+}
+
+// launchAttemptEntry は起動の「試行」の監査エントリ（detail は app_id と、許可リストを引けたときの label だけ。結果の行の detail の部分集合）。
+// result の ok は「起動の試みを記録した」の意味で、起動の成否は結果の行が持つ。MCP は kind = tool、agent は kind = agent（タスク・ステップに紐づく）。
+func launchAttemptEntry(ctx context.Context, who domain.Actor, appID, label, leaseID string) repository.AuditEntry {
+	detail := map[string]any{"app_id": domain.TruncateRunes(appID, maxAuditAppIDRunes)}
+	if label != "" {
+		detail["label"] = label
+	}
+	if who.Kind == domain.ActorAgent {
+		e := agentAuditBase(ctx, who, agentLaunchAttemptAuditEvent, leaseID)
+		e.Tool = launchAppTool
+		e.Result = auditOK
+		e.DetailJSON = marshalDetail(detail)
+		return e
+	}
+	e := ToolAuditEntry(who, launchAppTool, detail, leaseID, nil, 0)
+	e.Event = launchAttemptAuditEvent
+	e.DurationMS = nil
+	return e
 }
 
 // launchFailure は AppLauncher.Launch の失敗を API の launch_failed に写す。理由（4 値）以外は載せない。
@@ -85,14 +149,16 @@ func launchFailure(err error) error {
 }
 
 // launchAuditDetail は tool.launch_app の detail（API 仕様・er.md）。パス・引数・作業ディレクトリは入れない。
-// label は許可リストを引けたときだけ、pid は成功のときだけ、reason は launch_failed のときだけ入る。
+// label は許可リストを引けたときだけ、pid と reused_existing_window は成功のときだけ、reason は launch_failed のときだけ入る。
+// 前面のウィンドウのタイトル・id は記録しない。
 func launchAuditDetail(appID, label string, res LaunchResult, err error) map[string]any {
-	detail := map[string]any{"app_id": truncateRunes(appID, maxAuditAppIDRunes)}
+	detail := map[string]any{"app_id": domain.TruncateRunes(appID, maxAuditAppIDRunes)}
 	if label != "" {
 		detail["label"] = label
 	}
 	if err == nil {
 		detail["pid"] = res.PID
+		detail["reused_existing_window"] = res.ReusedExistingWindow
 		return detail
 	}
 	var de *domain.Error
@@ -102,12 +168,4 @@ func launchAuditDetail(appID, label string, res LaunchResult, err error) map[str
 		}
 	}
 	return detail
-}
-
-// truncateRunes は s を最大 n 文字（rune）にする。
-func truncateRunes(s string, n int) string {
-	if r := []rune(s); len(r) > n {
-		return string(r[:n])
-	}
-	return s
 }

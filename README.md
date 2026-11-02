@@ -2,12 +2,12 @@
 
 自分の Windows PC（ホスト）に常駐する [Wails](https://wails.io/) アプリです。tailnet（Tailscale）内の別端末から、MCP（Model Context Protocol）経由でこの PC のデスクトップ全体を操作（computer-use）できるようにします。個人利用（ホスト所有者＝操作者）が前提で、対象 OS は Windows のみです。
 
-- ホストの `tailscaled` を使い、tailnet の IP だけで Listen します（既定のポートは 8765。設定画面で変更できます）。
+- ホストの `tailscaled` を使い、tailnet の IP だけで Listen します（既定のポートは 8765。設定画面で変更できます）。例外は、ChatGPT へのサインインの間だけ OAuth のコールバック用に開く `127.0.0.1` の一時的な受信口です（仕様のみ・未実装。#49）。
 - 接続元の ID は Tailscale LocalAPI の WhoIs で取得し、許可リストと MCP 用の Bearer トークンで認可します。
 - キルスイッチ（グローバルホットキー `Ctrl+Alt+Shift+K`・トレイ・ダッシュボード）で、操作をホスト側から即座に止められます。
 - ホスト用の GUI はアプリ内のウィンドウとトレイに常駐し、ネットワークには公開しません。
 
-現在は M1（MCP の低レベルツール・ホスト GUI・キルスイッチ・接続要求）が対象です。全体の範囲とマイルストーンは [プロジェクト概要](docs/overview.md) を参照してください。
+現在は M1〜M4（MCP の低レベルツール・ホスト GUI・キルスイッチ・接続要求、アプリ起動許可リスト、Web ビューア、承認・監査、内蔵エージェントと高速パス）まで実装済みです。内蔵エージェント（OpenAI の `computer` ツール）と高速パス（TypeSafe）は既定で無効で、ホスト GUI での明示的な同意と有効化が必要です。**ChatGPT のプラン（Sign in with ChatGPT）で動かす接続方式は、仕様のみで未実装です（#49）。** 現在の実装の内蔵エージェントは OpenAI API キーの接続方式だけです。仕様では、ChatGPT のプランが既定の接続方式で、OpenAI API キーは明示的に選ぶ別の接続方式です。ChatGPT のプランの使用量の上限に達したときは、API キーへ自動で切り替えず、タスクを止めます（切り替えはホスト GUI での承認だけ。高速パスは ChatGPT のプランの接続方式とは併用しません）。OpenAI・TypeSafe の API キー（と、実装後は ChatGPT のトークン）は Windows の資格情報マネージャーにだけ保存し、設定ファイル・ログ・監査には書きません。全体の範囲とマイルストーンは [プロジェクト概要](docs/overview.md) を参照してください。
 
 ## インストール
 
@@ -26,7 +26,7 @@
 
 ## 推奨する tailnet ACL（NFR-S12）
 
-アプリは tailnet の IP だけで待ち受けますが、tailnet 側の ACL でも、接続元を自分のデバイスに、宛先をこのアプリのポートに絞ることを推奨します（多層防御の第 1 層）。次は tailnet のポリシーファイル（ACL）の例です。タグ名・ポートは自分の環境に置き換えてください。
+アプリは tailnet の IP だけで待ち受けますが（ChatGPT のサインインの間だけ開く `127.0.0.1` のコールバック受信口を除く。仕様のみ・未実装）、tailnet 側の ACL でも、接続元を自分のデバイスに、宛先をこのアプリのポートに絞ることを推奨します（多層防御の第 1 層）。次は tailnet のポリシーファイル（ACL）の例です。タグ名・ポートは自分の環境に置き換えてください。
 
 ```json
 {
@@ -56,8 +56,8 @@
 
 - 同じユーザー権限で動く悪意あるプロセスは、保護の対象外です。
 - スクリーンショットのサムネイルなど、画面の内容を保存する機能は、**平文**でディスクに書きます。ディスクの紛失・盗難に備えて、**BitLocker によるドライブ全体の暗号化を有効にしてください**。
-- 保存したくないときは、設定でサムネイルの保存を無効にできます（FR-AU02。対応するマイルストーンで提供）。
-- OpenAI などの API キーは、このフォルダーには置きません（Windows 資格情報マネージャー。対応するマイルストーンで提供）。
+- 保存したくないときは、設定でサムネイルの保存を無効にできます（FR-AU02）。
+- OpenAI などの API キーと、ChatGPT のサインインで得るトークン（アクセス・リフレッシュ。仕様のみ・未実装）は、このフォルダーには置きません（Windows 資格情報マネージャーに保存します）。
 
 ## 起動許可アプリ（M1.5。NFR-S20）
 
@@ -73,7 +73,7 @@ MCP の `launch_app` で起動できるのは、ホスト所有者が許可リ�
 - 本アプリは、こうしたプログラムを拒否するブロックリストを持ちません。何を登録するかは、ホスト所有者の判断です。
 - **ユーザーが書き込める場所（ダウンロード・`%TEMP%`・ユーザーのプロファイル配下など）の `.exe` を登録しないでください。** ファイルを差し替えられると、登録したのとは別のプログラムが起動します。起動のたびに確かめるのはパスの形と存在だけで、ファイルの内容や署名は確かめません。
 - 起動のたびに、実行ファイルがローカルの固定ディスク上の実体であること（ネットワーク・マップドドライブ・`subst`・シンボリックリンク・ジャンクションを経由しないこと）も確かめます。登録した場所を差し替えられる者がいれば、確認と起動の間に別のファイルへ入れ替えられる余地は残ります。
-- 起動の監査は、プロセスを作ったあとに非同期で記録します。記録のキューが満杯のとき・書き込みに失敗したときは、起動は成立したまま監査に残りません。その場合は運用ログに Error（`audit entry dropped`・`audit append failed`）が出ます。
+- 起動の監査は、「試行」と「結果」の 2 行（追記だけ）を残します。「試行」の行は、プロセスを作る前に同期で書きます。**書けないとき（DB の障害など）は起動せず**、`audit_unavailable`（HTTP 503。MCP は同じコードのツールエラー）を返します。「結果」の行は起動のあとに非同期で書き、書けなくても起動は取り消しません（運用ログに Warn の `audit entry dropped`・`audit append failed` が出ます）。同期書き込みのため、DB のロック待ちなどがあると呼び出しが遅れることがあります。
 - 起動したあとのプロセスは、本アプリの管理外です。終了も監視もしません（本アプリを終了しても、キルスイッチを発動しても、起動済みのプロセスは残ります）。
 
 ## 配布（ナイトリーと正式版）
@@ -82,7 +82,9 @@ Windows 向けのインストーラ（NSIS）は、GitHub Actions が GitHub Rel
 
 ## ビルドと開発
 
-必要なもの: Go（`go.mod` の `go` 行の版）、Node.js、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。
+必要なもの: Go（`go.mod` の `go` 行の版）、[bun](https://bun.sh/)（フロントエンドのパッケージマネージャ。版は `scripts/ci/install-bun.sh` に固定）、[Task](https://taskfile.dev/)、[templ](https://templ.guide/)（`task tools:templ` で `go.mod` の版を導入）、[golangci-lint](https://golangci-lint.run/)（版は CI と同じ v2.15.0）、[Lefthook](https://lefthook.dev/)（Git フック。`task tools:lefthook` で導入）。インストーラの作成には `makensis`、開発には `wails3` が要ります。フロントエンドの依存は `task frontend:install`（`bun install --frozen-lockfile`）で入ります。
+
+開発環境・CI/CD・Lint・Format・Git フックの構成は [環境構築](docs/environment/setup.md) にまとめています。
 
 ```sh
 task               # 利用できるタスクの一覧
@@ -93,12 +95,36 @@ task test          # テスト
 task lint          # golangci-lint（ホスト OS と Windows）
 task templ:generate # .templ から _templ.go を生成（生成物はコミットする）
 task frontend:build # static/dist を作る（esbuild・Tailwind CSS・htmx）
+task frontend:test # Lit のテスト（ヘッドレス Chromium。task frontend:browsers で導入）
+task e2e           # Playwright の E2E（テスト専用サーバー -tags e2e。偽の platform・tailnet）
 task ci            # CI と同じ検査を一通り実行
 task package       # NSIS インストーラを作る（版は VERSION ファイル。RELEASE_VERSION= で上書き）
 task dev           # wails3 dev で開発する（Windows。別ターミナルで task templ:watch）
 ```
 
 Linux / macOS では、Windows 専用のコードを除いてビルド・テストできます（`GOOS=windows go build ./...` でクロスビルドも確認できます）。実機でしか確かめられない項目は、[Windows 実機スモーク手順](docs/operations/smoke-windows.md) にまとめています。
+
+### Git フック（Lefthook）
+
+コミットとプッシュの前に、CI で落ちる検査を手元で先に走らせます。設定は [`lefthook.yml`](lefthook.yml) です。clone したら、フックを入れてください（clone ごとに一度）。
+
+```sh
+task tools:lefthook   # lefthook を導入する（go install github.com/evilmartians/lefthook/v2@v2.1.17。$(go env GOPATH)/bin を PATH に通す）
+task hooks:install    # Git フックを入れる（lefthook install と同じ）
+```
+
+- pre-commit: ステージしたファイルに関係する検査だけを順に走らせます（落ちたらコミットされず、残りは飛ばします）。
+  - gofmt（ステージした `*.go`。差分があれば失敗）
+  - golangci-lint（ホスト OS）と `scripts/check-imports.sh`（`*.go`・`go.mod` などの変更時）
+  - templ generate の差分チェック（`.templ`・`_templ.go` の変更時。生成物がステージした内容と一致すること）
+  - フロントエンドの型検査（`static/` の変更時。`bun install --frozen-lockfile` のあと `bunx tsc -p .`）
+- pre-push: `go test ./...`。
+
+フックを入れずに手元で実行する（`.git/hooks` には触れません）には `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使います。CI の残り（`go test -race`、`GOOS=windows` の build・vet・lint、本番ビルド）は `task ci` で確認します。
+
+## ライセンス
+
+[GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0）です。全文はリポジトリ直下の `LICENSE` にあります。
 
 ## ドキュメント
 
@@ -113,3 +139,4 @@ Linux / macOS では、Windows 専用のコードを除いてビルド・テス�
 | [API 仕様](docs/api/endpoints.md) | MCP・ルート・エラー形式 |
 | [Windows 実機スモーク手順](docs/operations/smoke-windows.md) | CI で動かせない項目の手動確認 |
 | [配信の運用](docs/operations/release.md) | ナイトリー・正式版の配信、版・タグの決め方 |
+| [環境構築](docs/environment/setup.md) | 開発環境のセットアップ、CI/CD、Lint、Format、Git フック |

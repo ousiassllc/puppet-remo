@@ -66,10 +66,11 @@ func registerTool[In any](s *Server, name, description string, readOnly bool, au
 		}
 		s.watch(req.Session, who)
 
-		ctx, cancel := s.toolContext(ctx)
+		ctx, cancel := s.toolContext(ctx, name)
 		defer cancel()
 		start := time.Now()
 		res, err := fn(ctx, who, in)
+		s.logToolCall(ctx, name, who, readOnly, time.Since(start), err)
 		if auditArgs != nil && s.audit != nil {
 			detail := auditArgs(in)
 			if len(res.AuditDetail) > 0 {
@@ -126,11 +127,23 @@ func (s *Server) actor(req *mcpsdk.CallToolRequest) (domain.Actor, error) {
 	}, nil
 }
 
-// addTools は FR-M01〜M15・M18・M19 の全ツールを登録する。run_task / get_task / cancel_task は M4 のため登録しない。
+// leaseAcquiringTools は、リースを取得しうるツール（acquire_control と、説明に「acquired implicitly」とある暗黙に取得するツール）。
+// 承認が要るクライアントでは承認待ち（最大 60 秒）の間ブロックするので、通常より長いタイムアウト（Config.LeaseToolTimeout）にして、
+// クライアントが approval_timeout を受け取れるようにする。launch_app への承認は取得時の 1 回だけで、保持中の呼び出しごとの承認は無い。
+var leaseAcquiringTools = map[string]bool{
+	"acquire_control": true,
+	"mouse_move":      true, "left_click": true, "right_click": true, "middle_click": true, "double_click": true, "triple_click": true,
+	"left_click_drag": true, "scroll": true, "key": true, "type": true,
+	"focus_window": true, "clipboard_read": true, "clipboard_write": true, "get_ui_tree": true,
+	"launch_app": true,
+}
+
+// addTools は FR-M01〜M15・M18・M19 と FR-G02（run_task / get_task / cancel_task）の全ツールを登録する。
 func (s *Server) addTools() {
 	s.addViewTools()
 	s.addInputTools()
 	s.addWindowTools()
 	s.addLeaseTools()
 	s.addAppTools()
+	s.addTaskTools()
 }

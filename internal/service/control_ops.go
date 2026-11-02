@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"unicode/utf8"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -66,6 +67,43 @@ func (c *control) plan(ctx context.Context, op domain.Op) (plan, error) {
 			o.At = at
 			return o, err
 		})
+	case domain.PointerMove:
+		return c.planStream(ctx, o.Monitor, func(conv pointConv) (domain.Op, error) {
+			at, err := conv(o.At)
+			o.At = at
+			return o, err
+		})
+	case domain.MouseButton:
+		if !o.Button.Valid() {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("unknown button: " + string(o.Button))
+		}
+		if !o.Action.Valid() {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("unknown button action: " + string(o.Action))
+		}
+		return c.planStream(ctx, o.Monitor, func(conv pointConv) (domain.Op, error) {
+			at, err := conv(o.At)
+			o.At = at
+			return o, err
+		})
+	case domain.Wheel:
+		if err := checkWheelNotches(o.DX, o.DY); err != nil {
+			return plan{}, err
+		}
+		return c.planStream(ctx, o.Monitor, func(conv pointConv) (domain.Op, error) {
+			at, err := conv(o.At)
+			o.At = at
+			return o, err
+		})
+	case domain.KeyEvent:
+		if !o.Action.Valid() {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("unknown key action: " + string(o.Action))
+		}
+		if o.Code == "" {
+			return plan{}, domain.ErrInvalidArgument.WithMsg("key code is required")
+		}
+		if err := validateMods(o.Mods); err != nil {
+			return plan{}, err
+		}
 	case domain.KeyPress:
 		if err := o.Keys.Validate(); err != nil {
 			return plan{}, err
@@ -105,6 +143,34 @@ func (c *control) plan(ctx context.Context, op domain.Op) (plan, error) {
 
 // pointConv は縮小座標を物理座標へ変換する。
 type pointConv func(domain.Point) (domain.Point, error)
+
+// planStream は monitor（Index か MonitorPrimary）の座標系（モニターの物理ピクセル。Web UI のストリームの座標）で
+// 座標を変換する関数を build に渡し、その結果を計画にする。変換後は仮想デスクトップの物理座標。
+func (c *control) planStream(ctx context.Context, monitor int, build func(pointConv) (domain.Op, error)) (plan, error) {
+	mons, err := c.capture.Monitors(ctx)
+	if err != nil {
+		return plan{}, err
+	}
+	mon, err := pickMonitor(mons, monitor)
+	if err != nil {
+		return plan{}, err
+	}
+	op, err := build(mon.StreamToPhysical)
+	if err != nil {
+		return plan{}, err
+	}
+	return plan{op: op, monitors: mons}, nil
+}
+
+// checkWheelNotches は web のホイールの 1 メッセージの上限（絶対値 50 ノッチ。API 仕様 §5.3）を検査する。
+func checkWheelNotches(dx, dy float64) error {
+	for _, v := range []float64{dx, dy} {
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) > maxScrollAmount {
+			return domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("wheel delta must be finite and at most %d notches", maxScrollAmount))
+		}
+	}
+	return nil
+}
 
 // planPoints は monitor（Index か MonitorPrimary）の縮小率で座標を変換する関数を build に渡し、その結果を計画にする。
 func (c *control) planPoints(ctx context.Context, monitor int, build func(pointConv) (domain.Op, error)) (plan, error) {
@@ -184,7 +250,8 @@ func (c *control) lockInput(ctx context.Context) (unlock func(), err error) {
 // execute は検査済みの計画を platform で実行する。
 func (c *control) execute(ctx context.Context, p plan) (Result, error) {
 	switch p.op.(type) {
-	case domain.MouseMove, domain.Click, domain.Drag, domain.Scroll, domain.KeyPress, domain.TypeText:
+	case domain.MouseMove, domain.Click, domain.Drag, domain.Scroll, domain.KeyPress, domain.TypeText,
+		domain.PointerMove, domain.MouseButton, domain.Wheel, domain.KeyEvent:
 		unlock, err := c.lockInput(ctx)
 		if err != nil {
 			return Result{}, err
@@ -205,6 +272,17 @@ func (c *control) execute(ctx context.Context, p plan) (Result, error) {
 		return Result{}, c.input.Drag(ctx, o.From, o.To, o.Mods)
 	case domain.Scroll:
 		return Result{}, c.input.Scroll(ctx, o.At, o.Dir, o.Amount)
+	case domain.PointerMove:
+		return Result{}, c.input.MoveTo(ctx, o.At)
+	case domain.MouseButton:
+		if err := c.input.MoveTo(ctx, o.At); err != nil {
+			return Result{}, err
+		}
+		return Result{}, c.input.Button(ctx, o.Button, o.Action)
+	case domain.Wheel:
+		return Result{}, c.input.Wheel(ctx, o.At, o.DX, o.DY)
+	case domain.KeyEvent:
+		return Result{}, c.input.KeyEvent(ctx, o)
 	case domain.KeyPress:
 		return Result{}, c.input.Key(ctx, o.Keys)
 	case domain.TypeText:
@@ -264,8 +342,19 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 		return "left_click_drag", args
 	case domain.Scroll:
 		return "scroll", map[string]any{"x": o.At.X, "y": o.At.Y, "direction": string(o.Dir), "amount": o.Amount, "monitor": o.Monitor}
+	case domain.MouseButton:
+		return "mouse_" + string(o.Action), map[string]any{"x": o.At.X, "y": o.At.Y, "button": string(o.Button), "monitor": o.Monitor}
+	case domain.Wheel:
+		return "wheel", map[string]any{"x": o.At.X, "y": o.At.Y, "dx": o.DX, "dy": o.DY, "monitor": o.Monitor}
+	case domain.KeyEvent:
+		// キーの名前（code・key）は記録しない（パスワードなどの入力を監査ログに残さない。FR-AU03 の type と同じ扱い）。
+		args = map[string]any{"action": string(o.Action)}
+		if len(o.Mods) > 0 {
+			args["modifiers"] = modNames(o.Mods)
+		}
+		return "key_" + string(o.Action), args
 	case domain.KeyPress:
-		return "key", map[string]any{"keys": o.Keys.String()}
+		return "key", keyPressArgs(o.Keys)
 	case domain.TypeText:
 		return "type", map[string]any{"text_len": utf8.RuneCountInString(o.Text)}
 	case domain.FocusWindow:
@@ -280,6 +369,78 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 		return "wait", map[string]any{"ms": o.Duration.Milliseconds()}
 	}
 	return "unknown", map[string]any{"type": fmt.Sprintf("%T", op)}
+}
+
+// recordedTextMaxRunes は audit.record_text が true のとき detail_json に入れる本文の上限（文字数）。
+// type は 10,000 文字、クリップボードは 1 MiB まで受け付けるが、監査の行を肥大させないため切り詰める。
+const recordedTextMaxRunes = 4096
+
+// keyPressRedacted は監査の keys に、表示できる 1 文字のキーの代わりに入れる印。
+const keyPressRedacted = "[char]"
+
+// isTypedCharacterKey は k のキーが表示できる 1 文字（文字・数字・記号）か。パスワードなどを 1 文字ずつ key で打てるので、
+// type の本文と同じく監査には残さない（FR-AU03）。enter・tab・escape・方向キー・f1 などの名前つきのキーと、修飾キーは名前を残す。
+func isTypedCharacterKey(k domain.KeyCombo) bool {
+	return utf8.RuneCountInString(k.Key) == 1
+}
+
+// keyPressArgs は key の監査の引数。表示できる 1 文字のキーは keys にその文字を入れず（`ctrl+[char]`）、文字数 text_len = 1 だけを残す。
+// 本文は設定 audit.record_text が true のときだけ addRecordedText が text に足す。
+func keyPressArgs(k domain.KeyCombo) map[string]any {
+	if !isTypedCharacterKey(k) {
+		return map[string]any{"keys": k.String()}
+	}
+	masked := k
+	masked.Key = keyPressRedacted
+	return map[string]any{"keys": masked.String(), "text_len": 1}
+}
+
+// addRecordedText は、設定 audit.record_text（既定 false）が true のとき、type の本文とクリップボードの内容（clipboard_read の結果を含む）
+// と、key の表示できる 1 文字（keyPressArgs が伏せたもの）を args["text"] に足す（FR-AU03、FR-S07）。トークン（prm_…）・Bearer の形の文字列は、本文の中にあっても先に伏せる（トークンはどの設定でも記録しない。NFR-S13）。
+// 伏せたあとの文字列が recordedTextMaxRunes を超えるときは切り詰めて args["text_truncated"] = true を付ける（text_len は元の長さ）。
+// 設定が読めない・真偽値でないときは記録しない側に倒す。
+func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result, args map[string]any) {
+	var text string
+	switch o := op.(type) {
+	case domain.TypeText:
+		text = o.Text
+	case domain.ClipboardWrite:
+		text = o.Text
+	case domain.ClipboardRead:
+		text = res.Text
+	case domain.KeyPress:
+		if !isTypedCharacterKey(o.Keys) {
+			return
+		}
+		text = o.Keys.Key
+	default:
+		return
+	}
+	if text == "" {
+		return
+	}
+	if on, err := loadBool(ctx, c.settings, settingAuditRecordText, false); err != nil || !on {
+		return
+	}
+	// 伏せてから切り詰める。先に切ると、境界をまたぐトークンが形の最小長を割って伏せられずに残る（NFR-S13）。
+	text = auditRedactString(text)
+	if cut, ok := cutAtRunes(text, recordedTextMaxRunes); ok {
+		text = cut
+		args["text_truncated"] = true
+	}
+	args["text"] = text
+}
+
+// cutAtRunes は s の先頭 limit ルーンを返す。切り詰めたときだけ ok が true。s 全体のルーン列は作らない。
+func cutAtRunes(s string, limit int) (string, bool) {
+	n := 0
+	for i := range s {
+		if n == limit {
+			return s[:i], true
+		}
+		n++
+	}
+	return s, false
 }
 
 // clickToolName は FR-M05 のツール名（left_click / right_click / middle_click / double_click / triple_click）。

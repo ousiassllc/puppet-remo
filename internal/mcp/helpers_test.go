@@ -71,6 +71,9 @@ type fakeControl struct {
 	// launches は Launch が受けた app_id の記録。launchErr が非 nil なら、検査（キルスイッチ・リース・許可リスト）の後に Launch がこれを返す。
 	launches  []string
 	launchErr error
+	// launchWindow・launchReused は Launch が返す、起動後の前面のウィンドウと再利用の印。
+	launchWindow *domain.WindowInfo
+	launchReused bool
 
 	// err が非 nil なら、Do・Screenshot・Monitors・Windows・CursorPosition がこれを返す（リースの確認の後）。
 	err error
@@ -143,6 +146,8 @@ func (f *fakeControl) Do(ctx context.Context, who domain.Actor, op domain.Op) (s
 	return service.Result{}, nil
 }
 
+func (f *fakeControl) ReleaseInput() error { return nil }
+
 func (f *fakeControl) LaunchableApps(context.Context) ([]domain.AppSummary, error) {
 	if err := f.viewErr(); err != nil {
 		return nil, err
@@ -172,7 +177,7 @@ func (f *fakeControl) Launch(ctx context.Context, who domain.Actor, appID string
 	if f.launchErr != nil {
 		return service.LaunchResult{}, f.launchErr
 	}
-	return service.LaunchResult{AppID: appID, PID: f.launchPID}, nil
+	return service.LaunchResult{AppID: appID, PID: f.launchPID, Window: f.launchWindow, ReusedExistingWindow: f.launchReused}, nil
 }
 
 // launchRequests は Launch が受けた app_id を順に返す。
@@ -244,23 +249,36 @@ type env struct {
 	ctl    *fakeControl
 	leases service.LeaseManager
 	kill   *fakeKill
+	agent  *fakeAgent
 	events <-chan domain.LeaseEvent
 }
 
 func newEnv(t *testing.T, mutate ...func(*Config)) *env {
 	t.Helper()
+	return newEnvWithLeases(t, nil, mutate...)
+}
+
+// newEnvWithLeases は newEnv の LeaseManager の設定を leaseMutate で変える版（承認の結合テスト用）。
+func newEnvWithLeases(t *testing.T, leaseMutate func(*service.LeaseConfig), mutate ...func(*Config)) *env {
+	t.Helper()
 	kill := &fakeKill{}
-	leases, err := service.NewLeaseManager(service.LeaseConfig{
+	leaseCfg := service.LeaseConfig{
 		Clock: fixedClock{}, IDs: &seqIDs{}, IdleTimeout: 5 * time.Minute, Kill: kill,
 		AfterFunc: func(time.Duration, func()) func() bool { return func() bool { return true } },
-	})
+	}
+	if leaseMutate != nil {
+		leaseMutate(&leaseCfg)
+	}
+	leases, err := service.NewLeaseManager(leaseCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctl := newFakeControl(leases, kill)
+	agent := newFakeAgent()
 	cfg := Config{
 		Control:   ctl,
 		Leases:    leases,
+		Agent:     agent,
 		Principal: testPrincipal,
 		Version:   "9.9.9-test",
 		Logger:    discardLogger(),
@@ -274,7 +292,7 @@ func newEnv(t *testing.T, mutate ...func(*Config)) *env {
 	}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return &env{t: t, srv: srv, http: ts, ctl: ctl, leases: leases, kill: kill, events: leases.Subscribe()}
+	return &env{t: t, srv: srv, http: ts, ctl: ctl, leases: leases, kill: kill, agent: agent, events: leases.Subscribe()}
 }
 
 // auditLog は mcp が記録した監査エントリを溜める service.AuditRecorder の偽物。

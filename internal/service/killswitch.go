@@ -21,7 +21,7 @@ type KillSwitch interface {
 	Active() bool
 	// Trigger は同期で次の順に実行する: 発動状態の永続化 → LeaseManager.ReleaseAll → クローザー（全セッション・押下中の入力の解放）
 	// → 監査。各段の失敗は後続を止めず、まとめて返す（発動状態は変わらない）。1 秒以内（NFR-P05）。
-	// M4 の Agent.CancelAll と Bus への通知は、それぞれクローザーと購読で足す。
+	// Agent.CancelAll と Bus への通知は、それぞれクローザー（app が登録する agent）と購読（lease・killswitch のトピック）で行う。
 	Trigger(source string) error
 	// Release はホスト GUI からのみ呼ぶ。永続化に失敗したら発動状態のまま。
 	Release() error
@@ -181,6 +181,8 @@ func (k *KillSwitchManager) Trigger(source string) error {
 	err := errors.Join(errs...)
 	if err != nil {
 		k.log.Error("kill switch trigger finished with errors", "source", source, "err", err)
+	} else {
+		k.log.Warn("kill switch triggered", "source", source)
 	}
 	k.recordAudit("killswitch.trigger", source, start, err)
 	return err
@@ -196,9 +198,11 @@ func (k *KillSwitchManager) Release() error {
 	ctx, cancel := context.WithTimeout(context.Background(), k.timeout)
 	defer cancel()
 	if err := k.persist(ctx, KillSwitchSnapshot{}); err != nil {
+		k.log.Error("kill switch release failed", "err", err)
 		k.recordAudit("killswitch.release", "", start, err)
 		return err
 	}
+	k.log.Info("kill switch released")
 	k.mu.Lock()
 	k.state = KillSwitchSnapshot{}
 	k.mu.Unlock()

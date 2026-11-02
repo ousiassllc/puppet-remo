@@ -18,8 +18,8 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
-// sseTopics は GET /events が流すイベント（API 仕様 §7.4 の M1 分）。名前は Bus のトピックと SSE の event 名で共通。
-// approval・tasks は M3・M4。
+// sseTopics は GET /events が流すイベント（API 仕様 §7.4）。名前は Bus のトピックと SSE の event 名で共通。
+// approval・tasks・approval-closed は SSE に流さない: 承認は専用ウィンドウ（/approvals/{id}）、タスクは /poll の rev_tasks で更新する。
 var sseTopics = []string{
 	service.TopicServerStatus, service.TopicSessions, service.TopicLease,
 	service.TopicConnectionRequests, service.TopicKillSwitch, service.TopicToast,
@@ -106,7 +106,7 @@ func (h *Handler) topicComponent(ctx context.Context, topic string, data any) te
 	case service.TopicSessions:
 		return organisms.SessionListBody(h.sessionsView())
 	case service.TopicLease:
-		return organisms.LeasePanelBody(h.leaseView())
+		return organisms.LeaseDisplay(h.leaseView())
 	case service.TopicConnectionRequests:
 		return organisms.RequestsBadge(h.header(ctx).PendingRequests)
 	case service.TopicKillSwitch:

@@ -68,4 +68,15 @@ func RunSecretStoreContract(t *testing.T, newStore func(t *testing.T) platform.S
 		requireCode(t, s.Set("", randomToken(t)), domain.ErrInvalidArgument, "Set")
 		requireCode(t, s.Delete(""), domain.ErrInvalidArgument, "Delete")
 	})
+
+	t.Run("an empty value is rejected and registers nothing", func(t *testing.T) {
+		s := newStore(t)
+		name := "puppet-remo/contract-" + randomToken(t)
+		t.Cleanup(func() { _ = s.Delete(name) })
+
+		requireCode(t, s.Set(name, ""), domain.ErrInvalidArgument, "Set")
+		if _, err := s.Get(name); !errors.Is(err, platform.ErrNotFound) {
+			t.Errorf("Get after a rejected Set: error = %v, want ErrNotFound", err)
+		}
+	})
 }

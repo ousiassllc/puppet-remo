@@ -25,6 +25,10 @@ func TestMCPCanListAndLaunchAnAllowedApp(t *testing.T) {
 	_, token := e.registerClient()
 	e.launcher.AddExecutable(launchExe)
 	e.launcher.AddDir(launchWork)
+	// 起動したプロセスの前面ウィンドウが最初の観測で見つかるようにして、ウィンドウ待ちの実時間待ちを避ける。
+	e.launcher.OnLaunch(func(pid uint32) {
+		e.windows.SetWindows(domain.WindowInfo{ID: "88", Title: "無題 - メモ帳", Process: "notepad.exe", PID: pid, Foreground: true})
+	})
 	app, err := e.app.apps.Create(context.Background(), domain.AppInput{
 		Label: "メモ帳", ExePath: launchExe, Args: []string{launchArg}, WorkingDir: launchWork,
 	})

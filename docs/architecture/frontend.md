@@ -71,7 +71,7 @@ graph TD
 | Lit は編集系のリッチ UI | ライブ画面ビューア 1 つのみ | 要件が 1 画面に限られる |
 | Huma で JSON API（アクションも含む） | `/api/v1/*` は読み取り専用（状態・モニター・リース）のみ。**アクションはすべて HTML を返す HTMX のルート**。MCP と WebSocket は Huma の対象外 | 状態を変更する操作の利用者は HTMX だけ。JSON の変更 API は不要 |
 | 静的ファイルは Gin の `Static`、本番は `max-age=31536000` | `go:embed` した `dist/` を両ルーターで配信し、**`Cache-Control: no-cache` + `ETag`（ビルド ID）**。開発は `!production` ビルドでディスクから配信（**ユーザー承認済み**） | 単一バイナリ配布。ファイル名にハッシュを付けないため、アプリの更新後に利用者のブラウザが古い JS を長期保持する事故を避ける |
-| 開発は `air` + `templ generate --watch` + `npm run dev` | **`wails3 dev`**（Go の再ビルドと再起動は Wails が行う）+ `templ generate --watch` + `frontend:dev`（esbuild のウォッチ + `WAILS_VITE_PORT` での待ち受け、Tailwind のウォッチ。§8.3） | Wails の開発サーバーとホットリロードが二重にならないようにする。`wails3 dev` は `frontend:dev` が待ち受けることを前提にする（§8.3） |
+| 開発は `air` + `templ generate --watch` + `bun run dev` | **`wails3 dev`**（Go の再ビルドと再起動は Wails が行う）+ `templ generate --watch` + `frontend:dev`（esbuild のウォッチ + `WAILS_VITE_PORT` での待ち受け、Tailwind のウォッチ。§8.3） | Wails の開発サーバーとホットリロードが二重にならないようにする。`wails3 dev` は `frontend:dev` が待ち受けることを前提にする（§8.3） |
 | `lib/api.ts` を共通ライブラリに含める | **初版では作らない**（**ユーザー承認済み**）。Lit から HTTP を呼ぶ箇所が無いため。必要になった時点で追加する（§6.1） | 呼び出し元が無い共通コードは持たない |
 | CSP は任意（HALT 標準は規定なし） | **両ルーターの全 HTML レスポンスに CSP ヘッダーを付ける**（`script-src 'self'` / `style-src 'self'`。インラインのスクリプト・スタイル・イベント属性は禁止。§7.1。NFR-S19） | API キーの入力画面を持つホスト GUI が主な対象。共有テンプレートなので Web UI も同じ規約にする |
 | `lib/ws.ts` は JSON メッセージ前提 | **バイナリフレーム（画面）と JSON テキストフレーム（制御・入力）の両方を扱う**（§6.2） | `/ws/screen` の形式（API 仕様 §5） |
@@ -101,7 +101,8 @@ internal/web/
 └── layout/                   # gui, remote（<head>・ヘッダー・`hx-headers`・スクリプトの読み込み）
 
 static/
-├── package.json              # esbuild, tailwindcss, lit, htmx.org, htmx-ext-*, @open-wc/testing, @web/test-runner
+├── package.json              # esbuild, tailwindcss, lit, htmx.org, htmx-ext-*, @open-wc/testing, @web/test-runner, @playwright/test
+├── playwright.config.ts      # E2E の設定（Chromium のみ。テスト専用サーバーをビルドして起動する webServer。§9）
 ├── esbuild.config.mjs
 ├── src/
 │   ├── components/
@@ -110,7 +111,7 @@ static/
 │   ├── app/                  # htmx-config.ts（classic スクリプト）, app.ts（グローバルのエラーリスナー・トークンのコピー）
 │   └── css/app.css           # Tailwind のエントリーポイント
 ├── dist/                     # ビルド成果物（go:embed。.gitignore）
-└── e2e/                      # Playwright（§9）
+└── e2e/                      # Playwright の E2E（§9。*.spec.ts・制御エンドポイントのクライアントと CSP 監視の helpers.ts）
 ```
 
 - `atoms` / `molecules` は 2 つの UI で**共有**し、`organisms` / `pages` は UI ごとに分ける。共有側は UI 固有の URL を持たない（URL は props で受ける）
@@ -144,9 +145,9 @@ static/
 // internal/web/organisms/remote/lease_panel.templ
 type LeasePanelView struct {
     State     string // "idle" | "pending_approval" | "held"
-    Holder    *HolderView // 種別（mcp / web / agent）・名前・タスクの概要
+    Holder    *HolderView // 種別（mcp / web / agent）・名前・タスクの要約（agent のときだけ。状態・ステップ数 / 上限・経過時間と上限・開始時刻・依頼元。指示と最終回答は出さない。FR-W08）
     Mine      bool
-    CanAcquire, CanRelease, CanRevoke bool // ハンドラが LeaseManager の状態から決める
+    CanAcquire, CanRelease, CanRevoke bool // ハンドラが LeaseManager の状態から決める。pending_approval（M3）はすべて false（承認待ちの表示だけ。操作を持たない）
 }
 
 templ LeasePanel(v LeasePanelView) {
@@ -169,6 +170,7 @@ templ LeasePanel(v LeasePanelView) {
 ```
 
 - リースが `idle` なら「取得」だけ、他者の保持中なら「強制剥奪」だけ、自分が保持なら「解放」だけを描画する
+- 保持者が `agent` のとき（M4）は、実行中のタスクの要約（`[data-lease-task]`）を添える。`handler/remote` は狭い読み取りのインターフェース `TaskSummaries`（`Running(ctx)`。実体は `service.TaskAdmin`）から取り、`view.ViewerTask` に写す。ビューアはタスクの依頼元とは別のクライアントなので、写すのは状態・ステップ数と上限・経過時間と上限・開始時刻・依頼元の表示名だけで、`prompt`・`result_text` は `view` に持たない
 - キルスイッチ中は操作系を一切描画しない（そもそもリモートのページは 503 になる。ホスト GUI は解除ボタンだけを描画する）
 - `hx.Post(...)` などは `hx-*` 属性を組み立てる補助関数（`atoms` に置く）。URL はハンドラ側（または view）が持つ文字列で、JS には書かない
 
@@ -231,7 +233,7 @@ func (h *Handler) Clients(c *gin.Context) {
 - **表示中の領域だけを更新する**: 一覧・パネルのように作り直す領域（接続要求の一覧、キルスイッチのパネル）は、描画した状態の版を隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）に持つ。`hx-include="[data-poll-rev]"` がそれを `/poll` のクエリで送り返し、サーバーは**版が変わった領域だけ**を差し替える。そのページに無い領域は版が送られないため、差し込み先の無い OOB を返さない。入力中の許可フォームなどを、ポーリングで消さないための仕組み
 - ヘッダーのキルスイッチのバッジとサイドバーの件数バッジは、軽い差し替え（中身だけ）で常に返す
 - トーストは、`Bus` の `toast` を `gui.Handler` が `New` で購読して溜めておき、`GET /poll` が取り出して `#toast-root` に追加する OOB にする（取り出したものは次の応答に出ない。バッファは `Bus` の購読者ごとの上限 16 件で、超えた分は古いものから捨てる）
-- `approval` のイベントは DOM を更新しない。承認ダイアログのウィンドウは Go 側（`app` が `Bus` から購読）が開く（ポーリングの対象外）
+- `approval` のイベントは DOM を更新しない。承認ダイアログのウィンドウは Go 側（`app` の `approvalDialogs` が `Bus` から購読）が開き、`approval-closed`（承認待ちの終了）で閉じる（ポーリングの対象外。M3・#68）。ダイアログの残り時間（60 秒のカウントダウン）だけは、ダイアログのページ自身が HTMX の `hx-trigger="every 1s"` で `GET /approvals/{id}` を呼んで `#approval-remaining` を差し替える（`#live-poll` は使わない。専用ウィンドウにレイアウトのポーリングは無い。Lit は使わない。§6 の基準）。許可・拒否の応答の `HX-Trigger: closeWindow` は `static/src/app/app.ts` が受け、Wails のランタイム（`/wails/runtime.js`。同一オリジンの外部スクリプト）の `Window.Close` でウィンドウを閉じる（CSP を守る。インラインスクリプト・ハンドラ属性は使わない）
 - `GET /events`（SSE）は仕様のまま残す。ストリームを流せる経路で GUI を配信するとき・テストのために使える。`sse` 拡張の JS（`dist/js/sse.min.js`）も配信物に残すが、レイアウトは読み込まない
 - ポーリングの間隔は 3 秒。画面が隠れている間の停止は行わない（`hx-trigger` のフィルターは eval が要るため CSP の都合で使えない。§7）
 
@@ -243,6 +245,7 @@ func (h *Handler) Clients(c *gin.Context) {
 |------|------|
 | 部分更新 | `hx-indicator` で対象にスピナー atom を表示 |
 | ページ遷移（ホスト GUI のサイドバーのみ） | `hx-boost` + `#main` への差し替え。グローバルに有効化しない |
+| 狭い幅のレイアウト（ホスト GUI。#51） | `md`（768px）未満はサイドバーを本文の上に積み、横に折り返すナビにして固定幅を持たない（`w-full` + `flex-wrap`）。`md` 以上は従来の固定幅（`w-56`）のサイドバーを左に置く。本文の余白は `p-4`（`md` 以上は `p-6`）。360px 幅でもページ全体が横に広がらない。JS は使わない |
 | 二重送信の防止 | `hx-disabled-elt="this"` |
 | 破壊的な操作（クライアント削除、トークン失効、キルスイッチ解除など） | サーバーが描画した確認のモーダル（molecule）を `hx-get` で開き、確定のボタンだけが実際のアクションを送る |
 | ファイル選択（起動許可アプリの実行ファイル。M1.5） | 「参照…」のボタンが `hx-post="/apps/pick-file"`、`hx-target="closest [data-field=exe_path]"`（`exe_path` の入力欄を包む要素。`form_field`）、`hx-swap="outerHTML"` で送る（フォームの `hx-target` などの継承を上書きする）。`hx-vals` の `form_id`（フォームの要素 id。追加は `app-form-new`、編集は `app-form-{id}`）で、応答の入力欄の `id` を追加・編集のフォームごとに重ならない値にする。サーバーは `app-form-` で始まる安全な文字だけの値以外を `app-form-new` に置き換える。サーバーがネイティブのダイアログを開き、選ばれたパスを入れた入力欄を返す（キャンセルは 204 で差し替えない）。入力欄は手入力のままでも使える（ダイアログは補助）。ダイアログの表示中はボタンを `hx-disabled-elt` で無効にし、`hx-indicator` を出す。JS（Wails の `runtime.js` の `Dialogs`）は使わない |
@@ -252,6 +255,20 @@ func (h *Handler) Clients(c *gin.Context) {
 - ルートの応答（`handler/gui/apps.go`）: `GET /apps` は `HX-Request` なら一覧（`#app-list`）、`GET /apps/new` は追加フォーム、`GET /apps/{id}/edit` は編集フォームのフラグメント（`HX-Boosted` とそれ以外はフルページ。`/apps/{id}/edit` のフルページは一覧の該当行が編集フォームになる。対象が無ければ 404）。`POST /apps` の 200 は一覧（`#app-list` を差し替え）に、追加フォームを空に戻す OOB（`#app-form-new`）とトーストを添える。`PUT /apps/{id}` の 200 は行のカード（編集フォームを差し替え）とトースト。422 はどちらもフォーム自身（`hx-target-422="this"`）を、入力値（引数は入力どおりの複数行）と項目別のメッセージ付きで再描画する。50 件到達の 409 `conflict` と、想定外のエラーはトーストのフラグメント（`HX-Retarget: #toast-root`）。`DELETE /apps/{id}` の 200 は一覧に、モーダルを閉じる OOB とトーストを添える
 - 引数は、入力欄の文字列をそのまま（LF・CRLF どちらも）`domain.ParseArgsLines` で 1 行 1 引数に分け、空行は捨てる。編集フォームは保存済みの引数を改行でつないで出す
 - 実装は `organisms/app_list.templ`（`AppList`・`AppCard`）・`organisms/app_form.templ`（`AppForm`・`AppExePathField`）・`pages/apps.templ`・アトム `textarea`。ハンドラは `service.AppRegistry` を `gui.Deps.Apps`（利用者側のインターフェース `gui.Apps`）で受け、`platform` を import しない
+
+**接続要求の履歴（`/requests/history`。FR-H03）**: 「接続要求」画面の「未処理」と「履歴」を `RequestsTabs` organism のタブで切り替える（どちらも `hx-boost`・`hx-target="#main"`・`hx-target-error="#main"`。サイドバーの強調は「接続要求」のまま）。履歴は `ConnectionRequestHistory` organism（`#request-history`）で、届いた日時・デバイス名・tailnet IP・ユーザー・結果（許可・拒否・失効・未処理のバッジ）・処理した日時の表を、読み取り専用で出す。件数が増えても重くならないよう、**1 ページ 20 件の固定のページ送り**にする（全件の読み込みも件数の上限による打ち切りもしない）。ページはクエリ `page` で、前へ・次へのリンクは `hx-get`・`hx-target="#request-history"`・`hx-swap="outerHTML"`・`hx-push-url="true"` で表だけを差し替える（`href` も持つため、JS なしや履歴の復元でも同じ URL でフルページが開く）。履歴は `#request-list` と違い `data-poll-rev` を持たず、`/poll` の対象にしない（表示中の表を勝手に差し替えない）。実装は `organisms/request_history.templ`・`pages/request_history.templ`
+
+**ログ画面（`/logs`。FR-H13）**: サイドバーの「ログ」（`navItems`・`view.NavLogs`）。アプリの運用ログ（NFR-O01。ファイル）を、日時・レベル（`atoms.Badge`。ERROR は danger・WARN は warn・INFO は ok・DEBUG は neutral）・内容（メッセージと属性の `キー 値`）の表で新しい順に出す。`AppLog` organism（`#app-log`）が、レベルの絞り込み（「すべて」「WARN 以上」「ERROR のみ」のリンク。クエリ `level`）・表・ページ送り（クエリ `page`。1 ページ 50 件の固定。「接続要求の履歴」と同じ理由）を持ち、リンクは `hx-get`・`hx-target="#app-log"`・`hx-swap="outerHTML"`・`hx-push-url="true"` で `#app-log` だけを差し替えて URL を更新する（絞り込みのリンクはページを 1 に戻し、ページ送りは `level` を保つ）。ログファイルのパスと「ログフォルダーを開く」ボタンはページ（`pages/logs.templ`）の見出しの下に並べて出す（フラグメントには含めない。絞り込み・ページ送りで差し替わらない）。ボタン（`atoms.Button` の secondary。`data-log-open-folder`）は `hx-post="/logs/open-folder"`・`hx-swap="none"`・`hx-disabled-elt="this"` で、本文もパラメーターも送らず、応答の OOB のトースト（成功は「ログフォルダーを開きました。」、失敗は固定の文言のエラーのトースト。`HX-Retarget: #toast-root`。パス・OS のエラー文は出さない）だけを反映する（Issue #54）。**開く場所の安全性は「パスを引数にしない」ことで保つ**: `gui.Logs.OpenFolder(ctx)` に引数は無く、実体の `app.LogReader` が常に `filepath.Dir(Path())`（ログフォルダー）を `platform.FolderOpener` へ渡す。URL・フォーム・クエリからパスを受ける経路は無く、任意のパスを開けない。`web` は `platform` を import せず、OS 呼び出しは `service.AppLog` の背後にある（`scripts/check-imports.sh`）。ログの内容は読み取り専用で、`/poll` の対象ではない（手動の再読み込み。絞り込みのリンクのクリックでも最新になる）。ハンドラは `gui.Deps.Logs`（利用者側のインターフェース `gui.Logs`。実体は `app.LogReader`）で受ける。ログの文字列はすべて templ がエスケープする。ログに秘密が出ないこと（NFR-S13）は、書き込み側の `ReplaceAttr` と読み出し側の `redactString` で守る（[アーキテクチャ「運用ログと監査ログ」](overview.md)）
+
+**監査ログ画面（`/audit`・`/audit/{id}`。FR-AU05、FR-H08。M3・#72）**: サイドバーの「監査ログ」（`navItems`・`view.NavAudit`）。ホスト GUI だけの読み取り専用の画面で、リモートのルーターには作らない。`organisms.AuditList`（`#audit-list`）が、絞り込みフォーム（`AuditFilters`。`molecules.FormField`・`atoms.Input` / `Select`。開始・終了日時は RFC 3339 のテキスト入力（`datetime-local` への変換はしない）・クライアント（`HostAdmin.Clients` の一覧。削除済みのクライアントの行は絞り込みの選択肢には出ず、一覧ではスナップショットの名前で出る）・種別・結果・イベント名の部分一致）・`ts` 降順の表（日時は `Location` のローカル時刻・クライアント・種別・イベント（詳細へのリンク）・結果バッジ（`ok` は ok、`denied` は warn、`error` は danger）・所要時間・サムネイルの有無）・「次へ（古いログ）」（`cursor` は前向きだけなので「前へ」は無い。戻るのはブラウザの履歴）を持つ。フォームと「次へ」は `hx-get`・`hx-target="#audit-list"`・`hx-swap="outerHTML"`・`hx-push-url="true"` で `#audit-list` だけを差し替えて URL を更新し、不正な値の 422 は `hx-target-422="#audit-list"` で同じ場所に項目別のメッセージ（`data-field-error`）付きで描き直す。`AuditDetail` organism は項目・引数のキー・値の表・サムネイル（`<img src="/audit/{id}/thumbnail">`。CSP の `img-src 'self'` で足りる。無いときは理由の文）を出す。ポーリング（`/poll`）・SSE の対象にしない（読み取りだけで、自動更新しない）。値は `AuditReader` が秘密を伏せたものだけで、templ が HTML エスケープする。見た目の確認用の画面は `internal/router/internal/guidemo`（スクリーンショットは `docs/screenshots/m3/`）。
+
+**設定画面の監査ログ・更新のグループ（`/settings`。FR-S07、FR-S09。M3・#73）**: `organisms.SettingsForm` に `<fieldset>` を 2 つ足した（`data-settings-group="audit"`・`"update"`）。監査ログのグループは、常に出す注意書き（`data-notice="audit-plaintext"`。サムネイルと本文は平文で保存される・BitLocker でのドライブ全体の暗号化・サムネイルの保存の無効化の案内。NFR-S11）、`audit.thumbnails_enabled` と `audit.record_text` のチェックボックス（`audit.record_text` には常に出す警告文 `data-notice="audit-record-text"`。有効にするときの確認モーダルは作らない）、`audit.retention_days`（日）と `audit.thumbs_max_bytes`（バイト。単位は未決のため換算しない）の数値入力。更新のグループは `update.channel`（正式版 `stable` が既定 / ナイトリー）と `update.apply_mode`（`confirm` が既定）の選択（どちらも `atoms.Select`。#74 で `update.channel` を足し、説明を更新の確認の間隔・自動適用の条件に更新した）。検証は既存の項目と同じくサーバーが行い、422 で入力値と項目別のメッセージ（`data-field-error`）付きにフォームを再描画する。`log.level` は未決のため出さない。
+
+**エージェント設定画面（`/agent`。FR-H11、FR-G14、FR-G22、NFR-S14。M4・#19）**: サイドバーの「エージェント」（`view.NavAgent`）。`pages.AgentSettings` / `AgentSettingsBoosted` が説明（既定は無効。`data-notice="agent-default-off"`）と `organisms.AgentSections`（`#agent-sections`）を包む。`AgentSections` は 2 つのカード（OpenAI のエージェント、高速パス（TypeSafe））で、それぞれ `organisms.APIKeyPanel`（キーの登録）と設定フォーム（`organisms.AgentForm`・`FastpathForm`）を持つ。2 つのフォームは `id`・`hx-put`・`hx-target="this"`・`hx-target-422="this"`・`novalidate` で自身を差し替える（`SettingsForm` と同じ規約）。**同意**は 2 つが別のチェックボックスと文言（`data-consent="openai"`・`"typesafe"`）: OpenAI は「スクリーンショット（プライマリモニターの全体）と指示・操作の履歴が OpenAI に送信される」、TypeSafe は「指示・前面のウィンドウのタイトルとプロセス名・要素の ID・役割・ラベル・有効か・直近 5 件の高速ステップの説明文が送信される。スクリーンショット・要素の値・入力した文字・キー入力・API キーは送らない」（FR-G14・G18・G22、NFR-PR04）。同意済みなら日時（`data-consent-at`）を出し、チェックを入れて描画する。**キーの入力欄**（`atoms.SecretInput`）は `type="password"`・`autocomplete="off"` で、`value` 属性を持たない（props にも値を受ける欄が無い）。パネルが受け取るのは登録の有無（真偽値）と失敗の理由だけ。削除ボタンは `hx-get` で確認モーダル（`#modal-root`）を開き、確定の `DELETE` は `#agent-sections` 全体を差し替える（有効・同意も変わるため）。JavaScript は HTMX のほかに要らない。
+
+**エージェント設定画面の ChatGPT のプランのカード（`/agent`。FR-H11、FR-G25〜G30、NFR-S21・S22。M4・#49。設計のみ・実装は未着手）**: `#agent-sections` の先頭に、接続方式の選択（`chatgpt`〔既定〕/ `openai_api_key`。`PUT /agent/connection`。`openai_api_key` への変更は確認モーダル `GET /agent/connection/api-key/confirm` の確定だけが送る）と、ChatGPT のプランのカード（`#chatgpt-card`）を足す。カードは状態（`data-chatgpt-state` = `signed_out` / `signing_in` / `connected` / `reauth_required` / `usage_limited`）で描き分ける状態駆動のレンダリングで、`signed_out`・`reauth_required` は「Continue with ChatGPT」（`POST /agent/chatgpt/signin`）、`signing_in` は「中止」、`connected` はアカウント（メール。この画面にだけ出す）・「ChatGPT のプランを使用中」・「使用量を管理」（`POST /agent/chatgpt/open-usage`。開く URL は実装が固定）・モデルの選択（`GET /agent/chatgpt/models`・`PUT /agent/chatgpt`）・「解除」（`GET /agent/chatgpt/signout/confirm` の確認モーダルを経て `DELETE /agent/chatgpt`）、`usage_limited` は「ChatGPT のプランの使用量の上限に達しました」の表示と「使用量を管理」「再開」（`POST /agent/chatgpt/resume`）「API キーに切り替える…」（OpenAI キー登録済みのときだけ。確認モーダルへ）を出す。初回のサインイン後の確認（`POST /agent/chatgpt/welcome/dismiss`）はモーダルで 1 回だけ。サインインの完了・上限・認可切れの反映は `GET /poll`（`rev_chatgpt`。SSE は使わない。§5.3）で、カードを `outerHTML` で差し替える。トークン・認可コードを HTML・`data-*`・イベントに出さない。API キーへの自動切り替えを行う UI・処理は無い（確認モーダルの確定だけが接続方式を変える。NFR-S22）。高速パスのカードには、接続方式が `chatgpt` のあいだは効かない旨を表示する。
+
+**更新画面（`/update`。FR-H09、FR-S09。M3・#74）**: サイドバーの「更新」（`navItems`・`view.NavUpdate`）。`pages.Update` / `UpdateBoosted` が `organisms.UpdatePanel`（`#update-panel`）を包む。パネルは現在の版・チャネル・適用方法・最後の確認（未確認なら「未確認」）・新版（版・公開日時・署名の検証結果のバッジ・リリースノートの要約）と、「今すぐ確認」（`hx-post="/update/check"`。`hx-target="#update-panel"`・`outerHTML`）・「更新する」（署名を検証できた新版があるときだけ。`hx-get="/update/apply/confirm"` で確認モーダルを `#modal-root` に出し、確定が `POST /update/apply`）。リリースノートは外部（GitHub の Release）由来なので、templ の自動エスケープのまま `<pre>`（`whitespace-pre-wrap`）に出す（`data-field="release-notes"`）。署名の検証に失敗した新版は「適用できません」のバッジと理由（`data-update="reject"`）を出し、「更新する」は出さない。確認の失敗は `data-update="error"`、署名鍵の未設定は `data-update="key-unset"`、`dev` ビルドは `data-update="not-updatable"` で、確認・適用のボタンを出さない。適用できない（リース保持中・接続中など）ときの 409 は、`HX-Retarget: #toast-root` のトーストに理由を出す（§5.2 の失敗の経路）。新版を検出したときのトーストは `Bus` の `toast`（`service.Updater` が出す）が `GET /poll` で届く。
 
 ### 5.5 HTMX 拡張の採否
 
@@ -312,7 +329,7 @@ func (h *Handler) Clients(c *gin.Context) {
 | 属性 | 型 | 内容 |
 |------|----|------|
 | `ws-url` | string | `ws://<host>:<port>/ws/screen?viewer_id=<ULID>`。サーバーが描画時に埋め込む |
-| `readonly` | boolean | 描画時にサーバーが判定した入力の可否。操作権を持たなければ付与する |
+| `readonly` | boolean | 描画時にサーバーが判定した操作権の有無（持たなければ付与する）。**初期描画のヒントにすぎず、入力の可否は決めない**（下の「入力」。HTMX はコンポーネントを swap しないので、取得・解放・剥奪で更新されない） |
 | `monitor` / `quality` / `fps` | number | **初期値**。接続後はサーバーの `config` メッセージが正で、HTMX のツールバー（Lit の外）からの変更はサーバー経由で反映される |
 
 ```go
@@ -335,7 +352,7 @@ func (h *Handler) Clients(c *gin.Context) {
 | イベント | `detail` | 用途 |
 |---------|---------|------|
 | `remo:lease-changed` | WebSocket の `lease` メッセージの内容 | HTMX がリースパネルを再取得する（`hx-trigger`） |
-| `remo:error` | `{ code, message }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラがトーストを出す |
+| `remo:error` | `{ code, message }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がトーストを出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、トーストは `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
 
 **状態とライフサイクル**
 
@@ -360,20 +377,20 @@ stateDiagram-v2
 **描画**
 
 - `ready` / `config` の `width` / `height` で `canvas` のサイズを決める（ストリームの座標空間 = モニターの物理ピクセル）。CSS で表示サイズに縮小する
-- バイナリフレーム（API 仕様 §5.4）を受信したら、各タイルの JPEG を `createImageBitmap` で復号し、`(x, y)` に描画する。連番（`seq`）が古いフレームは捨てる。キーフレーム（bit0）は全面を置き換える。復号中に新しいフレームが来ても、描画は連番の順に行う
+- バイナリフレーム（API 仕様 §5.4）を受信したら、各タイルの JPEG を `createImageBitmap` で復号し、`(x, y)` に描画する。連番（`seq`）が古い差分フレームは捨てる。キーフレーム（bit0）は全面を置き換え、連番によらず採用して連番を引き継ぐ（モニター・品質・FPS の変更でサーバーは連番を 1 から数え直すため）。復号中に新しいフレームが来ても、描画は連番の順に行う
 - `width` / `height` が変わったら `canvas` を作り直し、次のキーフレームまで描画を保留する
-- 閲覧のみ（`readonly` または非保持）でも描画は行う
+- 閲覧のみ（非保持）でも描画は行う
 
 **入力（操作権を持つときだけ）**
 
-「入力が有効」とは、`readonly` が付いておらず、かつ最後に受信した `lease` メッセージで `mine: true` であること。`readonly` は描画時のサーバー判定で、その後の変化は WebSocket の `lease`（サーバーが判定した `mine`）で切り替える。HTMX はコンポーネントを swap しないため、属性の再描画に頼らない。サーバー側でも入力は常に検査される（リース・InputGuard）。
+「入力が有効」とは、最後に受信した `lease`（`ready` の `lease` を含む）が `state: "held"` かつ `mine: true` であること（`pending_approval` は承認待ちの本人（`mine: true`）でも閲覧のみ。M3）。`mine: false`（他者の保持・空き・剥奪）では閲覧のみで、`mine` が `false` になった時点で押下中のキー・ボタンを送らずに捨てる（サーバーが解放する）。`readonly` 属性は描画時のサーバー判定を表す初期のヒントで、入力の可否には使わない（HTMX はコンポーネントを swap しないため、取得・解放・剥奪の後も属性は描画時のままで、これに頼ると操作権を取得しても入力が送られない）。サーバー側でも入力は常に検査される（リース・InputGuard）。
 
 | 入力 | 送るメッセージ（API 仕様 §5.3） | 備考 |
 |------|------------------------------|------|
 | マウス移動 | `input.mouse` `move` | 座標は `canvas` の表示座標からストリームの物理座標へ変換（`round((clientX − rect.left) × canvas.width ÷ rect.width)`）。1 アニメーションフレームにつき最大 1 回に間引く |
 | ボタン・ホイール | `input.mouse` `down` / `up` / `wheel` | `contextmenu` を抑止する。**`wheel` の `dx` / `dy` の単位は「ノッチ」**（数値。小数可。MCP `scroll.amount` と同じ単位）。ブラウザの `WheelEvent` を `deltaMode` に応じて換算する: `DOM_DELTA_PIXEL` は `delta ÷ 100`、`DOM_DELTA_LINE` は `delta ÷ 3`、`DOM_DELTA_PAGE` は `delta × 10`。符号は API 仕様の `scroll` の方向の規約に従う（`dy > 0` = 下。`WheelEvent.deltaY` と同じ）。サーバーが `ノッチ × 120`（Win32 の `WHEEL_DELTA`）を丸めて OS へ渡し、丸めの余りは次回へ繰り越す。Win32 側の符号の向きもサーバーが吸収する |
 | キー | `input.key` `down` / `up`（`code`、`key`、`modifiers`） | キャンバスにフォーカスがあるときだけ捕捉し、`preventDefault` する。ブラウザが先取りするショートカットは送れない（専用メニュー。FR-W06）。フォーカスを失ったら押下中のキーすべてに `up` を送る |
-| IME 確定 | `input.text` | `compositionend` の文字列を Unicode で送る |
+| IME 確定 | `input.text` | `compositionend` の文字列を Unicode で送る。`canvas` は IME を受けないため、Shadow DOM 内の見えない `<textarea>`（`tabindex="-1"`。`css` で不可視にする）が IME とキー入力を受ける。`canvas` の `mousedown` でこの要素にフォーカスを移し（「`canvas` にフォーカスがある」とは、この要素にフォーカスがあること）、`keydown` / `keyup` / `compositionend` / `blur` はこの要素で受ける。IME の処理中のキー（`isComposing`・`keyCode` 229）は `input.key` で送らない |
 
 ### 6.3 Shadow DOM とスタイル
 
@@ -389,7 +406,7 @@ stateDiagram-v2
 | `binaryType` | `arraybuffer` |
 | 受信 | テキストフレームは JSON をパースして `{ kind: "text", message }`、バイナリは `{ kind: "binary", data: ArrayBuffer }` として渡す |
 | 送信 | `send(obj)`（JSON）。64 KiB を超えるメッセージは送らずエラーにする（NFR-S09） |
-| 再接続 | 指数バックオフ（500 ms から、上限 15 s）で最大 10 回。**再接続しない閉じコード**: 4400 / 4401 / 4429 / 4503 / 4510。再接続した後は `onOpen` が再度呼ばれる |
+| 再接続 | 指数バックオフ（500 ms から、上限 15 s）で最大 10 回。**再接続しない閉じコード**: 4400 / 4401 / 4429 / 4503 / 4510。再接続した後は `onOpen` が再度呼ばれる。試行の数は、接続のたびにサーバーから 1 つでもメッセージを受け取ったら 0 に戻る（接続して直ぐ閉じる繰り返しは数え続けて、上限で止まる） |
 | コールバック | `onOpen`、`onMessage`、`onClose(code)`、`onGiveUp` |
 
 ## 7. セキュリティとスタイル
@@ -446,7 +463,7 @@ graph LR
 
 - esbuild: エントリーポイントは各 Web Component（`screen-viewer`）と `src/app/` の 2 ファイル。出力形式は下記。本番は minify、開発は sourcemap
 - Tailwind CLI: `src/css/app.css` → `dist/css/app.css`（minify）。Templ のファイルをコンテンツとして走査する
-- HTMX: `htmx.min.js`、`response-targets`、`sse` を `dist/js/` にコピーする（HTMX の拡張は別パッケージ）。**版の固定の手順**: 実装の着手時に `npm install htmx.org@2 htmx-ext-response-targets@2 htmx-ext-sse@2` で最新の 2.x を入れ、`package-lock.json` をコミットして固定する。以降の更新は意図的に行い、E2E の CSP 違反の検査（§7.1）を通す
+- HTMX: `htmx.min.js`、`response-targets`、`sse` を `dist/js/` にコピーする（HTMX の拡張は別パッケージ）。**版の固定の手順**: 実装の着手時に `bun add htmx.org@2 htmx-ext-response-targets@2 htmx-ext-sse@2` で最新の 2.x を入れ、`bun.lock` をコミットして固定する。以降の更新は意図的に行い、E2E の CSP 違反の検査（§7.1）を通す
 - esbuild の出力形式: `htmx-config.ts` は IIFE（classic スクリプト。htmx の直後に同期で読み込む）、`app.ts` と Web Component は ES モジュール。Templ の `<script>` タグは外部ファイルの参照のみ（§7.1）で、モジュールには `type="module"` を付ける
 - 成果物は両ルーターが同じ `dist/` から配信する。`Cache-Control: no-cache` + `ETag`（ビルド ID。§2）
 
@@ -455,14 +472,15 @@ graph LR
 ```json
 {
   "scripts": {
-    "build": "npm run build:css && npm run build:js && npm run copy:htmx",
-    "build:js": "node esbuild.config.mjs",
-    "build:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
-    "copy:htmx": "node scripts/copy-htmx.mjs",
-    "dev": "concurrently \"npm run dev:css\" \"npm run dev:js\"",
-    "dev:css": "tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
-    "dev:js": "node esbuild.config.mjs --watch",
-    "test": "web-test-runner \"src/**/*.test.ts\" --node-resolve"
+    "build": "bun run clean && bun run build:css && bun run build:js && bun run copy:htmx",
+    "clean": "bun scripts/clean.mjs",
+    "build:js": "bun esbuild.config.mjs",
+    "build:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
+    "copy:htmx": "bun scripts/copy-htmx.mjs",
+    "dev": "bun --bun concurrently \"bun run dev:css\" \"bun run dev:js\"",
+    "dev:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
+    "dev:js": "bun esbuild.config.mjs --watch",
+    "test": "bun --bun web-test-runner \"src/**/*.test.ts\" --node-resolve"
   }
 }
 ```
@@ -477,7 +495,7 @@ graph LR
 |---------|-------|------|
 | アプリ（Go） | `wails3 dev` | `.go` の変更で再ビルド・再起動。ホスト GUI は WebView で確認 |
 | Templ 生成 | `templ generate --watch` | `.templ` の変更で `_templ.go` を再生成（Wails がそれを検知して再ビルド） |
-| フロントエンド | Taskfile の `frontend:dev`（`npm run dev` = esbuild のウォッチ + `serve`、Tailwind のウォッチ） | `static/dist/` を更新し、**`WAILS_VITE_PORT` で待ち受ける**（下記） |
+| フロントエンド | Taskfile の `frontend:dev`（`bun run dev` = esbuild のウォッチ + `serve`、Tailwind のウォッチ） | `static/dist/` を更新し、**`WAILS_VITE_PORT` で待ち受ける**（下記） |
 
 - 開発ビルド（`!production`）の静的ファイルはディスク（`static/dist`）から配信する。ブラウザの再読み込みで反映される。ディスクの場所はカレントから親へ辿って `static/dist` を探す（`-trimpath` でソースの位置が使えないため）。別の場所は環境変数 `PUPPET_REMO_STATIC_DIR` で指す。ビルド ID（`ETag`）は `dist` 全体の内容のハッシュ（本番は起動後の最初の 1 回、開発は毎回）本番ビルド（`-tags production`。`wails3 build` / `package` が付与）は `go:embed` を使う
 - **`wails3 dev` は常に `FRONTEND_DEVSERVER_URL=http://<host>:$WAILS_VITE_PORT`（`WAILS_VITE_PORT` の既定は 9245）を設定し、アプリの起動前処理（preRun）がその URL を 500 ms 間隔で 10 回確認して、何も待ち受けていなければ致命的エラーで終了する**（Wails v3.0.0 のソースで確認）。したがってこの変数を未設定にして運用することはできない。`frontend:dev` タスクは、`WAILS_VITE_PORT` で待ち受けるプロセスを起動する必要がある。本プロジェクトでは esbuild の `serve` がその役目を担う
@@ -488,28 +506,39 @@ graph LR
 
 ## 9. テスト戦略
 
-レイヤーごとに手法を使い分ける。HTMX のインタラクションは E2E でカバーする。CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動き対話デスクトップが無いため、E2E は偽の `platform` 実装で行う（[コンポーネント設計](../components/overview.md) §10）。偽の platform と偽の tailnet で OS 非依存になるため、Playwright は Linux のランナーで実行する（Chromium の導入が容易）。Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけで、Windows の実機は CI に使わない。実機スモークは手動のまま。Lit のテストと Playwright の E2E は Web UI を作る M2 で CI に足す（M1 の CI にはない）。
+レイヤーごとに手法を使い分ける。HTMX のインタラクションは E2E でカバーする。CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップが無いため、E2E は偽の `platform` 実装で行う（[コンポーネント設計](../components/overview.md) §10）。偽の platform と偽の tailnet で OS 非依存になるため、Playwright は Linux のランナーで実行する（Chromium の導入が容易）。Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけで、Windows の実機は CI に使わない。実機スモークは手動のまま。Lit のテストと Playwright の E2E は、M2 の受け入れ条件には含めず、あとから CI の改善として足した（オーナーの決定。#64）。別ジョブ `e2e` で走る（下の「CI の手順」）。
 
 | レイヤー | 手法 | 検証内容 |
 |---------|------|---------|
 | Go ハンドラ（GUI・リモート） | `httptest` + HTML アサーション | ページルートの `HX-Request` 分岐（フルページに `<html>` が有る / フラグメントに無い）、アクションルートが常にフラグメント、ステータスコード、`/api/v1` が JSON、ミドルウェアの拒否（Host / Origin / ヘッダー / 未登録 / キルスイッチ）、エラーのフラグメントの `data-error-code`、**すべての HTML レスポンス（エラーページ・キルスイッチの 503 を含む）に §7.1 の CSP ヘッダーが付くこと** |
 | Templ | Go のテストで `Render()` → HTML 文字列のアサーション | **状態駆動レンダリング**: 権限・状態ごとに、押せないボタンが**描画されていない**こと（`CanRevoke = false` なら強制剥奪のボタンが HTML に無い）。キルスイッチ中は操作系が無い。**CSP 適合**: 描画した HTML に、`src` の無い `<script>`、`<style>`、`style=` 属性、`on*` 属性、`hx-on` 系の属性、`js:` 接頭辞、`hx-trigger` の `[...]` フィルターが無いこと |
-| Lit（`<remo-screen-viewer>`。M2） | `@open-wc/testing` + `@web/test-runner`（ヘッドレス Chromium） | タイルの描画（偽の WebSocket から画像を流す）、座標変換、連番の古いフレームの破棄、キーフレームでの置換、`readonly` と `lease.mine` による入力の有効・無効、フォーカスを失ったときの `up` 送信、再接続の方針（再接続しない閉じコード）、`remo:lease-changed` の発火 |
-| E2E（M2） | Playwright（Chromium。Linux のセルフホストランナー） | **偽の `platform` と偽の tailnet（`Listener` / `WhoIs` のテスト用実装）で起動したテスト専用のサーバー**（ビルドタグ `e2e`。本番のバイナリには含めない）に対して、リモートの Web UI を操作する: 未登録デバイスの待機ページ → ホスト側で許可 → ビューアの表示 → 操作権の取得 → クリックが偽の injector に届く → 強制剥奪 → キルスイッチ。全ページで CSP 違反（`securitypolicyviolation`）が 0 件であること（§7.1） |
+| Lit（`<remo-screen-viewer>`・`lib/ws.ts`・`lib/logger.ts`。#63・#64） | `@open-wc/testing` + `@web/test-runner`（ヘッドレス Chromium。`bun run test`） | タイルの描画（偽の WebSocket から画像を流す）、座標変換、連番の古いフレームの破棄、キーフレームでの置換、`lease.mine` による入力の有効・無効（`readonly` 属性が付いたままでも、`mine: true` の `lease` で入力が送られること）、フォーカスを失ったときの `up` 送信、再接続の方針（再接続しない閉じコード）、`remo:lease-changed` の発火 |
+| E2E（#64） | Playwright（Chromium のみ。Linux の GitHub ランナー（`ubuntu-latest`）。`bun run e2e`） | **偽の `platform` と偽の tailnet（`Watcher` / `WhoIs` / `Listener` のテスト用実装）で起動したテスト専用のサーバー**（ビルドタグ `e2e`。本番のバイナリには含めない）に対して、リモートの Web UI を操作する: 未登録デバイスの待機ページ → ホスト側で許可 → ビューアの表示 → 操作権の取得 → クリックが偽の injector に届く（座標とボタンを検査）→ 強制剥奪 → キルスイッチ（ビューアの停止と、再読み込みの 503）。登録済みデバイスは許可なしでビューアが開く。**全ページ**（テストごとの全ナビゲーション）で CSP 違反が 0 件であること: `securitypolicyviolation` イベントと、Content Security Policy に触れるコンソールのエラーの両方を失敗とする（§7.1。監視が壊れていないことは、インラインのスクリプトを足して検出されることを確かめるテストで担保する） |
 | GUI ルーターの E2E | `httptest` で足りる範囲に限る | Wails のウィンドウ自体（トレイ、承認ダイアログのウィンドウ、オーバーレイ）の動作は実機スモーク（コンポーネント設計 §10） |
 
-テスト専用サーバーは tailnet の IP ではなくループバックで Listen するが、これは**テスト用のビルドタグ（`e2e`）に限る**（NFR-S01）。本番のビルドは常に tailnet の IP だけで Listen する。
+テスト専用サーバーは tailnet の IP ではなくループバックで Listen するが、これは**テスト用のビルドタグ（`e2e`）に限る**（NFR-S01）。本番のビルドは常に tailnet の IP だけで Listen する（ChatGPT へのサインインの間だけ開く `127.0.0.1` の OAuth コールバック受信口を除く。NFR-S01・S21。tailnet 公開面ではなく、サインインしていないときは開かない）。
 
-**CI の手順**（すべて Linux のセルフホストランナー。ジョブは `go`・`windows-cross`・`frontend`・`lint`）: `go` ジョブ: gofmt → `go build` / `go vet` → import 規則 → `go test`。`windows-cross` ジョブ: `GOOS=windows` の `go build` / `go vet`（と import 規則）。`frontend` ジョブ: `templ generate` の差分チェック → `npm ci` → フロントエンドのビルド → TypeScript の型検査 → 本番ビルド（Windows 向けを含む）→ 同梱した `dist` のテスト。`lint` ジョブ: golangci-lint（Linux と `GOOS=windows`）。M2 で、Lit のテスト（`npm test`）と、テスト専用サーバー（`-tags e2e`）をビルドしての Playwright を足す。
+**テスト専用サーバーと E2E の構成（#64。オーナーの決定）**
+
+- **入口**: `internal/app/e2e.go`（`//go:build e2e`。`app.RunE2E`）と、それを呼ぶ `cmd/puppet-remo-e2e/main.go`（同じタグ）。`go build ./...`（タグなし）はどちらも無視するので、本番のバイナリ（`cmd/puppet-remo`）には入らない。`app.New` で本物の service・ルーター・WebSocket を組み立て、OS 依存部は `platformtest` の偽物（入力は OS に注入せず記録するだけの `FakeInput`）にする。SQLite は一時ディレクトリに作り、SIGINT・SIGTERM での終了時に消す
+- **偽の tailnet と Listener**: `internal/tailnet/e2e.go`（`//go:build e2e`）の `E2EWatcher`・`E2EWhoIs`（接続元のデバイスを切り替えられる）と `LoopbackListenFunc`。Listener は本物の `tailnet.NewListener` のままで、偽の Watcher が tailnet の IPv4（`100.64.0.1`）を報告し、Listener がそこへ Listen しようとするたびに、`app.Config.ListenFunc` がソケットだけを**同じポートの `127.0.0.1`** に差し替える（対象の絞り込み・再試行・状態の報告は本番と同じ）。偽の Watcher は `127.0.0.1` も報告する。ブラウザが送る Host（`127.0.0.1:<port>`）がリモートルーターの Host 検査（NFR-S02）を通るようにするため（Listener は loopback を Listen の対象にしない）。リモートルーターのポートは設定 `server.port` と同じ値（`-port`。Host 検査はこのポートだけを通す）
+- **制御エンドポイント**（ホスト側の操作と、偽の injector に届いた入力の読み取り）: **e2e ビルドだけ**にあり、リモートルーターとは別のソケット（`-control`）で、**loopback の IP リテラル（`127.0.0.1`・`::1`）にだけ bind する**（それ以外のアドレスは起動を拒否する。名前・`0.0.0.0` も不可）。loopback 以外の接続元は 403。認証は無い。ホスト側の操作は本物の経路を呼ぶ（DB の行を直接書かない）: `POST /requests/allow`（`HostAdmin.ApproveRequest`。承認モードは既定で自動許可）、`POST /lease/revoke`（`LeaseManager.Revoke`（ホスト））、`POST /killswitch`・`/killswitch/release`（トレイ・ホットキーと同じ経路）。ほかに `GET /ready`（リモートルーターの待ち受け開始で 200。Playwright の `webServer` が待つ）、`POST /identity?as=registered|unregistered`（偽の WhoIs）、`GET /requests`（保留中の接続要求）、`GET /lease`、`GET /inputs`（偽の injector が受けた入力。座標とボタン）、`POST /reset`（キルスイッチ解除・リース解放・クライアント削除・入力の記録の消去・未登録に戻す。各テストの先頭で呼ぶ）。loopback だけにバインドすること・非 loopback の接続元の拒否・loopback 以外の `-control` の拒否は、Go のテスト（`-tags e2e`）で検査する
+- **Playwright**: Chromium のみ。設定は `static/playwright.config.ts`。`webServer` が `go build -tags e2e` でテスト専用サーバーをビルドして起動し（`go run` は SIGTERM を子へ渡さず一時ディレクトリが残るため、ビルドしてから実行する）、`GET /ready` を待つ。状態は 1 つなので直列（`workers: 1`）。固定時間の待機は使わない（自動待機・web-first アサーション・`expect.poll`）。`static/dist`（`bun run build`）を配信する
+- **Chromium の導入**: `PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`（ジョブ専用の領域）へ `bunx playwright install --with-deps chromium` で入れる。`--with-deps` はブラウザに要るシステムのライブラリを入れる（ubuntu-latest は sudo を使える）。手元では `--with-deps` を付けない（`task frontend:browsers`）
+
+**CI の手順**（すべて Linux の GitHub ランナー（`ubuntu-latest`）。ジョブは `go`・`windows-cross`・`frontend`・`e2e`・`lint`）: `go` ジョブ: gofmt → `go build` / `go vet` → import 規則 → `go test`。`windows-cross` ジョブ: `GOOS=windows` の `go build` / `go vet`（と import 規則）。`frontend` ジョブ: bun の導入（`./.github/actions/setup-bun`。sudo 不要、版と SHA-256 は `scripts/ci/install-bun.sh` に固定）→ `templ generate` の差分チェック → `bun install --frozen-lockfile` → フロントエンドのビルド（`bun run build`）→ TypeScript の型検査（`bunx tsc -p .`）→ 本番ビルド（Windows 向けを含む）→ 同梱した `dist` のテスト。`e2e` ジョブ（#64。`frontend` とは別ジョブ。Lit のテストも Chromium が要るのでここで走らせる）: bun の導入 → `bun install --frozen-lockfile` → `bun run build` → E2E の型検査（`bunx tsc -p e2e`）→ `bunx playwright install chromium` → Lit のテスト（`bun run test`）→ `go build -tags e2e` / `go vet -tags e2e` → テスト専用サーバーの Go のテスト（`go test -tags e2e`）→ Playwright の E2E（`bun run e2e`）。templ はこのジョブでは再生成しない（コミット済みの `_templ.go` を使う。差分は `frontend` ジョブが検査する）。`lint` ジョブ: golangci-lint（Linux と `GOOS=windows`、`-tags e2e`）。手元では `task frontend:test`・`task test:e2e`・`task e2e`（`task ci` に含む）。
 
 ## 10. 要件とのトレース
 
 | 要件 | 担当 |
 |------|------|
 | FR-W01〜W09（Web UI） | `pages/remote`、`organisms/remote`、`<remo-screen-viewer>`、`handler/remote` |
-| FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`（`GET /poll`）。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。`lease_panel`（GUI）の強制剥奪ボタンは M2、`task_panel` と中断ボタンは M4（FR-H02） |
+| FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`（`GET /poll`）。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。GUI の強制剥奪ボタンは M2 で実装した（`organisms.LeasePanelBody` の `CanRevoke`。`POST /lease/revoke`）。実行中のエージェントタスクのパネルと中断ボタンは M4 で実装した（`organisms.RunningTasksPanel`・`organisms.TaskStatus`。`POST /tasks/{id}/cancel`。`GET /poll` の `rev_tasks`）。タスク画面（`/tasks`・`/tasks/{id}`。FR-H10）は `pages.Tasks` / `TaskDetail`・`organisms.TaskList` / `TaskDetail` |
+| FR-G25〜G30（ChatGPT のプラン経路の GUI。#49） | `organisms`（ChatGPT のカード `#chatgpt-card`・接続方式の選択・確認モーダル 2 種〔API キーへの切り替え、解除〕・初回の確認）、`handler/gui`（`/agent/chatgpt/*`・`/agent/connection*`）、`GET /poll`（`rev_chatgpt`）。リモートの UI には作らない |
 | FR-H12（起動許可アプリ。M1.5） | `pages`（`apps.templ`。設計の `pages/gui`）、`organisms`（`app_list.templ`・`app_form.templ`。設計の `organisms/gui`）、`handler/gui`（`apps.go`: `/apps`・`/apps/pick-file`）、`atoms`（`textarea`）、`molecules`（`modal`・`form_field`）。リモートの UI には作らない |
-| FR-L06（強制剥奪。M2） | `lease_panel`（リモート・GUI）の状態駆動レンダリング。M1 の GUI の `lease_panel` は保持者の表示のみで、`CanRevoke` のボタンは描画しない |
+| FR-H03・H04・H05・S05（承認モードと承認ダイアログ。M3・#68） | 接続要求の許可フォーム（`organisms.ConnectionRequestList`）の承認モード（常時承認（既定）・初回のみ承認・自動許可）、クライアントのカード（`organisms.ClientCard`）の承認モードの選択（`hx-patch`・`change` で送信。`approved_at` が NULL に戻る）と「初回のみ」の承認済み（日時）・未承認の表示・「承認を取り消す」（`POST /clients/{id}/approval/reset`。確認モーダルは挟まない）、承認ダイアログ（`pages.ApprovalDialog`・`organisms.ApprovalDialog`・`organisms.ApprovalRemaining`・`layout.Dialog`。サイドバー・ヘッダー・ポーリングの無い簡素な外枠） | `handler/gui/approvals.go`（`/approvals/{id}`・`allow`・`deny`。`gui.Deps.Approval`）。許可 / 拒否のボタンは `hx-disabled-elt="#approval-actions button"` で二重送信を防ぐ。表示する文字列はクライアント名・種別・要求の内容・残り時間だけ。`internal/router/internal/guidemo`（`-lease pending_approval`）で承認待ちとダイアログを確認でき、スクリーンショットは `docs/screenshots/m3/` |
+| FR-L07（承認待ち。M3・#67） | `lease_panel` に `pending_approval` の表示（「承認待ち: <名前>（種別）」。本人には「ホストの承認を待っています」）。承認待ちの間は取得・解放・強制剥奪のボタンも `#viewer-ops` も出さない | リモートの `ViewerLeasePanel` と GUI のダッシュボードの `#lease`（`LeaseDisplay`）は、`view.ViewerLease.Pending`・`PendingMine` / `view.Lease.Pending` で承認待ちを描く（`molecules.LeasePendingBadge`）。`data-lease-state="pending_approval"`。GUI は強制剥奪のボタンを `held` のときだけ出す現行の動きのまま（承認待ちの剥奪は docs に無い）。拒否・タイムアウトは `POST /viewer/lease/acquire` の 403 `approval_denied`・408 `approval_timeout` のトースト（`HX-Retarget: #toast-root`）。`<remo-screen-viewer>` は `state !== "held"` を入力無効として扱う |
+| FR-L06（強制剥奪。M2） | `lease_panel`（リモート・GUI）の状態駆動レンダリング。GUI のリースパネル（`#lease`）は M2 から `CanRevoke`（他者の `mcp` / `web` が保持中）のときだけ強制剥奪のボタンを描画する。リモートの `lease_panel` は別の子 Issue |
 | NFR-S02・S03（Host / Origin、カスタムヘッダー） | `middleware`、`layout` の `hx-headers` |
 | NFR-S06（自己保護） | ビューアに自ウィンドウが写らない（キャプチャ除外）。GUI に AI の入力が届かない（InputGuard） |
 | NFR-P02（表示遅延） | ビューアの描画方式（§6.2）、`lib/ws.ts` |
@@ -533,13 +562,14 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
-| リモートの UI（§1.3・§3・§6） | Web UI（`/viewer`）、Lit の `<remo-screen-viewer>`、`lib/ws.ts`、`handler/remote`、`organisms/remote`・`pages/remote` | M2 まで無い。M1 のリモートルーターは `/mcp` だけ（API 仕様 §7.5）。Lit・`lib/ws.ts`・`lib/logger.ts`・`src/components/`・`e2e/`（Playwright）・Lit のテスト・`web-test-runner` は作らない |
-| `internal/web` の構成（§3） | `organisms/{gui,remote}/`・`pages/{gui,remote}/`、`handler/{gui,remote}/` | `organisms/`・`pages/` は平ら（`gui/` のサブディレクトリを作らない）。`handler/gui/` だけ。`layout/` は `gui.templ` だけ。`webtest/`（ハンドラのテスト補助）と `handler/gui/guitest/`（偽の service）を追加した。`view/` は設計どおり。アトムは `badge`・`button`・`checkbox`・`input`・`select`・`spinner`・`textarea`・`toast`、モレキュールは `card`・`form_field`・`lease_badge`・`modal`・`status_pill`・`token_reveal` |
-| GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。M1.5 で apps（起動許可アプリ。`handler/gui/apps.go`）を足した。承認・タスク・エージェント・監査・更新は M3・M4 |
+| リモートの UI（§1.3・§3・§6） | Web UI（`/viewer`）、Lit の `<remo-screen-viewer>`、`lib/ws.ts`、`handler/remote`、`organisms/remote`・`pages/remote` | Web UI のページ・ハンドラは M2 の #62 で作った（`/`・`/viewer`・リース・設定・クリップボード・ショートカット・待機ページ。API 仕様 §4.2・§7.5）。`<remo-screen-viewer>`・`lib/ws.ts`・`lib/logger.ts`・`src/components/` は #63 で作った（esbuild が `dist/js/screen-viewer.js` を出し、レイアウトが読み込む。`screen-viewer/` は `remo-screen-viewer.ts`・`protocol.ts`（メッセージ・バイナリフレームの復号）・`input.ts`（座標・ホイール・キーの変換））。Lit のテスト（`src/**/*.test.ts`・`web-test-runner.config.mjs`）と `e2e/`（Playwright）は、M2 の受け入れ条件ではなく、あとから CI の改善として #64 で足した（下の「ビルドと CI」） |
+| `internal/web` の構成（§3） | `organisms/{gui,remote}/`・`pages/{gui,remote}/`、`handler/{gui,remote}/`、`layout/{gui,remote}` | `organisms/`・`pages/` は平ら（`gui/` / `remote/` のサブディレクトリを作らない。ビューアは `organisms/viewer_*.templ`、待機・エラーは `pages/remote_notice.templ`、ページは `pages/viewer.templ`）。`handler/gui/` と `handler/remote/`（M2。偽の依存は `handler/remote/remotetest/`）。`layout/` は `gui.templ` と `remote.templ`（`Remote` がビューアの外枠、`RemoteNotice` が待機・拒否・失効・ミドルウェアのエラーの簡素な外枠）。`webtest/`（ハンドラのテスト補助）と `handler/gui/guitest/`（偽の service）を追加した。`view/` は設計どおり（ビューアは `Viewer`・`ViewerToolbar`・`ViewerLease`・`ViewerOps`・`KeyMenuItem`・`RemoteError`）。アトムは `alert`・`badge`・`button`・`checkbox`・`input`・`select`・`spinner`・`textarea`・`toast`、モレキュールは `card`・`form_field`・`lease_badge`・`modal`・`status_pill`・`token_reveal` |
+| リモートのリースパネル・ビューアの組み立て（§4.3・§6.2） | `lease_panel`・`viewer_toolbar`・`clipboard_panel`・`key_menu` の各 organism を `<main id="viewer-root">` に並べる | `ViewerLeasePanel`（`#lease-panel`。`remo:lease-changed from:#viewer-root` で `GET /viewer/lease` を再取得して `outerHTML` で差し替える）・`ViewerToolbar`（`#viewer-toolbar`。`change` で `POST /viewer/settings`、422 は `hx-target-422="this"`）・`ViewerOps`（`#viewer-ops`。操作権を持つときだけ `ClipboardPanel` と `KeyMenu` を描画し、リース系の応答に OOB で添えて更新する）・`ViewerRoot`（`<remo-screen-viewer>` を HTMX の対象の外に置き、`readonly` は描画時の操作権の有無）。エラーはホスト GUI と同じく `HX-Retarget: #toast-root` のトースト。スライダー（画質・FPS）の横の数値は `app.ts` が `input` イベントで追従させる |
+| GUI のページ・ハンドラ（§3） | dashboard・requests・clients・tokens・approvals・tasks・agent・audit・settings・update・poll・events | M1 は dashboard・requests・clients（詳細とトークン）・settings・poll・events・killswitch のみ（API 仕様 §7.5）。M1.5 で apps（起動許可アプリ。`handler/gui/apps.go`）を足した。監査（`handler/gui/audit.go`。`/audit`・`/audit/{id}`・`/audit/{id}/thumbnail`）は M3 の #72 で足した。設定は M3 の #73 で監査ログ・更新のグループを足した。承認（approvals。M3・#68 で実装。`handler/gui/approvals.go`。M4 で `safety_check`・`judge_action` の表示を足した）・タスク（`handler/gui/tasks.go`。M4）・更新（M3・#74）は実装済み。エージェント設定（`handler/gui/agent.go`。`/agent`・API キーの登録と削除）は M4 の #19 で足した。 |
 | ホスト GUI の更新（§5.3） | `GET /poll`（本書のとおり） | 同じ。`GET /events`（SSE）は残すが GUI は購読しない。`htmx-ext-sse` は `static/package.json` に入れて `dist/js/sse.min.js` へコピーするが、レイアウトは読み込まない（未使用。ビルドの対象としては残る） |
-| `static/package.json`（§8.2） | `lit`・`htmx-ext-*`・`@open-wc/testing`・`@web/test-runner`、`test` スクリプト | M1 は `htmx.org`・`htmx-ext-response-targets`・`htmx-ext-sse`、開発依存は `tailwindcss`・`@tailwindcss/cli`・`esbuild`・`typescript`・`concurrently`。スクリプトに `clean` を足し（`build` の先頭で `dist` を消す）、`test` は無い。esbuild のエントリーは `src/app/` の 2 ファイル |
+| `static/package.json`（§8.2） | `lit`・`htmx-ext-*`・`@open-wc/testing`・`@web/test-runner`、`test` スクリプト | 依存は `htmx.org`・`htmx-ext-response-targets`・`htmx-ext-sse`・`lit`（#63。版は固定）、開発依存は `tailwindcss`・`@tailwindcss/cli`・`esbuild`・`typescript`・`concurrently`に、テストの `@open-wc/testing`・`@web/test-runner`・`@web/test-runner-playwright`・`@web/dev-server-esbuild`・`@types/mocha`・`@playwright/test`（#64。版は固定。`playwright` は 1 つの版だけ）を足した。スクリプトに `clean`（`build` の先頭で `dist` を消す）、`test`（Lit のテスト。`web-test-runner`）、`e2e`（Playwright。`bun --bun playwright test`）を足した。esbuild のエントリーは `src/app/` の 2 ファイルと `screen-viewer`（`src/components/screen-viewer/remo-screen-viewer.ts` → `dist/js/screen-viewer.js`。ES モジュール）。`define` の `__DEBUG__`（`--watch` のとき true）で、`lib/logger.ts` の本番のログをエラー・警告だけにする |
 | 開発タスク名（§8.3） | `frontend:dev` | 同じ。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service を loopback で配信）を足した。スクリーンショットは `docs/screenshots/m1/` |
-| ビルドと CI（§8・§9） | Playwright の E2E・Lit のテスト | M1 の CI は Go のビルド・vet・lint・test・import 規則・templ 生成の差分・フロントエンドのビルド。E2E と Lit のテストは M2。Windows 実機の確認は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) の手動手順 |
+| ビルドと CI（§8・§9） | Playwright の E2E・Lit のテスト | M1 の CI は Go のビルド・vet・lint・test・import 規則・templ 生成の差分・フロントエンドのビルド。Lit のテストと E2E（Playwright）は、M2 の受け入れ条件ではなく、あとから CI の改善として #64 で別ジョブ `e2e` に足した（オーナーの決定。Chromium は `PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright` へ `playwright install --with-deps chromium`。§9）。型検査（`bunx tsc -p .`）とビルドで `<remo-screen-viewer>` を検査する（`e2e/` は `bunx tsc -p e2e`）。Windows 実機の確認は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) の手動手順 |
 
 ## 改訂履歴
 
@@ -555,3 +585,25 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.7 | 2026-10-30 | §12「M1 実装での差分」を新設（リモートの UI・Lit・E2E が M2、`internal/web` の構成、GUI のページ、`htmx-ext-sse` の同梱と未使用、`static/package.json`、`gui:demo`・スクリーンショット・スモーク手順）。§3 のハンドラの依存規則に `tailnet` を追記 | M1 の実装との差分の文書化（オーナー決定） |
 | 1.8 | 2026-10-30 | 起動許可アプリの画面（M1.5。FR-H12）を追加: §3 のディレクトリ構成（`apps`・`app_list`・`app_form`）、§5.4 のファイル選択のパターン（`hx-post="/apps/pick-file"`）、§5 の画面の方針（フォーム・注意書き・削除の確認・`/poll` の対象外・パスはホスト GUI だけに出す）、§10 のトレース | M1.5 の仕様追記（#16。オーナー決定 8 件） |
 | 1.9 | 2026-10-30 | 起動許可アプリの画面の実装（#23）に合わせて、§5.4 のファイル選択の `hx-target` と `form_id`、§5 の `/apps` の応答（フラグメント・OOB・422・409）と構成、§10 のトレース、§12 のアトム（`textarea`）・ページを追記 | #23 の実装との整合 |
+| 1.10 | 2026-11-01 | フロントエンド（`static/`）のパッケージマネージャを npm から bun に変更（§8.1・§8.2・§8.3・§9）。ロックファイルは `package-lock.json` から `bun.lock`、スクリプトは `bun run`・`bunx`、CI は `bun install --frozen-lockfile`。runner への bun の導入手順（sudo なし）を CI の中に持つ | TS/JS のパッケージマネージャは bun に固定する方針（#42） |
+| 1.11 | 2026-11-01 | §5.4 に接続要求の履歴（「未処理」「履歴」のタブと、1 ページ 20 件のページ送り。固定の件数のページ分けを選んだ理由と `hx-get` の差し替え）を追加 | #44 |
+| 1.12 | 2026-11-01 | §5.4 にログ画面（サイドバーの「ログ」。レベルの絞り込みと 1 ページ 50 件のページ送り、`#app-log` の差し替え、ファイルを開くボタンを持たない理由）を追加 | #45 |
+| 1.13 | 2026-11-01 | §10 のトレースの GUI の強制剥奪ボタン（M2。`CanRevoke` のときだけ描画、`POST /lease/revoke`）を実装に合わせて更新 | #58 |
+| 1.14 | 2026-11-01 | §12 に Web UI（`/viewer`。`handler/remote`・`layout/remote`・`organisms/viewer_*`・`pages/viewer`・待機・拒否・失効のページ）の実装と、`<remo-screen-viewer>` の成果物は #63 が出すこと、`app.ts` のスライダーの数値の追従を追記 | #62 |
+| 1.15 | 2026-11-01 | §6.2 に IME とキー入力を受ける見えない入力要素、§6.4 に再接続の試行の数え直しを追記。§12 の差分表（`lit`・`lib/ws.ts`・`lib/logger.ts`・`components/`・esbuild のエントリー・Lit のテストと E2E を作らないこと）を更新 | #63 |
+| 1.16 | 2026-11-01 | §6.2 の `readonly` を初期描画のヒントに限定し、入力の有効・無効は WebSocket の `lease`（`mine`）だけで決めると明記（操作権の取得後も `readonly` が残って入力が送られない不具合の修正） | #63 |
+| 1.17 | 2026-11-01 | §6.2 の `remo:error` のトーストを、`code` から日本語にする（文言は HTMX のアクション失敗と揃え、表に無い `code` はサーバーの `message`。WebSocket の契約は変えない） | #63 |
+| 1.18 | 2026-11-02 | §5.4 に監査ログ画面（`/audit`。絞り込み・「次へ」・詳細・サムネイル）、§12 の差分表の GUI のハンドラに `audit` を足した | #72 |
+| 1.19 | 2026-11-02 | §5.4 に設定画面の監査ログ・更新のグループ（平文の注意書き・`audit.record_text` の警告・バイト単位の入力・`update.apply_mode` の選択）、§12 の差分表の GUI のハンドラに設定の M3 の項目を追記 | #73 |
+| 1.20 | 2026-11-02 | §4.3 の `Can*` に承認待ちの扱い、§6.2 の「入力が有効」に `state: held` の条件、§12 に FR-L07（承認待ちのリースパネル・ダッシュボード）の実装を追記 | #67 |
+| 1.21 | 2026-11-02 | §5.3 の `approval`・`approval-closed` と承認ダイアログの残り時間・`closeWindow`、§12 に FR-H03・H04・H05・S05（承認モードの選択・取消、承認ダイアログ）の実装を追記 | #68 |
+| 1.22 | 2026-11-02 | §5.4 に更新画面（`/update`。#74）と、設定画面の更新のチャネル（`update.channel`）を追記 | #74 |
+| 1.23 | 2026-11-02 | §5.4 にエージェント設定画面（`/agent`。#19）: 2 つの同意・伏せ字の入力欄（`atoms.SecretInput`）・キーのパネルと確認モーダル・`#agent-sections` の差し替え。§12 のトレースの GUI のページに `agent` を含める | #19 |
+| 1.24 | 2026-11-02 | §10・§12 の `task_panel` と中断ボタン、タスク（`/tasks`）、承認ダイアログの `safety_check`・`judge_action` を M4 の実装（`TaskStatus` の共有部品・`#running-tasks` の `rev_tasks`・`approvalTexts`）に更新 | #19（M4 ホスト GUI・タスク） |
+| 1.25 | 2026-11-02 | §4.3 に保持者 `agent` のときのタスクの要約（`TaskSummaries`・`view.ViewerTask`。指示・最終回答は出さない） | #19 のレビュー指摘（FR-W08） |
+| 1.26 | 2026-11-02 | §5.4 の表に、狭い幅（`md` 未満）でサイドバーを本文の上に積むレイアウトを追記 | #51 |
+| 1.27 | 2026-11-02 | §5.4 のログ画面に「ログフォルダーを開く」ボタン（`POST /logs/open-folder`。`hx-swap="none"` とトースト。開く場所は `app.LogReader` が固定し、パスを引数にしない）を追記。「フォルダーを開くボタンは持たない」を改めた | #54 |
+| 1.28 | 2026-11-02 | §9 の Lit のテストと Playwright の E2E を実装に合わせて確定: M2 の受け入れ条件には含めず CI の改善として別ジョブ `e2e` で足す（Lit のテストも同ジョブ）、テスト専用サーバーの入口（`internal/app/e2e.go`・`cmd/puppet-remo-e2e`・`internal/tailnet/e2e.go`。いずれもビルドタグ `e2e`）、e2e ビルドだけの制御エンドポイント（loopback の IP リテラルにだけ bind）、Chromium の導入（`PLAYWRIGHT_BROWSERS_PATH`・`--with-deps` なし・sudo なし）。§3・§12 の差分表を更新 | #64（オーナーの決定） |
+| 1.29 | 2026-11-02 | §9 の CI の実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。Chromium は `--with-deps` 付きで導入 | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
+| 1.30 | 2026-11-02 | §5.4 に、エージェント設定画面の ChatGPT のプランのカード（状態駆動の表示・サインイン / 解除 / 使用量の管理 / 再開 / API キーへの切り替えの確認モーダル・初回の確認・`/poll` での反映）と、§10 のトレースを追記。設計のみ | #49 |
+| 1.31 | 2026-11-02 | §9 の「tailnet の IP だけで Listen する」に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |

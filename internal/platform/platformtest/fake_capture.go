@@ -41,6 +41,7 @@ func (f *FakeCapturer) SetImage(monitor int, img *image.RGBA) {
 }
 
 // SetWatch は Watch が流すフレームとエラーを設定する。Watch の開始時に流れ、ctx の取り消しでチャネルが閉じる。
+// 設定しない（または両方とも空）と、Watch は全面が変化した最初の 1 コマ（Grab と同じ画像、Seq 1）だけを流す。
 func (f *FakeCapturer) SetWatch(frames []platform.Frame, errs []error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -72,6 +73,11 @@ func (f *FakeCapturer) Grab(ctx context.Context, monitor int) (*image.RGBA, erro
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	return f.image(monitor)
+}
+
+// image は monitor の画像（SetImage の差し替え、なければ単色）を返す。f.mu を持って呼ぶ。
+func (f *FakeCapturer) image(monitor int) (*image.RGBA, error) {
 	m, err := f.monitor(monitor)
 	if err != nil {
 		return nil, err
@@ -93,15 +99,20 @@ func (f *FakeCapturer) Watch(ctx context.Context, monitor int, fps int) (<-chan 
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, err := f.monitor(monitor); err != nil {
+	img, err := f.image(monitor)
+	if err != nil {
 		return nil, nil, err
 	}
 	if fps <= 0 {
 		return nil, nil, domain.ErrInvalidArgument.WithMsg("fps must be positive")
 	}
-	frames := make(chan platform.Frame, len(f.watchFrames))
+	watchFrames := f.watchFrames
+	if len(watchFrames) == 0 && len(f.watchErrs) == 0 {
+		watchFrames = []platform.Frame{{Image: img, Dirty: []image.Rectangle{img.Bounds()}, Seq: 1}}
+	}
+	frames := make(chan platform.Frame, len(watchFrames))
 	errs := make(chan error, len(f.watchErrs))
-	for _, fr := range f.watchFrames {
+	for _, fr := range watchFrames {
 		frames <- fr
 	}
 	for _, e := range f.watchErrs {

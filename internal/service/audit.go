@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
@@ -21,11 +22,18 @@ type AuditRecorder interface {
 	Record(ctx context.Context, e repository.AuditEntry)
 }
 
+// SyncAuditRecorder は、非同期の Record に加えて、書き終えるまで待ってエラーを返す RecordSync を持つ窓口。
+// Control が launch_app の「試行」の行を起動の前に書く（書けなければ起動しない。fail-closed。NFR-S20）のに使う。
+type SyncAuditRecorder interface {
+	AuditRecorder
+	RecordSync(ctx context.Context, e repository.AuditEntry) error
+}
+
 const defaultAuditQueueSize = 256
 
-// Audit は監査ログの追記（M1。FR-AU01）。書き込みは goroutine 1 本が行い、Record は
+// Audit は監査ログの追記（FR-AU01）。書き込みは goroutine 1 本が行い、Record は
 // バッファ付きチャネルへ非ブロッキングで入れる。満杯のときは呼び出しを待たせずに捨て、ドロップ数を slog で警告する。
-// 閲覧（Query）・サムネイル・保持期間の削除は M3。
+// サムネイル付きの RecordWithThumb は、同じ goroutine が Append → ThumbStore.Save → AttachThumb → 容量の確認の順に行う（audit_thumb.go）。
 type Audit struct {
 	store repository.Audit
 	clock domain.Clock
@@ -35,14 +43,18 @@ type Audit struct {
 	closed bool
 	queue  chan auditItem
 
+	thumbs thumbSaver // Thumbs が無ければゼロ値（サムネイルは保存しない）
+
 	dropped atomic.Int64
 	done    chan struct{}
 }
 
 // auditItem はキューの 1 要素。flushed が非 nil のものは Flush の目印で、entry は無い。
+// thumb が非 nil なら、entry の追記のあとに保存する（pending の枠を 1 つ使っている）。
 type auditItem struct {
 	ctx     context.Context
 	entry   repository.AuditEntry
+	thumb   *Thumbnail
 	flushed chan struct{}
 }
 
@@ -52,6 +64,17 @@ type AuditConfig struct {
 	Clock     domain.Clock
 	Logger    *slog.Logger // nil なら slog.Default()
 	QueueSize int          // 0 なら 256
+
+	// Thumbs が非 nil なら、サムネイルを保存できる（FR-AU02）。nil なら RecordWithThumb は画像を捨てて Record と同じに動く。
+	// Thumbs があるとき IDs（ファイル名の ULID）は必須。Settings は audit.thumbnails_enabled（既定 true）の読み取りで、nil なら常に有効。
+	Thumbs   repository.ThumbStore
+	IDs      domain.IDGen
+	Settings repository.Settings
+	// PurgeOverCap は保存のたびの容量の確認（Maintenance.PurgeThumbsOverCap）。nil なら確認しない。
+	PurgeOverCap func(ctx context.Context) error
+	// MaxPendingThumbs は、キューにある（まだ保存していない）サムネイルの件数の上限（画像のバイト列でメモリが増え続けないため）。
+	// 超えた分は画像だけを捨てて、エントリは追記する。0 なら 32。
+	MaxPendingThumbs int
 }
 
 // ErrAuditClosed は Close 済みの Audit への Flush で返る。
@@ -77,44 +100,75 @@ func NewAudit(cfg AuditConfig) (*Audit, error) {
 		queue: make(chan auditItem, size),
 		done:  make(chan struct{}),
 	}
+	if cfg.Thumbs != nil {
+		if cfg.IDs == nil {
+			return nil, domain.ErrInvalidArgument.WithMsg("audit thumbnails require an id generator")
+		}
+		a.thumbs = thumbSaver{
+			store: cfg.Thumbs, ids: cfg.IDs, settings: cfg.Settings, purgeOverCap: cfg.PurgeOverCap,
+			maxPending: int32(cmp.Or(cfg.MaxPendingThumbs, defaultMaxPendingThumbs)),
+		}
+	}
 	go a.run()
 	return a, nil
 }
 
 // Record は e をキューへ入れる。TS がゼロなら現在時刻を入れる。ctx のキャンセルは書き込みに影響しない。
 func (a *Audit) Record(ctx context.Context, e repository.AuditEntry) {
+	a.enqueue(ctx, e, nil)
+}
+
+// enqueue は e を（thumb があれば付けて）キューへ入れる。満杯・Close 後は e を捨て、thumb の枠を返す。
+func (a *Audit) enqueue(ctx context.Context, e repository.AuditEntry, thumb *Thumbnail) {
 	if e.TS.IsZero() {
 		e.TS = a.clock.Now()
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	if a.closed {
+		a.thumbs.release(thumb)
 		a.drop(e, "audit is closed")
 		return
 	}
 	select {
-	case a.queue <- auditItem{ctx: context.WithoutCancel(ctx), entry: e}:
+	case a.queue <- auditItem{ctx: context.WithoutCancel(ctx), entry: e, thumb: thumb}:
 	default:
+		a.thumbs.release(thumb)
 		a.drop(e, "audit queue is full")
 	}
+}
+
+// RecordSync は e を、書き終えるまで待って記録し、書けなければエラーを返す（同期書き込み。fail-closed の操作の「試行」の行）。
+// 書き込みは呼び出した goroutine が行い、キューを通らない（非同期の Record のキューが満杯でも、DB が書ければ書ける）。
+// 待ちの上限は新しく足さず、ctx（ツール呼び出しなら ToolTimeout）に従う。Close 後は ErrAuditClosed。
+func (a *Audit) RecordSync(ctx context.Context, e repository.AuditEntry) error {
+	if e.TS.IsZero() {
+		e.TS = a.clock.Now()
+	}
+	a.mu.RLock()
+	closed := a.closed
+	a.mu.RUnlock()
+	if closed {
+		return ErrAuditClosed
+	}
+	if _, err := a.store.Append(ctx, e); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Dropped はキューの満杯・Close 後の Record で捨てた件数を返す。
 func (a *Audit) Dropped() int64 { return a.dropped.Load() }
 
-// drop は e を捨てたことを記録する。launch_app は、プロセスを作ったあとに記録する（Control.Launch）ため、捨てると、起動が
-// 成立したのに監査に残らない（NFR-S20 の残存リスク）。運用で気づけるよう Error で出す。それ以外は Warn。
+// drop は e を捨てたことを Warn で記録する。launch_app の結果の行を捨てても、起動の前に「試行」の行を同期で書いてあるので、
+// 起動の事実は監査に残る（Control.Launch。NFR-S20）。
 func (a *Audit) drop(e repository.AuditEntry, why string) {
 	n := a.dropped.Add(1)
-	level := slog.LevelWarn
-	if e.Event == launchAppAuditEvent {
-		level = slog.LevelError
-	}
-	a.log.Log(context.Background(), level, "audit entry dropped", "reason", why, "kind", e.Kind, "event", e.Event, "dropped_total", n)
+	a.log.Warn("audit entry dropped", "reason", why, "kind", e.Kind, "event", e.Event, "dropped_total", n)
 }
 
-// launchAppAuditEvent は launch_app の監査のイベント名（ToolAuditEntry の "tool." + ツール名）。
-const launchAppAuditEvent = "tool.launch_app"
+// launchAppTool は launch_app の監査エントリの Tool（tool.launch_app と agent.step の両方）。
+const launchAppTool = "launch_app"
 
 // Flush は、呼び出し前に Record された件がすべて書き込まれるまで待つ。
 func (a *Audit) Flush(ctx context.Context) error {
@@ -162,8 +216,20 @@ func (a *Audit) run() {
 			close(it.flushed)
 			continue
 		}
-		if _, err := a.store.Append(it.ctx, it.entry); err != nil {
-			a.log.Error("audit append failed", "kind", it.entry.Kind, "event", it.entry.Event, "err", err)
+		id, err := a.store.Append(it.ctx, it.entry)
+		if err != nil {
+			// launch_app の結果の行は、起動の前に「試行」の行を書いてあるので、書けなくても起動は取り消さず Warn にとどめる。
+			level := slog.LevelError
+			if it.entry.Tool == launchAppTool {
+				level = slog.LevelWarn
+			}
+			a.log.Log(context.Background(), level, "audit append failed", "kind", it.entry.Kind, "event", it.entry.Event, "err", err)
+		}
+		if it.thumb != nil {
+			if err == nil {
+				a.saveThumb(it.ctx, id, it.entry, *it.thumb)
+			}
+			a.thumbs.release(it.thumb)
 		}
 	}
 }

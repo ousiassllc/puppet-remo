@@ -54,6 +54,19 @@ func (a *App) triggerKillSwitch(source string) {
 	}
 }
 
+// SetQuit はアプリを終える関数を設定する（Wails の起動後。更新の適用の開始後に呼ばれる）。
+func (a *App) SetQuit(quit func()) { a.quit.Store(&quit) }
+
+// requestQuit は更新の適用の開始後にアプリを終える。呼び出し元（適用の HTTP ハンドラ）の応答を妨げないよう、別の goroutine で終える。
+// SetQuit が済んでいなければ何もしない（インストーラは動いているので、ユーザーが手で終了する）。
+func (a *App) requestQuit() {
+	if q := a.quit.Load(); q != nil {
+		go (*q)()
+		return
+	}
+	a.log.Warn("the installer was started, but no quit function is set; quit the app manually")
+}
+
 // toast は GUI へ通知を出す（購読者がいなければ捨てられる）。
 func (a *App) toast(level, msg string) {
 	a.bus.Publish(service.Event{Topic: service.TopicToast, Data: service.Toast{Level: level, Message: msg}})
@@ -62,6 +75,7 @@ func (a *App) toast(level, msg string) {
 // onSettingsChange は設定の保存後に、影響のあるコンポーネントへ変更を渡す（HostSettingsConfig.OnChange）。
 func (a *App) onSettingsChange(old, updated service.HostSettings) {
 	if old.Port != updated.Port {
+		a.log.Info("server port changed", "old", old.Port, "new", updated.Port)
 		a.port.Store(int32(updated.Port))
 		a.listen.Reload()
 	}
@@ -92,14 +106,33 @@ func (a *App) Start(ctx context.Context) error {
 	a.cancel = cancel
 	a.mu.Unlock()
 
+	// 前回の実行で残った実行中・承認待ちのタスクを aborted にする（NFR-A08）。Listener（MCP の受付）・Agent を動かす前に、同期で行う
+	// （Maintenance.Run に任せると、先に動き出したタスクを巻き込みうる。Run は回収済みなら回収しない）。失敗しても起動は続ける。
+	if _, err := a.maint.AbortActiveTasks(runCtx); err != nil {
+		a.log.Error("task recovery failed", "err", err)
+	}
+
 	bridgeDone := service.BridgeLeaseEvents(runCtx, a.leases, a.bus)
 	a.spawn(func() { <-bridgeDone })
+	// エージェントのタスクのリースが他者の操作（強制剥奪・アイドルタイムアウト・切断・キルスイッチ）で解放されたら、そのタスクを
+	// 中断する（FR-L08）。購読は Watch の中で済む（これより後の解放は取りこぼさない）。
+	agentWatchDone := a.agent.Watch(runCtx)
+	a.spawn(func() { <-agentWatchDone })
+	// 承認ダイアログ（FR-H05）。購読は Watch の中で済む（ここより後の承認要求は取りこぼさない）。runCtx の終了（Shutdown）で、
+	// 開いているダイアログを閉じてから戻る。
+	dialogsDone := a.dialogs.Watch(runCtx)
+	a.spawn(func() { <-dialogsDone })
+	// 操作中オーバーレイ（#69）。購読は Watch の中で済む。runCtx の終了（Shutdown）で、出しているオーバーレイを隠してから戻る。
+	overlayDone := a.overlay.Watch(runCtx)
+	a.spawn(func() { <-overlayDone })
 	a.spawn(func() {
 		if err := a.tracker.Run(runCtx); err != nil {
 			a.log.Error("tailscaled status tracker stopped", "err", err)
 		}
 	})
 	a.spawn(func() { a.maint.Run(runCtx) })
+	// 起動の 1 分後と 6 時間ごとに新版を確認する（dev ビルドは何もしない）。止めるのは Shutdown。
+	a.updater.Start()
 	a.spawn(func() { _ = a.listen.Run(runCtx) }) // 異常終了は supervisor がログに残す
 
 	// ホットキーの登録に失敗しても（他のアプリが同じキーを使っているなど）、アプリは動かす。
@@ -107,6 +140,8 @@ func (a *App) Start(ctx context.Context) error {
 	if err := a.hotkey.Bind(a.initialKey); err != nil {
 		a.log.Error("kill switch hotkey is not active; use the tray or the dashboard", "err", err)
 		a.toast("error", "キルスイッチのホットキーを登録できませんでした。トレイまたはダッシュボードから発動できます。")
+	} else {
+		a.log.Info("kill switch hotkey registered", "hotkey", a.initialKey)
 	}
 	return nil
 }
@@ -119,8 +154,8 @@ func (a *App) spawn(fn func()) {
 	}()
 }
 
-// Shutdown はアプリを止める（docs/components/overview.md §9 の終了順）: ホットキーの解除 → Listener の停止 →
-// MCP セッションを閉じる → リースの解放 → 押下中の入力の解放 → 監査のキューの書き切り → 資源（DB など）を閉じる。
+// Shutdown はアプリを止める（docs/components/overview.md §9 の終了順）: ホットキーの解除 → Listener の停止 → エージェントのタスクの中断 →
+// MCP セッション・WebSocket を閉じる → リースの解放 → 押下中の入力の解放 → 監査のキューの書き切り → 資源（DB など）を閉じる。
 // 各段の失敗は後続を止めず、まとめて返す。複数回呼んでもよい（2 回目以降は何もしない）。
 func (a *App) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
@@ -131,6 +166,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	a.stopped = true
 	cancel := a.cancel
 	a.mu.Unlock()
+	a.log.Info("puppet-remo is shutting down")
 
 	var errs []error
 	a.hotkey.Close()
@@ -140,9 +176,15 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if err := waitGroup(ctx, &a.running); err != nil {
 		errs = append(errs, fmt.Errorf("stop background tasks: %w", err))
 	}
+	a.updater.Close()
+	// 実行中のエージェントのタスクを中断し、終了状態の保存・押下中の入力の解放・リースの解放が済むのを待つ（受付を止めたあと。docs §9）。
+	if err := a.agent.Close(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("cancel the agent task: %w", err))
+	}
 	if err := a.mcp.CloseSessions(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("close mcp sessions: %w", err))
 	}
+	a.ws.Close()
 	a.leases.ReleaseAll(string(domain.ReleaseDisconnect))
 	if err := a.cfg.Platform.Input.ReleaseAll(); err != nil {
 		errs = append(errs, fmt.Errorf("release held input: %w", err))

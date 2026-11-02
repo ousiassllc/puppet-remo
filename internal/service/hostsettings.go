@@ -5,35 +5,65 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
-// このファイルは GUI の設定画面が扱う M1 の設定（FR-S01〜S04、FR-S08。docs/architecture/er.md のキー一覧）。
+// このファイルは GUI の設定画面が扱う設定（FR-S01〜S04、FR-S06〜S09。docs/architecture/er.md のキー一覧）。
+// 監査ログの設定（audit.*）のキー・既定値・範囲は、読み手（audit_thumb.go・control_ops.go・maintenance.go）と同じものを使う。
 const (
-	settingServerPort    = "server.port"
-	settingKillHotkey    = "killswitch.hotkey"
-	defaultServerPort    = 8765
-	defaultKillHotkey    = "Ctrl+Alt+Shift+K"
-	settingMinPort       = 1024
-	settingMaxPort       = 65535
-	settingMinMaxDim     = 256
-	settingMaxMaxDim     = 4096
-	settingMinIdleSec    = 30
-	settingMaxIdleSec    = 3600
-	maxHotkeyLength      = 64
-	hostSettingsAuditKey = "settings.update"
+	settingServerPort           = "server.port"
+	settingKillHotkey           = "killswitch.hotkey"
+	settingViewerDefaultQuality = "viewer.default_quality"
+	settingViewerDefaultFPS     = "viewer.default_fps"
+	settingUpdateApplyMode      = "update.apply_mode"
+	settingUpdateChannel        = "update.channel"
+	settingUpdateLastCheckedAt  = "update.last_checked_at"
+	defaultServerPort           = 8765
+	defaultKillHotkey           = "Ctrl+Alt+Shift+K"
+	defaultViewerQuality        = 70
+	defaultViewerFPS            = 10
+	settingMinPort              = 1024
+	settingMaxPort              = 65535
+	settingMinMaxDim            = 256
+	settingMaxMaxDim            = 4096
+	settingMinIdleSec           = 30
+	settingMaxIdleSec           = 3600
+	viewerMinQuality            = 1
+	viewerMaxQuality            = 100
+	viewerMinFPS                = 1
+	viewerMaxFPS                = 30
+	maxHotkeyLength             = 64
+	hostSettingsAuditKey        = "settings.update"
 )
 
-// HostSettings は M1 の設定。
+// 更新の適用方法（update.apply_mode。FR-S09）。既定は UpdateApplyConfirm。
+const (
+	UpdateApplyConfirm  = "confirm"   // ホストが GUI で確認してから適用する
+	UpdateApplyAutoIdle = "auto_idle" // リースが空いている（アイドルの）ときに自動で適用する
+)
+
+// HostSettings は設定画面の設定（M1 の 4 項目と自動起動、M2 の FR-S06、M3 の FR-S07・FR-S09）。
 type HostSettings struct {
 	Port                   int    // server.port（1024〜65535）
 	KillSwitchHotkey       string // killswitch.hotkey（`Ctrl+Alt+Shift+K` の書式）
 	ScreenshotMaxDimension int    // screenshot.max_dimension（256〜4096）
 	LeaseIdleTimeoutSec    int    // lease.idle_timeout_sec（30〜3600）
-	Autostart              bool   // ログオン時の自動起動（OS が真実の源。DB には持たない）
+	ViewerDefaultQuality   int    // viewer.default_quality（1〜100）。Web UI の既定の JPEG 品質（FR-S06）
+	ViewerDefaultFPS       int    // viewer.default_fps（1〜30）。Web UI の既定の FPS（FR-S06）
+	// 監査ログ（FR-S07）。
+	AuditThumbnailsEnabled bool  // audit.thumbnails_enabled（既定 true。FR-AU02）
+	AuditRecordText        bool  // audit.record_text（既定 false。FR-AU03）
+	AuditRetentionDays     int   // audit.retention_days（1〜36500。既定 30。FR-AU04）
+	AuditThumbsMaxBytes    int64 // audit.thumbs_max_bytes（1〜2^53。既定 1 GiB。単位はバイト。FR-AU04）
+	// UpdateApplyMode は update.apply_mode（UpdateApplyConfirm / UpdateApplyAutoIdle。既定 confirm。FR-S09）。
+	UpdateApplyMode string
+	// UpdateChannel は update.channel（domain.ChannelStable / domain.ChannelNightly の文字列。既定 stable。FR-S09）。
+	UpdateChannel string
+	Autostart     bool // ログオン時の自動起動（OS が真実の源。DB には持たない）
 }
 
 // 設定の項目名（ValidationError.Fields のキー。API 仕様 §7.3 のフォームのキー）。
@@ -42,6 +72,15 @@ const (
 	FieldKillSwitchHotkey       = "killswitch.hotkey"
 	FieldScreenshotMaxDimension = "screenshot.max_dimension"
 	FieldLeaseIdleTimeoutSec    = "lease.idle_timeout_sec"
+	FieldViewerDefaultQuality   = "viewer.default_quality"
+	FieldViewerDefaultFPS       = "viewer.default_fps"
+	FieldAuditThumbnails        = "audit.thumbnails_enabled"
+	FieldAuditRecordText        = "audit.record_text"
+	FieldAuditRetentionDays     = "audit.retention_days"
+	FieldAuditThumbsMaxBytes    = "audit.thumbs_max_bytes"
+	FieldUpdateApplyMode        = "update.apply_mode"
+	FieldUpdateChannel          = "update.channel"
+	fieldAutostart              = "autostart"
 )
 
 // ValidationError は入力の項目別の不備（GUI は 422 でフォームを再描画する）。domain.CodeInvalidArgument として扱える。
@@ -71,6 +110,24 @@ func (s HostSettings) Validate() error {
 	}
 	if s.LeaseIdleTimeoutSec < settingMinIdleSec || s.LeaseIdleTimeoutSec > settingMaxIdleSec {
 		bad[FieldLeaseIdleTimeoutSec] = fmt.Sprintf("%d〜%d 秒の整数を指定してください。", settingMinIdleSec, settingMaxIdleSec)
+	}
+	if s.ViewerDefaultQuality < viewerMinQuality || s.ViewerDefaultQuality > viewerMaxQuality {
+		bad[FieldViewerDefaultQuality] = fmt.Sprintf("%d〜%d の整数を指定してください。", viewerMinQuality, viewerMaxQuality)
+	}
+	if s.ViewerDefaultFPS < viewerMinFPS || s.ViewerDefaultFPS > viewerMaxFPS {
+		bad[FieldViewerDefaultFPS] = fmt.Sprintf("%d〜%d の整数を指定してください。", viewerMinFPS, viewerMaxFPS)
+	}
+	if s.AuditRetentionDays < 1 || s.AuditRetentionDays > maxAuditRetentionDays {
+		bad[FieldAuditRetentionDays] = fmt.Sprintf("1〜%d 日の整数を指定してください。", maxAuditRetentionDays)
+	}
+	if s.AuditThumbsMaxBytes < 1 || s.AuditThumbsMaxBytes > maxJSONInteger {
+		bad[FieldAuditThumbsMaxBytes] = fmt.Sprintf("1〜%d バイトの整数を指定してください。", maxJSONInteger)
+	}
+	if s.UpdateApplyMode != UpdateApplyConfirm && s.UpdateApplyMode != UpdateApplyAutoIdle {
+		bad[FieldUpdateApplyMode] = "「ホストが確認して適用」か「アイドル時に自動で適用」を選んでください。"
+	}
+	if !domain.Channel(s.UpdateChannel).Valid() {
+		bad[FieldUpdateChannel] = "「正式版」か「ナイトリー」を選んでください。"
 	}
 	if msg := validateHotkey(s.KillSwitchHotkey); msg != "" {
 		bad[FieldKillSwitchHotkey] = msg
@@ -117,12 +174,16 @@ type HostSettingsConfig struct {
 	Autostart Autostart     // nil なら自動起動は常に無効として扱い、変更は保存しない
 	Audit     AuditRecorder // nil なら記録しない
 	Clock     domain.Clock  // Audit があるとき必須
+	Logger    *slog.Logger  // nil なら slog.Default()。保存済みの audit.* の数値が不正で既定値を使うときの警告に使う
 	// OnChange は保存に成功し、値が変わったときに old・new を渡して呼ぶ（ポートの再 Listen、ホットキーの再登録など、
 	// 影響のあるコンポーネントへの通知）。nil なら何もしない。保存の呼び出しの中で同期に呼ぶ。
 	OnChange func(old, updated HostSettings)
 }
 
-type hostSettings struct{ cfg HostSettingsConfig }
+type hostSettings struct {
+	cfg HostSettingsConfig
+	log *slog.Logger
+}
 
 // NewHostSettings は HostSettingsService を作る。
 func NewHostSettings(cfg HostSettingsConfig) (HostSettingsService, error) {
@@ -132,7 +193,11 @@ func NewHostSettings(cfg HostSettingsConfig) (HostSettingsService, error) {
 	if cfg.Audit != nil && cfg.Clock == nil {
 		return nil, errors.New("service: host settings requires Clock when Audit is set")
 	}
-	return &hostSettings{cfg: cfg}, nil
+	log := cfg.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	return &hostSettings{cfg: cfg, log: log}, nil
 }
 
 func (h *hostSettings) AutostartAvailable() bool { return h.cfg.Autostart != nil }
@@ -147,6 +212,38 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 		return HostSettings{}, err
 	}
 	idle, err := loadPositiveInt(ctx, h.cfg.Settings, settingLeaseIdleTimeoutSec, int(domain.DefaultLeaseIdleTimeout.Seconds()))
+	if err != nil {
+		return HostSettings{}, err
+	}
+	quality, err := loadPositiveInt(ctx, h.cfg.Settings, settingViewerDefaultQuality, defaultViewerQuality)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	fps, err := loadPositiveInt(ctx, h.cfg.Settings, settingViewerDefaultFPS, defaultViewerFPS)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	thumbsOn, err := loadBool(ctx, h.cfg.Settings, settingAuditThumbnailsEnabled, true)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	recordText, err := loadBool(ctx, h.cfg.Settings, settingAuditRecordText, false)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	retention, err := h.loadAuditInt(ctx, settingAuditRetentionDays, DefaultAuditRetentionDays, maxAuditRetentionDays)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	thumbsMax, err := h.loadAuditInt(ctx, settingAuditThumbsMaxBytes, DefaultThumbsMaxBytes, maxJSONInteger)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	applyMode, err := loadUpdateApplyMode(ctx, h.cfg.Settings)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	channel, err := loadUpdateChannel(ctx, h.cfg.Settings)
 	if err != nil {
 		return HostSettings{}, err
 	}
@@ -168,8 +265,67 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 	}
 	return HostSettings{
 		Port: port, KillSwitchHotkey: hotkey, ScreenshotMaxDimension: dim,
-		LeaseIdleTimeoutSec: idle, Autostart: autostart,
+		LeaseIdleTimeoutSec: idle, ViewerDefaultQuality: quality, ViewerDefaultFPS: fps,
+		AuditThumbnailsEnabled: thumbsOn, AuditRecordText: recordText, AuditRetentionDays: int(retention),
+		AuditThumbsMaxBytes: thumbsMax, UpdateApplyMode: applyMode, UpdateChannel: string(channel), Autostart: autostart,
 	}, nil
+}
+
+// loadAuditInt は audit.retention_days・audit.thumbs_max_bytes を、保守（Maintenance）と同じ規則で読む。
+// 値が不正（数値でない・小数・範囲外）なら警告を出して def を返す（実際に効いている値を表示し、保存し直して直せるようにする）。
+func (h *hostSettings) loadAuditInt(ctx context.Context, key string, def, upper int64) (int64, error) {
+	v, invalid, err := readBoundedInt(ctx, h.cfg.Settings, key, def, upper)
+	if invalid {
+		h.log.Warn("invalid audit retention setting; using the default", "key", key, "default", def)
+	}
+	return v, err
+}
+
+// loadUpdateApplyMode は update.apply_mode（既定 confirm）を読む。未知の値は domain.ErrInvalidArgument。
+func loadUpdateApplyMode(ctx context.Context, settings repository.Settings) (string, error) {
+	raw, ok, err := settings.Get(ctx, settingUpdateApplyMode)
+	if err != nil {
+		return "", fmt.Errorf("read setting %s: %w", settingUpdateApplyMode, err)
+	}
+	if !ok {
+		return UpdateApplyConfirm, nil
+	}
+	var mode string
+	if err := json.Unmarshal(raw, &mode); err != nil || (mode != UpdateApplyConfirm && mode != UpdateApplyAutoIdle) {
+		return "", domain.ErrInvalidArgument.WithMsg("setting " + settingUpdateApplyMode + " must be \"confirm\" or \"auto_idle\"")
+	}
+	return mode, nil
+}
+
+// loadUpdateChannel は update.channel（既定 stable）を読む。未知の値は domain.ErrInvalidArgument。
+func loadUpdateChannel(ctx context.Context, settings repository.Settings) (domain.Channel, error) {
+	raw, ok, err := settings.Get(ctx, settingUpdateChannel)
+	if err != nil {
+		return "", fmt.Errorf("read setting %s: %w", settingUpdateChannel, err)
+	}
+	if !ok {
+		return domain.ChannelStable, nil
+	}
+	var ch domain.Channel
+	if err := json.Unmarshal(raw, &ch); err != nil || !ch.Valid() {
+		return "", domain.ErrInvalidArgument.WithMsg("setting " + settingUpdateChannel + " must be \"stable\" or \"nightly\"")
+	}
+	return ch, nil
+}
+
+// ViewerDefaults は設定 viewer.default_quality・viewer.default_fps（既定 70・10。FR-S06）を読む。
+// 値が範囲（品質 1〜100、FPS 1〜30）の整数でなければ domain.ErrInvalidArgument。settings が nil なら既定値。
+func ViewerDefaults(ctx context.Context, settings repository.Settings) (quality, fps int, err error) {
+	if quality, err = loadPositiveInt(ctx, settings, settingViewerDefaultQuality, defaultViewerQuality); err != nil {
+		return 0, 0, err
+	}
+	if fps, err = loadPositiveInt(ctx, settings, settingViewerDefaultFPS, defaultViewerFPS); err != nil {
+		return 0, 0, err
+	}
+	if quality > viewerMaxQuality || fps > viewerMaxFPS {
+		return 0, 0, domain.ErrInvalidArgument.WithMsg("viewer default settings are out of range")
+	}
+	return quality, fps, nil
 }
 
 func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, error) {
@@ -198,6 +354,14 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		{settingKillHotkey, s.KillSwitchHotkey, func(a *HostSettings) { a.KillSwitchHotkey = s.KillSwitchHotkey }},
 		{settingScreenshotMaxDim, s.ScreenshotMaxDimension, func(a *HostSettings) { a.ScreenshotMaxDimension = s.ScreenshotMaxDimension }},
 		{settingLeaseIdleTimeoutSec, s.LeaseIdleTimeoutSec, func(a *HostSettings) { a.LeaseIdleTimeoutSec = s.LeaseIdleTimeoutSec }},
+		{settingViewerDefaultQuality, s.ViewerDefaultQuality, func(a *HostSettings) { a.ViewerDefaultQuality = s.ViewerDefaultQuality }},
+		{settingViewerDefaultFPS, s.ViewerDefaultFPS, func(a *HostSettings) { a.ViewerDefaultFPS = s.ViewerDefaultFPS }},
+		{settingAuditThumbnailsEnabled, s.AuditThumbnailsEnabled, func(a *HostSettings) { a.AuditThumbnailsEnabled = s.AuditThumbnailsEnabled }},
+		{settingAuditRecordText, s.AuditRecordText, func(a *HostSettings) { a.AuditRecordText = s.AuditRecordText }},
+		{settingAuditRetentionDays, s.AuditRetentionDays, func(a *HostSettings) { a.AuditRetentionDays = s.AuditRetentionDays }},
+		{settingAuditThumbsMaxBytes, s.AuditThumbsMaxBytes, func(a *HostSettings) { a.AuditThumbsMaxBytes = s.AuditThumbsMaxBytes }},
+		{settingUpdateApplyMode, s.UpdateApplyMode, func(a *HostSettings) { a.UpdateApplyMode = s.UpdateApplyMode }},
+		{settingUpdateChannel, s.UpdateChannel, func(a *HostSettings) { a.UpdateChannel = s.UpdateChannel }},
 	} {
 		raw, err := json.Marshal(kv.val)
 		if err != nil {
@@ -228,26 +392,35 @@ func (h *hostSettings) committed(ctx context.Context, old, updated HostSettings)
 	}
 }
 
-// audit は変更した項目の名前だけを記録する（値は設定の範囲内の数値・ホットキーで秘密ではないが、差分の事実だけで足りる）。
+// audit は変更した項目の名前と新しい値を記録する（値は範囲内の数値・真偽値・列挙・ホットキーで、秘密ではない）。
+// ただし audit.record_text は、変えたことだけを残して値は入れない（null。本文の記録の設定を監査の経路に流さない）。
 func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
 	if h.cfg.Audit == nil {
 		return
 	}
 	changed := map[string]any{}
-	if old.Port != updated.Port {
-		changed[FieldPort] = updated.Port
-	}
-	if old.KillSwitchHotkey != updated.KillSwitchHotkey {
-		changed[FieldKillSwitchHotkey] = updated.KillSwitchHotkey
-	}
-	if old.ScreenshotMaxDimension != updated.ScreenshotMaxDimension {
-		changed[FieldScreenshotMaxDimension] = updated.ScreenshotMaxDimension
-	}
-	if old.LeaseIdleTimeoutSec != updated.LeaseIdleTimeoutSec {
-		changed[FieldLeaseIdleTimeoutSec] = updated.LeaseIdleTimeoutSec
-	}
-	if old.Autostart != updated.Autostart {
-		changed["autostart"] = updated.Autostart
+	for _, f := range []struct {
+		key  string
+		diff bool
+		val  any
+	}{
+		{FieldPort, old.Port != updated.Port, updated.Port},
+		{FieldKillSwitchHotkey, old.KillSwitchHotkey != updated.KillSwitchHotkey, updated.KillSwitchHotkey},
+		{FieldScreenshotMaxDimension, old.ScreenshotMaxDimension != updated.ScreenshotMaxDimension, updated.ScreenshotMaxDimension},
+		{FieldLeaseIdleTimeoutSec, old.LeaseIdleTimeoutSec != updated.LeaseIdleTimeoutSec, updated.LeaseIdleTimeoutSec},
+		{FieldViewerDefaultQuality, old.ViewerDefaultQuality != updated.ViewerDefaultQuality, updated.ViewerDefaultQuality},
+		{FieldViewerDefaultFPS, old.ViewerDefaultFPS != updated.ViewerDefaultFPS, updated.ViewerDefaultFPS},
+		{FieldAuditThumbnails, old.AuditThumbnailsEnabled != updated.AuditThumbnailsEnabled, updated.AuditThumbnailsEnabled},
+		{FieldAuditRecordText, old.AuditRecordText != updated.AuditRecordText, nil},
+		{FieldAuditRetentionDays, old.AuditRetentionDays != updated.AuditRetentionDays, updated.AuditRetentionDays},
+		{FieldAuditThumbsMaxBytes, old.AuditThumbsMaxBytes != updated.AuditThumbsMaxBytes, updated.AuditThumbsMaxBytes},
+		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode, updated.UpdateApplyMode},
+		{FieldUpdateChannel, old.UpdateChannel != updated.UpdateChannel, updated.UpdateChannel},
+		{fieldAutostart, old.Autostart != updated.Autostart, updated.Autostart},
+	} {
+		if f.diff {
+			changed[f.key] = f.val
+		}
 	}
 	if len(changed) == 0 {
 		return

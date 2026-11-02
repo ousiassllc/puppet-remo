@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -19,11 +20,27 @@ type Control interface {
 	//  1. KillSwitch → ErrKillSwitchActive
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
 	//  3. 引数の検査と縮小座標 → 物理座標の変換（FR-M16。範囲外は ErrInvalidCoordinates）
-	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI）
+	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI。own_window には puppet-remo のウィンドウの範囲を DetailOwnWindows で付ける）
 	//  5. platform の実行
-	//  6. Audit（引数・結果・所要時間。type の本文・クリップボードは文字数のみ。FR-AU03）
+	//  6. Audit（引数・結果・所要時間。type の本文・クリップボードは既定では文字数だけで、設定 audit.record_text が true のときだけ本文も
+	//     detail_json の text に記録する（FR-AU03、FR-S07）。キー入力はキーの名前を記録しない）
+	//     result=ok で画面を変える操作（opChangesScreen。カーソルの移動だけ・クリップボード・待ち・読み取りは除く）は、設定
+	//     audit.thumbnails_enabled が有効なら操作の直後に非同期でサムネイルを撮り、撮影のあとに同じ行へ付けて記録する
+	//     （FR-AU02。Do は撮影を待たず、撮影の失敗は結果を変えない。モニターは操作のもの、無指定・Web 入力はプライマリ。
+	//     Web 入力は全体で 1 秒に 1 枚まで。control_thumb.go）
 	//
-	// Judge（4 の後。agent のみ）は M4 で足す。Wait はリース不要（KillSwitch の後に待つだけ）。
+	// Web UI（保持者種別 web。WebSocket の input.*）の入力は domain.PointerMove・MouseButton・Wheel・KeyEvent と、
+	// KeyPress・TypeText・ClipboardRead・ClipboardWrite で渡す。PointerMove・MouseButton・Wheel の座標は縮小座標ではなくストリームの座標
+	// （Monitor の物理ピクセル。3 で仮想デスクトップの物理座標へ変換し、モニターの外は ErrInvalidCoordinates）。
+	// web は暗黙にリースを取らない（未保持は ErrLeaseRequired）。PointerMove は監査しない（連続するカーソル移動で監査ログを埋めない）。
+	//
+	// ActorAgent は 4 の後に Judge（FR-G12）を通る（ControlConfig.Judge。無ければ RequireApproval 扱い）: Deny は domain.ErrJudgeDenied、
+	// RequireApproval は Approval.Request（ApprovalKindJudgeAction。クライアントの承認モードでは省略できない。ホストの拒否は
+	// ErrApprovalDenied、失効は ErrApprovalTimeout）。許可のあとはリース・InputGuard・対象ウィンドウを確かめ直す。mcp・web は Judge を通らない。
+	// Judge が見るウィンドウは、座標のある操作はその座標のウィンドウ（Drag は始点と終点）、FocusWindow・GetUITree は id のウィンドウ、
+	// キー・文字入力・クリップボードは前面のウィンドウ。agent のアクションは 1 件ごとに agent.step（kind = agent）で監査し
+	// （WithAgentStep の step_no・route。type の本文は記録しない）、Judge が allow 以外なら agent.judge も記録する（control_judge.go）。
+	// Wait はリース不要（KillSwitch の後に待つだけ）。
 	Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
 	// Screenshot は閲覧系（リース不要）。monitor は Index か domain.MonitorPrimary。format は "png"（既定）か "jpeg"。
 	Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
@@ -44,15 +61,27 @@ type Control interface {
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
 	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
 	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
+	//  4b. 起動の「試行」の行を SyncAuditRecorder.RecordSync で同期に書く（書けなければ ErrAuditUnavailable。起動しない。fail-closed。#37・NFR-S20）
+	//  4c. KillSwitch の再確認（同期書き込みの待ちの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
-	//  6. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
+	//  5b. 起動後のウィンドウの観測（起動の前後のウィンドウの一覧を比べる。LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
+	//  6. 結果の行（tool.launch_app。非同期。書けなくても起動は取り消さない。パス・引数は記録しない。FR-AU06）
 	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
+	// ReleaseInput は押下中のキー・ボタンをすべて離す（InputInjector.ReleaseAll の唯一の入口）。キルスイッチのクローザー `input` と、
+	// エージェントのタスクの終了処理（FR-G10）が呼ぶ。入力の直列化のロックは取らないので、実行中の入力があっても解放できる。
+	ReleaseInput() error
 }
 
 // LaunchResult は Launch の結果。
 type LaunchResult struct {
 	AppID string
 	PID   uint32
+	// Window は起動後に前面にあったウィンドウ（プロセスの作成後、pid のウィンドウが前面に出るまで最大およそ 3 秒待って観測する）。
+	// 前面のウィンドウを確かめられなかったときは nil。pid のウィンドウとは限らない（Window.PID が PID と違うことがある）。
+	Window *domain.WindowInfo
+	// ReusedExistingWindow は、pid のトップレベルウィンドウが見つからず、起動の前に無かった新しいウィンドウも開かないまま、
+	// 別のプロセスのウィンドウが前面にあるとき true（タブ式の単一ウィンドウのアプリなどで、既存のウィンドウが前に出ただけの可能性がある）。Window が nil のときは false。
+	ReusedExistingWindow bool
 }
 
 // Result は Do の結果。入力系は空。
@@ -69,6 +98,9 @@ type Shot struct {
 	Physical domain.Size // 元のサイズ
 	Scaled   domain.Size // 縮小後のサイズ（Data の画像の大きさ）
 	Scale    float64
+	// OwnWindows は撮影時点で、このモニター上にある puppet-remo のウィンドウの範囲（縮小座標）。
+	// ウィンドウは画像に写らない（NFR-S06）ため、入力を拒否される場所の手がかりとして返す。取れなかったときは nil。
+	OwnWindows []domain.OwnRegion
 }
 
 // Cursor は縮小座標のカーソル位置。
@@ -99,8 +131,16 @@ type ControlConfig struct {
 	Kill   ControlKillSwitch
 
 	Settings repository.Settings // nil なら screenshot.max_dimension は既定値
-	Audit    AuditRecorder       // nil なら記録しない
-	Clock    domain.Clock
+	// Audit は監査の記録先。nil なら記録しない（テスト用。本番の結線は必ず渡す）。launch_app の起動の前の「試行」の行は
+	// RecordSync で書く（書けなければ起動しない。NFR-S20）。ThumbnailsEnabled・RecordWithThumb も持つ（*Audit）なら、画面を変える操作の
+	// 成功時にサムネイルを撮って付ける（FR-AU02。control_thumb.go）。持たなければ撮らない。
+	Audit  SyncAuditRecorder
+	Clock  domain.Clock
+	Logger *slog.Logger // nil なら slog.Default()。サムネイルの撮影の失敗などの出力先
+	// Judge と Approval は ActorAgent のアクションだけが使う（mcp・web だけなら nil でよい）。agent のアクションで Judge が nil なら
+	// RequireApproval 扱い、Approval が nil で承認が要るなら ErrApprovalDenied（fail-closed）。
+	Judge    Judge
+	Approval Approval
 	// Sleep は Wait の待ち。nil なら ctx のキャンセルで終わるタイマー。テストが差し替える。
 	Sleep func(ctx context.Context, d time.Duration) error
 }
@@ -132,7 +172,11 @@ type control struct {
 	kill      KillSwitchState
 	guard     InputGuard
 	settings  repository.Settings
-	audit     AuditRecorder
+	audit     SyncAuditRecorder
+	judge     Judge
+	approval  Approval
+	log       *slog.Logger
+	thumbs    *thumbShooter // Audit がサムネイルに対応しないときは nil
 	clock     domain.Clock
 	sleep     func(ctx context.Context, d time.Duration) error
 	// inputSem は入力の実行を直列化する（容量 1。lockInput）。
@@ -158,16 +202,27 @@ func NewControl(cfg ControlConfig) (Control, error) {
 		guard:     InputGuard{Windows: cfg.Windows},
 		settings:  cfg.Settings,
 		audit:     cfg.Audit,
+		judge:     cfg.Judge,
+		approval:  cfg.Approval,
+		log:       cfg.Logger,
 		clock:     cfg.Clock,
 		sleep:     cfg.Sleep,
 		inputSem:  make(chan struct{}, 1),
 	}
+	if c.log == nil {
+		c.log = slog.Default()
+	}
 	if c.sleep == nil {
 		c.sleep = sleepContext
 	}
-	cfg.Kill.RegisterCloser("input", func(context.Context) error { return c.input.ReleaseAll() })
+	if ta, ok := cfg.Audit.(thumbAuditor); ok {
+		c.thumbs = &thumbShooter{audit: ta, capture: cfg.Capturer, clock: cfg.Clock, log: c.log, sem: make(chan struct{}, thumbWorkers)}
+	}
+	cfg.Kill.RegisterCloser("input", func(context.Context) error { return c.ReleaseInput() })
 	return c, nil
 }
+
+func (c *control) ReleaseInput() error { return c.input.ReleaseAll() }
 
 func sleepContext(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
@@ -182,38 +237,69 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 
 func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error) {
 	start := c.clock.Now()
-	res, leaseID, err := c.do(ctx, who, op)
-	if c.audit != nil {
+	var tr judgeTrace
+	res, leaseID, executed, err := c.do(ctx, who, op, &tr)
+	if _, isMove := op.(domain.PointerMove); c.audit != nil && !isMove {
 		tool, args := describeOp(op, res)
-		c.audit.Record(ctx, ToolAuditEntry(who, tool, args, leaseID, err, c.clock.Now().Sub(start)))
+		took := c.clock.Now().Sub(start)
+		var entry repository.AuditEntry
+		if who.Kind == domain.ActorAgent {
+			entry = agentStepEntry(ctx, who, tool, args, leaseID, err, tr, took.Milliseconds())
+		} else {
+			c.addRecordedText(ctx, op, res, args)
+			entry = ToolAuditEntry(who, tool, args, leaseID, err, took)
+		}
+		var shot *thumbTarget
+		if err == nil && opChangesScreen(executed) {
+			t := thumbTargetOf(who, executed)
+			shot = &t
+		}
+		c.recordAudit(ctx, entry, shot)
 	}
 	return res, err
 }
 
-func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op) (Result, string, error) {
+// recordAudit は監査エントリを記録する。shot が非 nil（画面を変える操作が成功した）で、サムネイルに対応する構成なら、
+// 撮影を非同期に行い、エントリはそのあとに記録する（呼び出しは待たない）。
+func (c *control) recordAudit(ctx context.Context, e repository.AuditEntry, shot *thumbTarget) {
+	if c.thumbs == nil {
+		c.audit.Record(ctx, e)
+		return
+	}
+	c.thumbs.record(ctx, e, shot)
+}
+
+// do は検査と実行を行い、結果・保持者のリース ID・実行した計画の op（物理座標へ変換済み。実行まで進まなければ nil）を返す。
+// tr には agent の Judge の経過を入れる（監査の行用）。
+func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *judgeTrace) (Result, string, domain.Op, error) {
 	if c.kill.Active() {
-		return Result{}, "", domain.ErrKillSwitchActive
+		return Result{}, "", nil, domain.ErrKillSwitchActive
 	}
 	if w, ok := op.(domain.Wait); ok {
-		return Result{}, "", c.wait(ctx, w)
+		return Result{}, "", nil, c.wait(ctx, w)
 	}
 	leaseID, err := c.ensureLease(ctx, who)
 	if err != nil {
-		return Result{}, "", err
+		return Result{}, "", nil, err
 	}
 	p, err := c.plan(ctx, op)
 	if err != nil {
-		return Result{}, leaseID, err
+		return Result{}, leaseID, nil, err
 	}
 	if err := c.guard.Check(ctx, p.op, p.monitors); err != nil {
-		return Result{}, leaseID, err
+		return Result{}, leaseID, nil, c.withOwnWindows(ctx, err)
+	}
+	if who.Kind == domain.ActorAgent {
+		if err := c.judgeAgent(ctx, who, p, tr); err != nil {
+			return Result{}, leaseID, nil, err
+		}
 	}
 	// リースの検査から実行までの間に発動したキルスイッチを取りこぼさない（Trigger は状態を先に立てる）。
 	if c.kill.Active() {
-		return Result{}, leaseID, domain.ErrKillSwitchActive
+		return Result{}, leaseID, nil, domain.ErrKillSwitchActive
 	}
 	res, err := c.execute(ctx, p)
-	return res, leaseID, err
+	return res, leaseID, p.op, err
 }
 
 // ensureLease は who のリースを確かめ、保持者のリース ID を返す。

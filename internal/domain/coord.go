@@ -112,6 +112,20 @@ func (m Monitor) PhysicalToScaled(p Point, maxDim int) Point {
 	return out
 }
 
+// ScaledRect は仮想デスクトップ上の物理座標の矩形 r を、このモニターの範囲に切り詰めたうえで縮小座標の矩形にする。
+// モニターと重ならない（最小化・別のモニター・空の矩形）ときは false。
+// 右下は排他的な端なので、最後のピクセルを縮小してから 1 を足す（返す矩形は縮小スクリーンショットの内側に収まる）。
+func (m Monitor) ScaledRect(r Rect, maxDim int) (Rect, bool) {
+	x0, y0 := max(r.X, m.Origin.X), max(r.Y, m.Origin.Y)
+	x1, y1 := min(r.X+r.W, m.Origin.X+m.Size.W), min(r.Y+r.H, m.Origin.Y+m.Size.H)
+	if r.Empty() || x1 <= x0 || y1 <= y0 {
+		return Rect{}, false
+	}
+	tl := m.PhysicalToScaled(Point{X: x0, Y: y0}, maxDim)
+	br := m.PhysicalToScaled(Point{X: x1 - 1, Y: y1 - 1}, maxDim)
+	return Rect{X: tl.X, Y: tl.Y, W: br.X - tl.X + 1, H: br.Y - tl.Y + 1}, true
+}
+
 // MonitorAt は物理座標 p を含むモニターを返す。どれにも含まれなければ false。
 func MonitorAt(monitors []Monitor, p Point) (Monitor, bool) {
 	for _, m := range monitors {
@@ -130,4 +144,17 @@ func divRound(a, b int) int {
 		q--
 	}
 	return q
+}
+
+// StreamToPhysical はストリームの座標 p（このモニターの物理ピクセル。モニターの左上が原点。API 仕様 §5.3）を、
+// 仮想デスクトップ上の物理座標へ変換する。モニターの外は ErrInvalidCoordinates。
+func (m Monitor) StreamToPhysical(p Point) (Point, error) {
+	if p.X < 0 || p.X >= m.Size.W || p.Y < 0 || p.Y >= m.Size.H {
+		return Point{}, ErrInvalidCoordinates.
+			WithMsg(fmt.Sprintf("(%d, %d) is outside the %dx%d stream of monitor %d", p.X, p.Y, m.Size.W, m.Size.H, m.Index)).
+			WithDetail("monitor", m.Index).
+			WithDetail("width", m.Size.W).
+			WithDetail("height", m.Size.H)
+	}
+	return Point{X: m.Origin.X + p.X, Y: m.Origin.Y + p.Y}, nil
 }

@@ -2,6 +2,7 @@ package gui_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,8 +32,10 @@ func TestDashboardShowsServerState(t *testing.T) {
 		`id="server-status"`, `id="sessions"`, `id="lease"`, `id="header-killswitch"`, `name="rev_killswitch"`,
 	)
 	lacks(t, res, "sse-connect", "sse-swap", "sse:", "sse.min.js", "/events")
-	// M1 のダッシュボードには強制剥奪も実行中タスクも無い。
-	lacks(t, res, "/lease/revoke", "強制剥奪", "タスク", "/tasks")
+	// 保持者（MCP）がいるので強制剥奪のボタンが出る（FR-H02）。実行中のタスクが無ければ、実行中タスクのパネルの中身は出ない
+	// （差し込み先 #running-tasks と版の隠し入力だけ。サイドバーの「タスク」は常にある）。
+	contains(t, res, `hx-post="/lease/revoke"`, "強制剥奪", `href="/tasks"`, `id="running-tasks"`, `name="rev_tasks"`)
+	lacks(t, res, "data-running-task", "実行中のエージェントタスク", "/cancel")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" && got != "" {
 		t.Errorf("Cache-Control = %q", got)
 	}
@@ -77,6 +80,28 @@ func TestDashboardKillSwitchIsStateDriven(t *testing.T) {
 		contains(t, res, `hx-get="/killswitch/release/confirm"`, "キルスイッチを解除", `data-killswitch="active"`, "キルスイッチ発動中", "ホットキー")
 		lacks(t, res, "/killswitch/trigger", "キルスイッチを発動", `data-killswitch="inactive"`)
 	})
+}
+
+// 狭い幅（約 360px）でサイドバーの固定幅がページを横に広げない（#51）。見た目は Go のテストで測れないので、
+// 固定幅が md 以上だけに掛かっていること（md 未満は w-full で本文の上に積む）を、クラスで押さえる。
+func TestSidebarIsFixedWidthOnlyFromMdUp(t *testing.T) {
+	res := newRig(t).get("/")
+	start := strings.Index(res.Body, `<nav id="sidebar-nav"`)
+	if start < 0 {
+		t.Fatal("no sidebar nav")
+	}
+	nav := res.Body[start : start+strings.Index(res.Body[start:], ">")]
+	for _, want := range []string{"w-full", "md:w-56", "md:block"} {
+		if !strings.Contains(nav, want) {
+			t.Errorf("sidebar nav lacks %q: %s", want, nav)
+		}
+	}
+	for _, tok := range strings.Fields(strings.SplitN(strings.SplitN(nav, `class="`, 2)[1], `"`, 2)[0]) {
+		if tok == "w-56" {
+			t.Errorf("sidebar nav has the bare fixed width w-56 (it must be md:w-56): %s", nav)
+		}
+	}
+	contains(t, res, "flex-col md:flex-row", "p-4 md:p-6")
 }
 
 func TestDashboardHTMXRequestsReturnFragments(t *testing.T) {
@@ -162,13 +187,13 @@ func TestKillSwitchErrors(t *testing.T) {
 
 func TestUnknownRoutes(t *testing.T) {
 	r := newRig(t)
-	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/audit", "/tasks", "/agent", "/approvals/x"} {
+	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/tasks/t1/cancel"} {
 		res := r.get(target)
 		status(t, res, http.StatusNotFound)
 		contains(t, res, "<html", `data-error-code="not_found"`, "ページが見つかりません")
 	}
-	// M1 に無い操作の経路は作らない（メソッド違いでも 404）。
-	for _, route := range [][2]string{{http.MethodPost, "/lease/revoke"}, {http.MethodPost, "/tasks/t1/cancel"}, {http.MethodPut, "/agent"}} {
+	// 無い操作の経路は作らない（メソッド違いでも 404。/lease/revoke と /tasks/{id}/cancel は POST だけ、/tasks は GET だけ、/agent は GET と PUT だけ）。
+	for _, route := range [][2]string{{http.MethodPut, "/lease/revoke"}, {http.MethodPut, "/tasks/t1/cancel"}, {http.MethodPost, "/tasks"}, {http.MethodDelete, "/tasks/t1"}, {http.MethodPost, "/agent"}, {http.MethodGet, "/agent/api-key"}, {http.MethodPost, "/agent/fastpath"}} {
 		res := r.do(route[0], route[1], nil, hx...)
 		status(t, res, http.StatusNotFound)
 	}
@@ -177,4 +202,97 @@ func TestUnknownRoutes(t *testing.T) {
 	status(t, res, http.StatusNotFound)
 	lacks(t, res, "<html")
 	contains(t, res, `data-error-code="not_found"`)
+}
+
+// 状態駆動レンダリング: 強制剥奪のボタンは、他者（mcp・web・agent）が保持中のときだけ HTML に出る（FR-H02、FR-L06、FR-L08）。
+func TestDashboardRevokeButtonIsStateDriven(t *testing.T) {
+	holder := func(kind domain.ActorKind) func(*guitest.Fakes) {
+		return func(f *guitest.Fakes) {
+			f.Leases.Held = true
+			f.Leases.H = service.Holder{LeaseID: "l1", Actor: domain.Actor{Kind: kind, ClientID: "c1", Label: "laptop"}, Since: f.Clock.T, IdleRemaining: time.Minute}
+		}
+	}
+	tests := []struct {
+		name   string
+		mutate func(*guitest.Fakes)
+		want   []string
+		not    []string
+	}{
+		{"idle", func(*guitest.Fakes) {}, []string{"空き"}, []string{"/lease/revoke", "強制剥奪"}},
+		{"held by mcp", holder(domain.ActorMCP), []string{`hx-post="/lease/revoke"`, "強制剥奪", "MCP"}, []string{"タスクが中断されます"}},
+		{"held by web", holder(domain.ActorWeb), []string{`hx-post="/lease/revoke"`, "強制剥奪", "Web", "laptop"}, []string{"タスクが中断されます"}},
+		// agent の剥奪はそのタスクの中断を伴う（FR-L06・L08）ので、ボタンに加えてその旨を添える。
+		{"held by agent", holder(domain.ActorAgent), []string{`hx-post="/lease/revoke"`, "強制剥奪", "エージェント", "保持中", "タスクが中断されます"}, nil},
+		// 保持者になれない種別（host・system）は、仮に保持者として返っても剥奪のボタンを出さない（種別から決める）。
+		{"held by host", holder(domain.ActorHost), []string{"保持中", "ホスト"}, []string{"/lease/revoke", "強制剥奪", "タスクが中断されます"}},
+		{"held by system", holder(domain.ActorSystem), []string{"保持中"}, []string{"/lease/revoke", "強制剥奪"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := newRig(t, tt.mutate).get("/")
+			status(t, res, http.StatusOK)
+			contains(t, res, tt.want...)
+			lacks(t, res, tt.not...)
+		})
+	}
+}
+
+func TestRevokeLease(t *testing.T) {
+	held := func(f *guitest.Fakes) {
+		f.Leases.Held = true
+		f.Leases.H = service.Holder{LeaseID: "l1", Actor: domain.Actor{Kind: domain.ActorWeb, ClientID: "c1", Label: "laptop"}, Since: f.Clock.T, IdleRemaining: time.Minute}
+	}
+	t.Run("revokes as the host and returns the lease body", func(t *testing.T) {
+		r := newRig(t, held)
+		res := r.post("/lease/revoke", nil, hx...)
+		status(t, res, http.StatusOK)
+		must(t, r.f.Leases.RevokeCalls == 1, "Revoke calls = %d, want 1", r.f.Leases.RevokeCalls)
+		must(t, r.f.Leases.LastBy == service.HostActor && r.f.Leases.LastBy.Kind == domain.ActorHost, "Revoke by = %+v, want the host actor", r.f.Leases.LastBy)
+		// 保持者は空きになり、ボタンは消える。完了のトーストが OOB で添えられる。
+		contains(t, res, "空き", "操作権を剥奪しました。", `hx-swap-oob="beforeend:#toast-root"`)
+		lacks(t, res, "/lease/revoke", "強制剥奪", "保持中", "<html", "laptop")
+	})
+	t.Run("idle is an idempotent 200 without a toast", func(t *testing.T) {
+		r := newRig(t)
+		res := r.post("/lease/revoke", nil, hx...)
+		status(t, res, http.StatusOK)
+		must(t, r.f.Leases.RevokeCalls == 1, "Revoke calls = %d, want 1", r.f.Leases.RevokeCalls)
+		contains(t, res, "空き")
+		lacks(t, res, "/lease/revoke", "操作権を剥奪しました。", "toast-root")
+	})
+	t.Run("a service error is a fragment error and keeps the holder", func(t *testing.T) {
+		r := newRig(t, held, func(f *guitest.Fakes) { f.Leases.RevokeErr = errCleanup })
+		res := r.post("/lease/revoke", nil, hx...)
+		status(t, res, http.StatusInternalServerError)
+		contains(t, res, `data-error-code="internal"`)
+		lacks(t, res, "cleanup boom")
+		if _, ok := r.f.Leases.Holder(); !ok {
+			t.Error("the holder was removed although Revoke failed")
+		}
+	})
+}
+
+// 承認待ち（pending_approval。FR-L07）: 「承認待ち: <名前>（種別）」を出す。保持中ではないので強制剥奪のボタンは出さない
+// （docs に承認待ちの剥奪の記述が無く、held のときだけ出す現行の動きを変えない）。
+func TestDashboardShowsPendingApproval(t *testing.T) {
+	pending := func(f *guitest.Fakes) {
+		f.Leases.HasPending = true
+		f.Leases.PendingLease = service.PendingLease{LeaseID: "l1", Actor: domain.Actor{Kind: domain.ActorWeb, ClientID: "c1", Label: "alice-laptop"}, Since: f.Clock.T}
+	}
+	res := newRig(t, pending).get("/")
+	status(t, res, http.StatusOK)
+	contains(t, res, "承認待ち", "alice-laptop", "Web", "ホストの承認を待っています", "data-lease-pending")
+	lacks(t, res, "/lease/revoke", "強制剥奪", "保持中", "アイドル解放まで")
+
+	// ラベルが空ならクライアント ID を出す。
+	res = newRig(t, pending, func(f *guitest.Fakes) { f.Leases.PendingLease.Actor.Label = "" }).get("/")
+	contains(t, res, "承認待ち", "c1")
+
+	// 保持者がいれば、承認待ちより保持を優先して出す（同時にはならない）。
+	res = newRig(t, pending, func(f *guitest.Fakes) {
+		f.Leases.Held = true
+		f.Leases.H = service.Holder{LeaseID: "l2", Actor: domain.Actor{Kind: domain.ActorMCP, ClientID: "c2", Label: "claude"}, Since: f.Clock.T, IdleRemaining: time.Minute}
+	}).get("/")
+	contains(t, res, "保持中", "claude")
+	lacks(t, res, "承認待ち")
 }

@@ -1,0 +1,79 @@
+package organisms
+
+import (
+	"strconv"
+
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+// ApprovalRemaining は承認ダイアログの残り時間。HTMX が 1 秒ごとに GET /approvals/{id} を呼び、同じ id の要素だけを
+// 差し替える（hx-select）。ボタンは差し替えないので、押している最中に消えない。0 になるとアプリがウィンドウを閉じる。
+templ ApprovalRemaining(v view.ApprovalRemaining) {
+	<p
+		id="approval-remaining"
+		class="text-sm text-slate-600"
+		role="timer"
+		data-approval-remaining={ strconv.Itoa(v.Seconds) }
+		hx-get={ v.RefreshURL }
+		hx-trigger="every 1s"
+		hx-target="this"
+		hx-select="#approval-remaining"
+		hx-swap="outerHTML"
+	>
+		残り <span class="font-semibold tabular-nums text-slate-900">{ strconv.Itoa(v.Seconds) }</span> 秒で拒否されます
+	</p>
+}
+
+// ApprovalDialog は承認ダイアログの中身（kind = lease・safety_check・judge_action。FR-H05）。見出し・クライアント名・種別・要求の内容・
+// 残り時間・許可 / 拒否を出す。safety_check・judge_action は、サービスが秘密・入力した文字列の本文・パスを除いて渡した Detail と、
+// 結果の説明（Note）も出す（Detail は templ が HTML エスケープする。lease は Detail・Note が空で何も足さない）。
+// 二重送信は hx-disabled-elt で両方のボタンを無効にして防ぐ。
+templ ApprovalDialog(v view.ApprovalDialog) {
+	<section id="approval-dialog" class="space-y-4 rounded-lg border border-amber-300 bg-white p-5 shadow-sm" data-approval={ v.ID } data-approval-type={ v.Kind }>
+		<h1 class="text-base font-semibold text-slate-900">{ v.Heading }</h1>
+		<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+			<dt class="text-slate-500">クライアント</dt>
+			<dd class="font-medium text-slate-900" data-approval-client>{ v.ClientLabel }</dd>
+			<dt class="text-slate-500">種別</dt>
+			<dd data-approval-kind>@atoms.Badge(atoms.BadgeNeutral, v.KindLabel)</dd>
+			<dt class="text-slate-500">要求の内容</dt>
+			<dd data-approval-summary>{ v.Summary }</dd>
+		</dl>
+		if v.Detail != "" {
+			<p class="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-800" data-approval-detail>{ v.Detail }</p>
+		}
+		if v.Note != "" {
+			<p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" data-approval-note>{ v.Note }</p>
+		}
+		@ApprovalRemaining(v.Remaining)
+		<div id="approval-actions" class="flex gap-2">
+			@atoms.Button(atoms.ButtonProps{Label: "許可", Variant: atoms.ButtonPrimary, Attrs: approvalButtonAttrs(v.AllowURL)})
+			@atoms.Button(atoms.ButtonProps{Label: "拒否", Variant: atoms.ButtonSecondary, Attrs: approvalButtonAttrs(v.DenyURL)})
+		</div>
+	</section>
+}
+
+func approvalButtonAttrs(url string) atoms.Attrs {
+	return atoms.Attrs{
+		"hx-post": url, "hx-target": "#approval-dialog", "hx-swap": "outerHTML", "hx-disabled-elt": "#approval-actions button",
+	}
+}
+
+// ApprovalDone は許可・拒否を受け付けたあとの表示。応答の HX-Trigger: closeWindow でウィンドウが閉じる。
+templ ApprovalDone(v view.ApprovalDone) {
+	<section id="approval-dialog" class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" data-approval-done>
+		if v.Allowed {
+			<p class="text-sm text-slate-800">許可しました。</p>
+		} else {
+			<p class="text-sm text-slate-800">拒否しました。</p>
+		}
+	</section>
+}
+
+// ApprovalGone は承認要求がすでに終わっている（失効・解決済み）ときの表示。
+templ ApprovalGone(v view.ApprovalGone) {
+	<section id="approval-dialog" class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" data-approval-gone data-error-code={ v.Code }>
+		<p class="text-sm text-slate-800">{ v.Message }</p>
+	</section>
+}

@@ -22,22 +22,42 @@ const (
 	ConnPending  = repository.ConnPending
 	ConnApproved = repository.ConnApproved
 	ConnDenied   = repository.ConnDenied
+	ConnExpired  = repository.ConnExpired
 )
 
+const (
+	// RequestHistoryPageSize は接続要求の履歴 1 ページの件数（固定）。
+	RequestHistoryPageSize = 20
+	// maxRequestHistoryPage は履歴のページ番号の上限（OFFSET の溢れを避ける。保持期間内の最大件数より大きい）。
+	maxRequestHistoryPage = 10000
+)
+
+// RequestHistoryPage は接続要求の履歴の 1 ページ。
+type RequestHistoryPage struct {
+	Items   []ConnRequest // 届いた日時（first_seen_at）の新しい順
+	Page    int           // 1 始まり
+	HasPrev bool
+	HasNext bool
+}
+
 // ApproveInput は接続要求を許可するときの入力（FR-H03）。
-// M1 の承認モードは常に always（DB の既定値）で、M3 まで参照しない。
 type ApproveInput struct {
 	DisplayName  string // 空なら要求の端末名
 	WebEnabled   bool
 	MCPEnabled   bool
 	AgentEnabled bool
+	// ApprovalMode は clients.approval_mode に保存するリース取得時の承認モード（FR-H03、FR-L07）。空なら always（既定）。
+	// 定義外の値は ErrInvalidArgument。
+	ApprovalMode domain.ApprovalMode
 }
 
-// ClientUpdate はクライアントの部分更新（FR-H04）。nil の項目は変えない。承認モードは M3 から。
+// ClientUpdate はクライアントの部分更新（FR-H04）。nil の項目は変えない。
 type ClientUpdate struct {
 	WebEnabled   *bool
 	MCPEnabled   *bool
 	AgentEnabled *bool
+	// ApprovalMode を変えると clients.approved_at を NULL に戻す（repository.Clients.Update の規則）。定義外の値は ErrInvalidArgument。
+	ApprovalMode *domain.ApprovalMode
 }
 
 // SessionCloser は、クライアントの無効化・削除・トークン失効のときに、該当するセッションを切断する窓口
@@ -49,6 +69,12 @@ type SessionCloser interface {
 	CloseToken(tokenID string)
 }
 
+// ClientTaskCanceller は、クライアントの削除・無効化で、そのクライアントが依頼した実行中のタスクを中断する窓口（*AgentService が満たす。
+// FR-A09・G10）。reason は監査用（agent.task_end の detail.reason）。
+type ClientTaskCanceller interface {
+	CancelClient(clientID, reason string)
+}
+
 // HostAdmin はホスト所有者が GUI で行う許可リストの管理（FR-H03、FR-H04）。
 // すべて操作主体 host として監査ログに記録する。トークンの平文は監査・ログに出さない。
 //
@@ -56,6 +82,10 @@ type SessionCloser interface {
 // domain.CodeConflict、入力の不備は domain.CodeInvalidArgument で返す。
 type HostAdmin interface {
 	PendingRequests(ctx context.Context) ([]ConnRequest, error)
+	// RequestHistory は接続要求の履歴（許可・拒否・失効・未処理のすべて）を、届いた日時（first_seen_at）の新しい順に
+	// 1 ページ（RequestHistoryPageSize 件）返す。page は 1 始まりで、1 未満は 1、maxRequestHistoryPage 超はその値に丸める。
+	// 1 行は 1 デバイス 1 件の集約（FR-A06）の単位で、許可・拒否・失効までの同じデバイスの試行を 1 件にまとめている。
+	RequestHistory(ctx context.Context, page int) (RequestHistoryPage, error)
 	// ApproveRequest は要求を許可してクライアントを登録する。同じデバイスの登録済みクライアント
 	// （ログイン名の変更など）があれば、そのトークン・セッション・リースごと置き換える。
 	ApproveRequest(ctx context.Context, requestID string, in ApproveInput) (domain.Client, error)
@@ -64,15 +94,21 @@ type HostAdmin interface {
 
 	Clients(ctx context.Context) ([]domain.Client, error)
 	Client(ctx context.Context, id string) (domain.Client, error)
-	// UpdateClient は有効化の切り替えを保存する。無効にした機能のセッションは切断し、リースは解放する。
+	// UpdateClient は有効化の切り替えと承認モードを保存する。無効にした機能のセッションは切断し、リースは解放する。
+	// 承認モードを変えたときは approved_at を NULL に戻す。監査（client.update）の detail に承認モードの変更前後（approval_mode_before・
+	// approval_mode）を入れる。
 	UpdateClient(ctx context.Context, id string, u ClientUpdate) (domain.Client, error)
+	// ResetApproval は first_time のクライアントの承認済み（approved_at）を取り消す（FR-H04、FR-S05）。次のリース取得から再び承認が要る。
+	// first_time でない、または承認済みでなければ conflict。更新後のクライアントを返す。
+	// 監査は approval.reset（kind = lease、actor_type = host。detail に client_id と取り消した approved_at）。拒否・タイムアウト後のクールダウンも解く。
+	ResetApproval(ctx context.Context, id string) (domain.Client, error)
 	// DeleteClient はクライアントを許可リストから外す（トークンは CASCADE で消える）。セッションを切断し、リースを解放する。
 	DeleteClient(ctx context.Context, id string) error
 
 	Tokens(ctx context.Context, clientID string) ([]TokenRecord, error)
 	// IssueToken はトークンを発行して平文を返す（平文を得られるのはこのときだけ）。ttl の意味は Authz.IssueToken と同じ。
 	IssueToken(ctx context.Context, clientID, label string, ttl *time.Duration) (plaintext string, err error)
-	// RevokeToken は clientID のトークン tokenID を失効し、そのセッションを切断する。
+	// RevokeToken は clientID のトークン tokenID を失効し、そのセッションを切断して、そのクライアントの実行中のタスクを中断する（FR-G10）。
 	RevokeToken(ctx context.Context, clientID, tokenID string) error
 }
 
@@ -84,17 +120,24 @@ type HostAdminConfig struct {
 	Authz        Authz
 	Leases       LeaseManager  // nil なら無効化・削除でリースを解放しない
 	Sessions     SessionCloser // nil なら切断しない
-	Audit        AuditRecorder // nil なら記録しない
-	Bus          *Bus          // nil なら通知しない
-	Clock        domain.Clock
-	IDs          domain.IDGen
-	Logger       *slog.Logger // nil なら slog.Default()
+	// Tasks は削除・Web / MCP / エージェントの無効化で、そのクライアントのタスクを中断する先（FR-A09・G10）。nil なら中断しない。
+	Tasks  ClientTaskCanceller
+	Audit  AuditRecorder // nil なら記録しない
+	Bus    *Bus          // nil なら通知しない
+	Clock  domain.Clock
+	IDs    domain.IDGen
+	Logger *slog.Logger // nil なら slog.Default()
 }
 
 type hostAdmin struct {
 	cfg HostAdminConfig
 	// approveMu は ApproveRequest を直列にする（既存クライアントの置き換えと要求の確定を並行させない）。
 	approveMu sync.Mutex
+}
+
+// invalidApprovalMode は定義外の承認モードを ErrInvalidArgument にする。
+func invalidApprovalMode(m domain.ApprovalMode) error {
+	return domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("approval_mode %q is not one of always, first_time, auto", m))
 }
 
 // NewHostAdmin は HostAdmin を作る。
@@ -132,15 +175,35 @@ func (h *hostAdmin) PendingRequests(ctx context.Context) ([]ConnRequest, error) 
 	return h.cfg.ConnRequests.ListPending(ctx)
 }
 
+func (h *hostAdmin) RequestHistory(ctx context.Context, page int) (RequestHistoryPage, error) {
+	page = min(max(page, 1), maxRequestHistoryPage)
+	// 次のページがあるかを知るために 1 件多く読む（全件の数え上げをしない）。
+	rows, err := h.cfg.ConnRequests.ListHistory(ctx, RequestHistoryPageSize+1, (page-1)*RequestHistoryPageSize)
+	if err != nil {
+		return RequestHistoryPage{}, err
+	}
+	out := RequestHistoryPage{Page: page, HasPrev: page > 1}
+	if len(rows) > RequestHistoryPageSize {
+		out.HasNext = true
+		rows = rows[:RequestHistoryPageSize]
+	}
+	out.Items = rows
+	return out, nil
+}
+
 func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in ApproveInput) (domain.Client, error) {
 	// 置き換えた古いクライアントの切断は approveMu の外で行う。CloseClient は進行中のツール呼び出し（最長でツールの
 	// タイムアウト）を待つので、ロックを持ったままだと他の許可や GUI の操作が止まる。defer は後入れ先出しなので、
 	// Unlock のあとに走る。置き換えは済んでいる（トークンは消えている）ので、確定に失敗しても切断は行う。
+	if in.ApprovalMode != "" && !in.ApprovalMode.Valid() {
+		return domain.Client{}, invalidApprovalMode(in.ApprovalMode)
+	}
 	var replacedID string
 	defer func() {
 		if replacedID != "" {
 			h.disconnect(replacedID, domain.ActorMCP)
 			h.disconnect(replacedID, domain.ActorWeb)
+			h.cancelTasks(replacedID, "client_replaced")
 		}
 	}()
 	h.approveMu.Lock()
@@ -153,6 +216,10 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 	if name == "" {
 		name = req.DisplayName
 	}
+	mode := in.ApprovalMode
+	if mode == "" {
+		mode = domain.ApprovalAlways
+	}
 	c := domain.Client{
 		ID:           h.cfg.IDs.NewID(),
 		StableNodeID: req.StableNodeID,
@@ -161,7 +228,7 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 		WebEnabled:   in.WebEnabled,
 		MCPEnabled:   in.MCPEnabled,
 		AgentEnabled: in.AgentEnabled,
-		ApprovalMode: domain.ApprovalAlways,
+		ApprovalMode: mode,
 	}
 	// 同じデバイス（stable_node_id）の登録済みクライアントがあれば置き換える（ログイン名の変更後の再許可。FR-A06）。
 	// 古いクライアントのトークンは CASCADE で消え、セッションとリースは切断・解放するので、権限は引き継がない。
@@ -187,6 +254,8 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 		}
 		return domain.Client{}, mapRepoErr(err, "connection request")
 	}
+	h.cfg.Logger.Info("connection request approved", "request_id", requestID, "client_id", c.ID, "device", c.DisplayName,
+		"login_name", c.LoginName, "replaced", old.ID != "")
 	if old.ID != "" {
 		h.audit(ctx, "client", "client.replace", c, map[string]any{
 			"request_id": requestID, "stable_node_id": c.StableNodeID,
@@ -196,6 +265,7 @@ func (h *hostAdmin) ApproveRequest(ctx context.Context, requestID string, in App
 	h.audit(ctx, "auth", "auth.connreq_approve", c, map[string]any{
 		"request_id": requestID, "stable_node_id": c.StableNodeID, "login_name": c.LoginName,
 		"web_enabled": c.WebEnabled, "mcp_enabled": c.MCPEnabled, "agent_enabled": c.AgentEnabled,
+		"approval_mode": string(c.ApprovalMode),
 	})
 	return c, nil
 }
@@ -208,6 +278,7 @@ func (h *hostAdmin) DenyRequest(ctx context.Context, requestID string) error {
 	if err := h.cfg.ConnRequests.Decide(ctx, requestID, repository.ConnDenied, nil); err != nil {
 		return mapRepoErr(err, "connection request")
 	}
+	h.cfg.Logger.Info("connection request denied", "request_id", requestID, "device", req.DisplayName, "login_name", req.LoginName)
 	h.audit(ctx, "auth", "auth.connreq_deny", domain.Client{DisplayName: req.DisplayName}, map[string]any{
 		"request_id": requestID, "stable_node_id": req.StableNodeID, "login_name": req.LoginName,
 	})
@@ -238,12 +309,15 @@ func (h *hostAdmin) Client(ctx context.Context, id string) (domain.Client, error
 }
 
 func (h *hostAdmin) UpdateClient(ctx context.Context, id string, u ClientUpdate) (domain.Client, error) {
+	if u.ApprovalMode != nil && !u.ApprovalMode.Valid() {
+		return domain.Client{}, invalidApprovalMode(*u.ApprovalMode)
+	}
 	before, err := h.Client(ctx, id)
 	if err != nil {
 		return domain.Client{}, err
 	}
 	err = h.cfg.Clients.Update(ctx, id, repository.ClientPatch{
-		WebEnabled: u.WebEnabled, MCPEnabled: u.MCPEnabled, AgentEnabled: u.AgentEnabled,
+		WebEnabled: u.WebEnabled, MCPEnabled: u.MCPEnabled, AgentEnabled: u.AgentEnabled, ApprovalMode: u.ApprovalMode,
 	})
 	if err != nil {
 		return domain.Client{}, mapRepoErr(err, "client")
@@ -252,16 +326,52 @@ func (h *hostAdmin) UpdateClient(ctx context.Context, id string, u ClientUpdate)
 	if err != nil {
 		return domain.Client{}, err
 	}
+	if before.ApprovalMode != after.ApprovalMode {
+		h.clearApprovalCooldown(id)
+	}
 	if before.MCPEnabled && !after.MCPEnabled {
 		h.disconnect(id, domain.ActorMCP)
 	}
 	if before.WebEnabled && !after.WebEnabled {
 		h.disconnect(id, domain.ActorWeb)
 	}
+	// 無効化（Web・MCP・エージェント）したクライアントのタスクは中断する（FR-A09・G10。agent_enabled の変更でセッションは切らない）。
+	if before.MCPEnabled && !after.MCPEnabled || before.WebEnabled && !after.WebEnabled || before.AgentEnabled && !after.AgentEnabled {
+		h.cancelTasks(id, "client_disabled")
+	}
+	h.cfg.Logger.Info("client updated", "client_id", id, "device", after.DisplayName,
+		"web_enabled", after.WebEnabled, "mcp_enabled", after.MCPEnabled, "agent_enabled", after.AgentEnabled,
+		"approval_mode", string(after.ApprovalMode))
 	h.audit(ctx, "client", "client.update", after, map[string]any{
 		"web_enabled": after.WebEnabled, "mcp_enabled": after.MCPEnabled, "agent_enabled": after.AgentEnabled,
+		"approval_mode_before": string(before.ApprovalMode), "approval_mode": string(after.ApprovalMode),
 	})
 	return after, nil
+}
+
+func (h *hostAdmin) ResetApproval(ctx context.Context, id string) (domain.Client, error) {
+	c, err := h.Client(ctx, id)
+	if err != nil {
+		return domain.Client{}, err
+	}
+	if c.ApprovalMode != domain.ApprovalFirstTime || c.ApprovedAt == nil {
+		return domain.Client{}, domain.NewError(domain.CodeConflict, "the client has no first_time approval to reset", nil)
+	}
+	if err := h.cfg.Clients.ResetApproval(ctx, id); err != nil {
+		return domain.Client{}, mapRepoErr(err, "client")
+	}
+	h.cfg.Logger.Info("client approval reset", "client_id", id, "device", c.DisplayName)
+	// 承認のやり直しなので、拒否・タイムアウト後のクールダウンも解く（次の取得でまた承認を求める）。
+	h.clearApprovalCooldown(id)
+	h.audit(ctx, "lease", "approval.reset", c, map[string]any{"client_id": id, "approved_at": c.ApprovedAt.UnixMilli()})
+	return h.Client(ctx, id)
+}
+
+// clearApprovalCooldown は clientID の拒否・タイムアウト後のクールダウンを解く（Leases が無ければ何もしない）。
+func (h *hostAdmin) clearApprovalCooldown(clientID string) {
+	if h.cfg.Leases != nil {
+		h.cfg.Leases.ClearApprovalCooldown(clientID)
+	}
 }
 
 func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
@@ -274,11 +384,21 @@ func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
 	}
 	h.disconnect(id, domain.ActorMCP)
 	h.disconnect(id, domain.ActorWeb)
+	h.cancelTasks(id, "client_deleted")
+	h.clearApprovalCooldown(id)
+	h.cfg.Logger.Info("client deleted", "client_id", id, "device", c.DisplayName)
 	h.audit(ctx, "client", "client.delete", c, map[string]any{"stable_node_id": c.StableNodeID, "login_name": c.LoginName})
 	return nil
 }
 
-// disconnect は clientID の kind のセッションを切断し、そのリースを解放する。
+// cancelTasks は clientID のタスクを中断する（Tasks が無ければ何もしない）。
+func (h *hostAdmin) cancelTasks(clientID, reason string) {
+	if h.cfg.Tasks != nil {
+		h.cfg.Tasks.CancelClient(clientID, reason)
+	}
+}
+
+// disconnect は clientID の kind のセッションを切断し、そのリースを解放する（承認待ちの取得は取り下げる）。
 func (h *hostAdmin) disconnect(clientID string, kind domain.ActorKind) {
 	if h.cfg.Sessions != nil {
 		h.cfg.Sessions.CloseClient(clientID, kind)
@@ -286,6 +406,10 @@ func (h *hostAdmin) disconnect(clientID string, kind domain.ActorKind) {
 	if h.cfg.Leases != nil {
 		if holder, ok := h.cfg.Leases.Holder(); ok && holder.Actor.ClientID == clientID && holder.Actor.Kind == kind {
 			h.cfg.Leases.ReleaseSession(holder.Actor)
+		}
+		// 承認待ちの取得も取り下げて idle に戻す（承認待ちの Acquire は待ち続けない）。
+		if p, ok := h.cfg.Leases.Pending(); ok && p.Actor.ClientID == clientID && p.Actor.Kind == kind {
+			h.cfg.Leases.ReleaseSession(p.Actor)
 		}
 	}
 	if h.cfg.Bus != nil {
@@ -344,9 +468,16 @@ func (h *hostAdmin) RevokeToken(ctx context.Context, clientID, tokenID string) e
 	if h.cfg.Sessions != nil {
 		h.cfg.Sessions.CloseToken(tokenID)
 	}
+	// 漏れたトークンで始めたタスクを走らせ続けない（FR-G10）。タスクはトークンではなくクライアントに紐づくので、
+	// どのトークンで始めたかによらず、そのクライアントの実行中のタスクを中断する（削除・無効化と同じ cancelled）。
+	// 失効済みへの再実行（冪等。元の失効時刻を保つ）では中断しない: 別の有効なトークンで始めた無関係なタスクを巻き込まないため。
+	if tok.RevokedAt == nil {
+		h.cancelTasks(clientID, "token_revoked")
+	}
 	if h.cfg.Bus != nil {
 		h.cfg.Bus.Publish(Event{Topic: TopicSessions})
 	}
+	h.cfg.Logger.Info("token revoked", "client_id", clientID, "token_id", tokenID, "label", tok.Label)
 	h.audit(ctx, "token", "token.revoke", c, map[string]any{"token_id": tokenID, "label": tok.Label})
 	return nil
 }

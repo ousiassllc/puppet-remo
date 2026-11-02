@@ -133,6 +133,32 @@ func TestFakeInputTracksHeldKeys(t *testing.T) {
 	}
 }
 
+func TestFakeInputTracksHeldButtons(t *testing.T) {
+	in := platformtest.NewFakeInput()
+	ctx := context.Background()
+	for _, c := range []struct {
+		b domain.Button
+		a domain.ButtonAction
+	}{
+		{domain.ButtonLeft, domain.ButtonActionDown},
+		{domain.ButtonRight, domain.ButtonActionDown},
+		{domain.ButtonLeft, domain.ButtonActionUp},
+	} {
+		if err := in.Button(ctx, c.b, c.a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, want := in.HeldButtons(), []domain.Button{domain.ButtonRight}; !reflect.DeepEqual(got, want) {
+		t.Errorf("HeldButtons() = %v, want %v", got, want)
+	}
+	if err := in.ReleaseAll(); err != nil {
+		t.Fatal(err)
+	}
+	if got := in.HeldButtons(); len(got) != 0 {
+		t.Errorf("HeldButtons() after ReleaseAll = %v, want none", got)
+	}
+}
+
 func TestFakeWindowsAtAndFocus(t *testing.T) {
 	w := seededWindows()
 	ctx := context.Background()
@@ -158,6 +184,20 @@ func TestFakeWindowsAtAndFocus(t *testing.T) {
 	list, _ := w.List(ctx)
 	if list[0].ID != "300" || list[1].Foreground || list[2].Foreground {
 		t.Errorf("List() = %+v; want 300 first and the only foreground window", list)
+	}
+}
+
+// クリックスルーのオーバーレイは At に現れず、その下の実ウィンドウが返る。オーバーレイだけの場所は「ウィンドウなし」。
+func TestFakeWindowsAtSkipsOverlay(t *testing.T) {
+	w := platformtest.NewFakeWindows(
+		domain.WindowInfo{ID: "ov", Own: true, Overlay: true, Rect: domain.Rect{X: 0, Y: 0, W: 1000, H: 1000}},
+		domain.WindowInfo{ID: "dlg", Own: true, Rect: domain.Rect{X: 100, Y: 100, W: 200, H: 200}},
+	)
+	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.ID != "dlg" {
+		t.Errorf("At(150,150) = %q, %v, %v; want the dialog under the overlay", got.ID, ok, err)
+	}
+	if got, ok, err := w.At(domain.Point{X: 800, Y: 800}); err != nil || ok {
+		t.Errorf("At(800,800) = %q, %v, %v; want no window (overlay only)", got.ID, ok, err)
 	}
 }
 
@@ -339,6 +379,85 @@ func TestFakeAppLauncherContract(t *testing.T) {
 		ExePath: exe, Dir: dir, MissingPath: `C:\Apps\Gone\gone.exe`, MissingDir: `C:\Apps\Gone`,
 		DeniedPath: denied, ElevatedPath: elevated,
 	})
+}
+
+func TestFakeInstallerContract(t *testing.T) {
+	const installer = `C:\Temp\puppet-remo-update\installer.exe`
+	platformtest.RunInstallerContract(t, func(*testing.T) platform.Installer {
+		i := platformtest.NewFakeInstaller()
+		i.AddInstaller(installer)
+		return i
+	}, platformtest.InstallerFixture{Path: installer, MissingPath: `C:\Temp\puppet-remo-update\gone.exe`})
+}
+
+func TestFakeInstallerRecordsRunsAndInjectsErrors(t *testing.T) {
+	const path = `C:\Temp\a.exe`
+	i := platformtest.NewFakeInstaller()
+	i.AddInstaller(path)
+	ctx := context.Background()
+	var seen []string
+	i.OnRun(func(p string) { seen = append(seen, p) })
+
+	if err := i.Run(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	i.SetError("Run", boom)
+	if err := i.Run(ctx, path); !errors.Is(err, boom) {
+		t.Fatalf("Run error = %v, want the injected error", err)
+	}
+	if got := i.Started(); !reflect.DeepEqual(got, []string{path}) || !reflect.DeepEqual(seen, []string{path}) {
+		t.Errorf("Started = %v, OnRun saw %v; want only the first run", got, seen)
+	}
+	if got := i.CallsTo("Run"); len(got) != 2 {
+		t.Errorf("CallsTo(Run) = %+v, want 2 calls", got)
+	}
+}
+
+func TestFakeFolderOpenerContract(t *testing.T) {
+	const dir = `C:\Users\demo\AppData\Local\puppet-remo\logs`
+	platformtest.RunFolderOpenerContract(t, func(*testing.T) platform.FolderOpener {
+		f := platformtest.NewFakeFolderOpener()
+		f.AddFolder(dir)
+		return f
+	}, platformtest.FolderOpenerFixture{Dir: dir, MissingDir: `C:\Users\demo\gone`})
+}
+
+func TestFakeFolderOpenerRecordsOpensAndInjectsErrors(t *testing.T) {
+	const dir = `C:\logs`
+	f := platformtest.NewFakeFolderOpener()
+	f.AddFolder(dir)
+	ctx := context.Background()
+
+	if err := f.OpenFolder(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	f.SetError("OpenFolder", boom)
+	if err := f.OpenFolder(ctx, dir); !errors.Is(err, boom) {
+		t.Fatalf("OpenFolder error = %v, want the injected error", err)
+	}
+	if got := f.Opened(); !reflect.DeepEqual(got, []string{dir}) {
+		t.Errorf("Opened = %v, want only the first open", got)
+	}
+	if got := f.CallsTo("OpenFolder"); len(got) != 2 || !reflect.DeepEqual(got[0].Args, []any{dir}) {
+		t.Errorf("CallsTo(OpenFolder) = %+v, want 2 calls with the directory", got)
+	}
+}
+
+func TestFakeFolderOpenerOpensOnlyKnownFoldersUnlessAcceptAny(t *testing.T) {
+	ctx := context.Background()
+	f := platformtest.NewFakeFolderOpener()
+	if err := f.OpenFolder(ctx, `C:\elsewhere`); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("OpenFolder(unknown) = %v, want platform.ErrNotFound", err)
+	}
+	f.AcceptAny()
+	if err := f.OpenFolder(ctx, `C:\elsewhere`); err != nil {
+		t.Fatalf("OpenFolder(any) = %v", err)
+	}
+	if err := f.OpenFolder(ctx, "relative"); !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Errorf("OpenFolder(relative) = %v, want ErrInvalidArgument even with AcceptAny", err)
+	}
 }
 
 func TestFakeFilePickerContract(t *testing.T) {

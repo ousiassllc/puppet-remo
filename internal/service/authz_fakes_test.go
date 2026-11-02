@@ -124,6 +124,10 @@ func (*memClients) Update(context.Context, string, repository.ClientPatch) error
 }
 func (*memClients) Delete(context.Context, string) error               { return errors.New("unused") }
 func (*memClients) TouchSeen(context.Context, string, time.Time) error { return errors.New("unused") }
+func (*memClients) MarkApproved(context.Context, string, time.Time) error {
+	return errors.New("unused")
+}
+func (*memClients) ResetApproval(context.Context, string) error { return errors.New("unused") }
 
 // memTokens は repository.Tokens のメモリ実装。
 type memTokens struct {
@@ -267,6 +271,24 @@ func (m *memConnRequests) ListPending(context.Context) ([]repository.ConnRequest
 }
 
 func (m *memConnRequests) Expire(context.Context, time.Time) error { return errors.New("unused") }
+
+func (m *memConnRequests) ListHistory(context.Context, int, int) ([]repository.ConnRequest, error) {
+	return nil, errors.New("unused")
+}
+
+func (m *memConnRequests) LatestByNode(_ context.Context, node string) (repository.ConnRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return repository.ConnRequest{}, m.err
+	}
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		if m.rows[i].StableNodeID == node {
+			return m.rows[i], nil
+		}
+	}
+	return repository.ConnRequest{}, repository.ErrNotFound
+}
 
 func (m *memConnRequests) snapshot() []repository.ConnRequest {
 	m.mu.Lock()

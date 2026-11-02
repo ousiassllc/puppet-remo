@@ -87,6 +87,26 @@ tasks:
     cmds:
       - cmd: go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{"{{"}}.Version{{"}}"}}' github.com/a-h/templ)
 
+  tools:lefthook:
+    desc: 固定した版の lefthook を導入する（Git フックの実行ツール。lefthook.yml の構文はこの版に合わせる）
+    cmds:
+      - go install github.com/evilmartians/lefthook/v2@v2.1.17
+
+  hooks:install:
+    desc: Git フック（pre-commit・pre-push）を .git/hooks に入れる（clone ごとに一度。lefthook が要る）
+    cmds:
+      - lefthook install
+
+  hooks:pre-commit:
+    desc: pre-commit のフックをステージ済みのファイルに対して手元で実行する（gofmt・golangci-lint・templ・型検査）
+    cmds:
+      - lefthook run pre-commit --no-auto-install
+
+  hooks:pre-push:
+    desc: pre-push のフック（go test ./...）を手元で実行する
+    cmds:
+      - lefthook run pre-push --no-auto-install --force
+
   templ:generate:
     desc: .templ から _templ.go を生成する（生成物はコミットする）
     cmds:
@@ -109,42 +129,78 @@ tasks:
           fi
 
   frontend:install:
-    desc: フロントエンドの依存を package-lock.json のとおりに導入する
+    desc: フロントエンドの依存を bun.lock のとおりに導入する（導入済みなら bun がすぐ終える）
     dir: static
-    sources:
-      - package.json
-      - package-lock.json
-    generates:
-      - node_modules/.package-lock.json
     cmds:
-      - npm ci
+      - bun install --frozen-lockfile
 
   frontend:build:
     desc: esbuild と Tailwind CLI で static/dist を作る（htmx と拡張を同梱。毎回作り直す）
     deps: [frontend:install]
     dir: static
     cmds:
-      - npm run build
+      - bun run build
 
   frontend:typecheck:
     desc: TypeScript の型検査
     deps: [frontend:install]
     dir: static
     cmds:
-      - npx tsc -p .
+      - bunx tsc -p .
+
+  frontend:typecheck:e2e:
+    desc: E2E（static/e2e・playwright.config.ts）の TypeScript の型検査
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - bunx tsc -p e2e
+
+  frontend:browsers:
+    desc: Playwright の Chromium を導入する（Lit のテストと E2E が使う。--with-deps・sudo は使わない。導入済みなら何もしない。置き場は PLAYWRIGHT_BROWSERS_PATH）
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - bunx playwright install chromium
+
+  frontend:test:
+    desc: Lit のテスト（web-test-runner。ヘッドレス Chromium）
+    deps: [frontend:browsers]
+    dir: static
+    cmds:
+      - bun run test
+
+  test:e2e:
+    desc: テスト専用サーバー（-tags e2e。偽の platform・偽の tailnet）の build・vet・テスト
+    cmds:
+      - go build -tags e2e ./...
+      - go vet -tags e2e ./...
+      - go test -tags e2e ./internal/app/... ./internal/tailnet/... ./cmd/...
+
+  e2e:
+    desc: Playwright の E2E（テスト専用サーバーを -tags e2e でビルドして起動し、ヘッドレス Chromium でリモートの Web UI を操作する）
+    deps: [frontend:build, frontend:browsers]
+    dir: static
+    cmds:
+      - bun run e2e
 
   frontend:dev:
     desc: esbuild と Tailwind のウォッチ（WAILS_VITE_PORT で serve。wails3 dev が呼ぶ）
     deps: [frontend:install]
     dir: static
     cmds:
-      - npm run dev
+      - bun run dev
 
   gui:demo:
     desc: GUI ルーターを偽の service で loopback に起動する（スクリーンショット・見た目の確認用。本番のバイナリには入らない）
     deps: [frontend:build]
     cmds:
       - go run ./internal/router/internal/guidemo -addr 127.0.0.1:8899
+
+  remote:demo:
+    desc: リモート Web UI（/viewer）とホスト GUI を偽の platform・tailnet で loopback に起動する（スクリーンショット・手動確認用。本番のバイナリには入らない）
+    deps: [frontend:build]
+    cmds:
+      - go run ./internal/app/internal/remotedemo -addr 127.0.0.1:8765 -gui-addr 127.0.0.1:8899
 
   build:production:
     desc: 本番ビルド（static/dist を go:embed する。先に frontend:build が要る）
@@ -180,6 +236,7 @@ tasks:
       - task: templ:check
       - task: frontend:build
       - task: frontend:typecheck
+      - task: frontend:typecheck:e2e
       - task: build:production
       - task: test:production
       - task: build
@@ -189,3 +246,6 @@ tasks:
       - task: check:imports
       - task: lint
       - task: test
+      - task: frontend:test
+      - task: test:e2e
+      - task: e2e

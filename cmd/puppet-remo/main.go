@@ -68,7 +68,7 @@ func run(args []string) error {
 		Logger:         log,
 	})
 
-	a, err := compose(context.Background(), dataDir, log, logCloser, host.MainWindowHandle)
+	a, err := compose(context.Background(), dataDir, log, logCloser, host)
 	if err != nil {
 		return err
 	}
@@ -77,8 +77,9 @@ func run(args []string) error {
 }
 
 // compose は本物の部品を作って app.New に渡す。作った資源は、成功すれば app.Shutdown が閉じる。
-// mainWindow はメインウィンドウの HWND を返す（Wails のウィンドウは Run で作られるため、ファイル選択のたびに呼ぶ関数で渡す）。
-func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io.Closer, mainWindow func() uintptr) (*app.App, error) {
+// host の MainWindowHandle は、メインウィンドウの HWND を返す（Wails のウィンドウは Run で作られるため、ファイル選択のたびに呼ぶ関数で渡す）。
+// host の Windows は、承認ダイアログなどのウィンドウの生成（Wails）。
+func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io.Closer, host *app.WailsHost) (*app.App, error) {
 	var closers []io.Closer
 	fail := func(err error) (*app.App, error) {
 		for _, c := range slices.Backward(closers) {
@@ -136,11 +137,19 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 			Capturer: windows.NewCapturer(), Input: input, Windows: wm, Clipboard: windows.NewClipboard(),
 			UI: ui, Hotkey: hotkey, Power: power, Autostart: autostart,
 			// ファイル選択ダイアログ（ホスト GUI の /apps。FR-H12）は、Wails のメインウィンドウを親にしたモーダルにする。
-			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(mainWindow),
+			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(host.MainWindowHandle),
+			// 署名検証済みの更新のインストーラは、NSIS を `/S` で起動する（UAC の確認つき。FR-H09）。
+			Installer: windows.NewInstaller(),
+			// API キー（OpenAI・TypeSafe）は資格情報マネージャーに置く（NFR-S14）。
+			Secrets: windows.NewSecretStore(),
 		},
+		// 承認ダイアログ（FR-H05）は専用の Wails ウィンドウ（キャプチャ除外）で開く。
+		Windows: host.Windows(),
 		Watcher: tailnet.NewWatcher(tailnet.WatcherConfig{API: api}),
 		WhoIs:   tailnet.NewWhoIs(tailnet.WhoIsConfig{API: api}),
 		Static:  staticHandler,
+		// ログ画面の「ログフォルダーを開く」（#54）は、エクスプローラーでログのフォルダーだけを開く（開く場所は LogReader が固定する）。
+		Logs:    app.NewLogReader(dataDir, app.WithFolderOpener(windows.NewFolderOpener())),
 		Version: version,
 		Logger:  log,
 		Closers: closers,

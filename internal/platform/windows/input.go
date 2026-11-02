@@ -36,8 +36,9 @@ type Input struct {
 	runner *threadRunner
 
 	// 以下は専用スレッドだけが読み書きする。
-	held  []keySpec // KeyEvent で押下中のキー（押した順）
-	carry wheelCarry
+	held    []keySpec       // KeyEvent で押下中のキー（押した順）
+	buttons []domain.Button // Button で押下中のボタン（押した順）
+	carry   wheelCarry
 }
 
 func newInput(drv driver) *Input {
@@ -74,6 +75,28 @@ func (in *Input) Click(ctx context.Context, b domain.Button, count int, mods []d
 			steps = append(steps, down, up)
 		}
 		return in.sendBalanced(append(steps, keyUpStepsReversed(modKeys)...))
+	})
+}
+
+// Button は b の down / up を 1 つ送る。押下中のボタンは覚え、ReleaseAll が離す。
+func (in *Input) Button(ctx context.Context, b domain.Button, a domain.ButtonAction) error {
+	return in.runner.do(ctx, func(context.Context) error {
+		if !b.Valid() {
+			return domain.ErrInvalidArgument.WithMsg("unknown button: " + string(b))
+		}
+		if !a.Valid() {
+			return domain.ErrInvalidArgument.WithMsg("unknown button action: " + string(a))
+		}
+		step, _ := buttonStep(b, a == domain.ButtonActionUp)
+		if err := in.drv.send([]inputStep{step}); err != nil {
+			return err
+		}
+		if a == domain.ButtonActionUp {
+			in.buttons = slices.DeleteFunc(in.buttons, func(x domain.Button) bool { return x == b })
+		} else if !slices.Contains(in.buttons, b) {
+			in.buttons = append(in.buttons, b)
+		}
+		return nil
 	})
 }
 
@@ -245,18 +268,25 @@ func endsCharacter(s inputStep) bool {
 	return s.up && !isHighSurrogate
 }
 
-// ReleaseAll は KeyEvent で押下中のキーを解放し、ホイールの端数を捨てる。
+// ReleaseAll は Button で押下中のボタンと KeyEvent で押下中のキーを解放し、ホイールの端数を捨てる。
+// 押した順の逆に（ボタンを先、キーを後）、1 回の SendInput で離す。
 // ctx を取らず、取り消されずに実行する（中断・キルスイッチ時に呼ばれる）。解放に失敗したキーは押下中のまま残す。
 func (in *Input) ReleaseAll() error {
 	return in.runner.do(context.Background(), func(context.Context) error {
 		in.carry.reset()
-		if len(in.held) == 0 {
+		var steps []inputStep
+		for i := len(in.buttons) - 1; i >= 0; i-- {
+			step, _ := buttonStep(in.buttons[i], true)
+			steps = append(steps, step)
+		}
+		steps = append(steps, keyUpStepsReversed(in.held)...)
+		if len(steps) == 0 {
 			return nil
 		}
-		if err := in.drv.send(keyUpStepsReversed(in.held)); err != nil {
+		if err := in.drv.send(steps); err != nil {
 			return err
 		}
-		in.held = nil
+		in.buttons, in.held = nil, nil
 		return nil
 	})
 }

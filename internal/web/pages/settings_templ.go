@@ -38,7 +38,7 @@ func settingsBody(v view.Settings) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-xl space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">設定</h1>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-xl space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">設定</h1><p class=\"text-sm text-slate-600\" data-notice=\"agent-link\">内蔵エージェント（既定は無効）と API キーの設定は、<a href=\"/agent\" class=\"font-medium text-indigo-700 underline\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">エージェント</a>の画面にあります。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -72,7 +72,7 @@ func settingsBody(v view.Settings) templ.Component {
 	})
 }
 
-// Settings は設定のフルページ（FR-S01〜S04、FR-S08）。
+// Settings は設定のフルページ（FR-S01〜S04、FR-S06〜S09）。
 func Settings(v view.Settings) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

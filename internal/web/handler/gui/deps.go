@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"time"
 
@@ -23,9 +24,13 @@ type SessionLister interface {
 	Sessions() []service.SessionInfo
 }
 
-// LeaseReader は現在のリース保持者を返す（M1 は表示のみ）。
-type LeaseReader interface {
+// LeaseControl は現在のリース保持者の読み取りと、ホスト所有者による強制剥奪（FR-H02、FR-L06）。実体は service.LeaseManager。
+// 剥奪の監査（lease.revoke）は実体が記録するため、ハンドラは記録しない。
+type LeaseControl interface {
 	Holder() (service.Holder, bool)
+	// Pending は承認待ち（pending_approval）の要求者。承認待ちでなければ false。
+	Pending() (service.PendingLease, bool)
+	Revoke(by domain.Actor) error
 }
 
 // KillSwitch はキルスイッチの状態と、ホスト所有者による発動・解除。
@@ -39,17 +44,29 @@ type KillSwitch interface {
 // Admin は接続要求・クライアント・トークンの管理（FR-H03、FR-H04）。
 type Admin interface {
 	PendingRequests(ctx context.Context) ([]service.ConnRequest, error)
+	RequestHistory(ctx context.Context, page int) (service.RequestHistoryPage, error)
 	ApproveRequest(ctx context.Context, requestID string, in service.ApproveInput) (domain.Client, error)
 	DenyRequest(ctx context.Context, requestID string) error
 
 	Clients(ctx context.Context) ([]domain.Client, error)
 	Client(ctx context.Context, id string) (domain.Client, error)
 	UpdateClient(ctx context.Context, id string, u service.ClientUpdate) (domain.Client, error)
+	// ResetApproval は first_time の承認済みを取り消す（approved_at を NULL に戻す。FR-H04）。
+	ResetApproval(ctx context.Context, id string) (domain.Client, error)
 	DeleteClient(ctx context.Context, id string) error
 
 	Tokens(ctx context.Context, clientID string) ([]service.TokenRecord, error)
 	IssueToken(ctx context.Context, clientID, label string, ttl *time.Duration) (plaintext string, err error)
 	RevokeToken(ctx context.Context, clientID, tokenID string) error
+}
+
+// Approval は承認ダイアログ（FR-H05）が使う、承認待ちの要求の読み取りと、ホスト所有者の結果の伝達。実体は service.Approval。
+// ダイアログを開くのは app（Bus の approval を購読する）で、ここは中身の描画と許可・拒否の受け付けだけ。
+type Approval interface {
+	// Resolve は id の要求に結果を伝える。解決済み・失効・取り下げ済み・存在しない id は ErrApprovalTimeout。
+	Resolve(id string, allow bool) error
+	// Pending は承認待ちの要求を、要求した順に返す。
+	Pending() []service.ApprovalRequest
 }
 
 // Settings は設定画面の読み書き（FR-S01〜S04、FR-S08）。
@@ -71,6 +88,57 @@ type Apps interface {
 	PickExecutable(ctx context.Context) (path string, ok bool, err error)
 }
 
+// Logs はアプリのログ（運用ログ。FR-H13）の閲覧。実体は app.LogReader。監査ログ（DB）とは別。
+type Logs interface {
+	Entries(ctx context.Context, filter service.AppLogFilter, page int) (service.AppLogPage, error)
+	// Path は今のログファイルのパス（画面に出す）。
+	Path() string
+	// OpenFolder はログフォルダーをファイルマネージャーで開く（#54）。開く場所は実体が固定し、引数にパスを取らない。
+	// フォルダーが無ければ service.ErrNotFound。エラーにパスは含まれない。
+	OpenFolder(ctx context.Context) error
+}
+
+// Audit は監査ログの閲覧（読み取り専用。FR-AU05、FR-H08）。実体は service.AuditReader。
+// 表示に使う値は、実体が秘密を伏せたものだけ（Get の引数）。操作の記録は実体の別の経路（service.Audit）が行う。
+type Audit interface {
+	Query(ctx context.Context, q service.AuditQuery) (service.AuditPage, error)
+	Get(ctx context.Context, id int64) (service.AuditDetail, error)
+	// Thumbnail は id のサムネイル（JPEG）を開く。呼び出し側が Close する。無ければ service.ErrNotFound。
+	Thumbnail(ctx context.Context, id int64) (io.ReadCloser, error)
+}
+
+// Updates は更新の確認と適用（FR-H09。画面は /update）。実体は service.Updater。監査（kind = update）は実体が記録するため、ハンドラは記録しない。
+type Updates interface {
+	Status(ctx context.Context) service.UpdateStatus
+	Check(ctx context.Context, by domain.ActorKind) service.UpdateStatus
+	Apply(ctx context.Context, by domain.ActorKind) error
+}
+
+// AgentSettings はエージェント設定（FR-H11。画面は /agent）の読み書き。実体は service.AgentSettings。
+// 監査（有効化・同意・高速パス。FR-G14・G22）は実体が記録するため、ハンドラは記録しない。API キーの値は、読み出しも戻り値にも無い（登録の有無だけ。NFR-S14）。
+// 項目の不備は *service.ValidationError、条件を満たさない有効化は domain.ErrAgentDisabled。
+type AgentSettings interface {
+	Load(ctx context.Context) (service.AgentSettingsView, error)
+	SaveAgent(ctx context.Context, in service.AgentSettingsInput) error
+	SetOpenAIKey(ctx context.Context, key string) error
+	DeleteOpenAIKey(ctx context.Context) error
+	SaveFastpath(ctx context.Context, in service.FastpathSettingsInput) error
+	SetTypeSafeKey(ctx context.Context, key string) error
+	DeleteTypeSafeKey(ctx context.Context) error
+}
+
+// Tasks はエージェントのタスクの一覧・詳細・実行中のタスクの読み取りと、ホスト所有者による中断（FR-H02・H10。M4）。
+// 実体は service.TaskAdmin。中断の監査（操作主体 host）は実体が記録するため、ハンドラは記録しない。
+type Tasks interface {
+	List(ctx context.Context, q service.TaskListQuery) (service.TaskPage, error)
+	// Detail は無ければ domain.ErrTaskNotFound。
+	Detail(ctx context.Context, id string) (service.TaskDetail, error)
+	// Running は実行中・承認待ちのタスク（高々 1 件）。
+	Running(ctx context.Context) ([]domain.Task, error)
+	// CancelByHost は終了済みなら現在の状態を返す。
+	CancelByHost(ctx context.Context, id string) (domain.Task, error)
+}
+
 // Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
@@ -80,13 +148,21 @@ type Events interface {
 type Deps struct {
 	Status     StatusReader
 	Sessions   SessionLister
-	Leases     LeaseReader
+	Leases     LeaseControl
 	KillSwitch KillSwitch
 	Admin      Admin
+	Approval   Approval
 	Settings   Settings
 	Apps       Apps
+	Logs       Logs
+	Audit      Audit
+	Updates    Updates
+	Tasks      Tasks
 	Events     Events
 	Clock      domain.Clock
+
+	// AgentSettings はエージェント設定（M4。FR-H11）。
+	AgentSettings AgentSettings
 
 	// Location は表示する時刻のタイムゾーン。nil なら time.Local。
 	Location *time.Location
@@ -114,7 +190,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Settings == nil, d.Apps == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.AgentSettings == nil, d.Tasks == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

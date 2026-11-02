@@ -3,7 +3,8 @@
 // 1 つの *sql.DB（WAL）を共有し、起動時に Open がマイグレーションと整合性チェックを同期で行う。
 // goroutine は持たない（保守処理のタイマーは service/maintenance が持つ）。
 // スキーマは docs/architecture/er.md の全体を v1 マイグレーションで作るが（M1.5 の launchable_apps は v2）、
-// CRUD を持つのは clients / client_tokens / connection_requests / settings / audit_logs / launchable_apps のみ。
+// CRUD を持つのは clients / client_tokens / connection_requests / settings / audit_logs / audit_thumbnails / launchable_apps / agent_tasks のみ。
+// サムネイルの画像本体は DB ではなく ThumbStore（thumbs/ 配下のファイル）が持つ。
 package repository
 
 import (
@@ -37,6 +38,7 @@ type DB struct {
 	sql         *sql.DB
 	clock       domain.Clock
 	quarantined string
+	thumbsDir   string // DB ファイルと同じディレクトリの thumbs/
 }
 
 // Option は Open の設定。
@@ -115,7 +117,7 @@ func openChecked(ctx context.Context, path string, o options) (_ *DB, err error)
 	if err = migrate(ctx, conn, o.migrations, o.clock.Now); err != nil {
 		return nil, err
 	}
-	return &DB{sql: conn, clock: o.clock}, nil
+	return &DB{sql: conn, clock: o.clock, thumbsDir: filepath.Join(filepath.Dir(path), ThumbsDirName)}, nil
 }
 
 // errCorrupt は quick_check が "ok" 以外を返したことを表す。
@@ -163,7 +165,11 @@ func (d *DB) Tokens() Tokens                 { return tokenStore{d} }
 func (d *DB) ConnRequests() ConnRequests     { return connRequestStore{d} }
 func (d *DB) Settings() Settings             { return settingStore{d} }
 func (d *DB) Audit() Audit                   { return auditStore{d} }
+func (d *DB) Tasks() Tasks                   { return taskStore{d} }
 func (d *DB) LaunchableApps() LaunchableApps { return launchableAppStore{d} }
+
+// Thumbs は監査のサムネイルの置き場（DB ファイルと同じディレクトリの thumbs/。ディレクトリは Save が初めて作る）。
+func (d *DB) Thumbs() ThumbStore { return newThumbStore(d.thumbsDir, d.clock) }
 
 // mapErr は SQLite の UNIQUE 制約違反を ErrConflict に写す。それ以外はそのまま返す。
 func mapErr(err error) error {

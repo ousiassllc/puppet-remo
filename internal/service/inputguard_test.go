@@ -77,6 +77,43 @@ func TestInputGuardCheckTable(t *testing.T) {
 	}
 }
 
+// オーバーレイ（クリックスルーの自ウィンドウ）は全モニターを覆うが、入力は下のウィンドウへ通る。
+// 判定は下の実ウィンドウで行い、オーバーレイ自身は拒否しない（#69）。
+func TestInputGuardOverlay(t *testing.T) {
+	overlay := domain.WindowInfo{ID: "ov", Title: "overlay", Own: true, Overlay: true, Rect: domain.Rect{X: 0, Y: 0, W: 3200, H: 1800}}
+	dialog := domain.WindowInfo{ID: "dlg", Title: "approval", Own: true, Rect: domain.Rect{X: 100, Y: 100, W: 400, H: 300}}
+	normal := domain.WindowInfo{ID: "n", Title: "normal", Rect: domain.Rect{X: 600, Y: 100, W: 400, H: 300}}
+	mons := []domain.Monitor{ctlMonitor}
+	pt := func(x, y int) domain.Point { return domain.Point{X: x, Y: y} }
+
+	tests := []struct {
+		name    string
+		wins    []domain.WindowInfo // 先頭が最上位
+		op      domain.Op
+		wantErr error
+	}{
+		{name: "オーバーレイが自ダイアログの上にあっても own_window", wins: []domain.WindowInfo{overlay, dialog},
+			op: domain.MouseMove{At: pt(150, 150)}, wantErr: domain.ErrInputBlocked},
+		{name: "オーバーレイが通常ウィンドウの上にあれば許可", wins: []domain.WindowInfo{overlay, normal},
+			op: domain.MouseMove{At: pt(650, 150)}},
+		{name: "オーバーレイだけの場所は許可", wins: []domain.WindowInfo{overlay},
+			op: domain.MouseMove{At: pt(2000, 1500)}},
+		{name: "前面がオーバーレイならキー入力を拒否しない", wins: []domain.WindowInfo{{ID: "ov", Own: true, Overlay: true, Foreground: true}},
+			op: domain.TypeText{Text: "x"}},
+		{name: "オーバーレイの下でも前面の自ダイアログへのキー入力は拒否", wins: []domain.WindowInfo{overlay, {ID: "dlg", Own: true, Foreground: true}},
+			op: domain.TypeText{Text: "x"}, wantErr: domain.ErrInputBlocked},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := InputGuard{Windows: platformtest.NewFakeWindows(tt.wins...)}
+			err := g.Check(context.Background(), tt.op, mons)
+			if !errors.Is(err, tt.wantErr) || (tt.wantErr == nil && err != nil) {
+				t.Fatalf("want %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestInputGuardPropagatesPlatformErrors(t *testing.T) {
 	w := platformtest.NewFakeWindows(ctlDefaultWindows()...)
 	boom := errors.New("boom")

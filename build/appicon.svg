@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- 大きいサイズ（65px 以上。appicon.png と ICO の 128・256px。64px 以下は appicon-small.svg）用。白地の角丸に、操り人形の操作棒 2 本と糸 4 本を黒の線だけで描く。色は白と黒だけ。 -->
+  <rect x="30" y="30" width="964" height="964" rx="190" fill="#fff"/>
+  <g fill="none" stroke="#000" stroke-width="8">
+    <!-- 糸（真下に板の下端まで）。棒の下から始め、棒で隠す -->
+    <path d="M291.5 320V994M405.5 440V994M636.5 400V994M743.5 420V994"/>
+    <!-- 奥の短い棒 -->
+    <rect fill="#fff" stroke-linejoin="round" x="-161" y="-25" width="322" height="50" rx="14" transform="translate(529 347) rotate(-34.2)"/>
+    <!-- 手前の長い棒 -->
+    <rect fill="#fff" stroke-linejoin="round" x="-271" y="-29.5" width="542" height="59" rx="14" transform="translate(523.5 367.5) rotate(17)"/>
+  </g>
+</svg>

@@ -2,7 +2,16 @@ package molecules
 
 import "github.com/ousiassllc/puppet-remo/internal/web/atoms"
 
-// LeaseBadge は操作権の保持者の種別つきの表示（M1 は表示のみ。強制剥奪の操作は持たない）。
+// LeasePendingBadge は承認待ち（pending_approval。FR-L07）の要求者の表示:「承認待ち: <名前>（種別）」。操作は持たない。
+templ LeasePendingBadge(holder, kind string) {
+	<span class="inline-flex items-center gap-2 text-sm" data-lease-pending>
+		@atoms.Badge(atoms.BadgeWarn, "承認待ち")
+		<span class="font-medium text-slate-800">{ holder }</span>
+		@atoms.Badge(atoms.BadgeNeutral, kind)
+	</span>
+}
+
+// LeaseBadge は操作権の保持者の種別つきの表示（操作は持たない。強制剥奪のボタンは organisms.LeasePanelBody）。
 templ LeaseBadge(held bool, holder, kind string) {
 	if held {
 		<span class="inline-flex items-center gap-2 text-sm">

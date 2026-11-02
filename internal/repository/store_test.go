@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -185,6 +186,67 @@ func TestClientsTouchSeen(t *testing.T) {
 	}
 	if err := cs.TouchSeen(ctx, "nope", at); !errors.Is(err, ErrNotFound) {
 		t.Errorf("TouchSeen missing: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestClientsApproval(t *testing.T) {
+	ctx := context.Background()
+	db, clock := openTestDB(t)
+	cs := db.Clients()
+	c := newClient("c1", "node1")
+	c.ApprovalMode = domain.ApprovalFirstTime
+	if err := cs.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	approvedAt := func() *time.Time {
+		t.Helper()
+		got, err := cs.Get(ctx, "c1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.ApprovedAt
+	}
+	if got := approvedAt(); got != nil {
+		t.Fatalf("approved_at before approval = %v, want nil", got)
+	}
+
+	at := clock.Now().Add(time.Hour)
+	if err := cs.MarkApproved(ctx, "c1", at); err != nil {
+		t.Fatal(err)
+	}
+	if got := approvedAt(); got == nil || !got.Equal(at) {
+		t.Errorf("approved_at after MarkApproved = %v, want %v", got, at)
+	}
+	// 承認済みの記録を取り消す。承認モードは変わらない。
+	if err := cs.ResetApproval(ctx, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := approvedAt(); got != nil {
+		t.Errorf("approved_at after ResetApproval = %v, want nil", got)
+	}
+	if got, _ := cs.Get(ctx, "c1"); got.ApprovalMode != domain.ApprovalFirstTime {
+		t.Errorf("approval_mode after ResetApproval = %q, want first_time", got.ApprovalMode)
+	}
+
+	// approval_mode の変更でも NULL に戻る（既存の規則）。
+	if err := cs.MarkApproved(ctx, "c1", at); err != nil {
+		t.Fatal(err)
+	}
+	auto := domain.ApprovalAuto
+	if err := cs.Update(ctx, "c1", ClientPatch{ApprovalMode: &auto}); err != nil {
+		t.Fatal(err)
+	}
+	if got := approvedAt(); got != nil {
+		t.Errorf("approved_at after approval_mode change = %v, want nil", got)
+	}
+
+	for name, fn := range map[string]func() error{
+		"MarkApproved":  func() error { return cs.MarkApproved(ctx, "nope", at) },
+		"ResetApproval": func() error { return cs.ResetApproval(ctx, "nope") },
+	} {
+		if err := fn(); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s missing: err = %v, want ErrNotFound", name, err)
+		}
 	}
 }
 
@@ -525,6 +587,168 @@ func TestConnRequestsExpire(t *testing.T) {
 	}
 	if n := count(t, db, `SELECT COUNT(*) FROM connection_requests WHERE id = 'again'`); n != 1 {
 		t.Errorf("recent row deleted")
+	}
+}
+
+// 接続要求の履歴の保持期間は 7 日・固定（er.md の決定事項。#52）。処理済み（許可・拒否）も失効も pending も、
+// last_seen_at から 7 日を過ぎたら一律に削除し、ちょうど 7 日の行は残す。定数 ConnRequestRetention ではなく
+// 7 日の値そのもので確かめ、定数を変えると落ちるようにする。
+func TestConnRequestsExpireDeletesEveryStatusAfterSevenDays(t *testing.T) {
+	ctx := context.Background()
+	db, clock := openTestDB(t)
+	rs := db.ConnRequests()
+	start := clock.Now()
+	if err := db.Clients().Create(ctx, newClient("c1", "nodeA")); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"approved", "denied", "expired", "pending"} {
+		if _, _, err := rs.UpsertPending(ctx, ConnRequest{
+			ID: id, StableNodeID: "node-" + id, LoginName: "l", DisplayName: "d", RemoteIP: "ip",
+			FirstSeenAt: start, LastSeenAt: start, ExpiresAt: start.Add(24 * time.Hour * 30),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := rs.Decide(ctx, "approved", ConnApproved, new("c1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Decide(ctx, "denied", ConnDenied, nil); err != nil {
+		t.Fatal(err)
+	}
+	// "expired" は expires_at を過ぎた pending を Expire で失効にして作る（手前の呼び出しで状態を揃える）。
+	if _, err := db.sql.ExecContext(ctx, `UPDATE connection_requests SET expires_at = ? WHERE id = 'expired'`, toMS(start.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Expire(ctx, start.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	// pending の期限を保持期間より先にしてあるので、削除の対象かどうかは last_seen_at だけで決まる。
+	const sevenDays = 7 * 24 * time.Hour
+	if err := rs.Expire(ctx, start.Add(sevenDays)); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM connection_requests`); n != 4 {
+		t.Errorf("rows at exactly 7 days = %d, want 4 (kept)", n)
+	}
+	if got := count(t, db, `SELECT COUNT(DISTINCT status) FROM connection_requests`); got != 4 {
+		t.Errorf("distinct statuses before deletion = %d, want 4 (approved/denied/expired/pending)", got)
+	}
+	if err := rs.Expire(ctx, start.Add(sevenDays+time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM connection_requests`); n != 0 {
+		t.Errorf("rows just past 7 days = %d, want 0 (all statuses deleted)", n)
+	}
+}
+
+// 履歴は状態を問わず、届いた日時の新しい順（同時刻は id の新しい順）に返し、ページ（limit・offset）で区切れる。
+// 許可・拒否した要求は処理後も残り（結果と処理日時つき）、同じデバイスの再要求は 1 件の pending に集約されたまま（FR-A06）。
+func TestConnRequestsHistory(t *testing.T) {
+	ctx := context.Background()
+	db, clock := openTestDB(t)
+	rs := db.ConnRequests()
+	start := clock.Now()
+	if err := db.Clients().Create(ctx, newClient("c1", "nodeA")); err != nil {
+		t.Fatal(err)
+	}
+	req := func(id, node string, at time.Duration) ConnRequest {
+		return ConnRequest{
+			ID: id, StableNodeID: node, LoginName: "l", DisplayName: "dev-" + id, RemoteIP: "100.64.0.1",
+			FirstSeenAt: start.Add(at), LastSeenAt: start.Add(at), ExpiresAt: start.Add(at + 24*time.Hour),
+		}
+	}
+	ids := func(rows []ConnRequest) []string {
+		var out []string
+		for _, r := range rows {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+
+	if rows, err := rs.ListHistory(ctx, 10, 0); err != nil || len(rows) != 0 {
+		t.Fatalf("empty history = %+v, %v", rows, err)
+	}
+
+	for _, r := range []ConnRequest{req("a", "nodeA", time.Minute), req("b", "nodeB", 2*time.Minute), req("c", "nodeC", 3*time.Minute)} {
+		if _, _, err := rs.UpsertPending(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 許可（a）と拒否（b）。処理後も行は残る。
+	clock.Advance(10 * time.Minute)
+	if err := rs.Decide(ctx, "a", ConnApproved, new("c1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Decide(ctx, "b", ConnDenied, nil); err != nil {
+		t.Fatal(err)
+	}
+	// 同じデバイス（nodeC）が再要求しても、pending は 1 件に集約されたまま（履歴にも 1 行）。
+	for range 2 {
+		again := req("c2", "nodeC", 4*time.Minute)
+		if _, created, err := rs.UpsertPending(ctx, again); err != nil || created {
+			t.Fatalf("re-request of a pending device: created=%v err=%v", created, err)
+		}
+	}
+	// nodeA は許可済み（pending ではない）なので、新しい要求（別行）を作れる。履歴には両方が残る。
+	if _, created, err := rs.UpsertPending(ctx, req("a2", "nodeA", 5*time.Minute)); err != nil || !created {
+		t.Fatalf("new request after approval: created=%v err=%v", created, err)
+	}
+
+	rows, err := rs.ListHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a2", "c", "b", "a"}; !slices.Equal(ids(rows), want) {
+		t.Fatalf("history = %v, want %v (newest first)", ids(rows), want)
+	}
+	byID := map[string]ConnRequest{}
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	if r := byID["a"]; r.Status != ConnApproved || r.DecidedAt == nil || !r.DecidedAt.Equal(clock.Now()) || r.ClientID == nil || *r.ClientID != "c1" {
+		t.Errorf("approved row = %+v", r)
+	}
+	if r := byID["b"]; r.Status != ConnDenied || r.DecidedAt == nil || !r.DecidedAt.Equal(clock.Now()) {
+		t.Errorf("denied row = %+v", r)
+	}
+	if r := byID["c"]; r.Status != ConnPending || r.DecidedAt != nil || r.RequestCount != 3 {
+		t.Errorf("aggregated pending row = %+v, want pending with request_count 3", r)
+	}
+	if pending, err := rs.ListPending(ctx); err != nil || len(pending) != 2 {
+		t.Errorf("pending = %+v, %v; want 2 (nodeC once, nodeA's new one)", pending, err)
+	}
+
+	// ページ: limit・offset で区切る。範囲外は空。
+	for _, tt := range []struct {
+		limit, offset int
+		want          []string
+	}{
+		{2, 0, []string{"a2", "c"}},
+		{2, 2, []string{"b", "a"}},
+		{2, 3, []string{"a"}},
+		{2, 4, nil},
+		{1, 100, nil},
+	} {
+		got, err := rs.ListHistory(ctx, tt.limit, tt.offset)
+		if err != nil || !slices.Equal(ids(got), tt.want) {
+			t.Errorf("ListHistory(%d, %d) = %v, %v; want %v", tt.limit, tt.offset, ids(got), err, tt.want)
+		}
+	}
+	for _, bad := range [][2]int{{0, 0}, {-1, 0}, {1, -1}} {
+		if _, err := rs.ListHistory(ctx, bad[0], bad[1]); !errors.Is(err, domain.ErrInvalidArgument) {
+			t.Errorf("ListHistory(%d, %d) err = %v, want ErrInvalidArgument", bad[0], bad[1], err)
+		}
+	}
+
+	// 同時刻の要求は id の新しい順。
+	tie1, tie2 := req("t1", "nodeT1", 20*time.Minute), req("t2", "nodeT2", 20*time.Minute)
+	for _, r := range []ConnRequest{tie1, tie2} {
+		if _, _, err := rs.UpsertPending(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := rs.ListHistory(ctx, 2, 0); err != nil || !slices.Equal(ids(got), []string{"t2", "t1"}) {
+		t.Errorf("tie order = %v, %v; want [t2 t1]", ids(got), err)
 	}
 }
 

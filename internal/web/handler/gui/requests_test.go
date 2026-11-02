@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
 )
@@ -21,9 +22,9 @@ func TestRequestsPage(t *testing.T) {
 		`name="rev_requests"`,
 		// サイドバーの件数バッジ。
 		`data-pending-count="2"`)
-	// 承認モードの既定は「常時承認」だけ（初回のみ承認・自動許可は選択肢に出さない。M3）。
-	contains(t, res, `name="approval_mode"`, `<option value="always" selected>常時承認</option>`)
-	lacks(t, res, `value="first_time"`, `value="auto"`, "初回のみ承認", "自動許可")
+	// 承認モードは 3 つから選べ、既定は「常時承認」（FR-H03）。
+	contains(t, res, `name="approval_mode"`, `<option value="always" selected>常時承認</option>`,
+		`<option value="first_time">初回のみ承認</option>`, `<option value="auto">自動許可</option>`)
 	// 機能の既定: Web・MCP は on、エージェントは off。
 	contains(t, res, `name="web_enabled"`, `name="mcp_enabled"`, `name="agent_enabled"`)
 }
@@ -63,7 +64,7 @@ func TestApproveRequest(t *testing.T) {
 		t.Fatalf("approved = %+v", r.f.Admin.Approved)
 	}
 	got := r.f.Admin.Approved[0]
-	want := service.ApproveInput{DisplayName: "Bob の PC", WebEnabled: true, MCPEnabled: true, AgentEnabled: false}
+	want := service.ApproveInput{DisplayName: "Bob の PC", WebEnabled: true, MCPEnabled: true, AgentEnabled: false, ApprovalMode: domain.ApprovalAlways}
 	if got != want {
 		t.Errorf("ApproveInput = %+v, want %+v", got, want)
 	}
@@ -74,7 +75,7 @@ func TestApproveRequest(t *testing.T) {
 
 func TestApproveRequestDefaultsApprovalModeToAlways(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) { seedRequest(f, "req-1", "bob-laptop") })
-	// approval_mode を送らなくても許可できる（M1 では常に always で保存し、参照しない）。
+	// approval_mode を送らなくても許可できる（既定の always で保存する）。
 	res := r.post("/requests/req-1/approve", url.Values{"mcp_enabled": {"on"}}, hx...)
 	status(t, res, http.StatusOK)
 	if c := r.f.Admin.Cs[0]; c.ApprovalMode != "always" || c.WebEnabled || !c.MCPEnabled || c.AgentEnabled {
@@ -82,14 +83,31 @@ func TestApproveRequestDefaultsApprovalModeToAlways(t *testing.T) {
 	}
 }
 
-func TestApproveRequestRejectsOtherApprovalModes(t *testing.T) {
-	for _, mode := range []string{"first_time", "auto", "bogus"} {
+// 許可フォームの承認モード（always / first_time / auto）は選ばれた値で保存される（FR-H03）。
+func TestApproveRequestStoresTheChosenApprovalMode(t *testing.T) {
+	for _, mode := range []domain.ApprovalMode{domain.ApprovalAlways, domain.ApprovalFirstTime, domain.ApprovalAuto} {
+		t.Run(string(mode), func(t *testing.T) {
+			r := newRig(t, func(f *guitest.Fakes) { seedRequest(f, "req-1", "bob-laptop") })
+			status(t, r.post("/requests/req-1/approve", url.Values{"approval_mode": {string(mode)}, "mcp_enabled": {"on"}}, hx...), http.StatusOK)
+			if len(r.f.Admin.Approved) != 1 || r.f.Admin.Approved[0].ApprovalMode != mode {
+				t.Fatalf("ApproveInput = %+v, want approval mode %s", r.f.Admin.Approved, mode)
+			}
+			if c := r.f.Admin.Cs[0]; c.ApprovalMode != mode {
+				t.Errorf("client = %+v", c)
+			}
+		})
+	}
+}
+
+func TestApproveRequestRejectsInvalidApprovalMode(t *testing.T) {
+	for _, mode := range []string{"bogus", "ALWAYS", "first-time"} {
 		t.Run(mode, func(t *testing.T) {
 			r := newRig(t, func(f *guitest.Fakes) { seedRequest(f, "req-1", "bob-laptop") })
 			res := r.post("/requests/req-1/approve", url.Values{"approval_mode": {mode}}, hx...)
 			status(t, res, http.StatusUnprocessableEntity)
 			contains(t, res, `data-error-code="invalid_argument"`)
 			must(t, len(r.f.Admin.Cs) == 0, "no client must be registered")
+			must(t, len(r.f.Admin.Approved) == 0, "the request must not be approved")
 		})
 	}
 }

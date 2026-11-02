@@ -17,7 +17,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
-// API 仕様 §3.3 のツール一覧（M1・M1.5）。run_task / get_task / cancel_task（M4）は含まない。
+// API 仕様 §3.3 のツール一覧（M1・M1.5・M4）。
 var wantTools = map[string]bool{ // 値は readOnlyHint
 	"get_screen_info":    true,
 	"screenshot":         true,
@@ -44,6 +44,22 @@ var wantTools = map[string]bool{ // 値は readOnlyHint
 	// M1.5
 	"list_launchable_apps": true,
 	"launch_app":           false,
+	// M4
+	"run_task":    false,
+	"get_task":    true,
+	"cancel_task": false,
+}
+
+// ownWindowHints は、puppet-remo 自身のウィンドウについて説明に含めるべき語（ツール名 → 語）。
+var ownWindowHints = map[string][]string{
+	"screenshot":      {"never captured", "own_windows"},
+	"list_windows":    {"blocked", "own_window", "not captured"},
+	"mouse_move":      {"own_window", "own_windows"},
+	"left_click":      {"own_window", "own_windows"},
+	"left_click_drag": {"own_window", "own_windows"},
+	"scroll":          {"own_window", "own_windows"},
+	"key":             {"own_window", "own_windows"},
+	"type":            {"own_window", "own_windows"},
 }
 
 func TestInitializeAndToolList(t *testing.T) {
@@ -54,13 +70,14 @@ func TestInitializeAndToolList(t *testing.T) {
 	if init.ServerInfo.Name != "puppet-remo" || init.ServerInfo.Version != "9.9.9-test" {
 		t.Errorf("ServerInfo = %+v", init.ServerInfo)
 	}
-	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id"} {
+	for _, want := range []string{"scaled", "lease", "acquired implicitly", "launch_app", "list_launchable_apps", "app_id",
+		"already open window forward", "reused_existing_window", "screenshot or list_windows before typing",
+		"never captured in screenshots", "input_blocked", "own_window", "own_windows", "blocked: true",
+		"run_task", "get_task", "cancel_task", "asynchronously", "agent_disabled", "Only one task runs at a time",
+		"untrusted", "only the model's claim", "nor any new window"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}
-	}
-	if strings.Contains(init.Instructions, "run_task") {
-		t.Errorf("Instructions mention run_task (M4): %s", init.Instructions)
 	}
 
 	list, err := cs.ListTools(context.Background(), nil)
@@ -76,6 +93,25 @@ func TestInitializeAndToolList(t *testing.T) {
 		got[tool.Name] = tool.Annotations.ReadOnlyHint
 		if tool.Description == "" {
 			t.Errorf("%s has no description", tool.Name)
+		}
+		// puppet-remo 自身のウィンドウは写らないが入力は拒否される。事前の手がかり（NFR-S06）。
+		for _, hint := range ownWindowHints[tool.Name] {
+			if !strings.Contains(tool.Description, hint) {
+				t.Errorf("%s description lacks %q: %s", tool.Name, hint, tool.Description)
+			}
+		}
+		// 既存のウィンドウが前に出るだけのアプリがあるので、入力の前に対象を確かめるよう促す（FR-M19）。
+		if tool.Name == "launch_app" {
+			for _, want := range []string{"reused_existing_window", "already open window forward", "confirm the target window with a screenshot or list_windows",
+				"no window that did not exist before the launch has appeared", "strong hint, not proof"} {
+				if !strings.Contains(tool.Description, want) {
+					t.Errorf("launch_app description lacks %q: %s", want, tool.Description)
+				}
+			}
+			// 別の pid の新しいウィンドウでも reused_existing_window は false になる（#55）ので、pid が違うだけで再利用と断定しない。
+			if strings.Contains(tool.Description, "returned pid, or reused_existing_window, means") {
+				t.Errorf("launch_app description still asserts the old definition: %s", tool.Description)
+			}
 		}
 	}
 	if len(got) != len(list.Tools) {
@@ -95,9 +131,10 @@ func TestInitializeAndToolList(t *testing.T) {
 			t.Errorf("unexpected tool %s", name)
 		}
 	}
+	// 三つのタスクのツールは、ホストの設定にかかわらず常に一覧に載る（有効・無効の判断は Agent が agent_disabled で返す）。
 	for _, m4 := range []string{"run_task", "get_task", "cancel_task"} {
-		if _, ok := got[m4]; ok {
-			t.Errorf("%s must not be registered before M4", m4)
+		if _, ok := got[m4]; !ok {
+			t.Errorf("%s must be registered", m4)
 		}
 	}
 }

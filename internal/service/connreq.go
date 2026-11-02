@@ -34,6 +34,7 @@ func (a *authz) RecordConnectionRequest(ctx context.Context, id Identity, ip str
 	} else {
 		if ok, first, _ := a.connRequests.check("", now, true); !ok {
 			if first {
+				a.log.Warn("connection requests are rate limited; new requests are dropped for now", "device", id.NodeName, "remote_ip", ip)
 				a.audit(ctx, repository.AuditEntry{
 					Event: "auth.connreq_rate_limited", ActorType: domain.ActorSystem, ClientLabel: id.NodeName,
 				}, map[string]any{"stable_node_id": id.StableNodeID, "remote_ip": ip})
@@ -41,7 +42,7 @@ func (a *authz) RecordConnectionRequest(ctx context.Context, id Identity, ip str
 			return nil
 		}
 	}
-	_, _, err = a.cfg.ConnRequests.UpsertPending(ctx, repository.ConnRequest{
+	req, created, err := a.cfg.ConnRequests.UpsertPending(ctx, repository.ConnRequest{
 		ID:           a.cfg.IDs.NewID(),
 		StableNodeID: id.StableNodeID,
 		LoginName:    id.LoginName,
@@ -51,6 +52,13 @@ func (a *authz) RecordConnectionRequest(ctx context.Context, id Identity, ip str
 		LastSeenAt:   now,
 		ExpiresAt:    now.Add(connRequestPendingTTL),
 	})
+	if err == nil && created {
+		a.log.Info("connection request received", "request_id", req.ID, "device", id.NodeName, "login_name", id.LoginName, "remote_ip", ip)
+		// 作成（新しい要求の行ができたとき）だけを記録する。pending への集約は記録しない（FR-AU01）。
+		a.audit(ctx, repository.AuditEntry{
+			Event: "auth.connreq_create", ActorType: domain.ActorSystem, ClientLabel: id.NodeName, Result: auditOK,
+		}, map[string]any{"request_id": req.ID, "stable_node_id": id.StableNodeID, "login_name": id.LoginName, "remote_ip": ip})
+	}
 	return err
 }
 

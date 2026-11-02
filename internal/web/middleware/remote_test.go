@@ -305,7 +305,7 @@ func TestRejectionFormats(t *testing.T) {
 
 func TestAllowlistWithoutWhoIsFailsClosed(t *testing.T) {
 	k := newKit()
-	h := Allowlist(k.auth)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("reached") }))
+	h := Allowlist(k.auth, nil)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("reached") }))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/x", nil))
 	if p := decodeProblem(t, w); p.Code != "whois_failed" || k.log.String() != "" {

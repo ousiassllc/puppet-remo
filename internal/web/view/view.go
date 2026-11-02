@@ -30,6 +30,8 @@ const (
 	NavClients   Nav = "clients"
 	NavApps      Nav = "apps"
 	NavSettings  Nav = "settings"
+	NavLogs      Nav = "logs"
+	NavAudit     Nav = "audit"
 )
 
 // Chrome は全画面共通の枠（ヘッダー・サイドバー）の表示。
@@ -71,9 +73,14 @@ type Session struct {
 // Sessions は接続中セッション一覧。
 type Sessions struct{ Items []Session }
 
-// Lease はリース保持者の表示（M1 は表示のみ。強制剥奪の操作は持たない）。
+// Lease はリース保持者の表示。CanRevoke のときだけ強制剥奪のボタンを出す（状態駆動）。
+// Pending（承認待ち。pending_approval）のときは HolderLabel・KindLabel が要求者で、Held は false・CanRevoke も false
+// （強制剥奪は held のときだけ。docs に承認待ちの剥奪の記述が無いため現行の動きを変えない）。
 type Lease struct {
 	Held          bool
+	Pending       bool   // 承認待ち（FR-L07）。「承認待ち: <名前>（種別）」を出す
+	CanRevoke     bool   // 剥奪できる保持者（mcp・web・agent。FR-L06・L08）がいる
+	RevokeHint    string // 強制剥奪のボタンに添える説明（agent は「タスクが中断される」）。空なら出さない
 	HolderLabel   string
 	KindLabel     string // 保持者の種別（mcp など）
 	Since         string
@@ -98,9 +105,10 @@ type Dashboard struct {
 	Sessions   Sessions
 	Lease      Lease
 	KillSwitch KillSwitch
+	Tasks      RunningTasks // 実行中のタスク（M4。FR-H02）。空ならパネルは中身を出さない
 }
 
-// ApprovalModeOption は承認モードの選択肢。M1 は「常時承認」だけを出す（他は M3 で選択肢を足す）。
+// ApprovalModeOption は承認モードの選択肢（常時承認・初回のみ承認・自動許可。FR-H03）。
 type ApprovalModeOption struct {
 	Value    string
 	Label    string
@@ -141,8 +149,16 @@ type Client struct {
 	LoginName   string
 	NodeID      string
 	Approved    string // 承認モードの表示（「常時承認」など）
-	Flags       []ClientFlag
-	DetailURL   string
+	// Modes は承認モードの選択肢（現在の値が Selected）。変更は UpdateURL へ PATCH する（approved_at が NULL に戻る。FR-H04）。
+	Modes     []ApprovalModeOption
+	UpdateURL string
+	// FirstTimeStatus は first_time のときだけ、承認済み（日時）・未承認の表示。それ以外は空。
+	FirstTimeStatus string
+	// CanResetApproval は first_time で承認済みのときだけ true（承認の取り消しのボタン。確認は要らない）。
+	CanResetApproval bool
+	ResetApprovalURL string
+	Flags            []ClientFlag
+	DetailURL        string
 	// CanDelete / CanOpenDetail は、一覧のカードだけが true（詳細ページでは出さない）。
 	CanDelete     bool
 	CanOpenDetail bool
@@ -236,7 +252,16 @@ type SettingsValues struct {
 	Hotkey           string
 	ScreenshotMaxDim string
 	LeaseIdleSec     string
-	Autostart        bool
+	ViewerQuality    string
+	ViewerFPS        string
+	// 監査ログ（FR-S07）。保持期間は日、容量の上限はバイト（単位は未決のため、保存値のまま表示する）。
+	AuditThumbnails     bool
+	AuditRecordText     bool
+	AuditRetentionDays  string
+	AuditThumbsMaxBytes string
+	UpdateApplyMode     string // confirm | auto_idle（FR-S09）
+	UpdateChannel       string // stable | nightly（FR-S09）
+	Autostart           bool
 }
 
 // SettingsField は設定の項目別のエラー。
@@ -245,6 +270,13 @@ type SettingsErrors struct {
 	Hotkey           string
 	ScreenshotMaxDim string
 	LeaseIdleSec     string
+	ViewerQuality    string
+	ViewerFPS        string
+	// 監査ログ・更新の項目別のエラー（チェックボックスは検証エラーにならない）。
+	AuditRetentionDays  string
+	AuditThumbsMaxBytes string
+	UpdateApplyMode     string
+	UpdateChannel       string
 }
 
 // SettingsForm は設定フォーム。
@@ -341,4 +373,282 @@ type AppExePathField struct {
 	Value   string
 	Error   string
 	PickURL string
+}
+
+// RequestsTab は接続要求画面のタブ（未処理の一覧と、履歴）。
+type RequestsTab string
+
+const (
+	RequestsTabPending RequestsTab = "pending"
+	RequestsTabHistory RequestsTab = "history"
+)
+
+// HistoryRow は接続要求の履歴 1 件。
+type HistoryRow struct {
+	ID          string
+	DisplayName string
+	LoginName   string
+	RemoteIP    string
+	ReceivedAt  string // 届いた日時（first_seen_at）
+	Result      string // 結果の表示名（許可・拒否・未処理・失効）
+	ResultTone  BadgeTone
+	ResultCode  string // approved / denied / pending / expired
+	DecidedAt   string // 処理した日時。許可・拒否だけ入る（それ以外は "-"）
+}
+
+// RequestHistory は接続要求の履歴の 1 ページ。PrevURL・NextURL が空なら、その向きのページは無い。
+type RequestHistory struct {
+	Rows    []HistoryRow
+	Page    int
+	PrevURL string
+	NextURL string
+}
+
+// RequestsHistory は接続要求の履歴のページ。
+type RequestsHistory struct {
+	Chrome  Chrome
+	History RequestHistory
+}
+
+// LogRow はアプリのログ（FR-H13）の 1 件。
+type LogRow struct {
+	Time      string
+	Level     string // ファイルの表記（DEBUG・INFO・WARN・ERROR など）
+	LevelTone BadgeTone
+	Message   string
+	Attrs     []LogAttr
+}
+
+// LogAttr はログに付いた属性（キー = 値）。
+type LogAttr struct{ Key, Value string }
+
+// LogFilterLink はレベルの絞り込みのリンク 1 つ。
+type LogFilterLink struct {
+	Code   string // all / warn / error
+	Label  string
+	URL    string
+	Active bool
+}
+
+// AppLog はアプリのログの 1 ページ（絞り込みのリンク・表・ページ送り）。PrevURL・NextURL が空なら、その向きのページは無い。
+type AppLog struct {
+	Rows    []LogRow
+	Page    int
+	Filters []LogFilterLink
+	Filter  string // 今の絞り込み（all / warn / error）
+	PrevURL string
+	NextURL string
+}
+
+// AppLogPage はログ画面のページ。Path は今のログファイルの場所。OpenFolderURL は「ログフォルダーを開く」ボタンの POST 先
+// （固定の URL。パスは送らない。#54）。
+type AppLogPage struct {
+	Chrome        Chrome
+	Path          string
+	OpenFolderURL string
+	Log           AppLog
+}
+
+// AuditFilterOption は監査ログの絞り込みの選択肢 1 つ。
+type AuditFilterOption struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+// AuditFilterErrors は絞り込みの項目別のエラーメッセージ（空なら正常）。Paging は limit・cursor の不備（入力欄が無いので、まとめて出す）。
+type AuditFilterErrors struct {
+	From, To, Kind, Result, Paging string
+}
+
+// Any は、どれかの項目にエラーがあるか。
+func (e AuditFilterErrors) Any() bool { return e != (AuditFilterErrors{}) }
+
+// AuditFilters は絞り込みフォームの入力値（URL のクエリそのまま）と選択肢。Limit は既定以外を指定したときだけ入る。
+type AuditFilters struct {
+	From, To, Q, Limit string
+	Clients            []AuditFilterOption // 先頭は「すべて」
+	Kinds              []AuditFilterOption // 先頭は「すべて」
+	Results            []AuditFilterOption // 先頭は「すべて」
+	Errors             AuditFilterErrors
+}
+
+// AuditRow は監査ログの一覧の 1 行。Client はクライアント名のスナップショット（削除済みでも残る）。
+type AuditRow struct {
+	ID         int64
+	DetailURL  string
+	Time       string
+	Client     string
+	Kind       string
+	Event      string
+	Result     string
+	ResultTone BadgeTone
+	Duration   string // 無いときは "-"
+	HasThumb   bool
+}
+
+// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・「次へ」）。NextURL が空なら次のページは無い。
+type AuditList struct {
+	Filters AuditFilters
+	Rows    []AuditRow
+	NextURL string
+}
+
+// AuditListPage は監査ログ画面のページ。
+type AuditListPage struct {
+	Chrome Chrome
+	List   AuditList
+}
+
+// AuditArg は詳細の引数 1 つ（キーと、秘密を伏せ終えた文字列の値）。
+type AuditArg struct{ Key, Value string }
+
+// AuditDetail は監査ログ 1 件の詳細ページ。ThumbURL が空ならサムネイルは無い（ThumbNote が理由）。
+type AuditDetail struct {
+	Chrome     Chrome
+	ID         int64
+	Time       string
+	Kind       string
+	Event      string
+	Actor      string
+	Client     string
+	SessionID  string
+	LeaseID    string
+	Tool       string
+	Result     string
+	ResultTone BadgeTone
+	ErrorCode  string
+	Duration   string
+	Args       []AuditArg
+	ThumbURL   string
+	ThumbW     string
+	ThumbH     string
+	ThumbNote  string
+	BackURL    string
+}
+
+// 以下はリモートの Web UI（ビューア。docs/architecture/frontend.md §3・§4.3）の表示モデル。
+
+// Option は選択欄の選択肢 1 つ。
+type Option struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+// ViewerToolbarErrors は設定フォームの項目ごとのエラー（空なら無い）。
+type ViewerToolbarErrors struct {
+	Monitor string
+	Quality string
+	FPS     string
+}
+
+// ViewerToolbar はビューアのツールバー（モニター・画質・FPS。FR-W04・W05）。値はフォームの文字列で、
+// 検証エラーのときは利用者の入力値をそのまま出す。
+type ViewerToolbar struct {
+	Monitors []Option
+	Quality  string
+	FPS      string
+	Errors   ViewerToolbarErrors
+}
+
+// ViewerLease はビューアのリースパネル（FR-W08）。保持者の種別・名前・状態は常に出し、操作は Can* が true のものだけを描画する（状態駆動）。
+// CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web・agent）が保持しているとき。
+// Pending は承認待ち（pending_approval。FR-L07）で、HolderLabel・KindLabel が要求者、PendingMine が要求者本人。承認待ちの間は
+// Held・Mine・Can* がすべて false（操作権を持たず、取得も解放も強制剥奪もできない）。
+// Task は保持者が agent のとき、実行中のタスクの要約（FR-W08。読めたときだけ）。
+type ViewerLease struct {
+	Held        bool
+	Mine        bool
+	Pending     bool
+	PendingMine bool
+	HolderLabel string
+	KindLabel   string // 保持者（承認待ちなら要求者）の種別（mcp / web / agent）
+	CanAcquire  bool
+	CanRelease  bool
+	CanRevoke   bool
+	Task        *ViewerTask
+}
+
+// ViewerTask はビューアのリースパネルに出す、実行中のエージェントのタスクの要約（FR-W08）。ビューアはタスクの依頼元とは別の
+// クライアントなので、指示（prompt）と最終回答は持たない（状態・ステップ数・上限・開始時刻・依頼元の表示名だけ）。
+type ViewerTask struct {
+	Status    string // 状態の表示（承認待ち / 実行中）
+	Steps     string // 「3 / 50」（実行したステップ数 / 上限）
+	Elapsed   string // 経過時間（開始から。承認待ちは「-」）
+	MaxTime   string // 実行時間の上限の表示
+	StartedAt string // 開始時刻（HH:MM:SS。承認待ちは空）
+	Requester string // 依頼元のクライアントの表示名
+}
+
+// KeyMenuItem はショートカット送信メニューの 1 項目。Keys は API 仕様 §3.3 の `keys` の書式。
+type KeyMenuItem struct {
+	Label string
+	Keys  string
+}
+
+// ViewerOps はクリップボードとショートカット送信（操作権が要る操作。FR-W06・W07）。Enabled のときだけ描画する。
+type ViewerOps struct {
+	Enabled bool
+	Keys    []KeyMenuItem
+}
+
+// Viewer はビューアのページ。ViewerID は X-Viewer-Id と ws-url に埋め込む。
+type Viewer struct {
+	ViewerID string
+	WSURL    string
+	Monitor  int
+	Quality  int
+	FPS      int
+	Toolbar  ViewerToolbar
+	Lease    ViewerLease
+	Ops      ViewerOps
+}
+
+// RemoteError はリモートの Web UI のエラーページ。
+type RemoteError struct {
+	Code    string
+	Title   string
+	Message string
+}
+
+// ApprovalDialog は承認ダイアログ（/approvals/{id}。専用の Wails ウィンドウの中身。FR-H05）。表示するのはクライアント名・種別・
+// 要求の内容・残り時間だけで、秘密・パス・引数は持たない。M4 の safety_check・judge_action は、サービスが秘密・入力した文字列の本文・
+// パスを除いて渡す Detail（短い説明）を出す。
+type ApprovalDialog struct {
+	ID          string
+	Kind        string // lease | safety_check | judge_action（data-approval-type）
+	Heading     string // ダイアログの見出し（種類ごと）
+	ClientLabel string
+	KindLabel   string // 要求元の種別（mcp / web / エージェント）
+	Summary     string // 要求の内容（種類ごとの 1 文）
+	Detail      string // safety_check の安全チェックの文面・judge_action の対象アクションの要約。lease は空
+	Note        string // 結果の説明（safety_check は「自動許可でも省略できない」と、拒否・時間切れでタスクが失敗すること）
+	Remaining   ApprovalRemaining
+	AllowURL    string
+	DenyURL     string
+}
+
+// ApprovalRemaining は承認ダイアログの残り時間（HTMX が 1 秒ごとに再取得して差し替える）。
+type ApprovalRemaining struct {
+	ID         string
+	Seconds    int    // 残り秒数（切り上げ。0 未満は 0）
+	RefreshURL string // GET /approvals/{id}
+}
+
+// ApprovalDone は許可・拒否を受け付けたあとのダイアログの表示（ウィンドウは closeWindow で閉じる）。
+type ApprovalDone struct {
+	Allowed bool
+}
+
+// ApprovalGone は承認要求が終わっている（失効・解決済み・存在しない）ときのダイアログの表示。
+type ApprovalGone struct {
+	Code    string
+	Message string
+}
+
+// Overlay は操作中オーバーレイ（GET /overlay。#69）。画面の枠と短い文言だけを出す（秘密・パス・引数は持たない）。
+type Overlay struct {
+	Label  string // 「操作中: <クライアント名>（<種別>）」。長さは制限済み
+	Detail string // 補足（agent の「エージェント実行中: <指示の要約>」。FR-H07）。無ければ空。長さは制限済み
 }

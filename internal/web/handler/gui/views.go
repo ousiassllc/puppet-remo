@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -73,10 +76,17 @@ func approvalLabel(m domain.ApprovalMode) string {
 	return string(m)
 }
 
-// approvalModes は接続要求の許可フォームの承認モードの選択肢。M1 は「常時承認」だけを出し、既定で選択する
-// （初回のみ承認・自動許可は適用が M3 のため、M3 で選択肢を足す）。
-func approvalModes() []view.ApprovalModeOption {
-	return []view.ApprovalModeOption{{Value: string(domain.ApprovalAlways), Label: approvalLabel(domain.ApprovalAlways), Selected: true}}
+// approvalModes は承認モードの選択肢（常時承認・初回のみ承認・自動許可。FR-H03）。selected が空なら always を選ぶ（許可フォームの既定）。
+func approvalModes(selected domain.ApprovalMode) []view.ApprovalModeOption {
+	if selected == "" {
+		selected = domain.ApprovalAlways
+	}
+	modes := []domain.ApprovalMode{domain.ApprovalAlways, domain.ApprovalFirstTime, domain.ApprovalAuto}
+	out := make([]view.ApprovalModeOption, len(modes))
+	for i, m := range modes {
+		out[i] = view.ApprovalModeOption{Value: string(m), Label: approvalLabel(m), Selected: m == selected}
+	}
+	return out
 }
 
 // chrome は全画面共通のヘッダー・サイドバーの表示を組み立てる。件数が取れなくても画面は出す（0 件として扱いログに残す）。
@@ -130,16 +140,40 @@ func (h *Handler) sessionsView() view.Sessions {
 func (h *Handler) leaseView() view.Lease {
 	holder, ok := h.d.Leases.Holder()
 	if !ok {
+		if p, pending := h.d.Leases.Pending(); pending {
+			return view.Lease{
+				Pending: true, HolderLabel: actorLabel(p.Actor), KindLabel: kindLabel(p.Actor.Kind), Since: h.formatTime(p.Since),
+			}
+		}
 		return view.Lease{}
 	}
-	label := holder.Actor.Label
-	if label == "" {
-		label = holder.Actor.ClientID
-	}
-	return view.Lease{
-		Held: true, HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
+	label := actorLabel(holder.Actor)
+	v := view.Lease{
+		Held: true, CanRevoke: hostCanRevoke(holder.Actor.Kind), HolderLabel: label, KindLabel: kindLabel(holder.Actor.Kind),
 		Since: h.formatTime(holder.Since), IdleRemaining: formatDuration(holder.IdleRemaining),
 	}
+	if v.CanRevoke && holder.Actor.Kind == domain.ActorAgent {
+		v.RevokeHint = "エージェントの操作権を剥奪すると、実行中のタスクが中断されます。"
+	}
+	return v
+}
+
+// hostCanRevoke は、ホスト所有者（このホスト GUI）が保持者の操作権を強制剥奪できるか。保持者になれる種別（mcp・web・agent）は
+// いずれも剥奪できる（FR-L06・L08。agent の剥奪はそのタスクの中断を伴う）。保持者になれない種別（host・system）は保持者にならないので出さない。
+func hostCanRevoke(k domain.ActorKind) bool {
+	switch k {
+	case domain.ActorMCP, domain.ActorWeb, domain.ActorAgent:
+		return true
+	}
+	return false
+}
+
+// actorLabel は操作主体の表示名。ラベルが空なら ClientID。
+func actorLabel(a domain.Actor) string {
+	if a.Label == "" {
+		return a.ClientID
+	}
+	return a.Label
 }
 
 // killSwitchView は発動中なら解除だけ、そうでなければ発動だけを出す。
@@ -172,6 +206,7 @@ func (h *Handler) dashboardView(ctx context.Context) view.Dashboard {
 		Sessions:   h.sessionsView(),
 		Lease:      h.leaseView(),
 		KillSwitch: h.killSwitchView(),
+		Tasks:      h.runningTasksView(ctx),
 	}
 }
 
@@ -182,10 +217,55 @@ func (h *Handler) requestListView(reqs []service.ConnRequest) view.RequestList {
 		v.Rows = append(v.Rows, view.RequestRow{
 			ID: r.ID, DisplayName: r.DisplayName, LoginName: r.LoginName, RemoteIP: r.RemoteIP, Count: r.RequestCount,
 			FirstSeen: h.formatTime(r.FirstSeenAt), LastSeen: h.formatTime(r.LastSeenAt), ExpiresAt: h.formatTime(r.ExpiresAt),
-			ApproveURL: "/requests/" + id + "/approve", DenyURL: "/requests/" + id + "/deny", Modes: approvalModes(),
+			ApproveURL: "/requests/" + id + "/approve", DenyURL: "/requests/" + id + "/deny", Modes: approvalModes(""),
 		})
 	}
 	v.Rev = revision(v)
+	return v
+}
+
+// pageParam はクエリ page（1 始まり）。無い・数値でない・1 未満は 1。
+func pageParam(c *gin.Context) int {
+	n, err := strconv.Atoi(c.Query("page"))
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// historyResult は履歴の行の結果の表示。期限を過ぎた pending は、保守（Expire）で expired にされる前でも失効として出す。
+func (h *Handler) historyResult(r service.ConnRequest) (code, label string, tone view.BadgeTone) {
+	status := r.Status
+	if status == service.ConnPending && !r.ExpiresAt.After(h.d.Clock.Now()) {
+		status = service.ConnExpired
+	}
+	switch status {
+	case service.ConnApproved:
+		return status, "許可", view.ToneOK
+	case service.ConnDenied:
+		return status, "拒否", view.ToneDanger
+	case service.ConnExpired:
+		return status, "失効", view.ToneNeutral
+	}
+	return status, "未処理", view.ToneWarn
+}
+
+func (h *Handler) requestHistoryView(p service.RequestHistoryPage) view.RequestHistory {
+	v := view.RequestHistory{Page: p.Page}
+	for _, r := range p.Items {
+		code, label, tone := h.historyResult(r)
+		v.Rows = append(v.Rows, view.HistoryRow{
+			ID: r.ID, DisplayName: r.DisplayName, LoginName: r.LoginName, RemoteIP: r.RemoteIP,
+			ReceivedAt: h.formatTime(r.FirstSeenAt), Result: label, ResultTone: tone, ResultCode: code,
+			DecidedAt: h.formatTimePtr(r.DecidedAt, "-"),
+		})
+	}
+	if p.HasPrev {
+		v.PrevURL = "/requests/history?page=" + strconv.Itoa(p.Page-1)
+	}
+	if p.HasNext {
+		v.NextURL = "/requests/history?page=" + strconv.Itoa(p.Page+1)
+	}
 	return v
 }
 
@@ -204,8 +284,9 @@ func (h *Handler) clientView(c domain.Client, inList bool) view.Client {
 	flag := func(field, label string, enabled bool) view.ClientFlag {
 		return view.ClientFlag{Field: field, Label: label, Enabled: enabled, ToggleURL: toggle, NextValue: strconv.FormatBool(!enabled)}
 	}
-	return view.Client{
+	v := view.Client{
 		ID: c.ID, DisplayName: c.DisplayName, LoginName: c.LoginName, NodeID: c.StableNodeID, Approved: approvalLabel(c.ApprovalMode),
+		Modes: approvalModes(c.ApprovalMode), UpdateURL: toggle,
 		Flags: []view.ClientFlag{
 			flag("web_enabled", "Web", c.WebEnabled),
 			flag("mcp_enabled", "MCP", c.MCPEnabled),
@@ -214,6 +295,18 @@ func (h *Handler) clientView(c domain.Client, inList bool) view.Client {
 		DetailURL: "/clients/" + id, DeleteConfirm: "/clients/" + id + "/delete/confirm",
 		CanDelete: inList, CanOpenDetail: inList,
 	}
+	if c.ApprovalMode == domain.ApprovalFirstTime {
+		v.FirstTimeStatus = "未承認（次のリース取得で承認が必要です）"
+		if c.ApprovedAt != nil {
+			v.FirstTimeStatus = "承認済み（" + h.formatTime(*c.ApprovedAt) + "）"
+			v.CanResetApproval = true
+			v.ResetApprovalURL = "/clients/" + id + "/approval/reset"
+			if !inList {
+				v.ResetApprovalURL += "?view=detail"
+			}
+		}
+	}
+	return v
 }
 
 func (h *Handler) clientListView(cs []domain.Client) view.ClientList {
@@ -270,6 +363,67 @@ func (h *Handler) settingsFormView(values view.SettingsValues, errs view.Setting
 func settingsValues(s service.HostSettings) view.SettingsValues {
 	return view.SettingsValues{
 		Port: strconv.Itoa(s.Port), Hotkey: s.KillSwitchHotkey, ScreenshotMaxDim: strconv.Itoa(s.ScreenshotMaxDimension),
-		LeaseIdleSec: strconv.Itoa(s.LeaseIdleTimeoutSec), Autostart: s.Autostart,
+		LeaseIdleSec: strconv.Itoa(s.LeaseIdleTimeoutSec), ViewerQuality: strconv.Itoa(s.ViewerDefaultQuality),
+		ViewerFPS: strconv.Itoa(s.ViewerDefaultFPS), Autostart: s.Autostart,
+		AuditThumbnails: s.AuditThumbnailsEnabled, AuditRecordText: s.AuditRecordText,
+		AuditRetentionDays: strconv.Itoa(s.AuditRetentionDays), AuditThumbsMaxBytes: strconv.FormatInt(s.AuditThumbsMaxBytes, 10),
+		UpdateApplyMode: s.UpdateApplyMode, UpdateChannel: s.UpdateChannel,
 	}
+}
+
+// logLevelTone はログのレベルの色（ERROR 以上は赤、WARN は黄、INFO は緑＝成功・通常、DEBUG などは灰）。
+func logLevelTone(l slog.Level) view.BadgeTone {
+	switch {
+	case l >= slog.LevelError:
+		return view.ToneDanger
+	case l >= slog.LevelWarn:
+		return view.ToneWarn
+	case l >= slog.LevelInfo:
+		return view.ToneOK
+	}
+	return view.ToneNeutral
+}
+
+// logURL は /logs の URL。all と 1 ページ目は省略する。
+func logURL(filter service.AppLogFilter, page int) string {
+	q := url.Values{}
+	if filter != service.AppLogAll {
+		q.Set("level", string(filter))
+	}
+	if page > 1 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if len(q) == 0 {
+		return "/logs"
+	}
+	return "/logs?" + q.Encode()
+}
+
+func (h *Handler) appLogView(filter service.AppLogFilter, p service.AppLogPage) view.AppLog {
+	v := view.AppLog{Page: p.Page, Filter: string(filter)}
+	for _, f := range []struct {
+		filter service.AppLogFilter
+		label  string
+	}{{service.AppLogAll, "すべて"}, {service.AppLogWarn, "WARN 以上"}, {service.AppLogError, "ERROR のみ"}} {
+		v.Filters = append(v.Filters, view.LogFilterLink{Code: string(f.filter), Label: f.label, URL: logURL(f.filter, 1), Active: f.filter == filter})
+	}
+	for _, e := range p.Items {
+		row := view.LogRow{Time: h.formatLogTime(e.Time), Level: e.Level, LevelTone: logLevelTone(e.Severity), Message: e.Message}
+		for _, a := range e.Attrs {
+			row.Attrs = append(row.Attrs, view.LogAttr{Key: a.Key, Value: a.Value})
+		}
+		v.Rows = append(v.Rows, row)
+	}
+	if p.HasPrev {
+		v.PrevURL = logURL(filter, p.Page-1)
+	}
+	if p.HasNext {
+		v.NextURL = logURL(filter, p.Page+1)
+	}
+	return v
+}
+
+// formatLogTime はログの日時（秒まで）。
+func (h *Handler) formatLogTime(t time.Time) string {
+	return t.In(h.loc).Format("2006-01-02 15:04:05")
 }

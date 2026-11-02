@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
 )
 
@@ -210,4 +211,96 @@ func TestBoostedLinksTargetMainForErrorPages(t *testing.T) {
 			t.Errorf("%s: main links with hx-target-error = %d, boosted links = %d", path, got, want)
 		}
 	}
+}
+
+// 承認モード（FR-H03・H04）: カードに 3 つの選択肢（現在の値が選択済み）を出し、PATCH で変える。変更で approved_at が NULL に戻る。
+func TestClientCardApprovalMode(t *testing.T) {
+	approvedAt := time.Date(2026, 10, 30, 11, 0, 0, 0, time.UTC)
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedClient(f, "c1", "alice-desktop", true, true, false)
+		c := seedClient(f, "c2", "bob-laptop", true, true, false)
+		_ = c
+		f.Admin.Cs[1].ApprovalMode = domain.ApprovalFirstTime
+		f.Admin.Cs[1].ApprovedAt = &approvedAt
+	})
+
+	list := r.get("/clients")
+	status(t, list, http.StatusOK)
+	c1 := between(t, list.Body, `id="client-c1"`, `id="client-c2"`)
+	for _, want := range []string{
+		`hx-patch="/clients/c1"`, `name="approval_mode"`, `<option value="always" selected>常時承認</option>`,
+		`<option value="first_time">初回のみ承認</option>`, `<option value="auto">自動許可</option>`, "承認モード: 常時承認",
+	} {
+		if !strings.Contains(c1, want) {
+			t.Errorf("card c1 does not contain %q\n%s", want, c1)
+		}
+	}
+	// always のクライアントには「初回のみ」の状態も取り消しも出ない。
+	for _, bad := range []string{"data-first-time-status", "approval/reset", "承認を取り消す"} {
+		if strings.Contains(c1, bad) {
+			t.Errorf("card c1 unexpectedly contains %q", bad)
+		}
+	}
+	// first_time で承認済みなら、承認済み（日時）と取り消しのボタンを出す。
+	contains(t, list, `<option value="first_time" selected>初回のみ承認</option>`, "承認済み（2026-10-30 11:00", `hx-post="/clients/c2/approval/reset"`, "承認を取り消す")
+
+	res := r.do(http.MethodPatch, "/clients/c1", url.Values{"approval_mode": {"first_time"}}, hx...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `id="client-c1"`, `<option value="first_time" selected>初回のみ承認</option>`, "承認モード: 初回のみ承認", "未承認（次のリース取得で承認が必要です）")
+	lacks(t, res, "<html", "承認を取り消す")
+	if got := r.f.Admin.Updates; len(got) != 1 || got[0].ApprovalMode == nil || *got[0].ApprovalMode != domain.ApprovalFirstTime {
+		t.Fatalf("updates = %+v", got)
+	}
+
+	// モードを変えると、承認済みだった first_time の approved_at が NULL に戻る。
+	res = r.do(http.MethodPatch, "/clients/c2", url.Values{"approval_mode": {"auto"}}, hx...)
+	status(t, res, http.StatusOK)
+	if r.f.Admin.Cs[1].ApprovedAt != nil || r.f.Admin.Cs[1].ApprovalMode != domain.ApprovalAuto {
+		t.Errorf("client = %+v, want auto with approved_at NULL", r.f.Admin.Cs[1])
+	}
+
+	for _, bad := range []string{"bogus", "", "Always"} {
+		res := r.do(http.MethodPatch, "/clients/c1", url.Values{"approval_mode": {bad}}, hx...)
+		status(t, res, http.StatusUnprocessableEntity)
+		contains(t, res, `data-error-code="invalid_argument"`)
+		lacks(t, res, "<html")
+	}
+	if len(r.f.Admin.Updates) != 2 {
+		t.Errorf("an invalid approval_mode reached the service: %+v", r.f.Admin.Updates)
+	}
+}
+
+// POST /clients/{id}/approval/reset: first_time で承認済みのときだけ approved_at を NULL に戻す。それ以外は 409、無ければ 404。
+func TestResetClientApproval(t *testing.T) {
+	approvedAt := time.Date(2026, 10, 30, 11, 0, 0, 0, time.UTC)
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedClient(f, "c1", "alice-desktop", true, true, false)
+		seedClient(f, "c2", "bob-laptop", true, true, false)
+		f.Admin.Cs[1].ApprovalMode = domain.ApprovalFirstTime
+		f.Admin.Cs[1].ApprovedAt = &approvedAt
+	})
+
+	res := r.post("/clients/c2/approval/reset", nil, hx...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `id="client-c2"`, "未承認（次のリース取得で承認が必要です）", "承認を取り消しました")
+	lacks(t, res, "<html", "承認を取り消す</button>")
+	if r.f.Admin.Cs[1].ApprovedAt != nil || r.f.Admin.Cs[1].ApprovalMode != domain.ApprovalFirstTime {
+		t.Errorf("client = %+v, want first_time with approved_at NULL", r.f.Admin.Cs[1])
+	}
+	// 詳細ページからはカードの PATCH 先に view=detail を保つ。
+	r.f.Admin.Cs[1].ApprovedAt = &approvedAt
+	res = r.post("/clients/c2/approval/reset?view=detail", nil, hx...)
+	status(t, res, http.StatusOK)
+	lacks(t, res, "/delete/confirm")
+	contains(t, res, `hx-patch="/clients/c2?view=detail"`)
+
+	// 取り消すものが無い（未承認の first_time・always）は 409、無いクライアントは 404。
+	for _, id := range []string{"c2", "c1"} {
+		res := r.post("/clients/"+id+"/approval/reset", nil, hx...)
+		status(t, res, http.StatusConflict)
+		contains(t, res, `data-error-code="conflict"`)
+	}
+	res = r.post("/clients/zzz/approval/reset", nil, hx...)
+	status(t, res, http.StatusNotFound)
+	contains(t, res, `data-error-code="not_found"`)
 }

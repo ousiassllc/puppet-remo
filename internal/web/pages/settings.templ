@@ -12,13 +12,16 @@ const settingsTitle = "設定"
 templ settingsBody(v view.Settings) {
 	<div class="max-w-xl space-y-4">
 		<h1 class="text-xl font-semibold text-slate-900">設定</h1>
+		<p class="text-sm text-slate-600" data-notice="agent-link">
+			内蔵エージェント（既定は無効）と API キーの設定は、<a href="/agent" class="font-medium text-indigo-700 underline" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">エージェント</a>の画面にあります。
+		</p>
 		@molecules.Card("") {
 			@organisms.SettingsForm(v.Form)
 		}
 	</div>
 }
 
-// Settings は設定のフルページ（FR-S01〜S04、FR-S08）。
+// Settings は設定のフルページ（FR-S01〜S04、FR-S06〜S09）。
 templ Settings(v view.Settings) {
 	@layout.GUI(settingsTitle, v.Chrome) {
 		@settingsBody(v)

@@ -393,6 +393,101 @@ out=$(cd "$r" && PATH="$tmp/fakebin:$PATH" "$here/publish-release.sh" v0.1.0 "$a
 assert_eq "公開(添付ファイルが無い): 失敗" 1 "$rc"
 
 # ----------------------------------------------------------------
+# sign-installer.sh（偽の go で、鍵ファイルの扱い・引数・Secret が無いときの動きを確かめる）
+
+mkdir -p "$tmp/signbin" "$tmp/signassets"
+cat >"$tmp/signbin/go" <<'FAKE'
+#!/usr/bin/env bash
+# 偽の go: 引数と環境を記録し、-key のファイルの権限・中身を記録して、-out に署名の代わりの内容を書く。
+log=$SIGN_LOG
+printf 'args:%s\n' "$*" >>"$log"
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -key) key=$2; shift 2 ;;
+    -out) out=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf 'keyfile:%s\n' "$key" >>"$log"
+printf 'keymode:%s\n' "$(stat -c %a "$key")" >>"$log"
+printf 'keycontent:%s\n' "$(cat "$key")" >>"$log"
+printf 'password_in_env:%s\n' "${MINISIGN_PASSWORD:+yes}" >>"$log"
+[[ ${FAKE_SIGN_FAIL:-} == 1 ]] && exit 1
+echo fake-signature >"$out"
+FAKE
+chmod +x "$tmp/signbin/go"
+echo installer >"$tmp/signassets/app.exe"
+
+sign() { # 追加の環境変数は呼び出し側で VAR=... を前置する
+  : >"$tmp/sign.log"
+  out=$(PATH="$tmp/signbin:$PATH" SIGN_LOG="$tmp/sign.log" "$here/sign-installer.sh" "$@" 2>&1) && rc=0 || rc=$?
+  slog=$(cat "$tmp/sign.log")
+}
+
+# Secret が無い: 通知を出して成功で終わる（署名を作らない・go を呼ばない）。
+rm -f "$tmp/signassets/app.exe.minisig"
+sign 0.1.1 "$tmp/signassets" app.exe
+assert_eq "署名(Secret 無し): rc" 0 "$rc"
+assert_contains "署名(Secret 無し): 通知" "$out" "::notice::"
+assert_eq "署名(Secret 無し): go を呼ばない" "" "$slog"
+[[ ! -e "$tmp/signassets/app.exe.minisig" ]] && ok=1 || ok=0
+assert_eq "署名(Secret 無し): 署名ファイルを作らない" 1 "$ok"
+# 空文字の Secret も「無い」と同じ。
+MINISIGN_SECRET_KEY='' sign 0.1.1 "$tmp/signassets" app.exe
+assert_eq "署名(空の Secret): rc" 0 "$rc"
+assert_eq "署名(空の Secret): go を呼ばない" "" "$slog"
+
+# Secret がある: 鍵を 0600 で一時ファイルに書き、署名ツールを呼び、終わったら鍵を消す。鍵・パスワードを出力しない。
+export MINISIGN_SECRET_KEY="untrusted comment: test only
+TEST-ONLY-KEY-MATERIAL"
+sign 0.1.1-nightly.20261102+abc1234 "$tmp/signassets" app.exe
+assert_eq "署名(Secret 有り): rc" 0 "$rc"
+assert_contains "署名(Secret 有り): 版を渡す" "$slog" "-version 0.1.1-nightly.20261102+abc1234"
+assert_contains "署名(Secret 有り): 出力先" "$slog" "-out $tmp/signassets/app.exe.minisig"
+assert_contains "署名(Secret 有り): 鍵の権限" "$slog" "keymode:600"
+assert_contains "署名(Secret 有り): 鍵の中身を渡す" "$slog" "TEST-ONLY-KEY-MATERIAL"
+assert_not_contains "署名(Secret 有り): パスワード無し" "$slog" "password_in_env:yes"
+assert_not_contains "署名(Secret 有り): 鍵を出力しない" "$out" "TEST-ONLY-KEY-MATERIAL"
+assert_not_contains "署名(Secret 有り): 鍵を引数に出さない" "$(grep '^args:' <<<"$slog")" "TEST-ONLY-KEY-MATERIAL"
+keyfile=$(sed -n 's/^keyfile://p' <<<"$slog")
+[[ -n $keyfile && ! -e $keyfile && ! -e "$(dirname "$keyfile")" ]] && ok=1 || ok=0
+assert_eq "署名(Secret 有り): 鍵の一時ファイルを消す" 1 "$ok"
+[[ -s "$tmp/signassets/app.exe.minisig" ]] && ok=1 || ok=0
+assert_eq "署名(Secret 有り): 署名ファイルができる" 1 "$ok"
+
+# パスワードは環境変数のまま渡し、出力しない。
+MINISIGN_PASSWORD=pw-test-only sign 0.1.1 "$tmp/signassets" app.exe
+assert_contains "署名(パスワード): 環境に渡る" "$slog" "password_in_env:yes"
+assert_not_contains "署名(パスワード): 出力しない" "$out" "pw-test-only"
+assert_not_contains "署名(パスワード): 引数に出さない" "$(grep '^args:' <<<"$slog")" "pw-test-only"
+
+# 署名ツールが失敗しても、鍵は消える。失敗は伝える。
+rm -f "$tmp/signassets/app.exe.minisig"
+FAKE_SIGN_FAIL=1 sign 0.1.1 "$tmp/signassets" app.exe
+assert_eq "署名(ツールの失敗): 失敗" 1 "$rc"
+keyfile=$(sed -n 's/^keyfile://p' <<<"$slog")
+[[ -n $keyfile && ! -e $keyfile ]] && ok=1 || ok=0
+assert_eq "署名(ツールの失敗): 鍵を消す" 1 "$ok"
+
+# 引数・インストーラの不備。
+sign 0.1.1 "$tmp/signassets"
+assert_eq "署名(引数が足りない): 失敗" 1 "$rc"
+sign 0.1.1 "$tmp/signassets" missing.exe
+assert_eq "署名(インストーラが無い): 失敗" 1 "$rc"
+unset MINISIGN_SECRET_KEY
+
+# ----------------------------------------------------------------
+# ワークフローのランナー: 公開リポジトリではセルフホストのジョブが動かない（組織の runner グループが公開リポジトリを許可しない）ので、
+# すべてのジョブを GitHub のランナー（ubuntu-latest）で走らせる。runs-on にそれ以外を書いたら失敗させる。
+
+repo_root=$(cd "$here/../.." && pwd)
+for wf in "$repo_root"/.github/workflows/*.yml; do
+  name=$(basename "$wf")
+  runs_on=$(sed -n 's/^[[:space:]]*runs-on:[[:space:]]*//p' "$wf" | sort -u)
+  assert_eq "ランナー($name): runs-on は ubuntu-latest だけ" "ubuntu-latest" "$runs_on"
+done
+
+# ----------------------------------------------------------------
 
 printf '\n%d 件成功、%d 件失敗\n' "$passed" "$failed"
 [[ $failed -eq 0 ]]
