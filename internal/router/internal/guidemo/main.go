@@ -6,8 +6,10 @@
 //
 //	task frontend:build && go run ./internal/router/internal/guidemo -addr 127.0.0.1:8899
 //
-// -lease で操作権の状態（idle / pending_approval / held。既定 held）を選べる。pending_approval ではダッシュボードに「承認待ち」を出し、
-// 承認ダイアログのページ（/approvals/ap-demo-001。残り時間は固定の偽の時計で 60 秒のまま）が開ける。
+// -lease で操作権の状態（idle / pending_approval / held / held_agent。既定 held）を選べる。pending_approval ではダッシュボードに「承認待ち」を出し、
+// 承認ダイアログのページ（/approvals/ap-demo-001。残り時間は固定の偽の時計で 60 秒のまま）が開ける。held_agent は、エージェントのタスクが操作権を
+// 保持している状態（ダッシュボードに実行中タスクと中断ボタン、強制剥奪）。終了済みのタスク（/tasks）はいつも入る。
+// -approval（none / safety_check / judge_action。既定 none）で、エージェントの承認ダイアログ（/approvals/ap-demo-sc・/approvals/ap-demo-ja）を出す。
 package main
 
 import (
@@ -38,23 +40,28 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8899", "待ち受けるアドレス（loopback のみ）")
-	lease := flag.String("lease", leaseHeld, "操作権の状態（idle / pending_approval / held）")
+	lease := flag.String("lease", leaseHeld, "操作権の状態（idle / pending_approval / held / held_agent）")
+	approval := flag.String("approval", approvalNone, "エージェントの承認ダイアログ（none / safety_check / judge_action）")
 	flag.Parse()
-	if err := run(*addr, *lease); err != nil {
+	if err := run(*addr, *lease, *approval); err != nil {
 		log.Fatal(err)
 	}
 }
 
 // 操作権の状態（-lease）。
 const (
-	leaseIdle    = "idle"
-	leasePending = "pending_approval"
-	leaseHeld    = "held"
+	leaseIdle      = "idle"
+	leasePending   = "pending_approval"
+	leaseHeld      = "held"
+	leaseHeldAgent = "held_agent"
 )
 
-func run(addr, lease string) error {
-	if lease != leaseIdle && lease != leasePending && lease != leaseHeld {
-		return fmt.Errorf("guidemo: -lease は idle / pending_approval / held のどれか（%q）", lease)
+func run(addr, lease, approval string) error {
+	if lease != leaseIdle && lease != leasePending && lease != leaseHeld && lease != leaseHeldAgent {
+		return fmt.Errorf("guidemo: -lease は idle / pending_approval / held / held_agent のどれか（%q）", lease)
+	}
+	if approval != approvalNone && approval != approvalSafetyCheck && approval != approvalJudgeAction {
+		return fmt.Errorf("guidemo: -approval は none / safety_check / judge_action のどれか（%q）", approval)
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -64,7 +71,7 @@ func run(addr, lease string) error {
 		return fmt.Errorf("guidemo は loopback でだけ待ち受ける（-addr %q）", addr)
 	}
 
-	f := seed(lease)
+	f := seed(lease, approval)
 	deps := f.Deps()
 	h, err := gui.New(deps)
 	if err != nil {
@@ -100,7 +107,7 @@ func run(addr, lease string) error {
 }
 
 // seed は見た目の確認用の架空のデータ（実在しないホスト名・ユーザー・IP）を入れる。
-func seed(lease string) *guitest.Fakes {
+func seed(lease, approval string) *guitest.Fakes {
 	f := guitest.New()
 	now := time.Now()
 	f.Clock.T = now
@@ -119,6 +126,8 @@ func seed(lease string) *guitest.Fakes {
 	}
 	demoActor := domain.Actor{Kind: domain.ActorMCP, ClientID: "client-001", Label: "demo-desktop", SessionID: "s1"}
 	switch lease {
+	case leaseHeldAgent:
+		holdByAgent(f, now)
 	case leaseHeld:
 		f.Leases.Held = true
 		f.Leases.H = service.Holder{LeaseID: "lease-1", Actor: demoActor, Since: now.Add(-3 * time.Minute), IdleRemaining: 4*time.Minute + 20*time.Second}
@@ -144,6 +153,8 @@ func seed(lease string) *guitest.Fakes {
 	f.Admin.Requests = append(f.Admin.Requests, demoRequestHistory(now)...)
 	f.Logs.Items = demoLogs(now)
 	seedAudit(f, now)
+	seedTasks(f, now) // seedAudit のあと（サムネイル・詳細の表を作り直すため）
+	seedApproval(f, now, approval)
 	expires := now.Add(60 * 24 * time.Hour)
 	used := now.Add(-time.Hour)
 	revoked := now.Add(-24 * time.Hour)

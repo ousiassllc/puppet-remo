@@ -22,6 +22,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/audit", h.Audit)
 	r.GET("/audit/:id", h.AuditDetail)
 	r.GET("/audit/:id/thumbnail", h.AuditThumbnail)
+	// エージェントのタスク（M4。FR-H10）。GUI ルーターだけにある
+	r.GET("/tasks", h.Tasks)
+	r.GET("/tasks/:id", h.TaskDetail)
 	r.GET("/clients", h.Clients)
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
@@ -65,6 +68,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 
 	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
 	r.POST("/lease/revoke", h.RevokeLease)
+
+	// タスクの中断（M4。FR-H02・H10）。ホスト所有者の中断のボタン
+	r.POST("/tasks/:id/cancel", h.CancelTask)
 
 	// キルスイッチ・設定
 	r.POST("/killswitch/trigger", h.TriggerKillSwitch)

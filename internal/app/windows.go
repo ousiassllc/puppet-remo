@@ -1,6 +1,24 @@
 package app
 
-import "github.com/ousiassllc/puppet-remo/internal/domain"
+import (
+	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
+)
+
+// 承認ダイアログのウィンドウの高さ（固定。クライアント名・種別・要求の内容・残り時間・許可 / 拒否が収まる大きさ）。
+// safety_check・judge_action は、内容の説明（Detail。最大 500 文字）と結果の説明（Note）の分だけ高くする。
+const (
+	approvalHeightLease = 340
+	approvalHeightAgent = 560
+)
+
+// approvalWindowHeight は承認の種類ごとのウィンドウの高さ。
+func approvalWindowHeight(kind string) int {
+	if kind == service.ApprovalKindLease {
+		return approvalHeightLease
+	}
+	return approvalHeightAgent
+}
 
 // このファイルは、Wails のウィンドウの生成・破棄の窓口（Windows）。承認ダイアログを開閉する購読側は approval_dialogs.go、
 // 操作中オーバーレイを出し入れする購読側は overlay.go。
@@ -17,9 +35,10 @@ type Window interface {
 type Windows interface {
 	// Main はホスト GUI のメインウィンドウ（閉じてもトレイに残る。Shell が使う）。
 	Main() MainWindow
-	// OpenApproval は承認要求 id の承認ダイアログ（専用のウィンドウ。URL は /approvals/{id}）を開いて返す。
+	// OpenApproval は承認要求 id の承認ダイアログ（専用のウィンドウ。URL は /approvals/{id}）を開いて返す。kind は承認の種類
+	// （service.ApprovalKind*）で、内容の説明（Detail）を出す safety_check・judge_action は背を高くする。
 	// ウィンドウはキャプチャ除外（ContentProtectionEnabled。NFR-S06）で作り、閉じるのは approvalDialogs（承認の終了・シャットダウン）。
-	OpenApproval(id string) Window
+	OpenApproval(id, kind string) Window
 	// ShowOverlay は操作中オーバーレイ（#69）を monitors の全モニターに出す。クリックスルー・キャプチャ除外・フォーカスを奪わない
 	// ウィンドウを 1 モニターに 1 枚、モニターの物理座標の原点・大きさに合わせて作る。label は枠に添える短い文言。
 	// すでに出ていれば、モニター構成が同じなら label だけを更新し、違えば作り直す（出している間のモニター構成の変化は、

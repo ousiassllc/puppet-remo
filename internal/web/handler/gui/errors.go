@@ -30,6 +30,8 @@ func classify(err error) failure {
 		return failure{http.StatusUnprocessableEntity, string(domain.CodeInvalidArgument), "入力内容を確認してください。"}
 	}
 	switch domain.CodeOf(err) {
+	case domain.CodeTaskNotFound:
+		return failure{http.StatusNotFound, codeNotFound, "対象が見つかりません。すでに削除されている可能性があります。"}
 	case domain.CodeConflict:
 		return failure{http.StatusConflict, string(domain.CodeConflict), "すでに処理済みか、現在の状態と合わないため実行できませんでした。"}
 	case domain.CodeKillSwitchActive:

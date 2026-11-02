@@ -93,11 +93,8 @@ func (h *WailsHost) serveGUI(w http.ResponseWriter, r *http.Request) {
 // Windows は承認ダイアログ・オーバーレイを開く Windows を返す（app.Config.Windows に渡す）。ウィンドウの生成は Run が Wails を動かしたあとに起きる。
 func (h *WailsHost) Windows() Windows { return wailsWindows{h} }
 
-// 承認ダイアログのウィンドウの大きさ（固定。クライアント名・種別・要求の内容・残り時間・許可 / 拒否が収まる大きさ）。
-const (
-	approvalWidth  = 440
-	approvalHeight = 340
-)
+// 承認ダイアログのウィンドウの幅（固定）。高さは種類ごと（approvalWindowHeight）。
+const approvalWidth = 440
 
 // wailsWindows は Windows の Wails 実装。
 type wailsWindows struct{ h *WailsHost }
@@ -117,12 +114,12 @@ func (w wailsWindows) Main() MainWindow {
 //   - プロセス内のウィンドウなので、platform.WindowManager の Own（プロセス ID の一致）で入力拒否（own_window）になる
 //
 // 許可も拒否も押さずに閉じられた場合は、承認待ちが 60 秒の失効で拒否になる（approvalDialogs の判断）。トレイのメニューに項目は足さない。
-func (w wailsWindows) OpenApproval(id string) Window {
+func (w wailsWindows) OpenApproval(id, kind string) Window {
 	win := w.h.wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "approval-" + id,
 		Title:            "puppet-remo 承認",
 		Width:            approvalWidth,
-		Height:           approvalHeight,
+		Height:           approvalWindowHeight(kind),
 		DisableResize:    true,
 		AlwaysOnTop:      true,
 		InitialPosition:  application.WindowCentered,

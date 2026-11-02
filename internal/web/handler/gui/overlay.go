@@ -2,6 +2,7 @@ package gui
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -16,9 +17,15 @@ import (
 const overlayLabelMaxRunes = 80
 
 // Overlay は GET /overlay。label は HTML エスケープして描画し（templ）、長ければ末尾を「…」にして切り詰める。
+// label は改行で 2 行まで: 1 行目が札の文言、2 行目（任意）が補足（agent の「エージェント実行中: <指示の要約>」。FR-H07）。
+// 各行をそれぞれ切り詰める。3 行目以降は捨てる。
 func (h *Handler) Overlay(c *gin.Context) {
+	first, rest, _ := strings.Cut(c.Query("label"), "\n")
+	second, _, _ := strings.Cut(rest, "\n")
 	c.Header("Cache-Control", "no-store")
-	h.render(c, http.StatusOK, pages.Overlay(view.Overlay{Label: truncateRunes(c.Query("label"), overlayLabelMaxRunes)}))
+	h.render(c, http.StatusOK, pages.Overlay(view.Overlay{
+		Label: truncateRunes(strings.TrimSpace(first), overlayLabelMaxRunes), Detail: truncateRunes(strings.TrimSpace(second), overlayLabelMaxRunes),
+	}))
 }
 
 // truncateRunes は s が max 文字を超えるとき、max 文字（末尾の「…」を含む）に切り詰める。

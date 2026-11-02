@@ -400,26 +400,53 @@ func TestClosingTheDialogWithoutAnAnswerLeavesTheRequestToTimeOut(t *testing.T) 
 	}
 }
 
-// M3 の kind は lease だけ。lease 以外の承認（M4）のダイアログは開かない。
-func TestNonLeaseApprovalDoesNotOpenADialog(t *testing.T) {
+// 承認の種類（lease・safety_check・judge_action。FR-H05）にかかわらず、要求ごとにダイアログが開く。開く種類が渡り、
+// 到着順の待ち行列（同時に 1 つ）も種類をまたいで守られる。
+func TestEveryApprovalKindOpensADialog(t *testing.T) {
 	k := newDialogKit(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	res := make(chan error, 1)
-	go func() {
-		_, err := k.approval.Request(ctx, service.ApprovalRequest{Kind: "safety_check", Who: dialogWho})
-		res <- err
-	}()
-	eventually(t, "the request to be pending", func() bool { return len(k.approval.Pending()) == 1 })
-	// 後続の lease の要求が開けば、先の safety_check は（購読側が処理済みで）開かなかったと分かる。
-	k.request(context.Background(), dialogWho)
-	w := k.nextWindow()
-	if p := k.approval.Pending(); len(p) != 2 || w.ID() != p[1].ID {
-		t.Errorf("dialog %q, pending %+v: want the dialog for the lease request only", w.ID(), p)
+	agentWho := domain.Actor{Kind: domain.ActorAgent, ClientID: "c1", Label: "claude", SessionID: "task-1"}
+	kinds := []string{service.ApprovalKindSafetyCheck, service.ApprovalKindJudgeAction, service.ApprovalKindLease}
+	results := make([]chan error, len(kinds))
+	for i, kind := range kinds {
+		results[i] = make(chan error, 1)
+		go func() {
+			_, err := k.approval.Request(ctx, service.ApprovalRequest{Kind: kind, Who: agentWho, Detail: "detail"})
+			results[i] <- err
+		}()
+		eventually(t, "the request to be pending", func() bool { return len(k.approval.Pending()) == i+1 })
 	}
-	cancel()
-	if err := <-res; !errors.Is(err, context.Canceled) {
-		t.Errorf("Request = %v, want context.Canceled after cancel", err)
+	for i, kind := range kinds {
+		w := k.nextWindow()
+		if p := k.approval.Pending(); w.ID() != p[0].ID || w.Kind() != kind {
+			t.Fatalf("dialog %q (kind %q), pending %+v: want the oldest request of kind %q", w.ID(), w.Kind(), p, kind)
+		}
+		if got := len(k.windows.ApprovalWindows()); got != i+1 {
+			t.Fatalf("dialogs opened = %d, want %d (one at a time)", got, i+1)
+		}
+		if err := k.approval.Resolve(w.ID(), false); err != nil {
+			t.Fatal(err)
+		}
+		k.expectClosed(w)
+	}
+	for i := range kinds {
+		if err := <-results[i]; err != nil {
+			t.Errorf("request %d: %v", i, err)
+		}
+	}
+}
+
+// 承認の種類ごとのウィンドウの高さ: lease は M3 のまま、safety_check・judge_action は内容の説明の分だけ高い。
+func TestApprovalWindowHeightByKind(t *testing.T) {
+	lease := approvalWindowHeight(service.ApprovalKindLease)
+	if lease != approvalHeightLease {
+		t.Errorf("lease height = %d, want %d", lease, approvalHeightLease)
+	}
+	for _, kind := range []string{service.ApprovalKindSafetyCheck, service.ApprovalKindJudgeAction} {
+		if got := approvalWindowHeight(kind); got != approvalHeightAgent || got <= lease {
+			t.Errorf("%s height = %d, want %d (taller than lease)", kind, got, approvalHeightAgent)
+		}
 	}
 }
 

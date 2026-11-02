@@ -31,9 +31,10 @@ func TestDashboardShowsServerState(t *testing.T) {
 		`id="server-status"`, `id="sessions"`, `id="lease"`, `id="header-killswitch"`, `name="rev_killswitch"`,
 	)
 	lacks(t, res, "sse-connect", "sse-swap", "sse:", "sse.min.js", "/events")
-	// 保持者（MCP）がいるので強制剥奪のボタンが出る（FR-H02）。実行中タスクは M4。
-	contains(t, res, `hx-post="/lease/revoke"`, "強制剥奪")
-	lacks(t, res, "タスク", "/tasks")
+	// 保持者（MCP）がいるので強制剥奪のボタンが出る（FR-H02）。実行中のタスクが無ければ、実行中タスクのパネルの中身は出ない
+	// （差し込み先 #running-tasks と版の隠し入力だけ。サイドバーの「タスク」は常にある）。
+	contains(t, res, `hx-post="/lease/revoke"`, "強制剥奪", `href="/tasks"`, `id="running-tasks"`, `name="rev_tasks"`)
+	lacks(t, res, "data-running-task", "実行中のエージェントタスク", "/cancel")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" && got != "" {
 		t.Errorf("Cache-Control = %q", got)
 	}
@@ -163,13 +164,13 @@ func TestKillSwitchErrors(t *testing.T) {
 
 func TestUnknownRoutes(t *testing.T) {
 	r := newRig(t)
-	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/tasks", "/agent"} {
+	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/tasks/t1/cancel"} {
 		res := r.get(target)
 		status(t, res, http.StatusNotFound)
 		contains(t, res, "<html", `data-error-code="not_found"`, "ページが見つかりません")
 	}
-	// M4 までに無い操作の経路は作らない（メソッド違いでも 404。/lease/revoke は POST だけ）。
-	for _, route := range [][2]string{{http.MethodPut, "/lease/revoke"}, {http.MethodPost, "/tasks/t1/cancel"}, {http.MethodPut, "/agent"}} {
+	// 無い操作の経路は作らない（メソッド違いでも 404。/lease/revoke と /tasks/{id}/cancel は POST だけ、/tasks は GET だけ）。
+	for _, route := range [][2]string{{http.MethodPut, "/lease/revoke"}, {http.MethodPut, "/tasks/t1/cancel"}, {http.MethodPost, "/tasks"}, {http.MethodDelete, "/tasks/t1"}} {
 		res := r.do(route[0], route[1], nil, hx...)
 		status(t, res, http.StatusNotFound)
 	}
@@ -180,7 +181,7 @@ func TestUnknownRoutes(t *testing.T) {
 	contains(t, res, `data-error-code="not_found"`)
 }
 
-// 状態駆動レンダリング: 強制剥奪のボタンは、他者（mcp・web）が保持中のときだけ HTML に出る（FR-H02、FR-L06）。
+// 状態駆動レンダリング: 強制剥奪のボタンは、他者（mcp・web・agent）が保持中のときだけ HTML に出る（FR-H02、FR-L06、FR-L08）。
 func TestDashboardRevokeButtonIsStateDriven(t *testing.T) {
 	holder := func(kind domain.ActorKind) func(*guitest.Fakes) {
 		return func(f *guitest.Fakes) {
@@ -195,10 +196,13 @@ func TestDashboardRevokeButtonIsStateDriven(t *testing.T) {
 		not    []string
 	}{
 		{"idle", func(*guitest.Fakes) {}, []string{"空き"}, []string{"/lease/revoke", "強制剥奪"}},
-		{"held by mcp", holder(domain.ActorMCP), []string{`hx-post="/lease/revoke"`, "強制剥奪", "MCP"}, nil},
-		{"held by web", holder(domain.ActorWeb), []string{`hx-post="/lease/revoke"`, "強制剥奪", "Web", "laptop"}, nil},
-		// agent の剥奪（タスクの中断を伴う）は M4。M2 では出さない。
-		{"held by agent", holder(domain.ActorAgent), []string{"エージェント", "保持中"}, []string{"/lease/revoke", "強制剥奪"}},
+		{"held by mcp", holder(domain.ActorMCP), []string{`hx-post="/lease/revoke"`, "強制剥奪", "MCP"}, []string{"タスクが中断されます"}},
+		{"held by web", holder(domain.ActorWeb), []string{`hx-post="/lease/revoke"`, "強制剥奪", "Web", "laptop"}, []string{"タスクが中断されます"}},
+		// agent の剥奪はそのタスクの中断を伴う（FR-L06・L08）ので、ボタンに加えてその旨を添える。
+		{"held by agent", holder(domain.ActorAgent), []string{`hx-post="/lease/revoke"`, "強制剥奪", "エージェント", "保持中", "タスクが中断されます"}, nil},
+		// 保持者になれない種別（host・system）は、仮に保持者として返っても剥奪のボタンを出さない（種別から決める）。
+		{"held by host", holder(domain.ActorHost), []string{"保持中", "ホスト"}, []string{"/lease/revoke", "強制剥奪", "タスクが中断されます"}},
+		{"held by system", holder(domain.ActorSystem), []string{"保持中"}, []string{"/lease/revoke", "強制剥奪"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

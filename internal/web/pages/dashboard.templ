@@ -11,6 +11,7 @@ const dashboardTitle = "ダッシュボード"
 templ dashboardBody(v view.Dashboard) {
 	<div class="space-y-6">
 		<h1 class="text-xl font-semibold text-slate-900">ダッシュボード</h1>
+		@organisms.RunningTasksPanel(v.Tasks)
 		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 			@organisms.ServerStatusPanel(v.Status)
 			@organisms.KillSwitchPanel(v.KillSwitch)
