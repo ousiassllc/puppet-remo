@@ -162,3 +162,75 @@ func TestControlLaunchFailureDoesNotObserveWindows(t *testing.T) {
 		t.Errorf("res = %+v, err = %v, slept = %v", res, err, e.slept)
 	}
 }
+
+// 起動したプロセスがすぐ終了し、別の pid の新しいウィンドウが開いたときは、既存のウィンドウが前に出ただけではないので、
+// 新しいウィンドウが背面にあっても印は付かない（Windows 11 のメモ帳。#55）。前面は既存のウィンドウのまま返す。
+func TestControlLaunchDoesNotFlagWhenANewWindowOfAnotherPIDOpens(t *testing.T) {
+	e := newAppEnv(t)
+	old := existingNotepad()
+	e.windows.SetWindows(old)
+	e.launcher.OnLaunch(func(uint32) {
+		fresh := domain.WindowInfo{ID: "88", Title: "無題 - メモ帳", Process: "notepad.exe", PID: userNotepadPID + 1}
+		e.windows.SetWindows(old, fresh)
+	})
+
+	res := launchNotepad(t, e)
+	if res.ReusedExistingWindow {
+		t.Error("ReusedExistingWindow = true, want false: a window that did not exist before the launch is open")
+	}
+	if res.Window == nil || res.Window.ID != "77" {
+		t.Errorf("Window = %+v, want the foreground window (77)", res.Window)
+	}
+	if d := auditDetail(t, lastLaunchEntry(t, e)); d["reused_existing_window"] != false {
+		t.Errorf("detail = %v, want reused_existing_window=false", d)
+	}
+}
+
+// 新しいウィンドウが、起動から少し遅れて開いたときも、観測の途中で拾って false にする。
+func TestControlLaunchDoesNotFlagWhenTheNewWindowOpensLater(t *testing.T) {
+	e := newAppEnv(t)
+	old := existingNotepad()
+	e.windows.SetWindows(old)
+	e.onSleep = func() {
+		if len(e.slept) == 3 {
+			e.windows.SetWindows(old, domain.WindowInfo{ID: "88", Title: "無題 - メモ帳", Process: "notepad.exe", PID: userNotepadPID + 1})
+		}
+	}
+
+	res := launchNotepad(t, e)
+	if res.ReusedExistingWindow {
+		t.Error("ReusedExistingWindow = true, want false: a new window opened during the observation")
+	}
+}
+
+// 起動の前からあったウィンドウの ID が同じまま（タイトルや前面が変わっただけ）なら、既存のウィンドウが前に出ただけのまま true。
+// puppet-remo 自身のウィンドウ（承認ダイアログ・オーバーレイ）が新しく開いても、新しいウィンドウには数えない。
+func TestControlLaunchIgnoresRetitledAndOwnWindowsWhenFlagging(t *testing.T) {
+	e := newAppEnv(t)
+	old := existingNotepad()
+	e.windows.SetWindows(old)
+	e.launcher.OnLaunch(func(uint32) {
+		retitled := old
+		retitled.Title = "*無題 - メモ帳"
+		own := domain.WindowInfo{ID: "99", Title: "puppet-remo", Process: "puppet-remo.exe", PID: 4242, Own: true}
+		e.windows.SetWindows(retitled, own)
+	})
+
+	res := launchNotepad(t, e)
+	if !res.ReusedExistingWindow {
+		t.Error("ReusedExistingWindow = false, want true: no new window other than puppet-remo's own appeared")
+	}
+}
+
+// 起動の前の一覧が読めなかったときは、新しいウィンドウの有無を使わず、従来どおり（前面が別の pid のウィンドウだけなら true）に判断する。
+func TestControlLaunchFallsBackWhenTheWindowListBeforeIsUnreadable(t *testing.T) {
+	e := newAppEnv(t)
+	e.windows.SetWindows(existingNotepad())
+	e.windows.SetError("List", domain.ErrDesktopUnavailable)
+	e.launcher.OnLaunch(func(uint32) { e.windows.SetError("List", nil) })
+
+	res := launchNotepad(t, e)
+	if !res.ReusedExistingWindow {
+		t.Error("ReusedExistingWindow = false, want true: without the list before the launch, a foreground window of another pid is the only evidence")
+	}
+}

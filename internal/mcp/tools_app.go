@@ -32,7 +32,7 @@ type launchWindowBody struct {
 }
 
 // launchAppBody の window は、前面のウィンドウを確かめられなかったときは付かない。
-// reused_existing_window は、pid のウィンドウが見つからないまま別のプロセスのウィンドウが前面にあるとき true（FR-M19）。
+// reused_existing_window は、pid のウィンドウも起動の前に無かった新しいウィンドウも見つからないまま別のプロセスのウィンドウが前面にあるとき true（FR-M19）。
 type launchAppBody struct {
 	OK                   bool              `json:"ok"`
 	AppID                string            `json:"app_id"`
@@ -68,7 +68,8 @@ func (s *Server) addAppTools() {
 			"(window: id, title, pid, process_name; omitted when it could not be determined). "+
 			"Some apps (for example tabbed single-window apps such as Windows 11 Notepad, browsers and Windows Terminal) only bring an "+
 			"already open window forward instead of opening a new one: reused_existing_window is true when no window of the returned pid "+
-			"was found and a window of another process is in the foreground. That window may hold the user's unsaved work. "+
+			"was found, no window that did not exist before the launch has appeared, and a window of another process is in the foreground. "+
+			"That window may hold the user's unsaved work. "+
 			"Before typing or clicking, ALWAYS confirm the target window with a screenshot or list_windows "+
 			"(a window pid different from the returned pid, or reused_existing_window, means the existing window was reused). "+
 			"Fails with app_not_found, launch_failed (reason in structuredContent), lease_held_by_other or kill_switch_active.",

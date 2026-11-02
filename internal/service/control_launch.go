@@ -78,11 +78,13 @@ func (c *control) launch(ctx context.Context, who domain.Actor, appID string) (r
 	if c.kill.Active() {
 		return LaunchResult{}, label, leaseID, domain.ErrKillSwitchActive
 	}
+	// 起動の前のウィンドウの一覧（起動後に新しく開いたウィンドウを見分ける。FR-M19。#55）。読めなければ nil（後の判定は新規の有無を使わない）。
+	before := c.windowIDs(ctx)
 	pid, err := c.launcher.Launch(ctx, platform.LaunchSpec{ExePath: app.ExePath, Args: app.Args, WorkingDir: app.WorkingDir})
 	if err != nil {
 		return LaunchResult{}, label, leaseID, launchFailure(err)
 	}
-	obs := c.observeLaunchedWindow(ctx, pid)
+	obs := c.observeLaunchedWindow(ctx, pid, before)
 	return LaunchResult{AppID: app.ID, PID: pid, Window: obs.foreground, ReusedExistingWindow: obs.reusedExistingWindow()}, label, leaseID, nil
 }
 

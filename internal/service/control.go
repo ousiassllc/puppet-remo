@@ -62,7 +62,7 @@ type Control interface {
 	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
 	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
-	//  5b. 起動後のウィンドウの観測（LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
+	//  5b. 起動後のウィンドウの観測（起動の前後のウィンドウの一覧を比べる。LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
 	//  6. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
 	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
 	// ReleaseInput は押下中のキー・ボタンをすべて離す（InputInjector.ReleaseAll の唯一の入口）。キルスイッチのクローザー `input` と、
@@ -77,8 +77,8 @@ type LaunchResult struct {
 	// Window は起動後に前面にあったウィンドウ（プロセスの作成後、pid のウィンドウが前面に出るまで最大およそ 3 秒待って観測する）。
 	// 前面のウィンドウを確かめられなかったときは nil。pid のウィンドウとは限らない（Window.PID が PID と違うことがある）。
 	Window *domain.WindowInfo
-	// ReusedExistingWindow は、pid のトップレベルウィンドウが見つからないまま、別のプロセスのウィンドウが前面にあるとき true
-	// （タブ式の単一ウィンドウのアプリなどで、既存のウィンドウが前に出ただけの可能性がある）。Window が nil のときは false。
+	// ReusedExistingWindow は、pid のトップレベルウィンドウが見つからず、起動の前に無かった新しいウィンドウも開かないまま、
+	// 別のプロセスのウィンドウが前面にあるとき true（タブ式の単一ウィンドウのアプリなどで、既存のウィンドウが前に出ただけの可能性がある）。Window が nil のときは false。
 	ReusedExistingWindow bool
 }
 
