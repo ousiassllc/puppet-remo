@@ -1071,7 +1071,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | エラー（§2 の `Error`） | `Code` 型（`string` の別名。`domain.CodeXxx`）を導入し、`Error.Code` は `Code`。`Error.Is` は `Code` の一致で判定する（`Msg`・`Detail` は比較しない）。`NewError`・`WithMsg`・`WithDetail`・`CodeOf`・`Code.HTTPStatus`・`Code.Valid` を足した。§2 の `ErrXxx` は `NewError(CodeXxx, …)` で作った `*Error`。`conflict` は `CodeConflict` だけでエラー値は持たない |
 | リース | `LeaseMachine`（`NewLeaseMachine`。I/O もタイマーも持たない idle → held → idle の状態機械）、`Lease`、`LeaseEvent`、`LeaseState`、`ReleaseReason`、`DefaultLeaseIdleTimeout`、`ActorKind.CanHoldLease`、`Actor.SameSession`、`Clock`、`IDGen` を足した |
 | M2 で追加した Op（#60） | `PointerMove`・`MouseButton`（`ButtonAction` = `ButtonActionDown` / `ButtonActionUp`）・`Wheel`（座標はストリームの座標。`Monitor.StreamToPhysical` で仮想デスクトップの物理座標へ）。`KeyEvent` も `Op` になった（`CheckKeyEvent` が SAS を拒否する）。MCP は使わない（ツールの公開面は変わらない） |
-| 未実装（M3〜M4） | `Action`・`Verdict`・`Stricter`・`TaskStatus`・`ErrJudgeDenied`・`ErrUnsupportedAction`、高速パスの `RoleClass`・`Candidate`・`CandidateTable`・`HandoffReason`・`ErrInvalidChoice` とその関数（M4） |
+| 未実装（M4） | なし。M3〜M4 の予定だった `Action`・`Verdict`・`Stricter`・`TaskStatus`・`ErrJudgeDenied`・`ErrUnsupportedAction`、高速パスの `RoleClass`・`Candidate`・`CandidateTable`・`HandoffReason`・`ErrInvalidChoice` とその関数は M4（#19）で実装した（§13.7）。`TaskStatus`・`HandoffReason`・`Task` は `task.go` |
 
 ### 13.3 platform（§3）
 
@@ -1151,6 +1151,18 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 
 **M1 では実装していない `Approval`（M3 の #66 で実装した。§13.5）・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`（M3 の #74 で実装した。§13.5）、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
 
+### 13.7 M4 の domain の実装差分（#19。§2）
+
+| 項目 | M4 の実装 |
+|------|----------|
+| Judge の型（`judge.go`） | `Verdict`（`VerdictAllow` < `VerdictRequireApproval` < `VerdictDeny`。ゼロ値は `VerdictAllow`。`String`）・`Stricter`（厳しい方）・`Action{Op, Source}`。`ErrJudgeDenied`・`ErrUnsupportedAction`・`ErrInvalidChoice` は `*Error` ではなく `errors.New` の単純なエラー（API 仕様 §2 のコード表に無く、`judge_denied`・`unsupported_action` はタスクの `error_code` の文字列だけなので `Code` を持たない）。同じ理由で `ErrSafetyCheckDenied`（FR-G08）と `ErrOpenAI`（`openai_error`。`openai.Model` の失敗は単純なエラーで返るため、`Agent` が `fmt.Errorf("%w: %w", ErrOpenAI, err)` で包む）を足した |
+| タスクの `error_code`（`taskerror.go`） | 定数 `TaskErrorInputBlocked`・`TaskErrorJudgeDenied`・`TaskErrorApprovalDenied`・`TaskErrorApprovalTimeout`・`TaskErrorKillSwitchActive`・`TaskErrorLeaseRequired`・`TaskErrorLeaseHeldByOther`・`TaskErrorLeaseRevoked`・`TaskErrorSafetyCheckDenied`・`TaskErrorUnsupportedAction`・`TaskErrorOpenAI`・`TaskErrorInternal`（文字列は上のとおりスネークケース）と、`TaskErrorCode(err) string`（nil は空。`ErrJudgeDenied`・`ErrUnsupportedAction`・`ErrSafetyCheckDenied`・`ErrOpenAI` の順に判定し、次に `CodeOf` が `input_blocked`・`approval_denied`・`approval_timeout`・`kill_switch_active`・`lease_*` のとき同名、それ以外は `internal`） |
+| 高速パスの候補表（`candidate.go`） | §2 の署名どおり。追加: `RoleClass` の定数（`RoleButton` …`RoleWindow`）、`CandidateKind` の定数（`CandidateClick`・`CandidateFocusWindow`・`CandidateReobserve`・`CandidateAbstain`）、`DefaultMaxCandidates`（24。`CandidateOptions.Max` が 0 以下ならこれ）。ControlType は Button 50000・CheckBox 50002・ComboBox 50003・Hyperlink 50005・ListItem 50007・MenuItem 50011・RadioButton 50013・TabItem 50019・TreeItem 50024・Window 50032 のみ（`RoleClassOf`） |
+| `BuildCandidateTable` の選択（規則 1〜5 の実装上の確定） | (1) 外接矩形が空（幅か高さが 0 以下）の要素も採らない（中心が定まらない）。(2) `Label` は前後の空白除去・連続する空白の圧縮だけをした表示用の形（大文字小文字は残す。`CandidateID` は `NormalizeLabel` を通す）。(3) 並べ替えのキーは中心ではなく矩形の（上端, 左端）で、同位置は ID の昇順（入力の並びに結果が依存しない）。(4) `focus_window` 候補は前面・自プロセス（`Own`。オーバーレイを含む）・昇格のウィンドウと、スナップショットのウィンドウ自身（`Snapshot.Window.ID` と同じ ID）、タイトルが空のウィンドウを除き、タイトルにも除外ラベルを適用し、ID は `CandidateID(RoleWindow, タイトル, nil)`。(5) `click` の `Monitor` は `Snapshot.Window.Monitor`、`focus_window` は `WindowInfo.Monitor`。(6) ID の衝突は `click` と `focus_window` の間も含めて数え、衝突した候補はすべて落とす。落とした数は `Dropped` に、衝突の分と上限超過の分を合算する。採用の条件による除外は `Dropped` に数えない |
+| `LabelExcluded` | 比較は `NormalizeLabel` を両辺に通した部分一致。**空（空白だけ）の除外語は無視する**（空文字列は何にでも部分一致し、全候補が消えるため） |
+| `CandidateTable.Validate` | 表の ID は候補をそのまま返す。`ChoiceReobserve` / `ChoiceAbstain` は `Kind` が `CandidateReobserve` / `CandidateAbstain`、`ID` が選択の文字列の `Candidate` を返す（空の表でも受理）。それ以外は `ErrInvalidChoice` を `%w` で包んだエラーと `Candidate{}`。エラー文に Jev の応答（入力）は載せない |
+| リースの保持者（FR-L08） | `ActorKind.CanHoldLease()` は `mcp`・`web`・`agent`。`LeaseMachine` の `Acquire`・`Request` は `agent` を受け付け、`agent` の保持中は他の種別が `lease_held_by_other`（`Detail["holder_kind"] = agent`）。`Revoke` は従来どおり `host` / `web` だけが呼べ、`agent` の保持者も剥奪できる（`ErrLeaseRevoked` が次の `Check`）。剥奪に伴うタスクの中断（`cancelled`）は `domain` ではなく `service` の責務 |
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -1192,3 +1204,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.35 | 2026-11-02 | §7 のオーバーレイ（全モニター・クリック透過・物理座標・保持者の変更・構成変化の扱い）と承認ダイアログの到着順の待ち行列、§5.4 の InputGuard の Overlay の扱い（`At` は Overlay を飛ばす）、§3 の `WindowInfo.Overlay`、§13.6 の `Windows`・`overlayController`・`GET /overlay` を追記し、「複数の要求の扱いは未決」「オーバーレイは #69 が足す」を削除 | #69・#68 |
 | 1.36 | 2026-11-02 | §13.5 の `LeaseManager`（承認の監査 `approval.*`・拒否後 30 秒のクールダウン・`RequestAcquire`・`lease-result`）・`HostAdmin`（`approval.reset`・クールダウンの解除）と、§13.6 の `mcp`（リースを取得しうるツールの 90 秒のタイムアウト）・`ws`（`lease-result` → `error`）・`web/handler/remote`（`POST /viewer/lease/acquire` の 202）を更新し、「未実装」「未決」の注記を削除。`launch_app` に呼び出しごとの承認は無いことを明記 | #66・#67 |
 | 1.37 | 2026-11-02 | §3 に `platform.Installer`、§5.10 の `Updater`（`Check(ctx, by)`・`Apply(ctx, by)`・`Start`・`Close`）、§10 と §13.3 の `Installer`、§13.5 に `Updater` の実装（署名・版の束縛・チャネル・適用の可否・失敗時の扱い・監査）と設定の `UpdateChannel` を追記し、「未実装」から `Updater` を外した | #74 |
+| 1.38 | 2026-11-02 | §13.2 の「未実装（M3〜M4）」を M4 の実装に更新し、§13.7 に M4 の domain の実装差分（Judge の型・タスクの `error_code`・高速パスの候補表の確定事項・`agent` のリース保持者）を追記 | #19 |

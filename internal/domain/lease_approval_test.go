@@ -150,8 +150,8 @@ func TestLeaseRequest(t *testing.T) {
 	t.Run("不正な要求者", func(t *testing.T) {
 		m, _ := newMachine(t, domain.DefaultLeaseIdleTimeout)
 		for name, who := range map[string]domain.Actor{
-			"agent は保持者になれない": {Kind: domain.ActorAgent, SessionID: "t"},
-			"セッション ID が空":     {Kind: domain.ActorMCP, ClientID: "c"},
+			"host は保持者になれない": {Kind: domain.ActorHost, SessionID: "t"},
+			"セッション ID が空":    {Kind: domain.ActorMCP, ClientID: "c"},
 		} {
 			if _, _, err := m.Request(who); !errors.Is(err, domain.ErrInvalidArgument) {
 				t.Errorf("%s: err = %v, want ErrInvalidArgument", name, err)
@@ -422,5 +422,18 @@ func TestLeaseTransitionsExhaustive(t *testing.T) {
 	walk(nil)
 	if count < 10000 {
 		t.Fatalf("explored %d sequences, want at least 10000", count)
+	}
+}
+
+// agent のタスクも承認待ちを経て保持者になれる（FR-G03 の pending_approval。FR-L08）。
+func TestLeaseRequestByAgent(t *testing.T) {
+	m, _ := newMachine(t, domain.DefaultLeaseIdleTimeout)
+	agent := domain.Actor{Kind: domain.ActorAgent, SessionID: "task-1"}
+	req := mustRequest(t, m, agent)
+	if _, _, err := m.Approve(req.ID); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if l, ok := m.Holder(); !ok || l.Holder != agent {
+		t.Errorf("Holder = %+v, %v; want the agent", l, ok)
 	}
 }
