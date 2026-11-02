@@ -69,7 +69,8 @@ type ViewerSession interface {
 	// Configure は閲覧者のモニター・品質・FPS を変える。Quality・FPS が 0 なら今の値のまま、Monitor は常に反映する。
 	// 範囲外は domain.ErrInvalidArgument（何も変えない）。終わったセッションも ErrInvalidArgument。
 	Configure(c ViewerConfig) error
-	// Done はセッションが終わったときに閉じる。Reason は Done が閉じた後に読む。
+	// Done はセッションが終わったときに閉じる。閲覧者の登録の解除・OnEnd の fn・web のリースの解放がすべて済んでから閉じるので、
+	// Done を待った側は、リースが解放済みであることを前提にしてよい。Reason は Done が閉じた後に読む。
 	Done() <-chan struct{}
 	Reason() ViewerCloseReason
 	// OnEnd は、セッションが終わるとき（どの理由でも）、web のリースを解放する前に fn を 1 度だけ呼ぶよう登録する
@@ -183,6 +184,7 @@ func (s *viewerSessions) Open(ctx context.Context, viewerID string, client domai
 		viewer:  v,
 		cancel:  cancel,
 		done:    make(chan struct{}),
+		closed:  make(chan struct{}),
 		cfg:     v.Config,
 		changed: make(chan ViewerConfig, 1),
 	}
@@ -302,9 +304,12 @@ type viewerSession struct {
 	viewer *Viewer
 	cancel context.CancelFunc // Streamer への登録を外す
 
+	// done は終了の開始（finish が最初に呼ばれた）で閉じる。内部の判定用（Configure の拒否・Open の登録の取り消し）。
+	// closed は終了の後始末（OnEnd・viewer_id の猶予・web のリースの解放）が終わってから閉じる。Done() で公開するのはこちら。
 	done   chan struct{}
+	closed chan struct{}
 	once   sync.Once
-	reason ViewerCloseReason // once の中で done を閉じる前に書く
+	reason ViewerCloseReason // once の中で closed を閉じる前に書く
 
 	// hookMu は onEnd と ended を守る。
 	hookMu sync.Mutex
@@ -322,12 +327,12 @@ var _ ViewerSession = (*viewerSession)(nil)
 func (c *viewerSession) Actor() domain.Actor                { return c.actor }
 func (c *viewerSession) Viewer() *Viewer                    { return c.viewer }
 func (c *viewerSession) ConfigChanged() <-chan ViewerConfig { return c.changed }
-func (c *viewerSession) Done() <-chan struct{}              { return c.done }
+func (c *viewerSession) Done() <-chan struct{}              { return c.closed }
 
 // Reason は終わった理由。終わっていなければ空。
 func (c *viewerSession) Reason() ViewerCloseReason {
 	select {
-	case <-c.done:
+	case <-c.closed:
 		return c.reason
 	default:
 		return ""
@@ -405,5 +410,6 @@ func (c *viewerSession) finish(reason ViewerCloseReason) {
 		}
 		s.mu.Unlock()
 		s.cfg.Leases.ReleaseSession(c.actor)
+		close(c.closed) // 後始末が済んでから。Done を待った側が、リースの解放済みを前提にしてよい
 	})
 }

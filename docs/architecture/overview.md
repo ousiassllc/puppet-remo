@@ -593,7 +593,7 @@ puppet-remo/
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
 | 配布・更新 | GitHub Releases（リポジトリは公開が前提）。インストーラ・`.sha256`・署名ファイル `.minisig`（minisign 形式。Ed25519）を公開し、アプリが埋め込みの公開鍵で署名検証して適用する。署名の trusted comment に版とファイル名を入れ、Release との不一致（付け替え）を拒否する。署名の秘密鍵は GitHub Actions の Secret（`MINISIGN_SECRET_KEY`）にだけ置き、Secret が無いときは署名を省いて公開する（アプリは署名のないリリースを適用しない）。チャネルは正式版（既定）とナイトリー。確認は起動の 1 分後と 6 時間ごと。詳細は [リリース運用](../operations/release.md) |
-| CI | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は別ジョブ `e2e` で行う（M2 の受け入れ条件ではなく、あとから足した CI の改善。#64。偽の platform と偽の tailnet により OS に依存しない。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
+| CI | GitHub Actions。すべてのジョブを GitHub のランナー（`ubuntu-latest`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は別ジョブ `e2e` で行う（M2 の受け入れ条件ではなく、あとから足した CI の改善。#64。偽の platform と偽の tailnet により OS に依存しない。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
 
 ## M1 実装での差分
@@ -612,7 +612,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |
 | ULID | `oklog/ulid/v2` | 同じ（`internal/app` の `ULIDGen`）。`domain.IDGen` として注入する |
 | ホスト GUI の更新 | `GET /poll`（本書の技術選定のとおり） | 同じ。`GET /events`（SSE）と `htmx-ext-sse` の同梱は残すが、M1 の GUI は読み込まない（未使用） |
-| 自動更新（M3・#74） | 署名検証付きの更新（`service.Updater`・`platform.Installer`。GitHub Releases の認証なしの取得・minisign の署名検証・チャネル・ダウングレード拒否・適用の可否） | M3 で実装した。公開鍵はプレースホルダ（`internal/service/updater_pubkey.pub`）のままで、オーナーが鍵を生成して置き換えるまで、確認だけ行い適用しない（fail closed）。リリース CI の署名は Secret があるときだけ（[リリース運用](../operations/release.md)「署名」）。`internal/app` が `Updater` を組み立て、`Shutdown` で止める（Wails の終了への結線は `wails_windows.go`） |
+| 自動更新（M3・#74） | 署名検証付きの更新（`service.Updater`・`platform.Installer`。GitHub Releases の認証なしの取得・minisign の署名検証・チャネル・ダウングレード拒否・適用の可否） | M3 で実装した。公開鍵（`internal/service/updater_pubkey.pub`。鍵 ID `4CF72995B5EA6E65`）は埋め込み済みで、このファイルを含むビルドは署名を検証できる。ファイルを空・コメントだけに戻すと、確認だけ行い適用しない（fail closed）。リリース CI の署名は Secret があるときだけ（[リリース運用](../operations/release.md)「署名」）。`internal/app` が `Updater` を組み立て、`Shutdown` で止める（Wails の終了への結線は `wails_windows.go`） |
 | ホスト GUI のウィンドウ | `ContentProtectionEnabled`（キャプチャ除外）を承認ダイアログ・オーバーレイ・ホスト GUI に付ける | 同じ（承認ダイアログは #68、オーバーレイは #69 で付けた） |
 
 ### ディレクトリ構成
@@ -680,5 +680,7 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.22 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
 | 1.23 | 2026-11-02 | 「運用ログと監査ログ」のログ画面の読み出しを、Windows で `FILE_SHARE_DELETE` つきで開く実装（`openLogFile`）に更新し、ローテーションとの共有違反の注記を直した | #53 |
 | 1.24 | 2026-11-02 | 技術選定表のテスト・CI の行と、M1 差分の `static/` の行を、#64 の実装（Lit のテストと Playwright の E2E は M2 の受け入れ条件ではなく CI の改善として別ジョブ `e2e` で足す。テスト専用サーバーはビルドタグ `e2e`）に更新 | #64（オーナーの決定） |
-| 1.25 | 2026-11-02 | 内蔵エージェントの接続方式を 2 つにした（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 設計方針の外部通信、技術選定の資格情報（ChatGPT の OAuth トークン）、構成図の OpenAI の表記、レイヤーの `openai`、エージェントのタスク実行に ChatGPT のプラン経路（トークンの更新・ストリーム・関数ツール・使用量の上限・API キーへの切り替えの承認・サインインの流れ）を追記 | #49 |
-| 1.26 | 2026-11-02 | 構成図の tailnet 公開面に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |
+| 1.25 | 2026-11-02 | 技術選定表の自動更新の行を、公開鍵の埋め込み済み（鍵 ID `4CF72995B5EA6E65`）に更新 | 署名鍵の登録 |
+| 1.26 | 2026-11-02 | 技術選定表の CI の行を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更 | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
+| 1.27 | 2026-11-02 | 内蔵エージェントの接続方式を 2 つにした（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 設計方針の外部通信、技術選定の資格情報（ChatGPT の OAuth トークン）、構成図の OpenAI の表記、レイヤーの `openai`、エージェントのタスク実行に ChatGPT のプラン経路（トークンの更新・ストリーム・関数ツール・使用量の上限・API キーへの切り替えの承認・サインインの流れ）を追記 | #49 |
+| 1.28 | 2026-11-02 | 構成図の tailnet 公開面に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |

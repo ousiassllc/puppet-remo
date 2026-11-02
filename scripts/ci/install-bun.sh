@@ -9,7 +9,7 @@ set -euo pipefail
 bun_version=1.3.14
 bun_sha256=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
 
-if command -v bun >/dev/null 2>&1 && [[ $(bun --version) == "$bun_version" ]]; then
+if command -v bun >/dev/null 2>&1 && command -v bunx >/dev/null 2>&1 && [[ $(bun --version) == "$bun_version" ]]; then
   echo "install-bun: bun $bun_version は PATH にある: $(command -v bun)"
   exit 0
 fi
@@ -28,6 +28,8 @@ else
 fi
 bindir="$work/bun-linux-x64"
 chmod +x "$bindir/bun"
+# 公式のリリースは bun の 1 本だけで、bunx は無い。bun は argv[0] が bunx のときに bunx として動くので、シンボリックリンクを置く。
+ln -s bun "$bindir/bunx"
 [[ $("$bindir/bun" --version) == "$bun_version" ]] || {
   echo "install-bun: 展開した bun の版が $bun_version ではない" >&2
   exit 1

@@ -178,6 +178,42 @@ func TestViewerDisconnectReleasesTheWebLease(t *testing.T) {
 	waitUntil(t, "the viewer to leave the streamer", func() bool { return e.stream.viewerCount() == 0 })
 }
 
+// Done が閉じたときには、web のリースはもう解放済み（Done を待った側が、リースの解放済みを前提にしてよい）。
+// 切断（ctx の取り消し）は別の goroutine で終了の後始末を走らせるので、Done が早く閉じると、待った側が解放前のリースを見ていた。
+// OnEnd の fn（リースの解放の前に呼ばれる）で後始末を止めて、その間は Done が閉じていないことを確かめる。
+func TestViewerDoneClosesOnlyAfterTheLeaseIsReleased(t *testing.T) {
+	e := newViewerEnv(t)
+	s, cancel := e.open(t, e.sessions.Issue(viewerClientA), viewerClientA)
+	mustAcquire(t, e.ctlEnv, s.Actor())
+
+	entered := make(chan struct{})
+	proceed := make(chan struct{})
+	s.OnEnd(func() {
+		close(entered)
+		<-proceed
+	})
+	cancel()
+	select {
+	case <-entered:
+	case <-time.After(streamWait):
+		t.Fatal("OnEnd was not called")
+	}
+	select {
+	case <-s.Done():
+		t.Fatal("Done closed before the end-of-session cleanup finished")
+	default:
+	}
+	if _, held := e.leases.Holder(); !held {
+		t.Fatal("the lease must still be held while OnEnd runs")
+	}
+
+	close(proceed)
+	waitClosed(t, s)
+	if _, held := e.leases.Holder(); held {
+		t.Fatal("the lease must be released by the time Done closes")
+	}
+}
+
 func TestViewerDisconnectKeepsOthersLease(t *testing.T) {
 	e := newViewerEnv(t)
 	s, _ := e.open(t, e.sessions.Issue(viewerClientA), viewerClientA)

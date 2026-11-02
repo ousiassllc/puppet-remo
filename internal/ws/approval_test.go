@@ -63,6 +63,30 @@ func newApprovalEnv(t *testing.T) *approvalEnv {
 	return ae
 }
 
+// awaitPendingApproval は承認待ちの要求が 1 つ以上になるまで待ち、最初のものを返す。
+// lease の pending_approval は、承認の要求（Approval.Request）が登録されるより先に通知される（承認の登録は別の goroutine）。
+// lease の通知を読んだ直後に Pending() を読むと、まだ空のことがある。
+func (e *approvalEnv) awaitPendingApproval() service.ApprovalRequest {
+	e.t.Helper()
+	var first service.ApprovalRequest
+	waitUntil(e.t, "the approval request to be registered", func() bool {
+		p := e.approval.Pending()
+		if len(p) == 0 {
+			return false
+		}
+		first = p[0]
+		return true
+	})
+	return first
+}
+
+// fireTimeout は承認の要求が登録（タイマーを張る）されるのを待ってから、そのタイマーを満了させる。
+func (e *approvalEnv) fireTimeout() {
+	e.t.Helper()
+	e.awaitPendingApproval() // 要求とタイマーは同じロックの中で登録されるので、要求が見えればタイマーもある
+	e.timers.fire()
+}
+
 // requestLease は actor の取得要求を別 goroutine で始め、承認待ちになるまで待つ。結果は返したチャネルに届く。
 func (e *approvalEnv) requestLease(actor domain.Actor) <-chan error {
 	e.t.Helper()
@@ -72,6 +96,7 @@ func (e *approvalEnv) requestLease(actor domain.Actor) <-chan error {
 		done <- err
 	}()
 	waitUntil(e.t, "the lease to become pending_approval", func() bool { _, ok := e.leases.Pending(); return ok })
+	e.awaitPendingApproval()
 	return done
 }
 
@@ -147,11 +172,11 @@ func TestDeniedAndTimedOutApprovalReturnToIdle(t *testing.T) {
 		wantErr error
 	}{
 		{"denied", func(e *approvalEnv) {
-			if err := e.approval.Resolve(e.approval.Pending()[0].ID, false); err != nil {
+			if err := e.approval.Resolve(e.awaitPendingApproval().ID, false); err != nil {
 				e.t.Fatal(err)
 			}
 		}, domain.ErrApprovalDenied},
-		{"timeout", func(e *approvalEnv) { e.timers.fire() }, domain.ErrApprovalTimeout},
+		{"timeout", func(e *approvalEnv) { e.fireTimeout() }, domain.ErrApprovalTimeout},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -187,7 +212,7 @@ func TestInputDuringPendingApprovalIsRejectedAsLeaseHeldByOther(t *testing.T) {
 		t.Error("an input during pending_approval reached the platform")
 	}
 
-	if err := e.approval.Resolve(e.approval.Pending()[0].ID, false); err != nil {
+	if err := e.approval.Resolve(e.awaitPendingApproval().ID, false); err != nil {
 		t.Fatal(err)
 	}
 	_ = awaitErr(t, done)
@@ -202,11 +227,11 @@ func TestRequestAcquireFailureIsSentToTheRequestingViewerOnly(t *testing.T) {
 		wantCode string
 	}{
 		{"denied", func(e *approvalEnv) {
-			if err := e.approval.Resolve(e.approval.Pending()[0].ID, false); err != nil {
+			if err := e.approval.Resolve(e.awaitPendingApproval().ID, false); err != nil {
 				e.t.Fatal(err)
 			}
 		}, "approval_denied"},
-		{"timeout", func(e *approvalEnv) { e.timers.fire() }, "approval_timeout"},
+		{"timeout", func(e *approvalEnv) { e.fireTimeout() }, "approval_timeout"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -238,7 +263,7 @@ func TestRequestAcquireFailureIsSentToTheRequestingViewerOnly(t *testing.T) {
 			e.leases.ClearApprovalCooldown(alice.ID)
 			done := e.requestLease(e.viewerActor(idOther))
 			readLeaseState(t, cOther, "pending_approval")
-			if err := e.approval.Resolve(e.approval.Pending()[0].ID, false); err != nil {
+			if err := e.approval.Resolve(e.awaitPendingApproval().ID, false); err != nil {
 				t.Fatal(err)
 			}
 			_ = awaitErr(t, done)
@@ -254,7 +279,7 @@ func TestRequestAcquireGrantIsSentAsLeaseMessage(t *testing.T) {
 		t.Fatalf("RequestAcquire = pending %v, %v", pending, err)
 	}
 	readLeaseState(t, c, "pending_approval")
-	if err := e.approval.Resolve(e.approval.Pending()[0].ID, true); err != nil {
+	if err := e.approval.Resolve(e.awaitPendingApproval().ID, true); err != nil {
 		t.Fatal(err)
 	}
 	if got := readLeaseState(t, c, "held"); got["mine"] != true {

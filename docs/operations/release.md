@@ -7,7 +7,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 | `develop` | ナイトリー（プレリリース） | `.github/workflows/nightly.yml` |
 | `main` | 正式版 | `.github/workflows/release.yml` |
 
-すべてのジョブはセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動きます。Windows の runner は使いません（`GOOS=windows` のクロスビルドと、NSIS の `makensis` を Linux で動かします）。使うトークンは `GITHUB_TOKEN`（`contents: write`）と、更新用の署名の Secret（`MINISIGN_SECRET_KEY`・任意で `MINISIGN_PASSWORD`。[署名](#署名更新用)）です。Secret が無くても CI は緑のまま（署名だけを省いて公開します）。Authenticode のコード署名はしません（[NFR-O07](../requirements/non-functional.md)。SmartScreen の警告は [README](../../README.md#smartscreen-の警告について) を参照）。
+すべてのジョブは GitHub のランナー（`ubuntu-latest`）で動きます。Windows の runner は使いません（`GOOS=windows` のクロスビルドと、NSIS の `makensis` を Linux で動かします）。使うトークンは `GITHUB_TOKEN`（`contents: write`）と、更新用の署名の Secret（`MINISIGN_SECRET_KEY`・任意で `MINISIGN_PASSWORD`。[署名](#署名更新用)）です。Secret が無くても CI は緑のまま（署名だけを省いて公開します）。Authenticode のコード署名はしません（[NFR-O07](../requirements/non-functional.md)。SmartScreen の警告は [README](../../README.md#smartscreen-の警告について) を参照）。
 
 ## 開発の流れ
 
@@ -74,7 +74,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 | 署名するもの | インストーラのバイト列全体（minisign の事前ハッシュ形式） |
 | 署名ファイル | `<インストーラのファイル名>.minisig`（インストーラと同じ Release に添付） |
 | 版の束縛 | 署名の trusted comment に `version=<main.version> file=<インストーラのファイル名>` を入れる。アプリは、Release の版・ファイル名と一致しない署名を拒否する（署名済みの古いインストーラを新しい Release へ付け替えるロールバックを防ぐ） |
-| 公開鍵 | リポジトリの [`internal/service/updater_pubkey.pub`](../../internal/service/updater_pubkey.pub)（`go:embed`）。ファイルが空・コメント（`#`）だけのプレースホルダの間、アプリは更新の確認だけ行い、**適用しない**（fail closed。画面に「署名鍵が未設定」と出る） |
+| 公開鍵 | リポジトリの [`internal/service/updater_pubkey.pub`](../../internal/service/updater_pubkey.pub)（`go:embed`。鍵 ID `4CF72995B5EA6E65`）。ファイルが空・コメント（`#`）だけの間は、アプリは更新の確認だけ行い、**適用しない**（fail closed。画面に「署名鍵が未設定」と出る） |
 | 秘密鍵 | GitHub Actions の Secret `MINISIGN_SECRET_KEY`（minisign の秘密鍵ファイルの中身）。パスワード付きの鍵なら `MINISIGN_PASSWORD` も。リポジトリ・ログには置かない |
 | 署名のステップ | `nightly.yml`・`release.yml` が、ビルドのあと・公開の前に `scripts/ci/sign-installer.sh` を実行する。Secret を一時ファイル（`0600`）に書き、[`scripts/ci/minisign-sign`](../../scripts/ci/minisign-sign/main.go)（Go。アプリの検証と同じライブラリ）で署名し、終了時に必ず消す。**Secret が無いときは通知（`::notice::`）だけ出して署名を省き、CI は緑のまま**（署名のないリリースは、アプリが適用しない） |
 | 鍵の生成 | CI では生成しない（オーナーが手元で行う。[次の節](#オーナーの作業署名鍵と公開)） |
@@ -103,7 +103,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
    minisign -G -p puppet-remo.pub -s puppet-remo.key
    ```
 
-2. **公開鍵をリポジトリに置く**: `puppet-remo.pub` の中身で `internal/service/updater_pubkey.pub` を**置き換える**（2 行: `untrusted comment: …` と鍵の行。プレースホルダのコメントは消す）。`develop` へ PR で入れる。このファイルを含むビルドから、アプリは署名を検証できる。**以前の版のアプリには公開鍵が無いので、鍵を入れた最初の版は手動でインストールする**。
+2. **公開鍵をリポジトリに置く**（済み。鍵 ID `4CF72995B5EA6E65`）: `puppet-remo.pub` の中身で `internal/service/updater_pubkey.pub` を**置き換える**（2 行: `untrusted comment: …` と鍵の行。プレースホルダのコメントは消す）。`develop` へ PR で入れる。このファイルを含むビルドから、アプリは署名を検証できる。**以前の版のアプリには公開鍵が無いので、鍵を入れた最初の版は手動でインストールする**。
 3. **秘密鍵を Secret に登録する**: リポジトリの Settings → Secrets and variables → Actions に、`MINISIGN_SECRET_KEY`（`puppet-remo.key` の中身そのまま。2 行）を登録する。パスワード付きの鍵なら `MINISIGN_PASSWORD` も登録する。`puppet-remo.key` は、登録したら安全な場所（パスワードマネージャーなど）に保管し、リポジトリ・チャットには置かない。
 4. **リポジトリ（Release）を公開にする**: アプリは認証なしで Release を取得する。リポジトリが private のままでは、更新の確認が失敗する。
 5. **確かめる**: `develop` に push してナイトリーが出たら、Release に `.minisig` が付いていることを確かめ、[Windows 実機スモーク手順](smoke-windows.md) §4.13 の更新の手順を実施する。
@@ -116,7 +116,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 
 1. Go を setup アクションで、bun を [`./.github/actions/setup-bun`](../../.github/actions/setup-bun/action.yml)（[`scripts/ci/install-bun.sh`](../../scripts/ci/install-bun.sh)。版と SHA-256 を固定して `RUNNER_TEMP` に展開する。sudo 不要）で入れる（キャッシュは `RUNNER_TEMP`）。
 2. `task`（版固定）と `wails3`（`go.mod` の版）を `go install` で入れる。`wails3` は `CGO_ENABLED=0` で入れる（cgo が有効だと Linux では gtk4・webkitgtk-6.0 が要る）。
-3. `makensis` が PATH に無ければ、`apt-get download nsis nsis-common` と `dpkg -x` で `RUNNER_TEMP` に展開する（sudo 不要。[`scripts/ci/install-nsis.sh`](../../scripts/ci/install-nsis.sh)）。runner に apt が無いときは失敗するので、NSIS を runner に入れること。
+3. `makensis` が PATH に無ければ、`apt-get download nsis nsis-common` と `dpkg -x` で `RUNNER_TEMP` に展開する（sudo 不要。[`scripts/ci/install-nsis.sh`](../../scripts/ci/install-nsis.sh)）。（ubuntu-latest には NSIS が入っていないので、このスクリプトで入れる。）
 4. `task windows:package RELEASE_VERSION=<X.Y.Z> APP_VERSION=<main.version>` を実行する。
 5. インストーラを改名し、SHA-256 を作る。exe に `main.version` が入っていることも確かめる。
 

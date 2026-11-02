@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 # push では main と develop だけ、作業ブランチは pull_request でだけ走らせる（同じコミットで二重に走らない）。
-# すべてのジョブはセルフホストの Linux ランナー（[self-hosted, Linux, X64]）で走らせる。
+# すべてのジョブは GitHub のランナー（ubuntu-latest）で走らせる（リポジトリを公開すると、組織のセルフホストの runner グループが使えなくなるため）。
 # Windows 向けの検査は GOOS=windows のクロスコンパイル（build と vet）だけで、Windows の実機は使わない。
-# ツール（Go・bun・golangci-lint・templ）はランナーに入っている前提にせず、setup アクションで導入する（bun は ./.github/actions/setup-bun）。
-# Go・bun のキャッシュはジョブ専用の一時領域（RUNNER_TEMP）に置き、ランナーのホームや他ジョブへ状態を残さない。
+# ツール（Go・bun・golangci-lint・templ）はランナーのイメージに入っている版に頼らず、setup アクションで導入する（bun は ./.github/actions/setup-bun）。
+# Go・bun のキャッシュはジョブ専用の一時領域（RUNNER_TEMP）に置く（ランナーはジョブごとに新しい VM で、状態は残らない）。
 # Lit のテストと Playwright の E2E は e2e ジョブで走らせる（Chromium は PLAYWRIGHT_BROWSERS_PATH でジョブ専用の領域に入れる）。M2 の受け入れ条件ではなく、追加した CI 改善（#64）。
 # 配信（nightly.yml・release.yml。docs/operations/release.md）の検査として、installer ジョブでインストーラをビルドだけして
 # （公開はしない）runner の道具の導入を確かめ、release-scripts ジョブで配信スクリプトのテストとワークフローの検査をする。
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   go:
     name: go (linux)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -69,7 +69,7 @@ jobs:
   # 実機の動作確認は docs/operations/smoke-windows.md の手順で行う（CI では行わない）。
   windows-cross:
     name: go (GOOS=windows build/vet)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -105,7 +105,7 @@ jobs:
   # 型検査 → 本番ビルド（static/dist を go:embed）と同梱物のテスト。ビルド成果物は OS に依存しない。
   frontend:
     name: frontend
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -168,12 +168,12 @@ jobs:
 
   # Lit のテストと Playwright の E2E（docs/architecture/frontend.md §9）。どちらもヘッドレスの Chromium が要るので、同じジョブで走らせる
   # （frontend ジョブとは分ける: ブラウザの導入と E2E の所要時間で、ビルド・型検査の結果を遅らせない）。
-  # Chromium はジョブ専用の領域（PLAYWRIGHT_BROWSERS_PATH）へ入れる。--with-deps と sudo は使わない（ランナーに必要なライブラリが入っている前提）。
+  # Chromium はジョブ専用の領域（PLAYWRIGHT_BROWSERS_PATH）へ入れる。ブラウザが要るシステムのライブラリは --with-deps で入れる（ubuntu-latest は sudo を使える）。
   # テスト専用サーバー（-tags e2e の cmd/puppet-remo-e2e。偽の platform・偽の tailnet・loopback の待ち受け）は本番のバイナリに入らない。
   # templ はこのジョブでは再生成しない（コミット済みの _templ.go を使う。差分は frontend ジョブが検査する）。
   e2e:
     name: e2e
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -209,9 +209,9 @@ jobs:
         working-directory: static
         run: bunx tsc -p e2e
 
-      - name: Chromium を導入（--with-deps なし・sudo なし）
+      - name: Chromium を導入（--with-deps でシステムのライブラリも入れる）
         working-directory: static
-        run: bunx playwright install chromium
+        run: bunx playwright install --with-deps chromium
 
       - name: Lit のテスト
         working-directory: static
@@ -232,7 +232,7 @@ jobs:
 
   lint:
     name: lint
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -273,7 +273,7 @@ jobs:
   # 配信のスクリプト（版・タグの決定、片付け、公開）のテストと、ワークフローの静的検査。
   release-scripts:
     name: release scripts
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
       run:
@@ -306,7 +306,7 @@ jobs:
   # runner での道具（task・wails3・makensis・gh）の導入が通ることを PR の段階で確かめる。
   installer:
     name: installer (build only)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
