@@ -104,7 +104,7 @@ func (r *LogReader) files() []string {
 
 // scanFileReverse はファイルの完結した行を末尾から順に fn へ渡す（fn が false を返すと止める）。ファイルが無ければ何もしない。
 func scanFileReverse(ctx context.Context, path string, fn func(line []byte) bool) error {
-	f, err := os.Open(path)
+	f, err := openLogFile(path) // Windows は FILE_SHARE_DELETE つき（ローテーションと競合しない。#53）
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil // ローテーションの途中で消えた・まだ作られていない
 	}
