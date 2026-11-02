@@ -12,8 +12,8 @@ import (
 
 const (
 	// scrollPixelsPerNotch は OpenAI の scroll_x / scroll_y（ピクセル）を MCP の scroll.amount（ノッチ。FR-M07）に
-	// 換算する固定値。仕様に換算の規則が無いため、ブラウザの 1 ノッチ（WHEEL_DELTA 120 ≒ 約 100 px）に合わせた暫定値。
-	// 端数は切り上げ（0 でない移動は最低 1 ノッチ）。実機のスモークで体感を確認し、オーナーの確認を要する。
+	// 換算する固定値（100 px = 1 ノッチ。FR-G05・docs/components/overview.md §12.1 でオーナーが決定。ブラウザの 1 ノッチ
+	// （WHEEL_DELTA 120）に近い値）。端数は切り上げ（0 でない移動は最低 1 ノッチ）。
 	scrollPixelsPerNotch = 100
 	// maxScrollNotches は domain.Scroll の Amount の上限（FR-M07: 1〜50）。超える移動は複数の Scroll に分ける。
 	maxScrollNotches = 50

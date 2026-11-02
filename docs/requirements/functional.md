@@ -130,7 +130,7 @@ M1・M2 は承認が不要なので `idle → held` に直接入る（`pending_a
 | FR-M04 | `mouse_move` | `x`, `y`, `monitor?` | OK | 必要 | M1 |
 | FR-M05 | `left_click` / `right_click` / `middle_click` / `double_click` / `triple_click` | `x?`, `y?`（省略時は現在位置）, `modifiers?`（`ctrl` / `shift` / `alt` / `win` の配列）, `monitor?` | OK | 必要 | M1 |
 | FR-M06 | `left_click_drag` | `from{x,y}`, `to{x,y}`, `modifiers?`, `monitor?` | OK | 必要 | M1 |
-| FR-M07 | `scroll` | `x`, `y`, `direction`（up / down / left / right）, `amount`（ノッチ数。Web UI のホイール入力 `dx`/`dy` と同じ単位。FR-W06 参照）, `monitor?` | OK | 必要 | M1 |
+| FR-M07 | `scroll` | `x`, `y`, `direction`（up / down / left / right）, `amount`（ノッチ数。Web UI のホイール入力 `dx`/`dy` と同じ単位。FR-W06 参照。内蔵エージェントの OpenAI の `scroll` は 100 px = 1 ノッチで換算する。FR-G05）, `monitor?` | OK | 必要 | M1 |
 | FR-M08 | `key` | `keys`（例: `ctrl+shift+t`、`Enter`） | OK | 必要 | M1 |
 | FR-M09 | `type` | `text`（Unicode 全般。日本語を含む） | OK | 必要 | M1 |
 | FR-M10 | `wait` | `ms`（上限 10,000） | OK | 不要 | M1 |
@@ -194,7 +194,7 @@ FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 �
 | FR-G02 | **MCP ツール**（トランスポートは FR-M 同様）: `run_task(prompt, max_steps?, max_duration_sec?)` → `{task_id, status}` を即時返却（`prompt` は 10,000 文字まで。`max_*` は設定値を下げる方向にのみ指定できる）。`get_task(task_id)` → 状態、ステップ数、高速パスのステップ数（`fast_steps`）、OpenAI のステップ数（`openai_steps`）、引き継ぎ理由（`handoff_reason`。FR-G23）、使用トークン、最終回答（完了時）、エラーコード。`cancel_task(task_id)`。タスクは依頼したクライアント自身のものだけ参照・中断できる。1 回の MCP 呼び出しは数百 ms 以内で終わり、長時間実行は `task_id` のポーリングで扱う（[NFR-S09](non-functional.md) の 30 秒制限と衝突しない） | M4 |
 | FR-G03 | **状態**: `pending_approval`（リース承認待ち）→ `running` → `completed` / `failed` / `cancelled` / `limit_reached` / `aborted`（アプリの再起動・異常終了で中断）。リース承認の拒否は `denied`。終了状態からは遷移しない。タスクはリース（種別 `agent`）を開始から終了まで保持する（FR-L08） | M4 |
 | FR-G04 | **ループ**: モデルは設定値（既定 `gpt-6.1-sol`）、ツールは `{type:"computer"}`（GA の `computer` ツール。旧 `computer_use_preview` は使わない）。最初の呼び出しで画面を撮って渡し、モデルが返す `computer_call` の `actions[]` を**順に**実行し、実行後に新しい画面を `computer_call_output`（`computer_screenshot`）で返す。`computer_call` が返らなくなったら最終回答として終了する。会話の持ち方は FR-G24（`store: false`、履歴を毎回送り直す）に従う。高速パス（FR-G16）が有効なときは、タスクは高速パスで始まり、引き継ぎ後にこのループへ入る | M4 |
-| FR-G05 | **アクションの対応**: OpenAI の `click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot` を、FR-M04〜M10 と同じ内部操作に 1 対 1 で写像する（入力層は MCP 直接・Web UI と共通）。未対応のアクションは `failed`（`unsupported_action`）で終了する | M4 |
+| FR-G05 | **アクションの対応**: OpenAI の `click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot` を、FR-M04〜M10 と同じ内部操作に 1 対 1 で写像する（入力層は MCP 直接・Web UI と共通）。未対応のアクションは `failed`（`unsupported_action`）で終了する。`scroll` は OpenAI がピクセル（`scroll_x` / `scroll_y`）で返すため、**100 px = 1 ノッチ**（FR-M07 の `amount` の単位）に換算する（端数は切り上げ。0 でない移動は最低 1 ノッチ。縦 → 横の順に別々の `scroll` にし、1 つが 50 ノッチ（FR-M07 の上限）を超えるときは分ける）。この値は決定済みで、変えるときは設定ではなく仕様の改訂で行う | M4 |
 | FR-G06 | **座標・スクリーンショット**: エージェントが見るスクリーンショットは FR-M16 と同じ縮小規則（プライマリモニター、最大辺は設定 FR-S03、既定 1568 px）で作る。モデルが返す座標は縮小座標として FR-M16 の変換で物理座標に戻す。画像は PNG を `detail: "original"` で送る（OpenAI ガイドの形式）。サイズは決定済み: 16:9 のモニターは 1568×882 = 49×28 = 1,372 パッチとなり、OpenAI が文書化する 30,000 パッチの拒否上限を大きく下回り、10,000 / 2,500 パッチのリサイズ予算も下回る。計測に基づく調整は FR-S03 の設定値で行える。送る枚数は FR-G24 | M4 |
 | FR-G07 | **1 アクションごとの検査**: OpenAI ループの `actions[]` の各アクションと、高速パスの各アクション（FR-G19）の直前に、キルスイッチ、リース、InputGuard（[NFR-S06](non-functional.md)）、Judge（FR-G12）を毎回通す。拒否・ブロック（`input_blocked`、`judge_denied`、`approval_denied` 等）が 1 回でも発生したら、残りのアクションは実行せず、タスクを `failed` として終了する（モデルに再試行させない。高速パスでも OpenAI への引き継ぎで救済しない） | M4 |
 | FR-G08 | **API の安全チェック**: OpenAI ループで `computer_call` に `pending_safety_checks` が付いたら、タスクを一時停止し、内容をホスト承認ダイアログに表示する。所有者が許可したときだけ `acknowledged_safety_checks` として返す。拒否・60 秒のタイムアウトは `failed`（`safety_check_denied`）。クライアントの承認モードが「自動許可」でも省略できない。高速パスの間は OpenAI を呼ばないためこのチェックは発生せず、代わりに FR-G07 の検査（Judge・InputGuard）と FR-G17 の除外ラベルが働く | M4 |
@@ -384,3 +384,4 @@ puppet-remo 自身のウィンドウ（ホスト GUI・承認ダイアログ。�
 | 1.27 | 2026-11-02 | FR-H03 に、M3 のマイグレーション（v4）で既存のクライアントの承認モードを `always` から `auto`（自動許可）へ移すこと（新規の既定は `always`）を追記 | M3 の続き（所有者の決定） |
 | 1.28 | 2026-11-02 | FR-W08 に保持者 `agent` のときの表示項目（指示・最終回答は出さない）、FR-G09 にモデル呼び出しの上限と承認待ちが時間の上限を超えうる旨、FR-G10 にリース喪失の扱い、FR-G14 に OpenAI の 401 での無効化を追記 | #19 のレビュー指摘 |
 | 1.29 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
+| 1.30 | 2026-11-02 | FR-G05 に OpenAI の `scroll`（ピクセル）の換算（100 px = 1 ノッチ、端数は切り上げ）を決定事項として追記し、FR-M07 に参照を足した | #19 |
