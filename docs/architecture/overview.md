@@ -55,7 +55,7 @@ graph TD
     end
     subgraph Host["ホスト (Windows) — 単一プロセス puppet-remo"]
         TS["tailscaled"]
-        subgraph Net["tailnet 公開面 (tailnet IP のみ Listen)"]
+        subgraph Net["tailnet 公開面 (tailnet IP のみ Listen。サインイン中だけ開く 127.0.0.1 のコールバック受信口を除く)"]
             RR["リモートルーター (Gin)<br/>/mcp /ws /viewer /api/v1"]
             MW["ミドルウェア<br/>Host/Origin 検証 → キルスイッチ → WhoIs → 許可リスト → Bearer(/mcp)"]
         end
@@ -681,3 +681,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.23 | 2026-11-02 | 「運用ログと監査ログ」のログ画面の読み出しを、Windows で `FILE_SHARE_DELETE` つきで開く実装（`openLogFile`）に更新し、ローテーションとの共有違反の注記を直した | #53 |
 | 1.24 | 2026-11-02 | 技術選定表のテスト・CI の行と、M1 差分の `static/` の行を、#64 の実装（Lit のテストと Playwright の E2E は M2 の受け入れ条件ではなく CI の改善として別ジョブ `e2e` で足す。テスト専用サーバーはビルドタグ `e2e`）に更新 | #64（オーナーの決定） |
 | 1.25 | 2026-11-02 | 内蔵エージェントの接続方式を 2 つにした（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 設計方針の外部通信、技術選定の資格情報（ChatGPT の OAuth トークン）、構成図の OpenAI の表記、レイヤーの `openai`、エージェントのタスク実行に ChatGPT のプラン経路（トークンの更新・ストリーム・関数ツール・使用量の上限・API キーへの切り替えの承認・サインインの流れ）を追記 | #49 |
+| 1.26 | 2026-11-02 | 構成図の tailnet 公開面に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |

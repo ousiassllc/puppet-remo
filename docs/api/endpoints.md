@@ -41,7 +41,7 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | 5 | 許可リスト照合（node ID + ログイン名） | 403 `device_not_registered`（接続要求を作成・集約。FR-A06）。登録済みでも該当機能が無効なら 403 `client_disabled` |
 | 6 | `/mcp` のみ: Bearer トークン（形式・照合は NFR-S04。node ID 束縛は FR-A05）。認証失敗は同一デバイスにつき 1 分 10 回まで（NFR-S04） | 401 `unauthorized`（`WWW-Authenticate: Bearer`）、超過は 429 `rate_limited` |
 
-エラーの形式は経路で決まる。**`/api/v1/*` と `/ws/screen` の接続前（ハンドシェイク）のエラーは problem+json**（§2）、**MCP（`/mcp`）は HTTP ステータス（401 / 403 / 429 / 503 など）と、ツール実行後のエラーは `isError`**（§3.4）、**Web UI と GUI のルートは HTML**（ページルートはエラーページ、アクションルートはエラーのフラグメント。同じステータスコードを返し、フラグメントには `data-error-code="<code>"` を付ける）。403 `device_not_registered` をブラウザ（Web UI のルート）が受けたときは、「接続要求を送信しました」という待機ページ（HTML）を返す（FR-W02）。
+エラーの形式は経路で決まる。**`/api/v1/*` と `/ws/screen` の接続前（ハンドシェイク）のエラーは problem+json**（§2）、**MCP（`/mcp`）は HTTP ステータス（401 / 403 / 429 / 503 など）と、ツール実行後のエラーは `isError`**（§3.4）、**Web UI と GUI のルートは HTML**（ページルートはエラーページ、アクションルートはエラーのフラグメント。同じステータスコードを返し、フラグメントには `data-error-code="<code>"` を付ける。`detail.reason` を持つコード〔接続方式 `chatgpt` の `agent_disabled` など〕は `data-error-reason="<reason>"` も付ける）。403 `device_not_registered` をブラウザ（Web UI のルート）が受けたときは、「接続要求を送信しました」という待機ページ（HTML）を返す（FR-W02）。
 
 ## 2. エラー形式（RFC 9457 problem+json）
 
@@ -90,7 +90,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `audit_unavailable` | 503 | `launch_app` | 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動できる） |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリだが OS がプロセスを作成できなかった（FR-M19。M1.5）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
-| `agent_disabled` | 409 | `run_task` / `PUT /agent`（GUI） | エージェント無効、選んだ接続方式（FR-G25）が使えない状態、またはクライアントに利用許可が無い。接続方式 `openai_api_key` は API キー未登録。接続方式 `chatgpt` は `structuredContent.detail.reason`（HTTP のエラーフラグメントは `data-error-reason`）に、`chatgpt_not_signed_in`（未サインイン）/ `chatgpt_signing_in`（サインイン中）/ `chatgpt_reauth_required`（認可切れ。再サインインが必要）/ `chatgpt_usage_limited`（使用量の上限による一時停止）のいずれかを付ける（FR-G01・G29・G30） |
+| `agent_disabled` | 409 | `run_task` / `PUT /agent`（GUI） | エージェント無効、選んだ接続方式（FR-G25）が使えない状態、またはクライアントに利用許可が無い。接続方式 `openai_api_key` は API キー未登録。接続方式 `chatgpt` は `structuredContent.detail.reason`（HTML のエラーフラグメントは、`data-error-code="agent_disabled"` に加えて `data-error-reason="<reason>"` を付ける。§1・§3.4）に、`chatgpt_not_signed_in`（未サインイン）/ `chatgpt_signing_in`（サインイン中）/ `chatgpt_reauth_required`（認可切れ。再サインインが必要）/ `chatgpt_usage_limited`（使用量の上限による一時停止）のいずれかを付ける（FR-G01・G29・G30） |
 | `task_not_found` | 404 | `get_task` / `cancel_task` | 対象が無い、または他クライアントのタスク |
 | `internal` | 500 | 共通 | 想定外のエラー。詳細はアプリのログにだけ残し、`detail` には出さない |
 
@@ -327,7 +327,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 }
 ```
 
-`detail` は、コードによって付く追加情報（無ければ省略）。`input_blocked` の `detail.reason` は `own_window` / `elevated_window`（`detail.window_id` も付く）/ `secure_attention_sequence`。
+`detail` は、コードによって付く追加情報（無ければ省略）。`input_blocked` の `detail.reason` は `own_window` / `elevated_window`（`detail.window_id` も付く）/ `secure_attention_sequence`。`agent_disabled`（接続方式 `chatgpt`）の `detail.reason` は `chatgpt_not_signed_in` / `chatgpt_signing_in` / `chatgpt_reauth_required` / `chatgpt_usage_limited`（§2。FR-G01）。
 
 **`own_window` の `detail.own_windows`**（FR-M20）: AI が避けられるよう、puppet-remo 自身のウィンドウ（スクリーンショットに写らない）の範囲を付ける。`get_ui_tree`・`focus_window` の `own_window` にも付く。
 
@@ -565,8 +565,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | DELETE | `/agent/fastpath/api-key` | なし | 200（資格情報を削除し、`agent.fastpath.enabled` を off、`consent_at` を削除する。実行中のタスクは失敗させず、以後の高速ステップを行わず OpenAI で続行する） |
 | PUT | `/agent/connection` | `connection`（`chatgpt` / `openai_api_key`。定義外は 422 `invalid_argument`）、`confirmed`（`openai_api_key` にするときだけ必須。**確認モーダル（`GET /agent/connection/api-key/confirm`）の確定ボタンだけが付ける隠し値 `1`**。付いていなければ 422 `invalid_argument` で、設定は変わらない。通常の設定フォームは送らない）、`reason`（確認モーダルが付ける `usage_limit` / `manual`。監査用。既定 `manual`） | 200 `#agent-sections`（モーダルを閉じる・トーストを OOB で添える）。`openai_api_key` にするときに OpenAI API キーが未登録なら 409 `conflict`。**保存するのは `agent.connection` だけ**（エージェントの有効・同意・ChatGPT のトークンは変えない）。実行中のタスクは自身の接続方式のまま続く（FR-G25）。`chatgpt` へ戻すのは確認なし。監査 `agent.connection`（`detail`: `from`・`to`・`reason`。`actor_type = host`。FR-G30・FR-AU01）。FR-S20・NFR-S22 |
 | GET | `/agent/connection/api-key/confirm` | クエリ `reason`（`usage_limit` / `manual`。既定 `manual`） | 200 確認モーダル（フラグメント。サーバーが描画）。以後のタスクが OpenAI API の従量課金になること・ChatGPT のプランの使用量は使われないこと・ツール（`computer`）と API の安全チェックが変わること・止まったタスクは再開されない（もう一度 `run_task` が要る）ことを書く。確定のボタンが `PUT /agent/connection`（`connection=openai_api_key`、`confirmed=1`、`reason`）を送る。OpenAI API キーが未登録、または接続方式がすでに `openai_api_key` なら 409 `conflict`（モーダルなし）。FR-G30 (4) |
-| POST | `/agent/chatgpt/signin` | なし（本文・クエリを読まない） | 200 ChatGPT のカード（`#chatgpt-card`。状態 `signing_in`。「中止」つき）。システムの既定ブラウザで、**アプリが組み立てた認可の URL 1 つだけ**（`https://auth.openai.com/api/accounts/authorize…`。FR-G28 (3)。リクエストで変えられない）を開き、コールバックの受信口（§7.6）を開く。サインインの完了は `/poll` の `rev_chatgpt`（§7.4）で画面に反映する。進行中なら 409 `conflict`。ブラウザを開けなかったときは `signed_out` のカードとエラーのトースト（URL・パラメーターは出さない）。監査 `agent.chatgpt.signin_start`（FR-AU01） |
-| POST | `/agent/chatgpt/signin/cancel` | なし | 200 カード（`signed_out`）。受信口を閉じる。進行中でなければ何もせず 200（冪等）。監査 `agent.chatgpt.signin`（`result = denied`、`error_code = cancelled`） |
+| POST | `/agent/chatgpt/signin` | なし（本文・クエリを読まない） | 200 ChatGPT のカード（`#chatgpt-card`。状態 `signing_in`。「中止」つき）。システムの既定ブラウザで、**アプリが組み立てた認可の URL 1 つだけ**（`https://auth.openai.com/api/accounts/authorize…`。FR-G28 (3)。リクエストで変えられない）を開き、コールバックの受信口（§7.6）を開く。サインインの完了は `/poll` の `rev_chatgpt`（§7.4）で画面に反映する。状態が `signed_out`・`reauth_required` 以外（進行中を含む）なら 409 `conflict`。ブラウザを開けなかったときは `signed_out` のカードとエラーのトースト（URL・パラメーターは出さない）。監査 `agent.chatgpt.signin_start`（FR-AU01） |
+| POST | `/agent/chatgpt/signin/cancel` | なし | 200 カード（`signed_out`）。受信口を閉じる。進行中でなければ何もせず 200（冪等）。監査 `agent.chatgpt.signin`（`result = denied`、`detail.reason = cancelled`） |
 | GET | `/agent/chatgpt/signout/confirm` | なし | 200 確認モーダル（解除すると、実行中の ChatGPT 経路のタスクが中断されること・ChatGPT 側の失効を試みること・再サインインまで `run_task` が `agent_disabled` になることを書く。チェックボックス「別のアカウントでサインインする」〔`forget_account`〕）。状態が `signed_out` なら 409 `conflict`。FR-G29 (6) |
 | DELETE | `/agent/chatgpt` | `forget_account`（チェックボックス。送られたら on） | 200 カード（`signed_out`）。モーダルを閉じる・トーストを OOB で添える（ChatGPT 側の失効を確認できたか。確認できないときは FR-G29 の文言）。**FR-G29 (6) の手順**（実行中タスクの中断 → 失効 → ローカルのトークン削除。`forget_account` なら `client_id`・`sub`・メールも削除）。`agent.enabled`・`agent.consent_at`・`agent.connection` は変えない。状態が `signed_out` なら 409 `conflict`。失効の失敗は 200 のまま（ローカルの削除は完了する）。監査 `agent.chatgpt.signout`（`detail`: `revoked`〔失効を確認できたか〕・`forget_account`・`cancelled_task`〔中断したタスクの ID〕） |
 | POST | `/agent/chatgpt/resume` | なし | 200 カード（`connected`）。`usage_limited` を解除する（使えるかは次のタスクの最初の呼び出しで分かる。FR-G30 (3)）。`usage_limited` でなければ 409 `conflict`。監査 `agent.chatgpt.resume` |
@@ -735,3 +735,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.41 | 2026-11-02 | §3.3 の `launch_app` の `reused_existing_window` を、起動前後のウィンドウ一覧の差で判定する（新しいウィンドウがあれば `false`）に改めた | #55 |
 | 1.42 | 2026-11-02 | §2 に `audit_unavailable`（503。`launch_app` の起動の「試行」を監査に書けないと起動しない）、§3.3 の `launch_app` に fail-closed の 2 行の監査を追記。§3.4 に、監査に残すスキーマ違反は `launch_app` だけであることを明記 | #37・#38 |
 | 1.43 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー）に対応: §1 のホスト専用の操作・§2 の `agent_disabled`（`detail.reason`）と `chatgpt_*` の失敗理由・§3.3 の `run_task`・`get_task`（`connection`、`error_code`、`openai_steps` の数え方）、§7.1 の `/agent`、§7.3 の `PUT /agent` の更新と `PUT /agent/connection`・API キーへの切り替えの確認モーダル・`/agent/chatgpt/*`（サインイン・中止・解除・再開・使用量の管理・モデル・初回の確認）、§7.4 の `rev_chatgpt`・`#chatgpt-card`、§7.5 の方針、§7.6（コールバック受信口）、§8 の決定事項・検証事項 | #49 |
+| 1.44 | 2026-11-02 | §1・§2・§3.4 に `data-error-reason` と `agent_disabled` の `detail.reason`、`POST /agent/chatgpt/signin` の 409 の条件（`signed_out`・`reauth_required` 以外）、`signin/cancel` の監査を `detail.reason = cancelled` に統一 | #49（レビュー指摘） |
