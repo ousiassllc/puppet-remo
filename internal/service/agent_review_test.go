@@ -579,3 +579,66 @@ func TestAgentReleasesHeldInputWithoutTheInputCloser(t *testing.T) {
 		t.Errorf("still held: keys %v buttons %v", k, b)
 	}
 }
+
+// ホストの承認の待ち（安全チェック・Judge）も実行時間の上限（FR-G09）に含まれる: 承認を待っている間に上限のタイマーが満了すると、
+// 待ちを打ち切って limit_reached で終わり、アクションは実行しない。タイマーの長さはタスクの上限（max_duration_sec）。
+func TestAgentApprovalWaitCountsTowardsTheTimeLimit(t *testing.T) {
+	safety := func() modelStepSpec {
+		s := step("c1", agentClick)
+		s.out.SafetyChecks = []openai.SafetyCheck{{ID: "sc_1", Code: "malicious_instructions", Message: "check"}}
+		return s
+	}
+	tests := []struct {
+		name     string
+		kind     string
+		judgeAsk bool
+		script   []modelStepSpec
+	}{
+		{"safety check", ApprovalKindSafetyCheck, false, []modelStepSpec{safety(), finalAnswer("never")}},
+		{"judge action", ApprovalKindJudgeAction, true, []modelStepSpec{step("c1", agentClick), finalAnswer("never")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ae := newAgentEnv(t, agentOpts{script: tt.script})
+			if tt.judgeAsk {
+				ae.judge.v = domain.VerdictRequireApproval
+			}
+			task, err := ae.agent.Start(context.Background(), ae.by, StartInput{Prompt: "p", MaxDurationSec: 30})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if req := ae.nextApprovalRequest(t); req.Kind != tt.kind {
+				t.Fatalf("request = %+v, want kind %s", req, tt.kind)
+			}
+			if got := ae.limit.Last(); got != 30*time.Second {
+				t.Fatalf("limit timer = %v, want 30s (the task's max_duration_sec)", got)
+			}
+			ae.limit.FireAll() // 承認の返事が無いまま、上限の時間になる（承認のタイマー ae.aTimers は満了させない）
+			got := ae.waitTask(t, task.ID)
+			if got.Status != domain.TaskLimitReached || got.ErrorCode != "" {
+				t.Fatalf("task = %s / %q, want limit_reached with no error_code", got.Status, got.ErrorCode)
+			}
+			if hasInputCall(ae.ctlEnv, "Click") {
+				t.Error("the action ran although the time limit was reached while waiting for approval")
+			}
+			if len(ae.input.CallsTo("ReleaseAll")) == 0 {
+				t.Error("input was not released")
+			}
+			if n := ae.approval.Pending(); len(n) != 0 {
+				t.Errorf("the pending approval was not withdrawn: %+v", n)
+			}
+		})
+	}
+}
+
+// 実行時間の上限のタイマーは、タスクが終わったら止める（完了したタスクを後から limit_reached にしない）。
+func TestAgentTimeLimitTimerStopsWhenTheTaskEnds(t *testing.T) {
+	ae := newAgentEnv(t, agentOpts{script: []modelStepSpec{finalAnswer("done")}})
+	task := ae.start(t, "p")
+	if got := ae.waitTask(t, task.ID); got.Status != domain.TaskCompleted {
+		t.Fatalf("task = %s", got.Status)
+	}
+	if n := ae.limit.Active(); n != 0 {
+		t.Errorf("active limit timers after the task ended = %d, want 0", n)
+	}
+}

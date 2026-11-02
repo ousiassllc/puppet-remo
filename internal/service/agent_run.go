@@ -25,11 +25,13 @@ type run struct {
 	cfg    AgentConfig // タスクの開始時の設定（そのタスクでは固定する）
 	ctx    context.Context
 	cancel context.CancelCauseFunc
-	done   chan struct{} // ループの終了処理（終了状態の保存・入力とリースの解放）が済んだら閉じる
-	actor  domain.Actor  // リースと Control.Do の操作主体（Kind agent、SessionID = タスク ID）
+	// stopLimit は実行時間の上限のタイマーの取り消し（armLimitTimer。running になるまでは nil）。
+	stopLimit func() bool
+	done      chan struct{} // ループの終了処理（終了状態の保存・入力とリースの解放）が済んだら閉じる
+	actor     domain.Actor  // リースと Control.Do の操作主体（Kind agent、SessionID = タスク ID）
 
 	task      domain.Task // agent_tasks の行の作業用の写し。更新のたびに persist で保存する
-	startedAt time.Time   // running になった時刻（実行時間の上限の起点。承認待ちは数えない）
+	startedAt time.Time   // running になった時刻（実行時間の上限の起点。リースの承認待ち（running になる前）は数えず、running のあとの承認待ちは数える）
 	hist      *openai.History
 	out       outcome
 }
@@ -68,6 +70,7 @@ func (r *run) execute() {
 	defer close(r.done)
 	defer r.a.clear(r)
 	defer r.finish()
+	defer r.stopLimitTimer()
 	defer func() {
 		if p := recover(); p != nil {
 			r.a.log.Error("agent task panicked", "task_id", r.id, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
@@ -84,6 +87,7 @@ func (r *run) loop() outcome {
 		return r.acquireFailure(err)
 	}
 	r.markRunning()
+	r.armLimitTimer()
 
 	var summary []string
 	if fast := r.a.cfg.Fast; fast != nil && fast.Enabled(ctx) {
@@ -176,6 +180,19 @@ func (r *run) markRunning() {
 	r.persist()
 }
 
+// armLimitTimer は実行時間の上限（FR-G09）のタイマーを起動する。満了すると ctx を errLimitReached で取り消すので、
+// モデルの呼び出し・ホストの承認の待ち（安全チェック・Judge。各最大 60 秒）の最中でも上限の時刻に打ち切られ、
+// タスクは limit_reached で終わる（承認待ちの時間も上限に含まれる）。ステップ・アクションの前の検査（checkBeforeAction）はそのまま残す。
+func (r *run) armLimitTimer() {
+	r.stopLimit = r.a.cfg.AfterFunc(time.Duration(r.task.MaxDurationSec)*time.Second, func() { r.cancel(errLimitReached) })
+}
+
+func (r *run) stopLimitTimer() {
+	if r.stopLimit != nil {
+		r.stopLimit()
+	}
+}
+
 // failure は途中のエラーをタスクの結末にする。ctx の取り消し（Cancel・CancelAll・リースの剥奪）は cancelled、
 // 上限は limit_reached、キルスイッチで拒否された Do も cancelled（FR-G10）、リースを失った（FR-L08）Do・リースの確認は
 // Watch の有無によらず cancelled にそろえる（剥奪は lease_revoked、アイドルタイムアウトの解放 ErrLeaseRequired と、剥奪のあと
@@ -200,6 +217,9 @@ func (r *run) failure(err error) outcome {
 }
 
 func (r *run) cancelled() outcome {
+	if errors.Is(context.Cause(r.ctx), errLimitReached) { // 実行時間の上限のタイマー（armLimitTimer）による取り消し
+		return outcome{status: domain.TaskLimitReached}
+	}
 	reason := "cancelled"
 	var c cancelCause
 	if errors.As(context.Cause(r.ctx), &c) {

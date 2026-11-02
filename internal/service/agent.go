@@ -81,6 +81,10 @@ type AgentServiceConfig struct {
 	ModelTimeout time.Duration
 	// CancelSettleWait は Cancel がループの終了を待つ最大の時間。0 なら DefaultAgentCancelSettleWait。
 	CancelSettleWait time.Duration
+	// AfterFunc は実行時間の上限（FR-G09）のタイマー。nil なら time.AfterFunc。タスクが running になった時点で、
+	// 上限（task.MaxDurationSec）の長さのタイマーを 1 つ起動し、満了したらタスクを中断して limit_reached にする。
+	// モデルの呼び出し・ホストの承認の待ち（安全チェック・Judge）の最中でも、上限の時刻で打ち切るためのもの。
+	AfterFunc AfterFunc
 }
 
 // AgentService は Agent の実装。同時に動くタスクは 1 つだけ（リースが保証し、プロセス内でも 1 つに絞る）。
@@ -107,6 +111,9 @@ func NewAgent(cfg AgentServiceConfig) (*AgentService, error) {
 	}
 	if cfg.CancelSettleWait <= 0 {
 		cfg.CancelSettleWait = DefaultAgentCancelSettleWait
+	}
+	if cfg.AfterFunc == nil {
+		cfg.AfterFunc = timeAfterFunc
 	}
 	log := cfg.Logger
 	if log == nil {

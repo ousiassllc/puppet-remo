@@ -189,6 +189,7 @@ type agentEnv struct {
 	logs    *syncBuffer
 	toasts  <-chan Event
 	by      domain.Actor // 依頼元（client-a の MCP セッション）
+	limit   *ctlTimers   // 実行時間の上限のタイマー（AgentServiceConfig.AfterFunc の偽物）
 }
 
 // agentOpts は newAgentEnv の設定。ゼロ値は「承認なし（auto）・高速パスなし・台本なしの偽モデル」。
@@ -287,8 +288,10 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 	if o.wrapTasks != nil {
 		tasks = o.wrapTasks(tasks)
 	}
+	ae.limit = &ctlTimers{}
 	ae.agent, err = NewAgent(AgentServiceConfig{
-		Tasks: tasks, Clients: db.Clients(), Settings: ae.cfg, Control: e.control, Leases: e.leases, Kill: e.kill,
+		AfterFunc: ae.limit.AfterFunc,
+		Tasks:     tasks, Clients: db.Clients(), Settings: ae.cfg, Control: e.control, Leases: e.leases, Kill: e.kill,
 		Approval: le.approval, Model: model, Fast: ae.fast, Audit: e.audit, Bus: bus, Disabler: ae.cfg, Clock: e.clock, IDs: &taskIDs{}, Logger: logger,
 		ModelTimeout: o.modelTimeout, CancelSettleWait: o.cancelWait,
 	})
