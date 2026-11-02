@@ -215,7 +215,7 @@ func judgeApprovalDetail(tool string, procs []string, r Reason) string {
 		}
 		return ch
 	}, d)
-	return truncateRunes(d, maxJudgeApprovalDetail)
+	return domain.TruncateRunes(d, maxJudgeApprovalDetail)
 }
 
 // recheckAfterApproval は承認を待っている間に変わりうるもの（リース・InputGuard・対象のウィンドウ）を、許可のあとに確かめ直す。

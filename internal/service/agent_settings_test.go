@@ -884,3 +884,79 @@ func TestAgentSettingsAuditDetailIsValidJSON(t *testing.T) {
 		}
 	}
 }
+
+// 無効化は、無関係な欄の不備（ここでは範囲外の max_steps）に妨げられない。他の欄は保存せず、無効化・同意の取り消し・タスクの中断だけを行う。
+func TestAgentSettingsDisableIsNotBlockedByInvalidUnrelatedFields(t *testing.T) {
+	e := newAgentSettingsEnv(t)
+	e.enableAgent(t)
+	in := validAgentInput()
+	in.Enabled = false
+	in.MaxSteps, in.Model = 0, "" // 不備
+	if err := e.s.SaveAgent(context.Background(), in); err != nil {
+		t.Fatalf("disabling with invalid unrelated fields: %v", err)
+	}
+	c, _ := e.s.Config(context.Background())
+	if c.Enabled || c.ConsentAt != nil {
+		t.Fatalf("config = %+v, want disabled without consent", c)
+	}
+	if c.MaxSteps != 50 || c.Model != "gpt-6.1-sol" {
+		t.Errorf("invalid fields must not be saved: %+v", c)
+	}
+	if got := e.cancels(); len(got) != 1 || got[0] != "agent_disabled" {
+		t.Errorf("cancels = %v", got)
+	}
+	if cs := e.entries("agent.consent"); len(cs) != 1 || auditDetail(t, cs[0])["state"] != "revoked" {
+		t.Errorf("audit = %+v", e.audit.Entries())
+	}
+	// すでに無効で同意も無いなら、不備は通常どおり検査される。
+	e.audit.entries = nil
+	if err := e.s.SaveAgent(context.Background(), in); fieldsOf(t, err)[FieldAgentMaxSteps] == "" {
+		t.Fatalf("err = %v, want a max_steps field error", err)
+	}
+	// 有効化は不備があれば断る。
+	in.Enabled, in.Consent = true, true
+	if err := e.s.SaveAgent(context.Background(), in); fieldsOf(t, err)[FieldAgentModel] == "" {
+		t.Fatalf("err = %v, want a model field error", err)
+	}
+}
+
+// OpenAI の 401（NFR-S16）: エージェントを無効にして consent_at を消し、agent.consent（revoked）を actor system・
+// error_code openai_unauthorized で記録する。キーは残す。すでに無効なら何もしない。
+func TestAgentSettingsDisableAgentBySystemAfter401(t *testing.T) {
+	e := newAgentSettingsEnv(t)
+	e.enableAgent(t)
+	system := domain.Actor{Kind: domain.ActorSystem, Label: "openai"}
+	if err := e.s.DisableAgent(context.Background(), system, AgentDisableOpenAIUnauthorized); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := e.s.Config(context.Background())
+	if c.Enabled || c.ConsentAt != nil {
+		t.Errorf("config = %+v", c)
+	}
+	if _, err := e.secrets.Get(platform.SecretOpenAI); err != nil {
+		t.Error("the OpenAI key stays (the GUI asks for a new one)")
+	}
+	cs := e.entries("agent.consent")
+	if len(cs) != 1 {
+		t.Fatalf("audit = %+v", e.audit.Entries())
+	}
+	if d := cs[0]; d.Kind != "agent" || d.ActorType != domain.ActorSystem || d.ErrorCode != "openai_unauthorized" || d.Result != "error" || d.ClientLabel != "openai" ||
+		auditDetail(t, d)["state"] != "revoked" {
+		t.Errorf("entry = %+v (%s)", d, d.DetailJSON)
+	}
+	e.audit.entries = nil
+	if err := e.s.DisableAgent(context.Background(), system, AgentDisableOpenAIUnauthorized); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.audit.Entries()) != 0 {
+		t.Errorf("a second call must do nothing: %+v", e.audit.Entries())
+	}
+	// 操作主体を渡さなければ system になる。
+	e.enableAgent(t)
+	if err := e.s.DisableAgent(context.Background(), domain.Actor{}, AgentDisableOpenAIUnauthorized); err != nil {
+		t.Fatal(err)
+	}
+	if d := e.entries("agent.consent"); len(d) != 1 || d[0].ActorType != domain.ActorSystem {
+		t.Errorf("audit = %+v", e.audit.Entries())
+	}
+}

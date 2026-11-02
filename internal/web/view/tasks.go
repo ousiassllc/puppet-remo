@@ -44,9 +44,12 @@ type TaskListPage struct {
 	List   TaskList
 }
 
-// TaskStepRow はタスク詳細のステップ 1 行（監査ログの行）。
+// TaskStepRow はタスク詳細の 1 行（監査ログの行）。No は所属するステップの番号で、1 つのステップに複数の行が付きうる
+// （複数のアクション・Judge の判定・安全チェック）。実行したステップとして番号を出すのはアクションの行だけで、
+// それ以外の行は KindLabel（「Judge の判定」など）を付けて番号を出さない（重複したステップに見せない）。
 type TaskStepRow struct {
 	No         int
+	KindLabel  string // アクション以外の行（pass・judge・safety_check）の種類。アクションの行は空
 	Route      string // fast | openai
 	RouteLabel string
 	Event      string

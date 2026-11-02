@@ -19,7 +19,8 @@ type Model interface {
 	//
 	// 失敗は次の 3 通りで、API キーはどのエラーにも含まれない:
 	//   - 未知・写像できないアクションは errors.Is(err, domain.ErrUnsupportedAction)（agent は unsupported_action にする）。
-	//   - HTTP の失敗（401 / 429 / 5xx など）は errors.As で *APIError を取り出せる（agent は 401 を GUI へ通知する。NFR-S16）。
+	//   - HTTP の失敗（401 / 429 / 5xx など）は errors.As で *APIError を取り出せる。401 は errors.Is(err, ErrUnauthorized) でも一致する
+	//     （agent は 401 を GUI へ通知し、エージェントを無効に戻す。NFR-S16）。
 	//   - それ以外（タイムアウト・通信エラー・キーの取得失敗・不正な応答）は通常のエラー（agent は openai_error にする）。
 	Step(ctx context.Context, in StepInput) (StepOutput, error)
 }

@@ -79,6 +79,9 @@ const (
 
 	// FastpathDisableUnauthorized は DisableFastpath の errorCode（TypeSafe が HTTP 401 を返した。FR-G21）。
 	FastpathDisableUnauthorized = "typesafe_unauthorized"
+
+	// AgentDisableOpenAIUnauthorized は DisableAgent の errorCode（OpenAI が HTTP 401 を返した。NFR-S16）。
+	AgentDisableOpenAIUnauthorized = "openai_unauthorized"
 )
 
 var (
@@ -273,8 +276,14 @@ func (s *AgentSettingsService) SaveAgent(ctx context.Context, in AgentSettingsIn
 	if err != nil {
 		return err
 	}
+	// 無効化（有効または同意済みの状態から enabled = false）は、無関係な欄の不備に妨げられない。不備があれば他の欄は保存せず、
+	// 無効化・同意の取り消し・実行中のタスクの中断だけを行う。それ以外（有効化・変化なしの保存）は不備を ValidationError で返す。
+	saveFields := true
 	if err := validateAgentInput(in, cur); err != nil {
-		return err
+		if in.Enabled || !cur.Enabled && cur.ConsentAt == nil {
+			return err
+		}
+		saveFields = false
 	}
 	if in.Enabled {
 		registered, err := s.OpenAIKeyRegistered(ctx)
@@ -291,12 +300,14 @@ func (s *AgentSettingsService) SaveAgent(ctx context.Context, in AgentSettingsIn
 			changed[key] = val
 		}
 	}
-	note(SettingAgentModel, cur.Model != in.Model, in.Model)
-	note(SettingAgentMaxSteps, cur.MaxSteps != in.MaxSteps, in.MaxSteps)
-	note(SettingAgentMaxDurationSec, cur.MaxDurationSec != in.MaxDurationSec, in.MaxDurationSec)
-	note(SettingAgentKeepScreenshots, cur.KeepScreenshots != in.KeepScreenshots, in.KeepScreenshots)
-	note(SettingAgentDenyProcesses, !slices.Equal(cur.DenyProcesses, in.DenyProcesses), in.DenyProcesses)
-	note(SettingAgentApproveProcesses, !slices.Equal(cur.ApproveProcesses, in.ApproveProcesses), in.ApproveProcesses)
+	if saveFields {
+		note(SettingAgentModel, cur.Model != in.Model, in.Model)
+		note(SettingAgentMaxSteps, cur.MaxSteps != in.MaxSteps, in.MaxSteps)
+		note(SettingAgentMaxDurationSec, cur.MaxDurationSec != in.MaxDurationSec, in.MaxDurationSec)
+		note(SettingAgentKeepScreenshots, cur.KeepScreenshots != in.KeepScreenshots, in.KeepScreenshots)
+		note(SettingAgentDenyProcesses, !slices.Equal(cur.DenyProcesses, in.DenyProcesses), in.DenyProcesses)
+		note(SettingAgentApproveProcesses, !slices.Equal(cur.ApproveProcesses, in.ApproveProcesses), in.ApproveProcesses)
+	}
 	note(SettingAgentEnabled, cur.Enabled != in.Enabled, in.Enabled)
 
 	// 無効化は enabled を最初に、有効化は最後に書く（途中で失敗しても、同意なしで有効な状態を残さない）。
@@ -305,16 +316,18 @@ func (s *AgentSettingsService) SaveAgent(ctx context.Context, in AgentSettingsIn
 			return err
 		}
 	}
-	for _, kv := range []struct {
-		key string
-		val any
-	}{
-		{SettingAgentModel, in.Model}, {SettingAgentMaxSteps, in.MaxSteps}, {SettingAgentMaxDurationSec, in.MaxDurationSec},
-		{SettingAgentKeepScreenshots, in.KeepScreenshots}, {SettingAgentDenyProcesses, in.DenyProcesses},
-		{SettingAgentApproveProcesses, in.ApproveProcesses},
-	} {
-		if err := s.setValue(ctx, kv.key, kv.val); err != nil {
-			return err
+	if saveFields {
+		for _, kv := range []struct {
+			key string
+			val any
+		}{
+			{SettingAgentModel, in.Model}, {SettingAgentMaxSteps, in.MaxSteps}, {SettingAgentMaxDurationSec, in.MaxDurationSec},
+			{SettingAgentKeepScreenshots, in.KeepScreenshots}, {SettingAgentDenyProcesses, in.DenyProcesses},
+			{SettingAgentApproveProcesses, in.ApproveProcesses},
+		} {
+			if err := s.setValue(ctx, kv.key, kv.val); err != nil {
+				return err
+			}
 		}
 	}
 	now := s.cfg.Clock.Now()
@@ -620,7 +633,7 @@ func (s *AgentSettingsService) DisableFastpath(ctx context.Context, by domain.Ac
 	if err != nil {
 		return err
 	}
-	return s.disableFastpathLocked(ctx, cur.Fastpath, by, truncateRunes(errorCode, 64), errorCode)
+	return s.disableFastpathLocked(ctx, cur.Fastpath, by, domain.TruncateRunes(errorCode, 64), errorCode)
 }
 
 // disableFastpathLocked は fp（現在の設定）が有効か同意を持つなら、無効にして consent_at を消し、agent.fastpath.disable を記録する。
@@ -640,13 +653,57 @@ func (s *AgentSettingsService) disableFastpathLocked(ctx context.Context, fp Fas
 		result = auditError
 	}
 	e := s.agentEntry(fastpathDisableAuditEvent, result, errorCode, map[string]any{"reason": reason})
+	setAuditActor(&e, by)
+	s.record(ctx, e)
+	s.log.Info("fast path disabled", "reason", reason, "error_code", errorCode)
+	return nil
+}
+
+// DisableAgent はエージェントをシステム側で無効にする（NFR-S16。Agent が OpenAI の HTTP 401 を受けたときに呼ぶ）。
+// agent.enabled を false にして consent_at を消し（FR-G14）、agent.consent（detail.state = revoked、detail.reason = errorCode）を
+// by（actor_type system）で、error_code = errorCode（AgentDisableOpenAIUnauthorized）、result = error で記録する。
+// すでに無効で同意も無ければ何もしない（冪等）。実行中のタスクは中断しない（呼び出し元のタスクは、その失敗で自分で終わる）。
+// OpenAI のキーは残す（GUI が再登録を促す）。
+func (s *AgentSettingsService) DisableAgent(ctx context.Context, by domain.Actor, errorCode string) error {
+	if by.Kind == "" {
+		by = domain.Actor{Kind: domain.ActorSystem, Label: systemLabel}
+	}
+	unlock, err := s.mu.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	cur, err := s.Config(ctx)
+	if err != nil {
+		return err
+	}
+	if !cur.Enabled && cur.ConsentAt == nil {
+		return nil
+	}
+	if err := s.setValue(ctx, SettingAgentEnabled, false); err != nil {
+		return err
+	}
+	if err := s.setValue(ctx, SettingAgentConsentAt, nil); err != nil {
+		return err
+	}
+	errorCode = domain.TruncateRunes(errorCode, 64)
+	result := auditOK
+	if errorCode != "" {
+		result = auditError
+	}
+	e := s.agentEntry(agentConsentAuditEvent, result, errorCode, map[string]any{"state": "revoked", "reason": errorCode})
+	setAuditActor(&e, by)
+	s.record(ctx, e)
+	s.log.Info("agent disabled", "reason", errorCode)
+	return nil
+}
+
+// setAuditActor は e の操作主体を by にする（agentEntry の既定は host）。
+func setAuditActor(e *repository.AuditEntry, by domain.Actor) {
 	e.ActorType, e.ClientID, e.ClientLabel, e.SessionID = by.Kind, by.ClientID, by.Label, by.SessionID
 	if by.Kind == domain.ActorHost && by.Label == "" {
 		e.ClientLabel = hostLabel
 	}
-	s.record(ctx, e)
-	s.log.Info("fast path disabled", "reason", reason, "error_code", errorCode)
-	return nil
 }
 
 // ---- 書き込み・監査の部品 ----

@@ -91,8 +91,10 @@ func (f *FastPath) Enabled(ctx context.Context) bool {
 }
 
 // Run は引き継ぐ（Handoff を返す）か、終了する（error を返す）まで 1 ステップずつ進める。error は ctx の取り消し・Control の拒否
-// （handoff_reason は NULL のまま）・全体の上限（errLimitReached）。r の steps・fastSteps を進め、永続化する。設定はタスクの開始時
-// （r.cfg）のものを使う。ステップの経路・番号は r の step_no（アクションを実行したステップだけ数える）。
+// （handoff_reason は NULL のまま）・全体の上限（errLimitReached）。r の steps・fastSteps を進め、永続化する。min_confidence・
+// max_steps・excluded_labels はタスクの開始時（r.cfg）のものを使う。一方、高速パスを使えるか（設定・キー・同意。Enabled）は
+// 毎ステップ読み直し、タスクの途中で同意の取り消し・無効化・キーの削除があれば、TypeSafe を呼ばずに chooser_unavailable で
+// 引き継ぐ。ステップの経路・番号は r の step_no（アクションを実行したステップだけ数える。行動しないパスの番号は recordPass）。
 func (f *FastPath) Run(ctx context.Context, r *run) (Handoff, error) {
 	fp := r.cfg.Fastpath
 	var (
@@ -110,6 +112,9 @@ func (f *FastPath) Run(ctx context.Context, r *run) (Handoff, error) {
 	for {
 		if err := r.checkBeforeStep(); err != nil {
 			return Handoff{}, err
+		}
+		if !f.Enabled(ctx) { // タスクの途中で同意の取り消し・無効化があった（Enabled は読めないときも false）
+			return handoff(domain.HandoffChooserUnavailable, map[string]any{"candidate_count": 0, "dropped_count": 0})
 		}
 
 		// 1. 観測
@@ -198,13 +203,14 @@ func (f *FastPath) Run(ctx context.Context, r *run) (Handoff, error) {
 		if r.overLimit() { // 高速ステップも agent.max_steps・max_duration_sec に数える。上限は引き継がずに終わる
 			return Handoff{}, errLimitReached
 		}
+		counts := map[string]any{"candidate_count": extra["candidate_count"], "dropped_count": extra["dropped_count"]}
 		if progressed {
 			noProgress = 0
 		} else if noProgress++; noProgress >= fastMaxNoProgress {
-			return handoff(domain.HandoffNoProgress, map[string]any{})
+			return handoff(domain.HandoffNoProgress, counts) // 最後の観測の候補数（アクションを選んだ回の表）
 		}
 		if r.task.FastSteps >= fp.MaxSteps {
-			return handoff(domain.HandoffFastStepLimit, map[string]any{})
+			return handoff(domain.HandoffFastStepLimit, counts)
 		}
 	}
 }
@@ -244,7 +250,7 @@ func chooseRequest(r *run, fp FastpathConfig, snap domain.UISnapshot, table doma
 // plan は受理した候補を Control.Do に渡す Op と、OpenAI への要約の 1 文にする。click は中心座標（物理）を
 // Monitor.PhysicalToScaled で縮小座標にして左・1 回のクリック、focus_window は FocusWindow。
 func (f *FastPath) plan(ctx context.Context, c domain.Candidate) (domain.Op, string, error) {
-	label := truncateRunes(c.Label, fastMaxSummaryLabelRunes)
+	label := domain.TruncateRunes(c.Label, fastMaxSummaryLabelRunes)
 	switch c.Kind {
 	case domain.CandidateFocusWindow:
 		return domain.FocusWindow{ID: c.WindowID}, fmt.Sprintf("Brought the window \"%s\" to the foreground.", label), nil
@@ -289,17 +295,20 @@ func (f *FastPath) onUnauthorized(ctx context.Context) {
 	}
 }
 
-// recordPass は行動しないパス（引き継ぎ・reobserve）を agent.step として記録する（route = fast と extra）。
+// recordPass は行動しないパス（引き継ぎ・reobserve）を agent.step として記録する（route = fast、extra、pass = true）。
 // 行動したステップは Control が AgentStep.ExtraDetail つきで記録する。入力した文字列・要素の値は extra に入らない。
+// パスの step_no は「直前に実行したステップの番号」（r.task.StepCount。まだ実行していなければ 0 で、step_no は記録しない）。
+// 次に実行するステップ（高速・OpenAI）は StepCount + 1 を使うので、パスの行がそれと衝突しない（pass で区別する）。
 func (f *FastPath) recordPass(ctx context.Context, r *run, extra map[string]any) {
 	if f.Audit == nil {
 		return
 	}
-	sctx := WithAgentStep(ctx, AgentStep{No: r.task.StepCount + 1, Route: AgentRouteFast})
+	sctx := WithAgentStep(ctx, AgentStep{No: r.task.StepCount, Route: AgentRouteFast})
 	e := agentAuditBase(sctx, r.actor, agentStepAuditEvent, "")
 	e.Result = auditOK
 	detail := maps.Clone(extra)
 	detail["route"] = AgentRouteFast
+	detail["pass"] = true // 行動しないパス（アクションのステップではない）
 	e.DetailJSON = marshalDetail(detail)
 	f.Audit.Record(context.WithoutCancel(ctx), e)
 }
@@ -312,7 +321,7 @@ func sanitizeChosen(s string) string {
 		}
 		return r
 	}, s)
-	return truncateRunes(s, fastMaxChosenRunes)
+	return domain.TruncateRunes(s, fastMaxChosenRunes)
 }
 
 // unitInterval は v が 0〜1 の有限の数か（NaN・無限大・範囲外の確信度で行動しない）。

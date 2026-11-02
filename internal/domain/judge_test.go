@@ -62,6 +62,7 @@ func TestTaskErrorCode(t *testing.T) {
 		{"lease_held_by_other", domain.ErrLeaseHeldByOther, "lease_held_by_other"},
 		{"lease_revoked", domain.ErrLeaseRevoked, "lease_revoked"},
 		{"judge_denied", domain.ErrJudgeDenied, "judge_denied"},
+		{"invalid_coordinates", domain.ErrInvalidCoordinates, "invalid_coordinates"},
 		{"wrapped judge_denied", fmt.Errorf("step 3: %w", domain.ErrJudgeDenied), "judge_denied"},
 		{"unsupported_action", domain.ErrUnsupportedAction, "unsupported_action"},
 		{"wrapped unsupported_action", fmt.Errorf("openai: %w", domain.ErrUnsupportedAction), "unsupported_action"},

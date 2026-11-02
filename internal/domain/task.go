@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"time"
+	"unicode/utf8"
+)
 
 // TaskStatus はエージェントのタスクの状態（FR-G03。ER の agent_tasks.status と 1 対 1）。
 type TaskStatus string
@@ -74,4 +77,12 @@ type Task struct {
 	CreatedAt      time.Time
 	StartedAt      *time.Time // running になった時刻。denied は nil
 	FinishedAt     *time.Time // 終了状態になった時刻
+}
+
+// TruncateRunes は s を最大 n 文字（rune）にする（超えた分は切り捨てる。末尾の記号は付けない）。
+func TruncateRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }

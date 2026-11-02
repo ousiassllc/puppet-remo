@@ -20,17 +20,19 @@ import (
 // 実行状態（ループ・履歴）はメモリだけに持つ（NFR-A08）。タスクの記録（agent_tasks）はステップごとに更新し、終了状態は
 // 1 回だけ書く。再起動で残った行の回収は Maintenance.AbortActiveTasks が行う。
 
-// 上限（FR-G02・G13）。
+// 上限（FR-G02・G13）。MCP の run_task の検査・get_task の出力も同じ値を使う。
 const (
-	maxAgentPromptRunes = 10_000
-	maxAgentResultRunes = 10_000
+	MaxAgentPromptRunes = 10_000
+	MaxAgentResultRunes = 10_000
 )
 
 // DefaultAgentModelTimeout は 1 回のモデル呼び出し（Responses API 1 回）の上限（FR-G04、NFR-S16。再試行しない）。
+// 実行時間の上限（FR-G09）の残りがこれより短いときは、残りまで縮める（modelStep）。
 const DefaultAgentModelTimeout = 60 * time.Second
 
-// agentCancelSettleWait は Cancel が、ループの終了を待つ最大の時間。モデルの HTTP は ctx で直ちに打ち切られるので、通常はすぐ終わる。
-const agentCancelSettleWait = 2 * time.Second
+// DefaultAgentCancelSettleWait は Cancel が、ループの終了を待つ最大の時間（cancel_task は 1 秒以内に返す。NFR-P08）。
+// モデルの HTTP は ctx で直ちに打ち切られるので、通常はすぐ終わる。待っても終わらなければ、その時点の状態（running）を返す。
+const DefaultAgentCancelSettleWait = 500 * time.Millisecond
 
 // agentPersistTimeout はタスクの行・監査を書くときの上限。ループの ctx（キャンセル済みでもありうる）とは独立にする。
 const agentPersistTimeout = 5 * time.Second
@@ -48,6 +50,11 @@ type AgentClients interface {
 	Get(ctx context.Context, id string) (domain.Client, error)
 }
 
+// AgentDisabler は OpenAI の HTTP 401（キー無効）でエージェントを無効に戻す窓口（AgentSettingsService が満たす。NFR-S16）。
+type AgentDisabler interface {
+	DisableAgent(ctx context.Context, by domain.Actor, errorCode string) error
+}
+
 // AgentServiceConfig は NewAgent の設定。Audit・Bus・Fast・Logger 以外は必須。
 type AgentServiceConfig struct {
 	Tasks    repository.Tasks
@@ -63,12 +70,17 @@ type AgentServiceConfig struct {
 	Fast  *FastPath
 	Audit AuditRecorder // nil なら記録しない
 	// Bus は OpenAI の HTTP 401（キー無効）を GUI のトーストで知らせる先。nil なら通知しない。
-	Bus    *Bus
-	Clock  domain.Clock
-	IDs    domain.IDGen
-	Logger *slog.Logger // nil なら slog.Default()
+	Bus *Bus
+	// Disabler は OpenAI の HTTP 401 でエージェントを無効にする窓口（enabled = false・consent_at を消す。NFR-S16・FR-G14）。
+	// nil なら無効にしない（トーストとタスクの失敗だけ）。
+	Disabler AgentDisabler
+	Clock    domain.Clock
+	IDs      domain.IDGen
+	Logger   *slog.Logger // nil なら slog.Default()
 	// ModelTimeout は 1 回のモデル呼び出しの上限。0 なら DefaultAgentModelTimeout。
 	ModelTimeout time.Duration
+	// CancelSettleWait は Cancel がループの終了を待つ最大の時間。0 なら DefaultAgentCancelSettleWait。
+	CancelSettleWait time.Duration
 }
 
 // AgentService は Agent の実装。同時に動くタスクは 1 つだけ（リースが保証し、プロセス内でも 1 つに絞る）。
@@ -93,6 +105,9 @@ func NewAgent(cfg AgentServiceConfig) (*AgentService, error) {
 	if cfg.ModelTimeout <= 0 {
 		cfg.ModelTimeout = DefaultAgentModelTimeout
 	}
+	if cfg.CancelSettleWait <= 0 {
+		cfg.CancelSettleWait = DefaultAgentCancelSettleWait
+	}
 	log := cfg.Logger
 	if log == nil {
 		log = slog.Default()
@@ -105,7 +120,7 @@ func NewAgent(cfg AgentServiceConfig) (*AgentService, error) {
 //
 // 検査の順序: 引数 → FR-G01 の条件（ErrAgentDisabled）→ キルスイッチ → 上限 → 他者のリース保持（ErrLeaseHeldByOther）・
 // 実行中のタスク。いずれもタスクの行を作らない。条件の検査と行の作成の間に他者が取得した場合は、行を作ったあとの取得の失敗として
-// タスクを failed（lease_held_by_other）にする。
+// タスクを failed（lease_held_by_other）にする。登録（reserve）のあとに条件をもう一度検査し、その間の設定変更も取りこぼさない。
 func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput) (domain.Task, error) {
 	if err := validateStartInput(in); err != nil {
 		return domain.Task{}, err
@@ -134,6 +149,14 @@ func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput
 		cancel(nil)
 		return domain.Task{}, err
 	}
+	// 条件の検査（checkConditions）と登録の間に、エージェントの無効化・agent_enabled の取り消し・クライアントの削除・キルスイッチが
+	// 入ると、CancelAll・CancelClient はまだ登録されていない run を見つけられない。登録できたあとにもう一度検査して、
+	// 満たさなければリースを作らずに断る（タスクの行も作らない）。
+	if _, err := a.checkConditions(ctx, by); err != nil {
+		a.clear(r)
+		cancel(nil)
+		return domain.Task{}, err
+	}
 	if err := a.cfg.Tasks.Create(ctx, r.task); err != nil {
 		a.clear(r)
 		cancel(nil)
@@ -153,8 +176,8 @@ func validateStartInput(in StartInput) error {
 	switch {
 	case n < 1:
 		return domain.ErrInvalidArgument.WithMsg("prompt must not be empty")
-	case n > maxAgentPromptRunes:
-		return domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("prompt must be at most %d characters", maxAgentPromptRunes))
+	case n > MaxAgentPromptRunes:
+		return domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("prompt must be at most %d characters", MaxAgentPromptRunes))
 	case in.MaxSteps < 0:
 		return domain.ErrInvalidArgument.WithMsg("max_steps must not be negative")
 	case in.MaxDurationSec < 0:
@@ -279,8 +302,11 @@ func (a *AgentService) RunningTasks() int {
 	return 0
 }
 
-// Get は by 自身が依頼したタスクを返す。他者の・無いタスクは domain.ErrTaskNotFound。
+// Get は by 自身が依頼したタスクを返す。他者の・無いタスク（依頼元の無い by を含む）は domain.ErrTaskNotFound。
 func (a *AgentService) Get(ctx context.Context, by domain.Actor, id string) (domain.Task, error) {
+	if by.ClientID == "" {
+		return domain.Task{}, taskNotFound(id)
+	}
 	return a.getTask(ctx, id, by.ClientID)
 }
 
@@ -302,7 +328,11 @@ func (a *AgentService) getTask(ctx context.Context, id, owner string) (domain.Ta
 func taskNotFound(id string) error { return fmt.Errorf("task %q: %w", id, domain.ErrTaskNotFound) }
 
 // Cancel は by 自身のタスクを中断する（cancel_task。FR-G10）。終了済みなら現在の状態をそのまま返す。
+// 依頼元の無い by はどのタスクも持たないので domain.ErrTaskNotFound（ホストの中断は CancelByHost）。
 func (a *AgentService) Cancel(ctx context.Context, by domain.Actor, id string) (domain.Task, error) {
+	if by.ClientID == "" {
+		return domain.Task{}, taskNotFound(id)
+	}
 	return a.cancelTask(ctx, id, by.ClientID, "cancel_task")
 }
 
@@ -325,7 +355,7 @@ func (a *AgentService) cancelTask(ctx context.Context, id, owner, reason string)
 		return t, nil
 	}
 	r.cancel(cancelCause{reason: reason})
-	timer := time.NewTimer(agentCancelSettleWait)
+	timer := time.NewTimer(a.cfg.CancelSettleWait)
 	defer timer.Stop()
 	select {
 	case <-r.done:
@@ -376,7 +406,8 @@ func (a *AgentService) Close(ctx context.Context) error {
 
 // Watch はリースの変化を購読し、実行中のタスクのリースが他者の操作（強制剥奪・アイドルタイムアウト・セッション切断・キルスイッチ）で
 // 解放されたら、そのタスクを中断する（FR-L08。cancelled）。購読は Watch の中で済み、ctx の終了で戻る。
-// Watch が動いていなくても、次のアクションの Control.Do が ErrLeaseRevoked / ErrLeaseRequired を返してタスクは終わる。
+// Watch が動いていなくても、次のアクションの Control.Do・リースの確認が ErrLeaseRevoked / ErrLeaseRequired（アイドルタイムアウト）/
+// ErrLeaseHeldByOther（剥奪のあと他者が取得）を返し、タスクは cancelled（reason lease_revoked / lease_lost）で終わる。
 func (a *AgentService) Watch(ctx context.Context) <-chan struct{} {
 	events := a.cfg.Leases.Subscribe()
 	done := make(chan struct{})

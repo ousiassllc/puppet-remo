@@ -105,7 +105,12 @@ func (a *AgentSettings) SaveAgent(_ context.Context, in service.AgentSettingsInp
 		bad[service.SettingAgentConsentAt] = "有効にするには、OpenAI へのスクリーンショット送信への同意が必要です。"
 	}
 	if len(bad) > 0 {
-		return &service.ValidationError{Fields: bad}
+		// 本物と同じ: 有効または同意済みの状態からの無効化は、他の欄の不備に妨げられない（他の欄は保存しない）。
+		if in.Enabled || !a.view.Enabled && a.view.ConsentAt == nil {
+			return &service.ValidationError{Fields: bad}
+		}
+		a.view.Enabled, a.view.ConsentAt = false, nil
+		return nil
 	}
 	if in.Enabled && !a.view.OpenAIKeyRegistered {
 		return domain.ErrAgentDisabled

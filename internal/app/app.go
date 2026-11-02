@@ -461,7 +461,7 @@ func (a *App) buildAgent(control service.Control, kill *service.KillSwitchManage
 	}
 	a.agent, err = service.NewAgent(service.AgentServiceConfig{
 		Tasks: cfg.Repo.Tasks(), Clients: cfg.Repo.Clients(), Settings: a.agentCfg, Control: control, Leases: a.leases, Kill: kill,
-		Approval: a.approval, Model: model, Fast: fast, Audit: a.audit, Bus: a.bus, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
+		Approval: a.approval, Model: model, Fast: fast, Audit: a.audit, Bus: a.bus, Disabler: a.agentCfg, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)

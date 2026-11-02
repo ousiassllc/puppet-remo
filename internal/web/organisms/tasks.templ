@@ -210,12 +210,21 @@ templ TaskDetail(v view.TaskDetail) {
 						</thead>
 						<tbody class="divide-y divide-slate-100">
 							for _, s := range v.Steps {
-								<tr data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route }>
-									<td class="whitespace-nowrap px-3 py-2 tabular-nums text-slate-700">{ strconv.Itoa(s.No) }</td>
+								<tr data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route } data-step-kind={ stepKind(s) }>
+									<td class="whitespace-nowrap px-3 py-2 tabular-nums text-slate-700">
+										if s.KindLabel == "" {
+											{ strconv.Itoa(s.No) }
+										} else {
+											<span class="text-slate-400" title={ "ステップ " + strconv.Itoa(s.No) + " に付く行" }>-</span>
+										}
+									</td>
 									<td class="whitespace-nowrap px-3 py-2">
 										@atoms.Badge(atoms.BadgeNeutral, s.RouteLabel)
 									</td>
 									<td class="px-3 py-2 text-slate-800">
+										if s.KindLabel != "" {
+											<span class="mr-1 text-xs font-medium text-slate-600" data-step-kind-label>{ s.KindLabel }</span>
+										}
 										<span class="font-medium">{ s.Summary }</span>
 										<span class="ml-1 text-xs text-slate-500">{ s.Event }</span>
 										@taskStepArgs(s.Args)

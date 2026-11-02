@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,13 +10,22 @@ import (
 	"unicode/utf8"
 )
 
+// ErrUnauthorized は OpenAI が HTTP 401（API キーが無効）を返したことを表す。*APIError（Status 401）が errors.Is で一致する。
+// agent はこれで GUI へ通知し、エージェントを無効に戻す（NFR-S16）。メッセージにキーは含まない。
+var ErrUnauthorized = errors.New("openai: unauthorized")
+
 // APIError は OpenAI が返した HTTP エラー（status >= 400）。API キー・リクエストのヘッダー・本文は持たない。
-// agent は errors.As で取り出し、401（キー無効）を GUI へ通知する（NFR-S16）。
+// agent は errors.Is(err, ErrUnauthorized) で 401（キー無効）を見分ける（NFR-S16）。
 type APIError struct {
 	Status  int    // HTTP ステータス
 	Type    string // error.type（例: invalid_request_error）
 	Code    string // error.code（無ければ空）
 	Message string // error.message（キーの断片が入りうる 401 では空。長いものは切り詰める）
+}
+
+// Is は Status が 401 の APIError を ErrUnauthorized と同一視する。
+func (e *APIError) Is(target error) bool {
+	return target == ErrUnauthorized && e.Status == http.StatusUnauthorized
 }
 
 func (e *APIError) Error() string {

@@ -6,18 +6,19 @@ import "errors"
 // API のエラーコード表（Code）とは別の語彙で、judge_denied・unsupported_action・safety_check_denied・openai_error は
 // HTTP のエラーにならず、タスクの失敗理由としてだけ現れる（API 仕様 §2）。
 const (
-	TaskErrorInputBlocked      = "input_blocked"
-	TaskErrorJudgeDenied       = "judge_denied"
-	TaskErrorApprovalDenied    = "approval_denied"
-	TaskErrorApprovalTimeout   = "approval_timeout"
-	TaskErrorKillSwitchActive  = "kill_switch_active"
-	TaskErrorLeaseRequired     = "lease_required"
-	TaskErrorLeaseHeldByOther  = "lease_held_by_other"
-	TaskErrorLeaseRevoked      = "lease_revoked"
-	TaskErrorSafetyCheckDenied = "safety_check_denied"
-	TaskErrorUnsupportedAction = "unsupported_action"
-	TaskErrorOpenAI            = "openai_error"
-	TaskErrorInternal          = "internal"
+	TaskErrorInputBlocked       = "input_blocked"
+	TaskErrorJudgeDenied        = "judge_denied"
+	TaskErrorApprovalDenied     = "approval_denied"
+	TaskErrorApprovalTimeout    = "approval_timeout"
+	TaskErrorKillSwitchActive   = "kill_switch_active"
+	TaskErrorLeaseRequired      = "lease_required"
+	TaskErrorLeaseHeldByOther   = "lease_held_by_other"
+	TaskErrorLeaseRevoked       = "lease_revoked"
+	TaskErrorInvalidCoordinates = "invalid_coordinates"
+	TaskErrorSafetyCheckDenied  = "safety_check_denied"
+	TaskErrorUnsupportedAction  = "unsupported_action"
+	TaskErrorOpenAI             = "openai_error"
+	TaskErrorInternal           = "internal"
 )
 
 // ErrOpenAI は OpenAI の呼び出しの失敗（FR-G04）。openai.Model の失敗は単純なエラーで返るので、
@@ -41,7 +42,7 @@ func TaskErrorCode(err error) string {
 	}
 	switch code := CodeOf(err); code {
 	case CodeInputBlocked, CodeApprovalDenied, CodeApprovalTimeout, CodeKillSwitchActive,
-		CodeLeaseRequired, CodeLeaseHeldByOther, CodeLeaseRevoked:
+		CodeLeaseRequired, CodeLeaseHeldByOther, CodeLeaseRevoked, CodeInvalidCoordinates:
 		return string(code)
 	}
 	return TaskErrorInternal

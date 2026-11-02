@@ -95,7 +95,7 @@ func TestTaskAdminDetailReadsTheStepsOfARealTask(t *testing.T) {
 	}
 	for i, tool := range []string{"left_click", "type"} {
 		s := d.Steps[i]
-		if s.No != 1 || s.Route != "openai" || s.Event != "agent.step" || s.Result != "ok" || s.Summary != tool || s.AuditID == 0 || s.At.IsZero() {
+		if s.No != 1 || s.Kind != TaskStepAction || s.Route != "openai" || s.Event != "agent.step" || s.Result != "ok" || s.Summary != tool || s.AuditID == 0 || s.At.IsZero() {
 			t.Errorf("step %d = %+v", i, s)
 		}
 	}
@@ -164,16 +164,16 @@ func TestTaskAdminStepArgsAreRedactedLikeTheAuditReader(t *testing.T) {
 		t.Fatalf("steps = %+v", d.Steps)
 	}
 	s := d.Steps[0]
-	if s.Route != "fast" || s.No != 1 || s.Summary != "chosen: c_1 → handoff to OpenAI (abstain)" {
+	if s.Route != "fast" || s.No != 1 || s.Kind != TaskStepPass || s.Summary != "chosen: c_1 → handoff to OpenAI (abstain)" {
 		t.Errorf("fast step = %+v", s)
 	}
 	if !hasArg(s.Args, "api_key", "[REDACTED]") || !hasArg(s.Args, "note", "[REDACTED]") {
 		t.Errorf("args = %+v, want secrets redacted", s.Args)
 	}
-	if j := d.Steps[1]; j.Summary != "judge: deny (deny_process) [judge_denied]" || j.Result != "denied" {
+	if j := d.Steps[1]; j.Kind != TaskStepJudge || j.Summary != "judge: deny (deny_process) [judge_denied]" || j.Result != "denied" {
 		t.Errorf("judge step = %+v", j)
 	}
-	if sc := d.Steps[2]; sc.Summary != "safety check: denied" {
+	if sc := d.Steps[2]; sc.Kind != TaskStepSafetyCheck || sc.Summary != "safety check: denied" {
 		t.Errorf("safety step = %+v", sc)
 	}
 }

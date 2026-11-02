@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -125,15 +126,27 @@ type chooserStepSpec struct {
 	mutate func()
 }
 
-// scriptedChooser は typesafe.Chooser の偽物。受けた要求を記録する。台本が尽きたら abstain を返す。
+// scriptedChooser は typesafe.Chooser の偽物。受けた要求を記録し、問い合わせの開始を started へ知らせる（待ちはチャネルで行う）。
+// 台本が尽きたら abstain を返す。
 type scriptedChooser struct {
-	mu     sync.Mutex
-	script []chooserStepSpec
-	reqs   []typesafe.ChoiceRequest
+	mu      sync.Mutex
+	script  []chooserStepSpec
+	reqs    []typesafe.ChoiceRequest
+	started chan struct{} // 問い合わせの開始ごとに 1 つ送る（容量 64）
 }
 
 func newScriptedChooser(script ...chooserStepSpec) *scriptedChooser {
-	return &scriptedChooser{script: script}
+	return &scriptedChooser{script: script, started: make(chan struct{}, 64)}
+}
+
+// waitStarted は問い合わせが始まるのを待つ。
+func (c *scriptedChooser) waitStarted(t *testing.T) {
+	t.Helper()
+	select {
+	case <-c.started:
+	case <-time.After(approvalWait):
+		t.Fatal("the chooser was not called")
+	}
 }
 
 func (c *scriptedChooser) Choose(ctx context.Context, req typesafe.ChoiceRequest) (typesafe.ChoiceResult, error) {
@@ -144,6 +157,7 @@ func (c *scriptedChooser) Choose(ctx context.Context, req typesafe.ChoiceRequest
 		spec, c.script = c.script[0], c.script[1:]
 	}
 	c.mu.Unlock()
+	c.started <- struct{}{}
 	if spec.block {
 		<-ctx.Done()
 		return typesafe.ChoiceResult{}, ctx.Err()
@@ -187,6 +201,10 @@ type agentOpts struct {
 	settings map[string]string
 	// wrapTasks はタスクの repository を包む（更新の回数を数えるなど）。
 	wrapTasks func(repository.Tasks) repository.Tasks
+	// modelTimeout・cancelWait は AgentServiceConfig.ModelTimeout・CancelSettleWait（0 なら既定）。
+	modelTimeout, cancelWait time.Duration
+	// noWatch は Agent.Watch を起動しない。
+	noWatch bool
 }
 
 func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
@@ -271,7 +289,8 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 	}
 	ae.agent, err = NewAgent(AgentServiceConfig{
 		Tasks: tasks, Clients: db.Clients(), Settings: ae.cfg, Control: e.control, Leases: e.leases, Kill: e.kill,
-		Approval: le.approval, Model: model, Fast: ae.fast, Audit: e.audit, Bus: bus, Clock: e.clock, IDs: &taskIDs{}, Logger: logger,
+		Approval: le.approval, Model: model, Fast: ae.fast, Audit: e.audit, Bus: bus, Disabler: ae.cfg, Clock: e.clock, IDs: &taskIDs{}, Logger: logger,
+		ModelTimeout: o.modelTimeout, CancelSettleWait: o.cancelWait,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +298,14 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 	e.kill.RegisterCloser("agent", func(context.Context) error { ae.agent.CancelAll("kill_switch"); return nil })
 
 	watchCtx, stopWatch := context.WithCancel(context.Background())
-	watchDone := ae.agent.Watch(watchCtx)
+	watchDone := func() <-chan struct{} {
+		if o.noWatch { // リースの変化を購読しない（次の操作のエラーだけでタスクが終わることの確認）
+			closed := make(chan struct{})
+			close(closed)
+			return closed
+		}
+		return ae.agent.Watch(watchCtx)
+	}()
 	t.Cleanup(func() {
 		stopWatch()
 		<-watchDone
@@ -300,7 +326,7 @@ func (g *taskIDs) NewID() string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.n++
-	return "task-" + string(rune('0'+g.n))
+	return fmt.Sprintf("task-%d", g.n)
 }
 
 // start はタスクを始める。
