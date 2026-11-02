@@ -35,7 +35,7 @@
 | UI Automation | COM `IUIAutomation`（`github.com/go-ole/go-ole` v1.3.0・MIT。IUIAutomation の vtable バインディングは自前で書く） | `get_ui_tree` と高速パスの候補表（スナップショット）用 |
 | 画像エンコード | 標準 `image/jpeg` | 純 Go 制約のため JPEG のみ |
 | OpenAI クライアント | `github.com/openai/openai-go/v3` | v3.90.0 で確認済み: `responses.ComputerToolParam`（`{type:"computer"}`）、`ResponseComputerToolCall` の `Actions`（`click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot`）と `PendingSafetyChecks`、`ResponseComputerToolCallOutputItem` の `AcknowledgedSafetyChecks`。旧 `computer_use_preview`（`environment: "windows"` 等を指定する旧方式）は使わない |
-| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` v0.2.8・MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go で、cgo 不要をソースと `go list` で確認済み） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く。OpenAI キーと TypeSafe キー（ターゲット名 `puppet-remo/typesafe`）は同じ SecretStore に置く |
+| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` v0.2.8・MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go で、cgo 不要をソースと `go list` で確認済み） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く。OpenAI キーと TypeSafe キー（ターゲット名はそれぞれ `puppet-remo/openai:puppet-remo`・`puppet-remo/typesafe:puppet-remo`）は同じ SecretStore に置く |
 | 高速パス（Jev による候補選択） | TypeSafe API（`POST https://api.typesafe.ai/v1/systemone`、モデル既定 `jev-1.13`）を `internal/typesafe` から直接呼ぶ。Go SDK は無いため標準 `net/http` | 既定は無効（`agent.fastpath.enabled`）。入力はテキストと JSON のみ（スクリーンショットは送らない）。呼び出しは 5 秒タイムアウト・再試行なし。**Jev は Judge ではない**（承認を緩めない）。Judge は既定のルールベース（自前の `RuleJudge`）のまま。品質は自前のタスクで M4 に測定して確認し、仕様書には性能の主張を書かない（[FR-G16](../requirements/functional.md)） |
 | ID 生成 | `github.com/oklog/ulid/v2` v2.1.2（Apache-2.0） | タスク・監査ログなどの ID。時刻順に並ぶ |
 | 検討したが採らない | Cua Driver（`trycua/cua`、Rust 製、MIT） | CLI・MCP・型付き SDK 経由で OS 操作を提供するが、本アプリは同一プロセス・純 Go で InputGuard・リース・監査を一貫して制御するため `platform` 層を自前実装する |
@@ -675,3 +675,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.19 | 2026-11-02 | 入力注入と自己保護の InputGuard にクリック透過のオーバーレイの例外（`At` は Overlay を飛ばす）、オーバーレイを全モニター・物理座標・保持者の変更・構成変化の扱いに具体化、M1 実装での差分の `internal/app`・キルスイッチ・`ContentProtectionEnabled` の行を #68・#69 の実装に更新 | #69 |
 | 1.20 | 2026-11-02 | 自動更新を具体化: 認証なしの取得（リポジトリは公開が前提）、minisign 形式の署名と trusted comment による版・ファイル名の束縛、公開鍵の埋め込みと未設定時の fail closed、署名鍵を GitHub Actions の Secret に置くこと（Secret が無いときは署名を省く）、チャネル、確認の間隔。M1 実装での差分に自動更新の行を追加 | #74 |
 | 1.21 | 2026-11-02 | 技術選定表の OpenAI / TypeSafe クライアントの行を M4 の実装（`internal/openai`・`internal/typesafe` を追加。`app` は import せず、組み立ては `service.NewAgentModel`・`service.NewAgentChooser`）に更新 | #19 |
+| 1.22 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |

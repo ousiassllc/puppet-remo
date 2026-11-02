@@ -15,7 +15,7 @@
 | 永続化しないもの | **リース**（[NFR-A01](../requirements/non-functional.md)）、**接続中セッション**（監査ログに `session_id` を文字列として記録するのみ）、承認待ち要求、WhoIs キャッシュ、Web UI の閲覧設定（モニター・品質・FPS はブラウザセッション単位）、**エージェントの実行状態**（ループ・会話。タスクの記録のみ `agent_tasks` に持つ。[NFR-A08](../requirements/non-functional.md)） |
 | サムネイル | 画像は**ファイル**として `%LOCALAPPDATA%\puppet-remo\thumbs\` に保存し、DB にはパスとサイズを持つ |
 | 改ざん検知 | 設けない（同一ユーザー権限の悪意あるプロセスは脅威モデル外） |
-| シークレット | **OpenAI API キーと TypeSafe API キーは DB に保存しない**。Windows 資格情報マネージャーにのみ置く（TypeSafe のターゲット名は `puppet-remo/typesafe`。[NFR-S14](../requirements/non-functional.md)）。`settings`・ログ・監査ログにも値を書かない |
+| シークレット | **OpenAI API キーと TypeSafe API キーは DB に保存しない**。Windows 資格情報マネージャーにのみ置く（TypeSafe のターゲット名は `puppet-remo/typesafe:puppet-remo`、OpenAI は `puppet-remo/openai:puppet-remo`。[NFR-S14](../requirements/non-functional.md)）。`settings`・ログ・監査ログにも値を書かない |
 
 ## 全体 ER 図
 
@@ -571,3 +571,4 @@ erDiagram
 | 1.24 | 2026-11-02 | 監査イベントのカタログに agent の 4 行（`agent.step`: `Control` が agent のアクション 1 件ごとに記録・`tool.` は付けない・Judge の拒否は `error_code = judge_denied` / `agent.judge` / `agent.consent` / `agent.fastpath.enable`・`.disable`）を追加し、エージェントのステップの `detail_json` に `judge`・`judge_reason`・`approval` と「1 行は 1 アクション」の規則を追記 | #19（service の M4） |
 | 1.25 | 2026-11-02 | 監査イベントのカタログの「エージェントのタスク・安全チェック」の予告行を、実装した `agent.task_start`・`agent.task_end`・`agent.safety_check`・`agent.task_cancel` の 4 イベント（`detail_json` の形・`result` の決め方・中断の `reason`）に置き換えた | #19 |
 | 1.26 | 2026-11-02 | `agent.consent` の `system`（OpenAI 401）・`openai_unauthorized`、`error_code` に `invalid_coordinates`、`agent.step` の `pass` と行動しないパスの `step_no` の規則、`agent_enabled` の説明の訂正 | #19 のレビュー指摘 |
+| 1.27 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |

@@ -288,7 +288,7 @@ type Clipboard interface {
     ReadText(ctx context.Context) (string, error)
     WriteText(ctx context.Context, s string) error
 }
-type SecretStore interface { // 資格情報マネージャー（go-keyring）。name は下記の定数
+type SecretStore interface { // 資格情報マネージャー（go-keyring）。name は下記の定数。実際のターゲット名は "<name>:puppet-remo"（§13.3）
     Get(name string) (string, error)  // 未登録は ErrNotFound
     Set(name, value string) error
     Delete(name string) error
@@ -468,7 +468,7 @@ func (h *History) Screenshots() int
 const OmittedScreenshot = "[screenshot omitted]"
 ```
 
-実装は `openai-go/v3` の `responses.ComputerToolParam`（`{type:"computer"}`）を使う。毎回の要求は、指示・これまでの出力アイテム（原文のまま）・`computer_call_output`（`History` が保持する直近 `agent.keep_screenshots` 枚だけ画像つき）で組み立てる。スクリーンショットは PNG・`detail: "original"`（最大辺の既定 1568 px。FR-S03）。`include` に何が要るか（推論の暗号化コンテンツなど）は実 API のスモークで確認する（§12.2）。未知のアクション種別は `ErrUnsupportedAction`。API キーは呼び出しごとに `SecretStore`（`puppet-remo/openai`）から読み、**ログ・エラーメッセージに出さない**（`http.RoundTripper` で `Authorization` を伏せる）。**所有する goroutine**: なし（呼び出しは `ctx` で取り消せる）。`History` は `run` の goroutine だけが触る。
+実装は `openai-go/v3` の `responses.ComputerToolParam`（`{type:"computer"}`）を使う。毎回の要求は、指示・これまでの出力アイテム（原文のまま）・`computer_call_output`（`History` が保持する直近 `agent.keep_screenshots` 枚だけ画像つき）で組み立てる。スクリーンショットは PNG・`detail: "original"`（最大辺の既定 1568 px。FR-S03）。`include` に何が要るか（推論の暗号化コンテンツなど）は実 API のスモークで確認する（§12.2）。未知のアクション種別は `ErrUnsupportedAction`。API キーは呼び出しごとに `SecretStore`（ターゲット名 `puppet-remo/openai:puppet-remo`）から読み、**ログ・エラーメッセージに出さない**（`http.RoundTripper` で `Authorization` を伏せる）。**所有する goroutine**: なし（呼び出しは `ctx` で取り消せる）。`History` は `run` の goroutine だけが触る。
 
 ### 4.4 typesafe
 
@@ -1025,7 +1025,7 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 |------|------|
 | COM / UI Automation | `github.com/go-ole/go-ole` v1.3.0（MIT）で COM を扱い、`IUIAutomation` の vtable バインディングは自前で書く（cgo なし） |
 | DXGI のキャプチャ | `github.com/kirides/go-d3d` v1.0.1（MIT、cgo なし）を第一候補とし、GDI `BitBlt` をフォールバックにする。M2 のキャプチャのスパイクで採否を確認し、成立しなければ自前の `syscall` 実装にする |
-| 資格情報 | `github.com/zalando/go-keyring` v0.2.8（MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go）。ターゲット名は `puppet-remo/openai`、`puppet-remo/typesafe` |
+| 資格情報 | `github.com/zalando/go-keyring` v0.2.8（MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go）。ターゲット名は `puppet-remo/openai:puppet-remo`、`puppet-remo/typesafe:puppet-remo`（go-keyring は `service:user` で作り、`service` に定数 `puppet-remo/openai`・`puppet-remo/typesafe`、`user` に固定値 `puppet-remo` を渡す。§13.3） |
 | WebSocket / ID / OpenAI / MCP | `github.com/coder/websocket` v1.8.15、`github.com/oklog/ulid/v2` v2.1.2、`github.com/openai/openai-go/v3` v3.90.0、`github.com/modelcontextprotocol/go-sdk` v1.8.0 |
 | MCP SDK の設定 | `DisableLocalhostProtection` は loopback 経由の要求にしか効かず tailnet IP では無関係なので、自前の Host / Origin ミドルウェア（NFR-S02）で守る。非推奨の `CrossOriginProtection` は使わない。`SessionTimeout` は 0 だと閉じないため 30 分アイドルに明示（リースのアイドル 5 分とは独立）。`KeepAlive` は既定の 0（ping しない。POST だけのクライアントは ping に応えられないため。NFR-A04）。`EventStore` は v1 では使わない（ストリームの再開なし。クライアントは再初期化する）。`MaxRequestBodyBytes` は 1 MiB（NFR-S09）、`Stateless=false`（セッションに紐づくリース保持者）、`JSONResponse` は既定 |
 | OpenAI の会話継続 | `store: false` 固定、`previous_response_id` は使わず、履歴を毎回再送する。スクリーンショットは直近 `agent.keep_screenshots`（既定 3）枚だけ残す（§4.3、FR-G24） |
@@ -1311,3 +1311,4 @@ M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tool
 | 1.46 | 2026-11-02 | §13.12 に `Agent`・`FastPath`・`TaskAdmin` の M4 の実装差分（`Start` の検査順・`run` の流れ・終了状態の決め方・安全チェックの承認の文面・高速パスの選択・中断の入口・保守と起動・`app` の結線・`remotedemo` の `-agent-demo`）を追記し、§5.6.1 の `FastPath` を実装の形（`NewFastPath`・`Disabler`・`AgentConfigReader`）に合わせ、`Control.ReleaseInput` を足し、§13.5 の `KillSwitch` の行・未実装の行・オーバーレイの行と §13.6 の「M1 では実装していない」の文を M4 の実装に更新 | #19 |
 | 1.47 | 2026-11-02 | §13.12 に `app` が `openai`・`typesafe` を import しない設計（`service.NewAgentModel`・`NewAgentChooser`・別名 `AgentModel`・`AgentChooser`・`service/agenttest`）を追記し、§13.1 の「まだ存在しない」を更新 | #19 |
 | 1.48 | 2026-11-02 | §13.12 を実装に合わせて訂正・追記: 再起動で残ったタスクは `aborted`（`error_code` NULL。`failed` / `server_restarted` は誤り）、リースの取得中のキルスイッチ・取り下げは `cancelled`、リースを失う経路は Watch の有無によらず `cancelled`（`lease_lost` / `lease_revoked`）、終了処理でリースを先に解放、高速パスは毎ステップ `Enabled` を読み直す、行動しないパスのステップ番号の規則（`pass`）、`Cancel` の待ちは 500 ミリ秒、`TaskStep.Kind`、`Disabler`（OpenAI 401 でエージェントを無効化）、モデル呼び出しの時間の上限の縮め方、承認待ちが時間の上限を超えうること | #19 のレビュー指摘 |
+| 1.49 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
