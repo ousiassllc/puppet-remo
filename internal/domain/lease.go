@@ -132,7 +132,7 @@ func (m *LeaseMachine) IdleDeadline() (time.Time, bool) {
 }
 
 // Acquire は who にリースを取得させる（idle → held。承認なし。FR-L03）。承認が要るときは Request を使う。
-//   - 保持者になれない種別（mcp・web 以外）、セッション ID が空 → ErrInvalidArgument
+//   - 保持者になれない種別（mcp・web・agent 以外）、セッション ID が空 → ErrInvalidArgument
 //   - 他者が保持中、または承認待ち → ErrLeaseHeldByOther（待機しない）
 //   - 自分が保持中 → 同じリースを返し、活動時刻を更新する（遷移なし）
 //
@@ -245,7 +245,7 @@ func (m *LeaseMachine) ReleaseAll(reason ReleaseReason) []LeaseEvent {
 }
 
 // Revoke は by が保持者を強制剥奪する（held → idle。FR-L06）。idle なら何もせず成功する（冪等）。
-// by の種別は host か web のみ（それ以外は ErrInvalidArgument）。agent の保持者の剥奪（タスクの中断を伴う）は M4。
+// by の種別は host か web のみ（それ以外は ErrInvalidArgument。agent は剥奪できない）。保持者が agent のとき、剥奪に伴うタスクの中断は service の責務（FR-L08）。
 // 剥奪された保持者は、次の Acquire が成功するまで Check が ErrLeaseRevoked を返す。
 func (m *LeaseMachine) Revoke(by Actor) ([]LeaseEvent, error) {
 	if !by.Kind.CanRevokeLease() {
