@@ -35,6 +35,9 @@ var toolCallArgs = map[string]map[string]any{
 	"get_ui_tree":     {"window_id": "w1"},
 	"screenshot":      {"monitor": 0, "format": "png"},
 	"launch_app":      {"app_id": "app-1"},
+	"run_task":        {"prompt": "hunter2"},
+	"get_task":        {"task_id": "task-seed"},
+	"cancel_task":     {"task_id": "task-seed"},
 }
 
 func TestMCPLayerAuditsExactlyTheToolsControlDoesNotAudit(t *testing.T) {
@@ -44,6 +47,7 @@ func TestMCPLayerAuditsExactlyTheToolsControlDoesNotAudit(t *testing.T) {
 			e := newEnv(t, func(c *Config) { c.Audit = a })
 			e.ctl.tree = sampleTree()
 			e.ctl.apps = []domain.AppSummary{{ID: "app-1", Label: "Notepad"}}
+			e.agent.put("c1", domain.Task{ID: "task-seed", Status: domain.TaskRunning})
 			cs := e.connect("c1")
 
 			res := callTool(t, cs, name, toolCallArgs[name])
