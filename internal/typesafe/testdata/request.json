@@ -1,0 +1,28 @@
+{
+  "model": "jev-1.13",
+  "state": {
+    "goal": "メモ帳を開いて保存ダイアログを閉じる",
+    "window": {"title": "無題 - メモ帳", "process": "notepad.exe"},
+    "elements": [
+      {"id": "b1c2d3e4f5a60718", "role": "button", "label": "保存", "enabled": true},
+      {"id": "0a1b2c3d4e5f6071", "role": "window", "label": "エクスプローラー", "enabled": true}
+    ],
+    "history": ["click button \"ファイル\"", "click menu_item \"名前を付けて保存\""]
+  },
+  "questions": {
+    "next": {
+      "type": "choice",
+      "instructions": "Decide the single next UI step toward state.goal. state.window is the foreground window, state.elements lists the operable candidates, and state.history lists the most recent steps already taken (oldest first). Pick the candidate whose operation makes the most progress. Pick reobserve if the screen has probably not finished updating or you need a fresh look. Pick abstain if no candidate clearly fits or you are unsure.",
+      "criteria": {
+        "b1c2d3e4f5a60718": "Click the button labeled \"保存\".",
+        "0a1b2c3d4e5f6071": "Bring the window titled \"エクスプローラー\" to the foreground.",
+        "reobserve": "No candidate is right yet; the screen may not have finished updating, so look at it again.",
+        "abstain": "Cannot decide with confidence: no candidate clearly fits the goal, or the goal needs typing, keys or scrolling."
+      }
+    },
+    "goal_maybe_done": {
+      "type": "noul",
+      "instructions": "Judging only from state.history and state.elements, has state.goal probably already been achieved?"
+    }
+  }
+}
