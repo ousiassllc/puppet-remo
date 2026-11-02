@@ -58,7 +58,7 @@ func newApprovalEnv(t *testing.T) *approvalEnv {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.Approval, c.Clients = ae.approval, approvalClients{}
+		c.Approval, c.Clients, c.Bus = ae.approval, approvalClients{}, e.bus
 	})
 	return ae
 }
@@ -191,4 +191,93 @@ func TestInputDuringPendingApprovalIsRejectedAsLeaseHeldByOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = awaitErr(t, done)
+}
+
+// RequestAcquire の承認待ちの拒否・タイムアウトは、要求したビューアだけに error メッセージ（approval_denied / approval_timeout）で届く。
+// 同じクライアントの別のビューアには届かない。
+func TestRequestAcquireFailureIsSentToTheRequestingViewerOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		finish   func(e *approvalEnv)
+		wantCode string
+	}{
+		{"denied", func(e *approvalEnv) {
+			if err := e.approval.Resolve(e.approval.Pending()[0].ID, false); err != nil {
+				e.t.Fatal(err)
+			}
+		}, "approval_denied"},
+		{"timeout", func(e *approvalEnv) { e.timers.fire() }, "approval_timeout"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newApprovalEnv(t)
+			cMine, idMine := e.connect()
+			idOther := e.issue()
+			cOther := e.dial(idOther)
+			readType(t, cOther, "ready")
+
+			_, pending, err := e.leases.RequestAcquire(context.Background(), e.viewerActor(idMine))
+			if err != nil || !pending {
+				t.Fatalf("RequestAcquire = pending %v, %v; want pending without error", pending, err)
+			}
+			readLeaseState(t, cMine, "pending_approval")
+			readLeaseState(t, cOther, "pending_approval")
+
+			tt.finish(e)
+			// lease（idle）と error は別のトピックなので、届く順は決まっていない。idle の lease と error を両方読む。
+			msg := readUntilLeaseAndError(t, cMine, "idle")
+			if msg["code"] != tt.wantCode {
+				t.Errorf("error = %v, want code %s", msg, tt.wantCode)
+			}
+			if s, _ := msg["message"].(string); s == "" {
+				t.Errorf("error message is empty: %v", msg)
+			}
+
+			// 別のビューアには error を送らない: 続けて別のビューアが取得を要求し、承認待ちの lease が届くまでに error が無い。
+			readLeaseState(t, cOther, "idle")
+			e.leases.ClearApprovalCooldown(alice.ID)
+			done := e.requestLease(e.viewerActor(idOther))
+			readLeaseState(t, cOther, "pending_approval")
+			if err := e.approval.Resolve(e.approval.Pending()[0].ID, false); err != nil {
+				t.Fatal(err)
+			}
+			_ = awaitErr(t, done)
+		})
+	}
+}
+
+// 許可は lease メッセージ（held）で届き、error は送らない。
+func TestRequestAcquireGrantIsSentAsLeaseMessage(t *testing.T) {
+	e := newApprovalEnv(t)
+	c, id := e.connect()
+	if _, pending, err := e.leases.RequestAcquire(context.Background(), e.viewerActor(id)); err != nil || !pending {
+		t.Fatalf("RequestAcquire = pending %v, %v", pending, err)
+	}
+	readLeaseState(t, c, "pending_approval")
+	if err := e.approval.Resolve(e.approval.Pending()[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := readLeaseState(t, c, "held"); got["mine"] != true {
+		t.Errorf("lease after approval = %#v", got)
+	}
+}
+
+// readUntilLeaseAndError は、state が want の lease メッセージと error メッセージの両方が届くまで読み、error メッセージを返す。
+func readUntilLeaseAndError(t *testing.T, c *websocket.Conn, want string) map[string]any {
+	t.Helper()
+	var errMsg map[string]any
+	sawLease := false
+	for !sawLease || errMsg == nil {
+		m := readMsg(t, c)
+		switch {
+		case m["type"] == "error":
+			errMsg = m
+		case m["type"] == "lease" && m["state"] == want:
+			sawLease = true
+		case m["type"] == "lease":
+		default:
+			t.Fatalf("unexpected message %v", m)
+		}
+	}
+	return errMsg
 }

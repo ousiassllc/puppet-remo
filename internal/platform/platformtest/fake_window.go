@@ -65,6 +65,7 @@ func (f *FakeWindows) List(ctx context.Context) ([]domain.WindowInfo, error) {
 }
 
 // At は最小化されていない最上位のウィンドウのうち、p を含むものを返す。
+// クリックスルーのオーバーレイ（Overlay）は入力が下へ通るので飛ばし、その下の実ウィンドウを返す（InputGuard が下の自ウィンドウを見逃さないため）。
 func (f *FakeWindows) At(p domain.Point) (domain.WindowInfo, bool, error) {
 	if err := f.enterSync("At", p); err != nil {
 		return domain.WindowInfo{}, false, err
@@ -72,7 +73,7 @@ func (f *FakeWindows) At(p domain.Point) (domain.WindowInfo, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, w := range f.windows {
-		if !w.Minimized && w.Rect.Contains(p) {
+		if !w.Minimized && !w.Overlay && w.Rect.Contains(p) {
 			return w, true, nil
 		}
 	}

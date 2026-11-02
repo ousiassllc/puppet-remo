@@ -352,7 +352,7 @@ func settingsValues(s service.HostSettings) view.SettingsValues {
 		ViewerFPS: strconv.Itoa(s.ViewerDefaultFPS), Autostart: s.Autostart,
 		AuditThumbnails: s.AuditThumbnailsEnabled, AuditRecordText: s.AuditRecordText,
 		AuditRetentionDays: strconv.Itoa(s.AuditRetentionDays), AuditThumbsMaxBytes: strconv.FormatInt(s.AuditThumbsMaxBytes, 10),
-		UpdateApplyMode: s.UpdateApplyMode,
+		UpdateApplyMode: s.UpdateApplyMode, UpdateChannel: s.UpdateChannel,
 	}
 }
 

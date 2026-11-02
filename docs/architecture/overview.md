@@ -39,7 +39,7 @@
 | 高速パス（Jev による候補選択） | TypeSafe API（`POST https://api.typesafe.ai/v1/systemone`、モデル既定 `jev-1.13`）を `internal/typesafe` から直接呼ぶ。Go SDK は無いため標準 `net/http` | 既定は無効（`agent.fastpath.enabled`）。入力はテキストと JSON のみ（スクリーンショットは送らない）。呼び出しは 5 秒タイムアウト・再試行なし。**Jev は Judge ではない**（承認を緩めない）。Judge は既定のルールベース（自前の `RuleJudge`）のまま。品質は自前のタスクで M4 に測定して確認し、仕様書には性能の主張を書かない（[FR-G16](../requirements/functional.md)） |
 | ID 生成 | `github.com/oklog/ulid/v2` v2.1.2（Apache-2.0） | タスク・監査ログなどの ID。時刻順に並ぶ |
 | 検討したが採らない | Cua Driver（`trycua/cua`、Rust 製、MIT） | CLI・MCP・型付き SDK 経由で OS 操作を提供するが、本アプリは同一プロセス・純 Go で InputGuard・リース・監査を一貫して制御するため `platform` 層を自前実装する |
-| 自動更新 | GitHub Releases + Ed25519 署名検証 | [NFR-S10](../requirements/non-functional.md) |
+| 自動更新 | GitHub Releases（認証なし・HTTPS）+ minisign 形式（Ed25519）の署名検証。署名は `aead.dev/minisign`（v0.3.0）で検証する | [NFR-S10](../requirements/non-functional.md) |
 
 ## システム構成図
 
@@ -497,12 +497,12 @@ graph TD
 
 - **座標変換**: 縮小座標 → `round(x ÷ 縮小率)` → モニター原点を加算 → 仮想デスクトップ座標。`SendInput` は `MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK` で 0〜65535 に正規化して送る。プロセスは Per-Monitor DPI Aware V2 のマニフェストを持つ
 - **`InputGuard`**（すべての注入の前に必ず通る。[NFR-S06](../requirements/non-functional.md)）:
-  1. 注入先の座標にあるトップレベルウィンドウ、またはフォアグラウンドウィンドウが**自プロセスのもの**ならブロック（`input_blocked`）
+  1. 注入先の座標にあるトップレベルウィンドウ、またはフォアグラウンドウィンドウが**自プロセスのもの**ならブロック（`input_blocked`）。ただしクリック透過のオーバーレイ（自プロセスで `WS_EX_TRANSPARENT` かつ `WS_EX_LAYERED`）は例外で、入力は下のウィンドウへ通るため拒否しない。全モニターを覆うオーバーレイの下にある承認ダイアログなどが判定から漏れないよう、座標の問い合わせ（`WindowManager.At`）はオーバーレイを飛ばして下の実ウィンドウを返す
   2. 管理者権限ウィンドウ（UIPI）が対象なら `input_blocked`
   3. キルスイッチ中・リース非保持なら拒否
   4. エージェントの入力は、上記に加えて Judge（次節）を通す。InputGuard はすべての保持者種別（`mcp` / `web` / `agent`）に同じ規則を適用する
 - **自ウィンドウのキャプチャ除外**: ホスト GUI・承認ダイアログ・オーバーレイは Wails の `ContentProtectionEnabled`（`WDA_EXCLUDEFROMCAPTURE`）を有効にする。AI のスクリーンショットにも Web UI のライブ画面にも写らない。AI が入力の止まる場所を避けられるよう、`own_window` のエラー・`screenshot` の `own_windows`・`list_windows` の `blocked`・`instructions` で範囲（縮小座標の矩形）と印を伝える（画像への描画はしない。FR-M20）
-- **オーバーレイ**: モニターごとに 1 ウィンドウ。枠なし・透過背景・最前面・`IgnoreMouseEvents`（クリック透過）・タスクバー非表示。リースの保持・解放イベントで表示・消去する
+- **オーバーレイ**（[FR-H07](../requirements/functional.md)）: 全モニターに、モニターごとに 1 ウィンドウ（物理座標の原点・大きさに合わせる）。枠なし・透過背景・最前面・`IgnoreMouseEvents`（クリック透過。`WS_EX_TRANSPARENT` + `WS_EX_LAYERED`）・タスクバー非表示・フォーカスを奪わない（`WS_EX_NOACTIVATE`）・キャプチャ除外。リースの保持（`held`）で表示・保持者の変更でラベル更新・解放（アイドル解放・強制剥奪・キルスイッチ・切断を含む）と承認待ちで消去する。中身は GUI ルーターの `GET /overlay`（枠と「操作中: <クライアント名>（種別）」だけ）。出している間のモニター構成の変化は追わず、次に出すときに反映する
 - **承認ダイアログ**: 承認要求ごとに専用の Wails ウィンドウを開く（Go 側でウィンドウ生成）。内容は GUI ルーターが Templ で描画し、「許可 / 拒否」は HTMX の `hx-post` で GUI ルーターへ送る。操作は入力ガードにより AI から押せない
 
 ## Judge（判定インターフェース）
@@ -591,7 +591,7 @@ puppet-remo/
 | フロントエンド | Tailwind CSS ビルド、esbuild（Lit コンポーネント）、`htmx.min.js` のコピー → `static/dist/` |
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
-| 配布・更新 | GitHub Releases。インストーラと署名ファイル（Ed25519）を公開し、アプリが署名検証して適用 |
+| 配布・更新 | GitHub Releases（リポジトリは公開が前提）。インストーラ・`.sha256`・署名ファイル `.minisig`（minisign 形式。Ed25519）を公開し、アプリが埋め込みの公開鍵で署名検証して適用する。署名の trusted comment に版とファイル名を入れ、Release との不一致（付け替え）を拒否する。署名の秘密鍵は GitHub Actions の Secret（`MINISIGN_SECRET_KEY`）にだけ置き、Secret が無いときは署名を省いて公開する（アプリは署名のないリリースを適用しない）。チャネルは正式版（既定）とナイトリー。確認は起動の 1 分後と 6 時間ごと。詳細は [リリース運用](../operations/release.md) |
 | CI | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は M2 で足す（偽の platform と偽の tailnet により OS に依存しない。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
 
@@ -611,7 +611,8 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |
 | ULID | `oklog/ulid/v2` | 同じ（`internal/app` の `ULIDGen`）。`domain.IDGen` として注入する |
 | ホスト GUI の更新 | `GET /poll`（本書の技術選定のとおり） | 同じ。`GET /events`（SSE）と `htmx-ext-sse` の同梱は残すが、M1 の GUI は読み込まない（未使用） |
-| ホスト GUI のウィンドウ | `ContentProtectionEnabled`（キャプチャ除外）を承認ダイアログ・オーバーレイ・ホスト GUI に付ける | M1 はホスト GUI のメインウィンドウだけに `ContentProtectionEnabled` を付ける（承認ダイアログ・オーバーレイは M3） |
+| 自動更新（M3・#74） | 署名検証付きの更新（`service.Updater`・`platform.Installer`。GitHub Releases の認証なしの取得・minisign の署名検証・チャネル・ダウングレード拒否・適用の可否） | M3 で実装した。公開鍵はプレースホルダ（`internal/service/updater_pubkey.pub`）のままで、オーナーが鍵を生成して置き換えるまで、確認だけ行い適用しない（fail closed）。リリース CI の署名は Secret があるときだけ（[リリース運用](../operations/release.md)「署名」）。`internal/app` が `Updater` を組み立て、`Shutdown` で止める（Wails の終了への結線は `wails_windows.go`） |
+| ホスト GUI のウィンドウ | `ContentProtectionEnabled`（キャプチャ除外）を承認ダイアログ・オーバーレイ・ホスト GUI に付ける | 同じ（承認ダイアログは #68、オーバーレイは #69 で付けた） |
 
 ### ディレクトリ構成
 
@@ -623,7 +624,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | `internal/web` | `handler/gui` と `handler/remote`（M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`・`handler/remote/remotetest/`（偽の service）を持つ |
 | `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ。`windows/` の `secret`（資格情報）は無い |
 | `internal/router` | `gui.go`・`remote.go` と `internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
-| `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`。承認ダイアログとオーバーレイは M3 |
+| `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`・`wails_overlay_windows.go`。承認ダイアログ（`approval_dialogs.go`。M3・#68）とオーバーレイ（`overlay.go`。M3・#69）の購読側は OS に依存せず、Wails の実装だけが Windows 専用 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
 | `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`。M2 の #63）。`e2e/` は作らない |
 | 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/environment/setup.md`（環境構築）、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
@@ -635,7 +636,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 
 ### キルスイッチ（「キルスイッチ」の節）
 
-M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以後のリクエストを 503 にする）から、(1) 永続化、(2) 全リース剥奪、(3) 登録済みクローザーの**並行**実行（MCP セッションの切断・押下中の入力の解放）、監査の順で行う。WebSocket の切断（クローザー `web-sessions`。閉じコード 4503）は M2 で足した。エージェントの中断・オーバーレイの消去は、それぞれ M4・M3 で足す。永続化とクローザーはそれぞれ自分の期限（既定 1 秒）を持つため、永続化が遅いと `Trigger` が戻るまで最大 2 × 期限かかり、NFR-P05 の 1 秒を超えうる（**既知の制限**。受付停止はメモリ上の状態で直ちに効くが、セッション切断の完了は遅れうる。詳細はコンポーネント設計 §13.5）。
+M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以後のリクエストを 503 にする）から、(1) 永続化、(2) 全リース剥奪、(3) 登録済みクローザーの**並行**実行（MCP セッションの切断・押下中の入力の解放）、監査の順で行う。WebSocket の切断（クローザー `web-sessions`。閉じコード 4503）は M2 で足した。オーバーレイの消去は、`Trigger` が `Bus` に出す `lease`（全リース剥奪の通知）を `app` が受けて行う（M3・#69）。エージェントの中断は M4 で足す。永続化とクローザーはそれぞれ自分の期限（既定 1 秒）を持つため、永続化が遅いと `Trigger` が戻るまで最大 2 × 期限かかり、NFR-P05 の 1 秒を超えうる（**既知の制限**。受付停止はメモリ上の状態で直ちに効くが、セッション切断の完了は遅れうる。詳細はコンポーネント設計 §13.5）。
 
 ### 受付と入力（「ルーターの分離とリクエスト処理」「入力注入と自己保護」の節）
 
@@ -671,3 +672,5 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.16 | 2026-11-01 | 技術スタックの画面キャプチャと「M1 実装での差分」の DXGI の行を、M2 の `Capturer.Watch` の実装（`go-d3d` の採用、`Frame.Dirty` は全面）に更新 | #57 |
 | 1.17 | 2026-11-01 | 技術選定の WebSocket（`coder/websocket` v1.8.15）を直接依存にしたこと、「M1 実装での差分」の `KillSwitch.Trigger` の記述に WebSocket の切断（`web-sessions`）を M2 で足したことを反映 | #61 |
 | 1.18 | 2026-11-01 | M1 実装での差分の `internal/web`（`handler/remote`・`remotetest`）とリモートルーターの提供物（Web UI・`/static/*`・待機ページの出し分け）を反映 | #62 |
+| 1.19 | 2026-11-02 | 入力注入と自己保護の InputGuard にクリック透過のオーバーレイの例外（`At` は Overlay を飛ばす）、オーバーレイを全モニター・物理座標・保持者の変更・構成変化の扱いに具体化、M1 実装での差分の `internal/app`・キルスイッチ・`ContentProtectionEnabled` の行を #68・#69 の実装に更新 | #69 |
+| 1.20 | 2026-11-02 | 自動更新を具体化: 認証なしの取得（リポジトリは公開が前提）、minisign 形式の署名と trusted comment による版・ファイル名の束縛、公開鍵の埋め込みと未設定時の fail closed、署名鍵を GitHub Actions の Secret に置くこと（Secret が無いときは署名を省く）、チャネル、確認の間隔。M1 実装での差分に自動更新の行を追加 | #74 |

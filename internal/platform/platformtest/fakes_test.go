@@ -187,6 +187,20 @@ func TestFakeWindowsAtAndFocus(t *testing.T) {
 	}
 }
 
+// クリックスルーのオーバーレイは At に現れず、その下の実ウィンドウが返る。オーバーレイだけの場所は「ウィンドウなし」。
+func TestFakeWindowsAtSkipsOverlay(t *testing.T) {
+	w := platformtest.NewFakeWindows(
+		domain.WindowInfo{ID: "ov", Own: true, Overlay: true, Rect: domain.Rect{X: 0, Y: 0, W: 1000, H: 1000}},
+		domain.WindowInfo{ID: "dlg", Own: true, Rect: domain.Rect{X: 100, Y: 100, W: 200, H: 200}},
+	)
+	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.ID != "dlg" {
+		t.Errorf("At(150,150) = %q, %v, %v; want the dialog under the overlay", got.ID, ok, err)
+	}
+	if got, ok, err := w.At(domain.Point{X: 800, Y: 800}); err != nil || ok {
+		t.Errorf("At(800,800) = %q, %v, %v; want no window (overlay only)", got.ID, ok, err)
+	}
+}
+
 func TestFakeWindowsForegroundWithoutWindow(t *testing.T) {
 	_, err := platformtest.NewFakeWindows().Foreground()
 	if !errors.Is(err, domain.ErrDesktopUnavailable) {
@@ -365,6 +379,39 @@ func TestFakeAppLauncherContract(t *testing.T) {
 		ExePath: exe, Dir: dir, MissingPath: `C:\Apps\Gone\gone.exe`, MissingDir: `C:\Apps\Gone`,
 		DeniedPath: denied, ElevatedPath: elevated,
 	})
+}
+
+func TestFakeInstallerContract(t *testing.T) {
+	const installer = `C:\Temp\puppet-remo-update\installer.exe`
+	platformtest.RunInstallerContract(t, func(*testing.T) platform.Installer {
+		i := platformtest.NewFakeInstaller()
+		i.AddInstaller(installer)
+		return i
+	}, platformtest.InstallerFixture{Path: installer, MissingPath: `C:\Temp\puppet-remo-update\gone.exe`})
+}
+
+func TestFakeInstallerRecordsRunsAndInjectsErrors(t *testing.T) {
+	const path = `C:\Temp\a.exe`
+	i := platformtest.NewFakeInstaller()
+	i.AddInstaller(path)
+	ctx := context.Background()
+	var seen []string
+	i.OnRun(func(p string) { seen = append(seen, p) })
+
+	if err := i.Run(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	i.SetError("Run", boom)
+	if err := i.Run(ctx, path); !errors.Is(err, boom) {
+		t.Fatalf("Run error = %v, want the injected error", err)
+	}
+	if got := i.Started(); !reflect.DeepEqual(got, []string{path}) || !reflect.DeepEqual(seen, []string{path}) {
+		t.Errorf("Started = %v, OnRun saw %v; want only the first run", got, seen)
+	}
+	if got := i.CallsTo("Run"); len(got) != 2 {
+		t.Errorf("CallsTo(Run) = %+v, want 2 calls", got)
+	}
 }
 
 func TestFakeFilePickerContract(t *testing.T) {

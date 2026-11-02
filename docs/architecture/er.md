@@ -60,7 +60,7 @@ erDiagram
         INTEGER web_enabled "Web UI 利用可 (0/1)"
         INTEGER mcp_enabled "MCP 利用可 (0/1)"
         INTEGER agent_enabled "エージェント(run_task)利用可 (0/1、既定 0)"
-        TEXT approval_mode "always / first_time / auto"
+        TEXT approval_mode "always / first_time / auto（既定 always。v4 で既存の行は auto へ移行）"
         INTEGER approved_at "first_time で承認済みになった時刻"
         INTEGER created_at
         INTEGER updated_at
@@ -92,7 +92,7 @@ erDiagram
 | `web_enabled` | INTEGER | NO | 1 | Web UI の利用可否 |
 | `mcp_enabled` | INTEGER | NO | 1 | MCP の利用可否 |
 | `agent_enabled` | INTEGER | NO | 0 | 内蔵エージェント（`run_task`）の利用可否。**既定は無効**（FR-A09）。M1 でも GUI・API から保存・編集できるが、M1 では参照せず効果はない（`run_task` は M4 から） |
-| `approval_mode` | TEXT | NO | `'always'` | `always` / `first_time` / `auto`（FR-L07）。M1 は承認なしでリースを取得するため参照せず、既定値 `always` で保存するだけ。承認モードの適用・選択・設定は M3 |
+| `approval_mode` | TEXT | NO | `'always'` | `always` / `first_time` / `auto`（FR-L07）。M1・M2 は承認なしでリースを取得するため参照せず、既定値 `always` で保存するだけだった。M3 から適用し、選択・変更は GUI（FR-H03・FR-H04）。**v4 のマイグレーション（`0004_existing_clients_auto_approval.sql`）**: M1・M2 の間に登録された既存のクライアントは `always` で保存されており、承認ダイアログはホストの手元でしか押せないため、そのままだと外からの操作がすべて 60 秒で拒否される。そこで v4 は、適用時点の `always` の行を `auto`（自動許可）へ移す（`first_time` の行・`approved_at` は変えない。列の既定値 `always` は変えないので、v4 の後に登録する新しいクライアントは承認モードを選ばなければ `always`（常時承認）。マイグレーションは 1 度だけ適用されるので、あとから `always` に戻した行は書き換わらない）。移行したクライアントを承認制に戻すときは、クライアントのカードで承認モードを変える |
 | `approved_at` | INTEGER | YES | NULL | `first_time` で一度承認された時刻。NULL なら未承認（承認の取り消しは NULL に戻す）。`approval_mode` を変更したときも NULL に戻す。M3 から使う: `first_time` のクライアントのリース取得がホストに許可されたとき `LeaseManager` が `repository.Clients.MarkApproved` で記録し（`always`・`auto` では記録しない。拒否・タイムアウト・取り下げでも記録しない）、承認の取り消しは `repository.Clients.ResetApproval`（NULL に戻す。承認モードは変えない）。承認が要るかの判定は `domain.NeedsApproval`（`first_time` は NULL のときだけ要る） |
 | `created_at` | INTEGER | NO | — | 登録時刻 |
 | `updated_at` | INTEGER | NO | — | 更新時刻 |
@@ -237,7 +237,8 @@ erDiagram
 | `audit.retention_days` | number | 30 | FR-AU04 |
 | `audit.thumbs_max_bytes` | number | 1073741824 | FR-AU04 |
 | `update.apply_mode` | string `"confirm"` / `"auto_idle"` | `"confirm"` | FR-S09 |
-| `update.last_checked_at` | number | なし | FR-H09 |
+| `update.channel` | string `"stable"` / `"nightly"` | `"stable"` | FR-S09（更新のチャネル。#74） |
+| `update.last_checked_at` | number（UTC ミリ秒） | なし | FR-H09（最後に更新を確認した時刻。成功・失敗を問わず確認のたびに `service.Updater` が保存する。#74） |
 | `log.level` | string | `"info"` | NFR-O01 |
 | `agent.enabled` | boolean | false | FR-S10、FR-G14 |
 | `agent.consent_at` | number（UTC ミリ秒） | なし | FR-G14（OpenAI へのスクリーンショット送信への同意の日時。有効化時に記録し、無効化で削除） |
@@ -440,16 +441,20 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | トークンの発行・失効 | `token` | `token.issue` / `token.revoke` | `host` |
 | クライアントの変更 | `client` | `client.replace` / `client.update` / `client.delete` | `host` |
 | リースの取得・解放・剥奪 | `lease` | `lease.acquire`（取得の失敗は `denied`）/ `lease.release` / `lease.revoke` | 保持者（剥奪は剥奪した側） |
-| リースの取得要求・承認・拒否（承認モード） | `lease` | **未実装**（#66） | — |
+| リースの取得要求・承認・拒否（承認モード） | `lease` | `approval.requested`（idle → pending_approval）/ `approval.granted`（pending_approval → held。続けて `lease.acquire`）/ `approval.denied`（ホストの拒否）/ `approval.timeout`（60 秒の失効）/ `approval.withdrawn`（キルスイッチ・切断・クライアントの削除・要求側の取り下げ。`detail.reason` に理由）/ `approval.reset`（承認済みの取り消し。ホスト GUI） | 承認を求めたセッション（`approval.reset` は `host`） |
 | MCP ツール呼び出し | `tool` | `tool.<ツール名>`（`tool.left_click`・`tool.type`・`tool.launch_app` など） | `mcp` |
 | Web UI からの入力操作 | `input` | `tool.<入力種別>`（`tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up`・`tool.type`・`tool.clipboard_read` など。`PointerMove` は記録しない） | `web` |
 | キルスイッチの発動・解除 | `killswitch` | `killswitch.trigger` / `killswitch.release` | `host` |
 | 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete` | `host` |
-| 更新の確認・適用 | `update` | **未実装**（#74） | — |
+| 更新の確認・適用 | `update` | `update.detected`（署名を検証できた新版の検出。`result = ok`）/ `update.verify_failed`（署名・版の束縛・取得の失敗、公開鍵の未設定。`result = denied`、`error_code` に理由: `signature_invalid`・`signature_missing`・`version_mismatch`・`key_unset`・`download_failed`・`verify_error`）/ `update.downgrade_rejected`（現行より古い版・同じ版。`result = denied`）/ `update.apply_started`（インストーラを起動する。`result = ok`）/ `update.apply_failed`（起動に失敗。`result = error`、`error_code` は `start_failed`・`installer_not_found`・`canceled`）。`detail_json` は `{ "version", "tag", "current", "channel", "reason"? }` だけで、URL・署名・パス・OS のエラー文は記録しない。同じ版・理由の `detected` / `verify_failed` / `downgrade_rejected` は繰り返し記録しない | `host`（GUI の「今すぐ確認」「更新する」）/ `system`（定期確認・`auto_idle` の自動適用） |
+
+承認の監査（M3・#66）。`kind = lease`、`lease_id` は承認待ちのリースの ID。`approval.requested` / `.granted` / `.withdrawn` は `result = ok`、`approval.denied` / `.timeout` は `result = denied`（`error_code` は `approval_denied` / `approval_timeout`）。`detail_json` は `{ "client_id", "lease_id", "holder_kind", "holder_label", "reason" }` だけで（`reason` は解放の理由: `approval_denied` / `approval_timeout` / `kill_switch` / `disconnect` / `withdrawn`。`approval.requested` は無し）、資格情報・パス・引数は入れない。`approval.reset` は `actor_type = host`・`client_label` は対象クライアント名・`detail_json` は `{ "client_id", "approved_at" }`（取り消した時刻。UTC ミリ秒）。拒否・タイムアウトの直後 30 秒の取得は承認を求めず、`lease.acquire`（`result = denied`・`error_code = approval_denied`・`detail_json` は `{ "cooldown": true }`）だけを記録する（`approval.requested` は記録しない）。
 
 `type` の本文とクリップボードの本文（M3・#71。FR-AU03、FR-S07）。設定 `audit.record_text`（既定 false）が false のあいだは、`detail_json` に文字数 `text_len` だけを入れる（M1 から同じ）。true のとき、`type` / `input.text`（`tool.type`）、クリップボードの書き込み（`tool.clipboard_write`）・読み取りの結果（`tool.clipboard_read`）の `detail_json` に `text`（本文）を足す（`text_len` は残す）。本文の中のトークン（`prm_…`）・`Bearer …` の形は、先に `[REDACTED]` に置き換える（切り詰めの境界をまたぐ秘密を残さないため。トークンと API キーは設定にかかわらず記録しない）。置き換えたあとの本文が 4,096 文字（ルーン）を超えるときは、4,096 文字までに切り詰めて `"text_truncated": true` を付ける（`text_len` は元の長さ）。キーの名前（`key_down` / `key_up` の `code`・`key`）は、この設定でも記録しない。設定が読めない・真偽値でないときは記録しない側に倒す。
 
 縮小スクリーンショットの保存（M3・#71。FR-AU02）。縮小・符号化は純粋関数 `service.NewThumbnail`（アスペクト比を保って長辺 320 px。拡大しない。短辺は最小 1 px。JPEG 品質 60。`golang.org/x/image/draw` の `CatmullRom`・`image/jpeg`。cgo なし）。保存は `Audit` の書き込み goroutine が 1 件ずつ、`Append` → `ThumbStore.Save`（`YYYY/MM/DD/<ULID>.jpg`。日付はイベントの `ts` の UTC）→ `AttachThumb` → 容量の確認（`Maintenance.PurgeThumbsOverCap`）の順に行う。`Record` は呼び出しを遅らせない（キューが満杯・`Close` 後は、これまでどおりエントリごと捨てて運用ログに残す）。キューにあるサムネイルの件数には別の上限（既定 32）があり、超えた分は画像だけを捨ててエントリは追記する（画像のバイト列でメモリが増え続けない）。`Save` / `AttachThumb` / 容量の確認の失敗は運用ログに残すだけで、ログ行と `Control.Do` の結果は変わらない（`AttachThumb` に失敗したら保存したファイルを消す）。`audit.thumbnails_enabled`（既定 true）は保存のたびに読み、false か真偽値でない値なら保存しない。
+
+**操作の直後のサムネイル（`Control` への結線。M3・#71）**: `Control` は、`result = ok` で画面を変える操作（MCP: クリック・ドラッグ・`scroll`・`key`・`type`・`focus_window`・`launch_app`。Web: ボタンの `down` / `up`・`wheel`・キー・文字入力・ショートカット送信）の直後に、非同期で `Monitors` → `Grab` → `NewThumbnail` を行い、**撮影のあとに**その操作の監査エントリを `Audit.RecordWithThumb` で記録する（`Append` → `Save` → `AttachThumb` → 容量の確認は上のとおり）。エントリを撮影のあとに 1 回だけ記録するので、画像は必ずその操作の行に付き、`Control.Do` は撮影を待たない（`ts` は操作の時刻）。撮らないもの: カーソルの移動だけ（`mouse_move`・Web の `move`）、クリップボード、`get_ui_tree`、`wait`、拒否・失敗した操作。撮るモニターは、`monitor` を明示した操作はそれ、座標のある操作はその座標を含むモニター、座標もモニターも無い操作と Web 入力はプライマリ。Web 入力は全体で 1 秒に 1 枚まで（間引かれた入力はサムネイル無しで記録）。撮影・符号化・保存の失敗は運用ログだけで、操作の結果もログ行も変えない。
 
 エージェントのステップ（`event = 'agent.step'`）の `detail_json`（FR-G19、FR-G23）。**入力した本文（`type` のテキスト）と要素の値は、どちらの経路でも記録しない**。
 
@@ -548,3 +553,7 @@ erDiagram
 | 1.17 | 2026-11-02 | 監査イベントのカタログ（FR-AU01 との対応。`auth.connreq_create` を追加）、`audit.record_text` の記録の形（`text`・4,096 文字・`text_truncated`）、サムネイルの保存の流れを追記 | #71 |
 | 1.18 | 2026-11-02 | 「データの保守」の M3 の実装の補足を、設定画面（#73）が同じ範囲を使うこと・範囲と単位が所有者の確認待ちであることに更新 | #73 |
 | 1.19 | 2026-11-02 | `audit.record_text` の本文は、トークンの形を伏せてから 4,096 文字に切り詰める順序を明記（境界をまたぐ秘密を残さない） | #75 |
+| 1.20 | 2026-11-02 | 「操作の直後のサムネイル」（`Control` への結線: 撮る操作・モニター・撮影のあとに記録する順序・Web 入力の 1 秒 1 枚）を追記 | #71 |
+| 1.21 | 2026-11-02 | 監査イベントのカタログに承認系の 6 イベント（`approval.requested` / `.granted` / `.denied` / `.timeout` / `.withdrawn` / `.reset`。`kind = lease`）を追加し、`detail_json` の形・拒否後 30 秒のクールダウンの記録（`lease.acquire` の `denied` + `cooldown`）を追記。1.16 の「未決」を解消 | #66 |
+| 1.22 | 2026-11-02 | 設定キー `update.channel`（`stable` / `nightly`）と `update.last_checked_at`（UTC ミリ秒。成功・失敗を問わず保存）、監査イベント `update.*` の 5 件（`kind = update`。`error_code` の理由と `detail_json`）をカタログに追記 | #74 |
+| 1.23 | 2026-11-02 | `clients.approval_mode` に v4 のマイグレーション（`0004_existing_clients_auto_approval.sql`）を追記: M1・M2 の間に登録された既存のクライアントを `always` から `auto`（自動許可）へ移す。新しいクライアントの既定は `always` のまま | M3 の続き（所有者の決定） |

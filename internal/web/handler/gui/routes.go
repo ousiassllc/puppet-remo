@@ -25,6 +25,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/clients", h.Clients)
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
+	r.GET("/update", h.Update)
 	r.GET("/apps", h.Apps)
 	r.GET("/apps/new", h.AppNew)
 	r.GET("/apps/:id/edit", h.AppEdit)
@@ -46,6 +47,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/clients/:id/tokens/:token_id/revoke/confirm", h.ConfirmRevokeToken)
 	r.GET("/killswitch/release/confirm", h.ConfirmReleaseKillSwitch)
 	r.GET("/apps/:id/delete/confirm", h.ConfirmDeleteApp)
+	r.GET("/update/apply/confirm", h.ConfirmApplyUpdate)
 
 	// 起動許可アプリ（M1.5。FR-H12）。許可リストを書き換える経路は、この GUI ルーターだけにある（NFR-S20）
 	r.POST("/apps", h.CreateApp)
@@ -58,6 +60,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.POST("/approvals/:id/allow", h.AllowApproval)
 	r.POST("/approvals/:id/deny", h.DenyApproval)
 
+	// 操作中オーバーレイ（M3。#69）。全モニターを覆うクリックスルーの Wails ウィンドウの中身
+	r.GET("/overlay", h.Overlay)
+
 	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
 	r.POST("/lease/revoke", h.RevokeLease)
 
@@ -65,4 +70,8 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.POST("/killswitch/trigger", h.TriggerKillSwitch)
 	r.POST("/killswitch/release", h.ReleaseKillSwitch)
 	r.PUT("/settings", h.SaveSettings)
+
+	// 更新（M3。FR-H09）。署名検証済みの新版の確認と適用
+	r.POST("/update/check", h.CheckUpdate)
+	r.POST("/update/apply", h.ApplyUpdate)
 }

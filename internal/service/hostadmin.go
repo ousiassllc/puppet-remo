@@ -94,7 +94,7 @@ type HostAdmin interface {
 	UpdateClient(ctx context.Context, id string, u ClientUpdate) (domain.Client, error)
 	// ResetApproval は first_time のクライアントの承認済み（approved_at）を取り消す（FR-H04、FR-S05）。次のリース取得から再び承認が要る。
 	// first_time でない、または承認済みでなければ conflict。更新後のクライアントを返す。
-	// 監査のイベント名は docs に無く未決のため、監査は記録しない（運用ログだけに残す。docs/components/overview.md §13.5）。
+	// 監査は approval.reset（kind = lease、actor_type = host。detail に client_id と取り消した approved_at）。拒否・タイムアウト後のクールダウンも解く。
 	ResetApproval(ctx context.Context, id string) (domain.Client, error)
 	// DeleteClient はクライアントを許可リストから外す（トークンは CASCADE で消える）。セッションを切断し、リースを解放する。
 	DeleteClient(ctx context.Context, id string) error
@@ -317,6 +317,9 @@ func (h *hostAdmin) UpdateClient(ctx context.Context, id string, u ClientUpdate)
 	if err != nil {
 		return domain.Client{}, err
 	}
+	if before.ApprovalMode != after.ApprovalMode {
+		h.clearApprovalCooldown(id)
+	}
 	if before.MCPEnabled && !after.MCPEnabled {
 		h.disconnect(id, domain.ActorMCP)
 	}
@@ -345,7 +348,17 @@ func (h *hostAdmin) ResetApproval(ctx context.Context, id string) (domain.Client
 		return domain.Client{}, mapRepoErr(err, "client")
 	}
 	h.cfg.Logger.Info("client approval reset", "client_id", id, "device", c.DisplayName)
+	// 承認のやり直しなので、拒否・タイムアウト後のクールダウンも解く（次の取得でまた承認を求める）。
+	h.clearApprovalCooldown(id)
+	h.audit(ctx, "lease", "approval.reset", c, map[string]any{"client_id": id, "approved_at": c.ApprovedAt.UnixMilli()})
 	return h.Client(ctx, id)
+}
+
+// clearApprovalCooldown は clientID の拒否・タイムアウト後のクールダウンを解く（Leases が無ければ何もしない）。
+func (h *hostAdmin) clearApprovalCooldown(clientID string) {
+	if h.cfg.Leases != nil {
+		h.cfg.Leases.ClearApprovalCooldown(clientID)
+	}
 }
 
 func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
@@ -358,6 +371,7 @@ func (h *hostAdmin) DeleteClient(ctx context.Context, id string) error {
 	}
 	h.disconnect(id, domain.ActorMCP)
 	h.disconnect(id, domain.ActorWeb)
+	h.clearApprovalCooldown(id)
 	h.cfg.Logger.Info("client deleted", "client_id", id, "device", c.DisplayName)
 	h.audit(ctx, "client", "client.delete", c, map[string]any{"stable_node_id": c.StableNodeID, "login_name": c.LoginName})
 	return nil

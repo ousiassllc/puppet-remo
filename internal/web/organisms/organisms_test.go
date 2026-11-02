@@ -165,14 +165,14 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 // 監査ログと更新の項目（FR-S07・FR-S09）: 平文の注意書きは常に出る。値は入力のとおり描画し、エラーは項目別に出す。
 func TestSettingsFormAuditAndUpdateFields(t *testing.T) {
 	form := view.SettingsForm{
-		Values: view.SettingsValues{AuditThumbnails: true, AuditRetentionDays: "0", AuditThumbsMaxBytes: "1073741824", UpdateApplyMode: "auto_idle"},
-		Errors: view.SettingsErrors{AuditRetentionDays: "範囲外", UpdateApplyMode: "選び直し"},
+		Values: view.SettingsValues{AuditThumbnails: true, AuditRetentionDays: "0", AuditThumbsMaxBytes: "1073741824", UpdateApplyMode: "auto_idle", UpdateChannel: "nightly"},
+		Errors: view.SettingsErrors{AuditRetentionDays: "範囲外", UpdateApplyMode: "選び直し", UpdateChannel: "選び直し 2"},
 	}
 	out := webtest.Render(t, organisms.SettingsForm(form))
 	has(t, out, `data-notice="audit-plaintext"`, "BitLocker", `data-notice="audit-record-text"`,
 		`name="audit.thumbnails_enabled"`, `name="audit.record_text"`, `name="audit.retention_days"`, `value="0"`,
 		`name="audit.thumbs_max_bytes"`, `value="1073741824"`, `<option value="auto_idle" selected>`,
-		`data-field-error="set-audit-days"`, `data-field-error="set-update-mode"`)
+		`data-field-error="set-audit-days"`, `data-field-error="set-update-mode"`, `data-field-error="set-update-channel"`, `<option value="nightly" selected>`)
 	hasNot(t, out, `data-field-error="set-audit-cap"`, `<option value="confirm" selected>`)
 	if got := strings.Count(out, "checked"); got != 1 {
 		t.Errorf("only audit.thumbnails_enabled must be checked, got %d", got)

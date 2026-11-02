@@ -93,11 +93,14 @@ type Leases struct {
 	holder  *domain.Actor
 	pending *domain.Actor // 承認待ちの要求者（pending_approval）
 	revoked *domain.Actor
-	// AcquireErr が nil でなければ Acquire はこれを返す（approval_denied・approval_timeout など。リースは変えない）。
+	// AcquireErr が nil でなければ RequestAcquire はこれを返す（approval_denied など、クールダウン中の即時の拒否。リースは変えない）。
 	AcquireErr error
-	Revokers   []domain.Actor // Revoke を呼んだ操作主体
-	Acquires   int
-	Releases   int
+	// ApprovalRequired が true なら、空きのリースへの RequestAcquire は承認待ちにして pending = true を返す。
+	ApprovalRequired bool
+	Requests         int            // 承認の要求を作った回数
+	Revokers         []domain.Actor // Revoke を呼んだ操作主体
+	Acquires         int
+	Releases         int
 }
 
 // Hold は actor が保持している状態にする（テストの準備）。
@@ -124,21 +127,33 @@ func (l *Leases) Holding() (domain.Actor, bool) {
 	return *l.holder, true
 }
 
-func (l *Leases) Acquire(_ context.Context, who domain.Actor) (service.Lease, error) {
+// RequestAcquire は本物と同じ規則の偽物: ApprovalRequired が true なら、承認待ちにして pending = true ですぐ返す
+// （承認の要求は Requests に数える。すでに自分が承認待ちなら数えずに同じ結果）。結果の通知（許可・拒否）は呼び出し側が
+// SetPending・Hold で状態を作って表す。
+func (l *Leases) RequestAcquire(_ context.Context, who domain.Actor) (service.Lease, bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.Acquires++
 	if l.AcquireErr != nil {
-		return service.Lease{}, l.AcquireErr
+		return service.Lease{}, false, l.AcquireErr
 	}
 	if l.pending != nil {
-		return service.Lease{}, domain.ErrLeaseHeldByOther
+		if l.pending.SameSession(who) {
+			return service.Lease{ID: "lease-1", Holder: who, Since: time.Unix(0, 0)}, true, nil
+		}
+		return service.Lease{}, false, domain.ErrLeaseHeldByOther
 	}
 	if l.holder != nil && !l.holder.SameSession(who) {
-		return service.Lease{}, domain.ErrLeaseHeldByOther
+		return service.Lease{}, false, domain.ErrLeaseHeldByOther
+	}
+	lease := service.Lease{ID: "lease-1", Holder: who, Since: time.Unix(0, 0)}
+	if l.ApprovalRequired && l.holder == nil {
+		l.Requests++
+		l.holder, l.pending = nil, &who
+		return lease, true, nil
 	}
 	l.holder, l.revoked = &who, nil
-	return service.Lease{ID: "lease-1", Holder: who, Since: time.Unix(0, 0)}, nil
+	return lease, false, nil
 }
 
 func (l *Leases) Release(who domain.Actor) {

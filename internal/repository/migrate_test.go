@@ -36,8 +36,8 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 			t.Errorf("index %s: got %d, want 1", index, n)
 		}
 	}
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 3 {
-		t.Errorf("schema version = %d, want 3", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 4 {
+		t.Errorf("schema version = %d, want 4", v)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestOpenIsIdempotentAndKeepsData(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 3 {
-		t.Errorf("schema_migrations rows = %d, want 3 (reopen must not re-apply)", n)
+	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 4 {
+		t.Errorf("schema_migrations rows = %d, want 4 (reopen must not re-apply)", n)
 	}
 	if v, ok, err := db.Settings().Get(ctx, "server.port"); err != nil || !ok || string(v) != "8765" {
 		t.Errorf("setting after reopen = %q, %v, %v", v, ok, err)
@@ -297,8 +297,8 @@ func TestOpenUpgradesM1Database(t *testing.T) {
 		t.Fatalf("Open M1 database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 3 {
-		t.Errorf("schema version = %d, want 3", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 4 {
+		t.Errorf("schema version = %d, want 4", v)
 	}
 	if got, err := db.Clients().Get(ctx, "c1"); err != nil || got.StableNodeID != "node1" {
 		t.Errorf("existing client after upgrade = %+v, %v", got, err)
@@ -361,8 +361,8 @@ func TestOpenUpgradesV2DatabaseKeepsDecidedConnRequests(t *testing.T) {
 		t.Fatalf("Open v2 database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 3 {
-		t.Errorf("schema version = %d, want 3", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 4 {
+		t.Errorf("schema version = %d, want 4", v)
 	}
 	got, err := db.ConnRequests().ListHistory(ctx, 10, 0)
 	if err != nil {
@@ -386,5 +386,98 @@ func TestOpenUpgradesV2DatabaseKeepsDecidedConnRequests(t *testing.T) {
 	}
 	if r := got[0]; r.DecidedAt != nil {
 		t.Errorf("pending row has decided_at = %v", r.DecidedAt)
+	}
+}
+
+// v3 の DB（M1・M2 の間に登録された既存のクライアント。承認モードは DB の既定値 'always'）を Open すると v4 で 'auto'（自動許可）に
+// 移り、v4 の後に登録した新しいクライアントの既定は 'always'（常時承認）のまま。M3 で選んだ 'first_time' は移行で変えない。
+func TestOpenMigratesExistingClientsToAutoApproval(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "puppet-remo.db")
+
+	full, err := fs.Sub(embeddedMigrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, name := range []string{"0001_init.sql", "0002_launchable_apps.sql", "0003_connreq_history_index.sql"} {
+		body, err := fs.ReadFile(full, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = string(body)
+	}
+	conn, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetMaxOpenConns(1)
+	if err := migrate(ctx, conn, migrationsFS(files), newFakeClock().Now); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		// M1・M2 で登録された行（approval_mode を指定しない = 既定値 'always'）
+		`INSERT INTO clients (id, stable_node_id, login_name, display_name, created_at, updated_at)
+			VALUES ('old1', 'nodeA', 'a@example.com', 'dev-a', 1, 1)`,
+		`INSERT INTO clients (id, stable_node_id, login_name, display_name, approval_mode, created_at, updated_at)
+			VALUES ('old2', 'nodeB', 'b@example.com', 'dev-b', 'always', 1, 1)`,
+		// 移行の前に 'first_time' を選んでいた行は、選んだ値を保つ
+		`INSERT INTO clients (id, stable_node_id, login_name, display_name, approval_mode, created_at, updated_at)
+			VALUES ('ft', 'nodeC', 'c@example.com', 'dev-c', 'first_time', 1, 1)`,
+	} {
+		if _, err := conn.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open v3 database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	for id, want := range map[string]domain.ApprovalMode{
+		"old1": domain.ApprovalAuto, "old2": domain.ApprovalAuto, "ft": domain.ApprovalFirstTime,
+	} {
+		c, err := db.Clients().Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ApprovalMode != want {
+			t.Errorf("client %s approval_mode = %q, want %q", id, c.ApprovalMode, want)
+		}
+	}
+
+	// 移行後に登録した新しいクライアントの既定は always（承認モードを選ばなければ常時承認）。
+	if err := db.Clients().Create(ctx, domain.Client{ID: "new1", StableNodeID: "nodeD", LoginName: "d@example.com", DisplayName: "dev-d"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.sql.ExecContext(ctx, `INSERT INTO clients (id, stable_node_id, login_name, display_name, created_at, updated_at)
+		VALUES ('new2', 'nodeE', 'e@example.com', 'dev-e', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"new1", "new2"} {
+		c, err := db.Clients().Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ApprovalMode != domain.ApprovalAlways {
+			t.Errorf("new client %s approval_mode = %q, want always", id, c.ApprovalMode)
+		}
+	}
+
+	// 再び開いても、新しい行（と、のちに always へ戻した行）は書き換わらない。
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db2, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db2.Close() }()
+	if c, err := db2.Clients().Get(ctx, "new1"); err != nil || c.ApprovalMode != domain.ApprovalAlways {
+		t.Errorf("new client after reopen = %+v, %v; want always", c, err)
 	}
 }

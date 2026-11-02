@@ -7,12 +7,16 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
 // leasePanel はリースパネル（#lease-panel）と、操作権の有無で変わるクリップボード・ショートカット（#viewer-ops。OOB）を返す。
 func (h *Handler) leasePanel(c *gin.Context, who domain.Actor) {
-	v := h.leaseView(who)
-	h.render(c, http.StatusOK, organisms.ViewerLeasePanel(v), organisms.ViewerOpsOOB(opsView(v)))
+	h.renderLeasePanel(c, http.StatusOK, h.leaseView(who))
+}
+
+func (h *Handler) renderLeasePanel(c *gin.Context, status int, v view.ViewerLease) {
+	h.render(c, status, organisms.ViewerLeasePanel(v), organisms.ViewerOpsOOB(opsView(v)))
 }
 
 // LeasePanel は GET /viewer/lease（リースパネルのフラグメント。remo:lease-changed で再取得される）。
@@ -23,17 +27,24 @@ func (h *Handler) LeasePanel(c *gin.Context) {
 }
 
 // AcquireLease は POST /viewer/lease/acquire（操作権を取得。FR-W08）。他者が保持中・承認待ちなら 409 lease_held_by_other。
-// 承認が要るクライアントでは Leases.Acquire が最大 60 秒ブロックし、ホストの結果（許可は 200 のリースパネル、拒否は 403
-// approval_denied、タイムアウトは 408 approval_timeout のトースト）まで応答しない。その間のパネルは WebSocket の lease
-// （remo:lease-changed → GET /viewer/lease）で承認待ちの表示に更新される。承認待ちを即座に返す窓口（Acquire の非同期版など）は
-// docs に決まりが無く、未実装（docs/components/overview.md §13.6）。
+// 承認が要らなければ 200 のリースパネル。承認が要るクライアントは、ホストの結果を待たずに 202 の承認待ちのパネル
+// （state pending_approval、要求者本人）をすぐ返す。結果は WebSocket で届く: 許可は lease（held）、拒否・タイムアウトは
+// error（approval_denied / approval_timeout）。承認待ちのあいだの再試行（408 後の再送など）は、新しい承認を作らず同じ 202 を返す。
+// 拒否・タイムアウト直後のクールダウン（30 秒）の取得は、承認を求めず 403 approval_denied。
 func (h *Handler) AcquireLease(c *gin.Context) {
 	_, who, ok := h.viewerContext(c)
 	if !ok {
 		return
 	}
-	if _, err := h.d.Leases.Acquire(c.Request.Context(), who); err != nil {
+	l, pending, err := h.d.Leases.RequestAcquire(c.Request.Context(), who)
+	if err != nil {
 		h.fail(c, err)
+		return
+	}
+	if pending {
+		h.renderLeasePanel(c, http.StatusAccepted, view.ViewerLease{
+			Pending: true, PendingMine: true, HolderLabel: actorLabel(l.Holder), KindLabel: string(l.Holder.Kind),
+		})
 		return
 	}
 	h.leasePanel(c, who)

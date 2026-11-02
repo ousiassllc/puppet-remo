@@ -20,6 +20,7 @@ import (
 // idle → pending_approval にして、ロックを手放してから Approval.Request でホストの結果を待つ（最大 60 秒）。
 // 許可で held、拒否・タイムアウト・取り下げ（ctx のキャンセル・キルスイッチ・セッション切断・クライアントの削除）で idle に戻る。
 // 承認待ちの間は、要求者本人を含むすべての Acquire・Check を ErrLeaseHeldByOther で断り、明示解放（Release）は何もしない。
+// 拒否・タイムアウトの直後（ApprovalCooldown = 30 秒）は、同じクライアントの取得を承認なしで ErrApprovalDenied にする。
 // 保持中は LeaseConfig.Power でスリープと画面オフを抑止する（NFR-A05）。どの解放の経路でも保持が終われば解除する。
 type LeaseManager interface {
 	// Acquire は idle → held。承認が要るクライアント（LeaseConfig.Approval があり、承認モードが always、または approved_at が無い
@@ -27,8 +28,16 @@ type LeaseManager interface {
 	// 拒否は ErrApprovalDenied、タイムアウトは ErrApprovalTimeout、待ち中の ctx のキャンセルは ctx.Err()、キルスイッチの発動は
 	// ErrKillSwitchActive（後から許可されても held にならない）、セッション切断・クライアントの削除による取り下げは ErrLeaseRequired。
 	// 他者が保持中、または承認待ちは ErrLeaseHeldByOther。同じ保持者の再取得は承認を要さず、活動として数える。
-	// キルスイッチの発動中は ErrKillSwitchActive。承認系の監査（取得要求・拒否・タイムアウト）はイベント名が未決のため記録しない。
+	// キルスイッチの発動中は ErrKillSwitchActive。承認系の監査（approval.*）は遷移のたびに記録する（クールダウンの断りは lease.acquire の denied）。
 	Acquire(ctx context.Context, who domain.Actor) (Lease, error)
+	// RequestAcquire は Acquire の待たない版（Web の POST /viewer/lease/acquire）。承認が要らなければ Acquire と同じに取得して
+	// (lease, false, nil)。承認が要れば承認待ちにして、待ちを LeaseManager の goroutine（ctx から独立。上限は承認の失効に余裕を足した時間。
+	// 取り下げで終わる）に渡し、すぐ (承認待ちのリース, true, nil) を返す。許可は lease の変化（Subscribe・Bus の lease）で、
+	// 拒否・タイムアウト（ErrApprovalDenied・ErrApprovalTimeout）は Bus の lease-result（LeaseResult）で who に伝わる。
+	// who がすでに承認待ちなら、新しい承認を作らずに pending = true を返す（再試行で承認が二重にならない）。失敗は Acquire と同じ。
+	RequestAcquire(ctx context.Context, who domain.Actor) (l Lease, pending bool, err error)
+	// ClearApprovalCooldown は clientID の拒否・タイムアウト後のクールダウンを解く（承認のリセット・承認モードの変更・クライアントの削除）。
+	ClearApprovalCooldown(clientID string)
 	// Release は保持者のみ。保持していなければ何もしない。
 	Release(who domain.Actor)
 	// ReleaseSession はセッション切断で保持者のリースを解放する（FR-L05）。who の承認待ちがあれば取り下げて idle に戻す。
@@ -107,6 +116,8 @@ type LeaseConfig struct {
 	// 片方だけの指定はエラー。
 	Approval Approval
 	Clients  LeaseClients
+	// Bus は RequestAcquire の待ちが拒否・タイムアウトで終わったときに lease-result を出す先。nil なら出さない。
+	Bus *Bus
 }
 
 // HostActor はホスト所有者（ホスト GUI）の操作主体。強制剥奪（LeaseManager.Revoke）の by に使い、監査の actor_type は host になる。
@@ -124,6 +135,7 @@ type leaseManager struct {
 	// approval・clients は nil なら承認なし。
 	approval Approval
 	clients  LeaseClients
+	bus      *Bus
 
 	// mu は全遷移（machine・timer・pending）を直列化する。ロックを持ったまま Approval・Audit・購読者を呼ばない。
 	mu       sync.Mutex
@@ -134,6 +146,8 @@ type leaseManager struct {
 	// cancelWait は承認待ちの Acquire が Approval.Request を待つ ctx の取り消し。承認待ちが終わる遷移で呼んで外す。
 	// 取り下げ（キルスイッチ・切断・クライアントの削除）で待ちを起こすために使う。
 	cancelWait context.CancelFunc
+	// cooldown は拒否・タイムアウトした clientID と、その後に承認なしで断る期限（clock の時刻）。mu で守る。
+	cooldown map[string]time.Time
 
 	// emitMu は pending の配信（監査・購読者）を直列化し、遷移の順序どおりに届ける。
 	emitMu sync.Mutex
@@ -162,6 +176,8 @@ func NewLeaseManager(cfg LeaseConfig) (LeaseManager, error) {
 
 		approval: cfg.Approval,
 		clients:  cfg.Clients,
+		bus:      cfg.Bus,
+		cooldown: map[string]time.Time{},
 	}
 	if m.log == nil {
 		m.log = slog.Default()
@@ -173,13 +189,71 @@ func NewLeaseManager(cfg LeaseConfig) (LeaseManager, error) {
 }
 
 func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, error) {
+	st, _, err := m.begin(ctx, who, false)
+	if err != nil {
+		return Lease{}, err
+	}
+	if st.waitCtx != nil {
+		return m.awaitApproval(ctx, st.waitCtx, who, st.lease.ID, st.needs)
+	}
+	return Lease{ID: st.lease.ID, Holder: st.lease.Holder, Since: st.lease.Since}, nil
+}
+
+// asyncAcquireBound は RequestAcquire の待ちを打ち切る上限（承認の失効 DefaultApprovalTimeout に余裕を足した保険）。
+// 通常は Approval.Request が 60 秒で失効を返し、取り下げ（キルスイッチ・切断・ReleaseAll）で先に終わる。
+const asyncAcquireBound = DefaultApprovalTimeout + 30*time.Second
+
+func (m *leaseManager) RequestAcquire(ctx context.Context, who domain.Actor) (Lease, bool, error) {
+	// 待ちは呼び出し元のリクエストの終わりに引きずられない（HTTP が先に切れても承認は続く）。値だけ引き継ぎ、時間で縛る。
+	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), asyncAcquireBound)
+	st, dup, err := m.begin(bg, who, true)
+	if err != nil || dup || st.waitCtx == nil {
+		cancel()
+		// dup は who がすでに承認待ち（st.lease がその要求）。承認待ちを増やさず、同じ要求を返す。
+		return Lease{ID: st.lease.ID, Holder: st.lease.Holder, Since: st.lease.Since}, dup, err
+	}
+	go func() {
+		defer cancel()
+		_, err := m.awaitApproval(bg, st.waitCtx, who, st.lease.ID, st.needs)
+		m.notifyResult(who, err)
+	}()
+	return Lease{ID: st.lease.ID, Holder: st.lease.Holder, Since: st.lease.Since}, true, nil
+}
+
+// notifyResult は RequestAcquire の待ちが拒否・タイムアウトで終わったことを、要求者のセッションへ知らせる（許可は lease イベントで伝わる）。
+// 取り下げ（キルスイッチ・切断・シャットダウン）は、セッション自体が終わるか誰かが明示した結果なので知らせない。
+func (m *leaseManager) notifyResult(who domain.Actor, err error) {
+	if m.bus == nil || !errors.Is(err, domain.ErrApprovalDenied) && !errors.Is(err, domain.ErrApprovalTimeout) {
+		return
+	}
+	m.bus.Publish(Event{Topic: TopicLeaseResult, Data: LeaseResult{Who: who, Err: err}})
+}
+
+// LeaseResult は Bus の lease-result イベントの Data。RequestAcquire の承認待ちが拒否・タイムアウトで終わったことを、
+// 要求したセッション（Who。ws が自分のセッションのものだけを取り出す）へ伝える。Err は ErrApprovalDenied か ErrApprovalTimeout。
+type LeaseResult struct {
+	Who domain.Actor
+	Err error
+}
+
+// acquireStart は begin の結果。waitCtx が非 nil なら承認待ちに入った（awaitApproval で結果を待つ）。
+type acquireStart struct {
+	lease   domain.Lease
+	needs   approvalNeed
+	waitCtx context.Context
+}
+
+// begin は取得の前半: 承認の要否・クールダウン・キルスイッチを見て、idle → held（承認不要）か idle → pending_approval にする。
+// 失敗は監査・ログまで済ませて返す。reuse が true で who がすでに承認待ちなら、何もせず dup = true（二重の承認を作らない）。
+func (m *leaseManager) begin(ctx context.Context, who domain.Actor, reuse bool) (st acquireStart, dup bool, err error) {
 	// クライアントの読み取りは I/O なので、ロックの外で行う。
 	needs, err := m.approvalNeeds(ctx, who)
 	if err != nil {
 		m.logDenied(who, err)
 		m.record(ctx, leaseDeniedAuditEntry(who, m.clock.Now(), err))
-		return Lease{}, err
+		return acquireStart{}, false, err
 	}
+	st.needs = needs
 	m.mu.Lock()
 	// キルスイッチの確認はロックの中で行う。Trigger は状態を立ててから ReleaseAll（同じロック）を呼ぶため、
 	// 取得が ReleaseAll の後に成功することはない。
@@ -187,22 +261,33 @@ func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, er
 		m.mu.Unlock()
 		m.logDenied(who, domain.ErrKillSwitchActive)
 		m.record(ctx, leaseDeniedAuditEntry(who, m.clock.Now(), domain.ErrKillSwitchActive))
-		return Lease{}, domain.ErrKillSwitchActive
+		return acquireStart{}, false, domain.ErrKillSwitchActive
 	}
-	var (
-		l       domain.Lease
-		events  []domain.LeaseEvent
-		waitCtx context.Context
-	)
+	if reuse {
+		if p, ok := m.machine.Pending(); ok && p.Holder.SameSession(who) {
+			m.mu.Unlock()
+			return acquireStart{lease: p}, true, nil
+		}
+	}
+	if needs.required && !m.holdsLocked(who) && m.coolingDownLocked(who.ClientID) {
+		// 拒否・タイムアウトの直後は、同じクライアントに承認を求めず断る（ホストのダイアログを連打させない）。
+		m.mu.Unlock()
+		m.logDenied(who, domain.ErrApprovalDenied)
+		e := leaseDeniedAuditEntry(who, m.clock.Now(), domain.ErrApprovalDenied)
+		e.DetailJSON = marshalDetail(map[string]any{"cooldown": true})
+		m.record(ctx, e)
+		return acquireStart{}, false, domain.ErrApprovalDenied
+	}
+	var events []domain.LeaseEvent
 	if needs.required && !m.holdsLocked(who) {
-		l, events, err = m.machine.Request(who)
+		st.lease, events, err = m.machine.Request(who)
 		if err == nil {
 			var cancel context.CancelFunc
-			waitCtx, cancel = context.WithCancel(ctx)
+			st.waitCtx, cancel = context.WithCancel(ctx)
 			m.cancelWait = cancel
 		}
 	} else {
-		l, events, err = m.machine.Acquire(who)
+		st.lease, events, err = m.machine.Acquire(who)
 	}
 	m.settleLocked(events)
 	m.mu.Unlock()
@@ -210,12 +295,31 @@ func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, er
 	if err != nil {
 		m.logDenied(who, err)
 		m.record(ctx, leaseDeniedAuditEntry(who, m.clock.Now(), err))
-		return Lease{}, err
+		return acquireStart{}, false, err
 	}
-	if waitCtx != nil {
-		return m.awaitApproval(ctx, waitCtx, who, l.ID, needs)
+	return st, false, nil
+}
+
+// ApprovalCooldown は拒否・タイムアウトのあと、同じクライアントの取得を承認なしで断る時間（FR-L07）。
+const ApprovalCooldown = 30 * time.Second
+
+// coolingDownLocked は clientID が拒否・タイムアウトのクールダウン中なら true。期限切れの記録は捨てる。mu を持って呼ぶ。
+func (m *leaseManager) coolingDownLocked(clientID string) bool {
+	until, ok := m.cooldown[clientID]
+	if !ok {
+		return false
 	}
-	return Lease{ID: l.ID, Holder: l.Holder, Since: l.Since}, nil
+	if !m.clock.Now().Before(until) {
+		delete(m.cooldown, clientID)
+		return false
+	}
+	return true
+}
+
+func (m *leaseManager) ClearApprovalCooldown(clientID string) {
+	m.mu.Lock()
+	delete(m.cooldown, clientID)
+	m.mu.Unlock()
 }
 
 // approvalNeed は取得者のクライアントに対する承認の要否。
@@ -283,6 +387,9 @@ func (m *leaseManager) awaitApproval(ctx, waitCtx context.Context, who domain.Ac
 		events, err = m.machine.Withdraw(id, domain.ReleaseApprovalDenied), domain.ErrApprovalDenied
 	default:
 		l, events, err = m.machine.Approve(id)
+	}
+	if errors.Is(err, domain.ErrApprovalDenied) || errors.Is(err, domain.ErrApprovalTimeout) {
+		m.cooldown[who.ClientID] = m.clock.Now().Add(ApprovalCooldown)
 	}
 	m.settleLocked(events)
 	m.mu.Unlock()
@@ -471,8 +578,8 @@ func (m *leaseManager) flush() {
 	m.keepAwake(held)
 	for _, ev := range events {
 		m.logEvent(ev)
-		if !isApprovalPhase(ev) {
-			m.record(context.Background(), leaseAuditEntry(ev))
+		for _, e := range leaseAuditEntries(ev) {
+			m.record(context.Background(), e)
 		}
 		m.publish(ev)
 	}
@@ -486,12 +593,6 @@ func (m *leaseManager) keepAwake(on bool) {
 	}
 	m.awake = on
 	m.power.KeepAwake(on)
-}
-
-// isApprovalPhase は承認待ちの開始（idle → pending_approval）と、held にならない終わり（pending_approval → idle）を返す。
-// これらの監査のイベント名は未決（docs/architecture/er.md）なので記録しない。pending_approval → held は lease.acquire として記録する。
-func isApprovalPhase(ev domain.LeaseEvent) bool {
-	return ev.To == domain.LeasePendingApproval || ev.From == domain.LeasePendingApproval && ev.To == domain.LeaseIdle
 }
 
 // logEvent はリースの取得・解放・剥奪・承認待ちを運用ログに出す（監査とは別。Check の活動の更新は出さない）。

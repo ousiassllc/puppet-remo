@@ -66,6 +66,9 @@ func RunWindowManagerContract(t *testing.T, newWindows func(t *testing.T) platfo
 			if ok && !got.Rect.Contains(p) {
 				t.Errorf("At(%v) = window %q with rect %+v, which does not contain the point", p, got.ID, got.Rect)
 			}
+			if ok && got.Overlay {
+				t.Errorf("At(%v) = click-through overlay %q; want the real window under it", p, got.ID)
+			}
 			break
 		}
 		far := domain.Point{X: math.MinInt32 / 2, Y: math.MinInt32 / 2}

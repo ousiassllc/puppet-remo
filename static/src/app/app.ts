@@ -116,6 +116,8 @@ const wsErrorMessages: Readonly<Record<string, string>> = {
   lease_required: "操作権がありません。先に「操作権を取得」を押してください。",
   lease_held_by_other: "ほかのセッションが操作権を保持しています。",
   lease_revoked: "操作権が強制的に外されました。改めて取得してください。",
+  approval_denied: "ホストが操作権の取得を拒否しました。",
+  approval_timeout: "ホストから時間内に応答がなく、操作権を取得できませんでした。",
   invalid_argument: "入力内容を確認してください。",
   kill_switch_active: "キルスイッチが発動中です。",
   desktop_unavailable: "ホストの画面を操作できません（ロック画面など）。",

@@ -18,9 +18,22 @@ import (
 
 // このファイルは承認ダイアログの開閉（approvalDialogs）のテスト。偽の Windows・Clock・タイマーで進める（固定時間の待ちを使わない）。
 
-type dialogClock struct{ now time.Time }
+type dialogClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
 
-func (c *dialogClock) Now() time.Time { return c.now }
+func (c *dialogClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *dialogClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
 
 type dialogIDs struct {
 	mu sync.Mutex
@@ -45,6 +58,19 @@ func (t *dialogTimers) after(_ time.Duration, f func()) func() bool {
 	defer t.mu.Unlock()
 	t.fns = append(t.fns, f)
 	return func() bool { return true }
+}
+
+// fireFirst は最初に張ったタイマー（最も古い承認要求の失効）だけを満了させる。
+func (t *dialogTimers) fireFirst() {
+	t.mu.Lock()
+	if len(t.fns) == 0 {
+		t.mu.Unlock()
+		return
+	}
+	f := t.fns[0]
+	t.fns = t.fns[1:]
+	t.mu.Unlock()
+	f()
 }
 
 func (t *dialogTimers) fireAll() {
@@ -185,56 +211,174 @@ func TestApprovalDialogClosesOnTimeoutAndWithdrawal(t *testing.T) {
 	})
 }
 
-// ダイアログが同時に開くのは 1 つだけ。開いている間に来た別の要求は、最初のダイアログが閉じたあとでも開かず、失効で拒否になる
-// （複数の要求の扱いは未決のため、順番に開くことはしない）。閉じたあとの新しい要求は開く。購読の goroutine を介さず sync を直接呼び、
-// 開閉の順序を決定的にする。
-func TestOnlyOneApprovalDialogIsOpenAtATime(t *testing.T) {
+// queueKit は approvalDialogs の sync を購読の goroutine を介さず直接呼ぶ（開閉の順序を決定的にする）。時計は要求ごとに進められる。
+type queueKit struct {
+	*dialogKit
+	d     *approvalDialogs
+	clock *dialogClock
+}
+
+func newQueueKit(t *testing.T) *queueKit {
+	t.Helper()
 	windows, timers, bus := NewFakeWindows(), &dialogTimers{}, service.NewBus()
-	approval, err := service.NewApproval(service.ApprovalConfig{Clock: &dialogClock{now: time.Unix(1_700_000_000, 0)}, IDs: &dialogIDs{}, Bus: bus, AfterFunc: timers.after})
+	clock := &dialogClock{now: time.Unix(1_700_000_000, 0)}
+	approval, err := service.NewApproval(service.ApprovalConfig{Clock: clock, IDs: &dialogIDs{}, Bus: bus, AfterFunc: timers.after})
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := newApprovalDialogs(windows, approval, bus, discardLogger())
-	k := &dialogKit{t: t, windows: windows, approval: approval, timers: timers, bus: bus}
-	other := domain.Actor{Kind: domain.ActorWeb, ClientID: "c2", Label: "web", SessionID: "s2"}
+	return &queueKit{
+		dialogKit: &dialogKit{t: t, windows: windows, approval: approval, timers: timers, bus: bus},
+		d:         newApprovalDialogs(windows, approval, bus, discardLogger()),
+		clock:     clock,
+	}
+}
 
-	first := k.request(context.Background(), dialogWho)
-	eventually(t, "the first request", func() bool { return len(approval.Pending()) == 1 })
-	d.sync()
-	w1 := k.nextWindow()
+// requestAndSync は要求を出し、承認待ちに入ったあとで sync する。n は出したあとの承認待ちの件数。
+func (q *queueKit) requestAndSync(who domain.Actor, n int) {
+	q.t.Helper()
+	q.request(context.Background(), who)
+	eventually(q.t, "the request to be pending", func() bool { return len(q.approval.Pending()) == n })
+	q.d.sync()
+}
 
-	second := k.request(context.Background(), other)
-	eventually(t, "the second request", func() bool { return len(approval.Pending()) == 2 })
-	d.sync()
-	if got := len(windows.ApprovalWindows()); got != 1 {
+func (q *queueKit) opened() int { return len(q.windows.ApprovalWindows()) }
+
+// ダイアログが同時に開くのは 1 つだけ。開いている間に来た別の要求は到着順に待たされ、今の要求が終わったら次が開く（#68）。
+// 待たされた要求の 60 秒は、その要求自身の到着時刻から数える（ExpiresAt）。
+func TestOverlappingApprovalsAreQueuedInArrivalOrder(t *testing.T) {
+	q := newQueueKit(t)
+	t0 := q.clock.Now()
+	who := func(n string) domain.Actor {
+		return domain.Actor{Kind: domain.ActorWeb, ClientID: "c" + n, Label: "web" + n, SessionID: "s" + n}
+	}
+
+	q.requestAndSync(who("1"), 1)
+	w1 := q.nextWindow()
+	q.clock.advance(10 * time.Second)
+	q.requestAndSync(who("2"), 2)
+	q.clock.advance(10 * time.Second)
+	q.requestAndSync(who("3"), 3)
+	if got := q.opened(); got != 1 {
 		t.Fatalf("dialogs opened = %d while one is open, want 1", got)
 	}
 
-	// 最初が終わればそのダイアログは閉じるが、見送った 2 つ目のためのダイアログは開かない。
-	if err := approval.Resolve(w1.ID(), true); err != nil {
+	// 1 つ目が終われば、そのダイアログは閉じ、到着順で次（2 つ目）が開く。3 つ目はまだ開かない。
+	if err := q.approval.Resolve(w1.ID(), true); err != nil {
 		t.Fatal(err)
 	}
-	awaitResult(t, first)
-	d.sync()
-	k.expectClosed(w1)
-	if got := len(windows.ApprovalWindows()); got != 1 {
-		t.Fatalf("dialogs opened = %d, want 1 (the skipped request is not shown later)", got)
+	q.d.sync()
+	q.expectClosed(w1)
+	w2 := q.nextWindow()
+	pending := q.approval.Pending()
+	if len(pending) != 2 || w2.ID() != pending[0].ID {
+		t.Fatalf("second dialog %q, pending %+v: want the second arrival", w2.ID(), pending)
 	}
-	timers.fireAll()
-	if r := awaitResult(t, second); !errors.Is(r.err, domain.ErrApprovalTimeout) {
-		t.Errorf("second request: err = %v, want approval_timeout", r.err)
+	if got := q.opened(); got != 2 {
+		t.Fatalf("dialogs opened = %d, want 2", got)
 	}
-	d.sync()
+	// 失効は各要求の到着から 60 秒（待っている間も進んでいる）。
+	if want := t0.Add(10*time.Second + service.DefaultApprovalTimeout); !pending[0].ExpiresAt.Equal(want) {
+		t.Errorf("second request ExpiresAt = %v, want %v", pending[0].ExpiresAt, want)
+	}
+	if want := t0.Add(20*time.Second + service.DefaultApprovalTimeout); !pending[1].ExpiresAt.Equal(want) {
+		t.Errorf("third request ExpiresAt = %v, want %v", pending[1].ExpiresAt, want)
+	}
 
-	// 閉じたあとの新しい要求は開く。
-	third := k.request(context.Background(), dialogWho)
-	eventually(t, "the third request", func() bool { return len(approval.Pending()) == 1 })
-	d.sync()
-	w3 := k.nextWindow()
-	_ = approval.Resolve(w3.ID(), false)
-	awaitResult(t, third)
-	d.sync()
-	k.expectClosed(w3)
+	// 2 つ目が拒否で終われば 3 つ目が開く。3 つ目が終われば何も残らない。
+	if err := q.approval.Resolve(w2.ID(), false); err != nil {
+		t.Fatal(err)
+	}
+	q.d.sync()
+	q.expectClosed(w2)
+	w3 := q.nextWindow()
+	if p := q.approval.Pending(); len(p) != 1 || w3.ID() != p[0].ID {
+		t.Fatalf("third dialog %q, pending %+v", w3.ID(), p)
+	}
+	if err := q.approval.Resolve(w3.ID(), true); err != nil {
+		t.Fatal(err)
+	}
+	q.d.sync()
+	q.expectClosed(w3)
+	if got := q.opened(); got != 3 {
+		t.Errorf("dialogs opened = %d, want 3", got)
+	}
+
+	// 待ちが空になったあとの新しい要求は、すぐ開く。
+	q.requestAndSync(who("4"), 1)
+	w4 := q.nextWindow()
+	_ = q.approval.Resolve(w4.ID(), false)
+	q.d.sync()
+	q.expectClosed(w4)
+}
+
+// 待たされている間に失効（60 秒）した要求は、ダイアログを開かない。今の要求の失効で次が開くが、その次がすでに失効していれば飛ばす。
+func TestQueuedApprovalThatExpiredWhileWaitingIsNotShown(t *testing.T) {
+	q := newQueueKit(t)
+	other := domain.Actor{Kind: domain.ActorWeb, ClientID: "c2", Label: "web", SessionID: "s2"}
+	third := domain.Actor{Kind: domain.ActorWeb, ClientID: "c3", Label: "web3", SessionID: "s3"}
+
+	first := q.request(context.Background(), dialogWho)
+	eventually(q.t, "the first request", func() bool { return len(q.approval.Pending()) == 1 })
+	q.d.sync()
+	w1 := q.nextWindow()
+	second := q.request(context.Background(), other)
+	eventually(q.t, "the second request", func() bool { return len(q.approval.Pending()) == 2 })
+	q.requestAndSync(third, 3)
+
+	// 1 つ目と 2 つ目の 60 秒が過ぎる（タイマーは要求の順に張られている）。3 つ目はまだ生きている。
+	q.timers.fireFirst()
+	if r := awaitResult(t, first); !errors.Is(r.err, domain.ErrApprovalTimeout) {
+		t.Fatalf("first: err = %v, want approval_timeout", r.err)
+	}
+	q.timers.fireFirst()
+	if r := awaitResult(t, second); !errors.Is(r.err, domain.ErrApprovalTimeout) {
+		t.Fatalf("second: err = %v, want approval_timeout", r.err)
+	}
+	q.d.sync()
+	q.expectClosed(w1)
+	w3 := q.nextWindow()
+	if p := q.approval.Pending(); len(p) != 1 || w3.ID() != p[0].ID {
+		t.Fatalf("dialog %q, pending %+v: want the dialog for the third request only", w3.ID(), p)
+	}
+	if got := q.opened(); got != 2 {
+		t.Errorf("dialogs opened = %d, want 2 (the expired second request is never shown)", got)
+	}
+}
+
+// 利用者が今のダイアログを許可も拒否もせずに閉じても、その要求は終わるまで「今の要求」のまま（60 秒で拒否になる）。
+// 待たせている次の要求のダイアログは、その要求が終わるまで開かず、閉じたダイアログも開き直さない。
+func TestClosingTheCurrentDialogDoesNotOpenTheNextOneUntilTheRequestEnds(t *testing.T) {
+	q := newQueueKit(t)
+	other := domain.Actor{Kind: domain.ActorWeb, ClientID: "c2", Label: "web", SessionID: "s2"}
+
+	first := q.request(context.Background(), dialogWho)
+	eventually(q.t, "the first request", func() bool { return len(q.approval.Pending()) == 1 })
+	q.d.sync()
+	w1 := q.nextWindow()
+	q.requestAndSync(other, 2)
+
+	w1.Close() // 利用者が「×」で閉じた
+	q.d.sync()
+	if got := q.opened(); got != 1 {
+		t.Fatalf("dialogs opened = %d after the user closed the dialog, want 1 (neither reopened nor the next one)", got)
+	}
+	if p := q.approval.Pending(); len(p) != 2 {
+		t.Fatalf("pending = %+v, want both requests to keep waiting", p)
+	}
+
+	// 60 秒で最初の要求が拒否になれば、次の要求のダイアログが開く。閉じたダイアログは開き直さない。
+	q.timers.fireFirst()
+	if r := awaitResult(t, first); !errors.Is(r.err, domain.ErrApprovalTimeout) {
+		t.Fatalf("first: err = %v, want approval_timeout", r.err)
+	}
+	q.d.sync()
+	w2 := q.nextWindow()
+	if p := q.approval.Pending(); len(p) != 1 || w2.ID() != p[0].ID {
+		t.Fatalf("dialog %q, pending %+v: want the second request", w2.ID(), p)
+	}
+	if got := q.opened(); got != 2 {
+		t.Errorf("dialogs opened = %d, want 2", got)
+	}
 }
 
 // 利用者がウィンドウを閉じても（許可も拒否もしない）、承認待ちは続き、60 秒で拒否になる。ダイアログは開き直さない。
@@ -397,7 +541,8 @@ func TestAppWiresTheApprovalDialogToTheLeaseAndTheGUIRouter(t *testing.T) {
 		t.Error("the lease must not be held after a denial")
 	}
 
-	// 承認待ちのままシャットダウンすると、ダイアログが閉じる。
+	// 承認待ちのままシャットダウンすると、ダイアログが閉じる。拒否の直後は同じクライアントがクールダウンで承認なしに断られる（FR-L07）ので、先に解く。
+	e.app.leases.ClearApprovalCooldown(clientID)
 	res = acquire()
 	w = nextDialog()
 	ctx, cancel := context.WithTimeout(context.Background(), waitLimit)

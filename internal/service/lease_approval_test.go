@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -245,12 +246,15 @@ func TestLeaseAcquireAlwaysWaitsForApproval(t *testing.T) {
 	if got[0] != domain.LeasePendingApproval || got[1] != domain.LeaseHeld {
 		t.Errorf("lease states = %v, want [pending_approval held]", got)
 	}
-	// 監査は承認されて held になった遷移（lease.acquire）だけ。承認系のイベント名は未決のため記録しない。
-	if ev := le.audit.Events(); len(ev) != 1 || ev[0] != "lease.acquire" {
-		t.Errorf("audit = %v, want [lease.acquire]", ev)
+	// 監査: 承認の要求 → 許可 → リースの取得（この順）。
+	wantEvents := []string{"approval.requested", "approval.granted", "lease.acquire"}
+	if ev := le.audit.Events(); !reflect.DeepEqual(ev, wantEvents) {
+		t.Fatalf("audit = %v, want %v", ev, wantEvents)
 	}
-	if e := le.audit.Entries()[0]; e.Result != auditOK || e.LeaseID != r.l.ID || e.ClientID != "client-a" {
-		t.Errorf("audit entry = %+v", e)
+	for _, e := range le.audit.Entries() {
+		if e.Result != auditOK || e.LeaseID != r.l.ID || e.ClientID != "client-a" || e.Kind != "lease" {
+			t.Errorf("audit entry = %+v", e)
+		}
 	}
 }
 
@@ -275,8 +279,9 @@ func TestLeaseAcquireDeniedReturnsToIdle(t *testing.T) {
 	if ids := le.clients.markedIDs(); len(ids) != 0 {
 		t.Errorf("拒否では approved_at を記録しない: %v", ids)
 	}
-	if ev := le.audit.Events(); len(ev) != 0 {
-		t.Errorf("audit = %v（承認系の監査は未決のため記録しない）", ev)
+	wantEvents := []string{"approval.requested", "approval.denied"}
+	if ev := le.audit.Events(); !reflect.DeepEqual(ev, wantEvents) {
+		t.Errorf("audit = %v, want %v", ev, wantEvents)
 	}
 	// 他者がすぐ取得できる（bob も always なので承認を待つ）。
 	out2, req2 := le.acquire(t, context.Background(), ctlBob)
@@ -791,7 +796,7 @@ func TestControlImplicitAcquireDeniedDoesNotExecute(t *testing.T) {
 }
 
 func TestControlLaunchAsksApprovalOnlyAtLeaseAcquire(t *testing.T) {
-	// launch_app への承認は、リース取得時の 1 回だけ（FR-L07）。保持中の呼び出しごとの承認は足さない（docs で未決）。
+	// launch_app への承認は、リース取得時の 1 回だけ（FR-L07。オーナー決定）。保持中の呼び出しごとの承認は足さない。
 	le := rebuildLeaseApproval(t, newAppEnv(t), domain.ApprovalAlways, nil)
 	app := registerNotepad(t, le.ctlEnv)
 

@@ -30,6 +30,10 @@ func TestOwnWindowRegions(t *testing.T) {
 			{Own: true, Rect: domain.Rect{X: -32000, Y: -32000, W: 160, H: 28}},
 			{Own: true, Rect: domain.Rect{X: 5000, Y: 0, W: 100, H: 100}},
 		}, nil},
+		{"クリックスルーのオーバーレイは含めない（全モニターを覆っても避ける範囲ではない）", []domain.WindowInfo{
+			{Own: true, Overlay: true, Rect: domain.Rect{X: 0, Y: 0, W: 1920, H: 1080}},
+			{Own: true, Rect: domain.Rect{X: 1920, Y: 0, W: 100, H: 100}},
+		}, []domain.OwnRegion{{Monitor: 1, Rect: domain.Rect{X: 0, Y: 0, W: 100, H: 100}}}},
 		{"複数の自ウィンドウは入力の順", []domain.WindowInfo{
 			{Own: true, Rect: domain.Rect{X: 1920, Y: 0, W: 100, H: 100}},
 			{Own: true, Rect: domain.Rect{X: 0, Y: 0, W: 1920, H: 1080}},
@@ -57,6 +61,8 @@ func TestInputBlockReason(t *testing.T) {
 		{domain.WindowInfo{Own: true}, domain.ReasonOwnWindow},
 		{domain.WindowInfo{Elevated: true}, domain.ReasonElevatedWindow},
 		{domain.WindowInfo{Own: true, Elevated: true}, domain.ReasonOwnWindow},
+		{domain.WindowInfo{Own: true, Overlay: true}, ""},
+		{domain.WindowInfo{Own: true, Overlay: true, Elevated: true}, ""},
 	}
 	for _, tt := range tests {
 		if got := domain.InputBlockReason(tt.w); got != tt.want {

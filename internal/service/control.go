@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -23,6 +24,10 @@ type Control interface {
 	//  5. platform の実行
 	//  6. Audit（引数・結果・所要時間。type の本文・クリップボードは既定では文字数だけで、設定 audit.record_text が true のときだけ本文も
 	//     detail_json の text に記録する（FR-AU03、FR-S07）。キー入力はキーの名前を記録しない）
+	//     result=ok で画面を変える操作（opChangesScreen。カーソルの移動だけ・クリップボード・待ち・読み取りは除く）は、設定
+	//     audit.thumbnails_enabled が有効なら操作の直後に非同期でサムネイルを撮り、撮影のあとに同じ行へ付けて記録する
+	//     （FR-AU02。Do は撮影を待たず、撮影の失敗は結果を変えない。モニターは操作のもの、無指定・Web 入力はプライマリ。
+	//     Web 入力は全体で 1 秒に 1 枚まで。control_thumb.go）
 	//
 	// Web UI（保持者種別 web。WebSocket の input.*）の入力は domain.PointerMove・MouseButton・Wheel・KeyEvent と、
 	// KeyPress・TypeText・ClipboardRead・ClipboardWrite で渡す。PointerMove・MouseButton・Wheel の座標は縮小座標ではなくストリームの座標
@@ -115,8 +120,11 @@ type ControlConfig struct {
 	Kill   ControlKillSwitch
 
 	Settings repository.Settings // nil なら screenshot.max_dimension は既定値
-	Audit    AuditRecorder       // nil なら記録しない
-	Clock    domain.Clock
+	// Audit は監査の記録先。nil なら記録しない。ThumbnailsEnabled・RecordWithThumb も持つ（*Audit）なら、画面を変える操作の
+	// 成功時にサムネイルを撮って付ける（FR-AU02。control_thumb.go）。持たなければ撮らない。
+	Audit  AuditRecorder
+	Clock  domain.Clock
+	Logger *slog.Logger // nil なら slog.Default()。サムネイルの撮影の失敗などの出力先
 	// Sleep は Wait の待ち。nil なら ctx のキャンセルで終わるタイマー。テストが差し替える。
 	Sleep func(ctx context.Context, d time.Duration) error
 }
@@ -149,6 +157,7 @@ type control struct {
 	guard     InputGuard
 	settings  repository.Settings
 	audit     AuditRecorder
+	thumbs    *thumbShooter // Audit がサムネイルに対応しないときは nil
 	clock     domain.Clock
 	sleep     func(ctx context.Context, d time.Duration) error
 	// inputSem は入力の実行を直列化する（容量 1。lockInput）。
@@ -181,6 +190,13 @@ func NewControl(cfg ControlConfig) (Control, error) {
 	if c.sleep == nil {
 		c.sleep = sleepContext
 	}
+	if ta, ok := cfg.Audit.(thumbAuditor); ok {
+		log := cfg.Logger
+		if log == nil {
+			log = slog.Default()
+		}
+		c.thumbs = &thumbShooter{audit: ta, capture: cfg.Capturer, clock: cfg.Clock, log: log, sem: make(chan struct{}, thumbWorkers)}
+	}
 	cfg.Kill.RegisterCloser("input", func(context.Context) error { return c.input.ReleaseAll() })
 	return c, nil
 }
@@ -198,39 +214,56 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 
 func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error) {
 	start := c.clock.Now()
-	res, leaseID, err := c.do(ctx, who, op)
+	res, leaseID, executed, err := c.do(ctx, who, op)
 	if _, isMove := op.(domain.PointerMove); c.audit != nil && !isMove {
 		tool, args := describeOp(op, res)
 		c.addRecordedText(ctx, op, res, args)
-		c.audit.Record(ctx, ToolAuditEntry(who, tool, args, leaseID, err, c.clock.Now().Sub(start)))
+		entry := ToolAuditEntry(who, tool, args, leaseID, err, c.clock.Now().Sub(start))
+		var shot *thumbTarget
+		if err == nil && opChangesScreen(executed) {
+			t := thumbTargetOf(who, executed)
+			shot = &t
+		}
+		c.recordAudit(ctx, entry, shot)
 	}
 	return res, err
 }
 
-func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op) (Result, string, error) {
+// recordAudit は監査エントリを記録する。shot が非 nil（画面を変える操作が成功した）で、サムネイルに対応する構成なら、
+// 撮影を非同期に行い、エントリはそのあとに記録する（呼び出しは待たない）。
+func (c *control) recordAudit(ctx context.Context, e repository.AuditEntry, shot *thumbTarget) {
+	if c.thumbs == nil {
+		c.audit.Record(ctx, e)
+		return
+	}
+	c.thumbs.record(ctx, e, shot)
+}
+
+// do は検査と実行を行い、結果・保持者のリース ID・実行した計画の op（物理座標へ変換済み。実行まで進まなければ nil）を返す。
+func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op) (Result, string, domain.Op, error) {
 	if c.kill.Active() {
-		return Result{}, "", domain.ErrKillSwitchActive
+		return Result{}, "", nil, domain.ErrKillSwitchActive
 	}
 	if w, ok := op.(domain.Wait); ok {
-		return Result{}, "", c.wait(ctx, w)
+		return Result{}, "", nil, c.wait(ctx, w)
 	}
 	leaseID, err := c.ensureLease(ctx, who)
 	if err != nil {
-		return Result{}, "", err
+		return Result{}, "", nil, err
 	}
 	p, err := c.plan(ctx, op)
 	if err != nil {
-		return Result{}, leaseID, err
+		return Result{}, leaseID, nil, err
 	}
 	if err := c.guard.Check(ctx, p.op, p.monitors); err != nil {
-		return Result{}, leaseID, c.withOwnWindows(ctx, err)
+		return Result{}, leaseID, nil, c.withOwnWindows(ctx, err)
 	}
 	// リースの検査から実行までの間に発動したキルスイッチを取りこぼさない（Trigger は状態を先に立てる）。
 	if c.kill.Active() {
-		return Result{}, leaseID, domain.ErrKillSwitchActive
+		return Result{}, leaseID, nil, domain.ErrKillSwitchActive
 	}
 	res, err := c.execute(ctx, p)
-	return res, leaseID, err
+	return res, leaseID, p.op, err
 }
 
 // ensureLease は who のリースを確かめ、保持者のリース ID を返す。

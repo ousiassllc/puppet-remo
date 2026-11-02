@@ -145,15 +145,58 @@ func TestLeasePanelPendingApproval(t *testing.T) {
 	lacks(t, res, "あなた", "ホストの承認を待っています", "/viewer/lease/acquire", "/viewer/lease/release", "/viewer/lease/revoke", `id="clipboard-panel"`)
 }
 
-// 承認待ちの間の取得は、本人でも 409 lease_held_by_other（LeaseManager の規則）。
-func TestLeaseAcquireDuringPendingApprovalIs409(t *testing.T) {
+// 承認待ちの本人の取得（再試行）は、新しい承認を作らず 202 の承認待ちのパネルを返す。他のビューアの取得は 409 lease_held_by_other。
+func TestLeaseAcquireDuringPendingApproval(t *testing.T) {
 	r := newRig(t)
 	id, h := r.viewer()
 	r.f.Leases.SetPending(actor(id))
-	failed(t, r.post("/viewer/lease/acquire", nil, h...), http.StatusConflict, "lease_held_by_other")
+	res := r.post("/viewer/lease/acquire", nil, h...)
+	status(t, res, http.StatusAccepted)
+	contains(t, res, `data-lease-state="pending_approval"`, "あなた", "ホストの承認を待っています")
+	if r.f.Leases.Requests != 0 {
+		t.Errorf("approval requests = %d, want 0 (the viewer is already pending)", r.f.Leases.Requests)
+	}
+
+	_, other := r.viewer()
+	failed(t, r.post("/viewer/lease/acquire", nil, other...), http.StatusConflict, "lease_held_by_other")
 }
 
-// ホストの拒否は 403 approval_denied、タイムアウトは 408 approval_timeout のトースト。リースは取れず、パネルは空きのまま。
+// 承認が要るクライアントの取得は、結果を待たずに 202 と承認待ちのパネル（本人）を返す。再送しても承認の要求は 1 件のまま。
+func TestLeaseAcquireNeedingApprovalReturns202Immediately(t *testing.T) {
+	r := newRig(t, func(f *remotetest.Fakes) { f.Leases.ApprovalRequired = true })
+	id, h := r.viewer()
+	res := r.post("/viewer/lease/acquire", nil, h...)
+	status(t, res, http.StatusAccepted)
+	contains(t, res, `id="lease-panel"`, `data-lease-state="pending_approval"`, "承認待ち", "alice-laptop", "あなた", "ホストの承認を待っています",
+		`id="viewer-ops"`, `hx-swap-oob="true"`)
+	lacks(t, res, "/viewer/lease/acquire", "/viewer/lease/release", `id="clipboard-panel"`, "<html")
+	if _, ok := r.f.Leases.Holding(); ok {
+		t.Error("the lease must not be held while waiting for the approval")
+	}
+
+	// 再試行（408 などのあとの再送）。承認は二重にならない。
+	for range 2 {
+		retry := r.post("/viewer/lease/acquire", nil, h...)
+		status(t, retry, http.StatusAccepted)
+		contains(t, retry, `data-lease-state="pending_approval"`, "ホストの承認を待っています")
+	}
+	if n := r.f.Leases.Requests; n != 1 {
+		t.Errorf("approval requests = %d, want 1", n)
+	}
+	if p, ok := r.f.Leases.Pending(); !ok || !p.Actor.SameSession(actor(id)) {
+		t.Errorf("pending = %+v, %v; want this viewer", p, ok)
+	}
+}
+
+// 承認が要らなければ従来どおり 200 の保持中のパネル。
+func TestLeaseAcquireWithoutApprovalIs200(t *testing.T) {
+	r := newRig(t)
+	_, h := r.viewer()
+	status(t, r.post("/viewer/lease/acquire", nil, h...), http.StatusOK)
+}
+
+// クールダウン中（拒否・タイムアウトの直後）の取得は、承認を求めずに 403 approval_denied。タイムアウトの失敗の表示も 408 approval_timeout。
+// リースは取れず、パネルは空きのまま。
 func TestLeaseAcquireApprovalFailures(t *testing.T) {
 	tests := []struct {
 		name string
