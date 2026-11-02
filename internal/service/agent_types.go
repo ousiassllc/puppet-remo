@@ -90,7 +90,7 @@ type FastpathSettingsInput struct {
 
 // AgentSettings はホスト GUI の「エージェント設定」の窓口（FR-H11・G14・G22）。すべて操作主体 host で監査する。
 // 項目の不備は *ValidationError（項目名 → メッセージ）、条件を満たさない有効化（API キー未登録など）は
-// domain.ErrAgentDisabled（code agent_disabled）。GUI は PUT /agent のルートの記述（API 仕様 §7）どおり 409 で返す。
+// domain.ErrAgentDisabled（code agent_disabled）。HTTP ステータスは 409（API 仕様 §2 のエラーコード表と §7 の PUT /agent で同じ）。
 // API キーの値はログ・エラー・監査・戻り値のどこにも出さない（NFR-S14）。
 // SaveAgent で enabled = false にする保存は、有効または同意済みの状態からなら、他の欄の不備に妨げられない（他の欄は保存しない）。
 type AgentSettings interface {
