@@ -248,3 +248,30 @@ func TestMaintenanceRunAbortsActiveTasksOnceBeforeTheFirstMaintenance(t *testing
 		})
 	}
 }
+
+// App.Start が先に回収したなら、Run は回収しない（Run の開始より先に動き出したタスクを aborted にしない）。
+func TestMaintenanceRunDoesNotAbortAgainAfterTheAppRecovered(t *testing.T) {
+	clock := newMaintClock()
+	log := &opLog{}
+	conn := &orderConn{log: log, expired: make(chan struct{}, 4)}
+	tasks := &orderTasks{log: log}
+	m, err := NewMaintenance(MaintenanceConfig{
+		ConnRequests: conn, Tasks: tasks, Settings: newCtlSettings(), Clock: clock, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.AbortActiveTasks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); m.Run(ctx) }()
+	recvOrFail(t, conn.expired, "the first maintenance")
+	recvOrFail(t, clock.waits, "the first wait")
+	cancel()
+	recvOrFail(t, done, "Run to return")
+	if got, want := log.all(), []string{"abort", "expire", "purge"}; !slices.Equal(got, want) {
+		t.Errorf("order = %v, want %v (one abort only, from the app)", got, want)
+	}
+}

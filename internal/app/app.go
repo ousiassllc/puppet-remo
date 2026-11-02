@@ -42,6 +42,7 @@ type Repo interface {
 	Audit() repository.Audit
 	Thumbs() repository.ThumbStore
 	LaunchableApps() repository.LaunchableApps
+	Tasks() repository.Tasks
 }
 
 // Platform は OS 依存部。本番は platform/windows、テストは platformtest の偽物。
@@ -62,8 +63,8 @@ type Platform struct {
 	Autostart service.Autostart
 	// Installer は署名検証済みの更新のインストーラの起動（FR-H09。#74）。service.Updater が唯一の呼び出し元。
 	Installer platform.Installer
-	// Secrets は API キー（OpenAI・TypeSafe）を置く資格情報マネージャー（NFR-S14。FR-G14）。M4 の消費側（エージェント・高速パス・
-	// ホスト GUI のキー管理）はこれを読む。
+	// Secrets は API キー（OpenAI・TypeSafe）を置く資格情報マネージャー（NFR-S14。FR-G14）。エージェント（openai.Model）・高速パス
+	// （typesafe.Chooser）は呼び出しのたびにここから読み、ホスト GUI のキー管理（service.AgentSettings）が登録・削除する。
 	Secrets platform.SecretStore
 }
 
@@ -107,6 +108,12 @@ type Config struct {
 	// ListenRetry は Listen に失敗したアドレスの再試行間隔。0 以下なら tailnet の既定。
 	ListenRetry time.Duration
 
+	// OpenAIModel と TypeSafeChooser は、エージェントが呼ぶ OpenAI・TypeSafe を差し替える口。**テストとオフラインのデモ専用**で、
+	// 利用者の設定項目ではない（config・GUI には出さない）。nil なら本物のクライアント（service.NewAgentModel・NewAgentChooser。キーは
+	// Platform.Secrets の puppet-remo/openai・puppet-remo/typesafe から呼び出しのたびに読む）を使う。
+	OpenAIModel     service.AgentModel
+	TypeSafeChooser service.AgentChooser
+
 	// Closers は Shutdown の最後（監査のキューを書き切ったあと）に閉じる。DB・プラットフォームの資源を渡す。
 	Closers []io.Closer
 }
@@ -125,9 +132,12 @@ type App struct {
 	kill service.HostKillSwitch
 
 	leases   service.LeaseManager
-	approval service.Approval   // リース取得の承認待ち（FR-L07）
-	dialogs  *approvalDialogs   // 承認待ちごとのダイアログの開閉（FR-H05）
-	overlay  *overlayController // リース保持中の操作中オーバーレイの出し入れ（#69）
+	approval service.Approval              // リース取得の承認待ち（FR-L07）
+	dialogs  *approvalDialogs              // 承認待ちごとのダイアログの開閉（FR-H05）
+	overlay  *overlayController            // リース保持中の操作中オーバーレイの出し入れ（#69）
+	agent    *service.AgentService         // 内蔵エージェント（FR-G。run_task / get_task / cancel_task の実体）
+	tasks    service.TaskAdmin             // ホスト GUI のタスク画面・ダッシュボード（FR-H10）
+	agentCfg *service.AgentSettingsService // エージェント設定（FR-H11）と、Agent・FastPath・RuleJudge が設定を読む窓口
 	authz    service.Authz
 	audit    *service.Audit
 	admin    service.HostAdmin
@@ -211,7 +221,8 @@ func (a *App) build(ctx context.Context) error {
 	// 保守は、サムネイルを保存するたびの容量の確認（PurgeThumbsOverCap）を Audit へ渡すため、Audit より先に作る。
 	var err error
 	a.maint, err = service.NewMaintenance(service.MaintenanceConfig{
-		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Settings: settings, Clock: cfg.Clock, Logger: a.log,
+		ConnRequests: connRequests, Audit: cfg.Repo.Audit(), Thumbs: cfg.Repo.Thumbs(), Tasks: cfg.Repo.Tasks(), Settings: settings,
+		Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("maintenance: %w", err)
@@ -248,8 +259,6 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
 	}
-	// 5 つ目の引数は agent のオーバーレイの 2 行目（指示の要約）を読む service.TaskAdmin。M4 で TaskAdmin を結線するときに渡す（nil の間は「エージェント実行中」だけ）。
-	a.overlay = newOverlayController(cfg.Windows, a.leases, cfg.Platform.Capturer, a.bus, nil, a.log)
 	killMgr.BindLeases(a.leases)
 
 	p := cfg.Platform
@@ -260,14 +269,30 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("app registry: %w", err)
 	}
+	// エージェント設定。Cancel（無効化・OpenAI キーの削除でタスクを中断）は Agent の組み立て後に結ばれる（a.agent は Start の前に必ず入る）。
+	a.agentCfg, err = service.NewAgentSettings(service.AgentSettingsConfig{
+		Settings: settings, Secrets: p.Secrets, Audit: audit, Clock: cfg.Clock, Logger: a.log,
+		Cancel: func(reason string) { a.agent.CancelAll(reason) },
+	})
+	if err != nil {
+		return fmt.Errorf("agent settings: %w", err)
+	}
+	// agent のアクションだけが Judge（RuleJudge。失敗・2 秒の超過は承認を求める fail-closed）と承認（judge_action）を通る。
 	control, err := service.NewControl(service.ControlConfig{
 		Capturer: p.Capturer, Input: p.Input, Windows: p.Windows, Clipboard: p.Clipboard, UI: p.UI,
 		Launcher: p.Launcher, Apps: a.apps,
 		Leases: a.leases, Kill: killMgr, Settings: settings, Audit: audit, Clock: cfg.Clock, Logger: a.log,
+		Judge:    service.FailClosed(service.Chain(service.NewRuleJudge(a.agentCfg)), judgeTimeout),
+		Approval: a.approval,
 	})
 	if err != nil {
 		return fmt.Errorf("control: %w", err)
 	}
+	if err := a.buildAgent(control, killMgr); err != nil {
+		return err
+	}
+	// agent のオーバーレイの 2 行目（指示の要約）は TaskAdmin から読む。
+	a.overlay = newOverlayController(cfg.Windows, a.leases, p.Capturer, a.bus, a.tasks, a.log)
 
 	a.authz, err = service.NewAuthz(service.AuthzConfig{
 		WhoIs: cfg.WhoIs, Clients: cfg.Repo.Clients(), Tokens: cfg.Repo.Tokens(), ConnRequests: connRequests,
@@ -278,7 +303,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.mcp, err = mcp.New(mcp.Config{
-		Control: control, Leases: a.leases, Audit: audit, Version: cfg.Version, Logger: a.log,
+		Control: control, Leases: a.leases, Audit: audit, Agent: a.agent, Version: cfg.Version, Logger: a.log,
 		// 連鎖（web/middleware）が認証した主体を MCP サーバーへ渡す。mcp は web を import できない。
 		Principal:        func(r *http.Request) (service.Principal, bool) { return middleware.PrincipalFrom(r.Context()) },
 		OnSessionsChange: func() { a.bus.Publish(service.Event{Topic: service.TopicSessions}) },
@@ -317,7 +342,8 @@ func (a *App) build(ctx context.Context) error {
 	a.admin, err = service.NewHostAdmin(service.HostAdminConfig{
 		Clients: cfg.Repo.Clients(), Tokens: cfg.Repo.Tokens(), ConnRequests: connRequests, Authz: a.authz,
 		// クライアントの削除・無効化・トークンの失効で、MCP のセッションと WebSocket のビューアの両方を閉じる。
-		Leases: a.leases, Sessions: sessionClosers{a.mcp, a.viewers}, Audit: audit, Bus: a.bus, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
+		// 削除・無効化したクライアントの実行中のタスクも中断する（FR-A09・G10）。
+		Leases: a.leases, Sessions: sessionClosers{a.mcp, a.viewers}, Tasks: a.agent, Audit: audit, Bus: a.bus, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("host admin: %w", err)
@@ -344,7 +370,7 @@ func (a *App) build(ctx context.Context) error {
 		u.PublicKey = service.EmbeddedUpdatePublicKey()
 	}
 	a.updater, err = service.NewUpdater(service.UpdaterConfig{
-		Settings: settings, Audit: audit, Clock: cfg.Clock, Installer: p.Installer, Leases: a.leases, Sessions: a.mcp, Bus: a.bus,
+		Settings: settings, Audit: audit, Clock: cfg.Clock, Installer: p.Installer, Leases: a.leases, Sessions: a.mcp, RunningTasks: a.agent.RunningTasks, Bus: a.bus,
 		Quit: a.requestQuit, CurrentVersion: cfg.Version, PublicKey: u.PublicKey, APIBase: u.APIBase, DownloadBase: u.DownloadBase,
 		HTTPClient: u.HTTPClient, TempDir: u.TempDir, StartDelay: u.StartDelay, Interval: u.Interval, IdlePoll: u.IdlePoll,
 		AfterFunc: u.AfterFunc, Logger: a.log,
@@ -399,7 +425,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	// GUI ルーター: プロセス内だけ（ソケットを開かない）。Wails の AssetOptions.Handler に渡す。
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin, Approval: a.approval,
-		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Updates: a.updater, Tasks: noTasks{}, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Updates: a.updater, Tasks: a.tasks, AgentSettings: a.agentCfg, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)
@@ -407,6 +433,43 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	a.gui, err = router.NewGUI(router.GUIConfig{Handler: h, Static: cfg.Static})
 	if err != nil {
 		return fmt.Errorf("gui router: %w", err)
+	}
+	return nil
+}
+
+// judgeTimeout は Judge の判定の上限。超えたら承認を求める（fail-closed。FR-G12）。
+const judgeTimeout = 2 * time.Second
+
+// buildAgent は内蔵エージェント（Agent・FastPath・TaskAdmin）を組み立てる。OpenAI・TypeSafe のクライアントは組み立てるだけで、
+// 通信も goroutine も起動しない（TypeSafe は高速パスが有効なタスクの最初のステップまで通信しない。docs §9）。
+// 組み立てと同時に、キルスイッチのクローザー agent（実行中のタスクを中断する）を登録する。
+func (a *App) buildAgent(control service.Control, kill *service.KillSwitchManager) error {
+	cfg, p := a.cfg, a.cfg.Platform
+	model := cfg.OpenAIModel
+	if model == nil {
+		model = service.NewAgentModel(p.Secrets)
+	}
+	chooser := cfg.TypeSafeChooser
+	if chooser == nil {
+		chooser = service.NewAgentChooser(p.Secrets)
+	}
+	fast, err := service.NewFastPath(service.FastPath{
+		UI: p.UI, Control: control, Chooser: chooser, Settings: a.agentCfg, Disabler: a.agentCfg, Audit: a.audit, Bus: a.bus, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("fast path: %w", err)
+	}
+	a.agent, err = service.NewAgent(service.AgentServiceConfig{
+		Tasks: cfg.Repo.Tasks(), Clients: cfg.Repo.Clients(), Settings: a.agentCfg, Control: control, Leases: a.leases, Kill: kill,
+		Approval: a.approval, Model: model, Fast: fast, Audit: a.audit, Bus: a.bus, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
+	kill.RegisterCloser("agent", func(context.Context) error { a.agent.CancelAll("kill_switch"); return nil })
+	a.tasks, err = service.NewTaskAdmin(service.TaskAdminConfig{Tasks: cfg.Repo.Tasks(), Steps: cfg.Repo.Audit(), Cancel: a.agent, Audit: a.audit})
+	if err != nil {
+		return fmt.Errorf("task admin: %w", err)
 	}
 	return nil
 }
