@@ -983,7 +983,7 @@ sequenceDiagram
 
 ## 10. テスト方針
 
-CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動き、**対話デスクトップがない**。Windows 向けのコードは CI では `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査するだけで、DXGI・`SendInput`・UI Automation・オーバーレイ・グローバルホットキーは CI では動かない。そこで各インターフェースを「モックで検証する範囲」と「実機スモークで確認する範囲」に分ける。実機スモークの手順は `docs` に別途置く（NFR-O04。キャプチャ・入力・ウィンドウ・クリップボードは [Windows 実機スモーク手順](../operations/smoke-windows.md)）。リモートの Web UI は、偽の `platform` と偽の `tailnet` で組み立てたテスト専用サーバー（ビルドタグ `e2e`。§13.13）に対して、CI の別ジョブ `e2e` で Lit のテストと Playwright の E2E を走らせる（#64）。
+CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスクトップがない**。Windows 向けのコードは CI では `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査するだけで、DXGI・`SendInput`・UI Automation・オーバーレイ・グローバルホットキーは CI では動かない。そこで各インターフェースを「モックで検証する範囲」と「実機スモークで確認する範囲」に分ける。実機スモークの手順は `docs` に別途置く（NFR-O04。キャプチャ・入力・ウィンドウ・クリップボードは [Windows 実機スモーク手順](../operations/smoke-windows.md)）。リモートの Web UI は、偽の `platform` と偽の `tailnet` で組み立てたテスト専用サーバー（ビルドタグ `e2e`。§13.13）に対して、CI の別ジョブ `e2e` で Lit のテストと Playwright の E2E を走らせる（#64）。
 
 | インターフェース | モック / 単体で検証する範囲 | 実機スモークで確認する範囲 |
 |----------------|-------------------------|---------------------------|
@@ -1043,7 +1043,7 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | Wails の開発時 | `wails3 dev` は `FRONTEND_DEVSERVER_URL` を常に出し、`WAILS_VITE_PORT`（既定 9245）の待ち受けを待つ。カスタム `AssetOptions.Handler`（Gin）には転送されない。そのため `frontend:dev` は esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（監視つき）を起動する（待ち受けの代役とライブ再ビルド。画面は Gin から出る）。詳細は [フロントエンド設計](../architecture/frontend.md) |
 | フロントエンドのファイル | `lib/ws.ts` と `lib/logger.ts` のみ（`lib/api.ts` は作らない）。静的ファイルは `Cache-Control: no-cache` + `ETag`（ビルド ID） |
 | トークンのコピー（GUI） | クリックで `navigator.clipboard.writeText`。使えないときは全選択して Ctrl+C を促す |
-| テストの実行環境 | CI はすべて Linux のセルフホストランナー。Windows 向けは `GOOS=windows` の build / vet のクロスコンパイルのみ。Playwright の E2E と Lit のテストは、M2 の受け入れ条件には含めず、あとから CI の改善として別ジョブ `e2e` に足した（偽の platform・tailnet で OS 非依存。#64。オーナーの決定）。Chromium は `PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright` へ `playwright install chromium`（`--with-deps`・sudo なし）。実機スモークは手動 |
+| テストの実行環境 | CI はすべて Linux の GitHub ランナー（`ubuntu-latest`）。Windows 向けは `GOOS=windows` の build / vet のクロスコンパイルのみ。Playwright の E2E と Lit のテストは、M2 の受け入れ条件には含めず、あとから CI の改善として別ジョブ `e2e` に足した（偽の platform・tailnet で OS 非依存。#64。オーナーの決定）。Chromium は `PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright` へ `playwright install --with-deps chromium`。実機スモークは手動 |
 | 配布 | v1 は Authenticode で署名しない（個人利用）。更新の完全性は Ed25519（NFR-S10） |
 | 意図的に設定しないもの | メモリ・帯域の目標は実装後の測定まで設定しない。日程は設定しない。4K 以上の WebSocket は縮小配信せず物理解像度のまま（`config` に後から `scale` を足せる） |
 | OpenAPI の範囲 | Huma は `/api/v1` の JSON API だけを公開する。MCP ツールは `tools/list` が定義 |
@@ -1339,3 +1339,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.55 | 2026-11-02 | §5.4.1 の `ReusedExistingWindow` と手順 5b を、起動の前後のウィンドウ一覧の差（新しいウィンドウがあれば `false`）に更新 | #55 |
 | 1.56 | 2026-11-02 | §5.4.1 の `Control.Launch` に手順 4b（起動の「試行」の監査を `SyncAuditRecorder.RecordSync` で起動の前に同期で書き、書けなければ `audit_unavailable` で起動しない）を追加し、手順 6 の fail-open の記述を、結果の行が書けなくても起動は取り消さない記述に改めた。`ControlConfig.Audit` は `SyncAuditRecorder`（`*Audit` が満たす） | #37 |
 | 1.57 | 2026-11-02 | §10・§12.1・§13.4 の `e2e` の `Listener`・新設の §13.13（テスト専用サーバー）を、#64 の実装に合わせて更新: Lit のテストと Playwright の E2E は M2 の受け入れ条件ではなく CI の改善として別ジョブ `e2e` で足す、入口は `internal/app/e2e.go` と `cmd/puppet-remo-e2e`、Listener は本物に `LoopbackListenFunc`、制御エンドポイントは e2e ビルドだけで loopback の IP リテラルにだけ bind する | #64（オーナーの決定） |
+| 1.58 | 2026-11-02 | §10 のテストの実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。Chromium は `--with-deps` 付き | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |

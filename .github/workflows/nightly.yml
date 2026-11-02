@@ -3,7 +3,7 @@ name: Nightly
 # develop への push ごとに、Windows 向け NSIS インストーラを作り、プレリリースとして GitHub Releases に公開する。
 # タグは nightly-YYYYMMDD-<短い sha。通常 7 桁、曖昧なときは長くなる>（日付は commit の日付 UTC）。最新 7 本だけ残し、古い Release とタグは削除する。
 # 版・タグの決め方は scripts/ci/next-version.sh、運用は docs/operations/release.md。
-# すべてのジョブはセルフホストの Linux ランナーで走らせる。使うトークンは GITHUB_TOKEN と、署名の Secret（MINISIGN_SECRET_KEY・MINISIGN_PASSWORD。任意）。
+# すべてのジョブは GitHub のランナー（ubuntu-latest）で走らせる。使うトークンは GITHUB_TOKEN と、署名の Secret（MINISIGN_SECRET_KEY・MINISIGN_PASSWORD。任意）。
 # Authenticode の署名はしない。更新用の minisign 署名は、Secret があるときだけ付ける（docs/operations/release.md「署名」）。
 on:
   push:
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   nightly:
     name: nightly installer
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write
