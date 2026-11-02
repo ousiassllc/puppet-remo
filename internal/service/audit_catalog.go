@@ -35,7 +35,9 @@ var AuditCatalog = []AuditRequirement{
 	{Item: "エージェントの各ステップ・Judge の判定（kind = agent）", Events: []string{agentStepAuditEvent, agentJudgeAuditEvent}},
 	{Item: "エージェントの有効化と同意", Events: []string{agentConsentAuditEvent}},
 	{Item: "高速パスの有効化と同意（agent.consent とは別）", Events: []string{fastpathEnableAuditEvent, fastpathDisableAuditEvent}},
-	{Item: "エージェントのタスクのライフサイクル・安全チェック（kind = agent）", Pending: "#19 の Agent（agent.task_start 等。実装する Issue がここにイベント名を足す）"},
+	{Item: "エージェントのタスクのライフサイクル・安全チェック（kind = agent）", Events: []string{
+		agentTaskStartAuditEvent, agentTaskEndAuditEvent, agentSafetyCheckAuditEvent, agentTaskCancelAuditEvent,
+	}},
 }
 
 // auditCatalogEvents は AuditCatalog の具体的なイベント名（tool.* の族を除く）の集合。

@@ -146,6 +146,8 @@ func (f *fakeControl) Do(ctx context.Context, who domain.Actor, op domain.Op) (s
 	return service.Result{}, nil
 }
 
+func (f *fakeControl) ReleaseInput() error { return nil }
+
 func (f *fakeControl) LaunchableApps(context.Context) ([]domain.AppSummary, error) {
 	if err := f.viewErr(); err != nil {
 		return nil, err

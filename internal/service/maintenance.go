@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sync/atomic"
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/repository"
@@ -58,6 +59,9 @@ type MaintenanceConfig struct {
 // Tasks を渡されたときは、タスクの回収（起動時の AbortActive。NFR-A08）と保持（保持期間を過ぎた終了済みタスクの削除）も行う。
 type Maintenance struct {
 	cfg MaintenanceConfig
+	// recovered は AbortActiveTasks を 1 度でも試みたか。Run は、アプリが先に回収した（Start が Agent の起動前に呼ぶ）なら、
+	// 動き出したタスクを巻き込まないよう、もう回収しない。
+	recovered atomic.Bool
 }
 
 // NewMaintenance は Maintenance を作る。動かすには Run を goroutine で呼ぶ。
@@ -135,12 +139,13 @@ func (m *Maintenance) PurgeTasksBeforeRetention(ctx context.Context) error {
 	return nil
 }
 
-// AbortActiveTasks は実行中・承認待ちのタスクをすべて aborted にする（起動時の回収。NFR-A08）。Run が最初の保守の前に 1 回呼ぶ。
-// 回収した件数を返す。Tasks が無ければ 0。
+// AbortActiveTasks は実行中・承認待ちのタスクをすべて aborted にする（起動時の回収。NFR-A08）。App.Start が、Listener（MCP の受付）・Agent を
+// 動かす前に呼ぶ。呼ばれていなければ Run が最初の保守の前に 1 回呼ぶ（呼んだあとの Run は回収しない）。回収した件数を返す。Tasks が無ければ 0。
 func (m *Maintenance) AbortActiveTasks(ctx context.Context) (int, error) {
 	if m.cfg.Tasks == nil {
 		return 0, nil
 	}
+	m.recovered.Store(true)
 	n, err := m.cfg.Tasks.AbortActive(ctx, m.cfg.Clock.Now())
 	if err != nil {
 		return 0, fmt.Errorf("abort active tasks: %w", err)
@@ -259,11 +264,13 @@ func readBoundedInt(ctx context.Context, settings repository.Settings, key strin
 	return int64(f), false, nil
 }
 
-// Run は起動時にタスクの回収（Tasks があれば AbortActive を 1 回）・孤児の掃除・保守を 1 回、以後 Interval ごとに保守を行い、ctx の終了で戻る。
+// Run は起動時にタスクの回収（Tasks があり、まだ回収されていなければ AbortActive を 1 回）・孤児の掃除・保守を 1 回、以後 Interval ごとに保守を行い、ctx の終了で戻る。
 // 失敗はログに残して続ける。回収は Run の先頭の 1 回だけ（動いているタスクを巻き込まないよう、Agent が動く前に呼ぶこと）。
 func (m *Maintenance) Run(ctx context.Context) {
-	if _, err := m.AbortActiveTasks(ctx); err != nil && ctx.Err() == nil {
-		m.cfg.Logger.Error("task recovery failed", "err", err)
+	if !m.recovered.Load() {
+		if _, err := m.AbortActiveTasks(ctx); err != nil && ctx.Err() == nil {
+			m.cfg.Logger.Error("task recovery failed", "err", err)
+		}
 	}
 	if err := m.SweepOrphans(ctx); err != nil && ctx.Err() == nil {
 		m.cfg.Logger.Error("orphan sweep failed", "err", err)

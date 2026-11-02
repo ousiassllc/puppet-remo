@@ -65,6 +65,9 @@ type Control interface {
 	//  5b. 起動後のウィンドウの観測（LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
 	//  6. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
 	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
+	// ReleaseInput は押下中のキー・ボタンをすべて離す（InputInjector.ReleaseAll の唯一の入口）。キルスイッチのクローザー `input` と、
+	// エージェントのタスクの終了処理（FR-G10）が呼ぶ。入力の直列化のロックは取らないので、実行中の入力があっても解放できる。
+	ReleaseInput() error
 }
 
 // LaunchResult は Launch の結果。
@@ -212,9 +215,11 @@ func NewControl(cfg ControlConfig) (Control, error) {
 	if ta, ok := cfg.Audit.(thumbAuditor); ok {
 		c.thumbs = &thumbShooter{audit: ta, capture: cfg.Capturer, clock: cfg.Clock, log: c.log, sem: make(chan struct{}, thumbWorkers)}
 	}
-	cfg.Kill.RegisterCloser("input", func(context.Context) error { return c.input.ReleaseAll() })
+	cfg.Kill.RegisterCloser("input", func(context.Context) error { return c.ReleaseInput() })
 	return c, nil
 }
+
+func (c *control) ReleaseInput() error { return c.input.ReleaseAll() }
 
 func sleepContext(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
