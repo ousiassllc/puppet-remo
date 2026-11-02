@@ -1151,6 +1151,21 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 
 **M1 では実装していない `Approval`（M3 の #66 で実装した。§13.5）・`Judge`・`Agent`・`FastPath`・`Streamer`（M2 で実装した。§13.5）・`Updater`（M3 の #74 で実装した。§13.5）、`openai`・`typesafe` パッケージ、`/api/v1` は、本書の設計が M2〜M4 の予定である（`ws`・WebSocket と Web UI（`/viewer`）は M2 で実装した）。** M1 の実装で触れない（呼ばない）宣言だけのもの: `SecretStore`（`Capturer.Watch` / `Frame` は M2 で実装した。§13.3）。
 
+### 13.x typesafe（§4.4）: M4 の typesafe の実装差分
+
+| 項目 | M4 の実装 |
+|------|----------|
+| 構成 | `internal/typesafe`（標準ライブラリだけ。`domain` も import しない）。`typesafe.go`（公開の型・エラー・`Config` の既定）、`chooser.go`（`net/http` の呼び出し・エラーの分類・キーの扱い）、`wire.go`（`/v1/systemone` の JSON の組み立てと解釈だけ。形式の修正はここと `testdata/` のゴールデンに閉じる） |
+| 要求・応答の形式（根拠: TypeSafe の公開 OpenAPI v0.2.0、`https://api.typesafe.ai/openapi.json`。文書の閲覧のみで、実 API は呼んでいない） | 要求 `{model, state, questions}`。`state` は FR-G18 の状態オブジェクト `{goal, window{title, process}, elements[{id, role, label, enabled}], history}`（`history` は直近 5 件。空は `[]`）。`questions.next` は `{type:"choice", instructions, criteria}`（`criteria` は 候補 ID → 短い説明（`click` の候補は「Click the ‹role› labeled "‹label›".」、`window` は「Bring the window titled "‹label›" to the foreground.」）に `reobserve`・`abstain` を加えたもの。API の上限は 255 件で、候補は最大 24 件）、`questions.goal_maybe_done` は `{type:"noul", instructions}`。応答 `answers.next = {type:"choice", choice, confidence, probabilities}`、`answers.goal_maybe_done = {type:"noul", noul}`（はい の確率）。`ChoiceResult.Confidence` は `answers.next.confidence`、`GoalMaybeDone` は `answers.goal_maybe_done.noul`。`probabilities` と `usage` は使わない。指示文・説明文は英語で、文面の良し悪しは実測で確かめる |
+| 応答の検証（NFR-S17） | 受理するのは、`next` が `type:"choice"` で `choice` と `confidence` があり、`choice` が**送った選択肢の名前**（候補 ID・`reobserve`・`abstain`）のどれかで、`confidence` と `noul` が 0〜1 のとき。それ以外（本文が JSON でない・項目欠落・型違い・範囲外・送っていない名前）は `ErrBadResponse`（誤りの文面に応答本文は含めない）。候補表との照合は `FastPath` も行う（二重の検査） |
+| 要求の検査 | `Elements` の ID が空・`reobserve` / `abstain` と同名・重複のときは、選択肢の名前の衝突で別の要素を選びかねないため、送らずに `ErrBadResponse`（`FastPath` は `invalid_choice` として引き継ぐ）。本文が `MaxBody` を超えるときは、キーの読み出しも通信もせず `ErrUnavailable`（ちょうど `MaxBody` は送る）。JSON は `<` `>` `&` をエスケープしない |
+| エラーの分類 | 401 → `ErrUnauthorized`（キーが空・空白や制御文字を含むときも、送らずに `ErrUnauthorized`）。429・5xx・タイムアウト・ネットワークエラー → `ErrUnavailable`。docs に無いその他の状態（400・403・422・3xx など）も `ErrUnavailable`（そのステップを OpenAI に任せる。要求は固定の形なので、通常は起きない）。リダイレクトは辿らない（キーを `api.typesafe.ai` 以外へ送らない。NFR-S18）。キーを読む関数が失敗したときは `ErrUnavailable`（原因は `errors.Is` で辿れる）。**呼び出し側の `ctx` が先に終わったときは、`ErrUnavailable` ではなく `ctx` のエラー**（`context.Canceled` など。`FastPath` のキャンセルは縮退ではない）を返し、HTTP を中断する |
+| `Config` | ゼロ値の欄は既定値（`Endpoint` は `https://api.typesafe.ai/v1/systemone`、`Timeout` は 5 秒、`MaxBody` は 256 KiB）。`Endpoint` はテスト用で、設定項目にしない。応答本文の読み取りは 1 MiB まで（超過は `ErrBadResponse`）。`Model` が空のときの既定値は持たない（`agent.fastpath.model` が既定 `jev-1.13` を持つ） |
+| キー（NFR-S14） | `Choose` のたびに `key` 関数から読み、保持しない。`http.RoundTripper`（`redactTransport`）がトランスポートのエラーの文面からキーを伏せる。ログは一切出さない。テスト: 応答本文にキーを反射するサーバーで、全失敗の種類のエラー（`%v`・`%+v`・`%#v`）と `slog` / `log` の出力にキーが出ないこと |
+| 送信内容の検査（NFR-PR04） | `ChoiceRequest`・`ChoiceWindow`・`ChoiceElement` の欄を固定するテスト（欄が増えたら意図的に直す）と、すべて埋めた要求の本文のキー（`model`・`state{goal, window{title, process}, elements[{id, role, label, enabled}], history}`・`questions`）が許可した集合に収まるテスト |
+| テスト（`httptest`。実 API・実ネットワークなし） | 成功・ゴールデン往復（`testdata/request.json`・`response.json`）、状態コードごとの分類と再試行なし、不正な応答、タイムアウト（ハンドラーを `ctx` の終了まで待たせる。sleep なし）、`ctx` のキャンセル、`MaxBody`（境界）、履歴の切り詰め、キーの扱い |
+| **未確認（§12.2 の実 API スモーク）** | 公開 OpenAPI の例に沿って作ったが、実 API への 1 回の問い合わせは未実施。確かめること: 要求が 200 で受理されること、`confidence` の意味、`goal_maybe_done` の確率の分布、`jev-1.13` が `GET /v1/models` に載っていること、指示文・説明文の言い回しが判断品質に効くか、1 ステップの時間 |
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -1192,3 +1207,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.35 | 2026-11-02 | §7 のオーバーレイ（全モニター・クリック透過・物理座標・保持者の変更・構成変化の扱い）と承認ダイアログの到着順の待ち行列、§5.4 の InputGuard の Overlay の扱い（`At` は Overlay を飛ばす）、§3 の `WindowInfo.Overlay`、§13.6 の `Windows`・`overlayController`・`GET /overlay` を追記し、「複数の要求の扱いは未決」「オーバーレイは #69 が足す」を削除 | #69・#68 |
 | 1.36 | 2026-11-02 | §13.5 の `LeaseManager`（承認の監査 `approval.*`・拒否後 30 秒のクールダウン・`RequestAcquire`・`lease-result`）・`HostAdmin`（`approval.reset`・クールダウンの解除）と、§13.6 の `mcp`（リースを取得しうるツールの 90 秒のタイムアウト）・`ws`（`lease-result` → `error`）・`web/handler/remote`（`POST /viewer/lease/acquire` の 202）を更新し、「未実装」「未決」の注記を削除。`launch_app` に呼び出しごとの承認は無いことを明記 | #66・#67 |
 | 1.37 | 2026-11-02 | §3 に `platform.Installer`、§5.10 の `Updater`（`Check(ctx, by)`・`Apply(ctx, by)`・`Start`・`Close`）、§10 と §13.3 の `Installer`、§13.5 に `Updater` の実装（署名・版の束縛・チャネル・適用の可否・失敗時の扱い・監査）と設定の `UpdateChannel` を追記し、「未実装」から `Updater` を外した | #74 |
+| 1.38 | 2026-11-02 | §13.x に typesafe（§4.4）の M4 の実装差分（公開 OpenAPI に沿った要求・応答の形式、エラーの分類、`Config` の既定、キーの扱い、実 API とのスモークが未実施であること）を追記 | #19 |
