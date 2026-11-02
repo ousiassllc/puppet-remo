@@ -983,7 +983,7 @@ sequenceDiagram
 
 ## 10. テスト方針
 
-CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動き、**対話デスクトップがない**。Windows 向けのコードは CI では `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査するだけで、DXGI・`SendInput`・UI Automation・オーバーレイ・グローバルホットキーは CI では動かない。そこで各インターフェースを「モックで検証する範囲」と「実機スモークで確認する範囲」に分ける。実機スモークの手順は `docs` に別途置く（NFR-O04。キャプチャ・入力・ウィンドウ・クリップボードは [Windows 実機スモーク手順](../operations/smoke-windows.md)）。
+CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動き、**対話デスクトップがない**。Windows 向けのコードは CI では `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査するだけで、DXGI・`SendInput`・UI Automation・オーバーレイ・グローバルホットキーは CI では動かない。そこで各インターフェースを「モックで検証する範囲」と「実機スモークで確認する範囲」に分ける。実機スモークの手順は `docs` に別途置く（NFR-O04。キャプチャ・入力・ウィンドウ・クリップボードは [Windows 実機スモーク手順](../operations/smoke-windows.md)）。リモートの Web UI は、偽の `platform` と偽の `tailnet` で組み立てたテスト専用サーバー（ビルドタグ `e2e`。§13.13）に対して、CI の別ジョブ `e2e` で Lit のテストと Playwright の E2E を走らせる（#64）。
 
 | インターフェース | モック / 単体で検証する範囲 | 実機スモークで確認する範囲 |
 |----------------|-------------------------|---------------------------|
@@ -1003,7 +1003,7 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | `domain.CandidateTable` | UIA 要素のフィクスチャ（メモ帳・ダイアログ・メニュー・ブラウザを想定した偽の `UISnapshot`）から表を作る表駆動テスト: 役割クラスの対応、無効・画面外・空ラベル・ウィンドウ枠・名前＝値の除外、`excluded_labels`（日本語・英語・大文字小文字）、24 件の上限と `Dropped`、ID の決定性と添字非依存、ID 衝突の除去、`Validate`（未知・空・重複・古い ID・`reobserve` / `abstain`）。プロパティテスト: 表に無い文字列は受理されない | — |
 | `FastPath`（偽の `Chooser`・偽の `UIAutomation`・偽の `Control`） | 引き継ぎの表駆動テスト: 8 種の理由それぞれが想定どおりの入力で発生し、検証の優先順（`invalid_choice` → `goal_maybe_done` → `abstain` → `low_confidence`）、`reobserve` は連続 3 回目で `abstain`、進捗なし 3 回で `no_progress`、`max_steps` で `fast_step_limit`。縮退: タイムアウト・5xx・429 → `chooser_unavailable` で引き継ぎタスクは失敗しない、401 → 設定が `false` に戻り通知、`Control` の拒否 → タスク終了で `handoff_reason` が NULL、キャンセルで HTTP 中断と `ReleaseAll`。1 ステップ 1 アクション、`type` / `key` / `scroll` を実行しないこと、Jev が返した ID 以外（座標・ツール名）を実行しないこと。完了は OpenAI だけが宣言すること。無効・キー無し・同意無しで `Chooser` が呼ばれないこと。監査に入力文字列・要素の値が出ないこと | 実アプリで固定のタスク集合を測定（M4 の受け入れ: 性能の主張を仕様に書かない）、1 ステップの時間（NFR-P09）、`Hash` による進捗の判定 |
 | `repository` | すべて（一時ファイルの SQLite。マイグレーション、制約、部分 UNIQUE、`ON DELETE`、削除の順序） | — |
-| `mcp` / `ws` / `web` | プロトコルの符号化、エラー変換、ミドルウェア連鎖（偽の `Authz`）、problem+json、HTMX の分岐、`Host` / `Origin` 検証、CSP ヘッダー（全 HTML 応答）、`wheel` のノッチ → `Wheel` への写像（小数、符号）、MCP の `Session` タイムアウト（30 分）と本文上限（1 MiB） | 実ブラウザでのビューア（描画・入力・再接続・ホイールの換算）、実 MCP クライアントからの `run_task` |
+| `mcp` / `ws` / `web` | プロトコルの符号化、エラー変換、ミドルウェア連鎖（偽の `Authz`）、problem+json、HTMX の分岐、`Host` / `Origin` 検証、CSP ヘッダー（全 HTML 応答）、`wheel` のノッチ → `Wheel` への写像（小数、符号）、MCP の `Session` タイムアウト（30 分）と本文上限（1 MiB）。ビューア（`<remo-screen-viewer>`）の Lit のテスト（`bun run test`）と、偽の `platform`・偽の `tailnet` で起動したテスト専用サーバー（ビルドタグ `e2e`。§13.13）に対する Playwright の E2E（待機ページ → 許可 → ビューア → 操作権 → クリックが偽の injector に届く → 強制剥奪 → キルスイッチ。全ページで CSP 違反 0 件。#64。[フロントエンド設計](../architecture/frontend.md) §9） | 実ブラウザでのビューア（描画・入力・再接続・ホイールの換算）、実 MCP クライアントからの `run_task` |
 
 **契約テスト**: `platform` のインターフェースごとに「実装が満たすべき振る舞い」の共通テストを書き、偽の実装（CI で走る）と Windows 実装（実機のスモークで走る。ビルドタグ `smoke`）の両方に同じテストを流す。
 
@@ -1043,7 +1043,7 @@ CI はセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）�
 | Wails の開発時 | `wails3 dev` は `FRONTEND_DEVSERVER_URL` を常に出し、`WAILS_VITE_PORT`（既定 9245）の待ち受けを待つ。カスタム `AssetOptions.Handler`（Gin）には転送されない。そのため `frontend:dev` は esbuild の `--serve=$WAILS_VITE_PORT --servedir=static/dist`（監視つき）を起動する（待ち受けの代役とライブ再ビルド。画面は Gin から出る）。詳細は [フロントエンド設計](../architecture/frontend.md) |
 | フロントエンドのファイル | `lib/ws.ts` と `lib/logger.ts` のみ（`lib/api.ts` は作らない）。静的ファイルは `Cache-Control: no-cache` + `ETag`（ビルド ID） |
 | トークンのコピー（GUI） | クリックで `navigator.clipboard.writeText`。使えないときは全選択して Ctrl+C を促す |
-| テストの実行環境 | CI はすべて Linux のセルフホストランナー。Windows 向けは `GOOS=windows` の build / vet のクロスコンパイルのみ。Playwright の E2E と Lit のテストは M2（Web UI）で足す（偽の platform・tailnet で OS 非依存）。実機スモークは手動 |
+| テストの実行環境 | CI はすべて Linux のセルフホストランナー。Windows 向けは `GOOS=windows` の build / vet のクロスコンパイルのみ。Playwright の E2E と Lit のテストは、M2 の受け入れ条件には含めず、あとから CI の改善として別ジョブ `e2e` に足した（偽の platform・tailnet で OS 非依存。#64。オーナーの決定）。Chromium は `PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright` へ `playwright install chromium`（`--with-deps`・sudo なし）。実機スモークは手動 |
 | 配布 | v1 は Authenticode で署名しない（個人利用）。更新の完全性は Ed25519（NFR-S10） |
 | 意図的に設定しないもの | メモリ・帯域の目標は実装後の測定まで設定しない。日程は設定しない。4K 以上の WebSocket は縮小配信せず物理解像度のまま（`config` に後から `scale` を足せる） |
 | OpenAPI の範囲 | Huma は `/api/v1` の JSON API だけを公開する。MCP ツールは `tools/list` が定義 |
@@ -1115,7 +1115,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `tailnet.WhoIs` | キャッシュは `sync.Mutex` + `map`（§4.2）。LocalAPI の 1 回の呼び出しは 5 秒で打ち切り、`ErrWhoIsFailed`（`context.DeadlineExceeded` を包む）で拒否する |
 | `tailnet.Listener` | tailnet IP は `BackendState` が Running のときだけ採用し（Starting・Stopped では Listen しない）、Listen する対象を `100.64.0.0/10` と `fd7a:115c:a1e0::/48` に絞る（防御的な二重の絞り込み）。Listen・受け付けの失敗は 1 秒間隔で再試行する。`Watcher` も切断時に 1 秒間隔で再接続する |
 | `http.Server` | `ReadHeaderTimeout` 10 秒、`IdleTimeout` **120 秒**、`MaxHeaderBytes` **64 KiB**。`WriteTimeout` は付けない（長い応答があるため） |
-| ビルドタグ `e2e` の `Listener` | M2 で足す（M1 には無い） |
+| ビルドタグ `e2e` の `Listener` | #64 で足した（`internal/tailnet/e2e.go`。`//go:build e2e`）。専用の `Listener` 型は作らず、本物の `tailnet.NewListener` に `ListenerConfig.ListenFunc`（`app.Config.ListenFunc`）として `tailnet.LoopbackListenFunc()` を渡す: 偽の `Watcher`（`E2EWatcher`。tailnet の IPv4 `100.64.0.1` と `127.0.0.1` を報告）に追従して Listener が tailnet の IPv4 へ Listen しようとするたびに、ソケットだけを**同じポートの `127.0.0.1`** にする（絞り込み・再試行・`State` は本物のまま。IPv6 は受けない）。NFR-S01 の例外はこのビルドタグだけで、本番のバイナリには入らない。偽の `WhoIs`（`E2EWhoIs`）も同じファイル（§13.13） |
 
 ### 13.5 service（§5）
 
@@ -1268,6 +1268,16 @@ M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tool
 | `app` の結線（`app.go`） | `buildAgent` が OpenAI クライアント（`service.NewAgentModel`）と TypeSafe クライアント（`service.NewAgentChooser`）を作る（`app` は `openai`・`typesafe` を import できないので、組み立ては `service` が持つ。`service/agent_clients.go`）。どちらも API キーは `SecretStore` から**呼び出しのたびに**読む（キーを保持しない。NFR-S14）。`Config.OpenAIModel`（`service.AgentModel`）・`Config.TypeSafeChooser`（`service.AgentChooser`）はテスト・デモが差し替える口（nil なら本物）。`Control` には `Judge`（`FailClosed(Chain(RuleJudge), 2 秒)`）と `Approval` を渡す |
 | デモ（`internal/app/internal/remotedemo`） | `-agent-demo`（オフライン。台本つきの偽の `openai.Model`（`service/agenttest` の別名・応答の作り方で書く）、ダミーのキー、ダミーのトークンで、MCP の `run_task` から最後まで動く）、`-agent-safety-check`（2 ステップ目に安全チェックを付ける）。デモのバイナリは loopback で待ち受けるが、接続の `LocalAddr` を偽の tailnet アドレスに見せる（MCP の SDK が loopback 宛ての接続に loopback 以外の `Host` を 403 にするため。本番は tailnet の IP で待ち受けるので当たらない）。使い方は `remotedemo` の doc comment |
 
+### 13.13 テスト専用サーバー（ビルドタグ `e2e`。#64。§10）
+
+Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) §9）のための入口。M2 の受け入れ条件ではなく、あとから CI の改善として足した（オーナーの決定）。ここにある部品はすべて `//go:build e2e` で、タグなしの `go build ./...` は無視し、本番のバイナリ（`cmd/puppet-remo`）には入らない。
+
+| 項目 | 実装 |
+|------|------|
+| 入口 | `internal/app/e2e.go` の `app.RunE2E`（`app` のパッケージ内にあるのは、制御エンドポイントが `HostAdmin`・`LeaseManager`・キルスイッチなどの組み立て済みの部品を直接使うため）と、それを呼ぶ `cmd/puppet-remo-e2e/main.go`（`-port`・`-control`）。`app.New` に偽の `platform`（`platformtest`）・偽の `tailnet`（§13.4）・一時ディレクトリの SQLite を渡し、`ListenFunc` を `LoopbackListenFunc` にする。静的ファイルは `static/dist`（`PUPPET_REMO_STATIC_DIR` で場所を指せる）。SIGINT・SIGTERM で止まり、一時ディレクトリを消す |
+| 制御エンドポイント | 別のソケット（`-control`）。**loopback の IP リテラル（`127.0.0.1`・`::1`）にだけ bind する**（名前・`0.0.0.0`・loopback 以外の IP は起動を拒否）。loopback 以外の接続元は 403。認証なし。ホスト側の操作は本物の経路: `POST /requests/allow`（`HostAdmin.ApproveRequest`）・`POST /lease/revoke`（`LeaseManager.Revoke`（ホスト））・`POST /killswitch`・`/killswitch/release`。`GET /ready`・`POST /identity?as=registered|unregistered`・`GET /requests`・`GET /lease`・`GET /inputs`（偽の injector が受けた入力）・`POST /reset` |
+| テスト | `go test -tags e2e ./internal/app/ ./internal/tailnet/`: 制御エンドポイントが loopback の IP リテラルにしか bind しないこと・非 loopback の接続元を 403 にすること・`LoopbackListenFunc` が loopback だけで待ち受けること・本物の Listener 経由で配信できること・リモートルーターの Host 検査のポート・E2E のシナリオ（待機 → 許可 → ビューア → キルスイッチ）の通し |
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -1328,3 +1338,4 @@ M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tool
 | 1.54 | 2026-11-02 | §3 に `platform.FolderOpener`（#54。ログフォルダーを開く）を追加し、§13.5 のアプリログの行に `service.AppLog.OpenFolder`・`LogReader` へのフォルダーを開く手段の注入（開く場所の固定）・`POST /logs/open-folder` を追記 | #54 |
 | 1.55 | 2026-11-02 | §5.4.1 の `ReusedExistingWindow` と手順 5b を、起動の前後のウィンドウ一覧の差（新しいウィンドウがあれば `false`）に更新 | #55 |
 | 1.56 | 2026-11-02 | §5.4.1 の `Control.Launch` に手順 4b（起動の「試行」の監査を `SyncAuditRecorder.RecordSync` で起動の前に同期で書き、書けなければ `audit_unavailable` で起動しない）を追加し、手順 6 の fail-open の記述を、結果の行が書けなくても起動は取り消さない記述に改めた。`ControlConfig.Audit` は `SyncAuditRecorder`（`*Audit` が満たす） | #37 |
+| 1.57 | 2026-11-02 | §10・§12.1・§13.4 の `e2e` の `Listener`・新設の §13.13（テスト専用サーバー）を、#64 の実装に合わせて更新: Lit のテストと Playwright の E2E は M2 の受け入れ条件ではなく CI の改善として別ジョブ `e2e` で足す、入口は `internal/app/e2e.go` と `cmd/puppet-remo-e2e`、Listener は本物に `LoopbackListenFunc`、制御エンドポイントは e2e ビルドだけで loopback の IP リテラルにだけ bind する | #64（オーナーの決定） |

@@ -541,7 +541,7 @@ type Judge interface {
 | 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない）。`wails3 dev` が開発サーバーの待受を要求するため、esbuild の `--serve` を待受として起動する |
 | CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
 | 静的ファイル | `Cache-Control: no-cache` + `ETag`（ビルド ID） |
-| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform。Lit と Playwright は M2 で CI に足す） |
+| テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform・偽の tailnet のテスト専用サーバー。ビルドタグ `e2e`。Lit と Playwright は、M2 の受け入れ条件ではなくあとから CI に足した。#64） |
 
 全項目と理由は [フロントエンド設計](frontend.md) §2 を参照。
 
@@ -577,7 +577,7 @@ puppet-remo/
 │   │   │   └── lib/              # ws.ts, logger.ts
 │   │   └── css/
 │   ├── dist/                     # ビルド成果物 (go:embed)
-│   └── e2e/                      # Playwright
+│   └── e2e/                      # Playwright（+ playwright.config.ts）
 ├── build/                        # Wails パッケージング (NSIS、マニフェスト)
 ├── docs/
 └── Taskfile.yml                  # templ / tailwind / esbuild (dev は --serve) / wails3 package
@@ -592,7 +592,7 @@ puppet-remo/
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
 | 配布・更新 | GitHub Releases（リポジトリは公開が前提）。インストーラ・`.sha256`・署名ファイル `.minisig`（minisign 形式。Ed25519）を公開し、アプリが埋め込みの公開鍵で署名検証して適用する。署名の trusted comment に版とファイル名を入れ、Release との不一致（付け替え）を拒否する。署名の秘密鍵は GitHub Actions の Secret（`MINISIGN_SECRET_KEY`）にだけ置き、Secret が無いときは署名を省いて公開する（アプリは署名のないリリースを適用しない）。チャネルは正式版（既定）とナイトリー。確認は起動の 1 分後と 6 時間ごと。詳細は [リリース運用](../operations/release.md) |
-| CI | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は M2 で足す（偽の platform と偽の tailnet により OS に依存しない。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
+| CI | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は別ジョブ `e2e` で行う（M2 の受け入れ条件ではなく、あとから足した CI の改善。#64。偽の platform と偽の tailnet により OS に依存しない。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
 
 ## M1 実装での差分
@@ -626,9 +626,10 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | `internal/router` | `gui.go`・`remote.go` と `internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
 | `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`・`wails_overlay_windows.go`。承認ダイアログ（`approval_dialogs.go`。M3・#68）とオーバーレイ（`overlay.go`。M3・#69）の購読側は OS に依存せず、Wails の実装だけが Windows 専用 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
-| `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`。M2 の #63）。`e2e/` は作らない |
+| `cmd/puppet-remo-e2e`・`internal/app/e2e.go`・`internal/tailnet/e2e.go`（#64） | Playwright の E2E のテスト専用サーバー。すべて `//go:build e2e`（`go build ./...` は無視し、本番のバイナリに入らない）。偽の platform・偽の tailnet・loopback の待ち受けと、e2e ビルドだけの制御エンドポイント（loopback の IP リテラルにだけ bind）。[コンポーネント設計](../components/overview.md) §13.13 |
+| `static/` | `src/app/`（`htmx-config.ts`・`app.ts`）、`src/css/`、`esbuild.config.mjs`、`scripts/`（`clean.mjs`・`copy-htmx.mjs`）、Go 側の `handler.go`・`disk.go`・`embed_production.go`（配信と ETag）。`src/components/`（`screen-viewer`・`lib`。M2 の #63）。Lit のテスト（`src/components/**/*.test.ts`・`web-test-runner.config.mjs`）と `e2e/`・`playwright.config.ts`（Playwright の E2E）は、M2 の受け入れ条件ではなくあとから CI の改善として #64 で足した |
 | 追加のファイル | `scripts/check-imports.sh`（レイヤー間の import 規則の検査）、`.github/workflows/ci.yml`、`.golangci.yml`、`README.md`、`docs/environment/setup.md`（環境構築）、`docs/operations/smoke-windows.md`（Windows 実機スモークの手順）、`docs/screenshots/m1/`（ホスト GUI のスクリーンショット） |
-| Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など |
+| Taskfile のタスク | M1 で使うのは `build`・`vet`・`test`・`lint`・`check:imports`・`templ:generate` / `templ:check`・`frontend:*`（開発は `frontend:dev`）・`gui:demo`・`build:production`・`package`・`dev`・`ci` など。#64 で `frontend:browsers`・`frontend:test`・`frontend:typecheck:e2e`・`test:e2e`・`e2e` を足した |
 
 ### 依存の向き
 
@@ -677,3 +678,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.21 | 2026-11-02 | 技術選定表の OpenAI / TypeSafe クライアントの行を M4 の実装（`internal/openai`・`internal/typesafe` を追加。`app` は import せず、組み立ては `service.NewAgentModel`・`service.NewAgentChooser`）に更新 | #19 |
 | 1.22 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
 | 1.23 | 2026-11-02 | 「運用ログと監査ログ」のログ画面の読み出しを、Windows で `FILE_SHARE_DELETE` つきで開く実装（`openLogFile`）に更新し、ローテーションとの共有違反の注記を直した | #53 |
+| 1.24 | 2026-11-02 | 技術選定表のテスト・CI の行と、M1 差分の `static/` の行を、#64 の実装（Lit のテストと Playwright の E2E は M2 の受け入れ条件ではなく CI の改善として別ジョブ `e2e` で足す。テスト専用サーバーはビルドタグ `e2e`）に更新 | #64（オーナーの決定） |

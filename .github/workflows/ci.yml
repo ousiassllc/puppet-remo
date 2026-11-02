@@ -17,7 +17,7 @@ concurrency:
 # Windows 向けの検査は GOOS=windows のクロスコンパイル（build と vet）だけで、Windows の実機は使わない。
 # ツール（Go・bun・golangci-lint・templ）はランナーに入っている前提にせず、setup アクションで導入する（bun は ./.github/actions/setup-bun）。
 # Go・bun のキャッシュはジョブ専用の一時領域（RUNNER_TEMP）に置き、ランナーのホームや他ジョブへ状態を残さない。
-# Lit のテスト・Playwright の E2E は M2（Web UI）で足す。
+# Lit のテストと Playwright の E2E は e2e ジョブで走らせる（Chromium は PLAYWRIGHT_BROWSERS_PATH でジョブ専用の領域に入れる）。M2 の受け入れ条件ではなく、追加した CI 改善（#64）。
 # 配信（nightly.yml・release.yml。docs/operations/release.md）の検査として、installer ジョブでインストーラをビルドだけして
 # （公開はしない）runner の道具の導入を確かめ、release-scripts ジョブで配信スクリプトのテストとワークフローの検査をする。
 # release.yml は、この CI（name: CI）が main への push で成功したときに起動する。
@@ -166,6 +166,70 @@ jobs:
       - name: 同梱した dist のテスト (production)
         run: go test -tags production ./static/...
 
+  # Lit のテストと Playwright の E2E（docs/architecture/frontend.md §9）。どちらもヘッドレスの Chromium が要るので、同じジョブで走らせる
+  # （frontend ジョブとは分ける: ブラウザの導入と E2E の所要時間で、ビルド・型検査の結果を遅らせない）。
+  # Chromium はジョブ専用の領域（PLAYWRIGHT_BROWSERS_PATH）へ入れる。--with-deps と sudo は使わない（ランナーに必要なライブラリが入っている前提）。
+  # テスト専用サーバー（-tags e2e の cmd/puppet-remo-e2e。偽の platform・偽の tailnet・loopback の待ち受け）は本番のバイナリに入らない。
+  # templ はこのジョブでは再生成しない（コミット済みの _templ.go を使う。差分は frontend ジョブが検査する）。
+  e2e:
+    name: e2e
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Go・bun・Playwright のキャッシュをジョブ専用の領域にする
+        run: |
+          {
+            echo "GOPATH=$RUNNER_TEMP/go"
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+            echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun"
+            echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: 依存の導入（bun.lock のとおり）
+        working-directory: static
+        run: bun install --frozen-lockfile
+
+      - name: フロントエンドのビルド（E2E が static/dist を配信する）
+        working-directory: static
+        run: bun run build
+
+      - name: E2E の型検査
+        working-directory: static
+        run: bunx tsc -p e2e
+
+      - name: Chromium を導入（--with-deps なし・sudo なし）
+        working-directory: static
+        run: bunx playwright install chromium
+
+      - name: Lit のテスト
+        working-directory: static
+        run: bun run test
+
+      - name: go build (-tags e2e)
+        run: go build -tags e2e ./...
+
+      - name: go vet (-tags e2e)
+        run: go vet -tags e2e ./...
+
+      - name: テスト専用サーバーの Go のテスト (-tags e2e)
+        run: go test -race -tags e2e -run 'E2E|Loopback' ./internal/app/ ./internal/tailnet/
+
+      - name: Playwright の E2E
+        working-directory: static
+        run: bun run e2e
+
   lint:
     name: lint
     runs-on: [self-hosted, Linux, X64]
@@ -202,6 +266,9 @@ jobs:
         env:
           GOOS: windows
           GOARCH: amd64
+
+      - name: golangci-lint (-tags e2e。テスト専用サーバーも検査する)
+        run: golangci-lint run --build-tags e2e ./...
 
   # 配信のスクリプト（版・タグの決定、片付け、公開）のテストと、ワークフローの静的検査。
   release-scripts:

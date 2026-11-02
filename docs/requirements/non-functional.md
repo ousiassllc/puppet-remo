@@ -44,7 +44,7 @@
 
 | ID | 要件 |
 |----|------|
-| NFR-S01 | tailscaled が持つ tailnet アドレス（IPv4・IPv6）のうち取得できたもののそれぞれに bind して Listen し、`0.0.0.0`・`127.0.0.1`・tailnet 以外のアドレスでは Listen しない（[FR-A01](functional.md)）。片方だけ取得できたらそれだけで動作し、両方とも取得できなければサーバーを停止して GUI に理由を表示する。Listen 対象に変化があれば GUI に表示する。例外は、ビルドタグ `e2e` のテスト専用サーバー（ループバックで Listen する。[フロントエンド設計](../architecture/frontend.md) §9）だけで、本番のビルドには含めない |
+| NFR-S01 | tailscaled が持つ tailnet アドレス（IPv4・IPv6）のうち取得できたもののそれぞれに bind して Listen し、`0.0.0.0`・`127.0.0.1`・tailnet 以外のアドレスでは Listen しない（[FR-A01](functional.md)）。片方だけ取得できたらそれだけで動作し、両方とも取得できなければサーバーを停止して GUI に理由を表示する。Listen 対象に変化があれば GUI に表示する。例外は、ビルドタグ `e2e` のテスト専用サーバー（リモートルーターをループバックで Listen する。ホスト側の操作と偽の injector の入力の読み取りのための制御エンドポイントも、loopback の IP リテラルにだけ bind する。[フロントエンド設計](../architecture/frontend.md) §9）だけで、本番のビルドには含めない（`go build ./...` はタグなしで無視する） |
 | NFR-S02 | すべての HTTP / WebSocket リクエストで `Host` ヘッダーを検証し、tailnet IP または MagicDNS 名 + 設定ポート以外は拒否する（DNS リバインディング対策）。`Origin` ヘッダーを持つリクエスト（ブラウザ）は、同一オリジンのみ許可する |
 | NFR-S03 | Web UI の状態変更リクエスト（HTMX のフォーム送信）はカスタムヘッダー `X-Puppet-Remo: 1` を必須とする。このヘッダーはクロスオリジンではプリフライトを要求するため、CORS を許可しない本アプリでは他オリジンのページから送れない。Content-Type は強制しない（HTMX の既定のフォーム形式を使う）。`Origin` 検証（NFR-S02）と併用する。`/api/v1` は GET のみで状態を変更しない。MCP は Bearer 必須のため CSRF の対象外 |
 | NFR-S04 | **Bearer トークン**（形式・保存・照合の唯一の定義。他の文書はこれを参照する）: 形式は `prm_` + base64url（パディングなし）でエンコードした 32 バイト（256 bit）の暗号論的乱数（接頭辞を含めて 47 文字）。DB には、接頭辞を含むトークン文字列（UTF-8）の SHA-256 だけを保存する。照合は、提示されたトークン文字列の SHA-256 を計算し、保存済みのハッシュと定数時間で比較する。平文は発行時に一度だけ表示し、保存しない。認証失敗は同一デバイスにつき 1 分 10 回までとし、超過は 429 を返す。認証失敗は監査ログへ DB に追記する（M1。閲覧 UI は M3。[FR-AU01](functional.md)）。ログ・監査ログにトークン（平文・ハッシュとも）は出さない（NFR-S13） |
@@ -112,7 +112,7 @@
 | NFR-O01 | アプリ運用ログ（slog、JSON）を `%LOCALAPPDATA%\puppet-remo\logs\` にローテーション（10 MiB × 5 世代）で出力する。監査ログ（業務記録）とは別物。レベルは設定可。ホスト GUI の「ログ」画面（[FR-H13](functional.md)）が読む。読み方（ファイルを末尾から一定のブロックずつ逆向きに読む。ローテーション済みのファイルにも続く）は [フロントエンド §5.4](../architecture/frontend.md)・[コンポーネント §13.6](../components/overview.md) |
 | NFR-O02 | 配布は GitHub Releases の NSIS インストーラ（Wails 標準）。更新はアプリ内自動更新（NFR-S10）。更新の適用はホスト GUI の確認後を既定とし、リース保持中・接続中は適用しない |
 | NFR-O03 | OS 依存部（画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・オーバーレイ・アプリ起動（`CreateProcess`。M1.5）・ファイル選択ダイアログ（M1.5））はインターフェースの背後に置き、コアロジックは OS 非依存でテスト可能にする（将来の他 OS 対応のため） |
-| NFR-O04 | CI は GitHub Actions で実行し、すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動かす。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査する。Lit のテストと Playwright E2E（偽の platform・偽の tailnet により OS 非依存。[フロントエンド設計](../architecture/frontend.md) §9）は Web UI を作る M2 で足す。OS アダプタの実機スモークテストは手動とし、手順を `docs` に記載する |
+| NFR-O04 | CI は GitHub Actions で実行し、すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動かす。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査する。Lit のテストと Playwright E2E（偽の platform・偽の tailnet により OS 非依存。[フロントエンド設計](../architecture/frontend.md) §9）は、M2 の受け入れ条件には含めず、あとから CI の改善として別ジョブ `e2e` で足した（オーナーの決定。#64）。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`（`--with-deps`・sudo なし）で導入する。OS アダプタの実機スモークテストは手動とし、手順を `docs` に記載する |
 | NFR-O05 | データベースのスキーマ変更はバージョン付きマイグレーションで管理する |
 | NFR-O06 | OpenAI API と TypeSafe API はインターフェースの背後に置き（`Chooser` など）、CI のテストでは実 API を呼ばない（OpenAI はモックで `computer_call` の連鎖・安全チェック・上限・中断を、TypeSafe はモックで候補選択の受理・拒否・エスカレーション・縮退を検証する）。候補表の生成は UI Automation のフィクスチャ（スナップショット）で検証する。実 API を使うスモークテスト手順は `docs` に記載する |
 | NFR-O07 | **配布は Authenticode 署名を行わない**（初版・個人利用）。そのため初回実行時に SmartScreen の警告が出る。回避手順（「詳細情報」→「実行」）を README に記載する。更新の完全性は Ed25519 署名（NFR-S10）で検証する |
@@ -189,3 +189,4 @@
 | 1.15 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
 | 1.16 | 2026-11-02 | NFR-S13 に `key` の表示できる 1 文字のキーを既定で出力しない旨を追記 | #19 |
 | 1.17 | 2026-11-02 | NFR-S20 の起動の監査を fail-open から fail-closed（起動の前に「試行」の行を同期で書き、書けなければ起動しない。`audit_unavailable`）に改め、残存リスクの記述を更新 | #37（所有者の決定） |
+| 1.18 | 2026-11-02 | NFR-S01 の `e2e` ビルドの例外を実装に合わせて明確化（ループバックで Listen するのはビルドタグ `e2e` のテスト専用サーバーだけ。制御エンドポイントも同じタグだけで、loopback の IP リテラルにだけ bind する）。NFR-O04 の Lit のテストと Playwright E2E を、M2 の受け入れ条件ではなくあとから足した CI の改善（別ジョブ `e2e`）に改めた | #64（オーナーの決定） |

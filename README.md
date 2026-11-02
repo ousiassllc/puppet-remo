@@ -95,6 +95,8 @@ task test          # テスト
 task lint          # golangci-lint（ホスト OS と Windows）
 task templ:generate # .templ から _templ.go を生成（生成物はコミットする）
 task frontend:build # static/dist を作る（esbuild・Tailwind CSS・htmx）
+task frontend:test # Lit のテスト（ヘッドレス Chromium。task frontend:browsers で導入）
+task e2e           # Playwright の E2E（テスト専用サーバー -tags e2e。偽の platform・tailnet）
 task ci            # CI と同じ検査を一通り実行
 task package       # NSIS インストーラを作る（版は VERSION ファイル。RELEASE_VERSION= で上書き）
 task dev           # wails3 dev で開発する（Windows。別ターミナルで task templ:watch）
