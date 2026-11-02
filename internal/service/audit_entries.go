@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -38,7 +39,7 @@ func ToolAuditEntry(who domain.Actor, tool string, args map[string]any, leaseID 
 		DetailJSON:  marshalDetail(args),
 	}
 	if err != nil {
-		e.ErrorCode = string(domain.CodeOf(err))
+		e.ErrorCode = auditErrorCode(err)
 	}
 	return e
 }
@@ -52,8 +53,11 @@ func SchemaRejectedAuditEntry(who domain.Actor, tool string, took time.Duration)
 	return e
 }
 
-// auditResult はエラーを監査の result に写す。
+// auditResult はエラーを監査の result に写す。Judge の拒否（domain.ErrJudgeDenied。*Error ではない）も denied。
 func auditResult(err error) string {
+	if errors.Is(err, domain.ErrJudgeDenied) {
+		return auditDenied
+	}
 	switch domain.CodeOf(err) {
 	case "":
 		return auditOK
@@ -62,6 +66,15 @@ func auditResult(err error) string {
 		return auditDenied
 	}
 	return auditError
+}
+
+// auditErrorCode はエラーを監査の error_code に写す。API のエラーコード（domain.CodeOf）に加え、Judge の拒否は
+// タスクの error_code と同じ judge_denied（domain.TaskErrorJudgeDenied）。
+func auditErrorCode(err error) string {
+	if errors.Is(err, domain.ErrJudgeDenied) {
+		return domain.TaskErrorJudgeDenied
+	}
+	return string(domain.CodeOf(err))
 }
 
 // marshalDetail は detail を JSON にする。nil・空・変換できない場合は nil（NULL で保存される）。

@@ -15,7 +15,9 @@ import (
 
 // LeaseManager は操作リース（FR-L01〜L05）の状態の唯一の所有者（docs/components/overview.md §5.2）。
 //
-// 保持者種別は mcp と web（agent は M4）。解放はアイドルタイマー・キルスイッチ・明示解放・切断・強制剥奪（Revoke）。
+// 保持者種別は mcp・web・agent（M4。agent は Actor{Kind: agent, ClientID: 依頼したクライアント, SessionID: task_id}。FR-L08）。
+// 承認モードは agent にも、依頼したクライアント（ClientID）の設定で mcp と同じに適用する（FR-L07）。
+// 解放はアイドルタイマー・キルスイッチ・明示解放・切断・強制剥奪（Revoke）。
 // LeaseConfig に Approval と Clients があるとき（M3。FR-L07）、Acquire はクライアントの承認モードに従い、承認が要るなら
 // idle → pending_approval にして、ロックを手放してから Approval.Request でホストの結果を待つ（最大 60 秒）。
 // 許可で held、拒否・タイムアウト・取り下げ（ctx のキャンセル・キルスイッチ・セッション切断・クライアントの削除）で idle に戻る。
@@ -45,7 +47,8 @@ type LeaseManager interface {
 	ReleaseSession(who domain.Actor)
 	// Revoke は by が保持者を強制剥奪する（FR-L06）。by は host（ホスト GUI）か web（Web クライアント）で、それ以外は ErrInvalidArgument。
 	// 保持者がいなければ何もせず nil（冪等）。剥奪された保持者の Check は、次の Acquire が成功するまで（リースが空きのあいだ）ErrLeaseRevoked を返す。
-	// 監査は by を操作主体とする lease.revoke。agent の保持者の剥奪（タスクの中断）は M4。
+	// 監査は by を操作主体とする lease.revoke（detail に剥奪された保持者）。保持者が agent のときも reason revoked で解放され、
+	// Agent は lease イベント（Subscribe）でそのタスクを中断する（FR-L08）。
 	Revoke(by domain.Actor) error
 	// Check は以後の入力操作が許されるかの確認。活動時刻を更新する（アイドル解放の起点）。
 	// ErrLeaseRequired / ErrLeaseHeldByOther / ErrLeaseRevoked。

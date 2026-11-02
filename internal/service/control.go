@@ -34,7 +34,13 @@ type Control interface {
 	// （Monitor の物理ピクセル。3 で仮想デスクトップの物理座標へ変換し、モニターの外は ErrInvalidCoordinates）。
 	// web は暗黙にリースを取らない（未保持は ErrLeaseRequired）。PointerMove は監査しない（連続するカーソル移動で監査ログを埋めない）。
 	//
-	// Judge（4 の後。agent のみ）は M4 で足す。Wait はリース不要（KillSwitch の後に待つだけ）。
+	// ActorAgent は 4 の後に Judge（FR-G12）を通る（ControlConfig.Judge。無ければ RequireApproval 扱い）: Deny は domain.ErrJudgeDenied、
+	// RequireApproval は Approval.Request（ApprovalKindJudgeAction。クライアントの承認モードでは省略できない。ホストの拒否は
+	// ErrApprovalDenied、失効は ErrApprovalTimeout）。許可のあとはリース・InputGuard・対象ウィンドウを確かめ直す。mcp・web は Judge を通らない。
+	// Judge が見るウィンドウは、座標のある操作はその座標のウィンドウ（Drag は始点と終点）、FocusWindow・GetUITree は id のウィンドウ、
+	// キー・文字入力・クリップボードは前面のウィンドウ。agent のアクションは 1 件ごとに agent.step（kind = agent）で監査し
+	// （WithAgentStep の step_no・route。type の本文は記録しない）、Judge が allow 以外なら agent.judge も記録する（control_judge.go）。
+	// Wait はリース不要（KillSwitch の後に待つだけ）。
 	Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
 	// Screenshot は閲覧系（リース不要）。monitor は Index か domain.MonitorPrimary。format は "png"（既定）か "jpeg"。
 	Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
@@ -125,6 +131,10 @@ type ControlConfig struct {
 	Audit  AuditRecorder
 	Clock  domain.Clock
 	Logger *slog.Logger // nil なら slog.Default()。サムネイルの撮影の失敗などの出力先
+	// Judge と Approval は ActorAgent のアクションだけが使う（mcp・web だけなら nil でよい）。agent のアクションで Judge が nil なら
+	// RequireApproval 扱い、Approval が nil で承認が要るなら ErrApprovalDenied（fail-closed）。
+	Judge    Judge
+	Approval Approval
 	// Sleep は Wait の待ち。nil なら ctx のキャンセルで終わるタイマー。テストが差し替える。
 	Sleep func(ctx context.Context, d time.Duration) error
 }
@@ -157,6 +167,9 @@ type control struct {
 	guard     InputGuard
 	settings  repository.Settings
 	audit     AuditRecorder
+	judge     Judge
+	approval  Approval
+	log       *slog.Logger
 	thumbs    *thumbShooter // Audit がサムネイルに対応しないときは nil
 	clock     domain.Clock
 	sleep     func(ctx context.Context, d time.Duration) error
@@ -183,19 +196,21 @@ func NewControl(cfg ControlConfig) (Control, error) {
 		guard:     InputGuard{Windows: cfg.Windows},
 		settings:  cfg.Settings,
 		audit:     cfg.Audit,
+		judge:     cfg.Judge,
+		approval:  cfg.Approval,
+		log:       cfg.Logger,
 		clock:     cfg.Clock,
 		sleep:     cfg.Sleep,
 		inputSem:  make(chan struct{}, 1),
+	}
+	if c.log == nil {
+		c.log = slog.Default()
 	}
 	if c.sleep == nil {
 		c.sleep = sleepContext
 	}
 	if ta, ok := cfg.Audit.(thumbAuditor); ok {
-		log := cfg.Logger
-		if log == nil {
-			log = slog.Default()
-		}
-		c.thumbs = &thumbShooter{audit: ta, capture: cfg.Capturer, clock: cfg.Clock, log: log, sem: make(chan struct{}, thumbWorkers)}
+		c.thumbs = &thumbShooter{audit: ta, capture: cfg.Capturer, clock: cfg.Clock, log: c.log, sem: make(chan struct{}, thumbWorkers)}
 	}
 	cfg.Kill.RegisterCloser("input", func(context.Context) error { return c.input.ReleaseAll() })
 	return c, nil
@@ -214,11 +229,18 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 
 func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error) {
 	start := c.clock.Now()
-	res, leaseID, executed, err := c.do(ctx, who, op)
+	var tr judgeTrace
+	res, leaseID, executed, err := c.do(ctx, who, op, &tr)
 	if _, isMove := op.(domain.PointerMove); c.audit != nil && !isMove {
 		tool, args := describeOp(op, res)
-		c.addRecordedText(ctx, op, res, args)
-		entry := ToolAuditEntry(who, tool, args, leaseID, err, c.clock.Now().Sub(start))
+		took := c.clock.Now().Sub(start)
+		var entry repository.AuditEntry
+		if who.Kind == domain.ActorAgent {
+			entry = agentStepEntry(ctx, who, tool, args, leaseID, err, tr, took.Milliseconds())
+		} else {
+			c.addRecordedText(ctx, op, res, args)
+			entry = ToolAuditEntry(who, tool, args, leaseID, err, took)
+		}
 		var shot *thumbTarget
 		if err == nil && opChangesScreen(executed) {
 			t := thumbTargetOf(who, executed)
@@ -240,7 +262,8 @@ func (c *control) recordAudit(ctx context.Context, e repository.AuditEntry, shot
 }
 
 // do は検査と実行を行い、結果・保持者のリース ID・実行した計画の op（物理座標へ変換済み。実行まで進まなければ nil）を返す。
-func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op) (Result, string, domain.Op, error) {
+// tr には agent の Judge の経過を入れる（監査の行用）。
+func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *judgeTrace) (Result, string, domain.Op, error) {
 	if c.kill.Active() {
 		return Result{}, "", nil, domain.ErrKillSwitchActive
 	}
@@ -257,6 +280,11 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op) (Resul
 	}
 	if err := c.guard.Check(ctx, p.op, p.monitors); err != nil {
 		return Result{}, leaseID, nil, c.withOwnWindows(ctx, err)
+	}
+	if who.Kind == domain.ActorAgent {
+		if err := c.judgeAgent(ctx, who, p, tr); err != nil {
+			return Result{}, leaseID, nil, err
+		}
 	}
 	// リースの検査から実行までの間に発動したキルスイッチを取りこぼさない（Trigger は状態を先に立てる）。
 	if c.kill.Active() {

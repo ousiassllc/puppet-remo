@@ -26,7 +26,7 @@ func registerNotepad(t *testing.T, e *ctlEnv) domain.LaunchableApp {
 	return a
 }
 
-// lastLaunchEntry は直近の監査エントリが tool.launch_app であることを確かめて返す。
+// lastLaunchEntry は直近の監査エントリが起動の記録（mcp は tool.launch_app、agent は agent.step の tool = launch_app）であることを確かめて返す。
 func lastLaunchEntry(t *testing.T, e *ctlEnv) repository.AuditEntry {
 	t.Helper()
 	entries := e.audit.Entries()
@@ -34,8 +34,10 @@ func lastLaunchEntry(t *testing.T, e *ctlEnv) repository.AuditEntry {
 		t.Fatal("no audit entry")
 	}
 	en := entries[len(entries)-1]
-	if en.Kind != "tool" || en.Event != "tool.launch_app" || en.Tool != "launch_app" {
-		t.Fatalf("entry = %+v, want tool.launch_app", en)
+	isMCP := en.Kind == "tool" && en.Event == "tool.launch_app"
+	isAgent := en.Kind == "agent" && en.Event == "agent.step"
+	if (!isMCP && !isAgent) || en.Tool != "launch_app" {
+		t.Fatalf("entry = %+v, want tool.launch_app (or agent.step with tool launch_app)", en)
 	}
 	return en
 }
@@ -440,19 +442,12 @@ func (r failingAppReader) Get(context.Context, string) (domain.LaunchableApp, er
 	return domain.LaunchableApp{}, r.err
 }
 
-// agent 種別の主体。M1 のリースの保持者は mcp だけ（domain.ActorKind.CanHoldLease。agent は M4）なので、agent は
-// リースを保持できず、暗黙の取得もできない: lease_required で拒否され、起動しない。監査の actor_type は agent になる。
-// リース保持中の agent による成功は TestControlLaunchByLeaseHoldingAgentSucceeds（偽のリース管理）が固定する。agent が本物の
-// LeaseManager の保持者になれるようになったら（M4）、そちらを本物のリースに置き換える。
+// agent 種別の主体。リースを保持していない agent は、暗黙の取得もできない（取得するのは Agent の run_task。FR-L08）:
+// lease_required で拒否され、起動しない。監査は agent.step（kind = agent）で actor_type は agent。
 func TestControlLaunchAgentWithoutLeaseIsRejectedAndAuditedAsAgent(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
-	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", SessionID: "task-1"}
-
-	if _, err := e.leases.Acquire(context.Background(), agent); err == nil {
-		t.Fatal("an agent acquired the lease: replace this test with a successful agent launch")
-	}
-	e.audit.entries = nil
+	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", ClientID: "client-a", SessionID: "task-1"}
 
 	_, err := e.control.Launch(context.Background(), agent, app.ID)
 	if !errors.Is(err, domain.ErrLeaseRequired) {
@@ -465,7 +460,8 @@ func TestControlLaunchAgentWithoutLeaseIsRejectedAndAuditedAsAgent(t *testing.T)
 		t.Error("an agent must not acquire the lease implicitly")
 	}
 	en := lastLaunchEntry(t, e)
-	if en.Result != "denied" || en.ErrorCode != "lease_required" || en.ActorType != domain.ActorAgent || en.SessionID != agent.SessionID {
+	if en.Kind != "agent" || en.Result != "denied" || en.ErrorCode != "lease_required" || en.ActorType != domain.ActorAgent ||
+		en.SessionID != agent.SessionID || en.TaskID != agent.SessionID {
 		t.Errorf("entry = %+v", en)
 	}
 }
@@ -724,44 +720,18 @@ func TestLaunchAuditDetailOnlyRecordsKnownReasons(t *testing.T) {
 	}
 }
 
-// agentLease は、リース管理の窓口が agent を保持者として扱う状況（M4 でリースに agent が入ったとき）を作る偽物。
-// 本番の LeaseMachine は M1 では agent を保持者にしない（domain.ActorKind.CanHoldLease）ので、検査（Check）と保持者（Holder）だけを
-// 差し替え、他の操作は本物の LeaseManager に任せる。Control.Launch が操作主体の種別に依存せず、リースの検査の結果と保持者の
-// リース ID だけで進むことを確かめる。
-type agentLease struct {
-	LeaseManager
-	holder Holder
-	checks []domain.Actor
-}
-
-func (l *agentLease) Check(who domain.Actor) error {
-	l.checks = append(l.checks, who)
-	if !l.holder.Actor.SameSession(who) {
-		return domain.ErrLeaseHeldByOther
-	}
-	return nil
-}
-
-func (l *agentLease) Holder() (Holder, bool) { return l.holder, true }
-
 // リースを保持している agent は、許可リストの同じ AppRegistry のアプリを起動できる（M4 の Agent も別の許可リスト・起動経路を持たない）。
-// 起動するのは登録された値だけで、監査は actor_type=agent・保持者のリース ID 付き・パスや引数なし。リースを保持していない他の agent は
-// 起動できない（M1.5 の mcp と同じ検査）。agent は暗黙にリースを取得しない（取得は Check の失敗後も Acquire を呼ばない）。
+// 起動するのは登録された値だけで、監査は agent.step（actor_type=agent・task_id・保持者のリース ID 付き・パスや引数なし）。
+// リースを保持していない他の agent は起動できない（M1.5 の mcp と同じ検査）。agent は暗黙にリースを取得しない。
 func TestControlLaunchByLeaseHoldingAgentSucceeds(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
-	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", SessionID: "task-1"}
-	leases := &agentLease{LeaseManager: e.leases, holder: Holder{LeaseID: "lease-agent", Actor: agent}}
-	ctl, err := NewControl(ControlConfig{
-		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
-		Launcher: e.launcher, Apps: e.apps, Leases: leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", ClientID: "client-a", SessionID: "task-1"}
+	lease := mustAcquire(t, e, agent)
+	e.audit.entries = nil
 	ctx := context.Background()
 
-	res, err := ctl.Launch(ctx, agent, app.ID)
+	res, err := e.control.Launch(WithAgentStep(ctx, AgentStep{No: 2, Route: AgentRouteOpenAI}), agent, app.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,34 +746,29 @@ func TestControlLaunchByLeaseHoldingAgentSucceeds(t *testing.T) {
 	if spec.ExePath != appNotepad || !slices.Equal(spec.Args, []string{appArgMark}) || spec.WorkingDir != appWorkMark {
 		t.Errorf("spec = %+v, want the registered values only", spec)
 	}
-	if _, ok := e.leases.Holder(); ok {
-		t.Error("the launch acquired the real lease")
-	}
-	if len(leases.checks) != 1 || !leases.checks[0].SameSession(agent) {
-		t.Errorf("lease checks = %+v, want one check for the agent", leases.checks)
-	}
 
 	en := lastLaunchEntry(t, e)
-	if en.Result != "ok" || en.ActorType != domain.ActorAgent || en.SessionID != agent.SessionID || en.ClientLabel != agent.Label ||
-		en.LeaseID != "lease-agent" || en.ErrorCode != "" || en.DurationMS == nil {
+	if en.Kind != "agent" || en.Result != "ok" || en.ActorType != domain.ActorAgent || en.SessionID != agent.SessionID || en.TaskID != agent.SessionID ||
+		en.ClientLabel != agent.Label || en.LeaseID != lease.ID || en.ErrorCode != "" || en.DurationMS == nil ||
+		en.StepNo == nil || *en.StepNo != 2 {
 		t.Errorf("entry = %+v", en)
 	}
 	d := auditDetail(t, en)
-	if len(d) != 4 || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["pid"] != float64(res.PID) || d["reused_existing_window"] != true {
-		t.Errorf("detail = %v, want exactly app_id, label, pid and reused_existing_window", d)
+	if len(d) != 5 || d["route"] != "openai" || d["app_id"] != app.ID || d["label"] != "メモ帳" || d["pid"] != float64(res.PID) || d["reused_existing_window"] != true {
+		t.Errorf("detail = %v, want route, app_id, label, pid and reused_existing_window", d)
 	}
 	assertNoSecrets(t, en, nil)
 
 	// 保持者でない別の agent は、同じ検査で拒否され、起動しない。
-	other := domain.Actor{Kind: domain.ActorAgent, Label: "agent", SessionID: "task-2"}
-	if _, err := ctl.Launch(ctx, other, app.ID); !errors.Is(err, domain.ErrLeaseHeldByOther) {
+	other := domain.Actor{Kind: domain.ActorAgent, Label: "agent", ClientID: "client-a", SessionID: "task-2"}
+	if _, err := e.control.Launch(ctx, other, app.ID); !errors.Is(err, domain.ErrLeaseHeldByOther) {
 		t.Fatalf("other agent: err = %v, want lease_held_by_other", err)
 	}
 	if n := len(e.launcher.CallsTo("Launch")); n != 1 {
 		t.Errorf("Launch calls = %d, want still 1", n)
 	}
-	if _, ok := e.leases.Holder(); ok {
-		t.Error("a rejected agent acquired the real lease implicitly")
+	if h, ok := e.leases.Holder(); !ok || !h.Actor.SameSession(agent) {
+		t.Error("a rejected agent changed the lease holder")
 	}
 	if en := lastLaunchEntry(t, e); en.Result != "denied" || en.ErrorCode != "lease_held_by_other" || en.ActorType != domain.ActorAgent {
 		t.Errorf("entry = %+v", en)

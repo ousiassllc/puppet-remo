@@ -623,7 +623,7 @@ func TestLeaseAcquireFailsClosedWhenClientUnreadable(t *testing.T) {
 func TestLeaseAcquireInvalidActorIsStillInvalidArgumentWithApproval(t *testing.T) {
 	le := newLeaseApprovalEnv(t, domain.ApprovalAlways)
 	for _, who := range []domain.Actor{
-		{Kind: domain.ActorAgent, ClientID: "client-a", SessionID: "task"},
+		{Kind: domain.ActorAgent, ClientID: "client-a"},
 		{Kind: domain.ActorMCP, ClientID: "client-a"},
 	} {
 		if _, err := le.leases.Acquire(context.Background(), who); !errors.Is(err, domain.ErrInvalidArgument) {
