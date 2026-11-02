@@ -1165,6 +1165,27 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `CandidateTable.Validate` | 表の ID は候補をそのまま返す。`ChoiceReobserve` / `ChoiceAbstain` は `Kind` が `CandidateReobserve` / `CandidateAbstain`、`ID` が選択の文字列の `Candidate` を返す（空の表でも受理）。それ以外は `ErrInvalidChoice` を `%w` で包んだエラーと `Candidate{}`。エラー文に Jev の応答（入力）は載せない |
 | リースの保持者（FR-L08） | `ActorKind.CanHoldLease()` は `mcp`・`web`・`agent`。`LeaseMachine` の `Acquire`・`Request` は `agent` を受け付け、`agent` の保持中は他の種別が `lease_held_by_other`（`Detail["holder_kind"] = agent`）。`Revoke` は従来どおり `host` / `web` だけが呼べ、`agent` の保持者も剥奪できる（`ErrLeaseRevoked` が次の `Check`）。剥奪に伴うタスクの中断（`cancelled`）は `domain` ではなく `service` の責務 |
 
+### 13.8 openai（§4.3）
+
+M4（#19）で `internal/openai` を実装した（`domain` だけを import する。依存は `github.com/openai/openai-go/v3` v3.90.0）。§4.3 のシグネチャは変えず、型・規則を足した点と、仕様が定めていなかった点の選択を記す。
+
+| 項目 | 設計（§4.3・FR-G04〜G06・G24） | 実装 |
+|------|------|------|
+| `StepOutput` | `CallID` | `CallID != ""` は `computer_call` が返ったことと同値（空なら最終回答で、`FinalText` に入る）。`screenshot` アクションは `Actions` に含めない（`agent` は各ステップの後に必ず新しい画面を撮って返す）。`computer_call` に `screenshot` しか無いときは、`CallID` あり・`Actions` 空 |
+| `Actions` の座標 | 縮小座標 | 縮小座標のまま写す（物理座標への変換は `Control.Do` の責務）。`Monitor` は `domain.MonitorPrimary` |
+| アクションの写像（FR-G05） | `click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot` | `click`: `left` / `right` → 左・右、`wheel` → 中ボタン、`back` / `forward` は FR-M05 に無いので未対応。`double_click` → `Click{Count: 2}`。`drag` → 最初の点から最後の点への `Drag`（途中の点は捨てる。2 点未満は未対応）。`move` → `MouseMove`。`keypress` → `domain.ParseKeyCombo`（`keys[]` を `+` で連結。`CTRL` / `ESC` / `ArrowDown` などの別名は小文字化と別名表で写す）。`type` → `TypeText`。`wait` → `Wait` |
+| 保持キー（`keys`） | — | `click` / `double_click` / `drag` の `keys` は修飾キー（`ctrl` / `shift` / `alt` / `win` とその別名）だけ `Mods` に写す。`move` / `scroll` の `keys` と、修飾キー以外は `domain.Op` に載せられないので未対応 |
+| 未対応 | `ErrUnsupportedAction` | 未知の `type`・上記の写せないものは `errors.Is(err, domain.ErrUnsupportedAction)` を満たすエラー（`type` の本文・キー名の中身は文言に載せない）。`computer_call` 内に 1 つでもあれば、そのステップのアクションは 1 つも返さない |
+| `scroll`（**オーナーの確認が要る暫定値**） | `amount` はノッチ（FR-M07）。OpenAI は `scroll_x` / `scroll_y` をピクセルで返す | 換算の規則が仕様に無いため、固定の 100 px = 1 ノッチ（`scrollPixelsPerNotch`）、端数は切り上げ（0 でない移動は最低 1 ノッチ）とした暫定値。縦（`up` / `down`）→ 横（`left` / `right`）の順に別々の `Scroll` にし、1 つが 50 ノッチ（FR-M07 の上限）を超えるときは複数に分ける。両方 0 なら `Actions` に出さない。実機のスモークで体感を確認して決める |
+| `wait` の時間 | 固定のみ | OpenAI の `wait` は時間を持たないため、固定 2 秒（FR-M10 の上限 10 秒以内） |
+| 要求 | `store: false`・`previous_response_id` なし・ツールは GA の `computer` | `ComputerToolParam`（`{type:"computer"}`）。`input` は、最初のユーザーメッセージ（`input_text` の指示、あれば高速パスの要約、`input_image`: PNG の data URL・`detail: "original"`）、出力アイテム（`OutputItem.Raw`。SDK が JSON の空白を詰めるだけで、キーの順序・値・未知のフィールドは変えない）、`computer_call_output`（`acknowledged_safety_checks` は `History.AddComputerOutput` の `ack` をそのまま返す）。モデル名は `StepInput.Model` |
+| 古いスクリーンショット（FR-G24） | プレースホルダのテキスト | 直近 `keep` 枚だけ画像つき（`keep < 1` は 1）。最初のユーザーメッセージの画像も数える。置き換えた最初のメッセージは `input_text` の `[screenshot omitted]`、古い `computer_call_output` の `output` は文字列 `"[screenshot omitted]"` になる。**この形を実 API が受理するかは未確認**（§12.2。受理されない場合は `History.computerOutput` を直す） |
+| `include` | §12.2: 実 API で確認 | `Config.Include []string`（既定は空 = `include` を送らない）。`reasoning.encrypted_content` が要るかは**実 API では未確認**。確認後に既定値を決める |
+| キー・エラー（NFR-S14・S16） | キーをログ・エラーに出さない | キーは `Step` のたびに `key` 関数から読み、SDK へはリクエストごとの `WithAPIKey` で渡す（環境変数 `OPENAI_API_KEY`・`OPENAI_BASE_URL`・`OPENAI_ORG_ID` などは読まない）。`http.RoundTripper`（`safeTransport`）が、トランスポートの失敗の文言から `Authorization` の値とキーを伏せる。SDK のエラー（`Request` に `Authorization` を抱える）は返さず、HTTP の失敗は `*openai.APIError`（`Status`・`Type`・`Code`・`Message`。キー・ヘッダー・要求本文を持たない。401 は `Message` を空にする。本文のキーは伏せ、`Message` は 300 文字まで）、それ以外は文言を伏せた `Unwrap` 可能なエラー（`errors.Is(err, context.DeadlineExceeded)` など）に包む。`agent` は `errors.As` で `*APIError` の 401 を GUI へ通知し、残りを `openai_error` にする |
+| タイムアウト・再試行 | 60 秒・再試行なし | `Config.Timeout`（0 なら 60 秒）の `context.WithTimeout`、SDK の再試行は `WithMaxRetries(0)` で無効 |
+| `Config` のテスト用の欄 | — | `BaseURL`・`Transport` はテスト（`httptest`）専用の差し替え口で、設定項目ではない。モデル名と `BaseURL` 以外の前提（プロバイダー・プラン）は置かない |
+| 応答の検査 | — | `status` が `failed` / `cancelled` / `incomplete` は通常のエラー。`computer_call` が 2 つ以上、`call_id` が空も通常のエラー。旧形式の単一 `action` も受理する。最終回答は `message` の `output_text`（と `refusal`）を連結 |
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -1209,3 +1230,4 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | 1.38 | 2026-11-02 | §13.2 の「未実装（M3〜M4）」を M4 の実装に更新し、§13.7 に M4 の domain の実装差分（Judge の型・タスクの `error_code`・高速パスの候補表の確定事項・`agent` のリース保持者）を追記 | #19 |
 | 1.38 | 2026-11-02 | §13.4 に `repository.Tasks`（`Create`・`Get`・`Update`・`List`・`ListActive`・`AbortActive`・`PurgeFinishedBefore`。終了状態の不変・キーセットのページ送り）、`Audit.ListByTask`・`AuditQuery.TaskID` を追記 | #19 |
 | 1.38 | 2026-11-02 | §13.3 の `SecretStore`（Windows 実装 `windows.NewSecretStore()`・実際のターゲット名・空の値の拒否）と `Platform.Secrets`（必須）を追記 | #19 |
+| 1.38 | 2026-11-02 | §13.8 に `openai`（§4.3）の実装を追記（アクションの写像・スクロールの換算の暫定値・古いスクリーンショットの置き換え・`include` の既定・キーとエラーの扱い） | #19 |
