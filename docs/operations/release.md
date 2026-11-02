@@ -7,7 +7,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 | `develop` | ナイトリー（プレリリース） | `.github/workflows/nightly.yml` |
 | `main` | 正式版 | `.github/workflows/release.yml` |
 
-すべてのジョブはセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動きます。Windows の runner は使いません（`GOOS=windows` のクロスビルドと、NSIS の `makensis` を Linux で動かします）。使うトークンは `GITHUB_TOKEN`（`contents: write`）と、更新用の署名の Secret（`MINISIGN_SECRET_KEY`・任意で `MINISIGN_PASSWORD`。[署名](#署名更新用)）です。Secret が無くても CI は緑のまま（署名だけを省いて公開します）。Authenticode のコード署名はしません（[NFR-O07](../requirements/non-functional.md)。SmartScreen の警告は [README](../../README.md#smartscreen-の警告について) を参照）。
+すべてのジョブは GitHub のランナー（`ubuntu-latest`）で動きます。Windows の runner は使いません（`GOOS=windows` のクロスビルドと、NSIS の `makensis` を Linux で動かします）。使うトークンは `GITHUB_TOKEN`（`contents: write`）と、更新用の署名の Secret（`MINISIGN_SECRET_KEY`・任意で `MINISIGN_PASSWORD`。[署名](#署名更新用)）です。Secret が無くても CI は緑のまま（署名だけを省いて公開します）。Authenticode のコード署名はしません（[NFR-O07](../requirements/non-functional.md)。SmartScreen の警告は [README](../../README.md#smartscreen-の警告について) を参照）。
 
 ## 開発の流れ
 
@@ -116,7 +116,7 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 
 1. Go を setup アクションで、bun を [`./.github/actions/setup-bun`](../../.github/actions/setup-bun/action.yml)（[`scripts/ci/install-bun.sh`](../../scripts/ci/install-bun.sh)。版と SHA-256 を固定して `RUNNER_TEMP` に展開する。sudo 不要）で入れる（キャッシュは `RUNNER_TEMP`）。
 2. `task`（版固定）と `wails3`（`go.mod` の版）を `go install` で入れる。`wails3` は `CGO_ENABLED=0` で入れる（cgo が有効だと Linux では gtk4・webkitgtk-6.0 が要る）。
-3. `makensis` が PATH に無ければ、`apt-get download nsis nsis-common` と `dpkg -x` で `RUNNER_TEMP` に展開する（sudo 不要。[`scripts/ci/install-nsis.sh`](../../scripts/ci/install-nsis.sh)）。runner に apt が無いときは失敗するので、NSIS を runner に入れること。
+3. `makensis` が PATH に無ければ、`apt-get download nsis nsis-common` と `dpkg -x` で `RUNNER_TEMP` に展開する（sudo 不要。[`scripts/ci/install-nsis.sh`](../../scripts/ci/install-nsis.sh)）。（ubuntu-latest には NSIS が入っていないので、このスクリプトで入れる。）
 4. `task windows:package RELEASE_VERSION=<X.Y.Z> APP_VERSION=<main.version>` を実行する。
 5. インストーラを改名し、SHA-256 を作る。exe に `main.version` が入っていることも確かめる。
 

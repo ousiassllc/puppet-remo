@@ -477,6 +477,17 @@ assert_eq "署名(インストーラが無い): 失敗" 1 "$rc"
 unset MINISIGN_SECRET_KEY
 
 # ----------------------------------------------------------------
+# ワークフローのランナー: 公開リポジトリではセルフホストのジョブが動かない（組織の runner グループが公開リポジトリを許可しない）ので、
+# すべてのジョブを GitHub のランナー（ubuntu-latest）で走らせる。runs-on にそれ以外を書いたら失敗させる。
+
+repo_root=$(cd "$here/../.." && pwd)
+for wf in "$repo_root"/.github/workflows/*.yml; do
+  name=$(basename "$wf")
+  runs_on=$(sed -n 's/^[[:space:]]*runs-on:[[:space:]]*//p' "$wf" | sort -u)
+  assert_eq "ランナー($name): runs-on は ubuntu-latest だけ" "ubuntu-latest" "$runs_on"
+done
+
+# ----------------------------------------------------------------
 
 printf '\n%d 件成功、%d 件失敗\n' "$passed" "$failed"
 [[ $failed -eq 0 ]]

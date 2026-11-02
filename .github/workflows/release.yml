@@ -4,7 +4,7 @@ name: Release
 # GitHub Releases に公開する。人はタグを打たない。タグ v<X.Y.Z> と Release はこのワークフローが作る。
 # 手動実行（workflow_dispatch）は使わない。CI が成功以外（失敗・キャンセル）のときは何もしない。
 # 版の決め方は scripts/ci/next-version.sh、運用は docs/operations/release.md。
-# すべてのジョブはセルフホストの Linux ランナーで走らせる。使うトークンは GITHUB_TOKEN と、署名の Secret（MINISIGN_SECRET_KEY・MINISIGN_PASSWORD。任意）。
+# すべてのジョブは GitHub のランナー（ubuntu-latest）で走らせる。使うトークンは GITHUB_TOKEN と、署名の Secret（MINISIGN_SECRET_KEY・MINISIGN_PASSWORD。任意）。
 # Authenticode の署名はしない。更新用の minisign 署名は、Secret があるときだけ付ける（docs/operations/release.md「署名」）。
 #
 # workflow_run は既定ブランチ（main）のこのファイルで動く。対象の commit は workflow_run の head_sha（github.sha ではない）。
@@ -28,7 +28,7 @@ jobs:
     name: release installer
     # push の CI が成功したときだけ。pull_request の CI や、失敗・キャンセルのときは何もしない。
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write

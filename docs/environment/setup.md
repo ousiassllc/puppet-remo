@@ -12,7 +12,7 @@
 | テンプレート | templ（`go.mod` の版に固定。生成物の `_templ.go` はコミットする） |
 | フロントエンドのビルド | bun（パッケージマネージャ兼ランタイム）、esbuild、Tailwind CSS CLI。成果物は `static/dist`（本番ビルドで `go:embed`） |
 | タスクランナー | [Task](https://taskfile.dev/)（`Taskfile.yml`。Wails の共通タスクと Windows 向けのビルドは `build/Taskfile.yml`・`build/windows/Taskfile.yml`） |
-| CI/CD | GitHub Actions。すべてのジョブをセルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動かす |
+| CI/CD | GitHub Actions。すべてのジョブを GitHub のランナー（`ubuntu-latest`）で動かす |
 | Lint | golangci-lint（v2。`.golangci.yml`） |
 | Format | gofmt |
 | Linterly | 未導入 |
@@ -83,7 +83,7 @@ Linux / macOS では、Windows 専用のコード（`//go:build windows`）を�
 
 ## CI/CD
 
-GitHub Actions。すべてのジョブは、セルフホストの Linux ランナー（`[self-hosted, Linux, X64]`）で動く。Windows のランナーは使わない（Windows 向けのコードの検査は `GOOS=windows` のクロスコンパイルだけ。Windows 実機の確認は CI で行わない）。ツール（Go・bun・golangci-lint・templ）はランナーに入っている前提にせず、ジョブの中で導入する。Go・bun などのキャッシュは、ジョブ専用の一時領域（`RUNNER_TEMP`）に置く。
+GitHub Actions。すべてのジョブは、GitHub のランナー（`ubuntu-latest`）で動く。Windows のランナーは使わない（Windows 向けのコードの検査は `GOOS=windows` のクロスコンパイルだけ。Windows 実機の確認は CI で行わない）。ツール（Go・bun・golangci-lint・templ）はランナーのイメージに入っている版に頼らず、ジョブの中で導入する。Go・bun などのキャッシュは、ジョブ専用の一時領域（`RUNNER_TEMP`）に置く。
 
 | ワークフロー | トリガー | 内容 |
 |--------------|----------|------|
@@ -100,7 +100,7 @@ GitHub Actions。すべてのジョブは、セルフホストの Linux ラン�
 | `go (linux)` | gofmt の差分チェック、`go build ./...`、`go vet ./...`、`scripts/check-imports.sh`、`go test -race ./...` |
 | `go (GOOS=windows build/vet)` | `GOOS=windows GOARCH=amd64` の `go build`・`go vet`・import 規則 |
 | `frontend` | templ（`go.mod` の版）の導入 → `templ generate` の差分チェック → `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p .` → `go build -tags production ./...`（Linux と `GOOS=windows`）→ `go test -tags production ./static/...` |
-| `e2e`（#64） | `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p e2e` → `bunx playwright install chromium`（`PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`。`--with-deps`・sudo なし）→ Lit のテスト（`bun run test`）→ `go build -tags e2e ./...` → `go vet -tags e2e ./...` → `go test -race -tags e2e`（テスト専用サーバーのテスト）→ Playwright の E2E（`bun run e2e`）。templ は再生成しない（コミット済みの `_templ.go` を使う） |
+| `e2e`（#64） | `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p e2e` → `bunx playwright install --with-deps chromium`（`PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`）→ Lit のテスト（`bun run test`）→ `go build -tags e2e ./...` → `go vet -tags e2e ./...` → `go test -race -tags e2e`（テスト専用サーバーのテスト）→ Playwright の E2E（`bun run e2e`）。templ は再生成しない（コミット済みの `_templ.go` を使う） |
 | `lint` | golangci-lint v2.15.0（ホスト OS と `GOOS=windows`、`-tags e2e`） |
 | `release scripts` | 配信スクリプトのテスト（`scripts/ci/test-release-scripts.sh`）と `actionlint` |
 | `installer (build only)` | インストーラをビルドだけして（公開しない）、ランナーでの道具（task・wails3・makensis・gh）の導入を確かめる |
@@ -189,3 +189,4 @@ OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義�
 | 1.0 | 2026-11-01 | 新規作成。Go・Wails v3・Task・GitHub Actions・golangci-lint・gofmt・templ・bun によるフロントエンドのビルド・Lefthook の現状を記載。Linterly は未導入と明記 | #40 |
 | 1.1 | 2026-11-01 | フロントエンドの型検査の実行条件に `static/src/*.ts`（`static/src` 直下）を追加 | レビュー指摘（`**/` は直下に一致しない） |
 | 1.2 | 2026-11-02 | Lit のテストと Playwright の E2E の実行手順（`task frontend:test`・`task e2e` など）、`e2e` ジョブ、Chromium の導入（`PLAYWRIGHT_BROWSERS_PATH`・`--with-deps` なし・sudo なし）、`lint` ジョブの `-tags e2e`、`task ci` の項目を追記 | #64（オーナーの決定） |
+| 1.3 | 2026-11-02 | CI/CD の実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。`e2e` ジョブの Chromium は `--with-deps` 付き | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |

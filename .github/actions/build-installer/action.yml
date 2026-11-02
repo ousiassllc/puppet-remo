@@ -1,6 +1,6 @@
 name: build-installer
 description: >-
-  Wails の Windows 向け NSIS インストーラを、セルフホストの Linux runner で作る。
+  Wails の Windows 向け NSIS インストーラを、GitHub のランナー（ubuntu-latest）で作る。
   道具（Go・bun・task・wails3・makensis）はこのアクションの中で入れる。署名はしない。
   呼び出す側が先に actions/checkout を済ませておくこと（リポジトリの内容を使う）。
 

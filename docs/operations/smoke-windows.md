@@ -1,6 +1,6 @@
 # Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8。M2: 継続キャプチャ `Capturer.Watch` は §3.9）
 
-CI はセルフホストの Linux ランナーで動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。継続キャプチャ（DXGI・`Capturer.Watch`）は §3.9、操作中オーバーレイは §4.12 で確認する。
+CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。継続キャプチャ（DXGI・`Capturer.Watch`）は §3.9、操作中オーバーレイは §4.12 で確認する。
 
 ## 1. 準備
 
