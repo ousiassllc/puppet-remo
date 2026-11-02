@@ -200,6 +200,8 @@ erDiagram
 
 保守: `last_seen_at` から 7 日を過ぎた行を定期削除する。`pending` で `expires_at` を過ぎた行は `expired` に更新する。レート制限（FR-A07）は件数カウントをメモリで行うため、DB には持たない。
 
+**接続要求の履歴の保持期間（決定事項。#52）**: 7 日・固定とする。設定項目にしない。許可・拒否・失効・`pending` のどの状態も同じ基準（`last_seen_at` から 7 日を過ぎたら削除。ちょうど 7 日の行は残す）で、処理済みだけを長く残す別扱いはしない。履歴の件数が増えないため、ページの上限（1 ページ 20 件）と索引（マイグレーション 0003）は変えない。`Expire` の実装も変えず、`TestConnRequestsExpireDeletesEveryStatusAfterSevenDays` が全状態を 7 日で消すことを確かめる。FR-A06（1 デバイス 1 件の集約）は変わらない。長期の記録は監査ログ（`audit_logs`。FR-AU01）が担う。
+
 M1 の実装の補足: 期限切れの `pending` は、保守で `expired` にする前でも一覧（`ListPending`）に含めず、許可もできない（許可は conflict）。同じデバイスの `pending` を 5 秒以内に更新済みなら、`last_seen_at` と `request_count` を DB に書かない（連続リクエストによる書き込みの抑止）。同じデバイスの期限切れの `pending` は、新しい要求を作る前に `expired` にする。
 
 ### settings
@@ -573,3 +575,4 @@ erDiagram
 | 1.26 | 2026-11-02 | `agent.consent` の `system`（OpenAI 401）・`openai_unauthorized`、`error_code` に `invalid_coordinates`、`agent.step` の `pass` と行動しないパスの `step_no` の規則、`agent_enabled` の説明の訂正 | #19 のレビュー指摘 |
 | 1.27 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
 | 1.28 | 2026-11-02 | `key` の監査の `keys` を、表示できる 1 文字のキーは `[char]` に伏せる規則を追記 | #19 |
+| 1.29 | 2026-11-02 | 接続要求の履歴の保持期間を 7 日・固定（設定項目にしない。全状態を `last_seen_at` から 7 日で削除。ページ上限・索引 0003・`Expire`・FR-A06 は変えない）と決定事項に明記 | #52（所有者の決定） |

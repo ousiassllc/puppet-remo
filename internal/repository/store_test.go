@@ -590,6 +590,57 @@ func TestConnRequestsExpire(t *testing.T) {
 	}
 }
 
+// 接続要求の履歴の保持期間は 7 日・固定（er.md の決定事項。#52）。処理済み（許可・拒否）も失効も pending も、
+// last_seen_at から 7 日を過ぎたら一律に削除し、ちょうど 7 日の行は残す。定数 ConnRequestRetention ではなく
+// 7 日の値そのもので確かめ、定数を変えると落ちるようにする。
+func TestConnRequestsExpireDeletesEveryStatusAfterSevenDays(t *testing.T) {
+	ctx := context.Background()
+	db, clock := openTestDB(t)
+	rs := db.ConnRequests()
+	start := clock.Now()
+	if err := db.Clients().Create(ctx, newClient("c1", "nodeA")); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"approved", "denied", "expired", "pending"} {
+		if _, _, err := rs.UpsertPending(ctx, ConnRequest{
+			ID: id, StableNodeID: "node-" + id, LoginName: "l", DisplayName: "d", RemoteIP: "ip",
+			FirstSeenAt: start, LastSeenAt: start, ExpiresAt: start.Add(24 * time.Hour * 30),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := rs.Decide(ctx, "approved", ConnApproved, new("c1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Decide(ctx, "denied", ConnDenied, nil); err != nil {
+		t.Fatal(err)
+	}
+	// "expired" は expires_at を過ぎた pending を Expire で失効にして作る（手前の呼び出しで状態を揃える）。
+	if _, err := db.sql.ExecContext(ctx, `UPDATE connection_requests SET expires_at = ? WHERE id = 'expired'`, toMS(start.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Expire(ctx, start.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	// pending の期限を保持期間より先にしてあるので、削除の対象かどうかは last_seen_at だけで決まる。
+	const sevenDays = 7 * 24 * time.Hour
+	if err := rs.Expire(ctx, start.Add(sevenDays)); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM connection_requests`); n != 4 {
+		t.Errorf("rows at exactly 7 days = %d, want 4 (kept)", n)
+	}
+	if got := count(t, db, `SELECT COUNT(DISTINCT status) FROM connection_requests`); got != 4 {
+		t.Errorf("distinct statuses before deletion = %d, want 4 (approved/denied/expired/pending)", got)
+	}
+	if err := rs.Expire(ctx, start.Add(sevenDays+time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM connection_requests`); n != 0 {
+		t.Errorf("rows just past 7 days = %d, want 0 (all statuses deleted)", n)
+	}
+}
+
 // 履歴は状態を問わず、届いた日時の新しい順（同時刻は id の新しい順）に返し、ページ（limit・offset）で区切れる。
 // 許可・拒否した要求は処理後も残り（結果と処理日時つき）、同じデバイスの再要求は 1 件の pending に集約されたまま（FR-A06）。
 func TestConnRequestsHistory(t *testing.T) {
