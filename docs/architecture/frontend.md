@@ -244,6 +244,7 @@ func (h *Handler) Clients(c *gin.Context) {
 |------|------|
 | 部分更新 | `hx-indicator` で対象にスピナー atom を表示 |
 | ページ遷移（ホスト GUI のサイドバーのみ） | `hx-boost` + `#main` への差し替え。グローバルに有効化しない |
+| 狭い幅のレイアウト（ホスト GUI。#51） | `md`（768px）未満はサイドバーを本文の上に積み、横に折り返すナビにして固定幅を持たない（`w-full` + `flex-wrap`）。`md` 以上は従来の固定幅（`w-56`）のサイドバーを左に置く。本文の余白は `p-4`（`md` 以上は `p-6`）。360px 幅でもページ全体が横に広がらない。JS は使わない |
 | 二重送信の防止 | `hx-disabled-elt="this"` |
 | 破壊的な操作（クライアント削除、トークン失効、キルスイッチ解除など） | サーバーが描画した確認のモーダル（molecule）を `hx-get` で開き、確定のボタンだけが実際のアクションを送る |
 | ファイル選択（起動許可アプリの実行ファイル。M1.5） | 「参照…」のボタンが `hx-post="/apps/pick-file"`、`hx-target="closest [data-field=exe_path]"`（`exe_path` の入力欄を包む要素。`form_field`）、`hx-swap="outerHTML"` で送る（フォームの `hx-target` などの継承を上書きする）。`hx-vals` の `form_id`（フォームの要素 id。追加は `app-form-new`、編集は `app-form-{id}`）で、応答の入力欄の `id` を追加・編集のフォームごとに重ならない値にする。サーバーは `app-form-` で始まる安全な文字だけの値以外を `app-form-new` に置き換える。サーバーがネイティブのダイアログを開き、選ばれたパスを入れた入力欄を返す（キャンセルは 204 で差し替えない）。入力欄は手入力のままでも使える（ダイアログは補助）。ダイアログの表示中はボタンを `hx-disabled-elt` で無効にし、`hx-indicator` を出す。JS（Wails の `runtime.js` の `Dialogs`）は使わない |
@@ -588,3 +589,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.23 | 2026-11-02 | §5.4 にエージェント設定画面（`/agent`。#19）: 2 つの同意・伏せ字の入力欄（`atoms.SecretInput`）・キーのパネルと確認モーダル・`#agent-sections` の差し替え。§12 のトレースの GUI のページに `agent` を含める | #19 |
 | 1.24 | 2026-11-02 | §10・§12 の `task_panel` と中断ボタン、タスク（`/tasks`）、承認ダイアログの `safety_check`・`judge_action` を M4 の実装（`TaskStatus` の共有部品・`#running-tasks` の `rev_tasks`・`approvalTexts`）に更新 | #19（M4 ホスト GUI・タスク） |
 | 1.25 | 2026-11-02 | §4.3 に保持者 `agent` のときのタスクの要約（`TaskSummaries`・`view.ViewerTask`。指示・最終回答は出さない） | #19 のレビュー指摘（FR-W08） |
+| 1.26 | 2026-11-02 | §5.4 の表に、狭い幅（`md` 未満）でサイドバーを本文の上に積むレイアウトを追記 | #51 |

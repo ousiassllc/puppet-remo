@@ -289,7 +289,7 @@ func Sidebar(c view.Chrome, oob bool) templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<nav id=\"sidebar-nav\" class=\"w-56 shrink-0 space-y-1 bg-slate-900 p-3\" aria-label=\"メイン\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<nav id=\"sidebar-nav\" class=\"flex w-full shrink-0 flex-wrap gap-1 bg-slate-900 p-3 md:block md:w-56 md:space-y-1\" aria-label=\"メイン\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -297,7 +297,7 @@ func Sidebar(c view.Chrome, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "><p class=\"px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400\">メニュー</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "><p class=\"w-full px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400\">メニュー</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
