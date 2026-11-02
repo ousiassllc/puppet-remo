@@ -122,6 +122,10 @@ task hooks:install    # Git フックを入れる（lefthook install と同じ�
 
 フックを入れずに手元で実行する（`.git/hooks` には触れません）には `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使います。CI の残り（`go test -race`、`GOOS=windows` の build・vet・lint、本番ビルド）は `task ci` で確認します。
 
+## ライセンス
+
+[GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0）です。全文はリポジトリ直下の `LICENSE` にあります。
+
 ## ドキュメント
 
 | 文書 | 内容 |
