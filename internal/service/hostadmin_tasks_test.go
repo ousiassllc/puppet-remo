@@ -89,3 +89,44 @@ func TestHostAdminCancelsTheClientsTasks(t *testing.T) {
 		t.Errorf("replace: cancelled %v, want %v", got, want)
 	}
 }
+
+// トークンの失効は、そのクライアントの実行中のタスクを中断する（FR-G10。削除・無効化と同じ cancelled の経路）。
+// 失敗した失効（別のクライアントの URL・存在しないトークン）では中断しない。
+func TestHostAdminRevokeTokenCancelsTheClientsTasks(t *testing.T) {
+	e := newAdminEnv(t)
+	tasks := &cancelledTasks{}
+	cfg := HostAdminConfig{
+		Clients: e.db.Clients(), Tokens: e.db.Tokens(), ConnRequests: e.db.ConnRequests(), Authz: e.authz,
+		Leases: e.leases, Sessions: e.sessions, Tasks: tasks, Audit: e.audit, Bus: e.bus, Clock: e.clock, IDs: &seqIDs{},
+	}
+	var err error
+	if e.admin, err = NewHostAdmin(cfg); err != nil {
+		t.Fatal(err)
+	}
+	c := e.approve(t, "nodeA", "pc", ApproveInput{MCPEnabled: true, AgentEnabled: true})
+	other := e.approve(t, "nodeB", "phone", ApproveInput{MCPEnabled: true, AgentEnabled: true})
+	if _, err := e.admin.IssueToken(e.ctx, c.ID, "claude", nil); err != nil {
+		t.Fatal(err)
+	}
+	toks, err := e.admin.Tokens(e.ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := e.admin.RevokeToken(e.ctx, other.ID, toks[0].ID); err == nil {
+		t.Fatal("revoke via another client succeeded")
+	}
+	if err := e.admin.RevokeToken(e.ctx, c.ID, "no-such-token"); err == nil {
+		t.Fatal("revoke of an unknown token succeeded")
+	}
+	if got := tasks.take(); len(got) != 0 {
+		t.Errorf("cancelled by a failed revoke: %v", got)
+	}
+
+	if err := e.admin.RevokeToken(e.ctx, c.ID, toks[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := tasks.take(), []string{c.ID + "/token_revoked"}; !equalStrings(got, want) {
+		t.Errorf("cancelled %v, want %v", got, want)
+	}
+}

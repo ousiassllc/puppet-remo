@@ -108,7 +108,7 @@ type HostAdmin interface {
 	Tokens(ctx context.Context, clientID string) ([]TokenRecord, error)
 	// IssueToken はトークンを発行して平文を返す（平文を得られるのはこのときだけ）。ttl の意味は Authz.IssueToken と同じ。
 	IssueToken(ctx context.Context, clientID, label string, ttl *time.Duration) (plaintext string, err error)
-	// RevokeToken は clientID のトークン tokenID を失効し、そのセッションを切断する。
+	// RevokeToken は clientID のトークン tokenID を失効し、そのセッションを切断して、そのクライアントの実行中のタスクを中断する（FR-G10）。
 	RevokeToken(ctx context.Context, clientID, tokenID string) error
 }
 
@@ -468,6 +468,9 @@ func (h *hostAdmin) RevokeToken(ctx context.Context, clientID, tokenID string) e
 	if h.cfg.Sessions != nil {
 		h.cfg.Sessions.CloseToken(tokenID)
 	}
+	// 漏れたトークンで始めたタスクを走らせ続けない（FR-G10）。タスクはトークンではなくクライアントに紐づくので、
+	// どのトークンで始めたかによらず、そのクライアントの実行中のタスクを中断する（削除・無効化と同じ cancelled）。
+	h.cancelTasks(clientID, "token_revoked")
 	if h.cfg.Bus != nil {
 		h.cfg.Bus.Publish(Event{Topic: TopicSessions})
 	}
