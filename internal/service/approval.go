@@ -13,7 +13,7 @@ import (
 // DefaultApprovalTimeout は承認待ちのタイムアウト（FR-L07、FR-H05: 60 秒で拒否扱い）。
 const DefaultApprovalTimeout = 60 * time.Second
 
-// 承認要求の種類（ApprovalRequest.Kind）。M3 で使うのは lease だけ。safety_check・judge_action は M4。
+// 承認要求の種類（ApprovalRequest.Kind）。lease は M3、safety_check・judge_action は M4（agent_types.go）。
 const ApprovalKindLease = "lease"
 
 // Approval はホストの承認待ちの要求を持つ（docs/components/overview.md §5.3）。UI を知らない:
@@ -33,9 +33,12 @@ type Approval interface {
 // ApprovalRequest は承認待ちの要求 1 件。
 type ApprovalRequest struct {
 	ID        string
-	Kind      string // ApprovalKindLease（M3）
+	Kind      string // ApprovalKindLease（M3）・ApprovalKindSafetyCheck・ApprovalKindJudgeAction（M4）
 	Who       domain.Actor
 	ExpiresAt time.Time // この時刻までに結果がなければ ErrApprovalTimeout（ダイアログのカウントダウン用）
+	// Detail は承認ダイアログに出す内容の説明（M4。safety_check は OpenAI の安全チェックの文面、judge_action は対象アクションの要約）。
+	// 呼び出し側が秘密・入力した文字列の本文・パス・引数を除いた短い文字列にして渡す（呼び出し側が 500 文字以内に切る）。lease は空。
+	Detail string
 }
 
 // Decision はホストの結果。
