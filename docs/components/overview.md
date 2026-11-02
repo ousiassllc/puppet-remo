@@ -326,7 +326,7 @@ type Installer interface { // 署名検証済みの更新のインストーラ�
     Run(ctx context.Context, path string) error // `/S`（サイレント）で起動し、終了は待たない。アプリの終了は呼び出し側（Updater）が行う
 }
 // ファイルマネージャー（Windows ではエクスプローラー）でフォルダーを開く（#54。FR-H13）。呼び出し元は app.LogReader だけで、
-// 開く場所は呼び出し元が固定する（service・web・HTTP のリクエストは決められない）。ドライブ付きの絶対パスの実在するディレクトリだけを開き、ファイルは開かない。
+// 開く場所は呼び出し元が固定する（service・web・HTTP のリクエストは決められない）。絶対パス（`filepath.IsAbs`）の実在するディレクトリだけを開き、ファイルは開かない。
 type FolderOpener interface {
     // 空・絶対パスでない・NUL を含む値は domain.ErrInvalidArgument、存在しない・ディレクトリでない値は platform.ErrNotFound（パスをメッセージに含めない）。
     // Windows 実装は ShellExecute の "open"（動詞固定・引数なし。シェル・コマンドラインを経由しない）。開いたら返し、ウィンドウは待たない。ctx が取り消し済みなら開かずに ctx.Err()。

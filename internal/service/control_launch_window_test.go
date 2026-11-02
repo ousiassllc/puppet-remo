@@ -234,3 +234,17 @@ func TestControlLaunchFallsBackWhenTheWindowListBeforeIsUnreadable(t *testing.T)
 		t.Error("ReusedExistingWindow = false, want true: without the list before the launch, a foreground window of another pid is the only evidence")
 	}
 }
+
+// 起動の前の一覧が読めて 0 件（空）のときは「前の状態が分からない」ではない: 起動後に別の pid のウィンドウが出たら新しいウィンドウと見なす（#55）。
+func TestControlLaunchEmptyListBeforeCountsLaterWindowsAsNew(t *testing.T) {
+	e := newAppEnv(t)
+	e.windows.SetWindows() // デスクトップにウィンドウが 1 つも無い
+	e.launcher.OnLaunch(func(uint32) {
+		e.windows.SetWindows(domain.WindowInfo{ID: "88", Title: "無題 - メモ帳", Process: "notepad.exe", PID: userNotepadPID + 1})
+	})
+
+	res := launchNotepad(t, e)
+	if res.ReusedExistingWindow {
+		t.Error("ReusedExistingWindow = true, want false: the list before the launch was empty, so a window of another pid is new")
+	}
+}

@@ -71,7 +71,8 @@ func (s *Server) addAppTools() {
 			"was found, no window that did not exist before the launch has appeared, and a window of another process is in the foreground. "+
 			"That window may hold the user's unsaved work. "+
 			"Before typing or clicking, ALWAYS confirm the target window with a screenshot or list_windows "+
-			"(a window pid different from the returned pid, or reused_existing_window, means the existing window was reused). "+
+			"(a window pid different from the returned pid may mean the existing window was reused, or that the app handed over to a new process that opened a new window; "+
+			"reused_existing_window=true is a strong hint, not proof). "+
 			"Fails with app_not_found, launch_failed (reason in structuredContent), lease_held_by_other or kill_switch_active.",
 		false, func(ctx context.Context, who domain.Actor, in launchAppIn) (toolResult, error) {
 			res, err := s.control.Launch(ctx, who, in.AppID)

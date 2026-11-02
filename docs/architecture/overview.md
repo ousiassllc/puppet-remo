@@ -470,7 +470,7 @@ sequenceDiagram
 - **メモリ上のリングバッファ（slog のハンドラから複製）にしなかった**: 再起動で消える。ファイルに残っているログ（起動直後の失敗など）が見えなくなる。ファイルが唯一の真実の源であり続けるほうが、画面とファイルが食い違わない
 - **別の保存先（DB など）に二重に書かなかった**: 書き込みの経路が増え、ログを書く処理がログの保存の失敗に影響される
 - 逆向きの読みは、書き込み中の途中の行・JSON でない行・壊れた行・1 MiB を超える行を読み飛ばすだけで、ローテーション（`lumberjack` の名前の付け替え）にも追従する（1 回の読み出しごとにファイルの一覧を取り直す）
-- 絞り込み（レベル）は読みながら行う。深いページや、まれなレベル（ERROR のみ）では多くを読むが、読むのは保持するファイル（最大 50 MiB）までで、ページは 100 までに丸める。読み出しはファイルを共有つきで開く（Windows は `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`。`internal/app/logfile_windows.go`）。Go の `os.Open` は `FILE_SHARE_DELETE` を付けず、読んでいる間（数ミリ秒）にちょうど `lumberjack` のローテーション（名前の付け替え）が起きると共有違反で失敗し、そのときの 1 行が書けない（#53）ため、読み出しだけ `CreateFile` で開く。実機の確認は [smoke-windows.md](../operations/smoke-windows.md) の §4.14 の F6（未確認）
+- 絞り込み（レベル）は読みながら行う。深いページや、まれなレベル（ERROR のみ）では多くを読むが、読むのは保持するファイル（最大 50 MiB）までで、ページは 100 までに丸める。読み出しはファイルを共有つきで開く（Windows は `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`。`internal/app/logfile_windows.go`）。Go の `os.Open` は `FILE_SHARE_DELETE` を付けず、読んでいる間（数ミリ秒）にちょうど `lumberjack` のローテーション（名前の付け替え）が起きると共有違反で失敗し、そのときの 1 行が書けない（#53）ため、読み出しだけ `CreateFile` で開く。実機の確認は [smoke-windows.md](../operations/smoke-windows.md) の §4.15 の F6（未確認）
 - 画面に出すときは、値を 500 文字までに切り詰め、1 件あたり 24 個までの属性だけを出す。値は書き込み時の伏せ字（`redactAttr`）のうえに、読み出し時にも同じ規則（`redactString`）で秘密を伏せる
 
 画面のレベルの絞り込みは「すべて」「WARN 以上」「ERROR のみ」。「すべて」はファイルにあるものをそのまま出すので、環境変数 `PUPPET_REMO_LOG_LEVEL=debug` で起動したときの DEBUG も含む（既定の INFO では DEBUG は書かれない）。ツールの成功のうち読み取りだけのもの（スクリーンショットの取得など。頻繁に呼ばれる）は DEBUG にして、既定のログを埋めない。

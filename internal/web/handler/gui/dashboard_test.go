@@ -2,6 +2,7 @@ package gui_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +80,28 @@ func TestDashboardKillSwitchIsStateDriven(t *testing.T) {
 		contains(t, res, `hx-get="/killswitch/release/confirm"`, "キルスイッチを解除", `data-killswitch="active"`, "キルスイッチ発動中", "ホットキー")
 		lacks(t, res, "/killswitch/trigger", "キルスイッチを発動", `data-killswitch="inactive"`)
 	})
+}
+
+// 狭い幅（約 360px）でサイドバーの固定幅がページを横に広げない（#51）。見た目は Go のテストで測れないので、
+// 固定幅が md 以上だけに掛かっていること（md 未満は w-full で本文の上に積む）を、クラスで押さえる。
+func TestSidebarIsFixedWidthOnlyFromMdUp(t *testing.T) {
+	res := newRig(t).get("/")
+	start := strings.Index(res.Body, `<nav id="sidebar-nav"`)
+	if start < 0 {
+		t.Fatal("no sidebar nav")
+	}
+	nav := res.Body[start : start+strings.Index(res.Body[start:], ">")]
+	for _, want := range []string{"w-full", "md:w-56", "md:block"} {
+		if !strings.Contains(nav, want) {
+			t.Errorf("sidebar nav lacks %q: %s", want, nav)
+		}
+	}
+	for _, tok := range strings.Fields(strings.SplitN(strings.SplitN(nav, `class="`, 2)[1], `"`, 2)[0]) {
+		if tok == "w-56" {
+			t.Errorf("sidebar nav has the bare fixed width w-56 (it must be md:w-56): %s", nav)
+		}
+	}
+	contains(t, res, "flex-col md:flex-row", "p-4 md:p-6")
 }
 
 func TestDashboardHTMXRequestsReturnFragments(t *testing.T) {
