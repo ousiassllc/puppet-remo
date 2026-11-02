@@ -103,7 +103,7 @@ func launchFailure(err error) error {
 // label は許可リストを引けたときだけ、pid と reused_existing_window は成功のときだけ、reason は launch_failed のときだけ入る。
 // 前面のウィンドウのタイトル・id は記録しない。
 func launchAuditDetail(appID, label string, res LaunchResult, err error) map[string]any {
-	detail := map[string]any{"app_id": truncateRunes(appID, maxAuditAppIDRunes)}
+	detail := map[string]any{"app_id": domain.TruncateRunes(appID, maxAuditAppIDRunes)}
 	if label != "" {
 		detail["label"] = label
 	}
@@ -119,12 +119,4 @@ func launchAuditDetail(appID, label string, res LaunchResult, err error) map[str
 		}
 	}
 	return detail
-}
-
-// truncateRunes は s を最大 n 文字（rune）にする。
-func truncateRunes(s string, n int) string {
-	if r := []rune(s); len(r) > n {
-		return string(r[:n])
-	}
-	return s
 }

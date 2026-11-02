@@ -158,13 +158,14 @@ func (h *Handler) SaveAgent(c *gin.Context) {
 	req.MaxDurationSec, errs.MaxDurationSec = parseInt(in.MaxDurationSec)
 	req.KeepScreenshots, errs.KeepScreenshots = parseInt(in.KeepScreenshots)
 
-	// 数値に読めなかった項目は 0 として検証に回し、範囲の不備も同時に示す（0 はどの項目でも範囲外なので、保存には進まない。
-	// 読めなかった項目のメッセージは上書きしない）。
+	// 数値に読めなかった項目は 0 として検証に回し、範囲の不備も同時に示す（0 はどの項目でも範囲外なので、有効にする保存・変化のない保存は
+	// 進まない。読めなかった項目のメッセージは上書きしない）。無効にする保存（enabled を外す）は、有効または同意済みの状態からなら
+	// 他の欄の不備に妨げられず、無効化だけが行われる（service.AgentSettings）。そのときは成功として保存済みの値を描画し直す。
 	{
 		err := h.d.AgentSettings.SaveAgent(ctx, req)
 		var verr *service.ValidationError
 		switch {
-		case err == nil && errs == (view.AgentErrors{}):
+		case err == nil && (errs == (view.AgentErrors{}) || !req.Enabled):
 			s, err := h.d.AgentSettings.Load(ctx)
 			if err != nil {
 				h.fail(c, err)
@@ -178,7 +179,7 @@ func (h *Handler) SaveAgent(c *gin.Context) {
 		case errors.As(err, &verr):
 			errs = mergeAgentErrors(errs, verr)
 		case err == nil:
-			// 数値に読めない入力があるのに保存された（検証が 0 を通した）。保存済みの値を描画し直す。
+			// 数値に読めない入力があるのに、有効のまま保存された（検証が 0 を通した）。保存済みの値を描画し直す。
 			h.log.Error("agent settings saved despite unparsable input")
 		case domain.CodeOf(err) == domain.CodeAgentDisabled:
 			h.failMessage(c, http.StatusConflict, string(domain.CodeAgentDisabled), "OpenAI API キーが登録されていないため、エージェントを有効にできません。先に API キーを登録してください。")

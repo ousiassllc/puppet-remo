@@ -36,6 +36,13 @@ type Control interface {
 	Do(ctx context.Context, who domain.Actor, op domain.Op) (service.Result, error)
 }
 
+// TaskSummaries は保持者が agent のときに、実行中のタスクの要約（状態・ステップ数・上限・開始時刻・依頼元の表示名）を出すための
+// 読み取り（FR-W08）。実体は service.TaskAdmin（Running）。ビューアは依頼元とは別のクライアントなので、返ったタスクのうち
+// 指示（Prompt）と最終回答（ResultText）は読まない・画面に出さない。
+type TaskSummaries interface {
+	Running(ctx context.Context) ([]domain.Task, error)
+}
+
 // Settings は既定の画質・FPS（viewer.default_*）の読み出し。実体は service.HostSettingsService。
 type Settings interface {
 	Load(ctx context.Context) (service.HostSettings, error)
@@ -47,6 +54,8 @@ type Deps struct {
 	Leases   Leases
 	Control  Control
 	Settings Settings
+	Tasks    TaskSummaries
+	Clock    domain.Clock // タスクの経過時間の基準
 	Logger   *slog.Logger // nil なら slog.Default()
 }
 
@@ -58,8 +67,8 @@ type Handler struct {
 
 // New は Handler を作る。
 func New(d Deps) (*Handler, error) {
-	if d.Sessions == nil || d.Leases == nil || d.Control == nil || d.Settings == nil {
-		return nil, errors.New("remote: sessions, leases, control and settings are required")
+	if d.Sessions == nil || d.Leases == nil || d.Control == nil || d.Settings == nil || d.Tasks == nil || d.Clock == nil {
+		return nil, errors.New("remote: sessions, leases, control, settings, tasks and clock are required")
 	}
 	h := &Handler{d: d, log: d.Logger}
 	if h.log == nil {

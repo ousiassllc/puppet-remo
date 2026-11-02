@@ -176,6 +176,30 @@ func TestTaskDetailPage(t *testing.T) {
 	}
 }
 
+// 安全チェック・Judge の判定・行動しないパスは、アクションと同じ番号を持ちうるが、ステップの番号は出さず種類を示す
+// （同じ番号のステップが 2 つあるように見せない）。
+func TestTaskDetailAuxiliaryRowsHaveNoStepNumber(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedTask(f, idFinished, domain.TaskCompleted, "p", 30, withSteps(0, 2))
+		f.Tasks.Steps = map[string][]service.TaskStep{idFinished: {
+			{No: 1, Kind: service.TaskStepAction, Route: "openai", Event: "agent.step", Result: "ok", Summary: "left_click", At: f.Clock.T},
+			{No: 2, Kind: service.TaskStepSafetyCheck, Route: "openai", Event: "agent.safety_check", Result: "ok", Summary: "safety check: allowed", At: f.Clock.T},
+			{No: 2, Kind: service.TaskStepAction, Route: "openai", Event: "agent.step", Result: "ok", Summary: "type", At: f.Clock.T},
+			{No: 2, Kind: service.TaskStepJudge, Route: "openai", Event: "agent.judge", Result: "ok", Summary: "judge: require_approval", At: f.Clock.T},
+			{No: 2, Kind: service.TaskStepPass, Route: "fast", Event: "agent.step", Result: "ok", Summary: "chosen: abstain", At: f.Clock.T},
+		}}
+	})
+	res := r.get("/tasks/" + idFinished)
+	status(t, res, http.StatusOK)
+	contains(t, res, `data-step-kind="action"`, `data-step-kind="aux"`, "安全チェック", "Judge の判定", "観察のみ（行動なし）", `data-step-kind-label`)
+	if n := strings.Count(res.Body, `data-step-kind="action"`); n != 2 {
+		t.Errorf("action rows = %d, want 2", n)
+	}
+	if n := strings.Count(res.Body, `data-step-kind="aux"`); n != 3 {
+		t.Errorf("auxiliary rows = %d, want 3", n)
+	}
+}
+
 func TestTaskDetailStates(t *testing.T) {
 	tests := []struct {
 		name   string

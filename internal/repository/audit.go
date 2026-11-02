@@ -22,7 +22,7 @@ type AuditEntry struct {
 	ClientLabel string // 表示名のスナップショット
 	SessionID   string
 	LeaseID     string
-	TaskID      string // M4: agent_tasks.id
+	TaskID      string // agent_tasks.id（エージェントのタスクに紐づく行だけ。FR-G15）
 	StepNo      *int
 	Tool        string
 	Result      string // ok / error / denied

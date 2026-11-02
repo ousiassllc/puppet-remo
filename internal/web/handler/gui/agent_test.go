@@ -199,6 +199,32 @@ func TestSaveAgentConsentRequiredOnlyWhenEnabling(t *testing.T) {
 	status(t, r.do(http.MethodPut, "/agent", form, hx...), http.StatusOK)
 }
 
+// 有効（同意済み）の状態から無効にする保存は、無関係な欄が読めない・範囲外でも 200 で、無効化だけが行われる（他の欄は保存しない）。
+// 無効のままなら不備は通常どおり 422。
+func TestSaveAgentDisableIsNotBlockedByInvalidFields(t *testing.T) {
+	r := newRig(t, registered(true, false))
+	status(t, r.do(http.MethodPut, "/agent", validAgentForm(), hx...), http.StatusOK)
+	if st := r.f.AgentSettings.State(); !st.Enabled || st.ConsentAt == nil {
+		t.Fatalf("setup: %+v", st)
+	}
+	form := validAgentForm()
+	form.Del("enabled")
+	form.Del("consent")
+	form.Set("max_steps", "abc")
+	form.Set("model", " ")
+	res := r.do(http.MethodPut, "/agent", form, hx...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `id="agent-form"`, "エージェントの設定を保存しました")
+	lacks(t, res, "data-field-error")
+	if st := r.f.AgentSettings.State(); st.Enabled || st.ConsentAt != nil || st.MaxSteps != 50 || st.Model == " " {
+		t.Errorf("state = %+v, want disabled without consent and the other fields untouched", st)
+	}
+	// すでに無効で同意も無いときの不備は 422。
+	res = r.do(http.MethodPut, "/agent", form, hx...)
+	status(t, res, http.StatusUnprocessableEntity)
+	contains(t, res, `data-field-error="agent-max-steps"`, `data-field-error="agent-model"`)
+}
+
 // API キー未登録で有効にしようとすると 409 agent_disabled（API 仕様 §7.3 のルートの記述）。
 func TestSaveAgentWithoutKeyIsConflict(t *testing.T) {
 	r := newRig(t)

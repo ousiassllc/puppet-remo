@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"time"
 	"unicode/utf8"
 
@@ -21,14 +22,10 @@ import (
 // 混ざる）。task_id は detail に入れる。指示（prompt）の本文は監査にも運用ログにも出さず、文字数だけを残す（指示の本文は
 // タスクの記録として Agent が agent_tasks に保存する。FR-G15・AU03）。
 
-const (
-	// maxPromptChars は run_task の prompt の上限（文字数。FR-G02）。
-	maxPromptChars = 10_000
-	// maxResultChars は get_task の result_text の上限（文字数。FR-G13）。Agent が切り詰めて保存するが、出力の側でも守る。
-	maxResultChars = 10_000
-	// maxTaskIDLen は task_id の長さの上限。ULID は 26 文字。クライアントが好きな長さの文字列を監査の detail へ書かせないための上限。
-	maxTaskIDLen = 64
-)
+// maxTaskIDLen は task_id の長さの上限。ULID は 26 文字。クライアントが好きな長さの文字列を監査の detail へ書かせないための上限。
+// run_task の prompt の上限（service.MaxAgentPromptRunes。FR-G02）と get_task の result_text の上限
+// （service.MaxAgentResultRunes。FR-G13。Agent が切り詰めて保存するが、出力の側でも守る）は service の値を使う。
+const maxTaskIDLen = 64
 
 // completedNote は completed のタスクの get_task に付ける note（FR-G13）。completed はモデルの申告にすぎない。
 const completedNote = "status completed is the model's own claim that the task is done, not a verified outcome. " +
@@ -94,7 +91,7 @@ func newTaskBody(t domain.Task) taskBody {
 		b.ErrorCode = &t.ErrorCode
 	}
 	if t.Status == domain.TaskCompleted {
-		text := truncateRunes(t.ResultText, maxResultChars)
+		text := domain.TruncateRunes(t.ResultText, service.MaxAgentResultRunes)
 		note := completedNote
 		b.ResultText, b.Note = &text, &note
 	}
@@ -111,14 +108,6 @@ func optionalTime(t *time.Time) *string {
 	return &s
 }
 
-// truncateRunes は s を最大 n 文字（rune）にする。
-func truncateRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n])
-}
-
 // runTaskArgs は run_task の監査の detail（引数の要約）。prompt は文字数だけ（FR-AU03）。
 func runTaskArgs(in runTaskIn) map[string]any {
 	args := map[string]any{"prompt_len": utf8.RuneCountInString(in.Prompt)}
@@ -133,7 +122,7 @@ func runTaskArgs(in runTaskIn) map[string]any {
 
 // taskIDArgs は get_task・cancel_task の監査の detail。検査の前の値でも、task_id は長さの上限で切り詰めて残す。
 func taskIDArgs(in taskIDIn) map[string]any {
-	return map[string]any{"task_id": truncateRunes(in.TaskID, maxTaskIDLen)}
+	return map[string]any{"task_id": domain.TruncateRunes(in.TaskID, maxTaskIDLen)}
 }
 
 // startInput は run_task の入力を検査して service.StartInput にする。違反は invalid_argument。
@@ -142,8 +131,8 @@ func (in runTaskIn) startInput() (service.StartInput, error) {
 	switch n := utf8.RuneCountInString(in.Prompt); {
 	case n == 0:
 		return service.StartInput{}, domain.ErrInvalidArgument.WithMsg("prompt must not be empty")
-	case n > maxPromptChars:
-		return service.StartInput{}, domain.ErrInvalidArgument.WithMsg("prompt must be at most 10000 characters")
+	case n > service.MaxAgentPromptRunes:
+		return service.StartInput{}, domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("prompt must be at most %d characters", service.MaxAgentPromptRunes))
 	}
 	out := service.StartInput{Prompt: in.Prompt}
 	if in.MaxSteps != nil {

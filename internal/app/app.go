@@ -384,7 +384,7 @@ func (a *App) build(ctx context.Context) error {
 		return fmt.Errorf("connection request states: %w", err)
 	}
 	a.web, err = webremote.New(webremote.Deps{
-		Sessions: a.viewers, Leases: a.leases, Control: control, Settings: a.settings, Logger: a.log,
+		Sessions: a.viewers, Leases: a.leases, Control: control, Settings: a.settings, Tasks: a.tasks, Clock: cfg.Clock, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("web ui: %w", err)
@@ -461,7 +461,7 @@ func (a *App) buildAgent(control service.Control, kill *service.KillSwitchManage
 	}
 	a.agent, err = service.NewAgent(service.AgentServiceConfig{
 		Tasks: cfg.Repo.Tasks(), Clients: cfg.Repo.Clients(), Settings: a.agentCfg, Control: control, Leases: a.leases, Kill: kill,
-		Approval: a.approval, Model: model, Fast: fast, Audit: a.audit, Bus: a.bus, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
+		Approval: a.approval, Model: model, Fast: fast, Audit: a.audit, Bus: a.bus, Disabler: a.agentCfg, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)

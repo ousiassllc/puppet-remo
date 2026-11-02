@@ -199,6 +199,19 @@ func (h *Handler) Tasks(c *gin.Context) {
 	}
 }
 
+// stepKindLabel はアクション以外の行の種類の表示（アクションの行は空。Kind が空の行もアクション扱い）。
+func stepKindLabel(k service.TaskStepKind) string {
+	switch k {
+	case service.TaskStepPass:
+		return "観察のみ（行動なし）"
+	case service.TaskStepJudge:
+		return "Judge の判定"
+	case service.TaskStepSafetyCheck:
+		return "安全チェック"
+	}
+	return ""
+}
+
 func routeLabel(route string) string {
 	switch route {
 	case "fast":
@@ -213,7 +226,7 @@ func (h *Handler) taskStepRows(steps []service.TaskStep) []view.TaskStepRow {
 	rows := make([]view.TaskStepRow, 0, len(steps))
 	for _, s := range steps {
 		r := view.TaskStepRow{
-			No: s.No, Route: s.Route, RouteLabel: routeLabel(s.Route), Event: s.Event, Result: s.Result, ResultTone: resultTone(s.Result),
+			No: s.No, KindLabel: stepKindLabel(s.Kind), Route: s.Route, RouteLabel: routeLabel(s.Route), Event: s.Event, Result: s.Result, ResultTone: resultTone(s.Result),
 			Summary: s.Summary, At: s.At.In(h.loc).Format(auditTimeLayout),
 		}
 		for _, a := range s.Args {

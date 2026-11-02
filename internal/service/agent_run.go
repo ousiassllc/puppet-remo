@@ -115,7 +115,7 @@ func (r *run) loop() outcome {
 		}
 		r.countOpenAIStep(out.Usage)
 		if out.CallID == "" { // computer_call が無い = 最終回答（完了を宣言できるのは OpenAI だけ。FR-G13）
-			return outcome{status: domain.TaskCompleted, result: truncateRunes(out.FinalText, maxAgentResultRunes)}
+			return outcome{status: domain.TaskCompleted, result: domain.TruncateRunes(out.FinalText, MaxAgentResultRunes)}
 		}
 		r.hist.AddOutput(out.Items)
 		if len(out.SafetyChecks) > 0 {
@@ -148,7 +148,9 @@ func (r *run) acquireLease() error {
 	return r.ctx.Err()
 }
 
-// acquireFailure は取得の失敗をタスクの結末にする。ホストの拒否・タイムアウトは denied、取り下げ（キルスイッチ・切断）は cancelled。
+// acquireFailure は取得の失敗をタスクの結末にする。ホストの拒否・タイムアウトは denied、キルスイッチは cancelled（reason kill_switch。
+// ctx の取り消しが先でも同じ理由）、取り下げ（セッション切断・クライアントの削除）は cancelled（reason lease_withdrawn）、
+// 条件の検査のあとに他者が取得した競合は failed（lease_held_by_other）。
 func (r *run) acquireFailure(err error) outcome {
 	switch {
 	case r.ctx.Err() != nil:
@@ -157,7 +159,9 @@ func (r *run) acquireFailure(err error) outcome {
 		return outcome{status: domain.TaskDenied, code: domain.TaskErrorApprovalDenied}
 	case errors.Is(err, domain.ErrApprovalTimeout):
 		return outcome{status: domain.TaskDenied, code: domain.TaskErrorApprovalTimeout}
-	case errors.Is(err, domain.ErrKillSwitchActive), errors.Is(err, domain.ErrLeaseRequired):
+	case errors.Is(err, domain.ErrKillSwitchActive):
+		return outcome{status: domain.TaskCancelled, reason: "kill_switch"}
+	case errors.Is(err, domain.ErrLeaseRequired):
 		return outcome{status: domain.TaskCancelled, reason: "lease_withdrawn"}
 	}
 	return outcome{status: domain.TaskFailed, code: domain.TaskErrorCode(err)}
@@ -173,7 +177,10 @@ func (r *run) markRunning() {
 }
 
 // failure は途中のエラーをタスクの結末にする。ctx の取り消し（Cancel・CancelAll・リースの剥奪）は cancelled、
-// 上限は limit_reached、キルスイッチ・剥奪で拒否された Do も cancelled（FR-G10・L08）、それ以外はエラーコードつきの failed。
+// 上限は limit_reached、キルスイッチで拒否された Do も cancelled（FR-G10）、リースを失った（FR-L08）Do・リースの確認は
+// Watch の有無によらず cancelled にそろえる（剥奪は lease_revoked、アイドルタイムアウトの解放 ErrLeaseRequired と、剥奪のあと
+// 他者が取得した ErrLeaseHeldByOther は lease_lost）。それ以外はエラーコードつきの failed。
+// リースを取得する前の失敗は acquireFailure で、ここは running になったタスクだけが通る。
 func (r *run) failure(err error) outcome {
 	switch {
 	case r.ctx.Err() != nil:
@@ -184,6 +191,8 @@ func (r *run) failure(err error) outcome {
 		return outcome{status: domain.TaskCancelled, reason: "kill_switch"}
 	case errors.Is(err, domain.ErrLeaseRevoked):
 		return outcome{status: domain.TaskCancelled, reason: "lease_revoked"}
+	case errors.Is(err, domain.ErrLeaseRequired), errors.Is(err, domain.ErrLeaseHeldByOther):
+		return outcome{status: domain.TaskCancelled, reason: "lease_lost"}
 	}
 	o := outcome{status: domain.TaskFailed, code: domain.TaskErrorCode(err)}
 	r.a.log.Warn("agent task failed", "task_id", r.id, "error_code", o.code)
@@ -226,10 +235,16 @@ func (r *run) overLimit() bool {
 	return r.checkBeforeStep() == errLimitReached
 }
 
-// modelStep はモデルを 1 回呼ぶ（60 秒で打ち切り、再試行しない）。失敗は終了の理由に写す: 対応しないアクションは
-// ErrUnsupportedAction のまま、それ以外は domain.ErrOpenAI で包む（API の 401 は GUI へ通知）。ctx の取り消しはそのまま返す。
+// modelStep はモデルを 1 回呼ぶ（ModelTimeout = 60 秒で打ち切り、再試行しない。実行時間の上限の残りがそれより短ければ残りまで縮める。
+// FR-G09）。失敗は終了の理由に写す: 対応しないアクションは ErrUnsupportedAction のまま、それ以外は domain.ErrOpenAI で包む
+// （API の 401 は GUI へ通知し、エージェントを無効に戻す）。残りの時間を使い切った打ち切りは errLimitReached、
+// ctx の取り消しはそのまま返す。
 func (r *run) modelStep(ctx context.Context) (openai.StepOutput, error) {
-	mctx, cancel := context.WithTimeout(ctx, r.a.cfg.ModelTimeout)
+	timeout, clamped := r.modelTimeout()
+	if timeout <= 0 {
+		return openai.StepOutput{}, errLimitReached
+	}
+	mctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	out, err := r.a.cfg.Model.Step(mctx, openai.StepInput{Model: r.cfg.Model, History: r.hist})
 	if err == nil {
@@ -238,15 +253,41 @@ func (r *run) modelStep(ctx context.Context) (openai.StepOutput, error) {
 	if ctx.Err() != nil {
 		return openai.StepOutput{}, ctx.Err()
 	}
+	if clamped && errors.Is(mctx.Err(), context.DeadlineExceeded) {
+		return openai.StepOutput{}, errLimitReached
+	}
 	if errors.Is(err, domain.ErrUnsupportedAction) {
 		return openai.StepOutput{}, err
 	}
-	var apiErr *openai.APIError
-	if errors.As(err, &apiErr) && apiErr.Status == 401 {
-		r.a.toast("error", "OpenAI の API キーが無効です。エージェント設定でキーを登録し直してください。")
+	if errors.Is(err, openai.ErrUnauthorized) {
+		r.onOpenAIUnauthorized(ctx)
 	}
 	r.a.log.Warn("openai step failed", "task_id", r.id, "error", err)
 	return openai.StepOutput{}, fmt.Errorf("%w: %w", domain.ErrOpenAI, err)
+}
+
+// modelTimeout はこのモデル呼び出しの上限。ModelTimeout か、実行時間の上限（FR-G09）の残りの短いほう（残りで縮めたら clamped）。
+func (r *run) modelTimeout() (timeout time.Duration, clamped bool) {
+	remaining := time.Duration(r.task.MaxDurationSec)*time.Second - r.a.cfg.Clock.Now().Sub(r.startedAt)
+	if remaining < r.a.cfg.ModelTimeout {
+		return remaining, true
+	}
+	return r.a.cfg.ModelTimeout, false
+}
+
+// onOpenAIUnauthorized は OpenAI の HTTP 401（キー無効）を GUI のトーストで知らせ、エージェントを無効に戻す（NFR-S16。
+// enabled = false・consent_at を消し、agent.consent を actor system・error_code openai_unauthorized で記録する）。
+// 今のタスクは中断せず、呼び出し元がそのまま failed（openai_error）で終える。
+func (r *run) onOpenAIUnauthorized(ctx context.Context) {
+	r.a.toast("error", "OpenAI の API キーが無効です（401）。エージェントを無効にしました。エージェント設定でキーを登録し直してください。")
+	if r.a.cfg.Disabler == nil {
+		return
+	}
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentPersistTimeout)
+	defer cancel()
+	if err := r.a.cfg.Disabler.DisableAgent(dctx, domain.Actor{Kind: domain.ActorSystem, Label: systemLabel}, AgentDisableOpenAIUnauthorized); err != nil {
+		r.a.log.Error("agent could not be disabled after a 401", "task_id", r.id, "error", err)
+	}
 }
 
 // capture は FR-G06 の規則（プライマリモニター・最大辺は screenshot.max_dimension）で新しい画面を PNG で撮る。リースは要らない。
@@ -283,7 +324,7 @@ func (r *run) askSafety(ctx context.Context, checks []openai.SafetyCheck) error 
 	e.Result = auditOK
 	codes := make([]string, 0, len(checks))
 	for _, c := range checks {
-		codes = append(codes, truncateRunes(c.Code, 64))
+		codes = append(codes, domain.TruncateRunes(c.Code, 64))
 	}
 	switch result {
 	case "allowed":
@@ -326,7 +367,7 @@ func safetyCheckDetail(checks []openai.SafetyCheck) string {
 	if len(parts) == 0 {
 		return "（安全チェックの文面なし）"
 	}
-	return truncateRunes(strings.Join(parts, " / "), maxSafetyCheckDetail)
+	return domain.TruncateRunes(strings.Join(parts, " / "), maxSafetyCheckDetail)
 }
 
 // ---- 記録 ----
@@ -363,19 +404,17 @@ func (r *run) persist() {
 	}
 }
 
-// finish は終了処理（execute の defer から 1 回だけ）: 押下中の入力を離す → 終了状態を保存 → 監査 → リースの解放。
-// リースの解放は、保存や監査が panic しても必ず行う。
+// finish は終了処理（execute の defer から 1 回だけ）: 押下中の入力を離す → リースの解放 → 終了状態を保存 → 監査。
+// リースは、保存（最大 5 秒）や監査を待たずに先に解放する（他の保持者を待たせない）。実行中の登録は clear が最後に外すので、
+// その間に次のタスクが始まることはない。リースの解放は、入力の解放が panic しても必ず行う。
 func (r *run) finish() {
 	defer func() {
 		if p := recover(); p != nil {
 			r.a.log.Error("agent task finish panicked", "task_id", r.id, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
 		}
 	}()
-	defer r.a.cfg.Leases.Release(r.actor)
+	r.releaseControl()
 
-	if err := r.a.cfg.Control.ReleaseInput(); err != nil {
-		r.a.log.Error("agent task could not release held input", "task_id", r.id, "error", err)
-	}
 	now := r.a.cfg.Clock.Now()
 	t := r.task
 	t.Status, t.ErrorCode, t.ResultText, t.FinishedAt = r.out.status, r.out.code, r.out.result, &now
@@ -392,6 +431,14 @@ func (r *run) finish() {
 	r.a.record(ctx, r.a.taskEndEntry(r, now))
 	r.a.log.Info("agent task finished", "task_id", r.id, "status", string(t.Status), "error_code", t.ErrorCode,
 		"steps", t.StepCount, "fast_steps", t.FastSteps, "openai_steps", t.OpenAISteps)
+}
+
+// releaseControl は押下中の入力を離し、リースを解放する（リースの解放は入力の解放が失敗・panic しても行う）。
+func (r *run) releaseControl() {
+	defer r.a.cfg.Leases.Release(r.actor)
+	if err := r.a.cfg.Control.ReleaseInput(); err != nil {
+		r.a.log.Error("agent task could not release held input", "task_id", r.id, "error", err)
+	}
 }
 
 // ---- 監査（kind = agent。タスクのライフサイクル） ----
@@ -433,8 +480,8 @@ func (a *AgentService) taskEndEntry(r *run, finished time.Time) repository.Audit
 	return e
 }
 
-// taskEndResult は agent.task_end の result。拒否・ブロック（FR-G07）とホストの承認の拒否は denied、それ以外の失敗は error、
-// 完了・中断・上限は ok（タスクとして正常に終わった）。
+// taskEndResult は agent.task_end の result。拒否・ブロック（FR-G07）とホストの承認の拒否、リースの競合負けは denied、
+// それ以外の失敗は error、完了・中断（キルスイッチ・リースの喪失を含む）・上限は ok（タスクとして正常に終わった）。
 func taskEndResult(status domain.TaskStatus, code string) string {
 	switch status {
 	case domain.TaskDenied:
@@ -442,8 +489,7 @@ func taskEndResult(status domain.TaskStatus, code string) string {
 	case domain.TaskFailed:
 		switch code {
 		case domain.TaskErrorInputBlocked, domain.TaskErrorJudgeDenied, domain.TaskErrorApprovalDenied, domain.TaskErrorApprovalTimeout,
-			domain.TaskErrorKillSwitchActive, domain.TaskErrorLeaseRequired, domain.TaskErrorLeaseHeldByOther, domain.TaskErrorLeaseRevoked,
-			domain.TaskErrorSafetyCheckDenied:
+			domain.TaskErrorLeaseHeldByOther, domain.TaskErrorSafetyCheckDenied:
 			return auditDenied
 		}
 		return auditError

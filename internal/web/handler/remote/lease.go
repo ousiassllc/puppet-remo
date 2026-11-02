@@ -12,7 +12,7 @@ import (
 
 // leasePanel はリースパネル（#lease-panel）と、操作権の有無で変わるクリップボード・ショートカット（#viewer-ops。OOB）を返す。
 func (h *Handler) leasePanel(c *gin.Context, who domain.Actor) {
-	h.renderLeasePanel(c, http.StatusOK, h.leaseView(who))
+	h.renderLeasePanel(c, http.StatusOK, h.leaseView(c.Request.Context(), who))
 }
 
 func (h *Handler) renderLeasePanel(c *gin.Context, status int, v view.ViewerLease) {

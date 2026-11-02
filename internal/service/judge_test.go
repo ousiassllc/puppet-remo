@@ -72,6 +72,9 @@ func TestChainTreatsAnUnknownVerdictAsRequireApproval(t *testing.T) {
 }
 
 func TestFailClosed(t *testing.T) {
+	// 文脈を無視する Judge は、テストの終了まで待たせる（固定時間の sleep ではなく、チャネルで解く）。
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
 	tests := []struct {
 		name     string
 		j        Judge
@@ -89,7 +92,7 @@ func TestFailClosed(t *testing.T) {
 			panic("boom")
 		}}, time.Second, domain.VerdictRequireApproval, JudgeReasonError},
 		{"a judge that ignores its context times out", &stubJudge{fn: func(ctx context.Context, _ domain.Action, _ domain.WindowInfo) (domain.Verdict, Reason, error) {
-			time.Sleep(2 * time.Second)
+			<-release
 			return domain.VerdictAllow, Reason{}, nil
 		}}, 20 * time.Millisecond, domain.VerdictRequireApproval, JudgeReasonTimeout},
 		{"a judge that honours its context times out", &stubJudge{fn: func(ctx context.Context, _ domain.Action, _ domain.WindowInfo) (domain.Verdict, Reason, error) {

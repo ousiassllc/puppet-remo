@@ -144,7 +144,7 @@ static/
 // internal/web/organisms/remote/lease_panel.templ
 type LeasePanelView struct {
     State     string // "idle" | "pending_approval" | "held"
-    Holder    *HolderView // 種別（mcp / web / agent）・名前・タスクの概要
+    Holder    *HolderView // 種別（mcp / web / agent）・名前・タスクの要約（agent のときだけ。状態・ステップ数 / 上限・経過時間と上限・開始時刻・依頼元。指示と最終回答は出さない。FR-W08）
     Mine      bool
     CanAcquire, CanRelease, CanRevoke bool // ハンドラが LeaseManager の状態から決める。pending_approval（M3）はすべて false（承認待ちの表示だけ。操作を持たない）
 }
@@ -169,6 +169,7 @@ templ LeasePanel(v LeasePanelView) {
 ```
 
 - リースが `idle` なら「取得」だけ、他者の保持中なら「強制剥奪」だけ、自分が保持なら「解放」だけを描画する
+- 保持者が `agent` のとき（M4）は、実行中のタスクの要約（`[data-lease-task]`）を添える。`handler/remote` は狭い読み取りのインターフェース `TaskSummaries`（`Running(ctx)`。実体は `service.TaskAdmin`）から取り、`view.ViewerTask` に写す。ビューアはタスクの依頼元とは別のクライアントなので、写すのは状態・ステップ数と上限・経過時間と上限・開始時刻・依頼元の表示名だけで、`prompt`・`result_text` は `view` に持たない
 - キルスイッチ中は操作系を一切描画しない（そもそもリモートのページは 503 になる。ホスト GUI は解除ボタンだけを描画する）
 - `hx.Post(...)` などは `hx-*` 属性を組み立てる補助関数（`atoms` に置く）。URL はハンドラ側（または view）が持つ文字列で、JS には書かない
 
@@ -586,3 +587,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.22 | 2026-11-02 | §5.4 に更新画面（`/update`。#74）と、設定画面の更新のチャネル（`update.channel`）を追記 | #74 |
 | 1.23 | 2026-11-02 | §5.4 にエージェント設定画面（`/agent`。#19）: 2 つの同意・伏せ字の入力欄（`atoms.SecretInput`）・キーのパネルと確認モーダル・`#agent-sections` の差し替え。§12 のトレースの GUI のページに `agent` を含める | #19 |
 | 1.24 | 2026-11-02 | §10・§12 の `task_panel` と中断ボタン、タスク（`/tasks`）、承認ダイアログの `safety_check`・`judge_action` を M4 の実装（`TaskStatus` の共有部品・`#running-tasks` の `rev_tasks`・`approvalTexts`）に更新 | #19（M4 ホスト GUI・タスク） |
+| 1.25 | 2026-11-02 | §4.3 に保持者 `agent` のときのタスクの要約（`TaskSummaries`・`view.ViewerTask`。指示・最終回答は出さない） | #19 のレビュー指摘（FR-W08） |

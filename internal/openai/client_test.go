@@ -459,6 +459,9 @@ func TestStepHTTPErrorsDoNotLeakKey(t *testing.T) {
 			if (apiErr.Message != "") != tc.wantMsg {
 				t.Errorf("message = %q, wantMsg = %v", apiErr.Message, tc.wantMsg)
 			}
+			if got := errors.Is(err, ErrUnauthorized); got != (tc.status == 401) {
+				t.Errorf("errors.Is(err, ErrUnauthorized) = %v for status %d", got, tc.status)
+			}
 			assertNoKey(t, err)
 			if n := len(fs.requests()); n != 1 {
 				t.Errorf("requests = %d, want exactly 1 (no retries)", n)

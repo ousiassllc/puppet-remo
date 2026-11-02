@@ -102,7 +102,7 @@ func taskStepOf(e repository.AuditEntry) (TaskStep, bool) {
 	if e.Kind != "agent" || !taskStepEvents[e.Event] {
 		return TaskStep{}, false
 	}
-	s := TaskStep{Event: e.Event, Result: e.Result, AuditID: e.ID, Thumb: e.Thumb != nil, At: e.TS, Args: auditArgs(e.DetailJSON)}
+	s := TaskStep{Kind: taskStepKind(e), Event: e.Event, Result: e.Result, AuditID: e.ID, Thumb: e.Thumb != nil, At: e.TS, Args: auditArgs(e.DetailJSON)}
 	if e.StepNo != nil {
 		s.No = *e.StepNo
 	}
@@ -111,6 +111,19 @@ func taskStepOf(e repository.AuditEntry) (TaskStep, bool) {
 	s.Route = detailString(detail, "route")
 	s.Summary = stepSummary(e, detail)
 	return s, true
+}
+
+// taskStepKind は行の種類。agent.step でアクション（tool）を実行した行だけが action（ステップ数に数える）。
+func taskStepKind(e repository.AuditEntry) TaskStepKind {
+	switch {
+	case e.Event == agentJudgeAuditEvent:
+		return TaskStepJudge
+	case e.Event == agentSafetyCheckAuditEvent:
+		return TaskStepSafetyCheck
+	case e.Tool != "":
+		return TaskStepAction
+	}
+	return TaskStepPass
 }
 
 func detailString(detail map[string]json.RawMessage, key string) string {

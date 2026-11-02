@@ -90,8 +90,9 @@ type FastpathSettingsInput struct {
 
 // AgentSettings はホスト GUI の「エージェント設定」の窓口（FR-H11・G14・G22）。すべて操作主体 host で監査する。
 // 項目の不備は *ValidationError（項目名 → メッセージ）、条件を満たさない有効化（API キー未登録など）は
-// domain.ErrAgentDisabled（code agent_disabled）。GUI は PUT /agent のルートの記述（API 仕様 §7）どおり 409 で返す
-// （エラーコード表の agent_disabled は 403 で、ルートの記述と食い違う。docs の食い違いとして最終報告に挙げる）。API キーの値はログ・エラー・監査・戻り値のどこにも出さない（NFR-S14）。
+// domain.ErrAgentDisabled（code agent_disabled）。GUI は PUT /agent のルートの記述（API 仕様 §7）どおり 409 で返す。
+// API キーの値はログ・エラー・監査・戻り値のどこにも出さない（NFR-S14）。
+// SaveAgent で enabled = false にする保存は、有効または同意済みの状態からなら、他の欄の不備に妨げられない（他の欄は保存しない）。
 type AgentSettings interface {
 	Load(ctx context.Context) (AgentSettingsView, error)
 	SaveAgent(ctx context.Context, in AgentSettingsInput) error
@@ -162,9 +163,22 @@ type TaskDetail struct {
 	Steps []TaskStep
 }
 
-// TaskStep は 1 ステップ（監査ログの行）。入力した文字列の本文・要素の値は含まない（FR-G23）。
+// TaskStepKind は TaskStep の種類。ステップ番号（No）は「実行したステップ」の番号で、1 つのステップに複数の行が付きうる
+// （OpenAI の 1 回の応答の複数のアクション、そのアクションの前の Judge の判定・安全チェック）。番号を持つ（ステップ数に数える）
+// のは action だけで、それ以外は直前に実行したステップ（まだ無ければ 0）か、これから実行するステップに付く補助の行。
+type TaskStepKind string
+
+const (
+	TaskStepAction      TaskStepKind = "action"       // アクションを 1 つ実行した行（agent.step で tool がある）。ステップ数に数える
+	TaskStepPass        TaskStepKind = "pass"         // 行動しない高速パス（reobserve・引き継ぎ）。番号は直前に実行したステップ
+	TaskStepJudge       TaskStepKind = "judge"        // Judge の判定（agent.judge）。番号はそのアクションのステップ
+	TaskStepSafetyCheck TaskStepKind = "safety_check" // OpenAI の安全チェックの承認（agent.safety_check）。番号はそれが止めるステップ
+)
+
+// TaskStep は 1 行（監査ログの行）。入力した文字列の本文・要素の値は含まない（FR-G23）。
 type TaskStep struct {
 	No      int
+	Kind    TaskStepKind
 	Route   string // "fast" | "openai"
 	Event   string // agent.step など
 	Result  string // 監査の result（ok / error / denied）

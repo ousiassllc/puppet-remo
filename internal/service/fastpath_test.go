@@ -124,7 +124,8 @@ func TestFastPathClickThenHandoffToOpenAI(t *testing.T) {
 	if _, has := click["handoff_reason"]; has {
 		t.Errorf("the acting step has a handoff_reason: %v", click)
 	}
-	if handoff["_tool"] != "" || handoff["handoff_reason"] != "abstain" || handoff["chosen_id"] != "abstain" || handoff["_step"] != 2.0 {
+	// 行動しないパスは、直前に実行したステップ（1）の番号で pass = true。次に実行する OpenAI のステップ（2）と番号が重ならない。
+	if handoff["_tool"] != "" || handoff["handoff_reason"] != "abstain" || handoff["chosen_id"] != "abstain" || handoff["_step"] != 1.0 || handoff["pass"] != true {
 		t.Errorf("handoff row = %v", handoff)
 	}
 	// 入力した文字列・要素の値・ラベルは監査に入らない。
@@ -374,13 +375,7 @@ func TestFastPathCancelDuringTheChooserCallIsACancellation(t *testing.T) {
 	chooser := newScriptedChooser(chooserStepSpec{block: true})
 	ae := newFastEnv(t, chooser, []modelStepSpec{finalAnswer("never")}, nil)
 	task := ae.start(t, "p")
-	deadline := time.Now().Add(approvalWait)
-	for len(chooser.Requests()) == 0 { // 問い合わせの開始をチャネルではなく記録で見る（上限つき）
-		if time.Now().After(deadline) {
-			t.Fatal("the chooser was not called")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	chooser.waitStarted(t)
 	done := make(chan domain.Task, 1)
 	go func() {
 		got, _ := ae.agent.Cancel(context.Background(), ae.by, task.ID)

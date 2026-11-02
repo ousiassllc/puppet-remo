@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -401,7 +400,7 @@ func TestAgentFailureClasses(t *testing.T) {
 		{"unsupported action", []modelStepSpec{{err: domain.ErrUnsupportedAction}}, nil, domain.TaskErrorUnsupportedAction},
 		{"input blocked", []modelStepSpec{step("c1", ownWindowClick, agentType)}, nil, domain.TaskErrorInputBlocked},
 		{"judge denied", []modelStepSpec{step("c1", agentClick, agentType)}, func(ae *agentEnv) { ae.judge.v = domain.VerdictDeny }, domain.TaskErrorJudgeDenied},
-		{"invalid coordinates", []modelStepSpec{step("c1", domain.Click{At: &domain.Point{X: 999, Y: 999}, Button: domain.ButtonLeft, Count: 1, Monitor: domain.MonitorPrimary}, agentType)}, nil, domain.TaskErrorInternal},
+		{"invalid coordinates", []modelStepSpec{step("c1", domain.Click{At: &domain.Point{X: 999, Y: 999}, Button: domain.ButtonLeft, Count: 1, Monitor: domain.MonitorPrimary}, agentType)}, nil, domain.TaskErrorInvalidCoordinates},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -700,6 +699,10 @@ func TestAgentKillSwitchCancelsWithinTheBudgetAndReleasesKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	r := ae.agent.runByID(task.ID)
+	if r == nil {
+		t.Fatal("the task is not registered")
+	}
 	done := make(chan error, 1)
 	go func() { done <- ae.kill.Trigger("test") }()
 	select {
@@ -709,6 +712,12 @@ func TestAgentKillSwitchCancelsWithinTheBudgetAndReleasesKeys(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("the kill switch did not finish within 1 second")
+	}
+	// タスクの終了（終了状態の保存・入力とリースの解放）は、キルスイッチの発動から 1 秒以内。チャネルで待つ。
+	select {
+	case <-r.done:
+	case <-time.After(time.Second):
+		t.Fatal("the task did not end within 1 second after the kill switch")
 	}
 	got := ae.waitTask(t, task.ID)
 	if got.Status != domain.TaskCancelled {
@@ -913,6 +922,3 @@ func TestAgentRunningTasksTracksTheLifetime(t *testing.T) {
 		t.Errorf("RunningTasks = %d after the task", ae.agent.RunningTasks())
 	}
 }
-
-// 使わない import の抑止ではなく、任意の順序で同じ結果になることの確認: スライスの比較。
-var _ = slices.Equal[[]int]

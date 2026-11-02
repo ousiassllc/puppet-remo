@@ -17,7 +17,12 @@ type Fakes struct {
 	Leases   *Leases
 	Control  *Control
 	Settings *Settings
+	Tasks    *Tasks
+	Clock    *Clock
 }
+
+// Now は Clock の基準の時刻（固定）。
+var Now = time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
 
 // New は空の状態の Fakes を返す。モニターはメイン 1 枚、既定の画質 70・10 fps。
 func New() *Fakes {
@@ -30,12 +35,44 @@ func New() *Fakes {
 			{Index: 1, Name: "DISPLAY2", Size: domain.Size{W: 1280, H: 720}},
 		}},
 		Settings: &Settings{Values: service.HostSettings{ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}},
+		Tasks:    &Tasks{},
+		Clock:    &Clock{T: Now},
 	}
 }
 
 // Deps は Handler の依存先。
 func (f *Fakes) Deps() remote.Deps {
-	return remote.Deps{Sessions: f.Sessions, Leases: f.Leases, Control: f.Control, Settings: f.Settings}
+	return remote.Deps{Sessions: f.Sessions, Leases: f.Leases, Control: f.Control, Settings: f.Settings, Tasks: f.Tasks, Clock: f.Clock}
+}
+
+// Clock は固定の時計。
+type Clock struct{ T time.Time }
+
+func (c *Clock) Now() time.Time { return c.T }
+
+// Tasks は実行中のタスクの偽の読み取り。
+type Tasks struct {
+	mu    sync.Mutex
+	list  []domain.Task
+	Err   error // 非 nil なら Running はこれを返す
+	Calls int
+}
+
+// SetRunning は実行中のタスクを置き換える。
+func (t *Tasks) SetRunning(tasks ...domain.Task) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.list = tasks
+}
+
+func (t *Tasks) Running(context.Context) ([]domain.Task, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.Calls++
+	if t.Err != nil {
+		return nil, t.Err
+	}
+	return append([]domain.Task(nil), t.list...), nil
 }
 
 // Sessions は viewer_id の表。
