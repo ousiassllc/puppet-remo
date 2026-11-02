@@ -15,7 +15,7 @@ var ErrUpdateKeyNotConfigured = errors.New("service: update public key is not co
 
 // updatePublicKeyFile は更新の署名の検証に使う公開鍵（minisign の .pub ファイルの中身。FR-H09、NFR-S10）。
 // 秘密鍵は GitHub Actions の Secret にだけあり、リポジトリにもログにも置かない。
-// 本物の公開鍵はオーナーが生成して置き換える（それまではプレースホルダで、ErrUpdateKeyNotConfigured になる）。
+// 空・コメントだけに戻すと未設定として ErrUpdateKeyNotConfigured になる（fail closed）。
 //
 //go:embed updater_pubkey.pub
 var updatePublicKeyFile []byte
