@@ -390,3 +390,41 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	has(t, empty, `data-empty="app-log"`)
 	hasNot(t, empty, "<tbody", "data-pager")
 }
+
+// API キーのパネル（NFR-S14）: 入力欄は伏せ字で value を持たない。登録の有無で状態・ボタンが変わる。エラーは項目別に出す。
+func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
+	p := view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", Target: "puppet-remo/openai", PutURL: "/agent/api-key", ConfirmURL: "/agent/api-key/delete/confirm"}
+	out := webtest.Render(t, organisms.APIKeyPanel(p))
+	has(t, out, `id="agent-key"`, `data-key-state="unregistered"`, "未登録", `type="password"`, `autocomplete="off"`, `name="api_key"`,
+		`hx-put="/agent/api-key"`, `hx-target-422="#agent-key"`, "puppet-remo/openai", "資格情報マネージャー", "表示しません", ">登録<")
+	hasNot(t, out, "value=", "data-key-delete", "削除", "data-field-error")
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	p.Registered, p.Error = true, "API キーを入力してください。"
+	out = webtest.Render(t, organisms.APIKeyPanel(p))
+	has(t, out, `data-key-state="registered"`, "登録済み", `data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`,
+		`data-field-error="agent-key-input"`, "入力してください", `aria-invalid`, "置き換える")
+	hasNot(t, out, "value=")
+	webtest.AssertCSPCompliantHTML(t, out)
+}
+
+// エージェントと高速パスのフォームは、別々の同意（別々のチェックボックスと文言）を持つ。既定の値は入力のとおりに描画する。
+func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
+	agent := webtest.Render(t, organisms.AgentForm(view.AgentForm{
+		Values: view.AgentValues{Model: "m", MaxSteps: "50", MaxDurationSec: "600", KeepScreenshots: "3", DenyProcesses: "A.exe\nB.exe"},
+		Errors: view.AgentErrors{Consent: "同意が必要です", General: "全体の不備"},
+	}))
+	has(t, agent, `hx-put="/agent"`, `data-consent="openai"`, "OpenAI に送信される", `data-field-error="agent-consent"`, "同意が必要です",
+		`data-form-error="agent"`, "全体の不備", `<textarea`, "A.exe\nB.exe", `min="1"`, `max="500"`, `min="30"`, `max="7200"`, `max="10"`)
+	hasNot(t, agent, "TypeSafe", "checked", "同意済み")
+
+	fast := webtest.Render(t, organisms.FastpathForm(view.FastpathForm{
+		Values:    view.FastpathValues{Enabled: true, Consent: true, Model: "jev-1.13", MinConfidence: "0.7", MaxSteps: "15", ExcludedLabels: "delete"},
+		ConsentAt: "2026-10-30 12:00",
+	}))
+	has(t, fast, `hx-put="/agent/fastpath"`, `data-consent="typesafe"`, "TypeSafe（api.typesafe.ai）に送信される", "ウィンドウのタイトル", "直近 5 件",
+		"スクリーンショット、要素の値", `data-consent-at="typesafe"`, "2026-10-30 12:00", `step="0.05"`, `max="1"`, "別の同意", "checked")
+	hasNot(t, fast, "OpenAI に送信される", `data-consent="openai"`)
+	webtest.AssertCSPCompliantHTML(t, agent)
+	webtest.AssertCSPCompliantHTML(t, fast)
+}

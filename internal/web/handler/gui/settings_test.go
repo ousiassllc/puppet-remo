@@ -40,7 +40,8 @@ func TestSettingsPage(t *testing.T) {
 	// NFR-S11: サムネイルと本文は平文。BitLocker とサムネイル無効化の案内、本文の記録の警告は常に出す（確認ダイアログは作らない）。
 	contains(t, res, `data-notice="audit-plaintext"`, "平文", "BitLocker", "サムネイルの保存を無効", `data-notice="audit-record-text"`, "パスワード")
 	lacks(t, res, "data-field-error", "log.level", `role="dialog"`)
-	// エージェント・API キーの設定は出さない（M4）。
+	// エージェント・API キーの設定は /agent にあり、設定のフォームには出さない（/agent へのリンクだけ。FR-H11）。
+	contains(t, res, `data-notice="agent-link"`, `href="/agent"`, "既定は無効")
 	lacks(t, res, "OpenAI", "api_key")
 }
 
