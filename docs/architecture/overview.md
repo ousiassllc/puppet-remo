@@ -607,7 +607,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 | WebSocket | `github.com/coder/websocket` v1.8.15 | M2（#61）で直接依存にした（`internal/ws`。v1.8.14 の間接依存だったものを v1.8.15 に上げた） |
 | 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | M4（#19）で依存に加え、`platform/windows` の `SecretStore` の背後に置いた（M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけだった）。呼び出しは M4 の後続の変更で足す |
 | DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | M2（#57）で直接依存に追加し採用を確定した（`internal/platform/windows` の `dxgi_windows.go`）。`Capturer.Watch` は DXGI を主、GDI をフォールバックとして実装した。変更矩形は使わず `Frame.Dirty` は全面 |
-| OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | 依存に無く、`internal/openai`・`internal/typesafe` も無い（M4） |
+| OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | `internal/openai`（`openai-go/v3` v3.90.0）・`internal/typesafe`（`net/http`）を M4（#19）で追加した。`app` は import せず、組み立ては `service`（`NewAgentModel`・`NewAgentChooser`）が持つ |
 | MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |
 | ULID | `oklog/ulid/v2` | 同じ（`internal/app` の `ULIDGen`）。`domain.IDGen` として注入する |
 | ホスト GUI の更新 | `GET /poll`（本書の技術選定のとおり） | 同じ。`GET /events`（SSE）と `htmx-ext-sse` の同梱は残すが、M1 の GUI は読み込まない（未使用） |
@@ -674,3 +674,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.18 | 2026-11-01 | M1 実装での差分の `internal/web`（`handler/remote`・`remotetest`）とリモートルーターの提供物（Web UI・`/static/*`・待機ページの出し分け）を反映 | #62 |
 | 1.19 | 2026-11-02 | 入力注入と自己保護の InputGuard にクリック透過のオーバーレイの例外（`At` は Overlay を飛ばす）、オーバーレイを全モニター・物理座標・保持者の変更・構成変化の扱いに具体化、M1 実装での差分の `internal/app`・キルスイッチ・`ContentProtectionEnabled` の行を #68・#69 の実装に更新 | #69 |
 | 1.20 | 2026-11-02 | 自動更新を具体化: 認証なしの取得（リポジトリは公開が前提）、minisign 形式の署名と trusted comment による版・ファイル名の束縛、公開鍵の埋め込みと未設定時の fail closed、署名鍵を GitHub Actions の Secret に置くこと（Secret が無いときは署名を省く）、チャネル、確認の間隔。M1 実装での差分に自動更新の行を追加 | #74 |
+| 1.21 | 2026-11-02 | 技術選定表の OpenAI / TypeSafe クライアントの行を M4 の実装（`internal/openai`・`internal/typesafe` を追加。`app` は import せず、組み立ては `service.NewAgentModel`・`service.NewAgentChooser`）に更新 | #19 |
