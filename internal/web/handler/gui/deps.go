@@ -111,6 +111,19 @@ type Updates interface {
 	Apply(ctx context.Context, by domain.ActorKind) error
 }
 
+// AgentSettings はエージェント設定（FR-H11。画面は /agent）の読み書き。実体は service.AgentSettings。
+// 監査（有効化・同意・高速パス。FR-G14・G22）は実体が記録するため、ハンドラは記録しない。API キーの値は、読み出しも戻り値にも無い（登録の有無だけ。NFR-S14）。
+// 項目の不備は *service.ValidationError、条件を満たさない有効化は domain.ErrAgentDisabled。
+type AgentSettings interface {
+	Load(ctx context.Context) (service.AgentSettingsView, error)
+	SaveAgent(ctx context.Context, in service.AgentSettingsInput) error
+	SetOpenAIKey(ctx context.Context, key string) error
+	DeleteOpenAIKey(ctx context.Context) error
+	SaveFastpath(ctx context.Context, in service.FastpathSettingsInput) error
+	SetTypeSafeKey(ctx context.Context, key string) error
+	DeleteTypeSafeKey(ctx context.Context) error
+}
+
 // Events は状態の変化の購読（SSE と、GET /poll に渡すトーストのキュー）。
 type Events interface {
 	Subscribe(topics ...string) (<-chan service.Event, func())
@@ -131,6 +144,9 @@ type Deps struct {
 	Updates    Updates
 	Events     Events
 	Clock      domain.Clock
+
+	// AgentSettings はエージェント設定（M4。FR-H11）。
+	AgentSettings AgentSettings
 
 	// Location は表示する時刻のタイムゾーン。nil なら time.Local。
 	Location *time.Location
@@ -158,7 +174,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.AgentSettings == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

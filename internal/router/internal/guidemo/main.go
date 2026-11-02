@@ -39,8 +39,9 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8899", "待ち受けるアドレス（loopback のみ）")
 	lease := flag.String("lease", leaseHeld, "操作権の状態（idle / pending_approval / held）")
+	agent := flag.String("agent", agentEmpty, "エージェント設定の状態（empty = 無効・キー未登録 / registered = OpenAI キー登録済みで有効。TypeSafe キーも登録済み・高速パスは無効）")
 	flag.Parse()
-	if err := run(*addr, *lease); err != nil {
+	if err := run(*addr, *lease, *agent); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -52,9 +53,18 @@ const (
 	leaseHeld    = "held"
 )
 
-func run(addr, lease string) error {
+// エージェント設定の状態（-agent）。キーの値は偽実装も持たない（登録の有無だけ）。
+const (
+	agentEmpty      = "empty"
+	agentRegistered = "registered"
+)
+
+func run(addr, lease, agent string) error {
 	if lease != leaseIdle && lease != leasePending && lease != leaseHeld {
 		return fmt.Errorf("guidemo: -lease は idle / pending_approval / held のどれか（%q）", lease)
+	}
+	if agent != agentEmpty && agent != agentRegistered {
+		return fmt.Errorf("guidemo: -agent は empty / registered のどちらか（%q）", agent)
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -65,6 +75,9 @@ func run(addr, lease string) error {
 	}
 
 	f := seed(lease)
+	if agent == agentRegistered {
+		seedAgentRegistered(f)
+	}
 	deps := f.Deps()
 	h, err := gui.New(deps)
 	if err != nil {
@@ -97,6 +110,19 @@ func run(addr, lease string) error {
 		return err
 	}
 	return nil
+}
+
+// seedAgentRegistered は OpenAI キー・TypeSafe キーを登録済みにし、エージェントを同意つきで有効にする（高速パスは無効のまま）。
+func seedAgentRegistered(f *guitest.Fakes) {
+	f.AgentSettings.Registered(true, true)
+	st := f.AgentSettings.State()
+	in := service.AgentSettingsInput{
+		Enabled: true, Consent: true, Model: st.Model, MaxSteps: st.MaxSteps, MaxDurationSec: st.MaxDurationSec,
+		KeepScreenshots: st.KeepScreenshots, DenyProcesses: st.DenyProcesses, ApproveProcesses: []string{"explorer.exe"},
+	}
+	if err := f.AgentSettings.SaveAgent(context.Background(), in); err != nil {
+		log.Fatalf("guidemo: seed agent: %v", err)
+	}
 }
 
 // seed は見た目の確認用の架空のデータ（実在しないホスト名・ユーザー・IP）を入れる。

@@ -163,13 +163,13 @@ func TestKillSwitchErrors(t *testing.T) {
 
 func TestUnknownRoutes(t *testing.T) {
 	r := newRig(t)
-	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/tasks", "/agent"} {
+	for _, target := range []string{"/nope", "/lease/revoke", "/wails/runtime.js", "/viewer", "/tasks"} {
 		res := r.get(target)
 		status(t, res, http.StatusNotFound)
 		contains(t, res, "<html", `data-error-code="not_found"`, "ページが見つかりません")
 	}
-	// M4 までに無い操作の経路は作らない（メソッド違いでも 404。/lease/revoke は POST だけ）。
-	for _, route := range [][2]string{{http.MethodPut, "/lease/revoke"}, {http.MethodPost, "/tasks/t1/cancel"}, {http.MethodPut, "/agent"}} {
+	// M4 までに無い操作の経路は作らない（メソッド違いでも 404。/lease/revoke は POST だけ。/agent は GET と PUT だけ）。
+	for _, route := range [][2]string{{http.MethodPut, "/lease/revoke"}, {http.MethodPost, "/tasks/t1/cancel"}, {http.MethodPost, "/agent"}, {http.MethodGet, "/agent/api-key"}, {http.MethodPost, "/agent/fastpath"}} {
 		res := r.do(route[0], route[1], nil, hx...)
 		status(t, res, http.StatusNotFound)
 	}

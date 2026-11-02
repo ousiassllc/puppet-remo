@@ -122,7 +122,7 @@ func TestStaticAssetsUseNoCacheAndETag(t *testing.T) {
 // 動的な応答（トークンの平文を含みうる）はキャッシュさせない。
 func TestDynamicResponsesAreNoStore(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/", "/requests", "/clients", "/settings", "/update", "/apps", "/nope"} {
+	for _, p := range []string{"/", "/requests", "/clients", "/settings", "/update", "/apps", "/agent", "/nope"} {
 		if got := do(h, http.MethodGet, p).Header().Get("Cache-Control"); got != "no-store" {
 			t.Errorf("GET %s: Cache-Control = %q, want no-store", p, got)
 		}
@@ -170,7 +170,7 @@ func TestGUIServesTheUpdateRoutes(t *testing.T) {
 // ホスト専用の経路だけがあり、/wails/* は予約され、M1 に無いものと、リモート向けの経路は存在しない。
 func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 	h, _ := newGUI(t)
-	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks", "/agent"} {
+	for _, p := range []string{"/wails/runtime.js", "/wails/", "/viewer", "/ws/screen", "/mcp", "/api/v1/status", "/tasks"} {
 		if rec := do(h, http.MethodGet, p); rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
 		}
@@ -263,4 +263,55 @@ func TestGUILimitsStateChangingRequestBodies(t *testing.T) {
 	if rec := do(h, http.MethodGet, "/apps"); rec.Code != http.StatusOK {
 		t.Errorf("GET /apps = %d", rec.Code)
 	}
+}
+
+// エージェント設定（M4。FR-H11）の経路は GUI にある。API キーの値は応答のどこにも出ず、キーの経路はキャッシュさせない。
+func TestGUIServesTheAgentRoutes(t *testing.T) {
+	h, f := newGUI(t)
+	const canary = "sk-canary-router-0123456789"
+	if rec := do(h, http.MethodGet, "/agent"); rec.Code != http.StatusOK {
+		t.Errorf("GET /agent: status %d, want 200", rec.Code)
+	}
+	// キー未登録の削除の確認は 409。
+	if rec := do(h, http.MethodGet, "/agent/api-key/delete/confirm", "HX-Request", "true"); rec.Code != http.StatusConflict {
+		t.Errorf("GET /agent/api-key/delete/confirm: status %d, want 409", rec.Code)
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPut, "/agent"}, {http.MethodPut, "/agent/api-key"}, {http.MethodDelete, "/agent/api-key"},
+		{http.MethodPut, "/agent/fastpath"}, {http.MethodPut, "/agent/fastpath/api-key"}, {http.MethodDelete, "/agent/fastpath/api-key"},
+	} {
+		if rec := do(h, route.method, route.path, "HX-Request", "true"); rec.Code == http.StatusNotFound {
+			t.Errorf("%s %s is not registered", route.method, route.path)
+		}
+	}
+	// キーは本文だけで受ける。URL に付けても登録されない（本文が空なので 422）。
+	rec := do(h, http.MethodPut, "/agent/api-key?api_key="+canary, "HX-Request", "true")
+	if rec.Code != http.StatusUnprocessableEntity || f.AgentSettings.State().OpenAIKeyRegistered {
+		t.Errorf("query api_key: status %d registered=%v", rec.Code, f.AgentSettings.State().OpenAIKeyRegistered)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+	// 本文で登録すると 200。応答にキーは出ない。
+	rec = doBody(h, http.MethodPut, "/agent/api-key", "api_key="+canary)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), canary) {
+		t.Errorf("PUT /agent/api-key: status %d body %.300s", rec.Code, rec.Body.String())
+	}
+	if !f.AgentSettings.State().OpenAIKeyRegistered {
+		t.Error("the key was not registered")
+	}
+	// 本文の上限（1 MiB）を超えるキーは 413 で、登録されない。
+	rec = doBody(h, http.MethodPut, "/agent/fastpath/api-key", "api_key="+strings.Repeat("a", router.GUIMaxBodyBytes+1))
+	if rec.Code != http.StatusRequestEntityTooLarge || f.AgentSettings.State().TypeSafeKeyRegistered {
+		t.Errorf("oversized key body: status %d registered=%v", rec.Code, f.AgentSettings.State().TypeSafeKeyRegistered)
+	}
+}
+
+// doBody はフォームの本文つきのリクエストを送る。
+func doBody(h http.Handler, method, target, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
 }
