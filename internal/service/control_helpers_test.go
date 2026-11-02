@@ -113,10 +113,44 @@ func (ts *ctlTimers) FireAll() {
 	}
 }
 
-// ctlAudit は AuditRecorder の偽物（記録を溜める）。
+// ctlAudit は SyncAuditRecorder の偽物（記録を溜める）。RecordSync の行（launch_app の試行）は entries ではなく sync に溜める
+// （Record の結果の行と混ぜない）。syncErr が非 nil なら RecordSync は何も記録せずそのエラーを返す。
 type ctlAudit struct {
 	mu      sync.Mutex
 	entries []repository.AuditEntry
+	sync    []repository.AuditEntry
+	syncErr error
+	onSync  func() // RecordSync のたびに呼ばれる（同期書き込みの最中の出来事を再現する）
+}
+
+func (a *ctlAudit) RecordSync(_ context.Context, e repository.AuditEntry) error {
+	a.mu.Lock()
+	if a.syncErr != nil {
+		err := a.syncErr
+		a.mu.Unlock()
+		return err
+	}
+	a.sync = append(a.sync, e)
+	hook := a.onSync
+	a.mu.Unlock()
+	if hook != nil {
+		hook() // ロックの外で呼ぶ（キルスイッチの発動は Record を通って同じロックを取る）
+	}
+	return nil
+}
+
+// SyncEntries は RecordSync で書かれた行を返す。
+func (a *ctlAudit) SyncEntries() []repository.AuditEntry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]repository.AuditEntry(nil), a.sync...)
+}
+
+// SetSyncErr は以後の RecordSync を err で失敗させる（nil で戻す）。
+func (a *ctlAudit) SetSyncErr(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.syncErr = err
 }
 
 func (a *ctlAudit) Record(_ context.Context, e repository.AuditEntry) {

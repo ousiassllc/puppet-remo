@@ -80,12 +80,59 @@ func (c *control) launch(ctx context.Context, who domain.Actor, appID string) (r
 	}
 	// 起動の前のウィンドウの一覧（起動後に新しく開いたウィンドウを見分ける。FR-M19。#55）。読めなければ nil（後の判定は新規の有無を使わない）。
 	before := c.windowIDs(ctx)
+	// 起動の「試行」の行を、プロセスを作る前に同期で書く。書けなければ起動しない（fail-closed。NFR-S20）。
+	if err := c.recordLaunchAttempt(ctx, who, appID, label, leaseID); err != nil {
+		return LaunchResult{}, label, leaseID, err
+	}
+	// 同期書き込みは DB のロック待ちなどで伸びうる。その間に発動したキルスイッチを取りこぼさない（試行の行は残るが、起動しない）。
+	if c.kill.Active() {
+		return LaunchResult{}, label, leaseID, domain.ErrKillSwitchActive
+	}
 	pid, err := c.launcher.Launch(ctx, platform.LaunchSpec{ExePath: app.ExePath, Args: app.Args, WorkingDir: app.WorkingDir})
 	if err != nil {
 		return LaunchResult{}, label, leaseID, launchFailure(err)
 	}
 	obs := c.observeLaunchedWindow(ctx, pid, before)
 	return LaunchResult{AppID: app.ID, PID: pid, Window: obs.foreground, ReusedExistingWindow: obs.reusedExistingWindow()}, label, leaseID, nil
+}
+
+// 起動の「試行」の監査のイベント名。結果の行（tool.launch_app・agent.step）とは別の行で、追記だけで更新しない。
+const (
+	launchAttemptAuditEvent      = "tool.launch_app.attempt"
+	agentLaunchAttemptAuditEvent = "agent.launch_attempt"
+)
+
+// recordLaunchAttempt は起動の「試行」の行を同期で書く。書けなければ ErrAuditUnavailable を返し（原因は運用ログにだけ出す）、
+// 呼び出し側は起動しない。audit が nil（テスト用）なら何もしない。
+func (c *control) recordLaunchAttempt(ctx context.Context, who domain.Actor, appID, label, leaseID string) error {
+	if c.audit == nil {
+		return nil
+	}
+	if err := c.audit.RecordSync(ctx, launchAttemptEntry(ctx, who, appID, label, leaseID)); err != nil {
+		c.log.Error("launch_app refused: the attempt could not be written to the audit log", "client", who.Label, "err", err)
+		return domain.ErrAuditUnavailable
+	}
+	return nil
+}
+
+// launchAttemptEntry は起動の「試行」の監査エントリ（detail は app_id と、許可リストを引けたときの label だけ。結果の行の detail の部分集合）。
+// result の ok は「起動の試みを記録した」の意味で、起動の成否は結果の行が持つ。MCP は kind = tool、agent は kind = agent（タスク・ステップに紐づく）。
+func launchAttemptEntry(ctx context.Context, who domain.Actor, appID, label, leaseID string) repository.AuditEntry {
+	detail := map[string]any{"app_id": domain.TruncateRunes(appID, maxAuditAppIDRunes)}
+	if label != "" {
+		detail["label"] = label
+	}
+	if who.Kind == domain.ActorAgent {
+		e := agentAuditBase(ctx, who, agentLaunchAttemptAuditEvent, leaseID)
+		e.Tool = launchAppTool
+		e.Result = auditOK
+		e.DetailJSON = marshalDetail(detail)
+		return e
+	}
+	e := ToolAuditEntry(who, launchAppTool, detail, leaseID, nil, 0)
+	e.Event = launchAttemptAuditEvent
+	e.DurationMS = nil
+	return e
 }
 
 // launchFailure は AppLauncher.Launch の失敗を API の launch_failed に写す。理由（4 値）以外は載せない。

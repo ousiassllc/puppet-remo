@@ -148,6 +148,41 @@ tasks:
     cmds:
       - bunx tsc -p .
 
+  frontend:typecheck:e2e:
+    desc: E2E（static/e2e・playwright.config.ts）の TypeScript の型検査
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - bunx tsc -p e2e
+
+  frontend:browsers:
+    desc: Playwright の Chromium を導入する（Lit のテストと E2E が使う。--with-deps・sudo は使わない。導入済みなら何もしない。置き場は PLAYWRIGHT_BROWSERS_PATH）
+    deps: [frontend:install]
+    dir: static
+    cmds:
+      - bunx playwright install chromium
+
+  frontend:test:
+    desc: Lit のテスト（web-test-runner。ヘッドレス Chromium）
+    deps: [frontend:browsers]
+    dir: static
+    cmds:
+      - bun run test
+
+  test:e2e:
+    desc: テスト専用サーバー（-tags e2e。偽の platform・偽の tailnet）の build・vet・テスト
+    cmds:
+      - go build -tags e2e ./...
+      - go vet -tags e2e ./...
+      - go test -tags e2e ./internal/app/... ./internal/tailnet/... ./cmd/...
+
+  e2e:
+    desc: Playwright の E2E（テスト専用サーバーを -tags e2e でビルドして起動し、ヘッドレス Chromium でリモートの Web UI を操作する）
+    deps: [frontend:build, frontend:browsers]
+    dir: static
+    cmds:
+      - bun run e2e
+
   frontend:dev:
     desc: esbuild と Tailwind のウォッチ（WAILS_VITE_PORT で serve。wails3 dev が呼ぶ）
     deps: [frontend:install]
@@ -201,6 +236,7 @@ tasks:
       - task: templ:check
       - task: frontend:build
       - task: frontend:typecheck
+      - task: frontend:typecheck:e2e
       - task: build:production
       - task: test:production
       - task: build
@@ -210,3 +246,6 @@ tasks:
       - task: check:imports
       - task: lint
       - task: test
+      - task: frontend:test
+      - task: test:e2e
+      - task: e2e

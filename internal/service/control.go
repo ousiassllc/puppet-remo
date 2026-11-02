@@ -61,9 +61,11 @@ type Control interface {
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
 	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
 	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
+	//  4b. 起動の「試行」の行を SyncAuditRecorder.RecordSync で同期に書く（書けなければ ErrAuditUnavailable。起動しない。fail-closed。#37・NFR-S20）
+	//  4c. KillSwitch の再確認（同期書き込みの待ちの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
 	//  5b. 起動後のウィンドウの観測（起動の前後のウィンドウの一覧を比べる。LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
-	//  6. Audit（tool.launch_app。パス・引数は記録しない。FR-AU06）
+	//  6. 結果の行（tool.launch_app。非同期。書けなくても起動は取り消さない。パス・引数は記録しない。FR-AU06）
 	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
 	// ReleaseInput は押下中のキー・ボタンをすべて離す（InputInjector.ReleaseAll の唯一の入口）。キルスイッチのクローザー `input` と、
 	// エージェントのタスクの終了処理（FR-G10）が呼ぶ。入力の直列化のロックは取らないので、実行中の入力があっても解放できる。
@@ -129,9 +131,10 @@ type ControlConfig struct {
 	Kill   ControlKillSwitch
 
 	Settings repository.Settings // nil なら screenshot.max_dimension は既定値
-	// Audit は監査の記録先。nil なら記録しない。ThumbnailsEnabled・RecordWithThumb も持つ（*Audit）なら、画面を変える操作の
+	// Audit は監査の記録先。nil なら記録しない（テスト用。本番の結線は必ず渡す）。launch_app の起動の前の「試行」の行は
+	// RecordSync で書く（書けなければ起動しない。NFR-S20）。ThumbnailsEnabled・RecordWithThumb も持つ（*Audit）なら、画面を変える操作の
 	// 成功時にサムネイルを撮って付ける（FR-AU02。control_thumb.go）。持たなければ撮らない。
-	Audit  AuditRecorder
+	Audit  SyncAuditRecorder
 	Clock  domain.Clock
 	Logger *slog.Logger // nil なら slog.Default()。サムネイルの撮影の失敗などの出力先
 	// Judge と Approval は ActorAgent のアクションだけが使う（mcp・web だけなら nil でよい）。agent のアクションで Judge が nil なら
@@ -169,7 +172,7 @@ type control struct {
 	kill      KillSwitchState
 	guard     InputGuard
 	settings  repository.Settings
-	audit     AuditRecorder
+	audit     SyncAuditRecorder
 	judge     Judge
 	approval  Approval
 	log       *slog.Logger

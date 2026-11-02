@@ -4,6 +4,8 @@
 /coverage.out
 /static/node_modules/
 /static/dist/
+/static/test-results/
+/static/playwright-report/
 /.task/
 /cmd/puppet-remo/*.syso
 /build/windows/nsis/MicrosoftEdgeWebview2Setup.exe

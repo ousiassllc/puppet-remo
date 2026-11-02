@@ -95,6 +95,7 @@ func (t *taskAdmin) CancelByHost(ctx context.Context, id string) (domain.Task, e
 
 // taskStepEvents はタスクの詳細に「ステップ」として出す監査のイベント。agent.task_start・agent.task_end は、タスクの行
 // （作成・終了の時刻と状態）が同じ情報を持つので出さない。
+// agent.launch_attempt（起動の「試行」の行。#37）は、同じアクションの agent.step の前置きなので、ステップには出さない（1 行 = 1 アクション）。
 var taskStepEvents = map[string]bool{agentStepAuditEvent: true, agentJudgeAuditEvent: true, agentSafetyCheckAuditEvent: true}
 
 // taskStepOf は監査の 1 行をタスクの 1 ステップにする（ステップでない行は ok = false）。

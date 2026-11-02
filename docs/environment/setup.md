@@ -57,6 +57,8 @@
 | `task frontend:build` | `static/dist` を作る（`bun run build`。`frontend:install` を先に走らせる） |
 | `task frontend:typecheck` | TypeScript の型検査（`bunx tsc -p .`） |
 | `task build:production` / `task test:production` | `-tags production` のビルドと同梱物の契約テスト（どちらも `frontend:build` が先に走る） |
+| `task frontend:browsers` / `task frontend:test` / `task frontend:typecheck:e2e` | Playwright の Chromium の導入、Lit のテスト、E2E（`static/e2e`・`playwright.config.ts`）の型検査（下の「Lit のテストと Playwright の E2E を手元で走らせる」） |
+| `task test:e2e` / `task e2e` | テスト専用サーバー（`-tags e2e`）の build・vet・test、Playwright の E2E |
 | `task gui:demo` | 偽の service でホスト GUI を `127.0.0.1:8899` に起動する（見た目の確認用） |
 | `task windows:build` | Windows 向けの本番ビルド → `bin/puppet-remo.exe`（フロントエンドのビルド込み） |
 | `task package` | NSIS インストーラを作る → `bin/puppet-remo-amd64-installer.exe`（`makensis` が要る。版は `VERSION` ファイル。`RELEASE_VERSION=` / `APP_VERSION=` で上書き） |
@@ -98,7 +100,8 @@ GitHub Actions。すべてのジョブは、セルフホストの Linux ラン�
 | `go (linux)` | gofmt の差分チェック、`go build ./...`、`go vet ./...`、`scripts/check-imports.sh`、`go test -race ./...` |
 | `go (GOOS=windows build/vet)` | `GOOS=windows GOARCH=amd64` の `go build`・`go vet`・import 規則 |
 | `frontend` | templ（`go.mod` の版）の導入 → `templ generate` の差分チェック → `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p .` → `go build -tags production ./...`（Linux と `GOOS=windows`）→ `go test -tags production ./static/...` |
-| `lint` | golangci-lint v2.15.0（ホスト OS と `GOOS=windows`） |
+| `e2e`（#64） | `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p e2e` → `bunx playwright install chromium`（`PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`。`--with-deps`・sudo なし）→ Lit のテスト（`bun run test`）→ `go build -tags e2e ./...` → `go vet -tags e2e ./...` → `go test -race -tags e2e`（テスト専用サーバーのテスト）→ Playwright の E2E（`bun run e2e`）。templ は再生成しない（コミット済みの `_templ.go` を使う） |
+| `lint` | golangci-lint v2.15.0（ホスト OS と `GOOS=windows`、`-tags e2e`） |
 | `release scripts` | 配信スクリプトのテスト（`scripts/ci/test-release-scripts.sh`）と `actionlint` |
 | `installer (build only)` | インストーラをビルドだけして（公開しない）、ランナーでの道具（task・wails3・makensis・gh）の導入を確かめる |
 
@@ -108,7 +111,23 @@ GitHub Actions。すべてのジョブは、セルフホストの Linux ラン�
 
 `task ci` は、次を順に実行する。CI の `go test -race` の代わりに `go test`（`task test`）を走らせる点が CI と違う。
 
-`fmt:check` → `templ:check` → `frontend:build` → `frontend:typecheck` → `build:production` → `test:production` → `build` → `vet` → `build:windows` → `vet:windows` → `check:imports` → `lint` → `test`
+`fmt:check` → `templ:check` → `frontend:build` → `frontend:typecheck` → `frontend:typecheck:e2e` → `build:production` → `test:production` → `build` → `vet` → `build:windows` → `vet:windows` → `check:imports` → `lint` → `test` → `frontend:test` → `test:e2e` → `e2e`
+
+### Lit のテストと Playwright の E2E を手元で走らせる
+
+Lit のテスト（`bun run test`。`@web/test-runner`）と E2E（`bun run e2e`。Playwright）は、どちらもヘッドレスの Chromium を使う。M2 の受け入れ条件ではなく、あとから足した CI の改善で（オーナーの決定。#64）、CI では別ジョブ `e2e` で走る。
+
+```sh
+task frontend:browsers   # Chromium の導入（bunx playwright install chromium。--with-deps・sudo なし。導入済みなら何もしない）
+task frontend:test       # Lit のテスト
+task test:e2e            # テスト専用サーバー（-tags e2e）の go build・go vet・go test
+task e2e                 # Playwright の E2E（static/dist のビルドと Chromium の導入が先に走る）
+```
+
+- Chromium の置き場は環境変数 `PLAYWRIGHT_BROWSERS_PATH`（未設定なら Playwright の既定のキャッシュ）。CI はジョブ専用の `$RUNNER_TEMP/ms-playwright` にする。手元でも `PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright task e2e` のように指せる。導入した版は `@playwright/test` の版に結びつくので、版を上げたら `task frontend:browsers` をやり直す。
+- `bun run e2e` は `static/` で動く。`webServer` が、リポジトリのルートで `go build -tags e2e ./cmd/puppet-remo-e2e` のテスト専用サーバーを作って起動し、制御エンドポイントの `GET /ready` を待つ。ポートの既定はリモートルーター `18765`・制御 `18766`（環境変数 `E2E_REMOTE_PORT`・`E2E_CONTROL_PORT` で変える）。`static/dist`（`bun run build`）が要る。失敗したテストのトレースは `static/test-results/`（`.gitignore`）に残る（`bunx playwright show-trace`）。
+- テスト専用サーバーだけを手で動かして試すには: `cd static && bun run build && cd .. && go run -tags e2e ./cmd/puppet-remo-e2e -port 18765 -control 127.0.0.1:18766`。リモートルーターは `127.0.0.1:18765`、制御エンドポイント（loopback のみ。ホスト側の操作と偽の injector の入力の読み取り）は `127.0.0.1:18766`。使い方は [コンポーネント設計](../components/overview.md) §13.13。
+- テスト専用サーバーは `//go:build e2e` のファイルだけで、`-tags e2e` を付けないビルド（`go build ./...`・`task build`・本番のバイナリ）には入らない。
 
 ## Lint
 
@@ -169,3 +188,4 @@ OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義�
 |----|------|---------|---------|
 | 1.0 | 2026-11-01 | 新規作成。Go・Wails v3・Task・GitHub Actions・golangci-lint・gofmt・templ・bun によるフロントエンドのビルド・Lefthook の現状を記載。Linterly は未導入と明記 | #40 |
 | 1.1 | 2026-11-01 | フロントエンドの型検査の実行条件に `static/src/*.ts`（`static/src` 直下）を追加 | レビュー指摘（`**/` は直下に一致しない） |
+| 1.2 | 2026-11-02 | Lit のテストと Playwright の E2E の実行手順（`task frontend:test`・`task e2e` など）、`e2e` ジョブ、Chromium の導入（`PLAYWRIGHT_BROWSERS_PATH`・`--with-deps` なし・sudo なし）、`lint` ジョブの `-tags e2e`、`task ci` の項目を追記 | #64（オーナーの決定） |

@@ -87,6 +87,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
 | `app_not_found` | 404 | `launch_app` | `app_id` が起動許可リストに無い（FR-M19。M1.5） |
 | `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に puppet-remo のウィンドウの範囲を付ける（§3.4） |
+| `audit_unavailable` | 503 | `launch_app` | 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動できる） |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリだが OS がプロセスを作成できなかった（FR-M19。M1.5）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
 | `agent_disabled` | 409 | `run_task` / `PUT /agent`（GUI） | エージェント無効、API キー未登録、またはクライアントに利用許可が無い |
@@ -274,8 +275,9 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 - プロセスの作成に成功した時点で起動は成功。そのあと、起動した `pid` のウィンドウが前面に出るのを、200 ミリ秒間隔で最大 16 回（およそ 3 秒。前面の `pid` が一致したらすぐ）観測して返す（起動の前後のウィンドウ一覧の差も見る）。ウィンドウが出なくても失敗にはしない。`window` を見たうえで、**入力の前に必ず `screenshot` か `list_windows` で対象を確かめる**（`instructions` とツールの説明にも同じ注意を書く）。
 
 - 検査の順序は、キルスイッチ（ミドルウェア連鎖の 3）→ 操作リース → 許可リスト。リース未保持なら暗黙に取得する（FR-L04）。リースの承認は M1.5 には無い（M3 から）
-- エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
+- エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）、`audit_unavailable`（HTTP 503。起動の「試行」の行を監査ログに書けなかったとき。プロセスは起動していない（暗黙に取得したリースは保持したまま）。下の監査の項）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
 - 同じアプリが起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない。自分からフォーカスを切り替えることはしない。アプリ自身が既存のウィンドウを前に出すことはあり、結果の `reused_existing_window` で分かる）。起動済みのプロセスは、リースの解放・セッションの切断・キルスイッチ・許可リストからの削除では終了しない
+- 監査は fail-closed の 2 行（#37。NFR-S20）: プロセスを作る**前**に「試行」の行（`tool.launch_app.attempt`。agent は `agent.launch_attempt`）を同期で書き、書けなければ起動せず `audit_unavailable` を返す。起動のあとに「結果」の行（下の `tool.launch_app` / `agent.step`）を書く。結果の行が書けなくても起動は取り消さず、運用ログに Warn を出す。試行の行はキルスイッチ・リース・許可リストの検査を通って起動に進む呼び出しにだけ書く。同期書き込みの遅延は許容し、新しい待ちの上限は足さない（既存の `ToolTimeout` のまま）。
 - すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。入力スキーマに合わない呼び出し（`app_id` の欠落・型違い・追加のプロパティ）は SDK が実行前に拒否するため `Control.Launch` に届かない。この場合は MCP の受信ミドルウェアが `tool.launch_app`（`denied`・`error_code = invalid_argument`、`detail` なし。拒否された値は記録しない）を 1 件追記する。`list_launchable_apps` も `tool.list_launchable_apps` として追記する
 
 #### 内蔵エージェント
@@ -347,7 +349,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 - 複数のモニターにまたがるウィンドウは、モニターごとに 1 件へ切り詰める。最小化されたウィンドウ、どのモニターとも重ならないウィンドウは含めない。どれも無い、またはウィンドウの一覧・モニター・設定を読めないときは、空配列（読めないときは `own_windows` ごと無い）で、拒否そのものは変えない
 - ウィンドウのタイトル・プロセス名・PID・ID・内容は載せない（範囲だけ）。`elevated_window` には付けない
 
-コードは §2 の表のとおり。引数のスキーマ違反（スキーマに無い引数・必須の欠落・型違い）は、ハンドラの手前で MCP SDK が拒否する。SDK（go-sdk）はこれを JSON-RPC エラーではなく、`isError` のツール結果（本文は `validating "arguments": …`。`structuredContent` は無く、`code` は付かない）で返す。
+コードは §2 の表のとおり。引数のスキーマ違反（スキーマに無い引数・必須の欠落・型違い）は、ハンドラの手前で MCP SDK が拒否する。**このうち監査に残すのは `launch_app` だけ**（§3.3。FR-AU06）で、他のツールのスキーマ違反は FR-AU01 の範囲外（決定事項。#38。何も実行せず状態を変えないため。監査には残らない）。SDK（go-sdk）はこれを JSON-RPC エラーではなく、`isError` のツール結果（本文は `validating "arguments": …`。`structuredContent` は無く、`code` は付かない）で返す。
 
 ## 4. Web UI（リモートルーター）
 
@@ -703,3 +705,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.39 | 2026-11-02 | §2 のエラーコード表の `agent_disabled` を 403 から 409 に改め、§7.5 の「表と食い違う」の注記を除いた（`PUT /agent` の 409 と統一） | #19 |
 | 1.40 | 2026-11-02 | §7.1 の `/logs` に「ログフォルダーを開く」ボタン、§7.3 に `POST /logs/open-folder`（開く場所を実装が固定。パスを受け取らない）を追加 | #54 |
 | 1.41 | 2026-11-02 | §3.3 の `launch_app` の `reused_existing_window` を、起動前後のウィンドウ一覧の差で判定する（新しいウィンドウがあれば `false`）に改めた | #55 |
+| 1.42 | 2026-11-02 | §2 に `audit_unavailable`（503。`launch_app` の起動の「試行」を監査に書けないと起動しない）、§3.3 の `launch_app` に fail-closed の 2 行の監査を追記。§3.4 に、監査に残すスキーマ違反は `launch_app` だけであることを明記 | #37・#38 |

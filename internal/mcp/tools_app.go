@@ -73,7 +73,8 @@ func (s *Server) addAppTools() {
 			"Before typing or clicking, ALWAYS confirm the target window with a screenshot or list_windows "+
 			"(a window pid different from the returned pid may mean the existing window was reused, or that the app handed over to a new process that opened a new window; "+
 			"reused_existing_window=true is a strong hint, not proof). "+
-			"Fails with app_not_found, launch_failed (reason in structuredContent), lease_held_by_other or kill_switch_active.",
+			"Fails with app_not_found, launch_failed (reason in structuredContent), lease_held_by_other, kill_switch_active or audit_unavailable "+
+			"(the attempt could not be written to the audit log, so nothing was launched).",
 		false, func(ctx context.Context, who domain.Actor, in launchAppIn) (toolResult, error) {
 			res, err := s.control.Launch(ctx, who, in.AppID)
 			if err != nil {

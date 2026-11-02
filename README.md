@@ -73,7 +73,7 @@ MCP の `launch_app` で起動できるのは、ホスト所有者が許可リ�
 - 本アプリは、こうしたプログラムを拒否するブロックリストを持ちません。何を登録するかは、ホスト所有者の判断です。
 - **ユーザーが書き込める場所（ダウンロード・`%TEMP%`・ユーザーのプロファイル配下など）の `.exe` を登録しないでください。** ファイルを差し替えられると、登録したのとは別のプログラムが起動します。起動のたびに確かめるのはパスの形と存在だけで、ファイルの内容や署名は確かめません。
 - 起動のたびに、実行ファイルがローカルの固定ディスク上の実体であること（ネットワーク・マップドドライブ・`subst`・シンボリックリンク・ジャンクションを経由しないこと）も確かめます。登録した場所を差し替えられる者がいれば、確認と起動の間に別のファイルへ入れ替えられる余地は残ります。
-- 起動の監査は、プロセスを作ったあとに非同期で記録します。記録のキューが満杯のとき・書き込みに失敗したときは、起動は成立したまま監査に残りません。その場合は運用ログに Error（`audit entry dropped`・`audit append failed`）が出ます。
+- 起動の監査は、「試行」と「結果」の 2 行（追記だけ）を残します。「試行」の行は、プロセスを作る前に同期で書きます。**書けないとき（DB の障害など）は起動せず**、`audit_unavailable`（HTTP 503。MCP は同じコードのツールエラー）を返します。「結果」の行は起動のあとに非同期で書き、書けなくても起動は取り消しません（運用ログに Warn の `audit entry dropped`・`audit append failed` が出ます）。同期書き込みのため、DB のロック待ちなどがあると呼び出しが遅れることがあります。
 - 起動したあとのプロセスは、本アプリの管理外です。終了も監視もしません（本アプリを終了しても、キルスイッチを発動しても、起動済みのプロセスは残ります）。
 
 ## 配布（ナイトリーと正式版）
@@ -95,6 +95,8 @@ task test          # テスト
 task lint          # golangci-lint（ホスト OS と Windows）
 task templ:generate # .templ から _templ.go を生成（生成物はコミットする）
 task frontend:build # static/dist を作る（esbuild・Tailwind CSS・htmx）
+task frontend:test # Lit のテスト（ヘッドレス Chromium。task frontend:browsers で導入）
+task e2e           # Playwright の E2E（テスト専用サーバー -tags e2e。偽の platform・tailnet）
 task ci            # CI と同じ検査を一通り実行
 task package       # NSIS インストーラを作る（版は VERSION ファイル。RELEASE_VERSION= で上書き）
 task dev           # wails3 dev で開発する（Windows。別ターミナルで task templ:watch）

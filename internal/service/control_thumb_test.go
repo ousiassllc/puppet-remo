@@ -140,6 +140,9 @@ func (a *thumbFakeAudit) Record(_ context.Context, e repository.AuditEntry) {
 	a.got = append(a.got, thumbRecord{Entry: e})
 }
 
+// RecordSync は launch_app の試行の行。サムネイルの検査の対象ではないので、何も溜めずに成功させる。
+func (a *thumbFakeAudit) RecordSync(context.Context, repository.AuditEntry) error { return nil }
+
 func (a *thumbFakeAudit) RecordWithThumb(_ context.Context, e repository.AuditEntry, t Thumbnail) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

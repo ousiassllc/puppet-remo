@@ -200,6 +200,8 @@ erDiagram
 
 保守: `last_seen_at` から 7 日を過ぎた行を定期削除する。`pending` で `expires_at` を過ぎた行は `expired` に更新する。レート制限（FR-A07）は件数カウントをメモリで行うため、DB には持たない。
 
+**接続要求の履歴の保持期間（決定事項。#52）**: 7 日・固定とする。設定項目にしない。許可・拒否・失効・`pending` のどの状態も同じ基準（`last_seen_at` から 7 日を過ぎたら削除。ちょうど 7 日の行は残す）で、処理済みだけを長く残す別扱いはしない。履歴の件数が増えないため、ページの上限（1 ページ 20 件）と索引（マイグレーション 0003）は変えない。`Expire` の実装も変えず、`TestConnRequestsExpireDeletesEveryStatusAfterSevenDays` が全状態を 7 日で消すことを確かめる。FR-A06（1 デバイス 1 件の集約）は変わらない。長期の記録は監査ログ（`audit_logs`。FR-AU01）が担う。
+
 M1 の実装の補足: 期限切れの `pending` は、保守で `expired` にする前でも一覧（`ListPending`）に含めず、許可もできない（許可は conflict）。同じデバイスの `pending` を 5 秒以内に更新済みなら、`last_seen_at` と `request_count` を DB に書かない（連続リクエストによる書き込みの抑止）。同じデバイスの期限切れの `pending` は、新しい要求を作る前に `expired` にする。
 
 ### settings
@@ -401,7 +403,7 @@ erDiagram
 | `id` | INTEGER | NO | AUTOINCREMENT | PK |
 | `ts` | INTEGER | NO | — | 発生時刻（UTC ミリ秒） |
 | `kind` | TEXT | NO | — | 分類: `auth`（接続要求・認証失敗）/ `client`（登録・変更・削除）/ `token` / `lease` / `tool`（MCP ツール呼び出し）/ `input`（Web UI からの入力操作）/ `agent`（タスクのライフサイクル・各ステップ・安全チェック・Judge の判定・エージェントと高速パスの有効化と同意）/ `killswitch` / `settings` / `update` |
-| `event` | TEXT | NO | — | イベント名（例: `lease.acquire`、`lease.revoke`、`tool.left_click`、`auth.bearer_failed`、`agent.task_start`、`agent.step`、`agent.safety_check`、`agent.judge`、`agent.consent`、`agent.fastpath.enable`、`agent.fastpath.disable`）。高速パスの有効化・無効化（`agent.consent` とは別イベント）は `kind = 'agent'`、有効化は `agent.fastpath.consent_at` の記録と同時に書く。401 によるシステム側の無効化は `actor_type = 'system'` で `agent.fastpath.disable`（`error_code` に `typesafe_unauthorized` を入れる） |
+| `event` | TEXT | NO | — | イベント名（例: `lease.acquire`、`lease.revoke`、`tool.left_click`、`auth.bearer_failed`、`agent.task_start`、`agent.step`、`agent.launch_attempt`、`agent.safety_check`、`agent.judge`、`agent.consent`、`agent.fastpath.enable`、`agent.fastpath.disable`）。高速パスの有効化・無効化（`agent.consent` とは別イベント）は `kind = 'agent'`、有効化は `agent.fastpath.consent_at` の記録と同時に書く。401 によるシステム側の無効化は `actor_type = 'system'` で `agent.fastpath.disable`（`error_code` に `typesafe_unauthorized` を入れる） |
 | `actor_type` | TEXT | NO | — | `mcp` / `web` / `agent`（内蔵エージェント）/ `host`（ホスト GUI 操作）/ `system` |
 | `client_id` | TEXT | YES | NULL | FK → `clients.id`、`ON DELETE SET NULL`。ホスト操作・システム・未登録デバイスは NULL。追記時にクライアントが既に無い場合（削除直後の `client.delete`・`lease.release` など）も NULL で保存し、`client_label` を残す |
 | `client_label` | TEXT | NO | — | 表示名のスナップショット。未登録デバイスはデバイス名、ホスト操作は `(host)` |
@@ -423,7 +425,8 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 
 | event | kind | actor_type | result | `detail_json` |
 |-------|------|------------|--------|---------------|
-| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・入力スキーマ違反）/ `error`（`launch_failed`） | `{ "app_id", "label", "pid"（ok のみ）, "reused_existing_window"（ok のみ。起動後に既存のウィンドウが前に出ただけと見られるか。FR-M19。前面のウィンドウのタイトル・id は記録しない）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument` |
+| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・入力スキーマ違反）/ `error`（`launch_failed`・`audit_unavailable`） | `{ "app_id", "label", "pid"（ok のみ）, "reused_existing_window"（ok のみ。起動後に既存のウィンドウが前に出ただけと見られるか。FR-M19。前面のウィンドウのタイトル・id は記録しない）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument`。試行の行が書けず起動しなかったときは `error` / `audit_unavailable`。**結果の行は、書けなくても起動を取り消さない**（非同期のキュー。運用ログに Warn の `audit entry dropped` / `audit append failed`）。`launch_app` 以外のツールのスキーマ違反は記録しない（FR-AU01 の範囲外。#38） |
+| `tool.launch_app.attempt` | `tool` | `mcp` | `ok` | 起動の**「試行」**の行（#37。fail-closed）。`Control.Launch` が、キルスイッチ・リース・許可リストの検査を通ってプロセスを作る**直前**に、呼び出しのスレッドで同期に追記する。書けなければ起動せず、`audit_unavailable`（503）を返す（結果の行 `tool.launch_app` は `error` / `audit_unavailable` で書こうとするが、監査ログが書けない状態なので残らないことがある）。`result = ok` は「起動を試みることを記録した」の意味で、起動の成否は結果の行が持つ。`{ "app_id", "label" }` だけ（`pid`・`reason` は入らない）。`duration_ms` は無い。結果の行とは別の行で、どちらも追記だけ（更新しない） |
 | `tool.list_launchable_apps` | `tool` | `mcp` | `ok` | `{ "count" }` |
 | `settings.launchable_app.create` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count" }` |
 | `settings.launchable_app.update` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count", "changed": ["label", "exe_path", "args", "working_dir"] }`。`changed` は変わった項目だけ。更新前の行が読めない行（`Corrupt`）のときは、壊れていた引数が破棄されたことを残すため `args` を必ず含める |
@@ -447,6 +450,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | キルスイッチの発動・解除 | `killswitch` | `killswitch.trigger` / `killswitch.release` | `host` |
 | 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete` | `host` |
 | 更新の確認・適用 | `update` | `update.detected`（署名を検証できた新版の検出。`result = ok`）/ `update.verify_failed`（署名・版の束縛・取得の失敗、公開鍵の未設定。`result = denied`、`error_code` に理由: `signature_invalid`・`signature_missing`・`version_mismatch`・`key_unset`・`download_failed`・`verify_error`）/ `update.downgrade_rejected`（現行より古い版・同じ版。`result = denied`）/ `update.apply_started`（インストーラを起動する。`result = ok`）/ `update.apply_failed`（起動に失敗。`result = error`、`error_code` は `start_failed`・`installer_not_found`・`canceled`）。`detail_json` は `{ "version", "tag", "current", "channel", "reason"? }` だけで、URL・署名・パス・OS のエラー文は記録しない。同じ版・理由の `detected` / `verify_failed` / `downgrade_rejected` は繰り返し記録しない | `host`（GUI の「今すぐ確認」「更新する」）/ `system`（定期確認・`auto_idle` の自動適用） |
+| エージェントの起動の試行 | `agent` | `agent.launch_attempt`（`Control.Launch` が、`actor_type = agent` の `launch_app` で、プロセスを作る**直前**に同期で 1 行。MCP の `tool.launch_app.attempt` と同じ規則。書けなければ起動しない。`tool = launch_app`、`task_id` は `Actor.SessionID`、`step_no` は `service.WithAgentStep` の値。`detail_json` は `{ "app_id", "label" }` だけ。タスク詳細（`TaskAdmin`）のステップには出さない。書けず起動しなかったときは、結果の行 `agent.step` が `error` / `audit_unavailable`） | `agent` |
 | エージェントの各ステップ | `agent` | `agent.step`（`Control.Do` / `Control.Launch` が、`actor_type = agent` のアクション 1 件ごとに 1 行。成功も拒否・失敗も記録する。`tool` はツール名（`left_click` など。MCP と同じ名前で、イベント名に `tool.` は付けない）、`task_id` は `Actor.SessionID`、`step_no` と `detail_json.route` は呼び出し側が `service.WithAgentStep` で渡す。`result = denied` は Judge・InputGuard・リース・キルスイッチ・承認の拒否。Judge の拒否は `error_code = judge_denied`）。`detail_json` は下記「エージェントのステップ」 | `agent` |
 | Judge の判定 | `agent` | `agent.judge`（Judge が `allow` 以外を返したときだけ、判定の直後（承認待ちの前）に 1 行。`result = ok`（`require_approval`）/ `denied`（`deny`。`error_code = judge_denied`）。`detail_json` は `{ "judge", "judge_reason", "processes", "route"? }`。`allow` の判定は個別の行にせず、`agent.step` の `detail_json.judge` に残す） | `agent` |
 | エージェントの有効化と同意 | `agent` | `agent.consent`（`detail_json.state` が `granted`（有効化。`consent_at` を同時に記録）/ `revoked`（無効化・OpenAI キーの削除。`reason` に `api_key_deleted`。OpenAI の HTTP 401 による無効化は `actor_type = system`・`result = error`・`error_code = openai_unauthorized`・`reason = openai_unauthorized`。NFR-S16）。キーの値は入れない） | `host` / `system` |
@@ -573,3 +577,5 @@ erDiagram
 | 1.26 | 2026-11-02 | `agent.consent` の `system`（OpenAI 401）・`openai_unauthorized`、`error_code` に `invalid_coordinates`、`agent.step` の `pass` と行動しないパスの `step_no` の規則、`agent_enabled` の説明の訂正 | #19 のレビュー指摘 |
 | 1.27 | 2026-11-02 | 資格情報のターゲット名を実装の実名（OpenAI は `puppet-remo/openai:puppet-remo`、TypeSafe は `puppet-remo/typesafe:puppet-remo`。go-keyring の `service:user`）に統一した。要件・実装は変えない | #19 |
 | 1.28 | 2026-11-02 | `key` の監査の `keys` を、表示できる 1 文字のキーは `[char]` に伏せる規則を追記 | #19 |
+| 1.29 | 2026-11-02 | 接続要求の履歴の保持期間を 7 日・固定（設定項目にしない。全状態を `last_seen_at` から 7 日で削除。ページ上限・索引 0003・`Expire`・FR-A06 は変えない）と決定事項に明記 | #52（所有者の決定） |
+| 1.30 | 2026-11-02 | 起動の監査を fail-closed の「試行」と「結果」の 2 行に改めた（`tool.launch_app.attempt` / `agent.launch_attempt` を追加。試行の行は起動の前に同期で書き、書けなければ起動しない。結果の行が書けなくても起動は取り消さない）。`launch_app` 以外のスキーマ違反は記録しない（FR-AU01 の範囲外）と明記 | #37・#38 |
