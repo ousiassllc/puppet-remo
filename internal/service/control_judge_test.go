@@ -289,6 +289,30 @@ func TestControlAgentNeverRecordsTypedTextEvenWithRecordText(t *testing.T) {
 	}
 }
 
+// key の表示できる 1 文字も同じ: agent の agent.step には、audit.record_text が true でも文字を残さない（keys は [char]、text なし）。
+func TestControlAgentNeverRecordsTypedCharacterKeysEvenWithRecordText(t *testing.T) {
+	je := newJudgeEnv(t, domain.ApprovalAuto, &stubJudge{v: domain.VerdictAllow})
+	je.settings.put(settingAuditRecordText, "true")
+	k, err := domain.ParseKeyCombo("q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := je.control.Do(context.Background(), ctlAgent, domain.KeyPress{Keys: k}); err != nil {
+		t.Fatal(err)
+	}
+	var seen bool
+	for _, e := range je.audit.Entries() {
+		d := string(e.DetailJSON)
+		if strings.Contains(d, `"q"`) || strings.Contains(d, `"text"`) {
+			t.Errorf("the typed key leaked: %s", d)
+		}
+		seen = seen || strings.Contains(d, "[char]")
+	}
+	if !seen {
+		t.Error("no audit row carried the redacted keys")
+	}
+}
+
 func TestControlAgentRequireApprovalAsksTheHostWithASafeSummary(t *testing.T) {
 	for _, mode := range []domain.ApprovalMode{domain.ApprovalAlways, domain.ApprovalFirstTime, domain.ApprovalAuto} {
 		t.Run(string(mode), func(t *testing.T) {

@@ -470,7 +470,10 @@ func (h *hostAdmin) RevokeToken(ctx context.Context, clientID, tokenID string) e
 	}
 	// 漏れたトークンで始めたタスクを走らせ続けない（FR-G10）。タスクはトークンではなくクライアントに紐づくので、
 	// どのトークンで始めたかによらず、そのクライアントの実行中のタスクを中断する（削除・無効化と同じ cancelled）。
-	h.cancelTasks(clientID, "token_revoked")
+	// 失効済みへの再実行（冪等。元の失効時刻を保つ）では中断しない: 別の有効なトークンで始めた無関係なタスクを巻き込まないため。
+	if tok.RevokedAt == nil {
+		h.cancelTasks(clientID, "token_revoked")
+	}
 	if h.cfg.Bus != nil {
 		h.cfg.Bus.Publish(Event{Topic: TopicSessions})
 	}

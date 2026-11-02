@@ -129,4 +129,12 @@ func TestHostAdminRevokeTokenCancelsTheClientsTasks(t *testing.T) {
 	if got, want := tasks.take(), []string{c.ID + "/token_revoked"}; !equalStrings(got, want) {
 		t.Errorf("cancelled %v, want %v", got, want)
 	}
+
+	// 失効済みへの再実行（冪等）は中断しない。別の有効なトークンで始めた無関係なタスクを巻き込まない。
+	if err := e.admin.RevokeToken(e.ctx, c.ID, toks[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := tasks.take(); len(got) != 0 {
+		t.Errorf("a repeated revoke cancelled %v", got)
+	}
 }

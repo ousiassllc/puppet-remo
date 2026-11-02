@@ -140,7 +140,7 @@ func firstField(verr *service.ValidationError, keys ...string) string {
 }
 
 // SaveAgent は PUT /agent。検証エラーは 422 で、入力値と項目別のメッセージ付きでフォームを再描画する。
-// API キー未登録などで有効にできないときは 409（agent_disabled。API 仕様 §7.3 のルートの記述）。
+// API キー未登録などで有効にできないときは 409（agent_disabled。API 仕様 §2 のエラーコード表も 409）。
 func (h *Handler) SaveAgent(c *gin.Context) {
 	ctx := c.Request.Context()
 	in := view.AgentValues{
