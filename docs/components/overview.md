@@ -39,7 +39,7 @@ graph TD
 |-----------|------------|---------------|
 | `domain` | 純粋なモデルとルール（リース状態機械、座標変換、承認モード、判定、エラー型、高速パスの候補表 `Candidate` / `CandidateTable`） | FR-L、FR-M16/M17、FR-G03、FR-G17 |
 | `repository` | SQLite と `thumbs/` へのアクセス、マイグレーション | ER、NFR-A06/O05 |
-| `platform` | OS 依存のインターフェースと Windows 実装（画面・入力・ウィンドウ・UI Automation・クリップボード・資格情報・アプリ起動 `AppLauncher`・ファイル選択 `FilePicker`） | FR-M、FR-M19、FR-H12、NFR-S06/S14/S20/O03 |
+| `platform` | OS 依存のインターフェースと Windows 実装（画面・入力・ウィンドウ・UI Automation・クリップボード・資格情報・アプリ起動 `AppLauncher`・ファイル選択 `FilePicker`・フォルダーを開く `FolderOpener`） | FR-M、FR-M19、FR-H12、FR-H13、NFR-S06/S14/S20/O03 |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs、Listener） | FR-A01〜A03、NFR-S05/A03 |
 | `openai` | Responses API の `computer` ツール呼び出し。`store: false` 固定のステートレス継続（履歴の再送とスクリーンショットの間引き） | FR-G04〜G06、FR-G24、NFR-S16 |
 | `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`。高速パスが有効なときだけ呼ばれる | FR-G18、FR-G21、NFR-S18 |
@@ -324,6 +324,13 @@ type Power interface { // スリープ抑止
 }
 type Installer interface { // 署名検証済みの更新のインストーラの実行（M3・#74。FR-H09）
     Run(ctx context.Context, path string) error // `/S`（サイレント）で起動し、終了は待たない。アプリの終了は呼び出し側（Updater）が行う
+}
+// ファイルマネージャー（Windows ではエクスプローラー）でフォルダーを開く（#54。FR-H13）。呼び出し元は app.LogReader だけで、
+// 開く場所は呼び出し元が固定する（service・web・HTTP のリクエストは決められない）。絶対パス（`filepath.IsAbs`）の実在するディレクトリだけを開き、ファイルは開かない。
+type FolderOpener interface {
+    // 空・絶対パスでない・NUL を含む値は domain.ErrInvalidArgument、存在しない・ディレクトリでない値は platform.ErrNotFound（パスをメッセージに含めない）。
+    // Windows 実装は ShellExecute の "open"（動詞固定・引数なし。シェル・コマンドラインを経由しない）。開いたら返し、ウィンドウは待たない。ctx が取り消し済みなら開かずに ctx.Err()。
+    OpenFolder(ctx context.Context, dir string) error
 }
 ```
 
@@ -659,7 +666,7 @@ type LaunchResult struct {
     PID   uint32
     // 起動後に前面にあったウィンドウ。前面を確かめられなかったとき（Foreground の失敗）は nil。Window.PID が PID と違うことがある。
     Window *domain.WindowInfo
-    // PID のトップレベルウィンドウが無いまま別のプロセスのウィンドウが前面にあるとき true（既存のウィンドウが前に出ただけの可能性。FR-M19）。Window が nil なら false。
+    // PID のトップレベルウィンドウが無く、起動の前に無かった新しいウィンドウも開かないまま別のプロセスのウィンドウが前面にあるとき true（既存のウィンドウが前に出ただけの可能性。FR-M19）。Window が nil なら false。
     ReusedExistingWindow bool
 }
 ```
@@ -671,7 +678,7 @@ type LaunchResult struct {
 3. `AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。
 4. `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）→ `ErrKillSwitchActive`
 5. `platform.AppLauncher.Launch`（Windows 実装は、起動の直前に実行ファイルがローカルの固定ディスク上の実体であること — `GetDriveType` が `DRIVE_FIXED`、`GetFinalPathNameByHandle` の結果が登録されたパスと一致 — を確かめ、違えば `access_denied`）→ 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
-5b. 起動後のウィンドウの観測（`Control` の内部。`platform.WindowManager` の `Foreground` と `List`。成功したときだけ。FR-M19）: 200 ミリ秒間隔（`launchWindowPollInterval`）で最大 16 回（`launchWindowPollAttempts`。待ちはおよそ 3 秒）、前面のウィンドウの `PID` が起動した `pid` に一致するまで観測する。待ちは `ControlConfig.Sleep`（`Wait` と共通。テストが差し替える）で行い、`ctx` の取り消しなどで待ちが失敗したらそこまでの観測で打ち切る。観測の失敗は起動の失敗にしない。最後の観測で、`Window` は `Foreground()` の結果（失敗したら nil）、`ReusedExistingWindow` は「`Foreground()` が取れて、その `PID` も `List()` のどのウィンドウの `PID` も起動した `pid` でない」とき `true`（`List` が読めなかったときは前面のウィンドウだけで判断する）
+5b. 起動後のウィンドウの観測（`Control` の内部。`platform.WindowManager` の `Foreground` と `List`。成功したときだけ。FR-M19）: 起動の直前に `List()` で（`Own` のウィンドウを除く）ウィンドウ ID の集合を控え、起動後、200 ミリ秒間隔（`launchWindowPollInterval`）で最大 16 回（`launchWindowPollAttempts`。待ちはおよそ 3 秒）、前面のウィンドウの `PID` が起動した `pid` に一致するまで観測する。待ちは `ControlConfig.Sleep`（`Wait` と共通。テストが差し替える）で行い、`ctx` の取り消しなどで待ちが失敗したらそこまでの観測で打ち切る。観測の失敗は起動の失敗にしない。最後の観測で、`Window` は `Foreground()` の結果（失敗したら nil）、`ReusedExistingWindow` は「`Foreground()` が取れて、その `PID` も `List()` のどのウィンドウの `PID` も起動した `pid` でなく、起動の前の集合に無い ID のウィンドウ（`Own` を除く）も無い」とき `true`（`List` が読めなかったときは前面のウィンドウだけで判断し、起動の前の `List` が読めなかったときは新しいウィンドウの有無を使わない。#55）
 6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・5 の失敗 `error`。`tool.launch_app`。FR-AU06）。起動のあとに非同期で記録するため、キューが満杯・書き込み失敗のときは起動が成立したまま記録が残らない（fail-open。NFR-S20 の残存リスク）。`Audit` は取りこぼしを Error で運用ログに出す（`audit entry dropped`・`audit append failed`）
 
 - 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。`detail` は `{app_id, label（許可リストを引けたときだけ）, pid と reused_existing_window（成功のみ）, reason（launch_failed のみ）}`。前面のウィンドウのタイトル・id は記録しない。パス・引数・作業ディレクトリは入れない
@@ -1125,7 +1132,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `audit.record_text`（M3・#71。FR-AU03、FR-S07） | `Control` が `type` の本文・クリップボードを文字数だけ記録 | 設定が true のとき、`Control.Do` の監査の `detail_json` に `text` を足す（`type`・`clipboard_write`・`clipboard_read` の結果。トークンの形を先に伏せてから 4,096 文字までに切り詰め、超過は `text_truncated`。ER「イベントのカタログ」）。MCP・Web の両方が `Control` を通るので、同じ規則になる。設定は記録のたびに読む |
 | 接続要求の作成の監査（M3・#71。FR-AU01） | 記録する | `Authz.RecordConnectionRequest` が、新しい要求の行ができたとき（`created = true`）だけ `auth.connreq_create`（`result = ok`・`actor_type = system`・`client_label` はデバイス名）を追記する。pending への集約は記録しない |
 | イベントのカタログ（M3・#71） | — | `service.AuditCatalog`（FR-AU01 の項目とイベント名の対応。承認（#66）は `approval.*` の 6 イベント、更新（#74）は `update.*` の 5 イベント）。網羅テストがソースの追記と ER の表との食い違いを検出する |
-| アプリログの閲覧（FR-H13） | なし | `service.AppLog`（`Entries(ctx, filter, page)`・`Path()`）と、値の型（`AppLogEntry`・`AppLogAttr`・`AppLogPage`・`AppLogFilter` の `all` / `warn` / `error`。1 ページ `AppLogPageSize`（50）・ページの上限 `MaxAppLogPage`（100））を `service` に置く。実体は `app.LogReader`（`NewLogReader(dataDir)`）で、ログファイルを 64 KiB ずつ末尾から逆向きに読み、ローテーション済みの `puppet-remo-<時刻>.log` へ新しい順に続く（読み方と理由は [アーキテクチャ「運用ログと監査ログ」](../architecture/overview.md)）。GUI は `gui.Deps.Logs` で受け、`GET /logs` を描画する。`app.Config.Logs` は必須。`app.NewLogger` は `ReplaceAttr`（`redactAttr`）でトークン・ハッシュ・Authorization などを `[REDACTED]` にし、`LogReader` も読み出しで同じ規則を適用する（NFR-S13） |
+| アプリログの閲覧（FR-H13） | なし | `service.AppLog`（`Entries(ctx, filter, page)`・`Path()`・`OpenFolder(ctx)`）と、値の型（`AppLogEntry`・`AppLogAttr`・`AppLogPage`・`AppLogFilter` の `all` / `warn` / `error`。1 ページ `AppLogPageSize`（50）・ページの上限 `MaxAppLogPage`（100））を `service` に置く。実体は `app.LogReader`（`NewLogReader(dataDir, opts...)`）で、ログファイルを 64 KiB ずつ末尾から逆向きに読み、ローテーション済みの `puppet-remo-<時刻>.log` へ新しい順に続く（読み方と理由は [アーキテクチャ「運用ログと監査ログ」](../architecture/overview.md)）。GUI は `gui.Deps.Logs` で受け、`GET /logs` を描画する。`app.Config.Logs` は必須。`app.NewLogger` は `ReplaceAttr`（`redactAttr`）でトークン・ハッシュ・Authorization などを `[REDACTED]` にし、`LogReader` も読み出しで同じ規則を適用する（NFR-S13）。**ログフォルダーを開く（#54）**: `OpenFolder(ctx)` は引数を取らず、`LogReader`（`logfolder.go`。`WithFolderOpener(platform.FolderOpener)` で注入。`cmd/puppet-remo` は `windows.NewFolderOpener()`、`remotedemo`・`guidemo` は記録だけの偽の実装）が常に `filepath.Dir(Path())` だけを `FolderOpener.OpenFolder` に渡す（開く場所をリクエスト・画面の入力で決める手段を作らない）。フォルダーが無ければ `service.ErrNotFound`（作らない。GUI は 404 のトースト）、それ以外の失敗は 500 のトースト（パス・OS のエラー文を出さない）。`POST /logs/open-folder`（GUI ルーターだけ）。`WithFolderOpener` を渡さない `LogReader` の `OpenFolder` は常に失敗する |
 | 運用ログの行（FR-H13・NFR-O01） | 一部の失敗だけ | 主な処理の成功と失敗を、次のレベルで `slog` に出す（ポーリングやフレームごとには出さない。秘密は渡さない）。起動 `puppet-remo starting`（INFO。`main`）・終了 `puppet-remo is shutting down`（INFO）。tailscaled の状態が変わったとき `tailscaled is running`（INFO）・`is not logged in` / `is not reachable`（WARN。`StatusTracker`）。待ち受けの状態が変わったとき `tailnet listener is listening`（INFO）・`is not listening`・一部のアドレスだけ（WARN。`app`）。接続要求 `connection request received`（INFO。新しい要求ができたときだけ）・`approved` / `denied`（INFO。`HostAdmin`）・レート制限 `connection requests are rate limited`（WARN）。認証 `bearer authentication failed`（WARN。理由・デバイス・IP だけ）・`bearer authentication is rate limited`（WARN）・WhoIs の失敗 `whois failed; the request was rejected`（WARN）。トークン `token issued` / `token revoked`（INFO。ID とラベルだけ）。クライアント `client updated` / `client deleted`（INFO）。リース `lease acquired` / `lease released`（INFO。理由つき）・`lease acquire denied`（INFO）。ツール `mcp tool succeeded`（状態を変えるものは INFO、読み取りだけは DEBUG）・`mcp tool was rejected`（WARN。コードつき）・想定外の失敗 `mcp tool failed`（ERROR）・`mcp tool timed out`（WARN）。キルスイッチ `kill switch triggered`（WARN）・`released`（INFO）・失敗（ERROR）。設定の反映 `server port changed`・`kill switch hotkey registered`（INFO）。ツールの引数・結果、トークンの平文・ハッシュ、Authorization ヘッダーは出さない。リリースの更新確認（FR-H09）は `Updater` が M1 に無いため、まだ出さない（`Updater` を実装するときに、確認・適用・失敗を同じ規則で足す） |
 | MCP ツールの監査 | `Control` が記録する（§5.4） | `Control.Do` を通る入力系・`focus_window`・クリップボード・UI ツリー・`wait` と、`Control.Launch` を通る `launch_app`（M1.5）は `Control` が監査する。`list_launchable_apps` は `mcp` のツール登録（`addAuditedTool`）が `{count}` で記録する（件数は結果から決まるため、`toolResult.AuditDetail` で足す）。`Do` を通らない `get_screen_info`・`screenshot`・`cursor_position`・`list_windows`・`acquire_control`・`release_control`・`get_control_status` は、`mcp` のツール登録（`addAuditedTool`）が `service.ToolAuditEntry` で記録する。拒否（リース・InputGuard・キルスイッチ）は `denied`、それ以外の失敗は `error` |
 | `Control` の直列化（§5.4） | ステートレス | 入力の実行（マウス・キーボード）は 1 度に 1 つへ直列化する（容量 1 のセマフォ。「移動してからクリック」の間に別の入力を割り込ませない）。検査の順序は設計のとおり（キルスイッチ → リース → 引数検査・縮小座標の変換 → InputGuard → platform → 監査。`Judge` は M4）。`get_ui_tree` は `max_depth` ≤ 20・`max_nodes` ≤ 5000（既定 5・500）で、超えると `invalid_argument` |
@@ -1317,3 +1324,5 @@ M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tool
 | 1.51 | 2026-11-02 | §13.5 の `HostAdmin` に、`RevokeToken` がそのクライアントの実行中のタスクを中断する（`token_revoked`）ことを追記 | #19 |
 | 1.52 | 2026-11-02 | §5.6 と §13.12 を、承認の待ちも実行時間の上限に含まれる設計（上限のタイマー `AgentServiceConfig.AfterFunc`）に改めた | #19 |
 | 1.53 | 2026-11-02 | §13.5 の `HostAdmin` に、`RevokeToken` は初回の失効でだけ中断し、失効済みへの再実行では中断しない旨と、§10 のテスト方針の実機の列に実際のターゲット名を追記 | #19 |
+| 1.54 | 2026-11-02 | §3 に `platform.FolderOpener`（#54。ログフォルダーを開く）を追加し、§13.5 のアプリログの行に `service.AppLog.OpenFolder`・`LogReader` へのフォルダーを開く手段の注入（開く場所の固定）・`POST /logs/open-folder` を追記 | #54 |
+| 1.55 | 2026-11-02 | §5.4.1 の `ReusedExistingWindow` と手順 5b を、起動の前後のウィンドウ一覧の差（新しいウィンドウがあれば `false`）に更新 | #55 |

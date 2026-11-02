@@ -9,6 +9,8 @@
 //     コマンドラインの組み立て（buildCommandLine）と失敗の分類（classifyLaunchError）、存在確認（inspectApp）は純粋なロジックで、Linux でもテストする。
 //   - FilePicker（platform.FilePicker）: GetOpenFileNameW（`.exe` のフィルター、親はメインウィンドウ、ctx の取り消しで WM_CLOSE）。
 //     親の HWND は NewFilePicker に関数で渡す（Wails のメインウィンドウの NativeWindow()。関数は internal/app の WailsHost.MainWindowHandle で、cmd/puppet-remo/main.go が渡す）。
+//   - FolderOpener（platform.FolderOpener）: ShellExecute の "open" で、実在するディレクトリ（絶対パス）だけをエクスプローラーで開く（#54。ログ画面のボタン）。
+//     動詞は固定・引数なしで、シェル・コマンドラインを経由しない。ファイルは開かず、エラーにパスを含めない。開くパスは呼び出し元（app.LogReader）が固定する。
 //   - Power: SetThreadExecutionState によるスリープ・画面オフの抑止（NFR-A05）。スレッドごとの状態なので専用の OS スレッドで設定・解除する。
 //
 // Win32 を呼ぶコードは *_windows.go（//go:build windows）に置く。キー名・修飾キーの変換表、座標の正規化、

@@ -93,6 +93,9 @@ type Logs interface {
 	Entries(ctx context.Context, filter service.AppLogFilter, page int) (service.AppLogPage, error)
 	// Path は今のログファイルのパス（画面に出す）。
 	Path() string
+	// OpenFolder はログフォルダーをファイルマネージャーで開く（#54）。開く場所は実体が固定し、引数にパスを取らない。
+	// フォルダーが無ければ service.ErrNotFound。エラーにパスは含まれない。
+	OpenFolder(ctx context.Context) error
 }
 
 // Audit は監査ログの閲覧（読み取り専用。FR-AU05、FR-H08）。実体は service.AuditReader。

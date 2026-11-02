@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ousiassllc/puppet-remo/internal/platform"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
@@ -33,12 +34,21 @@ const (
 )
 
 // LogReader は service.AppLog の実装（ログファイルの読み出し）。
-type LogReader struct{ path string }
+type LogReader struct {
+	path   string
+	opener platform.FolderOpener // ログフォルダーを開く手段（logfolder.go。nil なら OpenFolder は使えない）
+}
 
 var _ service.AppLog = (*LogReader)(nil)
 
-// NewLogReader は dataDir のログ（LogFilePath）を読む LogReader を返す。
-func NewLogReader(dataDir string) *LogReader { return &LogReader{path: LogFilePath(dataDir)} }
+// NewLogReader は dataDir のログ（LogFilePath）を読む LogReader を返す。ログフォルダーを開く手段は WithFolderOpener で渡す。
+func NewLogReader(dataDir string, opts ...LogReaderOption) *LogReader {
+	r := &LogReader{path: LogFilePath(dataDir)}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
 
 // Path は今のログファイルのパス。
 func (r *LogReader) Path() string { return r.path }
@@ -104,7 +114,7 @@ func (r *LogReader) files() []string {
 
 // scanFileReverse はファイルの完結した行を末尾から順に fn へ渡す（fn が false を返すと止める）。ファイルが無ければ何もしない。
 func scanFileReverse(ctx context.Context, path string, fn func(line []byte) bool) error {
-	f, err := os.Open(path)
+	f, err := openLogFile(path) // Windows は FILE_SHARE_DELETE つきで開く（#53。実機は未確認）
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil // ローテーションの途中で消えた・まだ作られていない
 	}

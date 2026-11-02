@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -55,8 +56,12 @@ func TestLogsPageShowsSuccessAndErrorEntriesNewestFirst(t *testing.T) {
 		}
 		last = i
 	}
-	// 読み取り専用: 操作は出さない。
-	lacks(t, res, "data-pager", `method="post"`, "hx-post")
+	// ログの閲覧は読み取り専用: 変更・消去の操作は出さない。操作はログフォルダーを開くボタン（POST /logs/open-folder）だけ（#54）。
+	lacks(t, res, "data-pager", `method="post"`, "hx-put", "hx-delete", "hx-patch")
+	contains(t, res, `hx-post="/logs/open-folder"`, "ログフォルダーを開く", `data-log-open-folder`, `hx-swap="none"`, `hx-disabled-elt="this"`)
+	if n := strings.Count(res.Body, "hx-post="); n != 1 {
+		t.Errorf("hx-post occurrences = %d, want only the open-folder button", n)
+	}
 }
 
 func TestLogsLevelFilter(t *testing.T) {
@@ -162,4 +167,75 @@ func TestLogsErrorRendersErrorPage(t *testing.T) {
 	status(t, res, http.StatusInternalServerError)
 	contains(t, res, "<html", `data-error-code="internal"`)
 	lacks(t, res, "disk boom")
+}
+
+// ---- ログフォルダーを開く（#54） ----
+
+const logFolderPath = `C:\Users\demo\AppData\Local\puppet-remo\logs`
+
+func TestLogsPageHasTheOpenFolderButtonInEveryFullRender(t *testing.T) {
+	r := newRig(t, seedLogs)
+	for _, hdr := range [][]string{nil, {"HX-Request", "true", "HX-Boosted", "true"}} {
+		contains(t, r.get("/logs", hdr...), `hx-post="/logs/open-folder"`, "ログフォルダーを開く")
+	}
+	// 絞り込み・ページ送りのフラグメント（#app-log だけ）にはボタンを含めない（差し替えで消えない場所に置く）。
+	lacks(t, r.get("/logs", hx...), "/logs/open-folder")
+}
+
+func TestOpenLogFolderOpensTheFolderAndShowsAToast(t *testing.T) {
+	r := newRig(t)
+	res := r.post("/logs/open-folder", nil, hx...)
+	status(t, res, http.StatusOK)
+	must(t, r.f.Logs.OpenFolderCalls == 1, "OpenFolder calls = %d, want 1", r.f.Logs.OpenFolderCalls)
+	contains(t, res, `hx-swap-oob="beforeend:#toast-root"`, `data-toast-level="info"`, "ログフォルダーを開きました。")
+	lacks(t, res, "<html", "puppet-remo.log", logFolderPath)
+}
+
+// 開く場所はリクエストで決まらない。フォーム・クエリのパスらしい値は読まず、応答にも出さない。
+func TestOpenLogFolderIgnoresAnyRequestedPath(t *testing.T) {
+	r := newRig(t)
+	const evil = `C:\Windows\System32`
+	res := r.post("/logs/open-folder?path="+url.QueryEscape(evil)+"&dir="+url.QueryEscape(evil),
+		url.Values{"path": {evil}, "dir": {evil}, "folder": {evil}}, hx...)
+	status(t, res, http.StatusOK)
+	must(t, r.f.Logs.OpenFolderCalls == 1, "OpenFolder calls = %d, want 1", r.f.Logs.OpenFolderCalls)
+	lacks(t, res, evil, "System32")
+}
+
+// GET では動かない（POST だけの経路。ページ遷移・プリフェッチ・<img> などで開かせない）。
+func TestOpenLogFolderIsPostOnly(t *testing.T) {
+	r := newRig(t)
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		status(t, r.do(method, "/logs/open-folder", nil, hx...), http.StatusNotFound)
+	}
+	must(t, r.f.Logs.OpenFolderCalls == 0, "OpenFolder calls = %d, want 0", r.f.Logs.OpenFolderCalls)
+}
+
+func TestOpenLogFolderFailureIsAFixedToastWithoutDetails(t *testing.T) {
+	const osErr = "ShellExecute failed at " + logFolderPath
+	for _, tt := range []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+		wantMsg    string
+	}{
+		{"missing folder", fmt.Errorf("%w: %s", service.ErrNotFound, logFolderPath), http.StatusNotFound, "not_found", "ログフォルダーが見つかりません。"},
+		{"os error", errors.New(osErr), http.StatusInternalServerError, "internal", "ログフォルダーを開けませんでした。"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRig(t, func(f *guitest.Fakes) { f.Logs.OpenFolderErr = tt.err })
+			res := r.post("/logs/open-folder", nil, hx...)
+			status(t, res, tt.wantStatus)
+			contains(t, res, `data-error-code="`+tt.wantCode+`"`, tt.wantMsg, `data-toast-level="error"`)
+			lacks(t, res, logFolderPath, "ShellExecute", `C:\`)
+			if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
+				t.Errorf("HX-Retarget = %q, want #toast-root", got)
+			}
+			if strings.Contains(fmt.Sprint(res.Header), logFolderPath) {
+				t.Errorf("headers leak the path: %v", res.Header)
+			}
+			must(t, r.f.Logs.OpenFolderCalls == 1, "OpenFolder calls = %d, want 1", r.f.Logs.OpenFolderCalls)
+		})
+	}
 }

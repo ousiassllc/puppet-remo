@@ -74,7 +74,7 @@ func TestInitializeAndToolList(t *testing.T) {
 		"already open window forward", "reused_existing_window", "screenshot or list_windows before typing",
 		"never captured in screenshots", "input_blocked", "own_window", "own_windows", "blocked: true",
 		"run_task", "get_task", "cancel_task", "asynchronously", "agent_disabled", "Only one task runs at a time",
-		"untrusted", "only the model's claim"} {
+		"untrusted", "only the model's claim", "nor any new window"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}
@@ -102,10 +102,15 @@ func TestInitializeAndToolList(t *testing.T) {
 		}
 		// 既存のウィンドウが前に出るだけのアプリがあるので、入力の前に対象を確かめるよう促す（FR-M19）。
 		if tool.Name == "launch_app" {
-			for _, want := range []string{"reused_existing_window", "already open window forward", "confirm the target window with a screenshot or list_windows"} {
+			for _, want := range []string{"reused_existing_window", "already open window forward", "confirm the target window with a screenshot or list_windows",
+				"no window that did not exist before the launch has appeared", "strong hint, not proof"} {
 				if !strings.Contains(tool.Description, want) {
 					t.Errorf("launch_app description lacks %q: %s", want, tool.Description)
 				}
+			}
+			// 別の pid の新しいウィンドウでも reused_existing_window は false になる（#55）ので、pid が違うだけで再利用と断定しない。
+			if strings.Contains(tool.Description, "returned pid, or reused_existing_window, means") {
+				t.Errorf("launch_app description still asserts the old definition: %s", tool.Description)
 			}
 		}
 	}

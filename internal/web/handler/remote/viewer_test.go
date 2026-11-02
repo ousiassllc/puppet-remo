@@ -119,7 +119,7 @@ func TestUnknownPathIs404(t *testing.T) {
 		contains(t, res, `data-error-code="not_found"`)
 	}
 	// ホスト GUI のルートは、リモートには存在しない（構造で分離する）。
-	for _, path := range []string{"/requests", "/clients", "/settings", "/killswitch/trigger", "/lease/revoke"} {
+	for _, path := range []string{"/requests", "/clients", "/settings", "/killswitch/trigger", "/lease/revoke", "/logs", "/logs/open-folder"} {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			if res := r.do(method, path, nil); res.StatusCode != http.StatusNotFound {
 				t.Errorf("%s %s = %d, want 404", method, path, res.StatusCode)

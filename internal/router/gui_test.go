@@ -170,6 +170,20 @@ func TestGUIServesTheUpdateRoutes(t *testing.T) {
 	}
 }
 
+// ログフォルダーを開く（#54）の経路は GUI にあり、POST だけ（GET では動かない）。開く場所は経路にもリクエストにも無い。
+func TestGUIServesTheOpenLogFolderRoute(t *testing.T) {
+	h, f := newGUI(t)
+	if rec := do(h, http.MethodPost, "/logs/open-folder", "HX-Request", "true"); rec.Code != http.StatusOK {
+		t.Errorf("POST /logs/open-folder: status %d, want 200", rec.Code)
+	}
+	if f.Logs.OpenFolderCalls != 1 {
+		t.Errorf("OpenFolder calls = %d, want 1", f.Logs.OpenFolderCalls)
+	}
+	if rec := do(h, http.MethodGet, "/logs/open-folder"); rec.Code != http.StatusNotFound || f.Logs.OpenFolderCalls != 1 {
+		t.Errorf("GET /logs/open-folder: status %d, calls %d, want 404 and no call (POST only)", rec.Code, f.Logs.OpenFolderCalls)
+	}
+}
+
 // ホスト専用の経路だけがあり、/wails/* は予約され、M1 に無いものと、リモート向けの経路は存在しない。
 func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 	h, _ := newGUI(t)

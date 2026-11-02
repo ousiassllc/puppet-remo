@@ -66,16 +66,19 @@ func (h *Handler) agentSettingsPage(ctx context.Context, s service.AgentSettings
 	}
 }
 
+// openAIKeyPanel・typeSafeKeyPanel の Target は、Windows の資格情報マネージャー上の実際のターゲット名
+// （go-keyring が `service:user` で作る。platform.SecretOpenAI・SecretTypeSafe + ":puppet-remo"。windows/secret.go）。
+// web は platform を import できないため、名前はここに書く。
 func openAIKeyPanel(registered bool, errMsg string) view.APIKeyPanel {
 	return view.APIKeyPanel{
-		ID: agentKeyPanelID, Provider: "OpenAI", Target: "puppet-remo/openai",
+		ID: agentKeyPanelID, Provider: "OpenAI", Target: "puppet-remo/openai:puppet-remo",
 		PutURL: agentKeyRoute, ConfirmURL: agentKeyRoute + "/delete/confirm", Registered: registered, Error: errMsg,
 	}
 }
 
 func typeSafeKeyPanel(registered bool, errMsg string) view.APIKeyPanel {
 	return view.APIKeyPanel{
-		ID: fastpathKeyPanelID, Provider: "TypeSafe", Target: "puppet-remo/typesafe",
+		ID: fastpathKeyPanelID, Provider: "TypeSafe", Target: "puppet-remo/typesafe:puppet-remo",
 		PutURL: fastpathKeyRoute, ConfirmURL: fastpathKeyRoute + "/delete/confirm", Registered: registered, Error: errMsg,
 	}
 }

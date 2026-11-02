@@ -414,6 +414,52 @@ func TestFakeInstallerRecordsRunsAndInjectsErrors(t *testing.T) {
 	}
 }
 
+func TestFakeFolderOpenerContract(t *testing.T) {
+	const dir = `C:\Users\demo\AppData\Local\puppet-remo\logs`
+	platformtest.RunFolderOpenerContract(t, func(*testing.T) platform.FolderOpener {
+		f := platformtest.NewFakeFolderOpener()
+		f.AddFolder(dir)
+		return f
+	}, platformtest.FolderOpenerFixture{Dir: dir, MissingDir: `C:\Users\demo\gone`})
+}
+
+func TestFakeFolderOpenerRecordsOpensAndInjectsErrors(t *testing.T) {
+	const dir = `C:\logs`
+	f := platformtest.NewFakeFolderOpener()
+	f.AddFolder(dir)
+	ctx := context.Background()
+
+	if err := f.OpenFolder(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	f.SetError("OpenFolder", boom)
+	if err := f.OpenFolder(ctx, dir); !errors.Is(err, boom) {
+		t.Fatalf("OpenFolder error = %v, want the injected error", err)
+	}
+	if got := f.Opened(); !reflect.DeepEqual(got, []string{dir}) {
+		t.Errorf("Opened = %v, want only the first open", got)
+	}
+	if got := f.CallsTo("OpenFolder"); len(got) != 2 || !reflect.DeepEqual(got[0].Args, []any{dir}) {
+		t.Errorf("CallsTo(OpenFolder) = %+v, want 2 calls with the directory", got)
+	}
+}
+
+func TestFakeFolderOpenerOpensOnlyKnownFoldersUnlessAcceptAny(t *testing.T) {
+	ctx := context.Background()
+	f := platformtest.NewFakeFolderOpener()
+	if err := f.OpenFolder(ctx, `C:\elsewhere`); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("OpenFolder(unknown) = %v, want platform.ErrNotFound", err)
+	}
+	f.AcceptAny()
+	if err := f.OpenFolder(ctx, `C:\elsewhere`); err != nil {
+		t.Fatalf("OpenFolder(any) = %v", err)
+	}
+	if err := f.OpenFolder(ctx, "relative"); !errors.Is(err, domain.ErrInvalidArgument) {
+		t.Errorf("OpenFolder(relative) = %v, want ErrInvalidArgument even with AcceptAny", err)
+	}
+}
+
 func TestFakeFilePickerContract(t *testing.T) {
 	platformtest.RunFilePickerContract(t, func(*testing.T) (platform.FilePicker, platformtest.FilePickerDriver) {
 		f := platformtest.NewFakeFilePicker()

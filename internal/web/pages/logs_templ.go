@@ -9,12 +9,19 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/layout"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
 const logsTitle = "ログ"
+
+// openLogFolderAttrs は「ログフォルダーを開く」ボタンの hx-* 属性。本文は送らず（開く場所はサーバーが固定する）、
+// 応答の OOB のトースト（成功・失敗とも）だけを反映する。画面は差し替えない。
+func openLogFolderAttrs(url string) atoms.Attrs {
+	return atoms.Attrs{"hx-post": url, "hx-swap": "none", "hx-disabled-elt": "this", "data-log-open-folder": ""}
+}
 
 func logsBody(v view.AppLogPage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -37,14 +44,14 @@ func logsBody(v view.AppLogPage) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">ログ</h1><p class=\"text-sm text-slate-600\">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p><p class=\"text-sm text-slate-600\">ログファイル: <code class=\"break-all rounded bg-slate-100 px-1 py-0.5 text-xs\" data-log-path>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">ログ</h1><p class=\"text-sm text-slate-600\">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p><div class=\"flex flex-wrap items-center gap-3\"><p class=\"text-sm text-slate-600\">ログファイル: <code class=\"break-all rounded bg-slate-100 px-1 py-0.5 text-xs\" data-log-path>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(v.Path)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/logs.templ`, Line: 15, Col: 143}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/logs.templ`, Line: 23, Col: 144}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -54,11 +61,19 @@ func logsBody(v view.AppLogPage) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = organisms.AppLog(v.Log).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "ログフォルダーを開く", Variant: atoms.ButtonSecondary, Attrs: openLogFolderAttrs(v.OpenFolderURL)}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = organisms.AppLog(v.Log).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -14,6 +14,10 @@ type AppLog interface {
 	Entries(ctx context.Context, filter AppLogFilter, page int) (AppLogPage, error)
 	// Path は今のログファイルのパス（画面に出す）。
 	Path() string
+	// OpenFolder はログフォルダー（ログファイルのあるフォルダー）を OS のファイルマネージャーで開く（#54）。
+	// 開く場所は実装が固定する（引数にパスを取らない。呼び出し元は決められない）。フォルダーが無ければ ErrNotFound。
+	// エラーにパスは含めない。ログを消す・書き換える操作は無い（読み取り専用）。
+	OpenFolder(ctx context.Context) error
 }
 
 const (

@@ -25,6 +25,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` | 未設定 | `requireAdministrator` のマニフェストを持つ実行ファイルのパス。設定すると `TestSmokeAppLauncher` が `elevation_required` を確かめる（§3.8 L4）。未設定なら飛ばす |
 | `PUPPET_REMO_SMOKE_LAUNCH_DENIED` | 未設定 | 起動を OS に拒否される実行ファイルのパス（ACL で実行を拒否したファイルなど）。設定すると `TestSmokeAppLauncher` が `access_denied` を確かめる（§3.8 L5）。未設定なら飛ばす |
 | `PUPPET_REMO_SMOKE_PICKER` | 未設定 | `1` のときだけファイル選択のテスト（`TestSmokeFilePicker`。§3.8 L9）を走らせる。ダイアログが開くため、手動で選択・キャンセルの操作が要る |
+| `PUPPET_REMO_SMOKE_FOLDER` | 未設定 | `1` のときだけフォルダーを開くテスト（`TestSmokeFolderOpener`。§4.14 F1）を走らせる。一時ディレクトリのエクスプローラーが 1 つ開く（手で閉じる） |
 
 ```powershell
 $env:PUPPET_REMO_SMOKE_INPUT = "1"; $env:PUPPET_REMO_SMOKE_CLIPBOARD = "1"
@@ -251,7 +252,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | A3 | 表示名 `メモ帳`・パス・引数なしで保存 | 一覧に行が追加される。同じ表示名（大文字小文字違いを含む）・存在しないパス・相対パス・UNC パス・`.exe` 以外・`..` を含むパスは、項目別のエラーで入力値が残る（422） |
 | A4 | MCP クライアントから `list_launchable_apps` | `{ "apps": [ { "id", "label": "メモ帳" } ] }` だけ。パス・引数は出ない |
 | A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid, window, reused_existing_window }` が返る。Windows 10 のメモ帳など新しいウィンドウが開くときは `window.pid` が `pid` と一致し `reused_existing_window: false` |
-| A5b | メモ帳（Windows 11。タブ式）を、書きかけのタブを開いたまま起動する（#46） | 新しいウィンドウが開かず既存のウィンドウが前に出るだけなら、`window` が既存のウィンドウ（`pid` が返った `pid` と別）で `reused_existing_window: true`。入力の前に `screenshot` / `list_windows` で確かめられる。新しいタブで打つには AI が「＋」を押す必要がある |
+| A5b | メモ帳（Windows 11。タブ式）を、書きかけのタブを開いたまま起動する（#46。判定は起動前後のウィンドウ一覧の差。#55） | 新しいウィンドウが開かず既存のウィンドウが前に出るだけなら、`window` が既存のウィンドウ（`pid` が返った `pid` と別）で `reused_existing_window: true`。入力の前に `screenshot` / `list_windows` で確かめられる。新しいタブで打つには AI が「＋」を押す必要がある |
+| A5c | メモ帳（Windows 11）を、書きかけのタブがない状態（または新しいウィンドウで開く設定）で起動する（#55） | 返った `pid` が別（起動したプロセスがすぐ終了して別の `pid` の新しいウィンドウを開く）でも、起動の前に無かった新しいウィンドウがあるので `reused_existing_window: false`。`list_windows` で新しいウィンドウが前面か背面かを確かめられる |
 | A6 | 未登録の `app_id`、パスや引数を含む追加の引数（`args`・`path`）を渡す | 未登録は `app_not_found`。追加の引数は引数検査（スキーマ違反。`isError` のツール結果で、`code` は付かない）で拒否される。いずれも何も起動しない |
 | A7 | 別のセッションがリースを保持している状態で `launch_app` | `lease_held_by_other`。起動しない |
 | A8 | キルスイッチ発動中に `launch_app` / `list_launchable_apps` | `kill_switch_active`（HTTP 503）。解除後は起動できる。キルスイッチは起動済みのメモ帳を終了しない |
@@ -350,6 +352,26 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | O10 | オーバーレイの表示中に、モニターを抜き差しする・解像度や表示スケールを変える | 出ている最中は追従しない（枠がずれてよい）。次にリースを取り直したとき（`held` へ）に、新しい構成で全モニターに合う。クラッシュ・ハングしない |
 | O11 | クライアント名に長い文字列（100 文字以上）と HTML の記号（`<script>` など）を付けたクライアントで O1 を行う | 札は 80 文字で `…` に切り詰められ、記号は文字としてそのまま出る（HTML として解釈されない）。札が画面を覆わない |
 
+### 4.14 ログフォルダーを開く（ホスト GUI の `/logs`。#54。FR-H13）
+
+`platform/windows.FolderOpener`（`ShellExecute` の `open`。シェル・コマンドラインを経由しない）と、ログ画面の「ログフォルダーを開く」ボタン（`POST /logs/open-folder`）の確認。開く場所がログフォルダー（`%LOCALAPPDATA%\puppet-remo\logs\`）に固定され、リクエストで変えられないこと・失敗の文言にパスが出ないことは CI の自動テスト（偽の `FolderOpener`）で済んでいる。ここは実際のエクスプローラーの起動の確認（**CI では確認できない**。**未確認**）。契約テスト `TestSmokeFolderOpener`（一時ディレクトリを開く）は `PUPPET_REMO_SMOKE_FOLDER=1` のときだけ走る。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| F1 | `$env:PUPPET_REMO_SMOKE_FOLDER = "1"; go test -tags smoke -run TestSmokeFolderOpener -v ./internal/platform/windows/` | `PASS`。一時ディレクトリのエクスプローラーが 1 つ開く（手で閉じる）。存在しないパス・相対パス・NUL 入りのパスは開かずに拒否される |
+| F2 | ホスト GUI の「ログ」画面（`/logs`）で「ログフォルダーを開く」を押す | エクスプローラーが `%LOCALAPPDATA%\puppet-remo\logs\` を開く（`puppet-remo.log` が見える）。画面に「ログフォルダーを開きました。」のトーストが出る。ボタンは応答が返るまで無効になり、画面は差し替わらない（絞り込み・ページ位置が変わらない） |
+| F3 | エクスプローラーが既に開いている状態・別のウィンドウが前面にある状態でもう一度押す | エクスプローラーのウィンドウ（既存のウィンドウの再利用でもよい）が前面に出る（開けないままにならない）。何度押しても開く場所は同じ |
+| F4 | ログフォルダーを削除（または名前を変更）してから押す | エクスプローラーは開かず、「ログフォルダーが見つかりません。」のエラーのトースト。フォルダーは作られない。パス・OS のメッセージは画面に出ない（運用ログには出る場合があるが、パスは含まない） |
+| F5 | ログフォルダーの場所（`LOCALAPPDATA`）に空白・日本語を含むユーザー名のプロファイルで F2 を行う | 同じようにそのフォルダーが開く（文字化け・別の場所を開くことがない） |
+
+### 4.15 ログ画面の読み出しとローテーション（#53。FR-H13、NFR-O01）
+
+ログ画面の読み出し（`openLogFile`）は、Windows では `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE` で開く（Go の `os.Open` は `FILE_SHARE_DELETE` を付けない。標準ライブラリ `syscall_windows.go` を読んで確認した）。これにより、読んでいる間に `lumberjack` がローテーション（名前の付け替え）しても共有違反にならない設計だが、**Windows 実機では確認していない（未確認）**。Linux の CI のテストは、Linux では元から成り立つため回帰を検出できない。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| F6 | `go test -run 'TestOpenLogFileDoesNotBlockRenameOrDelete\|TestRotateSucceedsWhileTheLogScreenHasTheFileOpen' -v ./internal/app/` を Windows で実行する（読み出しのために開いたまま、`lumberjack.Logger.Rotate()` と名前の付け替え・削除を行う） | `PASS`。開いたままでも `Rotate()` が共有違反で失敗せず、ローテーションのあとの書き込みも続く |
+
 ## 5. 既知の制約（M1）
 
 - キャプチャ: 1 枚撮り（`Grab`）は GDI `BitBlt`、継続キャプチャ（`Watch`）は DXGI（Desktop Duplication）で、使えなければ GDI（M2。§3.9）。DXGI は既定のアダプターに接続されたモニターだけを複製する（別 GPU のモニターは GDI になる）。`Frame.Dirty` は常に全面。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
@@ -379,3 +401,5 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-11-02 | §4.10 を `Control` への結線の実装に更新し（撮る操作・結線の未実装の注記を除去）、S5〜S7（Web 入力の 1 秒 1 枚・マルチモニターの撮影先・設定で無効）を追加 | #71 |
 | — | 2026-11-02 | §4.11 に P12（承認ダイアログの到着順の待ち行列）、§4.12（操作中オーバーレイ O1〜O11: 全モニター・クリック透過・キャプチャ除外・混在 DPI・入力が通ること・下のホスト GUI は拒否のまま・保持者の変更・消える条件・モニター構成の変化・ラベルの切り詰め。未確認）を追加 | #69・#68 |
 | — | 2026-11-02 | §4.13（更新: 検出・署名の検証失敗・ダウングレード・リース / 接続中の拒否・`auto_idle`・UAC・非公開のリポジトリ・オフライン・チャネルの切り替え U1〜U17）を追加。`TestSmokeInstaller` を §2 に追記 | #74 |
+| — | 2026-11-02 | §4.14（ログフォルダーを開く: エクスプローラーの起動・ログ画面のボタン・フォルダーが無いとき・空白や日本語を含むプロファイル F1〜F5。未確認）を追加。§2 の環境変数表に `PUPPET_REMO_SMOKE_FOLDER` を追加 | #54 |
+| — | 2026-11-02 | §4.8 に A5c（Windows 11 のメモ帳で、別の `pid` の新しいウィンドウが開くときの `reused_existing_window: false`）、A5b に起動前後の一覧の差で判定する旨、§4.15（ログ画面の読み出しとローテーション。F6）を追加。実機の確認は未確認 | #55・#53 |
