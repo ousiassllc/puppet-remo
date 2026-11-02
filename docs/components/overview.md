@@ -666,7 +666,7 @@ type LaunchResult struct {
     PID   uint32
     // 起動後に前面にあったウィンドウ。前面を確かめられなかったとき（Foreground の失敗）は nil。Window.PID が PID と違うことがある。
     Window *domain.WindowInfo
-    // PID のトップレベルウィンドウが無いまま別のプロセスのウィンドウが前面にあるとき true（既存のウィンドウが前に出ただけの可能性。FR-M19）。Window が nil なら false。
+    // PID のトップレベルウィンドウが無く、起動の前に無かった新しいウィンドウも開かないまま別のプロセスのウィンドウが前面にあるとき true（既存のウィンドウが前に出ただけの可能性。FR-M19）。Window が nil なら false。
     ReusedExistingWindow bool
 }
 ```
@@ -678,7 +678,7 @@ type LaunchResult struct {
 3. `AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。
 4. `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）→ `ErrKillSwitchActive`
 5. `platform.AppLauncher.Launch`（Windows 実装は、起動の直前に実行ファイルがローカルの固定ディスク上の実体であること — `GetDriveType` が `DRIVE_FIXED`、`GetFinalPathNameByHandle` の結果が登録されたパスと一致 — を確かめ、違えば `access_denied`）→ 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
-5b. 起動後のウィンドウの観測（`Control` の内部。`platform.WindowManager` の `Foreground` と `List`。成功したときだけ。FR-M19）: 200 ミリ秒間隔（`launchWindowPollInterval`）で最大 16 回（`launchWindowPollAttempts`。待ちはおよそ 3 秒）、前面のウィンドウの `PID` が起動した `pid` に一致するまで観測する。待ちは `ControlConfig.Sleep`（`Wait` と共通。テストが差し替える）で行い、`ctx` の取り消しなどで待ちが失敗したらそこまでの観測で打ち切る。観測の失敗は起動の失敗にしない。最後の観測で、`Window` は `Foreground()` の結果（失敗したら nil）、`ReusedExistingWindow` は「`Foreground()` が取れて、その `PID` も `List()` のどのウィンドウの `PID` も起動した `pid` でない」とき `true`（`List` が読めなかったときは前面のウィンドウだけで判断する）
+5b. 起動後のウィンドウの観測（`Control` の内部。`platform.WindowManager` の `Foreground` と `List`。成功したときだけ。FR-M19）: 起動の直前に `List()` で（`Own` のウィンドウを除く）ウィンドウ ID の集合を控え、起動後、200 ミリ秒間隔（`launchWindowPollInterval`）で最大 16 回（`launchWindowPollAttempts`。待ちはおよそ 3 秒）、前面のウィンドウの `PID` が起動した `pid` に一致するまで観測する。待ちは `ControlConfig.Sleep`（`Wait` と共通。テストが差し替える）で行い、`ctx` の取り消しなどで待ちが失敗したらそこまでの観測で打ち切る。観測の失敗は起動の失敗にしない。最後の観測で、`Window` は `Foreground()` の結果（失敗したら nil）、`ReusedExistingWindow` は「`Foreground()` が取れて、その `PID` も `List()` のどのウィンドウの `PID` も起動した `pid` でなく、起動の前の集合に無い ID のウィンドウ（`Own` を除く）も無い」とき `true`（`List` が読めなかったときは前面のウィンドウだけで判断し、起動の前の `List` が読めなかったときは新しいウィンドウの有無を使わない。#55）
 6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・5 の失敗 `error`。`tool.launch_app`。FR-AU06）。起動のあとに非同期で記録するため、キューが満杯・書き込み失敗のときは起動が成立したまま記録が残らない（fail-open。NFR-S20 の残存リスク）。`Audit` は取りこぼしを Error で運用ログに出す（`audit entry dropped`・`audit append failed`）
 
 - 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。`detail` は `{app_id, label（許可リストを引けたときだけ）, pid と reused_existing_window（成功のみ）, reason（launch_failed のみ）}`。前面のウィンドウのタイトル・id は記録しない。パス・引数・作業ディレクトリは入れない
@@ -1325,3 +1325,4 @@ M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tool
 | 1.52 | 2026-11-02 | §5.6 と §13.12 を、承認の待ちも実行時間の上限に含まれる設計（上限のタイマー `AgentServiceConfig.AfterFunc`）に改めた | #19 |
 | 1.53 | 2026-11-02 | §13.5 の `HostAdmin` に、`RevokeToken` は初回の失効でだけ中断し、失効済みへの再実行では中断しない旨と、§10 のテスト方針の実機の列に実際のターゲット名を追記 | #19 |
 | 1.54 | 2026-11-02 | §3 に `platform.FolderOpener`（#54。ログフォルダーを開く）を追加し、§13.5 のアプリログの行に `service.AppLog.OpenFolder`・`LogReader` へのフォルダーを開く手段の注入（開く場所の固定）・`POST /logs/open-folder` を追記 | #54 |
+| 1.55 | 2026-11-02 | §5.4.1 の `ReusedExistingWindow` と手順 5b を、起動の前後のウィンドウ一覧の差（新しいウィンドウがあれば `false`）に更新 | #55 |
