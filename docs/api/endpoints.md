@@ -307,11 +307,11 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 - `status` は FR-G03 の状態。終了状態では `finished_at` が入る
 - `result_text` は最終回答（`completed` のみ。10,000 文字で切り詰め）。`note` には `completed` がモデルの申告であり成否の検証は呼び出し側の責任であることを記す（FR-G13）
-- `error_code`: `failed` のときの理由（`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` など）
+- `error_code`: `failed` のときの理由（`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` / `invalid_coordinates`（モデルが縮小画像の外の座標を返した）など）。リースの喪失（強制剥奪・アイドルタイムアウト）・リース承認待ち中のキルスイッチはエラーではなく `status = cancelled`（`error_code` は `null`）
 - `fast_steps` / `openai_steps`: 高速パス（Jev が候補表から選んだ手）と OpenAI のコンピューター操作ループで実行したステップ数（FR-G23）。`step_count = fast_steps + openai_steps`（高速ステップも `max_steps` に数える）。高速パスを使わなかったタスクは `fast_steps = 0`
 - `handoff_reason`: 高速パスから OpenAI へ引き継いだ理由。`abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable` のいずれか。引き継ぎが無かった（高速パス無効、または高速パスの間にキャンセル・失敗で終了した）場合は `null`。引き継ぎ後はタスクが終了するまで OpenAI で続行する（v1 では高速パスに戻らない）。失敗理由ではなく、`error_code` とは別に扱う
 
-**`cancel_task`**: `task_id`\*。出力: `{ "ok": true, "status": "cancelled" }`。すでに終了していれば現在の状態をそのまま返す。1 秒以内に実行中の OpenAI 呼び出しを取り消し、リースを解放する（FR-G10）。
+**`cancel_task`**: `task_id`\*。出力: `{ "ok": true, "status": "cancelled" }`。すでに終了していれば現在の状態をそのまま返す。実行中の OpenAI 呼び出しを取り消し、リースを解放する（FR-G10）。ループの終了は最大 0.5 秒だけ待ち、それまでに終わらなければその時点の状態（`running`）を返す（1 秒以内に返る。NFR-P08）。依頼元のクライアント自身のタスクだけ（ほかは `task_not_found`）。
 
 ### 3.4 ツールエラー
 
@@ -371,7 +371,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 |---------|------|------|------|
 | GET | `/` | `/viewer` へリダイレクト | 302 |
 | GET | `/viewer` | ビューアのページ（ツールバー、リースパネル、`<remo-screen-viewer>`） | 200 HTML（`viewer_id` を埋め込む） |
-| GET | `/viewer/lease` | リースパネルのフラグメント | 200 HTML。保持者種別・名前・状態と、状態に応じたボタンのみ |
+| GET | `/viewer/lease` | リースパネルのフラグメント | 200 HTML。保持者種別・名前・状態と、状態に応じたボタンのみ。保持者（承認待ちなら要求者）が `agent` のときは、実行中のタスクの要約（`[data-lease-task]`: 「AI エージェントのタスク実行中」・状態・ステップ数 / 上限・経過時間と上限・開始時刻・依頼元のクライアント名）を添える。**指示（prompt）と最終回答は出さない**（ビューアは依頼元とは別のクライアント。FR-W08）。タスクを読めないときは要約なしで描画する |
 | POST | `/viewer/lease/acquire` | 操作権を取得 | 承認が要らなければ 200 リースパネル。**承認が要るクライアントは、ホストの結果を待たず 202 で承認待ちのパネル（`pending_approval`・本人）を即座に返す**。結果は WebSocket で届く（許可は `lease` の `held`、拒否・タイムアウトは `error` の `approval_denied` / `approval_timeout`。§5.3）。承認待ちのあいだの再試行は新しい承認を作らず同じ 202。他者が保持中・承認待ちなら 409 `lease_held_by_other`。拒否・タイムアウトの直後 30 秒は、承認を求めず 403 `approval_denied`（クールダウン。トースト。パネルは空きのまま） |
 | POST | `/viewer/lease/release` | 操作権を解放 | 200 リースパネル |
 | POST | `/viewer/lease/revoke` | 他者のリースを強制剥奪（保持者が `agent` ならそのタスクを中断。FR-L06） | 200 リースパネル（保持者は `idle` になる）。自身が取得するには改めて `acquire` する |
@@ -514,9 +514,9 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト（フォーム） | 応答 |
 |---------|------|-----------------------|------|
-| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。空は `always`。定義外は 422 `invalid_argument`。**M3 から**選べる（M1・M2 のフォームは `always` だけ）。許可した時点で `clients.approval_mode` に保存する。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off。M1 のフォームにも出して保存するが、**M1 では効果がなく**、`run_task` の可否に効くのは M4 から。FR-A09）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
+| POST | `/requests/{id}/approve` | `approval_mode`（`always` / `first_time` / `auto`、既定 `always`。空は `always`。定義外は 422 `invalid_argument`。**M3 から**選べる（M1・M2 のフォームは `always` だけ）。許可した時点で `clients.approval_mode` に保存する。FR-H03）、`web_enabled`、`mcp_enabled`、`agent_enabled`（既定 off。`run_task` の可否に効く（M4。M1〜M3 は保存だけで効果がない）。FR-A09）、`display_name` | 200 一覧フラグメント（クライアントを登録し、要求を `approved`）。要求が `pending` でなければ 409 `conflict` |
 | POST | `/requests/{id}/deny` | なし | 200 一覧フラグメント（`denied`。24 時間は同デバイスの再要求を作らない） |
-| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`（M1 でも受け付けて保存するが、**M1 では効果がない**。`run_task` の可否に効くのは M4 から。FR-A09）、`approval_mode`（M3 から。`always` / `first_time` / `auto`、定義外は 422 `invalid_argument`）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻し、監査 `client.update` の `detail` に `approval_mode_before`・`approval_mode` を入れる。同じ値の保存では戻さない） | 200 クライアントのフラグメント。Web / MCP を無効にしたクライアントのセッションは即時に切断（タスクの中断は M4 から。`agent_enabled` の変更ではセッションを切断しない） |
+| PATCH | `/clients/{id}` | `web_enabled`、`mcp_enabled`、`agent_enabled`（`run_task` の可否に効く（M4。M1〜M3 は保存だけで効果がない）。FR-A09。`agent_enabled` を外すと、そのクライアントの実行中のタスクを中断する）、`approval_mode`（M3 から。`always` / `first_time` / `auto`、定義外は 422 `invalid_argument`）（いずれか。`approval_mode` を変えると `approved_at` を NULL に戻し、監査 `client.update` の `detail` に `approval_mode_before`・`approval_mode` を入れる。同じ値の保存では戻さない） | 200 クライアントのフラグメント。Web / MCP を無効にしたクライアントのセッションは即時に切断（そのクライアントの実行中のエージェントのタスクも中断する（FR-G10）。`agent_enabled` の変更ではセッションを切断しない） |
 | POST | `/clients/{id}/approval/reset` | なし | 200 クライアントのフラグメント（`first_time` で承認済みのときだけ。`approved_at` を NULL に戻し、次のリース取得から再び承認が要る。破壊的ではないので確認モーダルは挟まない。詳細ページからは `?view=detail`）。`first_time` でない・承認済みでなければ 409 `conflict`、クライアントが無ければ 404。監査は `approval.reset`（`kind = lease`、`actor_type = host`。`detail` に `client_id`・取り消した `approved_at`）と運用ログ `client approval reset`。拒否・タイムアウト直後のクールダウン（30 秒）も解く |
 | DELETE | `/clients/{id}` | なし | 200（許可リストから除外。トークンは `CASCADE` で削除、セッション・タスクは切断・中断） |
 | POST | `/clients/{id}/tokens` | `label`\*、`expires_in_days`（既定 90、`never` で無期限） | 200 **トークン平文を一度だけ表示するフラグメント**。`Cache-Control: no-store`。ラベル重複は 409。以後は `token_prefix` のみ表示 |
@@ -697,3 +697,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.34 | 2026-11-02 | §3.3 の `get_control_status` の `holder.kind` に `agent`・`task_id`、`run_task` の `invalid_argument`、`instructions` のタスクの記述、MCP ツールの監査（`run_task` / `get_task` / `cancel_task`。`prompt` は文字数のみ）を実装に合わせて追記 | #19（mcp の `run_task` / `get_task` / `cancel_task`） |
 | 1.35 | 2026-11-02 | §7.5 にエージェント設定の GUI（#19）: キーの受け付け方（本文のみ・形式の検査・`no-store`・値を出さない）、確認モーダルを経る `DELETE`、`PUT /agent` の 409 `agent_disabled` が §2 のエラーコード表（403）と食い違うことを記載 | #19 |
 | 1.36 | 2026-11-02 | §7.1 の `/`（実行中タスクのパネル・強制剥奪は `mcp` / `web` / `agent`）・`/approvals/{id}`（`safety_check`・`judge_action` の表示）・`/overlay`（2 行目の補足）・`/tasks`（一覧・詳細）、§7.3 の `POST /lease/revoke`（`agent` の剥奪）・`POST /tasks/{id}/cancel`（応答・冪等・404）、§7.4 の `tasks`（`rev_tasks`）、§7.5 にタスク画面・承認の種類・エージェントのオーバーレイの実装を追記し、「`kind` が `lease` 以外は 410（M4）」を未知の `kind` に更新 | #19（M4 ホスト GUI・タスク） |
+| 1.37 | 2026-11-02 | §3.3 の `get_task` の `error_code` に `invalid_coordinates`、リース喪失は `cancelled`、`cancel_task` の待ちは 0.5 秒、§4.2 の `GET /viewer/lease` に保持者 `agent` のときのタスクの要約（指示・最終回答は出さない）、§7.2 の `agent_enabled` の効果（M4）と中断 | #19 のレビュー指摘 |
