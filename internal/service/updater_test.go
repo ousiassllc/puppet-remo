@@ -689,11 +689,11 @@ func TestNewUpdaterRejectsMalformedKeyAndBases(t *testing.T) {
 	}
 }
 
-// 埋め込んだ公開鍵のファイルは、プレースホルダか、書式の正しい minisign の公開鍵のどちらかである（壊れた鍵を出荷しない）。
-func TestEmbeddedUpdatePublicKeyIsPlaceholderOrValid(t *testing.T) {
-	_, err := parseUpdatePublicKey(EmbeddedUpdatePublicKey())
-	if err != nil && !errors.Is(err, ErrUpdateKeyNotConfigured) {
-		t.Fatalf("the embedded update public key is malformed: %v", err)
+// 埋め込んだ公開鍵は、書式の正しい minisign の公開鍵である（プレースホルダのまま・壊れた鍵を出荷しない。
+// 未設定だと出荷したアプリは更新を適用できない）。
+func TestEmbeddedUpdatePublicKeyIsValid(t *testing.T) {
+	if _, err := parseUpdatePublicKey(EmbeddedUpdatePublicKey()); err != nil {
+		t.Fatalf("the embedded update public key is unset or malformed: %v", err)
 	}
 }
 
