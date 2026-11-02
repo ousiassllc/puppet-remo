@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -293,6 +295,126 @@ func TestSessionLimit(t *testing.T) {
 			t.Fatalf("a slot did not free up after the session closed: %v", err)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// 新しいセッションを作っている最中の要求は、すでに表に載ったセッションと二重には数えない。
+// 二重に数えると、上限に届いていないのに 409 になる（server/discover の応答の後、要求が戻る前に initialize が来る時に起きた）。
+func TestSessionLimitDoesNotCountAnOpeningSessionTwice(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.MaxSessions = 3 })
+	e.connect("c1")
+
+	// c2 の initialize は、セッションが表に載った後・要求が戻る前で止める。
+	tracked, release := make(chan struct{}), make(chan struct{})
+	var held atomic.Bool
+	e.srv.sdk.AddReceivingMiddleware(func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
+		return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
+			res, err := next(ctx, method, req)
+			if method == "initialize" && held.CompareAndSwap(false, true) {
+				close(tracked)
+				<-release
+			}
+			return res, err
+		}
+	})
+	dialed := make(chan error, 1)
+	go func() {
+		cs, err := e.dial("c2")
+		if cs != nil {
+			t.Cleanup(func() { _ = cs.Close() })
+		}
+		dialed <- err
+	}()
+	select {
+	case <-tracked:
+	case <-time.After(waitLimit):
+		t.Fatal("c2's initialize did not reach the server")
+	}
+	defer func() { // 失敗で抜けても c2 の要求を止めたままにしない。
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+
+	// 接続中は c1 と c2 の 2 つ。上限 3 に届いていないので、c3 は入れる。
+	e.connect("c3")
+	// 3 つ目が入った後は上限に届いている。
+	if got := e.post("c4", []byte(initializeBody), nil).StatusCode; got != http.StatusConflict {
+		t.Errorf("status at the limit = %d, want 409", got)
+	}
+
+	close(release)
+	select {
+	case err := <-dialed:
+		if err != nil {
+			t.Errorf("connect c2: %v", err)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("c2 did not finish connecting")
+	}
+}
+
+// セッションを残さない要求（server/discover の拒否など）は、応答を返し始めた時点で枠を空ける。
+// クライアントは応答を受け取るとすぐ次の initialize を送るので、ハンドラが戻るまで枠を持ち越すと 409 になる。
+func TestSessionLimitIsFreedWhenTheResponseStarts(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.MaxSessions = 1 })
+	release := make(chan struct{})
+	var calls atomic.Int32
+	ts := httptest.NewServer(e.srv.limitSessions(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) > 1 {
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest) // 最初の要求は、応答を返したあとハンドラが戻らない。
+		w.(http.Flusher).Flush()
+		<-release
+	})))
+	defer ts.Close()
+	defer close(release)
+
+	post := func() *http.Response {
+		t.Helper()
+		resp, err := http.Post(ts.URL, "application/json", strings.NewReader(initializeBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		return resp
+	}
+	if got := post().StatusCode; got != http.StatusBadRequest {
+		t.Fatalf("first status = %d, want 400", got)
+	}
+	if got := post().StatusCode; got == http.StatusConflict {
+		t.Errorf("second status = %d: the slot of a request that already responded is still held", got)
+	}
+}
+
+// server/discover は拒否され、セッションの表（ダッシュボードと上限）には載らない。
+func TestDiscoverIsNotTrackedAsASession(t *testing.T) {
+	e := newEnv(t)
+	inTable := make(chan int, 1)
+	e.srv.sdk.AddReceivingMiddleware(func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
+		return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
+			res, err := next(ctx, method, req)
+			if method == methodDiscover {
+				inTable <- len(e.srv.Sessions())
+			}
+			return res, err
+		}
+	})
+	const body = `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{` +
+		`"io.modelcontextprotocol/protocolVersion":"2026-07-28",` +
+		`"io.modelcontextprotocol/clientInfo":{"name":"raw","version":"0"},` +
+		`"io.modelcontextprotocol/clientCapabilities":{}}}}`
+	e.post("c1", []byte(body), map[string]string{"Mcp-Protocol-Version": "2026-07-28", "Mcp-Method": methodDiscover})
+	select {
+	case n := <-inTable:
+		if n != 0 {
+			t.Errorf("%d sessions in the table while handling server/discover, want 0", n)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("server/discover did not reach the session handler")
 	}
 }
 
