@@ -61,6 +61,9 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.DELETE("/apps/:id", h.DeleteApp)
 	r.POST("/apps/pick-file", h.PickAppFile)
 
+	// ログフォルダーを開く（#54。FR-H13）。パスは受け取らない（開く場所は service.AppLog の実装が固定する）
+	r.POST(logOpenFolderURL, h.OpenLogFolder)
+
 	// 承認ダイアログ（M3。FR-H05）。専用の Wails ウィンドウの中身と、許可・拒否
 	r.GET("/approvals/:id", h.ApprovalDialog)
 	r.POST("/approvals/:id/allow", h.AllowApproval)

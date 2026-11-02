@@ -171,10 +171,10 @@ func (h *Handler) Logs(c *gin.Context) {
 	log := h.appLogView(filter, page)
 	switch {
 	case boostedRequest(c):
-		h.render(c, http.StatusOK, pages.LogsBoosted(view.AppLogPage{Chrome: h.chrome(ctx, view.NavLogs), Path: h.d.Logs.Path(), Log: log}))
+		h.render(c, http.StatusOK, pages.LogsBoosted(view.AppLogPage{Chrome: h.chrome(ctx, view.NavLogs), Path: h.d.Logs.Path(), OpenFolderURL: logOpenFolderURL, Log: log}))
 	case fragmentRequest(c):
 		h.render(c, http.StatusOK, organisms.AppLog(log))
 	default:
-		h.render(c, http.StatusOK, pages.Logs(view.AppLogPage{Chrome: h.chrome(ctx, view.NavLogs), Path: h.d.Logs.Path(), Log: log}))
+		h.render(c, http.StatusOK, pages.Logs(view.AppLogPage{Chrome: h.chrome(ctx, view.NavLogs), Path: h.d.Logs.Path(), OpenFolderURL: logOpenFolderURL, Log: log}))
 	}
 }

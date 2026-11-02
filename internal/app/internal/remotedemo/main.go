@@ -160,7 +160,7 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 			Hotkey:  platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
 		},
 		Watcher: watcher, WhoIs: whois,
-		Static: mustStatic(), Logs: app.NewLogReader(dir),
+		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())),
 		Version: "demo", Logger: logger, OpenAIModel: model,
 		// tailnet の IP の代わりに、-addr の loopback で待ち受ける（IPv4 の 1 本だけ）。
 		// 接続の LocalAddr は偽の tailnet アドレスに見せる（MCP の SDK は loopback 宛ての Host 検査をするため。agentdemo.go）。

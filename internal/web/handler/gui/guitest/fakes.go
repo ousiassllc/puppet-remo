@@ -540,14 +540,24 @@ func (p *Approval) Resolve(id string, allow bool) error {
 }
 
 // Logs は gui.Logs の偽実装。Items は新しい順に並べて入れる（本物のファイルと同じ順序。絞り込みとページ分けは本物と同じ規則）。
+// OpenFolder はフォルダーを開かず、呼ばれた回数を OpenFolderCalls に数える（OpenFolderErr があればそれを返す）。
 type Logs struct {
 	Items    []service.AppLogEntry
 	FilePath string
 	Err      error
+
+	OpenFolderErr   error
+	OpenFolderCalls int
 }
 
 // Path は表示するログファイルのパス。
 func (l *Logs) Path() string { return l.FilePath }
+
+// OpenFolder はフォルダーを開いたことにする（記録だけ）。
+func (l *Logs) OpenFolder(context.Context) error {
+	l.OpenFolderCalls++
+	return l.OpenFolderErr
+}
 
 // Entries は Items を filter で絞って 1 ページ返す。
 func (l *Logs) Entries(_ context.Context, filter service.AppLogFilter, page int) (service.AppLogPage, error) {

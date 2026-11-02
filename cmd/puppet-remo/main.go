@@ -148,7 +148,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		Watcher: tailnet.NewWatcher(tailnet.WatcherConfig{API: api}),
 		WhoIs:   tailnet.NewWhoIs(tailnet.WhoIsConfig{API: api}),
 		Static:  staticHandler,
-		Logs:    app.NewLogReader(dataDir),
+		// ログ画面の「ログフォルダーを開く」（#54）は、エクスプローラーでログのフォルダーだけを開く（開く場所は LogReader が固定する）。
+		Logs:    app.NewLogReader(dataDir, app.WithFolderOpener(windows.NewFolderOpener())),
 		Version: version,
 		Logger:  log,
 		Closers: closers,

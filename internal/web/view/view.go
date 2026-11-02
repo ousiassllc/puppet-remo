@@ -440,11 +440,13 @@ type AppLog struct {
 	NextURL string
 }
 
-// AppLogPage はログ画面のページ。Path は今のログファイルの場所。
+// AppLogPage はログ画面のページ。Path は今のログファイルの場所。OpenFolderURL は「ログフォルダーを開く」ボタンの POST 先
+// （固定の URL。パスは送らない。#54）。
 type AppLogPage struct {
-	Chrome Chrome
-	Path   string
-	Log    AppLog
+	Chrome        Chrome
+	Path          string
+	OpenFolderURL string
+	Log           AppLog
 }
 
 // AuditFilterOption は監査ログの絞り込みの選択肢 1 つ。

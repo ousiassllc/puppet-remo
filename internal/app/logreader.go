@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ousiassllc/puppet-remo/internal/platform"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
@@ -33,12 +34,21 @@ const (
 )
 
 // LogReader は service.AppLog の実装（ログファイルの読み出し）。
-type LogReader struct{ path string }
+type LogReader struct {
+	path   string
+	opener platform.FolderOpener // ログフォルダーを開く手段（logfolder.go。nil なら OpenFolder は使えない）
+}
 
 var _ service.AppLog = (*LogReader)(nil)
 
-// NewLogReader は dataDir のログ（LogFilePath）を読む LogReader を返す。
-func NewLogReader(dataDir string) *LogReader { return &LogReader{path: LogFilePath(dataDir)} }
+// NewLogReader は dataDir のログ（LogFilePath）を読む LogReader を返す。ログフォルダーを開く手段は WithFolderOpener で渡す。
+func NewLogReader(dataDir string, opts ...LogReaderOption) *LogReader {
+	r := &LogReader{path: LogFilePath(dataDir)}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
 
 // Path は今のログファイルのパス。
 func (r *LogReader) Path() string { return r.path }
