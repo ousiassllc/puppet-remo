@@ -102,6 +102,14 @@ type AgentSettings interface {
 	DeleteTypeSafeKey(ctx context.Context) error // 高速パスを無効にし consent_at を消す。実行中のタスクは失敗させず OpenAI で続行する
 }
 
+// AgentConfigReader は Agent・FastPath・RuleJudge が設定を読む窓口（AgentSettings の実装が満たす）。API キーの値は返さず、
+// 登録の有無だけを返す。Config は既定値を適用済みで、保存済みの値が不正なら既定値を使って運用ログに警告する（HostSettings.Load と同じ規則）。
+type AgentConfigReader interface {
+	Config(ctx context.Context) (AgentConfig, error)
+	OpenAIKeyRegistered(ctx context.Context) (bool, error)
+	TypeSafeKeyRegistered(ctx context.Context) (bool, error)
+}
+
 // StartInput は run_task の引数（FR-G02）。MaxSteps・MaxDurationSec の 0 は設定値。設定値を上回る指定は設定値に丸めるのではなく
 // domain.ErrInvalidArgument で拒否する（「下げる方向にのみ指定できる」）。Prompt は 1〜10,000 文字。
 type StartInput struct {
