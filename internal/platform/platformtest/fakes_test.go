@@ -448,11 +448,11 @@ func TestFakeFolderOpenerRecordsOpensAndInjectsErrors(t *testing.T) {
 func TestFakeFolderOpenerOpensOnlyKnownFoldersUnlessAcceptAny(t *testing.T) {
 	ctx := context.Background()
 	f := platformtest.NewFakeFolderOpener()
-	if err := f.OpenFolder(ctx, `C:\other`); !errors.Is(err, platform.ErrNotFound) {
+	if err := f.OpenFolder(ctx, `C:\elsewhere`); !errors.Is(err, platform.ErrNotFound) {
 		t.Fatalf("OpenFolder(unknown) = %v, want platform.ErrNotFound", err)
 	}
 	f.AcceptAny()
-	if err := f.OpenFolder(ctx, `C:\other`); err != nil {
+	if err := f.OpenFolder(ctx, `C:\elsewhere`); err != nil {
 		t.Fatalf("OpenFolder(any) = %v", err)
 	}
 	if err := f.OpenFolder(ctx, "relative"); !errors.Is(err, domain.ErrInvalidArgument) {
