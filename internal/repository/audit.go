@@ -51,6 +51,10 @@ type Audit interface {
 	Query(ctx context.Context, q AuditQuery) (entries []AuditEntry, next int64, err error)
 	// Get は 1 件（detail_json・サムネイルのメタを含む）。無ければ ErrNotFound。
 	Get(ctx context.Context, id int64) (AuditEntry, error)
+	// ListByTask は 1 つのタスクのログ（ステップごとの記録。detail_json・サムネイルのメタを含む）を step_no の昇順
+	// （同じなら id の昇順。step_no が NULL のタスク単位のイベントは先頭）で返す。件数は最大 MaxTaskStepEntries 件
+	// （超えた分は返さない）。taskID が空なら ErrInvalidArgument。
+	ListByTask(ctx context.Context, taskID string) ([]AuditEntry, error)
 	// AttachThumb はサムネイルのメタを紐づける（1 ログにつき 0 または 1 枚）。
 	// 2 回目は ErrConflict、audit_log_id が無ければ ErrNotFound、RelPath が thumbs/ 配下の相対パスでなければ ErrInvalidArgument。
 	AttachThumb(ctx context.Context, auditID int64, t ThumbMeta) error
