@@ -46,6 +46,20 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 				@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Variant: atoms.ButtonDanger, Attrs: leaseButtonAttrs("/viewer/lease/revoke")})
 			}
 		</div>
+		if v.Task != nil {
+			<div class="mt-2 rounded border border-indigo-100 bg-indigo-50 p-2 text-xs text-slate-700" data-lease-task>
+				<p class="font-semibold text-indigo-800">AI エージェントのタスク実行中</p>
+				<dl class="mt-1 space-y-0.5">
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">ステップ</dt><dd class="tabular-nums" data-task-steps>{ v.Task.Steps }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">経過</dt><dd class="tabular-nums" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
+					if v.Task.StartedAt != "" {
+						<div class="flex gap-2"><dt class="w-16 text-slate-500">開始</dt><dd class="tabular-nums" data-task-started>{ v.Task.StartedAt }</dd></div>
+					}
+					<div class="flex gap-2"><dt class="w-16 text-slate-500">依頼元</dt><dd data-task-requester>{ v.Task.Requester }</dd></div>
+				</dl>
+			</div>
+		}
 		if v.PendingMine {
 			<p class="mt-2 text-sm text-amber-700" role="status" data-lease-pending-message>ホストの承認を待っています。</p>
 		}

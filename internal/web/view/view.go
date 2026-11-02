@@ -551,19 +551,32 @@ type ViewerToolbar struct {
 }
 
 // ViewerLease はビューアのリースパネル（FR-W08）。保持者の種別・名前・状態は常に出し、操作は Can* が true のものだけを描画する（状態駆動）。
-// CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web）が保持しているとき。
+// CanAcquire は空き、CanRelease は自分が保持、CanRevoke は他者（mcp・web・agent）が保持しているとき。
 // Pending は承認待ち（pending_approval。FR-L07）で、HolderLabel・KindLabel が要求者、PendingMine が要求者本人。承認待ちの間は
 // Held・Mine・Can* がすべて false（操作権を持たず、取得も解放も強制剥奪もできない）。
+// Task は保持者が agent のとき、実行中のタスクの要約（FR-W08。読めたときだけ）。
 type ViewerLease struct {
 	Held        bool
 	Mine        bool
 	Pending     bool
 	PendingMine bool
 	HolderLabel string
-	KindLabel   string // 保持者（承認待ちなら要求者）の種別（mcp / web）
+	KindLabel   string // 保持者（承認待ちなら要求者）の種別（mcp / web / agent）
 	CanAcquire  bool
 	CanRelease  bool
 	CanRevoke   bool
+	Task        *ViewerTask
+}
+
+// ViewerTask はビューアのリースパネルに出す、実行中のエージェントのタスクの要約（FR-W08）。ビューアはタスクの依頼元とは別の
+// クライアントなので、指示（prompt）と最終回答は持たない（状態・ステップ数・上限・開始時刻・依頼元の表示名だけ）。
+type ViewerTask struct {
+	Status    string // 状態の表示（承認待ち / 実行中）
+	Steps     string // 「3 / 50」（実行したステップ数 / 上限）
+	Elapsed   string // 経過時間（開始から。承認待ちは「-」）
+	MaxTime   string // 実行時間の上限の表示
+	StartedAt string // 開始時刻（HH:MM:SS。承認待ちは空）
+	Requester string // 依頼元のクライアントの表示名
 }
 
 // KeyMenuItem はショートカット送信メニューの 1 項目。Keys は API 仕様 §3.3 の `keys` の書式。
