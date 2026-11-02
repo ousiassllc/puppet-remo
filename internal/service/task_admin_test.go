@@ -111,7 +111,7 @@ func TestTaskAdminDetailReadsTheStepsOfARealTask(t *testing.T) {
 	}
 }
 
-func rebuildControlAudit(t *testing.T, ae *agentEnv, a AuditRecorder) Control {
+func rebuildControlAudit(t *testing.T, ae *agentEnv, a SyncAuditRecorder) Control {
 	t.Helper()
 	e := ae.ctlEnv
 	c, err := NewControl(ControlConfig{

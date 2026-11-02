@@ -129,9 +129,10 @@ type ControlConfig struct {
 	Kill   ControlKillSwitch
 
 	Settings repository.Settings // nil なら screenshot.max_dimension は既定値
-	// Audit は監査の記録先。nil なら記録しない。ThumbnailsEnabled・RecordWithThumb も持つ（*Audit）なら、画面を変える操作の
+	// Audit は監査の記録先。nil なら記録しない（テスト用。本番の結線は必ず渡す）。launch_app の起動の前の「試行」の行は
+	// RecordSync で書く（書けなければ起動しない。NFR-S20）。ThumbnailsEnabled・RecordWithThumb も持つ（*Audit）なら、画面を変える操作の
 	// 成功時にサムネイルを撮って付ける（FR-AU02。control_thumb.go）。持たなければ撮らない。
-	Audit  AuditRecorder
+	Audit  SyncAuditRecorder
 	Clock  domain.Clock
 	Logger *slog.Logger // nil なら slog.Default()。サムネイルの撮影の失敗などの出力先
 	// Judge と Approval は ActorAgent のアクションだけが使う（mcp・web だけなら nil でよい）。agent のアクションで Judge が nil なら
@@ -169,7 +170,7 @@ type control struct {
 	kill      KillSwitchState
 	guard     InputGuard
 	settings  repository.Settings
-	audit     AuditRecorder
+	audit     SyncAuditRecorder
 	judge     Judge
 	approval  Approval
 	log       *slog.Logger

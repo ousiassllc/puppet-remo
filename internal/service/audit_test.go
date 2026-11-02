@@ -140,29 +140,69 @@ func TestAuditStoreFailureDoesNotStopTheWriter(t *testing.T) {
 	}
 }
 
-// launch_app の監査はプロセスを作ったあとに記録するため、取りこぼす（キューが満杯・Close 後）と起動が成立したのに残らない。
-// その場合は Error、それ以外のイベントは Warn で出す。書き込みの失敗は、どのイベントも Error（run）。
-func TestAuditLossOfLaunchAppIsLoggedAtError(t *testing.T) {
-	tests := []struct {
-		event     string
-		wantLevel string
-	}{
-		{"tool.launch_app", "level=ERROR"},
-		{"tool.type", "level=WARN"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.event, func(t *testing.T) {
+// launch_app の結果の行は、起動の前に「試行」の行を同期で書いてあるので、取りこぼし（キューが満杯・Close 後・書き込みの失敗）は
+// Warn で出す。それ以外のイベントの書き込みの失敗は Error（取りこぼし自体は Warn）。
+func TestAuditLossOfLaunchResultIsWarnedOthersFailAtError(t *testing.T) {
+	launch := repository.AuditEntry{Kind: "tool", Event: "tool.launch_app", Tool: "launch_app", Result: "ok"}
+	other := repository.AuditEntry{Kind: "tool", Event: "tool.type", Tool: "type", Result: "ok"}
+	t.Run("a dropped launch result is a warning", func(t *testing.T) {
+		var logs bytes.Buffer
+		a := newTestAudit(t, &ctlAuditStore{}, 0, &logs)
+		if err := a.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		a.Record(context.Background(), launch)
+		if !strings.Contains(logs.String(), "audit entry dropped") || !strings.Contains(logs.String(), "level=WARN") || strings.Contains(logs.String(), "level=ERROR") {
+			t.Fatalf("logs = %s, want only a WARN drop record", logs.String())
+		}
+	})
+	for _, tt := range []struct {
+		name  string
+		entry repository.AuditEntry
+		level string
+	}{{"a failed launch result write is a warning", launch, "level=WARN"}, {"a failed write of another event is an error", other, "level=ERROR"}} {
+		t.Run(tt.name, func(t *testing.T) {
 			var logs bytes.Buffer
-			a := newTestAudit(t, &ctlAuditStore{}, 0, &logs)
-			if err := a.Close(context.Background()); err != nil {
+			a := newTestAudit(t, &ctlAuditStore{err: errors.New("db locked")}, 0, &logs)
+			a.Record(context.Background(), tt.entry)
+			if err := a.Flush(context.Background()); err != nil {
 				t.Fatal(err)
 			}
-			a.Record(context.Background(), repository.AuditEntry{Kind: "tool", Event: tt.event, Result: "ok"})
-			if !strings.Contains(logs.String(), "audit entry dropped") || !strings.Contains(logs.String(), tt.wantLevel) {
-				t.Fatalf("logs = %s, want a drop record with %s", logs.String(), tt.wantLevel)
+			if !strings.Contains(logs.String(), "audit append failed") || !strings.Contains(logs.String(), tt.level) {
+				t.Fatalf("logs = %s, want an append failure with %s", logs.String(), tt.level)
 			}
 		})
 	}
+}
+
+// RecordSync は書き終えてから戻り（Flush を待たずに DB に見える）、書けなければエラーを返す。Close 後は断る。
+func TestAuditRecordSync(t *testing.T) {
+	ctx := context.Background()
+	t.Run("is written when it returns", func(t *testing.T) {
+		store := &ctlAuditStore{}
+		a := newTestAudit(t, store, 0, nil)
+		if err := a.RecordSync(ctx, repository.AuditEntry{Event: "attempt", Result: "ok"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := store.Entries(); len(got) != 1 || got[0].Event != "attempt" || got[0].TS.IsZero() {
+			t.Fatalf("entries right after RecordSync = %+v, want the attempt with a timestamp", got)
+		}
+	})
+	t.Run("returns the store's error", func(t *testing.T) {
+		a := newTestAudit(t, &ctlAuditStore{err: errors.New("db locked")}, 0, nil)
+		if err := a.RecordSync(ctx, repository.AuditEntry{Event: "attempt", Result: "ok"}); err == nil {
+			t.Fatal("RecordSync = nil, want the store's error")
+		}
+	})
+	t.Run("refuses after Close", func(t *testing.T) {
+		a := newTestAudit(t, &ctlAuditStore{}, 0, nil)
+		if err := a.Close(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.RecordSync(ctx, repository.AuditEntry{Event: "attempt", Result: "ok"}); !errors.Is(err, ErrAuditClosed) {
+			t.Fatalf("RecordSync after Close = %v, want ErrAuditClosed", err)
+		}
+	})
 }
 
 func TestAuditCloseDrainsQueueAndRefusesLaterRecords(t *testing.T) {

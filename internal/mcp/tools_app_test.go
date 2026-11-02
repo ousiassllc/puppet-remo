@@ -238,6 +238,21 @@ func TestLaunchAppErrors(t *testing.T) {
 	})
 }
 
+// 起動の試行を監査に書けないと Control.Launch が audit_unavailable で起動を断る（fail-closed。NFR-S20）。ツールエラーは同じコードで、
+// 本文にも原因は無い（Control.Launch は DB のエラーを載せない。service のテストが確かめる）。
+func TestLaunchAppAuditUnavailableIsAToolError(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.apps = sampleApps
+	e.ctl.launchErr = domain.ErrAuditUnavailable
+	res := callTool(t, e.connect("c1"), "launch_app", map[string]any{"app_id": sampleApps[0].ID})
+	if code := res.errCode(t); code != domain.CodeAuditUnavailable {
+		t.Fatalf("code = %s, want audit_unavailable", code)
+	}
+	if got := domain.CodeAuditUnavailable.HTTPStatus(); got != 503 {
+		t.Errorf("HTTP status = %d, want 503", got)
+	}
+}
+
 func TestLaunchAppFailureCarriesTheReasonOnly(t *testing.T) {
 	for _, reason := range []domain.LaunchFailure{
 		domain.LaunchFileMissing, domain.LaunchAccessDenied, domain.LaunchElevationRequired, domain.LaunchOther,

@@ -22,6 +22,13 @@ type AuditRecorder interface {
 	Record(ctx context.Context, e repository.AuditEntry)
 }
 
+// SyncAuditRecorder は、非同期の Record に加えて、書き終えるまで待ってエラーを返す RecordSync を持つ窓口。
+// Control が launch_app の「試行」の行を起動の前に書く（書けなければ起動しない。fail-closed。NFR-S20）のに使う。
+type SyncAuditRecorder interface {
+	AuditRecorder
+	RecordSync(ctx context.Context, e repository.AuditEntry) error
+}
+
 const defaultAuditQueueSize = 256
 
 // Audit は監査ログの追記（FR-AU01）。書き込みは goroutine 1 本が行い、Record は
@@ -131,22 +138,37 @@ func (a *Audit) enqueue(ctx context.Context, e repository.AuditEntry, thumb *Thu
 	}
 }
 
+// RecordSync は e を、書き終えるまで待って記録し、書けなければエラーを返す（同期書き込み。fail-closed の操作の「試行」の行）。
+// 書き込みは呼び出した goroutine が行い、キューを通らない（非同期の Record のキューが満杯でも、DB が書ければ書ける）。
+// 待ちの上限は新しく足さず、ctx（ツール呼び出しなら ToolTimeout）に従う。Close 後は ErrAuditClosed。
+func (a *Audit) RecordSync(ctx context.Context, e repository.AuditEntry) error {
+	if e.TS.IsZero() {
+		e.TS = a.clock.Now()
+	}
+	a.mu.RLock()
+	closed := a.closed
+	a.mu.RUnlock()
+	if closed {
+		return ErrAuditClosed
+	}
+	if _, err := a.store.Append(ctx, e); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Dropped はキューの満杯・Close 後の Record で捨てた件数を返す。
 func (a *Audit) Dropped() int64 { return a.dropped.Load() }
 
-// drop は e を捨てたことを記録する。launch_app は、プロセスを作ったあとに記録する（Control.Launch）ため、捨てると、起動が
-// 成立したのに監査に残らない（NFR-S20 の残存リスク）。運用で気づけるよう Error で出す。それ以外は Warn。
+// drop は e を捨てたことを Warn で記録する。launch_app の結果の行を捨てても、起動の前に「試行」の行を同期で書いてあるので、
+// 起動の事実は監査に残る（Control.Launch。NFR-S20）。
 func (a *Audit) drop(e repository.AuditEntry, why string) {
 	n := a.dropped.Add(1)
-	level := slog.LevelWarn
-	if e.Event == launchAppAuditEvent {
-		level = slog.LevelError
-	}
-	a.log.Log(context.Background(), level, "audit entry dropped", "reason", why, "kind", e.Kind, "event", e.Event, "dropped_total", n)
+	a.log.Warn("audit entry dropped", "reason", why, "kind", e.Kind, "event", e.Event, "dropped_total", n)
 }
 
-// launchAppAuditEvent は launch_app の監査のイベント名（ToolAuditEntry の "tool." + ツール名）。
-const launchAppAuditEvent = "tool.launch_app"
+// launchAppTool は launch_app の監査エントリの Tool（tool.launch_app と agent.step の両方）。
+const launchAppTool = "launch_app"
 
 // Flush は、呼び出し前に Record された件がすべて書き込まれるまで待つ。
 func (a *Audit) Flush(ctx context.Context) error {
@@ -196,7 +218,12 @@ func (a *Audit) run() {
 		}
 		id, err := a.store.Append(it.ctx, it.entry)
 		if err != nil {
-			a.log.Error("audit append failed", "kind", it.entry.Kind, "event", it.entry.Event, "err", err)
+			// launch_app の結果の行は、起動の前に「試行」の行を書いてあるので、書けなくても起動は取り消さず Warn にとどめる。
+			level := slog.LevelError
+			if it.entry.Tool == launchAppTool {
+				level = slog.LevelWarn
+			}
+			a.log.Log(context.Background(), level, "audit append failed", "kind", it.entry.Kind, "event", it.entry.Event, "err", err)
 		}
 		if it.thumb != nil {
 			if err == nil {
