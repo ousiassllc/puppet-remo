@@ -4,7 +4,7 @@ package service
 // 網羅テスト（audit_catalog_test.go）が、この表・ソースが実際に追記するイベント名・ER の表の 3 つの食い違いを検出する。
 // Events が空の項目は、Pending に書いた Issue が実装するまで未記録（その Issue が表を埋める）。
 type AuditRequirement struct {
-	Item    string   // FR-AU01 の項目（エージェントのものは M4 なので含めない）
+	Item    string   // FR-AU01 の項目
 	Events  []string // 記録するイベント名。tool.<名前> の族は AuditToolEventPrefix で表す
 	Pending string   // 未実装のとき、実装する Issue（Events は空）
 }
@@ -12,7 +12,7 @@ type AuditRequirement struct {
 // AuditToolEventPrefix は操作系・閲覧系ツールと Web 入力のイベント名の接頭辞（ToolAuditEntry。"tool." + ツール名）。
 const AuditToolEventPrefix = "tool."
 
-// AuditCatalog は FR-AU01（agent 以外）と記録するイベント名の対応。ここに無いイベントを足したら、網羅テストが失敗する。
+// AuditCatalog は FR-AU01 と記録するイベント名の対応。ここに無いイベントを足したら、網羅テストが失敗する。
 var AuditCatalog = []AuditRequirement{
 	{Item: "接続要求の作成", Events: []string{"auth.connreq_create"}},
 	{Item: "接続要求の許可", Events: []string{"auth.connreq_approve"}},
@@ -32,6 +32,10 @@ var AuditCatalog = []AuditRequirement{
 	{Item: "更新の確認・適用（kind = update）", Events: []string{
 		UpdateDetectedAuditEvent, UpdateVerifyFailedAuditEvent, UpdateDowngradeRejectedAuditEvent, UpdateApplyStartedAuditEvent, UpdateApplyFailedAuditEvent,
 	}},
+	{Item: "エージェントの各ステップ・Judge の判定（kind = agent）", Events: []string{agentStepAuditEvent, agentJudgeAuditEvent}},
+	{Item: "エージェントの有効化と同意", Events: []string{agentConsentAuditEvent}},
+	{Item: "高速パスの有効化と同意（agent.consent とは別）", Events: []string{fastpathEnableAuditEvent, fastpathDisableAuditEvent}},
+	{Item: "エージェントのタスクのライフサイクル・安全チェック（kind = agent）", Pending: "#19 の Agent（agent.task_start 等。実装する Issue がここにイベント名を足す）"},
 }
 
 // auditCatalogEvents は AuditCatalog の具体的なイベント名（tool.* の族を除く）の集合。

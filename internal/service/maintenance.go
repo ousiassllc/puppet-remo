@@ -41,6 +41,10 @@ type MaintenanceConfig struct {
 	Audit    repository.Audit
 	Thumbs   repository.ThumbStore
 	Settings repository.Settings // audit.retention_days・audit.thumbs_max_bytes を保守の都度読む
+	// Tasks が非 nil なら、Run の開始時に実行中・承認待ちのタスクを aborted にし（AbortActive。NFR-A08）、保守のたびに
+	// audit.retention_days を過ぎた終了済みのタスクを削除する（PurgeFinishedBefore）。タスクの保持期間は監査と同じ設定を使うので、
+	// Settings が必須（nil のままなら NewMaintenance が失敗する）。
+	Tasks repository.Tasks
 	// Clock は nil なら tailnet.SystemClock。
 	Clock tailnet.Clock
 	// Interval は 0 以下なら 1 時間。
@@ -51,7 +55,7 @@ type MaintenanceConfig struct {
 // Maintenance は定期的な保守（docs/components/overview.md §5.10）。
 // 接続要求の失効（pending は 24 時間で expired になり、最後の要求から 7 日を過ぎた行は削除される。FR-A06）と、
 // Audit を渡されたときの監査の保持（保持期間を過ぎた行の削除、サムネイルの容量の上限、起動時の孤児ファイルの掃除。FR-AU04）を行う。
-// タスクの保持期間と AbortActive は M4 で足す。
+// Tasks を渡されたときは、タスクの回収（起動時の AbortActive。NFR-A08）と保持（保持期間を過ぎた終了済みタスクの削除）も行う。
 type Maintenance struct {
 	cfg MaintenanceConfig
 }
@@ -63,6 +67,9 @@ func NewMaintenance(cfg MaintenanceConfig) (*Maintenance, error) {
 	}
 	if cfg.Audit != nil && (cfg.Thumbs == nil || cfg.Settings == nil) {
 		return nil, errors.New("service: maintenance with Audit requires Thumbs and Settings")
+	}
+	if cfg.Tasks != nil && cfg.Settings == nil {
+		return nil, errors.New("service: maintenance with Tasks requires Settings")
 	}
 	if cfg.Clock == nil {
 		cfg.Clock = tailnet.SystemClock
@@ -82,6 +89,9 @@ func (m *Maintenance) RunOnce(ctx context.Context) error {
 	errs := []error{m.cfg.ConnRequests.Expire(ctx, m.cfg.Clock.Now())}
 	if m.cfg.Audit != nil {
 		errs = append(errs, m.PurgeAuditBeforeRetention(ctx), m.PurgeThumbsOverCap(ctx))
+	}
+	if m.cfg.Tasks != nil {
+		errs = append(errs, m.PurgeTasksBeforeRetention(ctx))
 	}
 	return errors.Join(errs...)
 }
@@ -104,6 +114,43 @@ func (m *Maintenance) PurgeAuditBeforeRetention(ctx context.Context) error {
 	}
 	m.cfg.Logger.Debug("audit retention purge", "retention_days", days, "removed_thumbs", len(removed))
 	return m.removeThumbFiles(removed)
+}
+
+// PurgeTasksBeforeRetention は audit.retention_days を過ぎた終了済みのタスク（finished_at が古い行）を削除する。
+// 実行中・承認待ちのタスクは消さない。監査ログの task_id は NULL になり、ログは残る（ER「データの保守」）。Tasks が無ければ何もしない。
+func (m *Maintenance) PurgeTasksBeforeRetention(ctx context.Context) error {
+	if m.cfg.Tasks == nil {
+		return nil
+	}
+	days, err := m.auditRetentionDays(ctx)
+	if err != nil {
+		return err
+	}
+	cutoff := m.cfg.Clock.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	n, err := m.cfg.Tasks.PurgeFinishedBefore(ctx, cutoff)
+	if err != nil {
+		return fmt.Errorf("purge tasks before retention: %w", err)
+	}
+	m.cfg.Logger.Debug("task retention purge", "retention_days", days, "removed_tasks", n)
+	return nil
+}
+
+// AbortActiveTasks は実行中・承認待ちのタスクをすべて aborted にする（起動時の回収。NFR-A08）。Run が最初の保守の前に 1 回呼ぶ。
+// 回収した件数を返す。Tasks が無ければ 0。
+func (m *Maintenance) AbortActiveTasks(ctx context.Context) (int, error) {
+	if m.cfg.Tasks == nil {
+		return 0, nil
+	}
+	n, err := m.cfg.Tasks.AbortActive(ctx, m.cfg.Clock.Now())
+	if err != nil {
+		return 0, fmt.Errorf("abort active tasks: %w", err)
+	}
+	if n > 0 {
+		m.cfg.Logger.Warn("aborted tasks left active by the previous run", "count", n)
+	} else {
+		m.cfg.Logger.Debug("no active tasks to abort")
+	}
+	return n, nil
 }
 
 // PurgeThumbsOverCap はサムネイルの総容量が audit.thumbs_max_bytes を超えていたら、古い順に行とファイルを削除する（ログ行は残す。FR-AU04）。
@@ -212,8 +259,12 @@ func readBoundedInt(ctx context.Context, settings repository.Settings, key strin
 	return int64(f), false, nil
 }
 
-// Run は起動時に孤児の掃除と保守を 1 回、以後 Interval ごとに保守を行い、ctx の終了で戻る。失敗はログに残して続ける。
+// Run は起動時にタスクの回収（Tasks があれば AbortActive を 1 回）・孤児の掃除・保守を 1 回、以後 Interval ごとに保守を行い、ctx の終了で戻る。
+// 失敗はログに残して続ける。回収は Run の先頭の 1 回だけ（動いているタスクを巻き込まないよう、Agent が動く前に呼ぶこと）。
 func (m *Maintenance) Run(ctx context.Context) {
+	if _, err := m.AbortActiveTasks(ctx); err != nil && ctx.Err() == nil {
+		m.cfg.Logger.Error("task recovery failed", "err", err)
+	}
 	if err := m.SweepOrphans(ctx); err != nil && ctx.Err() == nil {
 		m.cfg.Logger.Error("orphan sweep failed", "err", err)
 	}

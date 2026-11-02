@@ -447,6 +447,11 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | キルスイッチの発動・解除 | `killswitch` | `killswitch.trigger` / `killswitch.release` | `host` |
 | 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete` | `host` |
 | 更新の確認・適用 | `update` | `update.detected`（署名を検証できた新版の検出。`result = ok`）/ `update.verify_failed`（署名・版の束縛・取得の失敗、公開鍵の未設定。`result = denied`、`error_code` に理由: `signature_invalid`・`signature_missing`・`version_mismatch`・`key_unset`・`download_failed`・`verify_error`）/ `update.downgrade_rejected`（現行より古い版・同じ版。`result = denied`）/ `update.apply_started`（インストーラを起動する。`result = ok`）/ `update.apply_failed`（起動に失敗。`result = error`、`error_code` は `start_failed`・`installer_not_found`・`canceled`）。`detail_json` は `{ "version", "tag", "current", "channel", "reason"? }` だけで、URL・署名・パス・OS のエラー文は記録しない。同じ版・理由の `detected` / `verify_failed` / `downgrade_rejected` は繰り返し記録しない | `host`（GUI の「今すぐ確認」「更新する」）/ `system`（定期確認・`auto_idle` の自動適用） |
+| エージェントの各ステップ | `agent` | `agent.step`（`Control.Do` / `Control.Launch` が、`actor_type = agent` のアクション 1 件ごとに 1 行。成功も拒否・失敗も記録する。`tool` はツール名（`left_click` など。MCP と同じ名前で、イベント名に `tool.` は付けない）、`task_id` は `Actor.SessionID`、`step_no` と `detail_json.route` は呼び出し側が `service.WithAgentStep` で渡す。`result = denied` は Judge・InputGuard・リース・キルスイッチ・承認の拒否。Judge の拒否は `error_code = judge_denied`）。`detail_json` は下記「エージェントのステップ」 | `agent` |
+| Judge の判定 | `agent` | `agent.judge`（Judge が `allow` 以外を返したときだけ、判定の直後（承認待ちの前）に 1 行。`result = ok`（`require_approval`）/ `denied`（`deny`。`error_code = judge_denied`）。`detail_json` は `{ "judge", "judge_reason", "processes", "route"? }`。`allow` の判定は個別の行にせず、`agent.step` の `detail_json.judge` に残す） | `agent` |
+| エージェントの有効化と同意 | `agent` | `agent.consent`（`detail_json.state` が `granted`（有効化。`consent_at` を同時に記録）/ `revoked`（無効化・OpenAI キーの削除。`reason` に `api_key_deleted`）。キーの値は入れない） | `host` |
+| 高速パスの有効化・無効化 | `agent` | `agent.fastpath.enable`（`agent.fastpath.consent_at` の記録と同時）/ `agent.fastpath.disable`（設定での無効化・TypeSafe キーの削除は `host`。TypeSafe の HTTP 401 による無効化は `system`・`result = error`・`error_code = typesafe_unauthorized`。FR-G21）。`agent.consent` とは別のイベント | `host` / `system` |
+| エージェントのタスク・安全チェック | `agent` | `agent.task_start`・`agent.safety_check` など（#19 の Agent が記録し、このカタログと `service.AuditCatalog` に足す） | `agent` |
 
 承認の監査（M3・#66）。`kind = lease`、`lease_id` は承認待ちのリースの ID。`approval.requested` / `.granted` / `.withdrawn` は `result = ok`、`approval.denied` / `.timeout` は `result = denied`（`error_code` は `approval_denied` / `approval_timeout`）。`detail_json` は `{ "client_id", "lease_id", "holder_kind", "holder_label", "reason" }` だけで（`reason` は解放の理由: `approval_denied` / `approval_timeout` / `kill_switch` / `disconnect` / `withdrawn`。`approval.requested` は無し）、資格情報・パス・引数は入れない。`approval.reset` は `actor_type = host`・`client_label` は対象クライアント名・`detail_json` は `{ "client_id", "approved_at" }`（取り消した時刻。UTC ミリ秒）。拒否・タイムアウトの直後 30 秒の取得は承認を求めず、`lease.acquire`（`result = denied`・`error_code = approval_denied`・`detail_json` は `{ "cooldown": true }`）だけを記録する（`approval.requested` は記録しない）。
 
@@ -456,7 +461,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 
 **操作の直後のサムネイル（`Control` への結線。M3・#71）**: `Control` は、`result = ok` で画面を変える操作（MCP: クリック・ドラッグ・`scroll`・`key`・`type`・`focus_window`・`launch_app`。Web: ボタンの `down` / `up`・`wheel`・キー・文字入力・ショートカット送信）の直後に、非同期で `Monitors` → `Grab` → `NewThumbnail` を行い、**撮影のあとに**その操作の監査エントリを `Audit.RecordWithThumb` で記録する（`Append` → `Save` → `AttachThumb` → 容量の確認は上のとおり）。エントリを撮影のあとに 1 回だけ記録するので、画像は必ずその操作の行に付き、`Control.Do` は撮影を待たない（`ts` は操作の時刻）。撮らないもの: カーソルの移動だけ（`mouse_move`・Web の `move`）、クリップボード、`get_ui_tree`、`wait`、拒否・失敗した操作。撮るモニターは、`monitor` を明示した操作はそれ、座標のある操作はその座標を含むモニター、座標もモニターも無い操作と Web 入力はプライマリ。Web 入力は全体で 1 秒に 1 枚まで（間引かれた入力はサムネイル無しで記録）。撮影・符号化・保存の失敗は運用ログだけで、操作の結果もログ行も変えない。
 
-エージェントのステップ（`event = 'agent.step'`）の `detail_json`（FR-G19、FR-G23）。**入力した本文（`type` のテキスト）と要素の値は、どちらの経路でも記録しない**。
+エージェントのステップ（`event = 'agent.step'`）の `detail_json`（FR-G19、FR-G23）。**1 行は 1 アクション**（`Control.Do` / `Control.Launch` が記録する）。OpenAI の 1 ステップが複数のアクションを返したときは、同じ `step_no` の行がアクションの順に並ぶ。アクションの引数の要約（座標・ボタン・回数・`text_len` など。MCP の `tool.<名前>` と同じキー）は `detail_json` の直下に入り、呼び出し側が `service.WithAgentStep` の `ExtraDetail` で渡す高速パスのキー（下表）も同じ階層に入る（`route`・`judge`・`judge_reason`・`approval` と引数のキーは `ExtraDetail` では上書きできない）。**入力した本文（`type` のテキスト。`audit.record_text` が true でも）・キーの名前・要素の値は、どちらの経路でも記録しない**。
 
 | キー | 経路 | 内容 |
 |------|------|------|
@@ -467,7 +472,10 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | `confidence` | `fast` | Jev の `confidence`（0〜1） |
 | `goal_maybe_done` | `fast` | Noul の確率（0〜1） |
 | `handoff_reason` | `fast` | OpenAI へ引き継ぐと決めたステップだけに入れる（`agent_tasks.handoff_reason` と同じ列挙値） |
-| `actions` | 両方 | 実行したアクションの順序付き配列（種別・座標等。FR-AU03 に従い本文は文字数のみ） |
+| アクションの引数 | 両方 | 実行したアクションの引数の要約（`tool` 列がアクション種別。座標・ボタン・回数・`text_len` など。FR-AU03 に従い本文は文字数のみ） |
+| `judge` | 両方 | Judge の判定: `allow` / `require_approval` / `deny`（`Control` が書く。Judge を通る前に拒否された行（キルスイッチ・リース・InputGuard）には無い） |
+| `judge_reason` | 両方 | Judge の理由のコード（`deny_process` / `approve_process` / `judge_error` / `judge_timeout` / `judge_unconfigured` / `judge_invalid_verdict`。`allow` には無い。プロセス名・本文は入れない） |
+| `approval` | 両方 | `require_approval` のときの承認の結果: `granted` / `denied` / `timeout` / `canceled` / `unavailable`（承認の窓口が無い） |
 
 インデックス:
 
@@ -557,3 +565,4 @@ erDiagram
 | 1.21 | 2026-11-02 | 監査イベントのカタログに承認系の 6 イベント（`approval.requested` / `.granted` / `.denied` / `.timeout` / `.withdrawn` / `.reset`。`kind = lease`）を追加し、`detail_json` の形・拒否後 30 秒のクールダウンの記録（`lease.acquire` の `denied` + `cooldown`）を追記。1.16 の「未決」を解消 | #66 |
 | 1.22 | 2026-11-02 | 設定キー `update.channel`（`stable` / `nightly`）と `update.last_checked_at`（UTC ミリ秒。成功・失敗を問わず保存）、監査イベント `update.*` の 5 件（`kind = update`。`error_code` の理由と `detail_json`）をカタログに追記 | #74 |
 | 1.23 | 2026-11-02 | `clients.approval_mode` に v4 のマイグレーション（`0004_existing_clients_auto_approval.sql`）を追記: M1・M2 の間に登録された既存のクライアントを `always` から `auto`（自動許可）へ移す。新しいクライアントの既定は `always` のまま | M3 の続き（所有者の決定） |
+| 1.24 | 2026-11-02 | 監査イベントのカタログに agent の 4 行（`agent.step`: `Control` が agent のアクション 1 件ごとに記録・`tool.` は付けない・Judge の拒否は `error_code = judge_denied` / `agent.judge` / `agent.consent` / `agent.fastpath.enable`・`.disable`）を追加し、エージェントのステップの `detail_json` に `judge`・`judge_reason`・`approval` と「1 行は 1 アクション」の規則を追記 | #19（service の M4） |
