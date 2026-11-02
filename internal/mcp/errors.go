@@ -52,7 +52,7 @@ func (s *Server) toolError(tool string, err error) *mcpsdk.CallToolResult {
 	}
 	if body.Code == domain.CodeLeaseHeldByOther {
 		if h, ok := s.leases.Holder(); ok {
-			body.Holder = &holderBody{Kind: string(h.Actor.Kind), Label: h.Actor.Label}
+			body.Holder = &holderBody{Kind: string(h.Actor.Kind), Label: h.Actor.Label} // lease_held_by_other には task_id を載せない
 		}
 	}
 	return &mcpsdk.CallToolResult{

@@ -247,6 +247,7 @@ type env struct {
 	ctl    *fakeControl
 	leases service.LeaseManager
 	kill   *fakeKill
+	agent  *fakeAgent
 	events <-chan domain.LeaseEvent
 }
 
@@ -271,9 +272,11 @@ func newEnvWithLeases(t *testing.T, leaseMutate func(*service.LeaseConfig), muta
 		t.Fatal(err)
 	}
 	ctl := newFakeControl(leases, kill)
+	agent := newFakeAgent()
 	cfg := Config{
 		Control:   ctl,
 		Leases:    leases,
+		Agent:     agent,
 		Principal: testPrincipal,
 		Version:   "9.9.9-test",
 		Logger:    discardLogger(),
@@ -287,7 +290,7 @@ func newEnvWithLeases(t *testing.T, leaseMutate func(*service.LeaseConfig), muta
 	}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return &env{t: t, srv: srv, http: ts, ctl: ctl, leases: leases, kill: kill, events: leases.Subscribe()}
+	return &env{t: t, srv: srv, http: ts, ctl: ctl, leases: leases, kill: kill, agent: agent, events: leases.Subscribe()}
 }
 
 // auditLog は mcp が記録した監査エントリを溜める service.AuditRecorder の偽物。

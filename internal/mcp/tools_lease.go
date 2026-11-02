@@ -14,14 +14,25 @@ const (
 	stateHeld            = "held"
 )
 
+// holderBody はリースの保持者。task_id は保持者が agent のときだけ（agent の Actor.SessionID は task_id。domain.Actor）。
 type holderBody struct {
-	Kind  string `json:"kind"`
-	Label string `json:"label"`
+	Kind   string `json:"kind"`
+	Label  string `json:"label"`
+	TaskID string `json:"task_id,omitempty"`
+}
+
+func newHolderBody(a domain.Actor) *holderBody {
+	b := &holderBody{Kind: string(a.Kind), Label: a.Label}
+	if a.Kind == domain.ActorAgent {
+		b.TaskID = a.SessionID
+	}
+	return b
 }
 
 // statusBody は get_control_status の出力（API 仕様 §3.3）。
 // holder は held のときだけ（pending_approval の要求者は出さない）。mine は held なら保持者が自分、pending_approval なら
-// 承認待ちの要求者が自分か。holder.kind は mcp / web（agent は M4）。
+// 承認待ちの要求者が自分か。holder.kind は mcp / web / agent（run_task のタスクの実行中）。保持者の種別も照合するので、
+// 自分が依頼したタスクの実行中は agent が保持者であり mine は false になる。
 type statusBody struct {
 	State            string      `json:"state"`
 	Holder           *holderBody `json:"holder,omitempty"`
@@ -66,7 +77,7 @@ func (s *Server) status(who domain.Actor) statusBody {
 	}
 	return statusBody{
 		State:            stateHeld,
-		Holder:           &holderBody{Kind: string(h.Actor.Kind), Label: h.Actor.Label},
+		Holder:           newHolderBody(h.Actor),
 		Mine:             h.Actor.SameSession(who),
 		IdleRemainingSec: idleSeconds(h),
 	}

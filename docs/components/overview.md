@@ -1201,6 +1201,20 @@ M4（#19）で `internal/openai` を実装した（`domain` だけを import す
 | `Config` のテスト用の欄 | — | `BaseURL`・`Transport` はテスト（`httptest`）専用の差し替え口で、設定項目ではない。モデル名と `BaseURL` 以外の前提（プロバイダー・プラン）は置かない |
 | 応答の検査 | — | `status` が `failed` / `cancelled` / `incomplete` は通常のエラー。`computer_call` が 2 つ以上、`call_id` が空も通常のエラー。旧形式の単一 `action` も受理する。最終回答は `message` の `output_text`（と `refusal`）を連結 |
 
+### 13.9 mcp（run_task / get_task / cancel_task）: M4 の実装差分
+
+M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tools_task.go`）を足した。`mcp` は `domain` と `service` だけを import し、`service.Agent`（§5.6）を呼ぶ。API 仕様 §3.3 の出力はそのままで、仕様が定めていなかった点の選択を記す。
+
+| 項目 | 設計（§5.6・API 仕様 §3.3・FR-G02） | 実装 |
+|------|------|------|
+| `Config.Agent` | `service.Agent` | 任意。`nil`（エージェントが組み込まれていない）でも 3 ツールは登録したまま、呼ぶと `agent_disabled`。ツールの一覧をホストの設定から独立させ、有効・無効の判断（設定・API キー・`clients.agent_enabled`）を `Agent` に一本化するため |
+| 引数の検査 | `prompt` は 10,000 文字まで、`max_*` は設定値以下 | `prompt` は 1〜10,000 文字（rune）、`max_steps` / `max_duration_sec` は省略（0 = 設定値）か 1 以上の整数。違反は `invalid_argument` で `Agent` を呼ばない。設定値超は `Agent.Start` が拒否する（丸めない）。`prompt` の欠落・型違い・追加のプロパティは SDK が入力スキーマで実行前に拒否する。`task_id` は 1〜64 バイト |
+| 出力 | `run_task` → `{task_id, status}`、`cancel_task` → `{ok: true, status}` | `get_task` はキーをすべて出し、ない値は `null`（`handoff_reason`・`started_at`・`finished_at`・`result_text`・`error_code`・`note`）。時刻は RFC 3339 の UTC。`result_text` と `note` は `completed` のときだけで、`result_text` は 10,000 文字（rune）で切り詰める（`Agent` の切り詰めに加えた出力側の守り）。`note` は英語の定型文（`completed` はモデルの申告であり成否の検証は呼び出し側の責任。FR-G13）。`cancel_task` は終了済みなら `Agent.Cancel` が返す現在の状態をそのまま返す |
+| 監査（FR-AU01・AU03） | `Agent` がタスクのライフサイクルとステップを記録する | 3 ツールとも `addAuditedTool` で `tool.<名前>`（`kind = tool`）を 1 呼び出しにつき 1 行記録する（`Agent` の `agent.*` の行とは重ならない）。`detail`: `run_task` は `prompt_len`（文字数のみ。指示の本文は監査にも運用ログにも出さない）・指定した上限・成功時の `task_id`、`get_task` / `cancel_task` は `task_id`。`task_id` 列には付けない（タスクの詳細の「ステップ」に混ざるのを避ける）。キルスイッチ・リース・`agent_disabled`・`task_not_found` の拒否は `Agent` のエラーのコードで `result` が決まる（`ToolAuditEntry`。`agent_disabled`・`task_not_found` は `error`） |
+| タイムアウト | `run_task` は 1 秒以内に返る（NFR-P08） | 3 ツールとも `leaseAcquiringTools` に入れず、通常の 30 秒（`ToolTimeout`）。`run_task` が取るリースは `Agent` の goroutine が種別 `agent` で取る |
+| `get_control_status` | `holder.kind` は `mcp` / `web` / `agent`、`task_id` | `holder.kind` はアクターの種別をそのまま返す。`agent` のときだけ `holder.task_id`（`Actor.SessionID`）を足す。`mine` は種別・クライアント・セッションの一致で決めるので、自分が依頼したタスクの実行中は `false`。`lease_held_by_other` の `holder` には `task_id` を載せない |
+| `instructions` | `run_task` の記述 | `run_task` / `get_task` / `cancel_task` の段落を追加（ホストがエージェントを有効にしたクライアントだけ・非同期で `get_task` をポーリング・同時に 1 つ・画面上の文字は信頼できない・`completed` はモデルの申告） |
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -1247,3 +1261,4 @@ M4（#19）で `internal/openai` を実装した（`domain` だけを import す
 | 1.38 | 2026-11-02 | §13.3 の `SecretStore`（Windows 実装 `windows.NewSecretStore()`・実際のターゲット名・空の値の拒否）と `Platform.Secrets`（必須）を追記 | #19 |
 | 1.38 | 2026-11-02 | §13.x に typesafe（§4.4）の M4 の実装差分（公開 OpenAPI に沿った要求・応答の形式、エラーの分類、`Config` の既定、キーの扱い、実 API とのスモークが未実施であること）を追記 | #19 |
 | 1.38 | 2026-11-02 | §13.8 に `openai`（§4.3）の実装を追記（アクションの写像・スクロールの換算の暫定値・古いスクリーンショットの置き換え・`include` の既定・キーとエラーの扱い） | #19 |
+| 1.38 | 2026-11-02 | §13.9 に `mcp` の `run_task` / `get_task` / `cancel_task`（引数の検査・出力の null・監査の `detail`・`Config.Agent` が `nil` のときの `agent_disabled`・`get_control_status` の `holder.task_id`）を追記 | #19 |
