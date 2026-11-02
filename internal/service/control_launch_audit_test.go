@@ -116,7 +116,7 @@ func TestControlLaunchWritesTheAttemptRowBeforeStartingTheProcess(t *testing.T) 
 }
 
 // 試行の行が書けなければ、起動しない（fail-closed）。エラーは audit_unavailable（HTTP 503）で、DB のエラーの中身は載せない。
-// 結果の行は試行の行と別にそのまま書こうとし（error / audit_unavailable）、リースは奪わない。
+// 結果の行は試行の行と別に書こうとする（error / audit_unavailable）。暗黙に取得したリースは起動を断ったあとも保持したまま（解放しない）。
 func TestControlLaunchDoesNotStartWhenTheAttemptCannotBeWritten(t *testing.T) {
 	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", ClientID: "client-a", SessionID: "task-1"}
 	for _, who := range []domain.Actor{ctlAlice, agent} {
@@ -250,5 +250,26 @@ func TestControlLaunchWritesAttemptThenResultAsSeparateRows(t *testing.T) {
 	got := store.Entries()
 	if len(got) != 2 || got[0].Event != "tool.launch_app.attempt" || got[1].Event != "tool.launch_app" || got[1].Result != "ok" {
 		t.Fatalf("stored rows = %+v, want the attempt, then the result", got)
+	}
+}
+
+// 試行の行を同期で書いている間に発動したキルスイッチを、起動の直前に再確認して取りこぼさない（試行の行は残るが、起動しない）。
+func TestControlLaunchRechecksTheKillSwitchAfterWritingTheAttempt(t *testing.T) {
+	e := newAppEnv(t)
+	app := registerNotepad(t, e)
+	e.audit.onSync = func() { _ = e.kill.Trigger("test") }
+
+	_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	if !errors.Is(err, domain.ErrKillSwitchActive) {
+		t.Fatalf("err = %v, want kill_switch_active", err)
+	}
+	if n := len(e.launcher.CallsTo("Launch")); n != 0 {
+		t.Errorf("launched %d times after the kill switch fired during the attempt write", n)
+	}
+	if n := len(e.audit.SyncEntries()); n != 1 {
+		t.Errorf("attempt rows = %d, want 1 (written before the kill switch fired)", n)
+	}
+	if en := lastLaunchEntry(t, e); en.Result != "denied" || en.ErrorCode != "kill_switch_active" {
+		t.Errorf("result entry = %+v, want denied / kill_switch_active", en)
 	}
 }

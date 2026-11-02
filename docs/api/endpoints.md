@@ -275,7 +275,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 - プロセスの作成に成功した時点で起動は成功。そのあと、起動した `pid` のウィンドウが前面に出るのを、200 ミリ秒間隔で最大 16 回（およそ 3 秒。前面の `pid` が一致したらすぐ）観測して返す（起動の前後のウィンドウ一覧の差も見る）。ウィンドウが出なくても失敗にはしない。`window` を見たうえで、**入力の前に必ず `screenshot` か `list_windows` で対象を確かめる**（`instructions` とツールの説明にも同じ注意を書く）。
 
 - 検査の順序は、キルスイッチ（ミドルウェア連鎖の 3）→ 操作リース → 許可リスト。リース未保持なら暗黙に取得する（FR-L04）。リースの承認は M1.5 には無い（M3 から）
-- エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）、`audit_unavailable`（HTTP 503。起動の「試行」の行を監査ログに書けなかったとき。何も起動していない。下の監査の項）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
+- エラー: `lease_held_by_other`（他者がリースを保持）、`app_not_found`、`launch_failed`、`kill_switch_active`（HTTP 503）、`audit_unavailable`（HTTP 503。起動の「試行」の行を監査ログに書けなかったとき。プロセスは起動していない（暗黙に取得したリースは保持したまま）。下の監査の項）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
 - 同じアプリが起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない。自分からフォーカスを切り替えることはしない。アプリ自身が既存のウィンドウを前に出すことはあり、結果の `reused_existing_window` で分かる）。起動済みのプロセスは、リースの解放・セッションの切断・キルスイッチ・許可リストからの削除では終了しない
 - 監査は fail-closed の 2 行（#37。NFR-S20）: プロセスを作る**前**に「試行」の行（`tool.launch_app.attempt`。agent は `agent.launch_attempt`）を同期で書き、書けなければ起動せず `audit_unavailable` を返す。起動のあとに「結果」の行（下の `tool.launch_app` / `agent.step`）を書く。結果の行が書けなくても起動は取り消さず、運用ログに Warn を出す。試行の行はキルスイッチ・リース・許可リストの検査を通って起動に進む呼び出しにだけ書く。同期書き込みの遅延は許容し、新しい待ちの上限は足さない（既存の `ToolTimeout` のまま）。
 - すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。入力スキーマに合わない呼び出し（`app_id` の欠落・型違い・追加のプロパティ）は SDK が実行前に拒否するため `Control.Launch` に届かない。この場合は MCP の受信ミドルウェアが `tool.launch_app`（`denied`・`error_code = invalid_argument`、`detail` なし。拒否された値は記録しない）を 1 件追記する。`list_launchable_apps` も `tool.list_launchable_apps` として追記する

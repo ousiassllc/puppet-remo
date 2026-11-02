@@ -120,15 +120,22 @@ type ctlAudit struct {
 	entries []repository.AuditEntry
 	sync    []repository.AuditEntry
 	syncErr error
+	onSync  func() // RecordSync のたびに呼ばれる（同期書き込みの最中の出来事を再現する）
 }
 
 func (a *ctlAudit) RecordSync(_ context.Context, e repository.AuditEntry) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.syncErr != nil {
-		return a.syncErr
+		err := a.syncErr
+		a.mu.Unlock()
+		return err
 	}
 	a.sync = append(a.sync, e)
+	hook := a.onSync
+	a.mu.Unlock()
+	if hook != nil {
+		hook() // ロックの外で呼ぶ（キルスイッチの発動は Record を通って同じロックを取る）
+	}
 	return nil
 }
 

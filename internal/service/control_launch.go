@@ -84,6 +84,10 @@ func (c *control) launch(ctx context.Context, who domain.Actor, appID string) (r
 	if err := c.recordLaunchAttempt(ctx, who, appID, label, leaseID); err != nil {
 		return LaunchResult{}, label, leaseID, err
 	}
+	// 同期書き込みは DB のロック待ちなどで伸びうる。その間に発動したキルスイッチを取りこぼさない（試行の行は残るが、起動しない）。
+	if c.kill.Active() {
+		return LaunchResult{}, label, leaseID, domain.ErrKillSwitchActive
+	}
 	pid, err := c.launcher.Launch(ctx, platform.LaunchSpec{ExePath: app.ExePath, Args: app.Args, WorkingDir: app.WorkingDir})
 	if err != nil {
 		return LaunchResult{}, label, leaseID, launchFailure(err)
