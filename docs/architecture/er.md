@@ -15,7 +15,7 @@
 | 永続化しないもの | **リース**（[NFR-A01](../requirements/non-functional.md)）、**接続中セッション**（監査ログに `session_id` を文字列として記録するのみ）、承認待ち要求、WhoIs キャッシュ、Web UI の閲覧設定（モニター・品質・FPS はブラウザセッション単位）、**エージェントの実行状態**（ループ・会話。タスクの記録のみ `agent_tasks` に持つ。[NFR-A08](../requirements/non-functional.md)） |
 | サムネイル | 画像は**ファイル**として `%LOCALAPPDATA%\puppet-remo\thumbs\` に保存し、DB にはパスとサイズを持つ |
 | 改ざん検知 | 設けない（同一ユーザー権限の悪意あるプロセスは脅威モデル外） |
-| シークレット | **OpenAI API キーと TypeSafe API キーは DB に保存しない**。Windows 資格情報マネージャーにのみ置く（TypeSafe のターゲット名は `puppet-remo/typesafe:puppet-remo`、OpenAI は `puppet-remo/openai:puppet-remo`。[NFR-S14](../requirements/non-functional.md)）。`settings`・ログ・監査ログにも値を書かない |
+| シークレット | **OpenAI API キー・TypeSafe API キー・ChatGPT の OAuth トークンは DB に保存しない**。Windows 資格情報マネージャーにのみ置く（ターゲット名は TypeSafe が `puppet-remo/typesafe:puppet-remo`、OpenAI が `puppet-remo/openai:puppet-remo`、ChatGPT の OAuth トークン〔アクセス・リフレッシュ・ID トークン・期限・scope をまとめた 1 件〕が `puppet-remo/chatgpt:puppet-remo`。[NFR-S14](../requirements/non-functional.md)）。`settings`・ログ・監査ログにも値を書かない。秘密ではない識別子（`agent.chatgpt.host_id`・`agent.chatgpt.client_id`・`agent.chatgpt.account_sub`・`agent.chatgpt.account_email`）は `settings` に置く |
 
 ## 全体 ER 図
 
@@ -244,6 +244,13 @@ erDiagram
 | `log.level` | string | `"info"` | NFR-O01 |
 | `agent.enabled` | boolean | false | FR-S10、FR-G14 |
 | `agent.consent_at` | number（UTC ミリ秒） | なし | FR-G14（OpenAI へのスクリーンショット送信への同意の日時。有効化時に記録し、無効化で削除） |
+| `agent.connection` | string（`"chatgpt"` / `"openai_api_key"`） | `"chatgpt"`（ただし未設定のまま起動したとき、OpenAI API キーが登録済みなら `"openai_api_key"` を一度だけ保存する） | FR-S20、FR-G25（内蔵エージェントの接続方式。ホスト GUI のみで変更。`openai_api_key` への変更は確認モーダルを経る。FR-G30、NFR-S22） |
+| `agent.chatgpt.model` | string | `"gpt-6.1-terra"`（候補） | FR-S21、FR-G26（ChatGPT のプラン経路のモデル。アカウントごとの `GET /v1/models` の `slug`） |
+| `agent.chatgpt.host_id` | string | なし（最初のサインインの前に作る） | FR-G28（`ext_agent_host_id`。`urn:uuid:` + UUIDv4。端末ごとに不変で、サインアウト・再サインイン・アカウントの切り替えでも変えない。メール・ユーザー ID を含めない。認証の資格情報ではない） |
+| `agent.chatgpt.client_id` | string | なし | FR-G28・G29（発行済みの OAuth クライアント ID。`dynamic_agent_client` は保存しない。新規登録のコールバックで得て、再サインインで使う。「別のアカウントでサインインする」の解除と `invalid_client` で削除） |
+| `agent.chatgpt.account_sub` | string | なし | FR-G28（検証した ID トークンの `sub`。再サインインでアカウントの一致を確かめる。ログ・監査には出さない。NFR-S13） |
+| `agent.chatgpt.account_email` | string | なし | FR-G28・H11（サインインしたアカウントのメール。`login_hint` と、エージェント設定画面の本人の確認用の表示にだけ使う。ログ・監査には出さない。NFR-S13） |
+| `agent.chatgpt.welcome_shown` | boolean | false | FR-G28 (7)（初回のサインイン後の確認を出したか） |
 | `agent.model` | string | `"gpt-6.1-sol"` | FR-S11 |
 | `agent.max_steps` | number | 50 | FR-S12 |
 | `agent.max_duration_sec` | number | 600 | FR-S12 |
@@ -294,7 +301,7 @@ erDiagram
 
 ### agent_tasks
 
-内蔵エージェントの 1 回の実行（[FR-G02〜G24](../requirements/functional.md)）。ステップ（アクション・Judge の判定・安全チェック・サムネイル・高速パスの選択）は `audit_logs` に `kind = 'agent'`、`task_id`、`step_no` で保存し、ここには集計だけを持つ。
+内蔵エージェントの 1 回の実行（[FR-G02〜G30](../requirements/functional.md)）。ステップ（アクション・Judge の判定・安全チェック・サムネイル・高速パスの選択）は `audit_logs` に `kind = 'agent'`、`task_id`、`step_no` で保存し、ここには集計だけを持つ。
 
 ```mermaid
 erDiagram
@@ -305,6 +312,7 @@ erDiagram
         TEXT prompt "run_task の指示"
         TEXT status "pending_approval / running / completed / failed / cancelled / limit_reached / aborted / denied"
         TEXT model "使用したモデル名"
+        TEXT connection "接続方式 (chatgpt / openai_api_key。開始時に固定)"
         INTEGER max_steps "適用した上限"
         INTEGER max_duration_sec "適用した上限"
         INTEGER step_count
@@ -337,16 +345,17 @@ erDiagram
 | `client_label` | TEXT | NO | — | 依頼元の表示名のスナップショット |
 | `prompt` | TEXT | NO | — | 指示本文（10,000 文字まで。NFR-S09）。タスクの記録として常に保存する（FR-AU03） |
 | `status` | TEXT | NO | `'pending_approval'` または `'running'` | FR-G03 の状態 |
-| `model` | TEXT | NO | — | 使用したモデル名（開始時の `agent.model`） |
+| `model` | TEXT | NO | — | 使用したモデル名（開始時の、接続方式 `openai_api_key` は `agent.model`、`chatgpt` は `agent.chatgpt.model`） |
+| `connection` | TEXT | NO | `'openai_api_key'`（マイグレーション v5 で既存の行に入る値。#49 より前のタスクはすべて OpenAI API キー経路。新しい行は開始時の `agent.connection` を必ず書く） | 接続方式。`CHECK (connection IN ('chatgpt','openai_api_key'))`。タスクの開始時に固定し、終了まで変えない（FR-G25）。ChatGPT のトークン・アカウントは持たない |
 | `max_steps` | INTEGER | NO | — | 適用した上限（`run_task` の指定は設定値以下） |
 | `max_duration_sec` | INTEGER | NO | — | 適用した上限 |
 | `step_count` | INTEGER | NO | 0 | 実行したステップの**総数**（`fast_steps + openai_steps`。`agent.max_steps` の判定対象。FR-G19）。高速パス導入前の定義（Responses API 呼び出しの数）を、高速パスのステップを含む総数に広げた。既存列を残して総数の意味に統一し、読み取り側（一覧・`get_task` の既存フィールド）を変えない |
 | `fast_steps` | INTEGER | NO | 0 | 高速パス（Jev）で実行したステップの数（FR-G19、FR-G23）。高速パスが無効・スキップされたタスクは 0。上限は `agent.fastpath.max_steps` |
-| `openai_steps` | INTEGER | NO | 0 | OpenAI（computer ツールのループ、Responses API 呼び出し）で実行したステップの数（FR-G23）。高速パスなしのタスクでは従来の `step_count` と同じ値 |
+| `openai_steps` | INTEGER | NO | 0 | OpenAI（computer ツールのループ、Responses API 呼び出し。接続方式 `chatgpt` も Responses API 呼び出し 1 回を 1 に数える）で実行したステップの数（FR-G23）。高速パスなしのタスクでは従来の `step_count` と同じ値 |
 | `handoff_reason` | TEXT | YES | NULL | 高速パスから OpenAI へ引き継いだ理由（FR-G20、FR-G23）。`abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable`。引き継ぎが起きなかったとき（高速パスが無効、または高速パス中にキャンセル・失敗で終了）は NULL。一度引き継いだタスクは最後まで OpenAI で続ける（v1 では戻さない）ため、1 タスクにつき理由は 1 つ |
 | `input_tokens` / `output_tokens` | INTEGER | NO | 0 | 使用トークンの累計（金額上限は設けない。FR-G09） |
 | `result_text` | TEXT | YES | NULL | 最終回答（10,000 文字で切り詰め）。`completed` はモデルの申告（FR-G13） |
-| `error_code` | TEXT | YES | NULL | 失敗の理由。`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` / `invalid_coordinates`（モデルが縮小画像の外の座標を返した）/ `lease_held_by_other`（リース取得の競合負け）など（FR-M17、FR-G）。リースの喪失（剥奪・アイドルタイムアウト）は `failed` ではなく `cancelled`（`error_code` なし） |
+| `error_code` | TEXT | YES | NULL | 失敗の理由。`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` / `invalid_coordinates`（モデルが縮小画像の外の座標を返した）/ `lease_held_by_other`（リース取得の競合負け）/ ChatGPT のプラン経路の `chatgpt_usage_limit`（使用量の上限）・`chatgpt_unauthorized`（認可切れ）・`chatgpt_error`（その他）など（FR-M17、FR-G、FR-G29・G30）。リースの喪失（剥奪・アイドルタイムアウト）と ChatGPT の解除による中断（`chatgpt_signout`）は `failed` ではなく `cancelled`（`error_code` なし） |
 | `created_at` | INTEGER | NO | — | `run_task` の受付時刻 |
 | `started_at` | INTEGER | YES | NULL | `running` になった時刻（承認拒否の `denied` は NULL） |
 | `finished_at` | INTEGER | YES | NULL | 終了状態になった時刻 |
@@ -454,6 +463,8 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | エージェントの各ステップ | `agent` | `agent.step`（`Control.Do` / `Control.Launch` が、`actor_type = agent` のアクション 1 件ごとに 1 行。成功も拒否・失敗も記録する。`tool` はツール名（`left_click` など。MCP と同じ名前で、イベント名に `tool.` は付けない）、`task_id` は `Actor.SessionID`、`step_no` と `detail_json.route` は呼び出し側が `service.WithAgentStep` で渡す。`result = denied` は Judge・InputGuard・リース・キルスイッチ・承認の拒否。Judge の拒否は `error_code = judge_denied`）。`detail_json` は下記「エージェントのステップ」 | `agent` |
 | Judge の判定 | `agent` | `agent.judge`（Judge が `allow` 以外を返したときだけ、判定の直後（承認待ちの前）に 1 行。`result = ok`（`require_approval`）/ `denied`（`deny`。`error_code = judge_denied`）。`detail_json` は `{ "judge", "judge_reason", "processes", "route"? }`。`allow` の判定は個別の行にせず、`agent.step` の `detail_json.judge` に残す） | `agent` |
 | エージェントの有効化と同意 | `agent` | `agent.consent`（`detail_json.state` が `granted`（有効化。`consent_at` を同時に記録）/ `revoked`（無効化・OpenAI キーの削除。`reason` に `api_key_deleted`。OpenAI の HTTP 401 による無効化は `actor_type = system`・`result = error`・`error_code = openai_unauthorized`・`reason = openai_unauthorized`。NFR-S16）。キーの値は入れない） | `host` / `system` |
+| ChatGPT のプラン経路のサインイン・解除・認可 | `agent` | `agent.chatgpt.signin_start`（開始。`host`）/ `agent.chatgpt.signin`（結果。`host`。`result` が `ok` / `denied`（`reason` = `access_denied`〔同意されなかった〕・`cancelled`〔「中止」〕）/ `error`（`reason` = `timeout`・`registration_incomplete`・`token_exchange_failed`・`id_token_invalid`・`account_mismatch`・`plan_use_not_granted`）。`ok` の `detail` は `new_registration`〔新規登録か〕だけ）/ `agent.chatgpt.signout`（解除。`host`。`detail`: `revoked`・`forget_account`・`cancelled_task`）/ `agent.chatgpt.resume`（`usage_limited` の解除。`host`）/ `agent.chatgpt.reauth_required`（認可切れの確認。`system`。`result = error`、`error_code` は更新・呼び出しが返したコード〔`invalid_grant`・`unauthorized` など〕、`detail.source` は `refresh` / `request`）/ `agent.chatgpt.usage_limit`（使用量の上限。`system`。`result = denied`、`error_code = subscription_sharing_usage_limit_exceeded`、`task_id`）。**トークン・認可コード・ID トークン・`state`・`nonce`・PKCE の値・メール・`sub`・`client_id` は入れない**（FR-AU01、NFR-S13）。接続方式 `chatgpt` のタスクの `agent.task_end` は、`reason` に `chatgpt_signout`（解除による中断）を取りうる。`result` は `chatgpt_usage_limit` の失敗が `denied`、`chatgpt_unauthorized`・`chatgpt_error` が `error` | `host` / `system` |
+| 内蔵エージェントの接続方式の変更 | `agent` | `agent.connection`（`detail`: `from`・`to`・`reason`〔`usage_limit`＝使用量の上限のあとの承認による切り替え / `manual`〕。ホスト GUI の確認モーダルの確定だけが記録する。FR-G30、NFR-S22） | `host` |
 | 高速パスの有効化・無効化 | `agent` | `agent.fastpath.enable`（`agent.fastpath.consent_at` の記録と同時）/ `agent.fastpath.disable`（設定での無効化・TypeSafe キーの削除は `host`。TypeSafe の HTTP 401 による無効化は `system`・`result = error`・`error_code = typesafe_unauthorized`。FR-G21）。`agent.consent` とは別のイベント | `host` / `system` |
 | エージェントのタスクの受付・終了 | `agent` | `agent.task_start`（`Agent.Start` が受け付けたとき。`result = ok`。`detail_json` は `{ "prompt_len", "model", "max_steps", "max_duration_sec" }` で、指示の本文は入れない: FR-AU03）/ `agent.task_end`（タスクごとに終了で 1 行。`task_id` を設定。`detail_json` は `{ "status", "step_count", "fast_steps", "openai_steps", "input_tokens", "output_tokens", "reason"?, "handoff_reason"?, "result_len"? }` で、最終回答の本文は入れず、完了のときだけ文字数 `result_len` を入れる。`reason` は中断の理由: `host`（ホスト GUI の中断）/ `cancel_task`（MCP の `cancel_task`）/ `kill_switch` / `lease_<リースの解放の理由>`（`lease_revoked` など）/ `client_disabled` / `client_deleted` / `client_replaced` / `agent_disabled` / `api_key_deleted` / `shutdown`。`result` は、拒否・ブロック（`denied` 状態、`input_blocked`・`judge_denied`・`approval_denied`・`approval_timeout`・`kill_switch_active`・`lease_required`・`lease_held_by_other`・`lease_revoked`・`safety_check_denied` の失敗）が `denied`、それ以外の失敗が `error`、完了・中断・上限（`limit_reached`）が `ok`。`error_code` は `agent_tasks.error_code` と同じ）。`duration_ms` は開始からの時間 | `agent` |
 | OpenAI の安全チェック | `agent` | `agent.safety_check`（OpenAI が返した `pending_safety_checks` をホストの承認に出した結果。1 ステップにつき 1 行。`step_no` はそのステップの番号。`detail_json` は `{ "result", "count", "codes", "route": "openai" }`。`result` は `allowed`（`result = ok`）/ `denied`・`timeout`・`unavailable`（承認の窓口が無い。いずれも `result = denied`、`error_code = safety_check_denied`）/ `canceled`（待っている間にタスクが中断された。`result = error`）。`codes` は OpenAI の安全チェックのコードだけで、文面（ホストの承認ダイアログに出す `code: message`）は監査には入れない。承認ダイアログの文面は制御文字・連続する空白を取り、秘密の形を伏せ、500 文字に切る） | `agent` |
@@ -579,3 +590,4 @@ erDiagram
 | 1.28 | 2026-11-02 | `key` の監査の `keys` を、表示できる 1 文字のキーは `[char]` に伏せる規則を追記 | #19 |
 | 1.29 | 2026-11-02 | 接続要求の履歴の保持期間を 7 日・固定（設定項目にしない。全状態を `last_seen_at` から 7 日で削除。ページ上限・索引 0003・`Expire`・FR-A06 は変えない）と決定事項に明記 | #52（所有者の決定） |
 | 1.30 | 2026-11-02 | 起動の監査を fail-closed の「試行」と「結果」の 2 行に改めた（`tool.launch_app.attempt` / `agent.launch_attempt` を追加。試行の行は起動の前に同期で書き、書けなければ起動しない。結果の行が書けなくても起動は取り消さない）。`launch_app` 以外のスキーマ違反は記録しない（FR-AU01 の範囲外）と明記 | #37・#38 |
+| 1.31 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 方針のシークレット（ChatGPT の OAuth トークン `puppet-remo/chatgpt:puppet-remo`。識別子は設定）、`settings` に `agent.connection`・`agent.chatgpt.model`・`agent.chatgpt.host_id`・`agent.chatgpt.client_id`・`agent.chatgpt.account_sub`・`agent.chatgpt.account_email`・`agent.chatgpt.welcome_shown`、`agent_tasks` に `connection`（マイグレーション v5。既存の行は `openai_api_key`）と `error_code`・`openai_steps` の追記、監査イベントのカタログに ChatGPT のサインイン・解除・認可切れ・使用量の上限と接続方式の変更 | #49 |

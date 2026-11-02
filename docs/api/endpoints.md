@@ -11,7 +11,7 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | **リモートルーター** | tailnet IP の TCP ポート（既定 8765。FR-S01）。HTTP のみ | MCP（`/mcp`）、Web UI（`/viewer`）、WebSocket（`/ws/screen`）、JSON API（`/api/v1`） |
 | **GUI ルーター** | プロセス内のみ（Wails `AssetOptions.Handler`）。ソケットを開かない | ホスト GUI（ダッシュボード、接続要求、クライアント管理、起動許可アプリ、承認、タスク、エージェント設定、監査ログ、設定、更新）と SSE |
 
-ホスト専用の操作（承認、トークン発行、API キー登録、キルスイッチ解除、**起動許可アプリの登録・変更・削除**など）は GUI ルーターにだけ存在し、リモートルーターには**同名の経路も作らない**（構造で隔離する）。M1 の実装が本書と異なる点（M1 で提供するルート、`/poll`、エラーの形、許可の挙動など）は [§7.5](#75-m1-実装での差分) にまとめる。
+ホスト専用の操作（承認、トークン発行、API キー登録、**ChatGPT へのサインイン・解除・接続方式の変更**、キルスイッチ解除、**起動許可アプリの登録・変更・削除**など）は GUI ルーターにだけ存在し、リモートルーターには**同名の経路も作らない**（構造で隔離する）。ChatGPT のサインインの間だけ開く OAuth のコールバック受信口は、どちらのルーターでもない別物で、`127.0.0.1` だけで Listen する（[§7.6](#76-chatgpt-のサインインのコールバック受信口)）。M1 の実装が本書と異なる点（M1 で提供するルート、`/poll`、エラーの形、許可の挙動など）は [§7.5](#75-m1-実装での差分) にまとめる。
 
 ### 共通規約
 
@@ -90,11 +90,11 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `audit_unavailable` | 503 | `launch_app` | 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動できる） |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリだが OS がプロセスを作成できなかった（FR-M19。M1.5）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
-| `agent_disabled` | 409 | `run_task` / `PUT /agent`（GUI） | エージェント無効、API キー未登録、またはクライアントに利用許可が無い |
+| `agent_disabled` | 409 | `run_task` / `PUT /agent`（GUI） | エージェント無効、選んだ接続方式（FR-G25）が使えない状態、またはクライアントに利用許可が無い。接続方式 `openai_api_key` は API キー未登録。接続方式 `chatgpt` は `structuredContent.detail.reason`（HTTP のエラーフラグメントは `data-error-reason`）に、`chatgpt_not_signed_in`（未サインイン）/ `chatgpt_signing_in`（サインイン中）/ `chatgpt_reauth_required`（認可切れ。再サインインが必要）/ `chatgpt_usage_limited`（使用量の上限による一時停止）のいずれかを付ける（FR-G01・G29・G30） |
 | `task_not_found` | 404 | `get_task` / `cancel_task` | 対象が無い、または他クライアントのタスク |
 | `internal` | 500 | 共通 | 想定外のエラー。詳細はアプリのログにだけ残し、`detail` には出さない |
 
-エージェントの失敗理由（`judge_denied`、`safety_check_denied`、`unsupported_action`、`openai_error`）はタスクの `error_code` として `get_task` に載るもので、HTTP のエラーにはならない。高速パス（FR-G16〜G23）の TypeSafe 呼び出しの失敗・拒否・タイムアウトはタスクを失敗させず、OpenAI への引き継ぎとして `handoff_reason`（§3.3 `get_task`）に記録される。高速パスは内部機構であり、エラーコード・API・MCP ツールを増やさない。
+エージェントの失敗理由（`judge_denied`、`safety_check_denied`、`unsupported_action`、`openai_error`、ChatGPT のプラン経路の `chatgpt_usage_limit`・`chatgpt_unauthorized`・`chatgpt_error`）はタスクの `error_code` として `get_task` に載るもので、HTTP のエラーにはならない（`openai_error` は接続方式 `openai_api_key`、`chatgpt_*` は接続方式 `chatgpt` の失敗。FR-G29・G30）。高速パス（FR-G16〜G23）の TypeSafe 呼び出しの失敗・拒否・タイムアウトはタスクを失敗させず、OpenAI への引き継ぎとして `handoff_reason`（§3.3 `get_task`）に記録される。高速パスは内部機構であり、エラーコード・API・MCP ツールを増やさない。
 
 ## 3. MCP（`/mcp`）
 
@@ -290,16 +290,16 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `max_steps` | integer | いいえ | ステップ上限。設定値（FR-S12）以下のみ指定できる |
 | `max_duration_sec` | integer | いいえ | 実行時間の上限（秒）。設定値以下のみ |
 
-出力（即時）: `{ "task_id": "01J…", "status": "pending_approval" | "running" }`。長時間実行になるため、完了は `get_task` で確認する（1 回の MCP 呼び出しは 1 秒以内に返る。NFR-P08）。エージェント無効なら `agent_disabled`、他者がリースを保持していれば `lease_held_by_other`、キルスイッチ中は `kill_switch_active`。`prompt` が空・10,000 文字（rune）超、`max_steps` / `max_duration_sec` が 1 未満・設定値超は `invalid_argument`（`prompt` の欠落・型違いは SDK が入力スキーマで拒否する）。
+出力（即時）: `{ "task_id": "01J…", "status": "pending_approval" | "running" }`。長時間実行になるため、完了は `get_task` で確認する（1 回の MCP 呼び出しは 1 秒以内に返る。NFR-P08）。エージェント無効・選んだ接続方式が使えない状態なら `agent_disabled`（接続方式 `chatgpt` のときは `detail.reason` が §2 の 4 種のいずれか。FR-G01）、他者がリースを保持していれば `lease_held_by_other`、キルスイッチ中は `kill_switch_active`。`prompt` が空・10,000 文字（rune）超、`max_steps` / `max_duration_sec` が 1 未満・設定値超は `invalid_argument`（`prompt` の欠落・型違いは SDK が入力スキーマで拒否する）。**接続方式は呼び出し側が指定できない**（ホスト GUI の設定 `agent.connection` で決まり、タスクの開始時に固定される。FR-G25）。
 
-**高速パス（FR-G16）は `run_task` から透過**: 引数も出力も増えず、呼び出し側は使う・使わないを指定できない。使うかどうかはホストの設定 `agent.fastpath.enabled`（既定 off。GUI のみで変更。FR-S14）だけで決まり、キー未登録・同意なし・無効のときは黙ってスキップして OpenAI のみで実行する。タスクの完了は常に OpenAI が確認用スクリーンショットを見て宣言する（FR-G20）。どちらの経路で実行したかは `get_task` の `fast_steps` / `openai_steps` / `handoff_reason` で分かる。
+**高速パス（FR-G16）は `run_task` から透過**: 引数も出力も増えず、呼び出し側は使う・使わないを指定できない。使うかどうかはホストの設定 `agent.fastpath.enabled`（既定 off。GUI のみで変更。FR-S14）だけで決まり、キー未登録・同意なし・無効のときは黙ってスキップして OpenAI のみで実行する。接続方式が `chatgpt` のときも黙ってスキップする（併用は対象外。FR-G25）。タスクの完了は常に OpenAI が確認用スクリーンショットを見て宣言する（FR-G20）。どちらの経路で実行したかは `get_task` の `fast_steps` / `openai_steps` / `handoff_reason` で分かる。
 
 **`get_task`**: `task_id`\*。出力:
 
 ```json
 {
   "task_id": "01J…", "status": "running",
-  "step_count": 7, "fast_steps": 4, "openai_steps": 3, "handoff_reason": "no_progress",
+  "step_count": 7, "fast_steps": 4, "openai_steps": 3, "handoff_reason": "no_progress", "connection": "openai_api_key",
   "max_steps": 50,
   "input_tokens": 41230, "output_tokens": 912,
   "created_at": "2026-10-29T03:12:00Z", "started_at": "2026-10-29T03:12:02Z", "finished_at": null,
@@ -309,8 +309,8 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 - `status` は FR-G03 の状態。終了状態では `finished_at` が入る
 - `result_text` は最終回答（`completed` のみ。10,000 文字で切り詰め）。`note` には `completed` がモデルの申告であり成否の検証は呼び出し側の責任であることを記す（FR-G13）
-- `error_code`: `failed` のときの理由（`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` / `invalid_coordinates`（モデルが縮小画像の外の座標を返した）など）。リースの喪失（強制剥奪・アイドルタイムアウト）・リース承認待ち中のキルスイッチはエラーではなく `status = cancelled`（`error_code` は `null`）
-- `fast_steps` / `openai_steps`: 高速パス（Jev が候補表から選んだ手）と OpenAI のコンピューター操作ループで実行したステップ数（FR-G23）。`step_count = fast_steps + openai_steps`（高速ステップも `max_steps` に数える）。高速パスを使わなかったタスクは `fast_steps = 0`
+- `error_code`: `failed` のときの理由（`input_blocked` / `judge_denied` / `approval_denied` / `safety_check_denied` / `unsupported_action` / `openai_error` / `invalid_coordinates`（モデルが縮小画像の外の座標を返した）など。接続方式 `chatgpt` の失敗は `chatgpt_usage_limit`（使用量の上限）/ `chatgpt_unauthorized`（認可切れ・401）/ `chatgpt_error`（その他の ChatGPT 経路のエラー。ネットワーク・タイムアウト・5xx・`subscription_sharing_*` のうち上限・認可切れ以外・`response.incomplete`・ストリームの中断）。FR-G29・G30。`openai_error` は使わない）。リースの喪失（強制剥奪・アイドルタイムアウト）・リース承認待ち中のキルスイッチはエラーではなく `status = cancelled`（`error_code` は `null`）。ChatGPT のプラン経路の解除（FR-G29）による中断も `cancelled`（`error_code` は `null`。理由は監査 `agent.task_end` の `reason = chatgpt_signout`）
+- `fast_steps` / `openai_steps`: 高速パス（Jev が候補表から選んだ手）と OpenAI のコンピューター操作ループで実行したステップ数（FR-G23）。`step_count = fast_steps + openai_steps`（高速ステップも `max_steps` に数える）。高速パスを使わなかったタスクは `fast_steps = 0`。**接続方式 `chatgpt` のタスクは、Responses API の呼び出し 1 回を `openai_steps` の 1 に数える**（経路名は `openai` のまま。高速パスは動かないので `fast_steps = 0`・`handoff_reason = null`）。`connection`: タスクの接続方式（`chatgpt` / `openai_api_key`。FR-G25。開始時に固定）
 - `handoff_reason`: 高速パスから OpenAI へ引き継いだ理由。`abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable` のいずれか。引き継ぎが無かった（高速パス無効、または高速パスの間にキャンセル・失敗で終了した）場合は `null`。引き継ぎ後はタスクが終了するまで OpenAI で続行する（v1 では高速パスに戻らない）。失敗理由ではなく、`error_code` とは別に扱う
 
 **`cancel_task`**: `task_id`\*。出力: `{ "ok": true, "status": "cancelled" }`。すでに終了していれば現在の状態をそのまま返す。実行中の OpenAI 呼び出しを取り消し、リースを解放する（FR-G10）。ループの終了は最大 0.5 秒だけ待ち、それまでに終わらなければその時点の状態（`running`）を返す（1 秒以内に返る。NFR-P08）。依頼元のクライアント自身のタスクだけ（ほかは `task_not_found`）。
@@ -508,7 +508,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/settings` | 設定。FR-S | M1〜 |
 | `/update` | 更新の確認・適用。FR-H09。現在の版・チャネル（正式版 / ナイトリー）・適用方法・最後の確認の時刻（未確認なら「未確認」）・新版（版・公開日時・リリースノートの要約・署名の検証結果）と、「今すぐ確認」（`POST /update/check`）・「更新する」（署名を検証できた新版があるときだけ。確認モーダル `GET /update/apply/confirm` を経て `POST /update/apply`）。サイドバーに「更新」。リリースノートは GitHub の Release 由来の外部文字列なので HTML エスケープして表示する（`<pre>`）。確認に失敗したとき（オフライン・非公開のリポジトリ・不正な応答）は、理由の短い文を出す（URL・応答の本文は出さない）。署名鍵が未設定のときは「署名鍵が未設定」と出し、「更新する」を出さない。`dev` ビルドは確認・適用のボタンを出さない | M3（#74） |
 | `/tasks` | タスク一覧（新しい順に 50 件。クエリ `cursor`（不透明な文字列。不正は 422 `invalid_argument`）で次のページ。HTMX の部分更新は `#task-list`、`hx-boost` は本文、それ以外はフルページ）。依頼元・指示の先頭 80 文字・状態・ステップ数 / 上限・開始・所要時間の表と詳細へのリンク。`/tasks/{id}`: 詳細（指示、状態、モデル、上限、`step_count`（= `fast_steps` + `openai_steps`）と内訳、`handoff_reason`（8 種の説明付き。無ければ出さない）、使用トークン、最終回答（`completed` のときは「モデルの申告であり、成否の確認は呼び出し側の責任」の注意書きを添える。FR-G13）、`error_code`（既知は説明付き）、作成・開始・終了の時刻、ステップの表（`step_no` 昇順の経路 `fast` / `openai`・アクションの要約・結果・引数（監査が伏せたもの）・`/audit/{audit_id}` へのリンク・サムネイルがあれば `/audit/{audit_id}/thumbnail`）。実行中・承認待ちは状態の行に中断ボタン）。無い `id` は 404 `not_found`。指示・最終回答・ステップの文字列は HTML エスケープし、入力した文字列の本文・要素の値は出さない（FR-G23）。FR-H10 | M4 |
-| `/agent` | エージェント設定（有効化と同意、OpenAI API キー、モデル、上限、`keep_screenshots`、Judge のリスト、**高速パス**: 有効化と同意、TypeSafe API キー、モデル、最小確信度、最大ステップ、除外ラベル）。FR-H11 | M4 |
+| `/agent` | エージェント設定（**接続方式の選択**、**ChatGPT のプランのカード**〔`#chatgpt-card`。状態・サインイン / 解除・使用量の上限の表示と対応・モデルの選択〕、有効化と同意、OpenAI API キー、モデル、上限、`keep_screenshots`、Judge のリスト、**高速パス**: 有効化と同意、TypeSafe API キー、モデル、最小確信度、最大ステップ、除外ラベル）。FR-H11 | M4 |
 | `/poll` | ホスト GUI の更新（OOB のフラグメント。§7.4） | M1 |
 | `/events` | SSE（§7.4）。ホスト GUI のレイアウトは購読しない | M1 |
 
@@ -557,12 +557,23 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | POST | `/approvals/{id}/deny` | なし | 同上（拒否。`Approval.Resolve(id, false)`。取得は `approval_denied`） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクの状態の 1 行（`[data-task-status]`。状態バッジ・ステップ数 / 上限・経過時間。中断できる状態なら中断ボタン）と、完了のトースト（OOB）。ダッシュボードの実行中タスクと詳細の先頭が同じ部品で、ボタンは `closest [data-task-status]` を `outerHTML` で差し替える。操作主体は `host` で、監査は `TaskAdmin.CancelByHost` が記録する。**終了済みなら現在の状態をそのまま返し**（冪等。トーストは「すでに終了しています」）、中断した（`cancelled`）ときは「タスクを中断しました。」、まだ終わっていないときは「タスクの中断を要求しました。」。無い `id` は 404 `not_found`（エラーのトースト）。M4 |
 | PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`update.apply_mode`、`update.channel`（`stable` / `nightly`）、`log.level`、`autostart`（OS のスタートアップ登録） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
-| PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック）、`model`、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`keep_screenshots`（1〜10。FR-S19）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。API キー未登録で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
+| PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック。文面は接続方式が `chatgpt` のときは ChatGPT のプランの使用量が使われる旨を含む。FR-G14）、`model`（接続方式 `openai_api_key` 用。FR-S11）、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`keep_screenshots`（1〜10。FR-S19）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。選んだ接続方式が使えない状態（`openai_api_key` で API キー未登録、`chatgpt` で未サインイン・認可切れなど）で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
 | PUT | `/agent/api-key` | `api_key`（伏せ字の入力） | 200 「登録済み」のフラグメント。**値は応答・ログ・監査に出さない**。資格情報マネージャーに保存し、保存に失敗したら 500 `internal` |
 | DELETE | `/agent/api-key` | なし | 200（資格情報を削除し、エージェントを無効にする。実行中のタスクは中断） |
 | PUT | `/agent/fastpath` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック。エージェントの `consent` とは別）、`model`（既定 `jev-1.13`。FR-S15）、`min_confidence`（0〜1、既定 0.7。FR-S16）、`max_steps`（1〜500、既定 15。FR-S17）、`excluded_labels`（改行区切り。FR-S18） | 200 フラグメント。TypeSafe API キー未登録で `enabled` にしようとすると 409 `conflict`、同意なしは 422（項目別メッセージ）。on にしたとき `agent.fastpath.consent_at`（UTC ミリ秒）を記録し、off にしたとき削除する。どちらも高速パス用の別の監査イベントを残す（FR-G22）。エージェント自体の有効・無効とは独立 |
 | PUT | `/agent/fastpath/api-key` | `api_key`（伏せ字の入力） | 200 「登録済み」のフラグメント。**値は応答・ログ・監査に出さず、登録後は表示しない**。資格情報マネージャーのターゲット `puppet-remo/typesafe:puppet-remo` に保存し、保存に失敗したら 500 `internal`。登録だけでは高速パスは有効にならない（`enabled` と同意が別に要る） |
 | DELETE | `/agent/fastpath/api-key` | なし | 200（資格情報を削除し、`agent.fastpath.enabled` を off、`consent_at` を削除する。実行中のタスクは失敗させず、以後の高速ステップを行わず OpenAI で続行する） |
+| PUT | `/agent/connection` | `connection`（`chatgpt` / `openai_api_key`。定義外は 422 `invalid_argument`）、`confirmed`（`openai_api_key` にするときだけ必須。**確認モーダル（`GET /agent/connection/api-key/confirm`）の確定ボタンだけが付ける隠し値 `1`**。付いていなければ 422 `invalid_argument` で、設定は変わらない。通常の設定フォームは送らない）、`reason`（確認モーダルが付ける `usage_limit` / `manual`。監査用。既定 `manual`） | 200 `#agent-sections`（モーダルを閉じる・トーストを OOB で添える）。`openai_api_key` にするときに OpenAI API キーが未登録なら 409 `conflict`。**保存するのは `agent.connection` だけ**（エージェントの有効・同意・ChatGPT のトークンは変えない）。実行中のタスクは自身の接続方式のまま続く（FR-G25）。`chatgpt` へ戻すのは確認なし。監査 `agent.connection`（`detail`: `from`・`to`・`reason`。`actor_type = host`。FR-G30・FR-AU01）。FR-S20・NFR-S22 |
+| GET | `/agent/connection/api-key/confirm` | クエリ `reason`（`usage_limit` / `manual`。既定 `manual`） | 200 確認モーダル（フラグメント。サーバーが描画）。以後のタスクが OpenAI API の従量課金になること・ChatGPT のプランの使用量は使われないこと・ツール（`computer`）と API の安全チェックが変わること・止まったタスクは再開されない（もう一度 `run_task` が要る）ことを書く。確定のボタンが `PUT /agent/connection`（`connection=openai_api_key`、`confirmed=1`、`reason`）を送る。OpenAI API キーが未登録、または接続方式がすでに `openai_api_key` なら 409 `conflict`（モーダルなし）。FR-G30 (4) |
+| POST | `/agent/chatgpt/signin` | なし（本文・クエリを読まない） | 200 ChatGPT のカード（`#chatgpt-card`。状態 `signing_in`。「中止」つき）。システムの既定ブラウザで、**アプリが組み立てた認可の URL 1 つだけ**（`https://auth.openai.com/api/accounts/authorize…`。FR-G28 (3)。リクエストで変えられない）を開き、コールバックの受信口（§7.6）を開く。サインインの完了は `/poll` の `rev_chatgpt`（§7.4）で画面に反映する。進行中なら 409 `conflict`。ブラウザを開けなかったときは `signed_out` のカードとエラーのトースト（URL・パラメーターは出さない）。監査 `agent.chatgpt.signin_start`（FR-AU01） |
+| POST | `/agent/chatgpt/signin/cancel` | なし | 200 カード（`signed_out`）。受信口を閉じる。進行中でなければ何もせず 200（冪等）。監査 `agent.chatgpt.signin`（`result = denied`、`error_code = cancelled`） |
+| GET | `/agent/chatgpt/signout/confirm` | なし | 200 確認モーダル（解除すると、実行中の ChatGPT 経路のタスクが中断されること・ChatGPT 側の失効を試みること・再サインインまで `run_task` が `agent_disabled` になることを書く。チェックボックス「別のアカウントでサインインする」〔`forget_account`〕）。状態が `signed_out` なら 409 `conflict`。FR-G29 (6) |
+| DELETE | `/agent/chatgpt` | `forget_account`（チェックボックス。送られたら on） | 200 カード（`signed_out`）。モーダルを閉じる・トーストを OOB で添える（ChatGPT 側の失効を確認できたか。確認できないときは FR-G29 の文言）。**FR-G29 (6) の手順**（実行中タスクの中断 → 失効 → ローカルのトークン削除。`forget_account` なら `client_id`・`sub`・メールも削除）。`agent.enabled`・`agent.consent_at`・`agent.connection` は変えない。状態が `signed_out` なら 409 `conflict`。失効の失敗は 200 のまま（ローカルの削除は完了する）。監査 `agent.chatgpt.signout`（`detail`: `revoked`〔失効を確認できたか〕・`forget_account`・`cancelled_task`〔中断したタスクの ID〕） |
+| POST | `/agent/chatgpt/resume` | なし | 200 カード（`connected`）。`usage_limited` を解除する（使えるかは次のタスクの最初の呼び出しで分かる。FR-G30 (3)）。`usage_limited` でなければ 409 `conflict`。監査 `agent.chatgpt.resume` |
+| POST | `/agent/chatgpt/open-usage` | なし（本文・クエリ・パスを読まない） | 200（OOB のトースト「ChatGPT の使用量の設定を開きました。」だけ。`hx-swap="none"`）。**開く先は実装が固定する `https://chatgpt.com/settings/usage` の 1 つ**で、リクエストで指定する手段は無く、トークン・クエリを付けない（`POST /logs/open-folder` と同じ作り。NFR-S21）。開けなければ 500 `internal` のエラーのトースト |
+| GET | `/agent/chatgpt/models` | なし | 200 モデルの選択肢のフラグメント（同じ Bearer で `GET https://api.openai.com/v1/models` を呼び、`visibility` が `list` のものの `slug`・`display_name`。サーバーの並び順のまま。FR-G26）。更新が必要なら先に更新する（FR-G29）。状態が `connected` でなければ 409 `conflict`。取得に失敗したら現在の値だけの選択肢とエラーのトースト（本文・トークンは出さない） |
+| PUT | `/agent/chatgpt` | `model`（`GET /agent/chatgpt/models` の `slug`） | 200 カード。一覧に無い値は 422 `invalid_argument`（FR-G26）。`agent.chatgpt.model` を保存する（FR-S21） |
+| POST | `/agent/chatgpt/welcome/dismiss` | なし | 200（初回のサインイン後の確認モーダルを閉じる OOB。`agent.chatgpt.welcome_shown` を保存し、以後は出さない。FR-G28 (7)） |
 | GET | `/audit` | クエリ: `from`, `to`（RFC 3339）、`client_id`, `kind`, `result`, `q`（イベント名の部分一致）、`cursor`, `limit`（既定 50、最大 200） | 200 一覧フラグメント（`ts` 降順。`cursor` は最後の `id`）。**M3（#72）の実装**: `HX-Request`（履歴の復元を除く）は `#audit-list` のフラグメント、`HX-Boosted` とそれ以外（履歴の復元を含む）はフルページ。範囲外・結果なしは空の表示（200）。不正な値（RFC 3339 でない `from` / `to`・未知の `kind`（`auth` / `client` / `token` / `lease` / `tool` / `input` / `agent` / `killswitch` / `settings` / `update`）・未知の `result`（`ok` / `denied` / `error`）・数値でない・負の `limit` / `cursor`）は 422（同じフラグメントを項目別のメッセージ（`data-field-error`）付きで描き直し、読み出しはしない）。`limit` は 200 を超えると 200。`from` / `to` は RFC 3339 のテキスト入力で、URL にもそのまま出る（ブラウザの日時入力欄への変換・ホストのタイムゾーンの補完はしない）。「次へ」の URL は今の絞り込みと次の `cursor` を持つ |
 | GET | `/audit/{id}` | なし | 200 詳細のページ（`HX-Request` は `#main` の中身）。対象が無い・`id` が正の整数でないときは 404（`data-error-code="not_found"`）。引数は `AuditReader` が秘密を伏せた値だけを、キーの昇順で出す（HTML エスケープ。M3・#72） |
 | GET | `/audit/{id}/thumbnail` | なし | 200 `image/jpeg`（`audit_thumbnails.rel_path` を `thumbs/` 配下に限定して配信。パスの走査を拒否）。無ければ 404。**M3（#72）の実装**: `Cache-Control: no-store`・`X-Content-Type-Options: nosniff`。パスはユーザー入力ではなく DB の `rel_path` で、`ThumbStore` が `thumbs/` の外を指すパスを拒否したとき（`ErrInvalidArgument`）も画像は返さず 404（運用ログに警告）。サムネイルの無い行・ファイルの無い行・`id` が正の整数でない場合も 404。読み出しの失敗は 500 |
@@ -578,7 +589,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | 項目 | 内容 |
 |------|------|
-| リクエスト | クエリ `rev_killswitch`（ダッシュボードを表示中の画面が送る。キルスイッチのパネルが持つ版）、`rev_requests`（接続要求の一覧を表示中の画面が送る。一覧が持つ版）。どちらも省略できる。`HX-Request` は不要 |
+| リクエスト | クエリ `rev_killswitch`（ダッシュボードを表示中の画面が送る。キルスイッチのパネルが持つ版）、`rev_requests`（接続要求の一覧を表示中の画面が送る。一覧が持つ版）、`rev_chatgpt`（エージェント設定を表示中の画面が送る。ChatGPT のカードが持つ版）。いずれも省略できる。`HX-Request` は不要 |
 | 応答 | 200 HTML。`hx-swap-oob` のフラグメントだけを並べた 1 つの応答（フルページではない）。`Cache-Control: no-store`。CSP ヘッダーは §1 のとおり |
 
 | OOB の差し込み先 | 内容 | 返す条件 |
@@ -588,6 +599,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `#server-status`・`#sessions`・`#lease`（innerHTML） | サーバー状態・接続中セッション・リース保持者（M2 から強制剥奪ボタンを含む） | `rev_killswitch` があるとき（ダッシュボード） |
 | `#killswitch-panel`（outerHTML） | キルスイッチのパネル（状態駆動: 発動中は解除だけ） | `rev_killswitch` があり、現在の版と違うとき |
 | `#request-list`（outerHTML） | 接続要求の一覧 | `rev_requests` があり、現在の版と違うとき |
+| `#chatgpt-card`（outerHTML） | ChatGPT のプランのカード（サインインの完了・失敗・タイムアウト、認可切れ、使用量の上限、再開、解除などの状態の変化） | `rev_chatgpt` があり、現在の版と違うとき。版は、状態・アカウントの表示・選んだモデル・OpenAI API キーの登録の有無・初回の確認を出すかの表示モデルのハッシュで、秘密を含まない |
 | `#toast-root`（beforeend） | 前回の呼び出し以降に溜まった `toast`（取り出した分は次の応答に出ない） | あるとき |
 
 版（`rev_*`）は、描画した表示モデルのハッシュで、一覧・パネルの隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）が持つ。レイアウトの `#live-poll` が `hx-include="[data-poll-rev]"` で送り返す。版が同じ領域は差し替えない（入力中の許可フォームを、ポーリングで消さないため）。応答に秘密（トークンなど）は含めない。`approval`（M3）は、この経路の対象外。`tasks`（M4）はダッシュボードの `#running-tasks`（`rev_tasks`。実行中・承認待ちのタスクの表示。経過時間を含むので、実行中は毎回差し替わる。無いときは中身が空の同じ要素）で、タスクの一覧・詳細は対象にしない。
@@ -634,8 +646,22 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 承認ダイアログの種類・エージェントのオーバーレイ（§7.1・M4。FR-H05・H07） | 承認の種類は `lease` / `safety_check` / `judge_action`。オーバーレイは `agent` のとき「エージェント実行中」と指示の要約を併記する | `handler/gui/approvals.go` の `approvalTexts`（種類ごとの見出し・要求の内容・結果の説明）と `Detail` の表示（`organisms.ApprovalDialog`）。`app` の `approvalDialogs` は 3 つの種類すべてでダイアログを開き、`Windows.OpenApproval(id, kind)` の `kind` で背の高さを選ぶ（`lease` 340、`safety_check`・`judge_action` 560）。オーバーレイは `app` の `overlayController` が `agent` の保持者のとき `taskReader.Detail(Actor.SessionID = task_id)` で指示を読み、2 行目に「エージェント実行中: <指示の要約（空白をたたみ 40 文字）>」を付けた `label` を `ShowOverlay` へ渡す（読めなければ「エージェント実行中」だけ）。TaskAdmin の結線は後続のスライスが行う（それまで `nil` で、要約なし） |
 | 更新（§7.1・§7.3・M3。#74） | 「更新」の画面・確認・適用 | `GET /update`・`/update/apply/confirm`、`POST /update/check`・`/update/apply`（`handler/gui/update.go`・`pages.Update`・`organisms.UpdatePanel`）。確認・適用は `service.Updater` が行い、ハンドラは描画と受け付けだけ。取得元は `https://api.github.com/repos/ousiassllc/puppet-remo/releases`（`stable` は `/releases/latest`、`nightly` は直近 30 件）を**認証なし**で呼ぶ（リポジトリは公開が前提。非公開の間は 404 / 401 / 403 で確認が失敗し、運用ログに残るだけでアプリは止まらない）。ダウンロードの URL は応答の値を使わず、タグとファイル名から組み立てる。署名（`<インストーラ>.minisig`。minisign・Ed25519）を埋め込みの公開鍵で検証し、署名の trusted comment が `version=<版> file=<ファイル名>` に一致しなければ拒否する。検証に成功した版だけを画面・トースト（`Bus` の `toast`。同じ版は 1 度）で知らせる。適用できないとき（リース保持中・承認待ち・MCP セッションの接続中・タスク実行中）は 409 `conflict` で、理由を日本語でトーストに出す。`auto_idle` は、署名検証済みの新版があるとき 30 秒ごとに空き（上記の 4 条件が無い）を確認して自動で適用する（`actor_type = system`）。監査は `kind = update`（`update.detected` / `verify_failed` / `downgrade_rejected` / `apply_started` / `apply_failed`。同じ版・理由の繰り返しは記録しない。URL・署名・パスは記録しない） |
 | エージェント設定（§7.1・§7.3・M4。#19） | `/agent` と `PUT /agent`・`/agent/api-key`・`/agent/fastpath`・`/agent/fastpath/api-key`、`DELETE` の 2 つ | `GET /agent`（`handler/gui/agent.go`・`pages.AgentSettings` / `AgentSettingsBoosted`）。画面は `#agent-sections`（OpenAI のカードと高速パスのカード）で、キーごとのパネル（`#agent-key`・`#fastpath-key`。登録の有無は `service.AgentSettingsView` の真偽値だけ）とフォーム（`#agent-form`・`#fastpath-form`）に分かれ、それぞれが自身を `outerHTML` で差し替える。`gui.Deps.AgentSettings`（`service.AgentSettings` と同じメソッド集合）が必須の依存。**`PUT /agent`・`PUT /agent/fastpath`**: 検証エラーは 422 のフォーム（入力値のまま・項目別のメッセージ。数値に読めない項目と範囲の不備を同時に示す）。成功は 200 のフォームとトースト（OOB）。**API キー未登録での有効化**は、`PUT /agent` が 409 `agent_disabled`（エラーコード表の `agent_disabled` も 409 で、同じ）、`PUT /agent/fastpath` が 409 `conflict`。トーストのフラグメントで、設定は変わらない。リスト（`deny_processes` など）は GUI が改行で分割し、各行の前後の空白を除いて空行を捨てて渡す。**`PUT /agent/api-key`・`PUT /agent/fastpath/api-key`**: キーは**本文の `api_key` だけ**で受ける（URL・クエリは読まない）。前後の空白・改行は除き、空・4,096 バイト超・空白や制御文字・非 ASCII を含むものは 422（項目のメッセージ。実体を呼ばない）。入力欄は `type="password"`・`autocomplete="off"` で、`value` を描画しない（失敗の再描画でも空）。応答・トースト・エラー・運用ログのどこにも値を出さない（保存の失敗は 500 `internal` の汎用トーストで、運用ログに残すエラー文からもキーを伏せる）。キーに関わる応答（登録・削除の確認・削除）は `Cache-Control: no-store`（GUI ルーターは動的な応答すべてに付ける）。成功は 200 の「登録済み」のパネルとトースト。画面に「資格情報マネージャーにだけ保存し、登録後は表示しない」と明記する。**`DELETE /agent/api-key`・`DELETE /agent/fastpath/api-key`**: 先に確認モーダル（`GET /agent/api-key/delete/confirm`・`GET /agent/fastpath/api-key/delete/confirm`。サーバーが描画。キー未登録なら 409 `conflict`）を経る。確定は 200 で、有効・同意の状態も変わるため `#agent-sections` 全体を返し、モーダルを閉じる・トーストを OOB で添える。 |
+| ChatGPT のプラン経路の GUI（§7.1・§7.3・§7.4・§7.6・M4。#49。**仕様のみ。実装は未着手**） | `/agent` の `#chatgpt-card`、`/agent/chatgpt/*`、`/agent/connection*`、OAuth のコールバック受信口 | 実装の方針（名前は実装が決める）: ChatGPT の認証と接続の状態（`signed_out` / `signing_in` / `connected` / `reauth_required` / `usage_limited`。FR-G28〜G30）は `service` が持つ 1 つの部品（認可・コードの交換・ID トークンの検証・更新〔排他〕・失効・使用量の上限の一時停止）で、`gui.Deps` の利用者側のインターフェースとして `handler/gui/agent.go` に渡す。ハンドラは描画と受け付けだけで、トークンの値・認可コード・`id_token_hint` を画面・応答・ログに出さない（NFR-S13）。ブラウザの起動（`BrowserOpener`）と `SecretStore` はインターフェースの背後に置き、テストは偽の実装とモックの OpenAI（`httptest`）だけを使う（NFR-O06。実際の OpenAI・ChatGPT を呼ばない）。サインインの完了は、受信口（§7.6）の結果を `Bus` へ流し、画面は `/poll` の `rev_chatgpt` で更新する（SSE は使わない。§7.4）。サインイン・解除・接続方式の変更・使用量の管理の各ルートは GUI ルーターだけで、リモートルーターに作らない（NFR-S21）。リモートルーターの `get_task`・`run_task`・`agent_disabled` には §2・§3.3 のコード・項目だけを足す |
 | WebSocket（§5・M2。#61） | 閉じコード・メッセージは §5 | ライブラリは `github.com/coder/websocket` v1.8.15。接続は圧縮しない（JPEG）。クライアントからのメッセージの上限（64 KiB）はライブラリの上限（1009 で閉じる）ではなく自前で検査し、4400 で閉じる。置き換えられた古い接続は 4401（§5.2）。`lease` の `holder` は `idle` のときだけ省く（M3: `pending_approval` は承認待ちの要求者の `holder` と、要求者本人かの `mine`）。`ready` の `monitors[]` の形は §5.3 |
 | Web UI（§4・M2。#62） | §4.2 のとおり | ハンドラは `web/handler/remote`（Gin。`router.NewRemote` が `/`・`/viewer`・`/viewer/` のパターンでマウントする）。未登録デバイスのページの選択は `middleware.RemoteConfig.ConnStates`（`service.ConnRequestStates`。読み取り専用。nil なら常に待機）。ページは `pages.Pending` / `Denied` / `Expired`（アクションルートにも同じページを返す）。ミドルウェアの HTML の拒否（`invalid_host` など）は `pages.RemoteError`（ページ）と `atoms.Alert`（アクションルートのフラグメント）。存在しない `monitor` の検証エラーは、ホスト GUI の検証エラーと同じ 422 `invalid_argument` のフォーム再描画（§4.2）。`<remo-screen-viewer>` の `dist/js/screen-viewer.js` はレイアウトが読み込むが、成果物は別の子 Issue（#63）が出す（それまでは 404 で、ライブ画面は出ない） |
+
+### 7.6 ChatGPT のサインインのコールバック受信口
+
+ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに戻る先。**リモートルーターでも GUI ルーターでもない**、サインインの間だけ開く 1 つの小さな HTTP サーバー（NFR-S01 の例外。NFR-S21）。
+
+| 項目 | 内容 |
+|------|------|
+| 待ち受け | `127.0.0.1` の空きポートだけ（`localhost`・`0.0.0.0`・tailnet のアドレスでは Listen しない）。サインインの開始（`POST /agent/chatgpt/signin`）で開き、結果の受理・「中止」・5 分のタイムアウト・アプリの終了のいずれかで閉じる。同時に 1 つだけ |
+| 経路 | `GET /auth/callback` だけ。ほかのパス・メソッドは 404 / 405。`Host` が `127.0.0.1:<そのポート>` でなければ 400。リクエストにクッキー・認証ヘッダー・カスタムヘッダーは要らない（ブラウザのリダイレクトなので付けられない） |
+| 受け取るクエリ | `code`・`state`・`scope`・`client_id`（新規登録のとき）、または `error`（`access_denied` など）・`error_description`。値は運用ログ・監査・応答に出さない（NFR-S13） |
+| 判定 | `state` が、保持しているサインインの `state` と一致する**最初の 1 回**の要求だけを結果として受け取り、閉じる。不一致・`state` が無い・不正な要求は 400 を返して待ちを続ける（5 分で閉じる）。結果の検証（`error`・`client_id`・コードの交換・ID トークン）は FR-G28 (4)〜(6) |
+| 応答 | 受け取った 1 回は 200 の静的な HTML（「サインインの結果をアプリに渡しました。このタブを閉じてください」。コード・`state`・アカウント名を含めない。外部のリソースを読み込まない）。400 も静的な短い文言（理由・値を含めない）。`Cache-Control: no-store`、`Content-Security-Policy: default-src 'none'`、`Referrer-Policy: no-referrer`、`X-Content-Type-Options: nosniff` を付ける |
+| 結果の扱い | 受け取った結果はアプリ（`service`）へ渡し、コードの交換・検証・保存はそちらが行う。受信口自身は資格情報を持たず、保存しない。結果は `Bus` で GUI の画面に反映する（`rev_chatgpt`。§7.4） |
 
 ## 8. 決定事項と実装時の検証事項
 
@@ -648,6 +674,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | WebSocket の高解像度 | v1 では 4K 以上でも縮小配信せず、物理解像度のまま配信する。`ready` / `config` に後から `scale` を足せる形にしてあるが、v1 では送らない |
 | ホイールの単位 | §5.3 のとおり、WebSocket の `wheel` の `dx` / `dy` と MCP `scroll` の `amount` はノッチ数。サーバーが `×120` に変換する |
 | 静的ファイルのキャッシュ | `Cache-Control: no-cache` + `ETag`（ビルド ID）（§1） |
+| ChatGPT のプラン経路の GUI・受信口（#49） | サインイン・解除・接続方式の変更・使用量の管理は GUI ルーターだけで、リモートルーターに同名の経路を作らない。サインインの完了の反映は `/poll`（SSE は使わない）。使用量の管理先は `POST /agent/chatgpt/open-usage`（開く URL を実装が固定。`POST /logs/open-folder` と同じ作り）。API キー経路への切り替えは確認モーダルの確定（`confirmed=1`）だけ（自動で切り替えない。NFR-S22）。受信口は `127.0.0.1` だけ（§7.6）。MCP の `get_task` の `error_code`・`connection`・`agent_disabled` の `detail.reason` を足す（高速パスと同様、エラーコード表のコードは増やさない） |
 
 ### 8.2 実機・実 API で検証する事項
 
@@ -658,6 +685,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | GUI ルーターの CSP | Wails の WebView のオリジン（開発時は WebView の URL のポートが開発用ポートになる）で §1 の CSP のまま動作すること、Wails がインラインスクリプトを注入しないこと（runtime.js は同一オリジン） |
 | 実機の `CreateProcess` による起動（M1.5） | 登録した `.exe`（引数・作業ディレクトリ付き）が、シェルを経由せず標準権限で起動し、`pid` が返ること。パスや引数に空白・日本語・引用符を含むときに、登録どおりに渡ること。`requireAdministrator` のアプリが `launch_failed`（`elevation_required`）になること |
 | ファイル選択ダイアログ（M1.5） | `POST /apps/pick-file` が、ダイアログを開いている間（長時間を含む）WebView で応答待ちのままタイムアウトせず、選択後に入力欄へパスが入ること。キャンセルで 204 になること。ダイアログが MCP の入力（`key` / `type`）を受けないこと（NFR-S06） |
+| ChatGPT のプラン経路（#49。未確認の点は [非機能要件](../requirements/non-functional.md)「ChatGPT プラン経路: 未確認」） | 既定のブラウザからの戻りがループバックの受信口に届くこと（ブラウザ・セキュリティソフトの影響）、受信口のポートが認可の `redirect_uri` として受理されること、サインインの完了が `/poll` で GUI に反映されること、`POST /agent/chatgpt/open-usage` が既定のブラウザで使用量の設定を開くこと、確認モーダルの確定（`confirmed=1`）が WebView でだけ送られること |
 
 ## 改訂履歴
 
@@ -706,3 +734,4 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 | 1.40 | 2026-11-02 | §7.1 の `/logs` に「ログフォルダーを開く」ボタン、§7.3 に `POST /logs/open-folder`（開く場所を実装が固定。パスを受け取らない）を追加 | #54 |
 | 1.41 | 2026-11-02 | §3.3 の `launch_app` の `reused_existing_window` を、起動前後のウィンドウ一覧の差で判定する（新しいウィンドウがあれば `false`）に改めた | #55 |
 | 1.42 | 2026-11-02 | §2 に `audit_unavailable`（503。`launch_app` の起動の「試行」を監査に書けないと起動しない）、§3.3 の `launch_app` に fail-closed の 2 行の監査を追記。§3.4 に、監査に残すスキーマ違反は `launch_app` だけであることを明記 | #37・#38 |
+| 1.43 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー）に対応: §1 のホスト専用の操作・§2 の `agent_disabled`（`detail.reason`）と `chatgpt_*` の失敗理由・§3.3 の `run_task`・`get_task`（`connection`、`error_code`、`openai_steps` の数え方）、§7.1 の `/agent`、§7.3 の `PUT /agent` の更新と `PUT /agent/connection`・API キーへの切り替えの確認モーダル・`/agent/chatgpt/*`（サインイン・中止・解除・再開・使用量の管理・モデル・初回の確認）、§7.4 の `rev_chatgpt`・`#chatgpt-card`、§7.5 の方針、§7.6（コールバック受信口）、§8 の決定事項・検証事項 | #49 |
