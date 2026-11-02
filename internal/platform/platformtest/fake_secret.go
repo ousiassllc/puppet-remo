@@ -52,6 +52,9 @@ func (f *FakeSecretStore) Set(name, value string) error {
 	if err := checkSecretName(name); err != nil {
 		return err
 	}
+	if value == "" {
+		return domain.ErrInvalidArgument.WithMsg("secret value is empty")
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.secrets[name] = value

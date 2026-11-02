@@ -6,8 +6,8 @@ import "errors"
 // ディレクトリが無い）。errors.Is で判定する。メッセージには名前・パスを含めない。
 var ErrNotFound = errors.New("platform: not found")
 
-// SecretStore は資格情報マネージャー（go-keyring）。name は下記の定数。M1 では使わない。
-// 空の name は ErrInvalidArgument。
+// SecretStore は資格情報マネージャー（go-keyring）。name は下記の定数。
+// 空の name・空の value は ErrInvalidArgument。
 type SecretStore interface {
 	Get(name string) (string, error) // 未登録は ErrNotFound
 	Set(name, value string) error

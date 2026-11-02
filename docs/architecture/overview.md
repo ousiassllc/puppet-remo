@@ -605,7 +605,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 |------|------|----------|
 | Huma（JSON API） | `/api/v1` を提供 | 使わない（`go.mod` に無い）。`/api/v1` は M2 以降 |
 | WebSocket | `github.com/coder/websocket` v1.8.15 | M2（#61）で直接依存にした（`internal/ws`。v1.8.14 の間接依存だったものを v1.8.15 に上げた） |
-| 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | 依存に無い。M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけで、Windows 実装も呼び出しも無い（API キー管理は M4） |
+| 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | M4（#19）で依存に加え、`platform/windows` の `SecretStore` の背後に置いた（M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけだった）。呼び出しは M4 の後続の変更で足す |
 | DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | M2（#57）で直接依存に追加し採用を確定した（`internal/platform/windows` の `dxgi_windows.go`）。`Capturer.Watch` は DXGI を主、GDI をフォールバックとして実装した。変更矩形は使わず `Frame.Dirty` は全面 |
 | OpenAI / TypeSafe クライアント | `openai-go/v3`、`net/http` | 依存に無く、`internal/openai`・`internal/typesafe` も無い（M4） |
 | MCP | go-sdk v1.8.0 | 同じ。`SessionTimeout` 30 分・`MaxRequestBodyBytes` 1 MiB・`Stateless=false`・`CrossOriginProtection` 不使用に加え、`KeepAlive` は既定の 0（ping しない。NFR-A04） |

@@ -140,6 +140,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(host.MainWindowHandle),
 			// 署名検証済みの更新のインストーラは、NSIS を `/S` で起動する（UAC の確認つき。FR-H09）。
 			Installer: windows.NewInstaller(),
+			// API キー（OpenAI・TypeSafe）は資格情報マネージャーに置く（NFR-S14）。
+			Secrets: windows.NewSecretStore(),
 		},
 		// 承認ダイアログ（FR-H05）は専用の Wails ウィンドウ（キャプチャ除外）で開く。
 		Windows: host.Windows(),
