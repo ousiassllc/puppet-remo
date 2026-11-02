@@ -1,3 +1,2 @@
-# 署名鍵が未設定（プレースホルダ。本物の公開鍵ではない）。
-# オーナーが `minisign -G` で作った公開鍵ファイル（.pub）の中身で、このファイルを置き換える（docs/operations/release.md「オーナーの作業」）。
-# このままのときは、更新の確認はできるが、署名を検証できないので適用はしない（fail closed）。
+untrusted comment: minisign public key 4CF72995B5EA6E65
+RWRlbuq1lSn3TCwuiFuUkvzJbiaZrK4Aueskt+JTjQfMio3xTvqhdjxA
