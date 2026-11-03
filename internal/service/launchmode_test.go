@@ -420,6 +420,28 @@ func TestLaunchDenylistModeRequiresAnExistingFixedDiskExecutable(t *testing.T) {
 	}
 }
 
+// .exe 名のリンクの実体が .exe でない（.bat など）ものは、解決した実体で起動することになるため起動しない（CreateProcess は .bat を cmd.exe 経由で実行しうる。
+// 名前の項目に当たらない綴りでの拒否リストのすり抜けを防ぐ）。
+func TestLaunchDenylistModeRejectsLinksToNonExeTargets(t *testing.T) {
+	e := newModeEnv(t)
+	e.launcher.AddExecutable(`C:\Tools\run.bat`)
+	e.launcher.AddLink(`C:\Link\innocent.exe`, `C:\Tools\run.bat`)
+	setMode(t, e, domain.LaunchModeDenylist)
+	ctx := context.Background()
+
+	_, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{Path: `C:\Link\innocent.exe`})
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodeLaunchFailed || de.Detail["reason"] != domain.LaunchAccessDenied {
+		t.Errorf("Launch(link to .bat) = %v, want launch_failed(access_denied)", err)
+	}
+	if de != nil && (strings.Contains(de.Msg, "bat") || strings.Contains(de.Msg, `C:\`)) {
+		t.Errorf("the error leaks the path: %q", de.Msg)
+	}
+	if n := launchCount(e); n != 0 {
+		t.Errorf("%d launches for a link to a non-.exe target", n)
+	}
+}
+
 // 内蔵エージェント（M4）も、同じ方式・同じ拒否リストに従う（別の経路を持たない）。
 func TestLaunchByAgentFollowsTheSameModeAndDenylist(t *testing.T) {
 	e := newModeEnv(t)
