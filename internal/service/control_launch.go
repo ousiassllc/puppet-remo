@@ -168,8 +168,12 @@ func (c *control) resolveLaunchPath(ctx context.Context, path string) (platform.
 	return platform.LaunchSpec{ExePath: resolved}, "", nil
 }
 
+// errResolvedNotExe は、実体が .exe でない（リンクの先が .bat・.cmd・.com など）ために起動しなかったことを表す（*platform.LaunchError の Err。パスを含まない）。
+var errResolvedNotExe = errors.New("service: the resolved executable is not a .exe")
+
 // checkNotDenied は exePath を実体のパスに解決し（固定ディスク上の実在でなければ launch_failed）、拒否リストに当たらないことを確かめる。
-// 当たれば ErrAppDenied。戻り値は解決した実体のパス。
+// 当たれば ErrAppDenied。実体が .exe でない（.exe 名のリンクの先が .bat・.cmd など。CreateProcess はそれを cmd.exe 経由で実行しうる）ときは
+// launch_failed（access_denied）。戻り値は解決した実体のパス。
 func (c *control) checkNotDenied(ctx context.Context, exePath string) (string, error) {
 	resolved, err := c.launcher.Resolve(ctx, exePath)
 	if err != nil {
@@ -181,6 +185,9 @@ func (c *control) checkNotDenied(ctx context.Context, exePath string) (string, e
 	}
 	if domain.MatchDenied(denied, exePath, resolved) {
 		return "", domain.ErrAppDenied
+	}
+	if !domain.ValidateLaunchPath(resolved) {
+		return "", launchFailure(&platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errResolvedNotExe})
 	}
 	return resolved, nil
 }
