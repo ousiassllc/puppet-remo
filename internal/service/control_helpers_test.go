@@ -236,6 +236,7 @@ type ctlEnv struct {
 	launcher  *platformtest.FakeAppLauncher
 	picker    *platformtest.FakeFilePicker
 	appStore  repository.LaunchableApps
+	denyStore repository.LaunchDenylist
 	appDB     string // appStore の SQLite ファイル（テストが行を直接書き換えるのに使う）
 	apps      AppRegistry
 	kill      *KillSwitchManager
@@ -278,9 +279,9 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 		picker:    platformtest.NewFakeFilePicker(),
 	}
 	e.ui = platformtest.NewFakeUIAutomation(e.windows)
-	e.appStore, e.appDB = openAppStore(t)
+	e.appStore, e.denyStore, e.appDB = openAppStore(t)
 	apps, err := NewAppRegistry(AppRegistryConfig{
-		Apps: e.appStore, Launcher: e.launcher, Picker: e.picker, Audit: e.audit, Clock: e.clock, IDs: &ctlIDs{},
+		Apps: e.appStore, Denied: e.denyStore, Settings: e.settings, Launcher: e.launcher, Picker: e.picker, Audit: e.audit, Clock: e.clock, IDs: &ctlIDs{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -318,7 +319,7 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 }
 
 // openAppStore は一時ファイルの SQLite の起動許可リストとそのファイルのパスを返す（label の一意性・50 件の上限は本物の repository で確かめる）。
-func openAppStore(t *testing.T) (repository.LaunchableApps, string) {
+func openAppStore(t *testing.T) (repository.LaunchableApps, repository.LaunchDenylist, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "puppet-remo.db")
 	db, err := repository.Open(context.Background(), path)
@@ -326,5 +327,5 @@ func openAppStore(t *testing.T) (repository.LaunchableApps, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return db.LaunchableApps(), path
+	return db.LaunchableApps(), db.LaunchDenylist(), path
 }

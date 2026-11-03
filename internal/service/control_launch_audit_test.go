@@ -77,7 +77,7 @@ func TestControlLaunchWritesTheAttemptRowBeforeStartingTheProcess(t *testing.T) 
 			ctl := e.controlWith(t, order, e.audit)
 
 			ctx := WithAgentStep(context.Background(), AgentStep{No: 3, Route: AgentRouteOpenAI})
-			res, err := ctl.Launch(ctx, tt.who, app.ID)
+			res, err := ctl.Launch(ctx, tt.who, LaunchRequest{AppID: app.ID})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -129,7 +129,7 @@ func TestControlLaunchDoesNotStartWhenTheAttemptCannotBeWritten(t *testing.T) {
 			e.audit.entries = nil
 			e.audit.SetSyncErr(errors.New(`insert audit_logs: database is locked (C:\secret\puppet-remo.db)`))
 
-			_, err := e.control.Launch(context.Background(), who, app.ID)
+			_, err := e.control.Launch(context.Background(), who, LaunchRequest{AppID: app.ID})
 			if !errors.Is(err, domain.ErrAuditUnavailable) || domain.CodeOf(err).HTTPStatus() != 503 {
 				t.Fatalf("err = %v, want audit_unavailable (503)", err)
 			}
@@ -147,7 +147,7 @@ func TestControlLaunchDoesNotStartWhenTheAttemptCannotBeWritten(t *testing.T) {
 
 			// 書けるようになれば、同じ呼び出しで起動できる。
 			e.audit.SetSyncErr(nil)
-			if _, err := e.control.Launch(context.Background(), who, app.ID); err != nil {
+			if _, err := e.control.Launch(context.Background(), who, LaunchRequest{AppID: app.ID}); err != nil {
 				t.Fatalf("Launch after the audit recovered = %v", err)
 			}
 		})
@@ -165,16 +165,16 @@ func TestControlLaunchRejectedBeforeStartingKeepsItsErrorWhenTheAuditIsDown(t *t
 	if _, err := e.leases.Acquire(ctx, ctlBob); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.control.Launch(ctx, ctlAlice, app.ID); !errors.Is(err, domain.ErrLeaseHeldByOther) {
+	if _, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{AppID: app.ID}); !errors.Is(err, domain.ErrLeaseHeldByOther) {
 		t.Errorf("lease held by other: err = %v, want lease_held_by_other", err)
 	}
-	if _, err := e.control.Launch(ctx, ctlBob, "no-such-app"); !errors.Is(err, domain.ErrAppNotFound) {
+	if _, err := e.control.Launch(ctx, ctlBob, LaunchRequest{AppID: "no-such-app"}); !errors.Is(err, domain.ErrAppNotFound) {
 		t.Errorf("unknown app: err = %v, want app_not_found", err)
 	}
 	if err := e.kill.Trigger("test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.control.Launch(ctx, ctlBob, app.ID); !errors.Is(err, domain.ErrKillSwitchActive) {
+	if _, err := e.control.Launch(ctx, ctlBob, LaunchRequest{AppID: app.ID}); !errors.Is(err, domain.ErrKillSwitchActive) {
 		t.Errorf("kill switch: err = %v, want kill_switch_active", err)
 	}
 	if n := len(e.audit.SyncEntries()); n != 0 {
@@ -214,7 +214,7 @@ func TestControlLaunchKeepsTheLaunchWhenTheResultRowCannotBeWritten(t *testing.T
 	t.Cleanup(func() { _ = audit.Close(context.Background()) })
 	ctl := e.controlWith(t, e.launcher, audit)
 
-	res, err := ctl.Launch(context.Background(), ctlAlice, app.ID)
+	res, err := ctl.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if err != nil || res.PID == 0 {
 		t.Fatalf("Launch = %+v, %v; want success although the result row cannot be written", res, err)
 	}
@@ -241,7 +241,7 @@ func TestControlLaunchWritesAttemptThenResultAsSeparateRows(t *testing.T) {
 	store := &ctlAuditStore{}
 	audit := newTestAudit(t, store, 0, nil)
 	ctl := e.controlWith(t, e.launcher, audit)
-	if _, err := ctl.Launch(context.Background(), ctlAlice, app.ID); err != nil {
+	if _, err := ctl.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if err := audit.Flush(context.Background()); err != nil {
@@ -259,7 +259,7 @@ func TestControlLaunchRechecksTheKillSwitchAfterWritingTheAttempt(t *testing.T) 
 	app := registerNotepad(t, e)
 	e.audit.onSync = func() { _ = e.kill.Trigger("test") }
 
-	_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if !errors.Is(err, domain.ErrKillSwitchActive) {
 		t.Fatalf("err = %v, want kill_switch_active", err)
 	}

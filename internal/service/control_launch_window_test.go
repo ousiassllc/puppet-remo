@@ -19,7 +19,7 @@ func existingNotepad() domain.WindowInfo {
 func launchNotepad(t *testing.T, e *ctlEnv) LaunchResult {
 	t.Helper()
 	app := registerNotepad(t, e)
-	res, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	res, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestControlLaunchFailureDoesNotObserveWindows(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
 	e.launcher.DenyAccess(appNotepad)
-	res, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	res, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if err == nil || res.Window != nil || res.ReusedExistingWindow || len(e.slept) != 0 {
 		t.Errorf("res = %+v, err = %v, slept = %v", res, err, e.slept)
 	}

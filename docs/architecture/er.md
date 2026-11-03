@@ -29,6 +29,7 @@ erDiagram
     audit_logs ||--o| audit_thumbnails : "サムネイル"
     settings
     launchable_apps
+    launch_denylist
 ```
 
 ## テーブル一覧
@@ -40,7 +41,8 @@ erDiagram
 | `connection_requests` | 未登録デバイスからの接続要求 | FR-A06, A07 |
 | `agent_tasks` | 内蔵エージェントのタスク（指示、状態、使用トークン、最終回答、高速パスのステップ数・OpenAI へ引き継いだ理由）。ステップは `audit_logs` に `task_id` で紐づく | FR-G02, G03, G09, G15, G16〜G24, H10 |
 | `settings` | アプリ設定、キルスイッチ状態、エージェント設定（高速パスを含む。キー・値） | FR-S01〜S19, FR-H06, FR-H11 |
-| `launchable_apps` | 起動許可リスト（`launch_app` で起動してよいアプリ。表示名・実行ファイルのパス・固定の引数・作業ディレクトリ）。ホスト GUI だけが書く。他の表への外部キーは無い | FR-M18, M19, H12, AU06 |
+| `launchable_apps` | 起動許可リスト（`launch_app` を `app_id` で起動してよいアプリ。表示名・実行ファイルのパス・固定の引数・作業ディレクトリ）。ホワイトリスト方式（既定）で起動できるのはこのリストのアプリだけ。ホスト GUI だけが書く。他の表への外部キーは無い | FR-M18, M19, H12, AU06 |
+| `launch_denylist` | 起動の拒否リスト（ブラックリスト方式のときだけ効く。実体のパスまたは実行ファイル名の 1 件ずつ。上限 200）。起動の方式そのもの（`launch.mode`）は `settings` に持つ。ホスト GUI だけが書く。他の表への外部キーは無い | FR-M18, M19, H12, AU06 |
 | `audit_logs` | 監査ログ | FR-AU01〜AU05 |
 | `audit_thumbnails` | 監査ログに紐づく縮小スクリーンショットのメタ情報 | FR-AU02, AU04 |
 
@@ -242,6 +244,7 @@ erDiagram
 | `update.channel` | string `"stable"` / `"nightly"` | `"stable"` | FR-S09（更新のチャネル。#74） |
 | `update.last_checked_at` | number（UTC ミリ秒） | なし | FR-H09（最後に更新を確認した時刻。成功・失敗を問わず確認のたびに `service.Updater` が保存する。#74） |
 | `log.level` | string | `"info"` | NFR-O01 |
+| `launch.mode` | string（`"allowlist"` / `"denylist"`） | `"allowlist"`（行が無いとき。読めない値・定義外の値も `allowlist` として扱う〔fail closed〕。v5 のマイグレーションは行を書かないので、既存のインストールは `allowlist` のまま） | FR-M18・M19・H12、NFR-S20（`launch_app` の起動の方式。`allowlist` = ホワイトリスト方式〔既定。`launchable_apps` のアプリだけを `app_id` で起動〕、`denylist` = ブラックリスト方式〔`launch_denylist` に当たらない固定ディスク上の `.exe` を `path` でも起動できる〕。**ホスト GUI の `/apps` だけが変更できる**（MCP・Web UI には経路が無い）。`denylist` への切り替えは確認モーダルを経る。変わるときだけ `settings.launch_mode.update` を監査する） |
 | `agent.enabled` | boolean | false | FR-S10、FR-G14 |
 | `agent.consent_at` | number（UTC ミリ秒） | なし | FR-G14（OpenAI へのスクリーンショット送信への同意の日時。有効化時に記録し、無効化で削除） |
 | `agent.connection` | string（`"chatgpt"` / `"openai_api_key"`） | `"chatgpt"`（ただし未設定のまま起動したとき、OpenAI API キーが登録済みなら `"openai_api_key"` を一度だけ保存する） | FR-S20、FR-G25（内蔵エージェントの接続方式。ホスト GUI のみで変更。`openai_api_key` への変更は確認モーダルを経る。FR-G30、NFR-S22） |
@@ -268,7 +271,7 @@ erDiagram
 
 ### launchable_apps
 
-MCP の `launch_app` が起動できるアプリの許可リスト（M1.5。[FR-M18・M19・H12](../requirements/functional.md)）。**書き込みはホスト GUI（`service.AppRegistry`）だけ**で、リモートの経路（MCP・Web UI）からは書かない。`id` は MCP の `app_id` として公開する唯一の値で、`exe_path` / `args_json` / `working_dir` は MCP・リモートルーターのどの応答にも出さない（出すのは `id` と `label`）。
+MCP の `launch_app` が起動できるアプリの許可リスト（M1.5。[FR-M18・M19・H12](../requirements/functional.md)）。起動の方式（設定 `launch.mode`）が**ホワイトリスト方式（既定）**のときは、このリストのアプリだけが `app_id` で起動できる（`launch_app` は `path` を受け付けず、`invalid_argument` で拒否する）。ホスト所有者が GUI で選ぶ**ブラックリスト方式**では、登録済みのアプリを `app_id` で起動できるほか、[`launch_denylist`](#launch_denylist) に当たらない固定ディスク上の `.exe` を `path` でも起動できる（このリストのアプリも拒否リストの照合を通る）。**書き込みはホスト GUI（`service.AppRegistry`）だけ**で、リモートの経路（MCP・Web UI）からは書かない。`id` は MCP の `app_id` として公開する唯一の値で、`exe_path` / `args_json` / `working_dir` は MCP・リモートルーターのどの応答にも出さない（出すのは `id` と `label`）。
 
 ```mermaid
 erDiagram
@@ -298,6 +301,39 @@ erDiagram
 インデックス: UNIQUE 制約による `label` のインデックスのみ（行数は最大 50）。
 
 起動時の扱い: `launch_app` は `id` の行を読み、`domain` の検証規則（パスの形・引数の数と長さ）を**起動のたびに**再度確認し、満たさなければ `app_not_found` で拒否する（fail closed。行が手で書き換えられても、規則外のパスは起動しない）。実行ファイルが消えていても行は残り、起動時に `launch_failed`（`file_missing`）になる。クライアントの削除・無効化・トークン失効は許可リストに影響しない（許可リストはホスト全体のもので、クライアント別ではない）。
+
+ブラックリスト方式（`launch.mode` = `denylist`）では、`app_id` で起動する登録済みのアプリも、実体のパス（`platform.AppLauncher.Resolve` の結果）を `launch_denylist` と照合し、当たれば `app_denied`（403）で拒否する（拒否が優先。ホワイトリストに載っていても起動しない）。ホワイトリスト方式では拒否リストを参照しない。
+
+### launch_denylist
+
+起動の拒否リスト（#88。[FR-M18・M19・H12](../requirements/functional.md)）。**ブラックリスト方式（`settings` の `launch.mode` = `denylist`）のときだけ効く**。ホワイトリスト方式（既定）では参照せず、行があっても起動の可否に影響しない。**書き込みはホスト GUI（`service.AppRegistry` の `CreateDenied` / `UpdateDenied` / `DeleteDenied`）だけ**で、リモートの経路（MCP・Web UI）からは書かない。**中身は MCP・リモートルーターのどの応答にも出さない**（`list_launchable_apps` は方式と登録済みのアプリだけを返す）。他の表への外部キーは無い。v5 のマイグレーション（`0005_launch_denylist.sql`）で作る。方式は `settings` の `launch.mode`（行が無ければ `allowlist`）に持ち、マイグレーションは行を書かないので、既存のインストールはホワイトリスト方式のまま動く。
+
+```mermaid
+erDiagram
+    launch_denylist {
+        TEXT id PK "ULID"
+        TEXT kind "path / name"
+        TEXT value "実体の絶対パス または 実行ファイル名"
+        TEXT dedup_key UK "kind と value の正規形 (重複の判定)"
+        INTEGER created_at
+        INTEGER updated_at
+    }
+```
+
+| カラム | 型 | NULL | 既定値 | 説明 |
+|--------|----|------|--------|------|
+| `id` | TEXT | NO | — | PK。ULID（アプリ側で生成）。編集しても変わらない |
+| `kind` | TEXT | NO | — | `path`（パスで照合）/ `name`（実行ファイル名で照合）。`CHECK (kind IN ('path','name'))` |
+| `value` | TEXT | NO | — | `kind = path`: 絶対パスのローカルの `.exe`（`launchable_apps.exe_path` と同じパスの規則）。登録時にファイルが固定ディスクにあれば**解決した実体のパス**（シンボリックリンク・ジャンクション・8.3 短縮名を解決。`\\?\` は付けない）で保存し、無い・固定ディスクに無い・解決できないときは入力の綴りの区切りを正規化（`/` → `\`、連続する区切りを 1 つに）して保存する（まだ置かれていないファイルや別のドライブのファイルも持てる）。`kind = name`: フォルダーを含まない `.exe` の名前（例: `cmd.exe`。255 文字以内。入力のまま保存し、照合は大文字小文字を区別しない）。GUI の入力欄は 1 つ（「パスまたは実行ファイル名」）で、`\`・`/`・`:` のどれかを含めばパス、含まなければ名前として分ける（検証は `domain.ClassifyDenied`）。`CHECK (length(value) > 0)` |
+| `dedup_key` | TEXT | NO | — | 重複の判定。`domain.DeniedKey(kind, value)` = `kind` と、小文字にした `value`（`path` は区切りを `\` にそろえたもの）をつなげた正規形。UNIQUE。同じ `kind` で大文字小文字・区切りの違いだけの値は重複として拒否し、`kind` が違えば同じ綴りでも別の登録 |
+| `created_at` | INTEGER | NO | — | 登録時刻 |
+| `updated_at` | INTEGER | NO | — | 更新時刻 |
+
+制約: `CHECK (kind IN ('path','name'))`、`CHECK (length(value) > 0)`、`UNIQUE (dedup_key)`。登録数の上限 200（`domain.MaxDeniedApps`）はサービス層（`repository.LaunchDenylist.Create(limit)`）が、件数の確認と挿入を同じトランザクションで行って守る（DB の制約にはしない。満杯は `conflict`）。一覧は `kind`・`value`（大文字小文字を区別しない）の昇順。
+
+インデックス: UNIQUE 制約による `dedup_key` のインデックスのみ（行数は最大 200）。
+
+照合（起動のたび。`domain.MatchDenied`）: 起動しようとする実行ファイルを `platform.AppLauncher.Resolve` で**実体のパス**（シンボリックリンク・ジャンクション・8.3 短縮名を解決した、固定ディスク上のドライブ文字つきの絶対パス）にして比べる。`path` の行は実体のパスと一致（大文字小文字・区切りの違いを無視）すれば当たり、登録の綴りと違っても、解決した実体が同じなら当たる。`name` の行は、実体のファイル名**と**呼び出し側が指定した綴りのファイル名のどちらかと一致（大文字小文字を無視）すれば当たる（どのフォルダーにあっても当たる。fail closed）。当たれば `app_denied`（HTTP 403。監査は `result = denied`。メッセージにパス・拒否リストの中身は含めない）。**既知の限界**: 拒否した実行ファイルの**名前を変えたコピー**は検出しない（`name` は名前だけ、`path` は実体のパスだけを比べるため）。`cmd.exe`・`powershell.exe` などのインタープリターは任意のコードを実行できるので、ブラックリスト方式ではホスト所有者が拒否リストに入れない限り起動できる。
 
 ### agent_tasks
 
@@ -434,14 +470,18 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 
 | event | kind | actor_type | result | `detail_json` |
 |-------|------|------------|--------|---------------|
-| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・入力スキーマ違反）/ `error`（`launch_failed`・`audit_unavailable`） | `{ "app_id", "label", "pid"（ok のみ）, "reused_existing_window"（ok のみ。起動後に既存のウィンドウが前に出ただけと見られるか。FR-M19。前面のウィンドウのタイトル・id は記録しない）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument`。試行の行が書けず起動しなかったときは `error` / `audit_unavailable`。**結果の行は、書けなくても起動を取り消さない**（非同期のキュー。運用ログに Warn の `audit entry dropped` / `audit append failed`）。`launch_app` 以外のツールのスキーマ違反は記録しない（FR-AU01 の範囲外。#38） |
-| `tool.launch_app.attempt` | `tool` | `mcp` | `ok` | 起動の**「試行」**の行（#37。fail-closed）。`Control.Launch` が、キルスイッチ・リース・許可リストの検査を通ってプロセスを作る**直前**に、呼び出しのスレッドで同期に追記する。書けなければ起動せず、`audit_unavailable`（503）を返す（結果の行 `tool.launch_app` は `error` / `audit_unavailable` で書こうとするが、監査ログが書けない状態なので残らないことがある）。`result = ok` は「起動を試みることを記録した」の意味で、起動の成否は結果の行が持つ。`{ "app_id", "label" }` だけ（`pid`・`reason` は入らない）。`duration_ms` は無い。結果の行とは別の行で、どちらも追記だけ（更新しない） |
+| `tool.launch_app` | `tool` | `mcp` | `ok` / `denied`（キルスイッチ・リース・`app_not_found`・`app_denied`・`invalid_argument`〔`app_id` と `path` の同時指定・どちらも無い・ホワイトリスト方式での `path`・`path` の形の不備。入力スキーマ違反を含む〕）/ `error`（`launch_failed`・`audit_unavailable`） | `{ "app_id"（指定があったとき）, "path"（指定があり、形の検査〔絶対パスのローカルの `.exe`〕を通ったときだけ。呼び出し側が渡した綴りのまま 1,024 文字までに切り詰める）, "label"（許可リストの行を引けたとき）, "launch_mode": "denylist"（ブラックリスト方式のときだけ。ホワイトリスト方式は従来どおり記録しない）, "pid"（ok のみ）, "reused_existing_window"（ok のみ。起動後に既存のウィンドウが前に出ただけと見られるか。FR-M19。前面のウィンドウのタイトル・id は記録しない）, "reason"（error のみ: `file_missing` / `access_denied` / `elevation_required` / `other`） }`。`path` で起動したときは `app_id` と `label` は無い。`app_id` が許可リストに無いとき `label` は無く、受け取った `app_id` は 64 文字までに切り詰めて記録する。`error_code` は FR-M17 のコード（`app_denied` は拒否リストに当たった起動）。形の検査を通らない `path` は未検証の入力なので記録しない。入力スキーマ違反（SDK が実行前に拒否。mcp の受信ミドルウェアが記録）は `detail` なし・`error_code = invalid_argument`。試行の行が書けず起動しなかったときは `error` / `audit_unavailable`。**結果の行は、書けなくても起動を取り消さない**（非同期のキュー。運用ログに Warn の `audit entry dropped` / `audit append failed`）。`launch_app` 以外のツールのスキーマ違反は記録しない（FR-AU01 の範囲外。#38） |
+| `tool.launch_app.attempt` | `tool` | `mcp` | `ok` | 起動の**「試行」**の行（#37。fail-closed）。`Control.Launch` が、キルスイッチ・リース・起動の方式と対象の検査（許可リスト、ブラックリスト方式では拒否リストの照合を含む）を通ってプロセスを作る**直前**に、呼び出しのスレッドで同期に追記する。書けなければ起動せず、`audit_unavailable`（503）を返す（結果の行 `tool.launch_app` は `error` / `audit_unavailable` で書こうとするが、監査ログが書けない状態なので残らないことがある）。`result = ok` は「起動を試みることを記録した」の意味で、起動の成否は結果の行が持つ。`{ "app_id", "path", "label", "launch_mode" }` だけ（結果の行の `detail` のうち、指定と方式の部分集合。入る条件は結果の行と同じで、`pid`・`reason` は入らない）。`duration_ms` は無い。結果の行とは別の行で、どちらも追記だけ（更新しない）。要求の形の不備（`app_id` と `path` の同時指定・どちらも無い・ホワイトリスト方式での `path`）、拒否リストに当たる起動（`app_denied`）、実在しない・固定ディスクに無いパスは、試行の行の前に拒否するので試行の行は無い |
 | `tool.list_launchable_apps` | `tool` | `mcp` | `ok` | `{ "count" }` |
 | `settings.launchable_app.create` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count" }` |
 | `settings.launchable_app.update` | `settings` | `host` | `ok` | `{ "app_id", "label", "exe_path", "arg_count", "changed": ["label", "exe_path", "args", "working_dir"] }`。`changed` は変わった項目だけ。更新前の行が読めない行（`Corrupt`）のときは、壊れていた引数が破棄されたことを残すため `args` を必ず含める |
 | `settings.launchable_app.delete` | `settings` | `host` | `ok` | `{ "app_id", "label" }` |
+| `settings.launch_mode.update` | `settings` | `host` | `ok` | `{ "from", "to" }`（`allowlist` / `denylist`）。**方式が実際に変わったときだけ**記録する（同じ値への切り替えは記録しない）。切り替えはホスト GUI の `/apps` だけ。`settings.launchable_app.*` と同じ扱い |
+| `settings.launch_denylist.create` | `settings` | `host` | `ok` | `{ "id", "kind", "value" }` |
+| `settings.launch_denylist.update` | `settings` | `host` | `ok` | `{ "id", "kind", "value", "before_kind", "before_value" }` |
+| `settings.launch_denylist.delete` | `settings` | `host` | `ok` | `{ "id", "kind", "value" }` |
 
-**引数（`args_json`）と作業ディレクトリは、どのイベントにも記録しない**（件数 `arg_count` だけ。FR-AU03・NFR-S13）。`exe_path` は許可を変える登録系イベントにだけ記録し、`tool.launch_app` には記録しない。クライアントが削除済みのときの `client_id` は NULL（既存の規則）。
+**引数（`args_json`）と作業ディレクトリは、どのイベントにも記録しない**（件数 `arg_count` だけ。FR-AU03・NFR-S13。`launch_app` は `path` 指定でも引数・作業ディレクトリを受け取らない）。登録済みのアプリの `exe_path` は許可を変える登録系イベントにだけ記録し、`tool.launch_app` には記録しない（`path` で起動したときだけ、形の検査を通った `path` を上記のとおり記録する）。拒否リストの `value` は、許可を変える登録系イベント（`settings.launch_denylist.*`）にだけ記録する。クライアントが削除済みのときの `client_id` は NULL（既存の規則）。
 
 **イベントのカタログ（M3・#71。FR-AU01）**。ソースが追記するイベント名と FR-AU01（agent 以外）の対応で、`service.AuditCatalog` が持つ。網羅テスト（`audit_catalog_test.go`）が、ソースの追記・`AuditCatalog`・この表の食い違いを検出する。新しいイベントを足すときは、この表と `AuditCatalog` も足す。
 
@@ -457,10 +497,10 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | MCP ツール呼び出し | `tool` | `tool.<ツール名>`（`tool.left_click`・`tool.type`・`tool.launch_app` など） | `mcp` |
 | Web UI からの入力操作 | `input` | `tool.<入力種別>`（`tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up`・`tool.type`・`tool.clipboard_read` など。`PointerMove` は記録しない） | `web` |
 | キルスイッチの発動・解除 | `killswitch` | `killswitch.trigger` / `killswitch.release` | `host` |
-| 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete` | `host` |
+| 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete`、`settings.launch_mode.update`、`settings.launch_denylist.create` / `.update` / `.delete` | `host` |
 | 更新の確認・適用 | `update` | `update.detected`（署名を検証できた新版の検出。`result = ok`）/ `update.verify_failed`（署名・版の束縛・取得の失敗、公開鍵の未設定。`result = denied`、`error_code` に理由: `signature_invalid`・`signature_missing`・`version_mismatch`・`key_unset`・`download_failed`・`verify_error`）/ `update.downgrade_rejected`（現行より古い版・同じ版。`result = denied`）/ `update.apply_started`（インストーラを起動する。`result = ok`）/ `update.apply_failed`（起動に失敗。`result = error`、`error_code` は `start_failed`・`installer_not_found`・`canceled`）。`detail_json` は `{ "version", "tag", "current", "channel", "reason"? }` だけで、URL・署名・パス・OS のエラー文は記録しない。同じ版・理由の `detected` / `verify_failed` / `downgrade_rejected` は繰り返し記録しない | `host`（GUI の「今すぐ確認」「更新する」）/ `system`（定期確認・`auto_idle` の自動適用） |
-| エージェントの起動の試行 | `agent` | `agent.launch_attempt`（`Control.Launch` が、`actor_type = agent` の `launch_app` で、プロセスを作る**直前**に同期で 1 行。MCP の `tool.launch_app.attempt` と同じ規則。書けなければ起動しない。`tool = launch_app`、`task_id` は `Actor.SessionID`、`step_no` は `service.WithAgentStep` の値。`detail_json` は `{ "app_id", "label" }` だけ。タスク詳細（`TaskAdmin`）のステップには出さない。書けず起動しなかったときは、結果の行 `agent.step` が `error` / `audit_unavailable`） | `agent` |
-| エージェントの各ステップ | `agent` | `agent.step`（`Control.Do` / `Control.Launch` が、`actor_type = agent` のアクション 1 件ごとに 1 行。成功も拒否・失敗も記録する。`tool` はツール名（`left_click` など。MCP と同じ名前で、イベント名に `tool.` は付けない）、`task_id` は `Actor.SessionID`、`step_no` と `detail_json.route` は呼び出し側が `service.WithAgentStep` で渡す。`result = denied` は Judge・InputGuard・リース・キルスイッチ・承認の拒否。Judge の拒否は `error_code = judge_denied`）。`detail_json` は下記「エージェントのステップ」 | `agent` |
+| エージェントの起動の試行 | `agent` | `agent.launch_attempt`（`Control.Launch` が、`actor_type = agent` の `launch_app` で、プロセスを作る**直前**に同期で 1 行。MCP の `tool.launch_app.attempt` と同じ規則。書けなければ起動しない。`tool = launch_app`、`task_id` は `Actor.SessionID`、`step_no` は `service.WithAgentStep` の値。`detail_json` は `tool.launch_app.attempt` と同じ `{ "app_id", "path", "label", "launch_mode" }` だけ（入る条件も同じ）。タスク詳細（`TaskAdmin`）のステップには出さない。書けず起動しなかったときは、結果の行 `agent.step` が `error` / `audit_unavailable`） | `agent` |
+| エージェントの各ステップ | `agent` | `agent.step`（`Control.Do` / `Control.Launch` が、`actor_type = agent` のアクション 1 件ごとに 1 行。成功も拒否・失敗も記録する。`tool` はツール名（`left_click` など。MCP と同じ名前で、イベント名に `tool.` は付けない）、`task_id` は `Actor.SessionID`、`step_no` と `detail_json.route` は呼び出し側が `service.WithAgentStep` で渡す。`result = denied` は Judge・InputGuard・リース・キルスイッチ・承認の拒否と、`launch_app` の `app_denied`・`invalid_argument`。Judge の拒否は `error_code = judge_denied`）。`detail_json` は下記「エージェントのステップ」。`tool = launch_app` の行は、`tool.launch_app` と同じ `detail`（`app_id`・`path`・`label`・`launch_mode`・`pid` など）を持つ | `agent` |
 | Judge の判定 | `agent` | `agent.judge`（Judge が `allow` 以外を返したときだけ、判定の直後（承認待ちの前）に 1 行。`result = ok`（`require_approval`）/ `denied`（`deny`。`error_code = judge_denied`）。`detail_json` は `{ "judge", "judge_reason", "processes", "route"? }`。`allow` の判定は個別の行にせず、`agent.step` の `detail_json.judge` に残す） | `agent` |
 | エージェントの有効化と同意 | `agent` | `agent.consent`（`detail_json.state` が `granted`（有効化。`consent_at` を同時に記録）/ `revoked`（無効化・OpenAI キーの削除。`reason` に `api_key_deleted`。OpenAI の HTTP 401 による無効化は `actor_type = system`・`result = error`・`error_code = openai_unauthorized`・`reason = openai_unauthorized`。NFR-S16）。キーの値は入れない） | `host` / `system` |
 | ChatGPT のプラン経路のサインイン・解除・認可 | `agent` | `agent.chatgpt.signin_start`（開始。`host`）/ `agent.chatgpt.signin`（結果。`host`。`result` が `ok` / `denied`（`reason` = `access_denied`〔同意されなかった〕・`cancelled`〔「中止」〕）/ `error`（`reason` = `timeout`・`registration_incomplete`・`token_exchange_failed`・`id_token_invalid`・`account_mismatch`・`plan_use_not_granted`）。`ok` の `detail` は `new_registration`〔新規登録か〕だけ。サインインの拒否・失敗の分類は `detail.reason` に統一し、`error_code` 列は使わない。`agent.chatgpt.reauth_required` と `agent.chatgpt.usage_limit` は API・更新が返したコードそのものなので `error_code` 列に入れる）/ `agent.chatgpt.signout`（解除。`host`。`detail`: `revoked`・`forget_account`・`cancelled_task`）/ `agent.chatgpt.resume`（`usage_limited` の解除。`host`）/ `agent.chatgpt.reauth_required`（認可切れの確認。`system`。`result = error`、`error_code` は更新・呼び出しが返したコード〔`invalid_grant`・`unauthorized` など〕、`detail.source` は `refresh` / `request`）/ `agent.chatgpt.usage_limit`（使用量の上限。`system`。`result = denied`、`error_code = subscription_sharing_usage_limit_exceeded`、`task_id`）。**トークン・認可コード・ID トークン・`state`・`nonce`・PKCE の値・メール・`sub`・`client_id` は入れない**（FR-AU01、NFR-S13）。接続方式 `chatgpt` のタスクの `agent.task_end` は、`reason` に `chatgpt_signout`（解除による中断）を取りうる。`result` は `chatgpt_usage_limit` の失敗が `denied`、`chatgpt_unauthorized`・`chatgpt_error` が `error` | `host` / `system` |
@@ -592,3 +632,4 @@ erDiagram
 | 1.30 | 2026-11-02 | 起動の監査を fail-closed の「試行」と「結果」の 2 行に改めた（`tool.launch_app.attempt` / `agent.launch_attempt` を追加。試行の行は起動の前に同期で書き、書けなければ起動しない。結果の行が書けなくても起動は取り消さない）。`launch_app` 以外のスキーマ違反は記録しない（FR-AU01 の範囲外）と明記 | #37・#38 |
 | 1.31 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 方針のシークレット（ChatGPT の OAuth トークン `puppet-remo/chatgpt:puppet-remo`。識別子は設定）、`settings` に `agent.connection`・`agent.chatgpt.model`・`agent.chatgpt.host_id`・`agent.chatgpt.client_id`・`agent.chatgpt.account_sub`・`agent.chatgpt.account_email`・`agent.chatgpt.welcome_shown`、`agent_tasks` に `connection`（マイグレーション v5。既存の行は `openai_api_key`）と `error_code`・`openai_steps` の追記、監査イベントのカタログに ChatGPT のサインイン・解除・認可切れ・使用量の上限と接続方式の変更 | #49 |
 | 1.32 | 2026-11-02 | `agent_tasks` に `CHECK (connection IN ('chatgpt','openai_api_key'))`、`agent.task_start` の `detail_json` に `connection`、`agent.chatgpt.signin` の分類は `detail.reason` に統一（`reauth_required`・`usage_limit` は `error_code`）と明記 | #49（レビュー指摘） |
+| 1.33 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: `settings` のキー `launch.mode`（行が無い・不正な値は `allowlist`）、拒否リスト `launch_denylist`（v5 のマイグレーション `0005_launch_denylist.sql`。`path` / `name`・`dedup_key`・上限 200・ホスト GUI だけが書く・照合の規則と既知の限界）を全体 ER 図・テーブル一覧・テーブル定義に追加し、`launchable_apps` の起動時の扱いを方式別に更新。監査イベント `settings.launch_mode.update`・`settings.launch_denylist.create` / `.update` / `.delete` をカタログに追加し、`tool.launch_app`・`tool.launch_app.attempt`・`agent.launch_attempt`・`agent.step` の `detail` に `path`・`launch_mode`（`app_id` は path 起動では無し）を追記 | #88 |

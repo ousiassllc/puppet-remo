@@ -52,29 +52,47 @@ type Control interface {
 	// MaxDimension は縮小スクリーンショットの最大辺（設定 screenshot.max_dimension。既定 1568）。
 	// get_screen_info の縮小率 domain.Monitor.Scale(maxDim) と、UI ツリー・ウィンドウ矩形の縮小座標への変換に使う。
 	MaxDimension(ctx context.Context) (int, error)
-	// LaunchableApps は許可リストの id と表示名だけを label の昇順で返す（M1.5。FR-M18。リース不要。キルスイッチ中は拒否）。
-	LaunchableApps(ctx context.Context) ([]domain.AppSummary, error)
-	// Launch は許可リストのアプリを新しいプロセスとして起動する（M1.5。FR-M19）。呼び出し側が渡せるのは appID だけ。
+	// LaunchableApps は起動の方式（launch.mode）と、許可リストの id と表示名だけを label の昇順で返す（M1.5。FR-M18。リース不要。キルスイッチ中は拒否）。
+	// 方式によらず登録済みのアプリを返す。拒否リストの中身は返さない。
+	LaunchableApps(ctx context.Context) (LaunchableList, error)
+	// Launch はアプリを新しいプロセスとして起動する（M1.5。FR-M19）。呼び出し側が渡せるのは req の AppID（登録済みのアプリ）か、
+	// denylist 方式のときだけ Path（固定ディスク上の実在の .exe の絶対パス。引数・作業ディレクトリは渡せない）。
+	// mcp も内蔵エージェント（M4）も同じ検査を通る（方式・拒否リストは AppReader が持つ 1 つ）。
 	// 検査の順序は固定で、1 つでも失敗したら起動しない（InputGuard・Judge・承認は通らず、起動を直列化しない）:
 	//
 	//  1. KillSwitch → ErrKillSwitchActive
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
-	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
+	//  3. 方式（AppReader.LaunchMode）と対象:
+	//     - allowlist: AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）。path の指定は ErrInvalidArgument
+	//     - denylist: AppID なら同じ検査に加えて、Path なら domain.ValidateLaunchPath → AppLauncher.Resolve（実体のパス）→
+	//       拒否リストとの照合（domain.MatchDenied。当たれば ErrAppDenied）。AppID と Path の同時指定は ErrInvalidArgument
 	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  4b. 起動の「試行」の行を SyncAuditRecorder.RecordSync で同期に書く（書けなければ ErrAuditUnavailable。起動しない。fail-closed。#37・NFR-S20）
 	//  4c. KillSwitch の再確認（同期書き込みの待ちの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
 	//  5b. 起動後のウィンドウの観測（起動の前後のウィンドウの一覧を比べる。LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
 	//  6. 結果の行（tool.launch_app。非同期。書けなくても起動は取り消さない。パス・引数は記録しない。FR-AU06）
-	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
+	Launch(ctx context.Context, who domain.Actor, req LaunchRequest) (LaunchResult, error)
 	// ReleaseInput は押下中のキー・ボタンをすべて離す（InputInjector.ReleaseAll の唯一の入口）。キルスイッチのクローザー `input` と、
 	// エージェントのタスクの終了処理（FR-G10）が呼ぶ。入力の直列化のロックは取らないので、実行中の入力があっても解放できる。
 	ReleaseInput() error
 }
 
+// LaunchRequest は Launch の指定。AppID と Path はどちらか一方だけ（同時指定は ErrInvalidArgument）。
+type LaunchRequest struct {
+	AppID string // 許可リストの id（list_launchable_apps の id）
+	Path  string // denylist 方式のときだけ。固定ディスク上の .exe の絶対パス
+}
+
+// LaunchableList は LaunchableApps の結果。
+type LaunchableList struct {
+	Mode domain.LaunchMode // 起動の方式（launch.mode）
+	Apps []domain.AppSummary
+}
+
 // LaunchResult は Launch の結果。
 type LaunchResult struct {
-	AppID string
+	AppID string // path 指定の起動では空
 	PID   uint32
 	// Window は起動後に前面にあったウィンドウ（プロセスの作成後、pid のウィンドウが前面に出るまで最大およそ 3 秒待って観測する）。
 	// 前面のウィンドウを確かめられなかったときは nil。pid のウィンドウとは限らない（Window.PID が PID と違うことがある）。

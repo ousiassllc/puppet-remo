@@ -20,7 +20,7 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 
 	for _, table := range []string{
 		"clients", "client_tokens", "connection_requests", "settings",
-		"agent_tasks", "audit_logs", "audit_thumbnails", "launchable_apps", "schema_migrations",
+		"agent_tasks", "audit_logs", "audit_thumbnails", "launch_denylist", "launchable_apps", "schema_migrations",
 	} {
 		if n := count(t, db, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table); n != 1 {
 			t.Errorf("table %s: got %d, want 1", table, n)
@@ -36,8 +36,8 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 			t.Errorf("index %s: got %d, want 1", index, n)
 		}
 	}
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 4 {
-		t.Errorf("schema version = %d, want 4", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 5 {
+		t.Errorf("schema version = %d, want 5", v)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestOpenIsIdempotentAndKeepsData(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 4 {
-		t.Errorf("schema_migrations rows = %d, want 4 (reopen must not re-apply)", n)
+	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 5 {
+		t.Errorf("schema_migrations rows = %d, want 5 (reopen must not re-apply)", n)
 	}
 	if v, ok, err := db.Settings().Get(ctx, "server.port"); err != nil || !ok || string(v) != "8765" {
 		t.Errorf("setting after reopen = %q, %v, %v", v, ok, err)
@@ -297,8 +297,8 @@ func TestOpenUpgradesM1Database(t *testing.T) {
 		t.Fatalf("Open M1 database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 4 {
-		t.Errorf("schema version = %d, want 4", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 5 {
+		t.Errorf("schema version = %d, want 5", v)
 	}
 	if got, err := db.Clients().Get(ctx, "c1"); err != nil || got.StableNodeID != "node1" {
 		t.Errorf("existing client after upgrade = %+v, %v", got, err)
@@ -361,8 +361,8 @@ func TestOpenUpgradesV2DatabaseKeepsDecidedConnRequests(t *testing.T) {
 		t.Fatalf("Open v2 database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 4 {
-		t.Errorf("schema version = %d, want 4", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 5 {
+		t.Errorf("schema version = %d, want 5", v)
 	}
 	got, err := db.ConnRequests().ListHistory(ctx, 10, 0)
 	if err != nil {

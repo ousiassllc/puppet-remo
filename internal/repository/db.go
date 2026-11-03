@@ -2,8 +2,8 @@
 //
 // 1 つの *sql.DB（WAL）を共有し、起動時に Open がマイグレーションと整合性チェックを同期で行う。
 // goroutine は持たない（保守処理のタイマーは service/maintenance が持つ）。
-// スキーマは docs/architecture/er.md の全体を v1 マイグレーションで作るが（M1.5 の launchable_apps は v2）、
-// CRUD を持つのは clients / client_tokens / connection_requests / settings / audit_logs / audit_thumbnails / launchable_apps / agent_tasks のみ。
+// スキーマは docs/architecture/er.md の全体を v1 マイグレーションで作るが（M1.5 の launchable_apps は v2、launch_denylist は v5）、
+// CRUD を持つのは clients / client_tokens / connection_requests / settings / audit_logs / audit_thumbnails / launchable_apps / launch_denylist / agent_tasks のみ。
 // サムネイルの画像本体は DB ではなく ThumbStore（thumbs/ 配下のファイル）が持つ。
 package repository
 
@@ -167,6 +167,7 @@ func (d *DB) Settings() Settings             { return settingStore{d} }
 func (d *DB) Audit() Audit                   { return auditStore{d} }
 func (d *DB) Tasks() Tasks                   { return taskStore{d} }
 func (d *DB) LaunchableApps() LaunchableApps { return launchableAppStore{d} }
+func (d *DB) LaunchDenylist() LaunchDenylist { return launchDenylistStore{d} }
 
 // Thumbs は監査のサムネイルの置き場（DB ファイルと同じディレクトリの thumbs/。ディレクトリは Save が初めて作る）。
 func (d *DB) Thumbs() ThumbStore { return newThumbStore(d.thumbsDir, d.clock) }

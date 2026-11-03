@@ -142,6 +142,31 @@ func RunAppLauncherContract(t *testing.T, newLauncher func(t *testing.T) platfor
 		}
 	})
 
+	t.Run("Resolve", func(t *testing.T) {
+		l := newLauncher(t)
+		got, err := l.Resolve(ctx, fx.ExePath)
+		if err != nil {
+			t.Fatalf("Resolve(existing file): %v", err)
+		}
+		if domain.NormalizePathForMatch(got) == "" || !strings.EqualFold(domain.NormalizePathForMatch(got), domain.NormalizePathForMatch(fx.ExePath)) {
+			t.Errorf("Resolve(existing file) = %q, want the same file as the fixture (case may differ)", got)
+		}
+		// 解決した実体は、そのまま Launch の ExePath に渡せる形（もう一度解決しても変わらない）。
+		again, err := l.Resolve(ctx, got)
+		if err != nil || again != got {
+			t.Errorf("Resolve(resolved) = %q, %v, want %q", again, err, got)
+		}
+		_, err = l.Resolve(ctx, fx.MissingPath)
+		var le *platform.LaunchError
+		if !errors.As(err, &le) || le.Reason != domain.LaunchFileMissing {
+			t.Errorf("Resolve(missing): error = %v, want *LaunchError file_missing", err)
+		} else if strings.Contains(err.Error(), fx.MissingPath) {
+			t.Errorf("Resolve(missing): error %q contains a path", err)
+		}
+		_, err = l.Resolve(ctx, "")
+		requireCode(t, err, domain.ErrInvalidArgument, "Resolve(empty)")
+	})
+
 	t.Run("canceled context", func(t *testing.T) {
 		l := newLauncher(t)
 		pid, err := l.Launch(canceledCtx(), platform.LaunchSpec{ExePath: fx.ExePath})
@@ -150,6 +175,8 @@ func RunAppLauncherContract(t *testing.T, newLauncher func(t *testing.T) platfor
 			fx.Terminate(t, pid)
 		}
 		requireCanceled(t, l.Inspect(canceledCtx(), fx.ExePath, ""), "Inspect")
+		_, err = l.Resolve(canceledCtx(), fx.ExePath)
+		requireCanceled(t, err, "Resolve")
 	})
 }
 

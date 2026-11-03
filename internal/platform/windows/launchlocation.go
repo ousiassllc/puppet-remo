@@ -20,11 +20,21 @@ func isLocalFixedDrive(driveType uint32) bool { return driveType == driveFixed }
 // 大文字小文字は区別しない。final がドライブ文字で始まらない形（UNC の \\?\UNC\…・ボリューム GUID の \\?\Volume{…}\…）も許さない。
 // 8.3 形式の短い名前など、同じファイルでも綴りが違う場合は一致しない（fail closed）。
 func finalPathMatches(requested, final string) bool {
-	rest, ok := strings.CutPrefix(final, `\\?\`)
-	if !ok || len(rest) < 3 || !isDriveLetter(rest[0]) || rest[1] != ':' || rest[2] != '\\' {
+	rest, ok := driveLetterPath(final)
+	if !ok {
 		return false
 	}
 	return strings.EqualFold(normalizeSeparators(requested), rest)
+}
+
+// driveLetterPath は GetFinalPathNameByHandle の結果 final（`\\?\C:\…`）から `\\?\` の接頭辞を除いた、ドライブ文字つきの絶対パスを返す。
+// ドライブ文字で始まらない形（UNC の \\?\UNC\…・ボリューム GUID の \\?\Volume{…}\…・接頭辞なし）は ok=false。
+func driveLetterPath(final string) (string, bool) {
+	rest, ok := strings.CutPrefix(final, `\\?\`)
+	if !ok || len(rest) < 3 || !isDriveLetter(rest[0]) || rest[1] != ':' || rest[2] != '\\' {
+		return "", false
+	}
+	return rest, true
 }
 
 // normalizeSeparators は "/" を "\" にし、連続する区切りを 1 つにする（Windows は同じ場所として扱う。UNC は先頭の

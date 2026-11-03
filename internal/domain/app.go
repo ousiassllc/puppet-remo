@@ -27,6 +27,9 @@ const (
 	AppFieldExePath    = "exe_path"
 	AppFieldArgs       = "args"
 	AppFieldWorkingDir = "working_dir"
+	// AppFieldDeniedValue・AppFieldLaunchMode は拒否リストの入力と、方式の切り替えの項目名。
+	AppFieldDeniedValue = "value"
+	AppFieldLaunchMode  = "mode"
 )
 
 // LaunchableApp は起動許可リストの 1 件（launchable_apps 表の 1 行）。

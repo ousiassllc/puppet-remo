@@ -47,3 +47,26 @@ func TestFinalPathMatches(t *testing.T) {
 		}
 	}
 }
+
+func TestDriveLetterPath(t *testing.T) {
+	tests := []struct {
+		final string
+		want  string
+		ok    bool
+	}{
+		{`\\?\C:\Windows\System32\cmd.exe`, `C:\Windows\System32\cmd.exe`, true},
+		{`\\?\d:\a.exe`, `d:\a.exe`, true},
+		{`\\?\UNC\server\share\a.exe`, ``, false},
+		{`\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\a.exe`, ``, false},
+		{`C:\a.exe`, ``, false},
+		{`\\.\C:\a.exe`, ``, false},
+		{`\\?\C:`, ``, false},
+		{``, ``, false},
+	}
+	for _, tt := range tests {
+		got, ok := driveLetterPath(tt.final)
+		if got != tt.want || ok != tt.ok {
+			t.Errorf("driveLetterPath(%q) = %q, %v, want %q, %v", tt.final, got, ok, tt.want, tt.ok)
+		}
+	}
+}
