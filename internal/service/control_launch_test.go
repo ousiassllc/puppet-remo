@@ -71,7 +71,7 @@ func TestControlLaunchStartsTheRegisteredApp(t *testing.T) {
 	app := registerNotepad(t, e)
 	ctx := context.Background()
 
-	res, err := e.control.Launch(ctx, ctlAlice, app.ID)
+	res, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{AppID: app.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,11 +111,11 @@ func TestControlLaunchStartsTheRegisteredApp(t *testing.T) {
 func TestControlLaunchStartsANewProcessEveryTime(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
-	first, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	first, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	second, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestControlLaunchKillSwitchIsCheckedFirst(t *testing.T) {
 	e.audit.entries = nil
 
 	for _, id := range []string{app.ID, "unknown"} {
-		_, err := e.control.Launch(context.Background(), ctlAlice, id)
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: id})
 		if !errors.Is(err, domain.ErrKillSwitchActive) {
 			t.Fatalf("err = %v, want kill_switch_active", err)
 		}
@@ -167,7 +167,7 @@ func TestControlLaunchLeaseHeldByOtherIsDeniedBeforeTheListIsRead(t *testing.T) 
 
 	// 未登録の ID でも lease_held_by_other（app_not_found で存在を探らせない）。
 	for _, id := range []string{app.ID, "unknown"} {
-		_, err := e.control.Launch(context.Background(), ctlAlice, id)
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: id})
 		if !errors.Is(err, domain.ErrLeaseHeldByOther) {
 			t.Fatalf("id %q: err = %v, want lease_held_by_other", id, err)
 		}
@@ -189,7 +189,7 @@ func TestControlLaunchNeedsTheLeaseForNonMCPActors(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
 	web := domain.Actor{Kind: domain.ActorWeb, ClientID: "client-w", Label: "web", SessionID: "viewer-1"}
-	_, err := e.control.Launch(context.Background(), web, app.ID)
+	_, err := e.control.Launch(context.Background(), web, LaunchRequest{AppID: app.ID})
 	if !errors.Is(err, domain.ErrLeaseRequired) {
 		t.Fatalf("err = %v, want lease_required", err)
 	}
@@ -206,7 +206,7 @@ func TestControlLaunchUnknownAppIsDenied(t *testing.T) {
 	registerNotepad(t, e)
 	long := strings.Repeat("あ", 100)
 
-	_, err := e.control.Launch(context.Background(), ctlAlice, long)
+	_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: long})
 	if !errors.Is(err, domain.ErrAppNotFound) {
 		t.Fatalf("err = %v, want app_not_found", err)
 	}
@@ -250,7 +250,7 @@ func TestControlLaunchRechecksTheStoredRow(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+			_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 			if !errors.Is(err, domain.ErrAppNotFound) {
 				t.Fatalf("err = %v, want app_not_found", err)
 			}
@@ -283,7 +283,7 @@ func TestControlLaunchFailureReasons(t *testing.T) {
 			app := registerNotepad(t, e)
 			tt.setup(e)
 
-			_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+			_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 			if !errors.Is(err, domain.ErrLaunchFailed) {
 				t.Fatalf("err = %v, want launch_failed", err)
 			}
@@ -308,7 +308,7 @@ func TestControlLaunchFailureReasons(t *testing.T) {
 func (e *ctlEnv) rebuildControl(t *testing.T) {
 	t.Helper()
 	apps, err := NewAppRegistry(AppRegistryConfig{
-		Apps: e.appStore, Launcher: e.launcher, Picker: e.picker, Audit: e.audit, Clock: e.clock, IDs: &ctlIDs{},
+		Apps: e.appStore, Denied: e.denyStore, Settings: e.settings, Launcher: e.launcher, Picker: e.picker, Audit: e.audit, Clock: e.clock, IDs: &ctlIDs{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +329,7 @@ func TestControlLaunchOtherLauncherFailures(t *testing.T) {
 		e := newAppEnv(t)
 		app := registerNotepad(t, e)
 		e.launcher.SetError("Launch", domain.ErrInvalidArgument.WithMsg(`bad command line for `+appNotepad))
-		_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 		var de *domain.Error
 		if !errors.As(err, &de) || de.Code != domain.CodeLaunchFailed || de.Detail["reason"] != domain.LaunchOther {
 			t.Fatalf("err = %v, want launch_failed(other)", err)
@@ -340,7 +340,7 @@ func TestControlLaunchOtherLauncherFailures(t *testing.T) {
 		e := newAppEnv(t)
 		app := registerNotepad(t, e)
 		e.launcher.SetError("Launch", &platform.LaunchError{Reason: domain.LaunchFailure(appNotepad), Err: errors.New("os")})
-		_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 		var de *domain.Error
 		if !errors.As(err, &de) || de.Detail["reason"] != domain.LaunchOther {
 			t.Fatalf("err = %v, want reason other", err)
@@ -352,7 +352,7 @@ func TestControlLaunchOtherLauncherFailures(t *testing.T) {
 		app := registerNotepad(t, e)
 		boom := errors.New("boom")
 		e.launcher.SetError("Launch", boom)
-		_, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 		if !errors.Is(err, boom) {
 			t.Fatalf("err = %v", err)
 		}
@@ -379,7 +379,7 @@ func TestControlLaunchRechecksTheKillSwitchBeforeStarting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ctl.Launch(context.Background(), ctlAlice, app.ID)
+	_, err = ctl.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if !errors.Is(err, domain.ErrKillSwitchActive) {
 		t.Fatalf("err = %v, want kill_switch_active", err)
 	}
@@ -415,7 +415,7 @@ func TestControlLaunchAppReaderFailureDoesNotLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ctl.Launch(context.Background(), ctlAlice, app.ID)
+	_, err = ctl.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want the reader's error", err)
 	}
@@ -449,7 +449,7 @@ func TestControlLaunchAgentWithoutLeaseIsRejectedAndAuditedAsAgent(t *testing.T)
 	app := registerNotepad(t, e)
 	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", ClientID: "client-a", SessionID: "task-1"}
 
-	_, err := e.control.Launch(context.Background(), agent, app.ID)
+	_, err := e.control.Launch(context.Background(), agent, LaunchRequest{AppID: app.ID})
 	if !errors.Is(err, domain.ErrLeaseRequired) {
 		t.Fatalf("err = %v, want lease_required", err)
 	}
@@ -478,7 +478,7 @@ func TestControlLaunchCorruptRowIsDeniedButListedAndDeletable(t *testing.T) {
 	corruptArgsJSON(t, e.appDB, app.ID, `[1]`)
 	e.audit.entries = nil
 
-	_, err = e.control.Launch(context.Background(), ctlAlice, app.ID)
+	_, err = e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if !errors.Is(err, domain.ErrAppNotFound) {
 		t.Fatalf("err = %v, want app_not_found", err)
 	}
@@ -496,7 +496,7 @@ func TestControlLaunchCorruptRowIsDeniedButListedAndDeletable(t *testing.T) {
 	if err != nil || len(list) != 2 {
 		t.Fatalf("List = %+v, %v; want both rows", list, err)
 	}
-	if _, err := e.control.Launch(context.Background(), ctlAlice, other.ID); err != nil {
+	if _, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: other.ID}); err != nil {
 		t.Errorf("the healthy row failed to launch: %v", err)
 	}
 
@@ -539,7 +539,7 @@ func TestAppRegistryUpdateRepairsACorruptRow(t *testing.T) {
 	if err := domain.CheckLaunchTarget(got); err != nil {
 		t.Errorf("CheckLaunchTarget = %v, want nil", err)
 	}
-	if _, err := e.control.Launch(ctx, ctlAlice, app.ID); err != nil {
+	if _, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{AppID: app.ID}); err != nil {
 		t.Errorf("Launch after the repair = %v", err)
 	}
 
@@ -587,8 +587,8 @@ func TestControlLaunchableApps(t *testing.T) {
 	ctx := context.Background()
 
 	empty, err := e.control.LaunchableApps(ctx)
-	if err != nil || empty == nil || len(empty) != 0 {
-		t.Fatalf("empty list = %#v, %v; want a non-nil empty slice", empty, err)
+	if err != nil || empty.Apps == nil || len(empty.Apps) != 0 || empty.Mode != domain.LaunchModeAllowlist {
+		t.Fatalf("empty list = %#v, %v; want a non-nil empty slice in allowlist mode", empty, err)
 	}
 
 	var ids = map[string]string{}
@@ -609,8 +609,8 @@ func TestControlLaunchableApps(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []domain.AppSummary{{ID: ids["A-app"], Label: "A-app"}, {ID: ids["b-app"], Label: "b-app"}}
-	if !slices.Equal(got, want) {
-		t.Errorf("apps = %+v, want %+v", got, want)
+	if !slices.Equal(got.Apps, want) {
+		t.Errorf("apps = %+v, want %+v", got.Apps, want)
 	}
 	// リース不要で、リースを取らない。監査は mcp 層が tool.list_launchable_apps として記録する（Control は記録しない）。
 	if _, ok := e.leases.Holder(); ok {
@@ -639,8 +639,8 @@ func TestControlLaunchableAppsOmitsRowsThatCannotLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []domain.AppSummary{{ID: good.ID, Label: "電卓"}}; !slices.Equal(got, want) {
-		t.Errorf("apps = %+v, want %+v", got, want)
+	if want := []domain.AppSummary{{ID: good.ID, Label: "電卓"}}; !slices.Equal(got.Apps, want) {
+		t.Errorf("apps = %+v, want %+v", got.Apps, want)
 	}
 }
 
@@ -650,7 +650,7 @@ func TestControlLaunchableAppsListingWorksWhileAnotherSessionHoldsTheLease(t *te
 	if _, err := e.leases.Acquire(context.Background(), ctlBob); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := e.control.LaunchableApps(context.Background()); err != nil || len(got) != 1 {
+	if got, err := e.control.LaunchableApps(context.Background()); err != nil || len(got.Apps) != 1 {
 		t.Errorf("apps = %+v, %v", got, err)
 	}
 }
@@ -702,7 +702,7 @@ func TestLaunchAuditDetailOnlyRecordsKnownReasons(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := domain.ErrLaunchFailed.WithDetail("reason", tt.reason)
-			d := launchAuditDetail("app-1", "メモ帳", LaunchResult{}, err)
+			d := launchAuditDetail(LaunchRequest{AppID: "app-1"}, launchTrace{label: "メモ帳"}, LaunchResult{}, err)
 			got, has := d["reason"]
 			if tt.want == "" {
 				if has {
@@ -731,7 +731,7 @@ func TestControlLaunchByLeaseHoldingAgentSucceeds(t *testing.T) {
 	e.audit.entries = nil
 	ctx := context.Background()
 
-	res, err := e.control.Launch(WithAgentStep(ctx, AgentStep{No: 2, Route: AgentRouteOpenAI}), agent, app.ID)
+	res, err := e.control.Launch(WithAgentStep(ctx, AgentStep{No: 2, Route: AgentRouteOpenAI}), agent, LaunchRequest{AppID: app.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -761,7 +761,7 @@ func TestControlLaunchByLeaseHoldingAgentSucceeds(t *testing.T) {
 
 	// 保持者でない別の agent は、同じ検査で拒否され、起動しない。
 	other := domain.Actor{Kind: domain.ActorAgent, Label: "agent", ClientID: "client-a", SessionID: "task-2"}
-	if _, err := e.control.Launch(ctx, other, app.ID); !errors.Is(err, domain.ErrLeaseHeldByOther) {
+	if _, err := e.control.Launch(ctx, other, LaunchRequest{AppID: app.ID}); !errors.Is(err, domain.ErrLeaseHeldByOther) {
 		t.Fatalf("other agent: err = %v, want lease_held_by_other", err)
 	}
 	if n := len(e.launcher.CallsTo("Launch")); n != 1 {

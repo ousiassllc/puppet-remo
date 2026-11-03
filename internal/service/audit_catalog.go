@@ -27,6 +27,7 @@ var AuditCatalog = []AuditRequirement{
 	{Item: "キルスイッチ発動・解除", Events: []string{"killswitch.trigger", "killswitch.release"}},
 	{Item: "設定変更", Events: []string{
 		"settings.update", "settings.launchable_app.create", "settings.launchable_app.update", "settings.launchable_app.delete",
+		"settings.launch_mode.update", "settings.launch_denylist.create", "settings.launch_denylist.update", "settings.launch_denylist.delete",
 		"client.replace", "client.update", "client.delete",
 	}},
 	{Item: "更新の確認・適用（kind = update）", Events: []string{

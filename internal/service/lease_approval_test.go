@@ -802,7 +802,7 @@ func TestControlLaunchAsksApprovalOnlyAtLeaseAcquire(t *testing.T) {
 
 	out := make(chan error, 1)
 	go func() {
-		_, err := le.control.Launch(context.Background(), ctlAlice, app.ID)
+		_, err := le.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 		out <- err
 	}()
 	var req ApprovalRequest
@@ -828,7 +828,7 @@ func TestControlLaunchAsksApprovalOnlyAtLeaseAcquire(t *testing.T) {
 		t.Fatal("Launch did not return")
 	}
 	// 保持中の 2 回目の起動は承認を要求しない。
-	if _, err := le.control.Launch(context.Background(), ctlAlice, app.ID); err != nil {
+	if _, err := le.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID}); err != nil {
 		t.Fatal(err)
 	}
 	le.expectNoApproval(t)

@@ -52,7 +52,7 @@ func TestAppsPageListsAppsWithPathsArgsAndNotice(t *testing.T) {
 		`id="app-form-new"`, `hx-post="/apps"`, `hx-target="#app-list"`, `hx-target-422="this"`, ` novalidate`,
 		`data-notice="interpreter"`, "cmd.exe", "powershell.exe", "任意のコード",
 		`name="exe_path"`, `hx-post="/apps/pick-file"`, `name="label"`, `<textarea`, `name="args"`, `name="working_dir"`)
-	lacks(t, res, "data-empty")
+	lacks(t, res, `data-empty="apps"`)
 }
 
 func TestAppsPageEmpty(t *testing.T) {

@@ -63,7 +63,8 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"When the host requires approval for this client, acquiring the lease waits for the host's answer and fails with " +
 	"approval_denied (the host denied) or approval_timeout (no answer in time). " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
-	"you can pass only an app_id, never a path or arguments, and it needs the lease like input tools. " +
+	"you pass an app_id, never arguments or a working directory, and it needs the lease like input tools. " +
+	"Only when list_launchable_apps reports mode denylist may you pass the absolute path of a .exe instead; the host owner's denied apps fail with app_denied. " +
 	"Some apps only bring an already open window forward when launched instead of opening a new one (tabbed single-window apps " +
 	"such as Windows 11 Notepad, browsers, Windows Terminal), and that window may hold the user's unsaved work: " +
 	"launch_app reports the launched app's own window (omitted when none was found, never another app's foreground window) and sets reused_existing_window when neither a window of the returned pid nor any new window was found, " +

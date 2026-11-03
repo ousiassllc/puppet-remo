@@ -88,21 +88,35 @@ func (*Launcher) Launch(ctx context.Context, spec platform.LaunchSpec) (uint32, 
 // 検査と CreateProcess の間にファイルが差し替えられうる（TOCTOU）ことは防げない。登録先のディレクトリを書き換えられる者は、
 // 許可リストに無い実行ファイルを置いて起動させられるため、NFR-S20 の残存リスクとして残る。
 func verifyExecutableLocation(exePath string) error {
+	final, err := finalExecutablePath(exePath)
+	if err != nil {
+		return err
+	}
+	if !finalPathMatches(exePath, final) {
+		return &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
+	}
+	return nil
+}
+
+// finalExecutablePath は exePath を開いて、GetFinalPathNameByHandle が返す実体のパス（`\\?\` つき）を返す。
+// 先に、exePath のドライブのルートが固定ディスク（DRIVE_FIXED）であることを確かめる（ネットワーク・リムーバブルなどは access_denied）。
+// ファイルが開けない失敗は CreateProcess と同じ分類（存在しなければ file_missing）。
+func finalExecutablePath(exePath string) (string, error) {
 	root, err := windows.UTF16PtrFromString(filepath.VolumeName(exePath) + `\`)
 	if err != nil {
-		return domain.ErrInvalidArgument.WithMsg("executable path contains a NUL character")
+		return "", domain.ErrInvalidArgument.WithMsg("executable path contains a NUL character")
 	}
 	if !isLocalFixedDrive(windows.GetDriveType(root)) {
-		return &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
+		return "", &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
 	}
 	path, err := windows.UTF16PtrFromString(exePath)
 	if err != nil {
-		return domain.ErrInvalidArgument.WithMsg("executable path contains a NUL character")
+		return "", domain.ErrInvalidArgument.WithMsg("executable path contains a NUL character")
 	}
 	h, err := windows.CreateFile(path, windows.FILE_READ_ATTRIBUTES,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, 0, 0)
 	if err != nil {
-		return newLaunchError(err)
+		return "", newLaunchError(err)
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
 
@@ -110,16 +124,37 @@ func verifyExecutableLocation(exePath string) error {
 	for {
 		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0) // FILE_NAME_NORMALIZED | VOLUME_NAME_DOS
 		if err != nil {
-			return newLaunchError(err)
+			return "", newLaunchError(err)
 		}
 		if int(n) < len(buf) {
-			if !finalPathMatches(exePath, windows.UTF16ToString(buf[:n])) {
-				return &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
-			}
-			return nil
+			return windows.UTF16ToString(buf[:n]), nil
 		}
 		buf = make([]uint16, n+1) // n は終端の NUL を含む必要な長さ
 	}
+}
+
+// Resolve は exePath の実体のパス（リンク・8.3 短縮名を解決した、固定ディスク上のドライブ文字つきの絶対パス）を返す。
+// 実体のドライブが固定ディスクでない（UNC・ボリューム GUID に解決される、リンク先が別のリムーバブルなど）ときは access_denied。
+func (*Launcher) Resolve(ctx context.Context, exePath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(exePath) {
+		return "", domain.ErrInvalidArgument.WithMsg("executable path is not absolute")
+	}
+	final, err := finalExecutablePath(exePath)
+	if err != nil {
+		return "", err
+	}
+	resolved, ok := driveLetterPath(final)
+	if !ok {
+		return "", &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
+	}
+	root, err := windows.UTF16PtrFromString(resolved[:3])
+	if err != nil || !isLocalFixedDrive(windows.GetDriveType(root)) {
+		return "", &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errLocationNotAllowed}
+	}
+	return resolved, nil
 }
 
 // Inspect は exePath が存在する通常ファイルか、workingDir（空でなければ）が存在するディレクトリかを調べる。無ければ platform.ErrNotFound。

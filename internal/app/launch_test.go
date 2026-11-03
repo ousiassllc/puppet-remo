@@ -45,7 +45,7 @@ func TestMCPCanListAndLaunchAnAllowedApp(t *testing.T) {
 		t.Fatalf("list_launchable_apps: %+v", list.Content)
 	}
 	raw, _ := json.Marshal(list.StructuredContent)
-	if want := `{"apps":[{"id":"` + app.ID + `","label":"メモ帳"}]}`; string(raw) != want {
+	if want := `{"apps":[{"id":"` + app.ID + `","label":"メモ帳"}],"mode":"allowlist"}`; string(raw) != want {
 		t.Errorf("list_launchable_apps = %s, want %s", raw, want)
 	}
 	for _, secret := range []string{launchExe, launchArg, launchWork} {
@@ -111,6 +111,10 @@ func TestRemoteRouterHasNoAllowListRoutes(t *testing.T) {
 		{http.MethodPost, "/apps"}, {http.MethodPost, "/apps/pick"},
 		{http.MethodPut, "/apps/app-1"}, {http.MethodDelete, "/apps/app-1"},
 		{http.MethodGet, "/api/v1/apps"}, {http.MethodPost, "/api/v1/apps"}, {http.MethodGet, "/settings/apps"},
+		// 起動の方式と拒否リスト（#88）も GUI だけ。
+		{http.MethodPut, "/apps/mode"}, {http.MethodGet, "/apps/mode/confirm"}, {http.MethodGet, "/apps/denied"},
+		{http.MethodPost, "/apps/denied"}, {http.MethodPut, "/apps/denied/den-1"}, {http.MethodDelete, "/apps/denied/den-1"},
+		{http.MethodGet, "/apps/denied/den-1/edit"}, {http.MethodGet, "/apps/denied/den-1/delete/confirm"},
 	} {
 		req, _ := http.NewRequest(tc.method, "http://"+testTailnetIP+":8765"+tc.path, strings.NewReader(`{"label":"x","exe_path":"`+`C:\\Tools\\notepad.exe`+`"}`))
 		req.Header.Set(middleware.CSRFHeader, "1")
@@ -125,5 +129,83 @@ func TestRemoteRouterHasNoAllowListRoutes(t *testing.T) {
 	}
 	if apps, err := e.app.apps.List(context.Background()); err != nil || len(apps) != 0 {
 		t.Errorf("a remote request changed the allow list: %+v, %v", apps, err)
+	}
+	if mode, err := e.app.apps.LaunchMode(context.Background()); err != nil || mode != domain.LaunchModeAllowlist {
+		t.Errorf("a remote request changed the launch mode: %q, %v", mode, err)
+	}
+}
+
+// 方式の切り替え（ホスト GUI の AppRegistry）→ MCP の launch_app(path) → 拒否リストに当たるものは起動しない、までを本物の結線（DB・Control・MCP）で通す。
+// allowlist（既定）に戻すと path は拒否され、登録済みの app_id は今まで通り起動できる。
+func TestMCPLaunchByPathFollowsTheLaunchMode(t *testing.T) {
+	const (
+		okExe     = `C:\Tools\ok.exe`
+		blockedLn = `C:\Link\blocked.exe`
+		blocked   = `C:\Tools\blocked.exe`
+	)
+	ctx := context.Background()
+	e := newEnv(t)
+	_, token := e.registerClient()
+	for _, p := range []string{launchExe, okExe, blocked} {
+		e.launcher.AddExecutable(p)
+	}
+	e.launcher.AddLink(blockedLn, blocked)
+	e.launcher.OnLaunch(func(pid uint32) {
+		e.windows.SetWindows(domain.WindowInfo{ID: "88", Title: "w", Process: "x.exe", PID: pid, Foreground: true})
+	})
+	reg, err := e.app.apps.Create(ctx, domain.AppInput{Label: "メモ帳", ExePath: launchExe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.start()
+	e.watcher.Set(runningStatus(testTailnetIP))
+	e.waitListening(1)
+	cs := e.dialMCP(token)
+	launches := func() int { return len(e.launcher.CallsTo("Launch")) }
+
+	// 既定（allowlist）: path は拒否される（起動しない）。
+	if res := callTool(t, cs, "launch_app", map[string]any{"path": okExe}); !res.IsError || launches() != 0 {
+		t.Fatalf("path launch in allowlist mode: isError=%v launches=%d, want rejected", res.IsError, launches())
+	}
+
+	if err := e.app.apps.SetLaunchMode(ctx, domain.LaunchModeDenylist); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.app.apps.CreateDenied(ctx, blocked); err != nil {
+		t.Fatal(err)
+	}
+	list := callTool(t, cs, "list_launchable_apps")
+	raw, _ := json.Marshal(list.StructuredContent)
+	if !strings.Contains(string(raw), `"mode":"denylist"`) || !strings.Contains(string(raw), reg.ID) || strings.Contains(string(raw), "blocked") {
+		t.Errorf("list_launchable_apps = %s, want mode denylist, the registered app, and no denylist contents", raw)
+	}
+
+	if res := callTool(t, cs, "launch_app", map[string]any{"path": okExe}); res.IsError || launches() != 1 {
+		t.Fatalf("unlisted path: isError=%v launches=%d (%+v), want launched", res.IsError, launches(), res.Content)
+	}
+	spec, _ := e.launcher.CallsTo("Launch")[0].Args[0].(platform.LaunchSpec)
+	if spec.ExePath != okExe || len(spec.Args) != 0 || spec.WorkingDir != "" {
+		t.Errorf("spec = %+v, want the path only (no args, no working dir)", spec)
+	}
+	for _, p := range []string{blocked, blockedLn, strings.ToUpper(blocked), `c:/tools//BLOCKED.exe`} {
+		res := callTool(t, cs, "launch_app", map[string]any{"path": p})
+		b, _ := json.Marshal(res.StructuredContent)
+		if !res.IsError || !strings.Contains(string(b), `"app_denied"`) || launches() != 1 {
+			t.Errorf("denied path %q: isError=%v launches=%d body=%s, want app_denied and no launch", p, res.IsError, launches(), b)
+		}
+	}
+	if res := callTool(t, cs, "launch_app", map[string]any{"path": okExe, "app_id": reg.ID}); !res.IsError || launches() != 1 {
+		t.Errorf("app_id and path together: isError=%v launches=%d, want rejected", res.IsError, launches())
+	}
+
+	// allowlist に戻す: path は拒否、登録済みの app_id は起動できる。
+	if err := e.app.apps.SetLaunchMode(ctx, domain.LaunchModeAllowlist); err != nil {
+		t.Fatal(err)
+	}
+	if res := callTool(t, cs, "launch_app", map[string]any{"path": okExe}); !res.IsError || launches() != 1 {
+		t.Errorf("path after switching back: isError=%v launches=%d, want rejected", res.IsError, launches())
+	}
+	if res := callTool(t, cs, "launch_app", map[string]any{"app_id": reg.ID}); res.IsError || launches() != 2 {
+		t.Errorf("registered app after switching back: isError=%v launches=%d, want launched", res.IsError, launches())
 	}
 }

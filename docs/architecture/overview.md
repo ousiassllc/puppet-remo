@@ -69,7 +69,7 @@ graph TD
             APPR["承認 (Approval)"]
             KILL["キルスイッチ"]
             AUDIT["監査 (Audit)"]
-            APPS["許可リスト (AppRegistry)<br/>起動してよいアプリ (M1.5)"]
+            APPS["許可リスト・拒否リスト・起動の方式 (AppRegistry)<br/>起動してよい / 拒否するアプリ (M1.5)"]
             TOOLS["操作ツール (Control)"]
             STREAM["画面配信 (Streamer)"]
             AGENT["内蔵エージェント (Agent)<br/>タスク実行ループ"]
@@ -120,7 +120,7 @@ graph TD
     TOOLS --> UIA
     TOOLS --> CLIP
     TOOLS --> LAUNCH
-    TOOLS -- "Launch: Get(app_id) を参照" --> APPS
+    TOOLS -- "Launch: LaunchMode / Get(app_id) / ListDenied を参照 (AppReader)" --> APPS
     GR --> APPS
     APPS --> PICK
     APPS --> DB
@@ -259,7 +259,7 @@ sequenceDiagram
 
 ### アプリ起動（`launch_app`。M1.5）
 
-起動できるのは、ホスト所有者がホスト GUI で登録した許可リストのアプリだけ。クライアントが渡せるのは `app_id` だけで、パス・引数は登録時に固定されている（FR-M19、NFR-S20）。検査の順序は `Control.Launch`（[コンポーネント設計](../components/overview.md) §5.4.1）。承認は M1.5 には無い。
+起動の方式（`launch.mode`）は 2 つで、ホスト所有者がホスト GUI の `/apps` だけで選ぶ（既定は**ホワイトリスト方式** `allowlist`。値が無い・読めないときもこちら）。**ホワイトリスト方式（既定）**では、起動できるのはホスト GUI で登録した許可リストのアプリだけで、クライアントが渡せるのは `app_id` だけ（パス・引数は登録時に固定。`path` を渡すと `invalid_argument`）。**ブラックリスト方式**（所有者が GUI で確認のうえ選ぶ）では、`app_id` に加えて、固定ディスク上の既存の `.exe` の絶対パス `path` でも起動でき、拒否リスト（パスまたは実行ファイル名）に当たるものだけを `app_denied` で拒否する。パス指定でも引数・作業ディレクトリは渡せない（FR-M19、NFR-S20）。`app_id` と `path` の同時指定・どちらも無い指定は `invalid_argument`。拒否リストとの照合は、リンク・8.3 短縮名を解決した実体のパス（`AppLauncher.Resolve`）に対して行い、許可リストのアプリを `app_id` で起動するときも照合する（拒否が優先）。検査の順序は `Control.Launch`（[コンポーネント設計](../components/overview.md) §5.4.1）。承認は M1.5 には無い。
 
 ```mermaid
 sequenceDiagram
@@ -267,11 +267,11 @@ sequenceDiagram
     participant M as /mcp (MCP サーバー)
     participant K as KillSwitch
     participant L as LeaseManager
-    participant R as AppRegistry
+    participant R as AppReader (許可リスト・方式・拒否リスト)
     participant P as platform.AppLauncher
     participant W as platform.WindowManager
     participant AU as Audit
-    C->>M: tools/call launch_app(app_id)
+    C->>M: tools/call launch_app(app_id | path)
     M->>K: Active()
     alt キルスイッチ中
         M->>AU: 記録 (denied: kill_switch_active)
@@ -282,18 +282,54 @@ sequenceDiagram
             M->>AU: 記録 (denied: lease_held_by_other)
             M-->>C: エラー
         else 取得済み
-            M->>R: Get(app_id) + 形の再検査
-            alt 許可リストに無い / 規則外
-                M->>AU: 記録 (denied: app_not_found)
+            M->>R: LaunchMode()
+            alt app_id と path の同時指定 / どちらも無い / ホワイトリスト方式で path
+                M->>AU: 記録 (denied: invalid_argument)
                 M-->>C: エラー
-            else 許可リストにある
-                M->>P: Launch(絶対パス, 固定の引数, 作業ディレクトリ)
+            else app_id（どちらの方式でも）
+                M->>R: Get(app_id) + 形の再検査
+                alt 許可リストに無い / 規則外
+                    M->>AU: 記録 (denied: app_not_found)
+                    M-->>C: エラー
+                else 許可リストにある
+                    opt ブラックリスト方式のときだけ
+                        M->>P: Resolve(登録した実行ファイル) 実体のパス
+                        M->>R: ListDenied() と照合 (拒否が優先)
+                    end
+                    alt 拒否リストに当たる
+                        M->>AU: 記録 (denied: app_denied)
+                        M-->>C: エラー (パス・拒否リストの内容は含めない)
+                    else 当たらない / ホワイトリスト方式
+                        M->>P: Launch(絶対パス, 固定の引数, 作業ディレクトリ)
+                    end
+                end
+            else path（ブラックリスト方式だけ）
+                alt 形が不正 (ValidateLaunchPath)
+                    M->>AU: 記録 (denied: invalid_argument)
+                    M-->>C: エラー
+                else 形は正しい
+                    M->>P: Resolve(path) 固定ディスク上の実体のパス
+                    alt 固定ディスク外 / 存在しない
+                        M->>AU: 記録 (error: launch_failed, reason: access_denied / file_missing)
+                        M-->>C: エラー
+                    else 実体のパスを解決できた
+                        M->>R: ListDenied() と照合
+                        alt 拒否リストに当たる
+                            M->>AU: 記録 (denied: app_denied)
+                            M-->>C: エラー (パス・拒否リストの内容は含めない)
+                        else 当たらない
+                            M->>P: Launch(実体のパス, 引数なし, 作業ディレクトリなし)
+                        end
+                    end
+                end
+            end
+            opt Launch を呼んだとき（キルスイッチ再確認と「試行」の行の同期の追記のあと）
                 alt CreateProcess 成功
                     P-->>M: pid
                     M->>W: Foreground / List（pid のウィンドウが前面に出るまで最大およそ 3 秒）
                     W-->>M: 前面のウィンドウ
-                    M->>AU: 記録 (ok: app_id, label, pid, reused_existing_window)
-                    M-->>C: { ok, app_id, pid, window?, reused_existing_window }
+                    M->>AU: 記録 (ok: app_id（path 起動では無し）, label, pid, reused_existing_window)
+                    M-->>C: { ok, app_id?, pid, window?, reused_existing_window }
                 else 失敗
                     P-->>M: LaunchError(reason)
                     M->>AU: 記録 (error: launch_failed, reason)
@@ -304,7 +340,7 @@ sequenceDiagram
     end
 ```
 
-許可リストの登録・変更・削除は GUI ルーターだけ（書き込みを持つ `AppRegistry` を受け取るのは GUI ルーターだけで、`Control` は読み取り専用の `AppReader` だけを受け取る。`mcp` は持たない）。ファイル選択は `AppRegistry.PickExecutable` が `platform.FilePicker` に委ねる。内蔵エージェント（M4）がアプリを起動するときも、同じ許可リストと `Control.Launch` を使う。
+許可リスト・拒否リストの登録・変更・削除と起動の方式の切り替えは GUI ルーターだけ（書き込みを持つ `AppRegistry`（許可リストに加えて、起動の方式 `SetLaunchMode` と拒否リストの `CreateDenied` / `UpdateDenied` / `DeleteDenied` も持つ）を受け取るのは GUI ルーターだけで、`Control` は読み取り専用の `AppReader`（`List` / `Get` / `LaunchMode` / `ListDenied`）だけを受け取る。`mcp` は持たない）。ファイル選択は `AppRegistry.PickExecutable` が `platform.FilePicker` に委ねる。内蔵エージェント（M4）がアプリを起動するときも、同じ起動の方式・許可リスト・拒否リストと `Control.Launch` を使う（エージェントの道具に `launch_app` は含まれない。FR-G27）。
 
 ### 内蔵エージェントのタスク実行
 
@@ -685,3 +721,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.27 | 2026-11-02 | 内蔵エージェントの接続方式を 2 つにした（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 設計方針の外部通信、技術選定の資格情報（ChatGPT の OAuth トークン）、構成図の OpenAI の表記、レイヤーの `openai`、エージェントのタスク実行に ChatGPT のプラン経路（トークンの更新・ストリーム・関数ツール・使用量の上限・API キーへの切り替えの承認・サインインの流れ）を追記 | #49 |
 | 1.28 | 2026-11-02 | 構成図の tailnet 公開面に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |
 | 1.29 | 2026-11-03 | 操作中オーバーレイを、WebView2 の全面ウィンドウから、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（真ん中は覆わない）に改めた | #86 |
+| 1.30 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: 構成図の許可リスト・拒否リスト・起動の方式（`AppRegistry`・`AppReader`）、「アプリ起動」の流れ図（起動の方式の確認・`path` の分岐・`app_denied`・実体のパスの解決）と本文、`AppRegistry` が方式と拒否リストの書き込みを持ち `Control` は読み取り専用の `AppReader`（`LaunchMode`・`ListDenied` を含む）だけを受け取ること | #88 |

@@ -20,6 +20,7 @@ import (
 
 // このファイルは起動許可アプリ（M1.5。FR-H12）のルート。許可リストを書き換えるのはホスト所有者だけで、この GUI ルーターにだけある（NFR-S20）。
 // 追加・変更・削除の監査（settings.launchable_app.*。引数・作業ディレクトリは記録しない）は service.AppRegistry が行う。
+// 起動の方式と拒否リストのルートは apps_launchmode.go。
 // 実行ファイルのパス・引数・作業ディレクトリはホスト所有者だけが見る GUI に出すが、ログ・エラーのメッセージには出さない。
 
 const (
@@ -76,12 +77,32 @@ func (h *Handler) appListView(apps []domain.LaunchableApp, editID string, edit *
 }
 
 // appsPage はページ（フル・boosted）の表示モデル。
-func (h *Handler) appsPage(ctx context.Context, apps []domain.LaunchableApp, editID string, edit *view.AppForm) view.Apps {
+func (h *Handler) appsPage(ctx context.Context, apps []domain.LaunchableApp, editID string, edit *view.AppForm) (view.Apps, error) {
+	mode, err := h.d.Apps.LaunchMode(ctx)
+	if err != nil {
+		return view.Apps{}, err
+	}
+	denied, err := h.deniedSection(ctx, deniedState{})
+	if err != nil {
+		return view.Apps{}, err
+	}
 	return view.Apps{
 		Chrome:  h.chrome(ctx, view.NavApps),
+		Mode:    h.launchModePanel(mode),
 		List:    h.appListView(apps, editID, edit),
 		NewForm: h.newAppForm(view.AppFormValues{}, view.AppFormErrors{}),
+		Denied:  denied,
+	}, nil
+}
+
+// renderAppsPage は appsPage を組んで描画する。
+func (h *Handler) renderAppsPage(c *gin.Context, apps []domain.LaunchableApp, editID string, edit *view.AppForm) {
+	v, err := h.appsPage(c.Request.Context(), apps, editID, edit)
+	if err != nil {
+		h.pageFail(c, err)
+		return
 	}
+	h.renderApps(c, v)
 }
 
 func (h *Handler) renderApps(c *gin.Context, v view.Apps) {
@@ -104,7 +125,7 @@ func (h *Handler) Apps(c *gin.Context) {
 		h.render(c, http.StatusOK, organisms.AppList(h.appListView(apps, "", nil)))
 		return
 	}
-	h.renderApps(c, h.appsPage(ctx, apps, "", nil))
+	h.renderAppsPage(c, apps, "", nil)
 }
 
 // AppNew は GET /apps/new。HTMX の部分更新は追加フォームのフラグメント。
@@ -134,7 +155,7 @@ func (h *Handler) AppEdit(c *gin.Context) {
 		h.pageFail(c, err)
 		return
 	}
-	h.renderApps(c, h.appsPage(ctx, apps, app.ID, &form))
+	h.renderAppsPage(c, apps, app.ID, &form)
 }
 
 // readAppForm はフォームの入力を読む。表示用の値（引数は入力されたままの文字列）と、service に渡す入力を返す。

@@ -149,13 +149,19 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 	windows := app.NewFakeWindows() // デモは Wails を使わない（承認ダイアログのウィンドウは開かず、id をログに出すだけ）
 	go logApprovals(ctx, windows)
 
+	// /apps（起動許可アプリ・起動の方式・拒否リスト）の手動確認用に、偽の実行ファイルをいくつか置く（実在のファイルではない）。
+	launcher := platformtest.NewFakeAppLauncher()
+	for _, p := range []string{`C:\Windows\System32\notepad.exe`, `C:\Windows\System32\calc.exe`, `C:\Windows\System32\cmd.exe`} {
+		launcher.AddExecutable(p)
+	}
+
 	a, err := app.New(ctx, app.Config{
 		Repo:    db,
 		Windows: windows,
 		Platform: app.Platform{
 			Capturer: newCapturer(sc), Input: &input{FakeInput: platformtest.NewFakeInput(), scene: sc, log: logger},
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
-			Launcher: platformtest.NewFakeAppLauncher(), FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
+			Launcher: launcher, FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
 			Secrets: secrets,
 			Hotkey:  platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
 		},

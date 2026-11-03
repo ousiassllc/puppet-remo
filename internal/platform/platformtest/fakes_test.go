@@ -499,3 +499,29 @@ func TestFakeFilePickerDoesNotOpenForCanceledContext(t *testing.T) {
 		t.Errorf("WaitOpen = %v, want no dialog to have opened", err)
 	}
 }
+
+func TestFakeAppLauncherResolve(t *testing.T) {
+	l := platformtest.NewFakeAppLauncher()
+	l.AddExecutable(`C:\Windows\System32\cmd.exe`)
+	l.AddLink(`C:\Users\me\Link\run.exe`, `C:\Windows\System32\cmd.exe`)
+	l.AddLink(`C:\WINDOW~1\SYSTEM~1\CMD.EXE`, `C:\Windows\System32\cmd.exe`)
+	l.AddLink(`C:\Windows\System32\net-link.exe`, `Z:\share\cmd.exe`)
+	l.MarkNonFixed(`Z:\share\cmd.exe`)
+	ctx := context.Background()
+
+	for _, in := range []string{
+		`C:\Windows\System32\cmd.exe`, `c:/windows//system32/CMD.EXE`, `C:\Users\me\Link\run.exe`, `C:\WINDOW~1\SYSTEM~1\CMD.EXE`,
+	} {
+		got, err := l.Resolve(ctx, in)
+		if err != nil || got != `C:\Windows\System32\cmd.exe` {
+			t.Errorf("Resolve(%q) = %q, %v, want the canonical spelling", in, got, err)
+		}
+	}
+	var le *platform.LaunchError
+	if _, err := l.Resolve(ctx, `C:\nope.exe`); !errors.As(err, &le) || le.Reason != domain.LaunchFileMissing {
+		t.Errorf("Resolve(missing) = %v, want file_missing", err)
+	}
+	if _, err := l.Resolve(ctx, `C:\Windows\System32\net-link.exe`); !errors.As(err, &le) || le.Reason != domain.LaunchAccessDenied {
+		t.Errorf("Resolve(link to a non-fixed drive) = %v, want access_denied", err)
+	}
+}
