@@ -69,9 +69,6 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.POST("/approvals/:id/allow", h.AllowApproval)
 	r.POST("/approvals/:id/deny", h.DenyApproval)
 
-	// 操作中オーバーレイ（M3。#69）。全モニターを覆うクリックスルーの Wails ウィンドウの中身
-	r.GET("/overlay", h.Overlay)
-
 	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
 	r.POST("/lease/revoke", h.RevokeLease)
 

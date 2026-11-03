@@ -646,9 +646,3 @@ type ApprovalGone struct {
 	Code    string
 	Message string
 }
-
-// Overlay は操作中オーバーレイ（GET /overlay。#69）。画面の枠と短い文言だけを出す（秘密・パス・引数は持たない）。
-type Overlay struct {
-	Label  string // 「操作中: <クライアント名>（<種別>）」。長さは制限済み
-	Detail string // 補足（agent の「エージェント実行中: <指示の要約>」。FR-H07）。無ければ空。長さは制限済み
-}
