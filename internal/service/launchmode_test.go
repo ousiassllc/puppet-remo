@@ -10,6 +10,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
+	"github.com/ousiassllc/puppet-remo/internal/platform/platformtest"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
@@ -529,5 +530,48 @@ func TestLaunchDenylistModeReresolvesEntriesRegisteredBeforeTheFileExisted(t *te
 	}
 	if _, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{Path: pathOK}); err != nil {
 		t.Errorf("an unrelated path = %v, want started", err)
+	}
+}
+
+// resolveFailsFor は特定のパスの Resolve だけを指定のエラーで失敗させる起動の偽物。
+type resolveFailsFor struct {
+	*platformtest.FakeAppLauncher
+	path string
+	err  error
+}
+
+func (r resolveFailsFor) Resolve(ctx context.Context, p string) (string, error) {
+	if p == r.path {
+		return "", r.err
+	}
+	return r.FakeAppLauncher.Resolve(ctx, p)
+}
+
+// 拒否リストのパス項目の再解決: 「解決できない項目」（ファイルが無い・固定ディスクにない・形が合わない）は元の綴りで照合し、
+// それ以外の失敗（想定外のエラー・ctx の取り消し）は取りこぼしたまま進めずエラーを返す（fail closed）。
+func TestWithReresolvedPathsIsFailClosed(t *testing.T) {
+	const entry = `C:\Later\x.exe`
+	denied := []domain.DeniedApp{{ID: "d1", Kind: domain.DeniedPath, Value: entry}, {ID: "d2", Kind: domain.DeniedName, Value: "cmd.exe"}}
+	boom := errors.New("transient OS failure")
+	run := func(err error) ([]domain.DeniedApp, error) {
+		fake := platformtest.NewFakeAppLauncher()
+		c := &control{launcher: resolveFailsFor{FakeAppLauncher: fake, path: entry, err: err}}
+		return c.withReresolvedPaths(context.Background(), denied)
+	}
+
+	for name, err := range map[string]error{
+		"file missing":         &platform.LaunchError{Reason: domain.LaunchFileMissing, Err: boom},
+		"not a fixed drive":    &platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: boom},
+		"malformed for the OS": domain.ErrInvalidArgument,
+	} {
+		got, gotErr := run(err)
+		if gotErr != nil || !slices.Equal(got, denied) {
+			t.Errorf("%s: = %+v, %v, want the entries unchanged", name, got, gotErr)
+		}
+	}
+	for name, err := range map[string]error{"unexpected failure": boom, "canceled": context.Canceled} {
+		if got, gotErr := run(err); gotErr == nil || got != nil {
+			t.Errorf("%s: = %+v, %v, want an error and no entries", name, got, gotErr)
+		}
 	}
 }
