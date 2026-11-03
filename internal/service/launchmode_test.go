@@ -504,3 +504,30 @@ func TestLaunchByPathFailsClosedWhenTheAttemptCannotBeAudited(t *testing.T) {
 		t.Errorf("launches = %d", n)
 	}
 }
+
+// 登録時にファイルが無かったパス項目（入力の綴りのまま保存される）は、あとでそのパスがリンクやジャンクションになっても、
+// 起動のたびに再解決して照合する（拒否が静かに効かなくならない）。
+func TestLaunchDenylistModeReresolvesEntriesRegisteredBeforeTheFileExisted(t *testing.T) {
+	e := newModeEnv(t)
+	setMode(t, e, domain.LaunchModeDenylist)
+	ctx := context.Background()
+
+	const later, realFile = `C:\Later\x.exe`, `C:\Real\x.exe`
+	entry, err := e.apps.CreateDenied(ctx, later) // まだ無い: 入力の綴りのまま保存される
+	if err != nil || entry.Value != later {
+		t.Fatalf("CreateDenied = %+v, %v", entry, err)
+	}
+	e.launcher.AddExecutable(realFile)
+	e.launcher.AddLink(later, realFile) // 登録のあとで、そのパスが実体への経路になった
+	e.audit.entries = nil
+
+	if _, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{Path: realFile}); !errors.Is(err, domain.ErrAppDenied) {
+		t.Errorf("Launch(the real file behind a denied path) = %v, want app_denied", err)
+	}
+	if n := launchCount(e); n != 0 {
+		t.Errorf("the denied executable was started (%d launches)", n)
+	}
+	if _, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{Path: pathOK}); err != nil {
+		t.Errorf("an unrelated path = %v, want started", err)
+	}
+}

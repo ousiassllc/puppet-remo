@@ -324,7 +324,7 @@ erDiagram
 |--------|----|------|--------|------|
 | `id` | TEXT | NO | — | PK。ULID（アプリ側で生成）。編集しても変わらない |
 | `kind` | TEXT | NO | — | `path`（パスで照合）/ `name`（実行ファイル名で照合）。`CHECK (kind IN ('path','name'))` |
-| `value` | TEXT | NO | — | `kind = path`: 絶対パスのローカルの `.exe`（`launchable_apps.exe_path` と同じパスの規則）。登録時にファイルが固定ディスクにあれば**解決した実体のパス**（シンボリックリンク・ジャンクション・8.3 短縮名を解決。`\\?\` は付けない）で保存し、無い・固定ディスクに無い・解決できないときは入力の綴りの区切りを正規化（`/` → `\`、連続する区切りを 1 つに）して保存する（まだ置かれていないファイルや別のドライブのファイルも持てる）。`kind = name`: フォルダーを含まない `.exe` の名前（例: `cmd.exe`。255 文字以内。入力のまま保存し、照合は大文字小文字を区別しない）。GUI の入力欄は 1 つ（「パスまたは実行ファイル名」）で、`\`・`/`・`:` のどれかを含めばパス、含まなければ名前として分ける（検証は `domain.ClassifyDenied`）。`CHECK (length(value) > 0)` |
+| `value` | TEXT | NO | — | `kind = path`: 絶対パスのローカルの `.exe`（`launchable_apps.exe_path` と同じパスの規則）。登録時にファイルが固定ディスクにあれば**解決した実体のパス**（シンボリックリンク・ジャンクション・8.3 短縮名を解決。`\\?\` は付けない）で保存し、無い・固定ディスクに無い・解決できないときは入力の綴りの区切りを正規化（`/` → `\`、連続する区切りを 1 つに）して保存する（まだ置かれていないファイルや別のドライブのファイルも持てる）。`kind = name`: フォルダーを含まない `.exe` の名前（例: `cmd.exe`。255 文字以内。入力のまま保存し、照合は大文字小文字を区別しない）。GUI の入力欄は 1 つ（「パスまたは実行ファイル名」）で、`\`・`/`・`:` のどれかを含めばパス、含まなければ名前として分ける（検証は `domain.ClassifyDenied`）。`CHECK (length(value) > 0)`。登録時に解決できなかった項目（ファイルがまだ無い等）も、起動のたびに再解決して照合する（あとから置かれたリンクの先を取りこぼさない） |
 | `dedup_key` | TEXT | NO | — | 重複の判定。`domain.DeniedKey(kind, value)` = `kind` と、小文字にした `value`（`path` は区切りを `\` にそろえたもの）をつなげた正規形。UNIQUE。同じ `kind` で大文字小文字・区切りの違いだけの値は重複として拒否し、`kind` が違えば同じ綴りでも別の登録 |
 | `created_at` | INTEGER | NO | — | 登録時刻 |
 | `updated_at` | INTEGER | NO | — | 更新時刻 |
@@ -382,7 +382,7 @@ erDiagram
 | `prompt` | TEXT | NO | — | 指示本文（10,000 文字まで。NFR-S09）。タスクの記録として常に保存する（FR-AU03） |
 | `status` | TEXT | NO | `'pending_approval'` または `'running'` | FR-G03 の状態 |
 | `model` | TEXT | NO | — | 使用したモデル名（開始時の、接続方式 `openai_api_key` は `agent.model`、`chatgpt` は `agent.chatgpt.model`） |
-| `connection` | TEXT | NO | `'openai_api_key'`（マイグレーション v5 で既存の行に入る値。#49 より前のタスクはすべて OpenAI API キー経路。新しい行は開始時の `agent.connection` を必ず書く） | 接続方式。`CHECK (connection IN ('chatgpt','openai_api_key'))`。タスクの開始時に固定し、終了まで変えない（FR-G25）。ChatGPT のトークン・アカウントは持たない |
+| `connection` | TEXT | NO | `'openai_api_key'`（#49 のマイグレーションで既存の行に入る値。番号は実装時に採番する〔v5 は #88 の `launch_denylist` が使用済み〕。#49 より前のタスクはすべて OpenAI API キー経路。新しい行は開始時の `agent.connection` を必ず書く） | 接続方式。`CHECK (connection IN ('chatgpt','openai_api_key'))`。タスクの開始時に固定し、終了まで変えない（FR-G25）。ChatGPT のトークン・アカウントは持たない |
 | `max_steps` | INTEGER | NO | — | 適用した上限（`run_task` の指定は設定値以下） |
 | `max_duration_sec` | INTEGER | NO | — | 適用した上限 |
 | `step_count` | INTEGER | NO | 0 | 実行したステップの**総数**（`fast_steps + openai_steps`。`agent.max_steps` の判定対象。FR-G19）。高速パス導入前の定義（Responses API 呼び出しの数）を、高速パスのステップを含む総数に広げた。既存列を残して総数の意味に統一し、読み取り側（一覧・`get_task` の既存フィールド）を変えない |
@@ -630,6 +630,6 @@ erDiagram
 | 1.28 | 2026-11-02 | `key` の監査の `keys` を、表示できる 1 文字のキーは `[char]` に伏せる規則を追記 | #19 |
 | 1.29 | 2026-11-02 | 接続要求の履歴の保持期間を 7 日・固定（設定項目にしない。全状態を `last_seen_at` から 7 日で削除。ページ上限・索引 0003・`Expire`・FR-A06 は変えない）と決定事項に明記 | #52（所有者の決定） |
 | 1.30 | 2026-11-02 | 起動の監査を fail-closed の「試行」と「結果」の 2 行に改めた（`tool.launch_app.attempt` / `agent.launch_attempt` を追加。試行の行は起動の前に同期で書き、書けなければ起動しない。結果の行が書けなくても起動は取り消さない）。`launch_app` 以外のスキーマ違反は記録しない（FR-AU01 の範囲外）と明記 | #37・#38 |
-| 1.31 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 方針のシークレット（ChatGPT の OAuth トークン `puppet-remo/chatgpt:puppet-remo`。識別子は設定）、`settings` に `agent.connection`・`agent.chatgpt.model`・`agent.chatgpt.host_id`・`agent.chatgpt.client_id`・`agent.chatgpt.account_sub`・`agent.chatgpt.account_email`・`agent.chatgpt.welcome_shown`、`agent_tasks` に `connection`（マイグレーション v5。既存の行は `openai_api_key`）と `error_code`・`openai_steps` の追記、監査イベントのカタログに ChatGPT のサインイン・解除・認可切れ・使用量の上限と接続方式の変更 | #49 |
+| 1.31 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 方針のシークレット（ChatGPT の OAuth トークン `puppet-remo/chatgpt:puppet-remo`。識別子は設定）、`settings` に `agent.connection`・`agent.chatgpt.model`・`agent.chatgpt.host_id`・`agent.chatgpt.client_id`・`agent.chatgpt.account_sub`・`agent.chatgpt.account_email`・`agent.chatgpt.welcome_shown`、`agent_tasks` に `connection`（#49 のマイグレーション。番号は実装時に採番〔v5 は #88 の `launch_denylist` が使用済み〕。既存の行は `openai_api_key`）と `error_code`・`openai_steps` の追記、監査イベントのカタログに ChatGPT のサインイン・解除・認可切れ・使用量の上限と接続方式の変更 | #49 |
 | 1.32 | 2026-11-02 | `agent_tasks` に `CHECK (connection IN ('chatgpt','openai_api_key'))`、`agent.task_start` の `detail_json` に `connection`、`agent.chatgpt.signin` の分類は `detail.reason` に統一（`reauth_required`・`usage_limit` は `error_code`）と明記 | #49（レビュー指摘） |
 | 1.33 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: `settings` のキー `launch.mode`（行が無い・不正な値は `allowlist`）、拒否リスト `launch_denylist`（v5 のマイグレーション `0005_launch_denylist.sql`。`path` / `name`・`dedup_key`・上限 200・ホスト GUI だけが書く・照合の規則と既知の限界）を全体 ER 図・テーブル一覧・テーブル定義に追加し、`launchable_apps` の起動時の扱いを方式別に更新。監査イベント `settings.launch_mode.update`・`settings.launch_denylist.create` / `.update` / `.delete` をカタログに追加し、`tool.launch_app`・`tool.launch_app.attempt`・`agent.launch_attempt`・`agent.step` の `detail` に `path`・`launch_mode`（`app_id` は path 起動では無し）を追記 | #88 |

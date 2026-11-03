@@ -398,7 +398,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | D8 | `launch_app { path: "C:\\SmokeDeny\\Tool Long Name.exe" }`（パスの項目に当たる）と、大文字小文字違い `c:\\smokedeny\\TOOL LONG NAME.EXE` | どちらも `app_denied`。プロセスは起動しない |
 | D9 | 8.3 短縮名（D の準備の `dir /x` で調べたもの。例: `C:\\SMOKED~1\\TOOLLO~1.EXE`）で `launch_app { path }` | `app_denied`（実体のパスに解決してから照合する）。起動しない |
 | D10 | シンボリックリンク（`C:\\SmokeDeny\\link.exe`）と、ディレクトリジャンクション経由（`C:\\SmokeJunction\\Tool Long Name.exe`）で `launch_app { path }` | どちらも `app_denied`（リンク・ジャンクションを解決した実体のパスで照合する）。起動しない |
-| D11 | 名前を変えたコピー `launch_app { path: "C:\\SmokeDeny\\renamed-np.exe" }` | **既知の残存リスク**: 名前を変えたコピーは検出できない（`name` の項目は実体のファイル名と要求の綴りのファイル名だけ、`path` の項目は実体のパスだけを比べる）ため、**起動する**（メモ帳が 1 つ増える）。起動後に閉じる。この挙動が仕様（NFR-S20 の残存リスク）で、不具合として扱わない |
+| D10b | `.exe` 名のシンボリックリンクの先が `.bat`（`mklink C:\\SmokeDeny\\link-bat.exe C:\\SmokeDeny\\x.bat`）のとき `launch_app { path: "C:\\SmokeDeny\\link-bat.exe" }` | 起動しない。`launch_failed`（`reason = access_denied`）。実体が `.exe` でないものは、拒否リストに載っていなくても起動しない（CreateProcess が `cmd.exe` 経由で実行して拒否リストをすり抜けるのを防ぐ） |
+| D11 | 名前を変えたコピー（ハードリンクを含む）`launch_app { path: "C:\\SmokeDeny\\renamed-np.exe" }` | **既知の残存リスク**: 名前を変えたコピーは検出できない（`name` の項目は実体のファイル名と要求の綴りのファイル名だけ、`path` の項目は実体のパスだけを比べる）ため、**起動する**（メモ帳が 1 つ増える）。起動後に閉じる。この挙動が仕様（NFR-S20 の残存リスク）で、不具合として扱わない |
 | D12 | 固定ディスク以外のパスで `launch_app { path }`: ネットワークドライブをマップした `Z:\\...\\x.exe`、USB メモリなどのリムーバブルドライブ `E:\\x.exe`（用意できるものだけ。どちらも `.exe` を置いておく） | どちらも `launch_failed`（`reason: access_denied`）。起動しない。メッセージにパスが出ない |
 | D13 | 存在しない `C:\\SmokeDeny\\nope.exe` | `launch_failed`（`reason: file_missing`）。メッセージにパスが出ない |
 | D14 | 形の不正: 相対パス `notepad.exe`、UNC `\\\\localhost\\C$\\Windows\\System32\\notepad.exe`、`..` を含む `C:\\Windows\\..\\Windows\\System32\\notepad.exe`、`.exe` 以外 `C:\\Windows\\System32\\drivers\\etc\\hosts`、使えない文字 `C:\\Smoke*.exe` | すべて `invalid_argument`。何も起動しない |

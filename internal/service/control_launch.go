@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
@@ -183,6 +185,10 @@ func (c *control) checkNotDenied(ctx context.Context, exePath string) (string, e
 	if err != nil {
 		return "", err
 	}
+	denied, err = c.withReresolvedPaths(ctx, denied)
+	if err != nil {
+		return "", err
+	}
 	if domain.MatchDenied(denied, exePath, resolved) {
 		return "", domain.ErrAppDenied
 	}
@@ -190,6 +196,35 @@ func (c *control) checkNotDenied(ctx context.Context, exePath string) (string, e
 		return "", launchFailure(&platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errResolvedNotExe})
 	}
 	return resolved, nil
+}
+
+// withReresolvedPaths は denied のパス項目を、起動のたびに実体のパスへ解決し直した項目を足して返す（元の項目も残す）。
+// 登録時に解決できなかった項目（ファイルがまだ無かった・別のドライブにあった）は入力の綴りのまま保存されているので、その後に
+// 置かれたリンク・ジャンクション・8.3 短縮名の先が同じファイルでも、実体のパス（resolved）とは一致しない。再解決して取りこぼさない
+// （拒否が静かに効かない状態を作らない）。解決できない項目（ファイルが無い・固定ディスクにない）は元の綴りだけで照合し、それ以外の失敗（ctx の取り消しを含む）は呼び出し元へ返す。
+func (c *control) withReresolvedPaths(ctx context.Context, denied []domain.DeniedApp) ([]domain.DeniedApp, error) {
+	var extra []domain.DeniedApp
+	for _, d := range denied {
+		if d.Kind != domain.DeniedPath {
+			continue
+		}
+		r, err := c.launcher.Resolve(ctx, d.Value)
+		var le *platform.LaunchError
+		switch {
+		case err == nil:
+			if !strings.EqualFold(domain.NormalizePathForMatch(r), domain.NormalizePathForMatch(d.Value)) {
+				extra = append(extra, domain.DeniedApp{ID: d.ID, Kind: domain.DeniedPath, Value: r})
+			}
+		case errors.As(err, &le), errors.Is(err, domain.ErrInvalidArgument):
+			// ファイルが無い・固定ディスクにない・形が合わない項目は、解決できない項目として元の綴りだけで照合する。
+		default:
+			return nil, err // ctx の取り消し・想定外の失敗は、取りこぼしたまま進めず起動しない（fail closed）
+		}
+	}
+	if len(extra) == 0 {
+		return denied, nil
+	}
+	return append(slices.Clone(denied), extra...), nil
 }
 
 // 起動の「試行」の監査のイベント名。結果の行（tool.launch_app・agent.step）とは別の行で、追記だけで更新しない。
