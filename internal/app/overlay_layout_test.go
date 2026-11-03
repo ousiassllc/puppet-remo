@@ -126,6 +126,7 @@ func TestSplitOverlayLabel(t *testing.T) {
 		{"html is text", "<script>alert(1)</script>", "<script>alert(1)</script>", ""},
 		{"long", long + "\n" + long, strings.Repeat("あ", 79) + "…", strings.Repeat("あ", 79) + "…"},
 		{"exactly the limit", strings.Repeat("a", 80), strings.Repeat("a", 80), ""},
+		{"control chars dropped", "a\x00b\tc\x1b\nd\x00", "abc", "d"},
 		{"empty", "", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

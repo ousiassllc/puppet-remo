@@ -278,3 +278,36 @@ func TestControlLaunchEmptyListBeforeCountsLaterWindowsAsNew(t *testing.T) {
 		t.Error("ReusedExistingWindow = true, want false: the list before the launch was empty, so a window of another pid is new")
 	}
 }
+
+// 観測の待ちの間にキルスイッチが発動したら、起動したアプリのウィンドウを前面に出さない（Focus を呼ばない）。起動は成功のまま結果を返す。
+func TestControlLaunchDoesNotFocusWhenTheKillSwitchFiresDuringTheWait(t *testing.T) {
+	e := newAppEnv(t)
+	front := domain.WindowInfo{ID: "5", Title: "Grok Bot", Process: "grok.exe", PID: 900, Foreground: true}
+	e.launcher.OnLaunch(func(pid uint32) {
+		e.windows.SetWindows(front, domain.WindowInfo{ID: "88", Title: "無題", PID: pid})
+	})
+	e.onSleep = func() { _ = e.kill.Trigger("test") }
+
+	res := launchNotepad(t, e)
+	if res.Window == nil || res.Window.ID != "88" || res.Window.Foreground {
+		t.Errorf("Window = %+v, want the launched window 88, not brought to the front", res.Window)
+	}
+	if fg, err := e.windows.Foreground(); err != nil || fg.ID != "5" {
+		t.Errorf("foreground = %+v (%v), want the other app's window 5 untouched after the kill switch", fg, err)
+	}
+}
+
+// 前面に出せなかったとき（Focus の失敗）も、起動は成功のまま、起動したアプリのウィンドウを Foreground なしで返す。
+func TestControlLaunchKeepsTheResultWhenFocusFails(t *testing.T) {
+	e := newAppEnv(t)
+	front := domain.WindowInfo{ID: "5", Title: "Grok Bot", Process: "grok.exe", PID: 900, Foreground: true}
+	e.launcher.OnLaunch(func(pid uint32) {
+		e.windows.SetWindows(front, domain.WindowInfo{ID: "88", Title: "無題", PID: pid})
+	})
+	e.windows.SetError("Focus", domain.ErrInputBlocked)
+
+	res := launchNotepad(t, e)
+	if res.PID == 0 || res.Window == nil || res.Window.ID != "88" || res.Window.Foreground {
+		t.Errorf("result = %+v (window %+v), want success with window 88 not in the foreground", res, res.Window)
+	}
+}

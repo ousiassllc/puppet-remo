@@ -86,7 +86,8 @@ type overlayScreen struct {
 
 // overlayThread はオーバーレイのウィンドウを持つメッセージループ用の OS スレッド（最初の ShowOverlay で起動する。プロセスの終了まで残る）。
 type overlayThread struct {
-	id uint32
+	id   uint32
+	done chan struct{} // スレッドが終わったら閉じる（do が待ち続けないため）
 
 	mu   sync.Mutex
 	jobs []overlayJob
@@ -173,7 +174,7 @@ var overlayWndProcPtr = syscall.NewCallback(overlayWndProc)
 var overlayThreadRef *overlayThread
 
 func startOverlayThread() (*overlayThread, error) {
-	t := &overlayThread{byHwnd: make(map[uintptr]*overlayWin)}
+	t := &overlayThread{byHwnd: make(map[uintptr]*overlayWin), done: make(chan struct{})}
 	ready := make(chan error, 1)
 	go t.run(ready)
 	if err := <-ready; err != nil {
@@ -184,6 +185,7 @@ func startOverlayThread() (*overlayThread, error) {
 
 func (t *overlayThread) run(ready chan<- error) {
 	runtime.LockOSThread()
+	defer close(t.done)
 	t.id = windows.GetCurrentThreadId()
 	overlayThreadRef = t
 	// 座標を物理ピクセルで扱う（プロセスが Per-Monitor V2 でなくても、このスレッドのウィンドウは仮想化されない）。古い Windows では無い関数なので結果は見ない。
@@ -239,10 +241,26 @@ func (t *overlayThread) do(fn func() error) error {
 	t.jobs = append(t.jobs, overlayJob{fn: fn, res: res})
 	t.mu.Unlock()
 	if r, _, err := overlayProcPostThreadMessage.Call(uintptr(t.id), w32.WM_APP, 0, 0); r == 0 {
+		// 積んだジョブを取り除く（残すと、次の成功した投稿で、失敗を返した古いジョブが実行される）。
+		t.mu.Lock()
+		t.jobs = slices.DeleteFunc(t.jobs, func(j overlayJob) bool { return j.res == res })
+		t.mu.Unlock()
 		return fmt.Errorf("overlay: PostThreadMessage: %w", err)
 	}
-	return <-res
+	select {
+	case err := <-res:
+		return err
+	case <-t.done:
+		select {
+		case err := <-res:
+			return err
+		default:
+			return errOverlayThreadGone
+		}
+	}
 }
+
+var errOverlayThreadGone = errors.New("overlay: message loop thread has exited")
 
 func (t *overlayThread) drain() {
 	t.mu.Lock()
@@ -250,8 +268,18 @@ func (t *overlayThread) drain() {
 	t.jobs = nil
 	t.mu.Unlock()
 	for _, j := range jobs {
-		j.res <- j.fn()
+		j.res <- runOverlayJob(j.fn)
 	}
+}
+
+// runOverlayJob は fn を実行し、panic はエラーにする（メッセージループのスレッドで落とさず、呼び出し側へ返す）。
+func runOverlayJob(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("overlay: job panicked: %v", r)
+		}
+	}()
+	return fn()
 }
 
 // --- ウィンドウ（以下はオーバーレイのスレッドだけが呼ぶ）---
@@ -297,6 +325,7 @@ func (t *overlayThread) relabel(first, detail string) error {
 		}
 		lbl.first, lbl.detail = first, detail
 		if err := t.layoutLabel(s.monitor, lbl); err != nil {
+			t.destroyAll() // 半端な表示を残さない（出さない側に倒す）
 			return err
 		}
 		r := lbl.rect(s.monitor)

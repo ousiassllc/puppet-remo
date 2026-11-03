@@ -94,7 +94,8 @@ func (c *control) launch(ctx context.Context, who domain.Actor, appID string) (r
 	}
 	obs := c.observeLaunchedWindow(ctx, pid, app.ExePath, before)
 	win := obs.launched
-	if win != nil && !win.Foreground {
+	// 観測の間（最大およそ 3 秒）に発動したキルスイッチを取りこぼさない: 発動していたら前面を奪わない（起動は成立しているので結果は返す）。
+	if win != nil && !win.Foreground && !c.kill.Active() {
 		// 起動したアプリのウィンドウが背面にあるなら前面に出す（失敗しても起動は成功のまま。Foreground は成功したときだけ立てる）。
 		if c.windows.Focus(ctx, win.ID) == nil {
 			focused := *win

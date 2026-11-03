@@ -3,6 +3,7 @@ package app
 import (
 	"math"
 	"strings"
+	"unicode"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 )
@@ -67,7 +68,18 @@ func overlayLabelRect(m domain.Monitor, textW, textH int) domain.Rect {
 func splitOverlayLabel(label string) (first, detail string) {
 	f, rest, _ := strings.Cut(label, "\n")
 	d, _, _ := strings.Cut(rest, "\n")
-	return truncateOverlayRunes(strings.TrimSpace(f)), truncateOverlayRunes(strings.TrimSpace(d))
+	return truncateOverlayRunes(cleanOverlayLine(f)), truncateOverlayRunes(cleanOverlayLine(d))
+}
+
+// cleanOverlayLine は制御文字（NUL・タブ・ESC など）を取り、前後の空白を取る。クライアント名は利用者が付けた任意の文字列で、
+// NUL は Windows の文字列 API（UTF-16 への変換）が受け付けず panic の元になる。
+func cleanOverlayLine(s string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s))
 }
 
 // truncateOverlayRunes は s が overlayLabelMaxRunes 文字を超えるとき、末尾の「…」を含めてその文字数に切り詰める。
