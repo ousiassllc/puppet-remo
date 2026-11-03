@@ -165,15 +165,14 @@ func TestLaunchApp(t *testing.T) {
 	}
 }
 
-// 起動後に前面にあったウィンドウと、既存のウィンドウが前に出ただけのときの印を、そのまま返す（FR-M19）。
-func TestLaunchAppReportsTheForegroundWindow(t *testing.T) {
-	existing := domain.WindowInfo{ID: "77", Title: "無題 - メモ帳", Process: "notepad.exe", PID: 500, Foreground: true}
+// 起動したアプリのウィンドウをそのまま返す（FR-M19。#85）。
+func TestLaunchAppReportsTheLaunchedWindow(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		window *domain.WindowInfo
 		reused bool
 	}{
-		{name: "existing window brought forward", window: &existing, reused: true},
+		{name: "handed over to a process that opened a new window", window: &domain.WindowInfo{ID: "99", Title: "無題 - メモ帳", Process: "notepad.exe", PID: 501}},
 		{name: "new window of the launched pid", window: &domain.WindowInfo{ID: "88", Title: "新規", Process: "notepad.exe", PID: 4120}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

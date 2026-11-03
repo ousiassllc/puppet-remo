@@ -92,8 +92,17 @@ func (c *control) launch(ctx context.Context, who domain.Actor, appID string) (r
 	if err != nil {
 		return LaunchResult{}, label, leaseID, launchFailure(err)
 	}
-	obs := c.observeLaunchedWindow(ctx, pid, before)
-	return LaunchResult{AppID: app.ID, PID: pid, Window: obs.foreground, ReusedExistingWindow: obs.reusedExistingWindow()}, label, leaseID, nil
+	obs := c.observeLaunchedWindow(ctx, pid, app.ExePath, before)
+	win := obs.launched
+	if win != nil && !win.Foreground {
+		// 起動したアプリのウィンドウが背面にあるなら前面に出す（失敗しても起動は成功のまま。Foreground は成功したときだけ立てる）。
+		if c.windows.Focus(ctx, win.ID) == nil {
+			focused := *win
+			focused.Foreground = true
+			win = &focused
+		}
+	}
+	return LaunchResult{AppID: app.ID, PID: pid, Window: win, ReusedExistingWindow: obs.reusedExistingWindow()}, label, leaseID, nil
 }
 
 // 起動の「試行」の監査のイベント名。結果の行（tool.launch_app・agent.step）とは別の行で、追記だけで更新しない。

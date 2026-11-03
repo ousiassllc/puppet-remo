@@ -23,7 +23,7 @@ type launchAppIn struct {
 	AppID string `json:"app_id" jsonschema:"id of an app from list_launchable_apps"`
 }
 
-// launchWindowBody は launch_app の結果に付く、起動後に前面にあったウィンドウ（list_windows の id・title・pid・process_name と同じ値）。
+// launchWindowBody は launch_app の結果に付く、起動したアプリのウィンドウ（list_windows の id・title・pid・process_name と同じ値）。
 type launchWindowBody struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
@@ -31,8 +31,8 @@ type launchWindowBody struct {
 	Process string `json:"process_name"`
 }
 
-// launchAppBody の window は、前面のウィンドウを確かめられなかったときは付かない。
-// reused_existing_window は、pid のウィンドウも起動の前に無かった新しいウィンドウも見つからないまま別のプロセスのウィンドウが前面にあるとき true（FR-M19）。
+// launchAppBody の window は、起動したアプリのウィンドウが見つからなかったときは付かない（前面にある別のアプリのウィンドウは返さない。#85）。
+// reused_existing_window は、pid のウィンドウも起動の前に無かった新しいウィンドウも見つからないまま別のプロセスのウィンドウが前面にあるとき true（FR-M19）。このとき window は付かない。
 type launchAppBody struct {
 	OK                   bool              `json:"ok"`
 	AppID                string            `json:"app_id"`
@@ -64,8 +64,9 @@ func (s *Server) addAppTools() {
 		"Launch an allowed app as a new process (not idempotent: every call starts a new process). "+
 			"The app, its arguments and its working directory are fixed by the host owner; you can only pass app_id. "+
 			"Needs the control lease (acquired implicitly). Returns the process id once the process is created, "+
-			"then waits up to about 3 seconds for a window of that process to come to the foreground and reports the foreground window "+
-			"(window: id, title, pid, process_name; omitted when it could not be determined). "+
+			"then waits up to about 3 seconds for a window of the launched app to appear, brings it to the foreground if needed and reports it "+
+			"(window: id, title, pid, process_name; the window of the returned pid, or a new window of the same executable when the app handed over to another process; "+
+			"omitted when no such window was found: another app's foreground window is never reported in its place). "+
 			"Some apps (for example tabbed single-window apps such as Windows 11 Notepad, browsers and Windows Terminal) only bring an "+
 			"already open window forward instead of opening a new one: reused_existing_window is true when no window of the returned pid "+
 			"was found, no window that did not exist before the launch has appeared, and a window of another process is in the foreground. "+
