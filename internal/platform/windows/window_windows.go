@@ -53,7 +53,7 @@ func (wm *WindowManager) List(ctx context.Context) ([]domain.WindowInfo, error) 
 }
 
 // At は p 上の最前面のウィンドウを返す。タイトルのないウィンドウも対象にする。最小化されたウィンドウは含めない。
-// 操作中オーバーレイ（クリックスルーの自ウィンドウ。全モニターを覆う）は入力が下へ通るので飛ばし、その下の実ウィンドウを返す
+// 操作中オーバーレイ（クリックスルーの自ウィンドウ。モニターの縁の枠と札）は入力が下へ通るので飛ばし、その下の実ウィンドウを返す
 // （下にある承認ダイアログなどが own_window の判定から漏れないようにする。#69）。
 func (wm *WindowManager) At(p domain.Point) (domain.WindowInfo, bool, error) {
 	all, err := wm.snapshot()

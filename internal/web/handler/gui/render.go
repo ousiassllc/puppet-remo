@@ -31,3 +31,12 @@ func fragmentRequest(c *gin.Context) bool {
 func boostedRequest(c *gin.Context) bool {
 	return fragmentRequest(c) && c.GetHeader("HX-Boosted") != ""
 }
+
+// truncateRunes は s が max 文字を超えるとき、max 文字（末尾の「…」を含む）に切り詰める。
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
+}
