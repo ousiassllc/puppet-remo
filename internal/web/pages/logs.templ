@@ -10,7 +10,7 @@ import (
 const logsTitle = "ログ"
 
 // openLogFolderAttrs は「ログフォルダーを開く」ボタンの hx-* 属性。本文は送らず（開く場所はサーバーが固定する）、
-// 応答の OOB のトースト（成功・失敗とも）だけを反映する。画面は差し替えない。
+// 応答の OOB のトースト（成功）と #alert-root のアラート（失敗）だけを反映する。画面は差し替えない。
 func openLogFolderAttrs(url string) atoms.Attrs {
 	return atoms.Attrs{"hx-post": url, "hx-swap": "none", "hx-disabled-elt": "this", "data-log-open-folder": ""}
 }
