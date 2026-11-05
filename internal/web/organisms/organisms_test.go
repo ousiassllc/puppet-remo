@@ -720,3 +720,20 @@ func TestFormAndNestedPanelSpacing(t *testing.T) {
 	dlg := webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Detail: "詳細", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30}}))
 	has(t, dlg, `rounded-md bg-bone p-4 text-sm text-ink" data-approval-detail`)
 }
+
+// S2: 一覧画面の「絞り込み → 表 → ページ送り」を縦に積む外側のラッパーは、他の一覧と同じ 16px（space-y-4）にする。
+func TestListWrappersUseSectionGap(t *testing.T) {
+	row := view.LogRow{Time: "2026-11-01 09:00:01", Level: "INFO", LevelTone: view.ToneOK, Message: "m"}
+	for _, c := range map[string]struct {
+		out string
+		id  string
+	}{
+		"app_log":         {webtest.Render(t, organisms.AppLog(view.AppLog{Rows: []view.LogRow{row}})), "app-log"},
+		"audit":           {webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1"}}})), "audit-list"},
+		"tasks":           {webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}})), "task-list"},
+		"request_history": {webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: []view.HistoryRow{{ID: "r1"}}})), "request-history"},
+	} {
+		has(t, c.out, `<div id="`+c.id+`" class="space-y-4"`)
+		hasNot(t, c.out, `id="`+c.id+`" class="space-y-3"`)
+	}
+}

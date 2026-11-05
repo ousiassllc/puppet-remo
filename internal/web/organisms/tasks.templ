@@ -70,7 +70,7 @@ templ RunningTasksOOB(v view.RunningTasks) {
 // TaskList はタスクの一覧（新しい順の表・「次へ」。FR-H10）。読み取り専用で、ポーリングの対象ではない。
 // 「次へ」は #task-list を差し替える（HX-Request のフラグメント）。指示の先頭は利用者・MCP クライアント由来なので templ が HTML エスケープする。
 templ TaskList(v view.TaskList) {
-	<div id="task-list" class="space-y-3">
+	<div id="task-list" class="space-y-4">
 		if len(v.Rows) == 0 {
 			@molecules.EmptyState("task-list") {
 				エージェントのタスクはまだありません。
