@@ -101,7 +101,7 @@ templ AgentForm(f view.AgentForm) {
 				<p class="text-xs text-mute" data-consent-at="openai">同意済み: { f.ConsentAt }</p>
 			}
 			if f.Errors.Consent != "" {
-				<p class="text-sm text-danger" role="alert" data-field-error="agent-consent">{ f.Errors.Consent }</p>
+				@molecules.FieldError("agent-consent", f.Errors.Consent)
 			}
 		}
 		@molecules.FormField("agent-model", "モデル", "OpenAI のモデル名。既定は gpt-6.1-sol。", f.Errors.Model) {
@@ -163,7 +163,7 @@ templ FastpathForm(f view.FastpathForm) {
 				<p class="text-xs text-mute" data-consent-at="typesafe">同意済み: { f.ConsentAt }</p>
 			}
 			if f.Errors.Consent != "" {
-				<p class="text-sm text-danger" role="alert" data-field-error="fastpath-consent">{ f.Errors.Consent }</p>
+				@molecules.FieldError("fastpath-consent", f.Errors.Consent)
 			}
 		}
 		@molecules.FormField("fastpath-model", "モデル", "TypeSafe のモデル名。既定は jev-1.13。", f.Errors.Model) {
