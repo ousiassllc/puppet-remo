@@ -70,7 +70,7 @@ templ Alert(p AlertProps) {
 			<p class="text-ink" data-alert-message>{ p.Message }</p>
 		</div>
 		if p.Dismissible {
-			<button type="button" class="motion-hover shrink-0 rounded-full text-mute hover:text-ink" aria-label="閉じる" data-clear="#alert-root" data-ripple>
+			<button type="button" class="motion-hover inline-flex size-8 shrink-0 items-center justify-center rounded-md text-mute hover:bg-accent-soft hover:text-ink" aria-label="閉じる" data-clear="#alert-root" data-ripple>
 				@Icon(IconXmark, IconMD)
 			</button>
 		}
