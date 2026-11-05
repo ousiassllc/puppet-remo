@@ -12,7 +12,7 @@ import (
 // パス・引数・作業ディレクトリは、ホスト所有者だけが見る GUI に出す（リモートには出さない。FR-H12）。
 templ AppCard(a view.AppRow) {
 	<article id={ appCardID(a) } class="rounded-lg border border-border bg-surface p-4" data-app={ a.ID }>
-		<h3 class="text-base font-semibold text-ink">{ a.Label }</h3>
+		<h3 class="text-xl font-semibold text-ink">{ a.Label }</h3>
 		if a.Unlaunchable {
 			<div class="mt-2">
 				@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-unlaunchable": true}) {

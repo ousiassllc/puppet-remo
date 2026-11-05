@@ -27,7 +27,7 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 templ ClientCard(c view.Client) {
 	<article id={ cardID(c) } class="rounded-lg border border-border bg-surface p-4" data-client={ c.ID }>
 		<div class="flex flex-wrap items-baseline justify-between gap-2">
-			<h3 class="text-base font-semibold text-ink">{ c.DisplayName }</h3>
+			<h3 class="text-xl font-semibold text-ink">{ c.DisplayName }</h3>
 			<span class="text-xs text-mute" data-approval-mode>承認モード: { c.Approved }</span>
 		</div>
 		<p class="mt-1 text-xs text-mute">

@@ -170,7 +170,7 @@ templ AuditDetail(v view.AuditDetail) {
 			@auditField("所要時間", v.Duration, "duration")
 		</dl>
 		<section class="space-y-2" aria-label="引数">
-			<h2 class="text-base font-semibold text-ink">引数</h2>
+			<h2 class="text-2xl font-semibold text-ink">引数</h2>
 			if len(v.Args) == 0 {
 				@molecules.EmptyState("audit-args") {
 					記録された引数はありません。
@@ -197,7 +197,7 @@ templ AuditDetail(v view.AuditDetail) {
 			}
 		</section>
 		<section class="space-y-2" aria-label="サムネイル">
-			<h2 class="text-base font-semibold text-ink">サムネイル</h2>
+			<h2 class="text-2xl font-semibold text-ink">サムネイル</h2>
 			if v.ThumbURL != "" {
 				<img
 					src={ v.ThumbURL }

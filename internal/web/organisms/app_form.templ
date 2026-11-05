@@ -74,7 +74,7 @@ templ AppForm(f view.AppForm, oob bool) {
 		data-app-form={ appFormMode(f) }
 		{ appFormAttrs(f, oob)... }
 	>
-		<h3 class="text-base font-semibold text-ink">{ appFormTitle(f) }</h3>
+		<h3 class="text-xl font-semibold text-ink">{ appFormTitle(f) }</h3>
 		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "note", "data-notice": "interpreter"}) {
 			cmd.exe・powershell.exe などのコマンドインタープリタやスクリプトホストを登録すると、リモートの AI に任意のコードの実行を許すことになります。信頼できる、目的の決まったアプリだけを登録してください。
 		}

@@ -209,3 +209,9 @@ func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "shadow-modal", "motion-fade-in", "motion-rise-in")
 	hasNot(t, out, "shadow-xl", "z-40")
 }
+
+// T5: Mono を指定した入力欄だけ font-mono（識別子・トークンの判読用）。既定は Sora のまま。
+func TestInputMonoIsOptIn(t *testing.T) {
+	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")
+	hasNot(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"})), "font-mono")
+}

@@ -645,3 +645,9 @@ func TestCardPaddingsFollowScale(t *testing.T) {
 	has(t, lease, "rounded-lg border border-border bg-surface p-4")
 	hasNot(t, lease, "bg-surface p-3")
 }
+
+// T5: ポート番号は桁を揃える値なので font-mono（隣の IP・MagicDNS 名の <code> と同じ書体）。
+func TestServerStatusPortIsMono(t *testing.T) {
+	out := webtest.Render(t, organisms.ServerStatusBody(view.ServerStatus{Port: 8765}))
+	has(t, out, `<dd data-field="port" class="mb-1 min-w-0 font-mono sm:mb-0">8765</dd>`)
+}
