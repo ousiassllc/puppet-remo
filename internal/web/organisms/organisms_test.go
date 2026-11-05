@@ -499,6 +499,15 @@ func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
 	webtest.AssertCSPCompliantHTML(t, fast)
 }
 
+// 同意のエラー文も、入力のエラーと同じ FieldError で描画する（出現はフェードイン。M5）。
+func TestConsentErrorsUseFieldError(t *testing.T) {
+	agent := webtest.Render(t, organisms.AgentForm(view.AgentForm{Errors: view.AgentErrors{Consent: "同意が必要です"}}))
+	has(t, agent, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="agent-consent"`)
+
+	fast := webtest.Render(t, organisms.FastpathForm(view.FastpathForm{Errors: view.FastpathErrors{Consent: "同意が必要です"}}))
+	has(t, fast, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="fastpath-consent"`)
+}
+
 // トースト・アラートの置き場: トーストは画面下の中央（端から 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
 // app.ts が複製する雛形 #alert-template（role なし）。
 func TestToastAndAlertRoots(t *testing.T) {
