@@ -133,7 +133,7 @@ func TestApprovalDialogKinds(t *testing.T) {
 	sc := base
 	sc.Kind, sc.Heading, sc.Summary, sc.Detail, sc.Note = "safety_check", "安全チェック", "要約", "<b>detail</b>", "note"
 	out2 := webtest.Render(t, organisms.ApprovalDialog(sc))
-	has(t, out2, `data-approval-type="safety_check"`, `data-approval-detail>&lt;b&gt;detail&lt;/b&gt;<`, `data-approval-note>note<`)
+	has(t, out2, `data-approval-type="safety_check"`, `data-approval-detail>&lt;b&gt;detail&lt;/b&gt;<`, `data-approval-note`, `>note</div>`)
 	hasNot(t, out2, "<b>detail</b>")
 	for _, o := range []string{out, out2} {
 		webtest.AssertCSPCompliantHTML(t, o)

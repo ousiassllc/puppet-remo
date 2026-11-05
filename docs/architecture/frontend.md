@@ -497,7 +497,7 @@ graph LR
 
 | 領域 | 実装 |
 |------|------|
-| 色・ダーク（C） | `:root`（ライト）と `[data-theme="dark"]`（ダーク。`prefers-color-scheme` でも初期値）に `--ink` `--bone` `--mute` `--surface` `--border` `--accent` `--accent-soft` `--focus` と状態色 `--success` `--warning` `--danger` `--info`。`--scrim`（モーダルの暗幕）はガイドに値が無い暫定値。フォーカスは `:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px }`、フォームは枠線 `--focus` + `--ring`。プリズム色は使わない。状態はアイコン + 文言 + 状態色（`atoms.Badge`・`atoms.Alert`） |
+| 色・ダーク（C） | `:root`（ライト）と `[data-theme="dark"]`（ダーク。`prefers-color-scheme` でも初期値）に `--ink` `--bone` `--mute` `--surface` `--border` `--accent` `--accent-soft` `--focus` と状態色 `--success` `--warning` `--danger` `--info`。`--scrim`（モーダルの暗幕）はガイドに値が無い暫定値。フォーカスは `:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px }`、フォームは枠線 `--focus` + `--ring`。プリズム色は使わない。状態はアイコン + 文言 + 状態色（`atoms.Badge`・`atoms.Alert`。画面に常設する注意書き・同意の枠は `atoms.Notice`。文字は本文色 `text-ink`、状態色は枠・地・アイコンだけ）。`text-mute` は 1 行の補足（件数・日時など）だけで、複数文の説明には使わない |
 | タイポグラフィ（T） | Sora + Noto Sans JP（UI）と JetBrains Mono（コード・桁を揃える数値。表の数値列は右寄せ）。いずれも OFL で、`@fontsource-variable/*`（`bun.lock` で固定）の woff2 を `scripts/copy-fonts.mjs` が `dist/fonts/` にコピーし、`@font-face`（`src/css/fonts.generated.css`。Git に入れない）を生成する。外部の CDN は使わない（CSP `default-src 'self'` の範囲）。サイズはガイドのスケール（xs 12〜3xl 40。本文 16px・行間 1.8）、ウェイトは Regular（400）と SemiBold（600。見出しとボタンだけ） |
 | 形・余白・線（S） | 角丸 `rounded-sm/md/lg/xl/full` = 4 / 8 / 12 / 16 / 9999。余白は 4px 基準（カード `p-6`・入力の高さ `h-10`）。影はモーダルだけ（`shadow-modal`）。カード・パネルは 1px `--border`。空状態は `molecules.EmptyState`（破線・`rounded-lg`・padding 48/24・アイコン + 文言） |
 | アイコン（I） | Iconoir（MIT）の regular の SVG を `atoms.Icon`（`currentColor`・線 1.5・16/20/24px）で出す。使うアイコンは `atoms/icon.templ` に path を写して足す |

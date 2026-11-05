@@ -47,17 +47,19 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 			}
 		</div>
 		if v.Task != nil {
-			<div class="mt-2 rounded-sm border border-info/40 bg-info/10 p-2 text-xs text-ink" data-lease-task>
-				<p class="text-info">AI エージェントのタスク実行中</p>
-				<dl class="mt-1 space-y-0.5">
-					<div class="flex gap-2"><dt class="w-16 text-mute">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
-					<div class="flex gap-2"><dt class="w-16 text-mute">ステップ</dt><dd class="font-mono" data-task-steps>{ v.Task.Steps }</dd></div>
-					<div class="flex gap-2"><dt class="w-16 text-mute">経過</dt><dd class="font-mono" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
-					if v.Task.StartedAt != "" {
-						<div class="flex gap-2"><dt class="w-16 text-mute">開始</dt><dd class="font-mono" data-task-started>{ v.Task.StartedAt }</dd></div>
-					}
-					<div class="flex gap-2"><dt class="w-16 text-mute">依頼元</dt><dd data-task-requester>{ v.Task.Requester }</dd></div>
-				</dl>
+			<div class="mt-2">
+				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-lease-task": true}) {
+					<p class="font-semibold">AI エージェントのタスク実行中</p>
+					<dl class="space-y-0.5 text-xs">
+						<div class="flex gap-2"><dt class="w-16 text-mute">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
+						<div class="flex gap-2"><dt class="w-16 text-mute">ステップ</dt><dd class="font-mono" data-task-steps>{ v.Task.Steps }</dd></div>
+						<div class="flex gap-2"><dt class="w-16 text-mute">経過</dt><dd class="font-mono" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
+						if v.Task.StartedAt != "" {
+							<div class="flex gap-2"><dt class="w-16 text-mute">開始</dt><dd class="font-mono" data-task-started>{ v.Task.StartedAt }</dd></div>
+						}
+						<div class="flex gap-2"><dt class="w-16 text-mute">依頼元</dt><dd data-task-requester>{ v.Task.Requester }</dd></div>
+					</dl>
+				}
 			</div>
 		}
 		if v.PendingMine {

@@ -40,7 +40,11 @@ templ ServerStatusBody(v view.ServerStatus) {
 		</dd>
 	</dl>
 	if v.Reason != "" {
-		<p class="mt-3 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning" role="status">{ v.Reason }</p>
+		<div class="mt-3">
+			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status"}) {
+				{ v.Reason }
+			}
+		</div>
 	}
 }
 
