@@ -515,10 +515,10 @@ func TestToastAndAlertRoots(t *testing.T) {
 	}
 }
 
-// サイドナビ: 幅 240・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
+// サイドナビ: 幅 240（md 未満のドロワーは約 78%）・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
 func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
 	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}, false))
-	has(t, nav, "w-60", "space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
+	has(t, nav, "w-[78%]", "md:w-60", "space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
 	hasNot(t, nav, "bg-slate", "md:w-56")
 	header := webtest.Render(t, organisms.Header(view.Header{}))
 	has(t, header, "h-14", "border-b", "border-border")
