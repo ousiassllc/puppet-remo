@@ -73,6 +73,9 @@ func TestAlertTonesIconsAndDismiss(t *testing.T) {
 		out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: tone, Code: "conflict", Heading: "見出し", Message: "本文"}))
 		has(t, out, `role="alert"`, `data-error-code="conflict"`, `data-alert-tone="`+string(tone)+`"`, "border-"+color+"/40", "<svg", "見出し", "本文", "data-alert-message")
 		hasNot(t, out, "data-clear")
+		// 通知の帯は --r-md（8）。--r-lg（12）はカードで、同じ部品群の Notice と角を揃える（S1）。
+		has(t, out, "rounded-md")
+		hasNot(t, out, "rounded-lg")
 	}
 	out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "h", Message: "m", Dismissible: true}))
 	has(t, out, `data-clear="#alert-root"`, `aria-label="閉じる"`, "data-ripple")

@@ -159,7 +159,7 @@ templ taskStepArgs(args []view.AuditArg) {
 // TaskDetail はタスク 1 件の詳細（FR-H10・FR-G23）。指示・最終回答・ステップの文字列はすべて templ が HTML エスケープする。
 // ステップは監査ログの行で、入力した文字列の本文・要素の値は持たない。サムネイルは監査の画面と同じ経路（/audit/{id}/thumbnail）。
 templ TaskDetail(v view.TaskDetail) {
-	<div class="space-y-4" data-task-detail={ v.ID }>
+	<div class="space-y-12" data-task-detail={ v.ID }>
 		<div class="space-y-3 rounded-lg border border-border bg-surface p-4">
 			@TaskStatus(v.Status)
 			<dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
