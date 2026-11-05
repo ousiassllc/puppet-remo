@@ -180,7 +180,7 @@ templ TaskDetail(v view.TaskDetail) {
 		</div>
 		<section class="space-y-2" aria-label="指示">
 			<h2 class="text-base font-semibold text-ink">指示</h2>
-			<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-3 font-sans text-sm text-ink" data-task-prompt>{ v.Prompt }</pre>
+			<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-prompt>{ v.Prompt }</pre>
 		</section>
 		<section class="space-y-2" aria-label="最終回答">
 			<h2 class="text-base font-semibold text-ink">最終回答</h2>
@@ -189,7 +189,7 @@ templ TaskDetail(v view.TaskDetail) {
 					最終回答はありません。
 				}
 			} else {
-				<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-3 font-sans text-sm text-ink" data-task-result>{ v.ResultText }</pre>
+				<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-result>{ v.ResultText }</pre>
 				if v.ResultNote != "" {
 					@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-task-result-note": true}) {
 						{ v.ResultNote }
