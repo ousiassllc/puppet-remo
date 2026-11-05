@@ -11,6 +11,11 @@ func hintClass(hint string) string {
 	return "mt-1 text-xs text-mute"
 }
 
+// FieldError は入力のエラー文（role=alert）。FormField と、入力の外に出すエラー（絞り込みのページ送りなど）が同じ見た目になるよう共有する。
+templ FieldError(id, errMsg string) {
+	<p class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
+}
+
 // FormField はラベル・入力・ヒント・エラーの組。入力は children で受ける。
 // Error があるときだけ描画する（role=alert。クライアント側の検証 JS は持たない）。
 templ FormField(id, label, hint, errMsg string) {
@@ -21,7 +26,7 @@ templ FormField(id, label, hint, errMsg string) {
 			<p class={ hintClass(hint) }>{ hint }</p>
 		}
 		if errMsg != "" {
-			<p class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
+			@FieldError(id, errMsg)
 		}
 	</div>
 }

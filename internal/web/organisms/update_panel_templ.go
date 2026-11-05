@@ -148,7 +148,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -255,14 +255,14 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 				}
 			}
 			if v.Latest.Notes != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<pre class=\"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-2 text-sm text-ink\" data-field=\"release-notes\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<pre class=\"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-2 font-sans text-sm text-ink\" data-field=\"release-notes\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(v.Latest.Notes)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 66, Col: 157}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 66, Col: 167}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -297,7 +297,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "applying"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.NoticeAnimated(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "applying"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

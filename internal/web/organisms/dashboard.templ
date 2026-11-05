@@ -173,7 +173,7 @@ templ killSwitchPanel(v view.KillSwitch, oob bool) {
 		<h2 class="border-b border-border px-6 py-3 text-base font-semibold text-ink">キルスイッチ</h2>
 		<div class="space-y-3 p-6">
 			if v.Active {
-				@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "status", "data-killswitch": "active"}) {
+				@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "status", "data-killswitch": "active"}) {
 					発動中です。すべての操作権を剥奪し、リモートからの要求を断っています。
 				}
 				if v.Since != "" {

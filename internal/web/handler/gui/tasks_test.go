@@ -169,7 +169,12 @@ func TestTaskDetailPage(t *testing.T) {
 		"メモ帳に書きました。", "data-task-result-note", "モデル（OpenAI）の申告",
 		// ステップは step_no の昇順、経路、結果、監査ログとサムネイル（監査の画面と同じ経路）
 		`data-step-no="1" data-route="fast"`, `data-step-no="2" data-route="openai"`, "高速パス", "OpenAI",
-		`href="/audit/901"`, `href="/audit/902"`, `src="/audit/902/thumbnail"`, "x:")
+		`href="/audit/901"`, `href="/audit/902"`, `src="/audit/902/thumbnail"`, "x:",
+		// 指示・最終回答は自然文（T1: <pre> でも等幅にしない）。
+		`border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-prompt`,
+		`border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-result>`,
+		// 操作のリンクは本文サイズ（T3）。
+		`class="mt-1 block text-sm link"`)
 	lacks(t, res, `src="/audit/901/thumbnail"`, `hx-post=`, "中断")
 	if i, j, k := strings.Index(res.Body, `data-step-no="1"`), strings.Index(res.Body, `data-step-no="2"`), strings.Index(res.Body, `data-step-no="3"`); i >= j || j >= k {
 		t.Error("steps are not in step_no order")

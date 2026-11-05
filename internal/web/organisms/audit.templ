@@ -57,7 +57,7 @@ templ AuditFilters(f view.AuditFilters) {
 			<input type="hidden" name="limit" value={ f.Limit }/>
 		}
 		if f.Errors.Paging != "" {
-			<p class="text-xs text-danger" role="alert" data-field-error="audit-paging">{ f.Errors.Paging }</p>
+			@molecules.FieldError("audit-paging", f.Errors.Paging)
 		}
 		<div class="flex items-center gap-3">
 			@atoms.Button(atoms.ButtonProps{Label: "絞り込む", Variant: atoms.ButtonPrimary, Type: "submit"})

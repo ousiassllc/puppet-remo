@@ -278,7 +278,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "agent"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "agent"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -570,7 +570,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "fastpath"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "fastpath"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

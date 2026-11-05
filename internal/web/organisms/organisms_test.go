@@ -603,21 +603,28 @@ func TestStatusMessagesUseNotice(t *testing.T) {
 		out   string
 		attrs []string
 		tone  string
+		rises bool
 	}{
-		{"agent form error", webtest.Render(t, organisms.AgentForm(view.AgentForm{Errors: view.AgentErrors{General: "保存できません"}})), []string{`data-form-error="agent"`, `role="alert"`}, "danger"},
-		{"fastpath form error", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{Errors: view.FastpathErrors{General: "保存できません"}})), []string{`data-form-error="fastpath"`, `role="alert"`}, "danger"},
-		{"app unlaunchable", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a6", Label: "x", ExePath: "c.exe", Unlaunchable: true})), []string{"data-app-unlaunchable", `role="alert"`}, "danger"},
-		{"app corrupt", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: "c.exe", Corrupt: true})), []string{"data-app-corrupt", `role="alert"`}, "danger"},
-		{"update error", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Error: "確認できません"})), []string{`data-update="error"`, `role="status"`}, "warning"},
-		{"update key unset", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, KeyNotConfigured: true})), []string{`data-update="key-unset"`}, "warning"},
-		{"update applying", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Applying: true})), []string{`data-update="applying"`}, "info"},
-		{"killswitch active", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true})), []string{`data-killswitch="active"`}, "danger"},
-		{"lease pending", webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{Pending: true, PendingMine: true})), []string{"data-lease-pending-message", `role="status"`}, "warning"},
-		{"token error", webtest.Render(t, organisms.TokenFieldError("入力してください", "validation")), []string{`data-error-code="validation"`, `role="alert"`}, "danger"},
+		{"agent form error", webtest.Render(t, organisms.AgentForm(view.AgentForm{Errors: view.AgentErrors{General: "保存できません"}})), []string{`data-form-error="agent"`, `role="alert"`}, "danger", true},
+		{"fastpath form error", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{Errors: view.FastpathErrors{General: "保存できません"}})), []string{`data-form-error="fastpath"`, `role="alert"`}, "danger", true},
+		{"app unlaunchable", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a6", Label: "x", ExePath: "c.exe", Unlaunchable: true})), []string{"data-app-unlaunchable", `role="alert"`}, "danger", false},
+		{"app corrupt", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: "c.exe", Corrupt: true})), []string{"data-app-corrupt", `role="alert"`}, "danger", false},
+		{"update error", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Error: "確認できません"})), []string{`data-update="error"`, `role="status"`}, "warning", true},
+		{"update key unset", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, KeyNotConfigured: true})), []string{`data-update="key-unset"`}, "warning", false},
+		{"update applying", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Applying: true})), []string{`data-update="applying"`}, "info", true},
+		{"killswitch active", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true})), []string{`data-killswitch="active"`}, "danger", true},
+		{"lease pending", webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{Pending: true, PendingMine: true})), []string{"data-lease-pending-message", `role="status"`}, "warning", false},
+		{"token error", webtest.Render(t, organisms.TokenFieldError("入力してください", "validation")), []string{`data-error-code="validation"`, `role="alert"`}, "danger", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"/40", "bg-"+tt.tone+"/10", "text-ink", "<svg")...)
+			// 操作の結果として現れるもの（422 の再描画・アクションの応答・状態の切り替わり）はフェードイン、常設のものは静か（M5）。
+			if tt.rises {
+				has(t, tt.out, "motion-rise-in")
+			} else {
+				hasNot(t, tt.out, "motion-rise-in")
+			}
 			hasNot(t, tt.out, `class="text-sm text-`+tt.tone+`"`)
 		})
 	}

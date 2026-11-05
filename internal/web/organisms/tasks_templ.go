@@ -822,14 +822,14 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</dl></div><section class=\"space-y-2\" aria-label=\"指示\"><h2 class=\"text-base font-semibold text-ink\">指示</h2><pre class=\"max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-3 text-sm text-ink\" data-task-prompt>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</dl></div><section class=\"space-y-2\" aria-label=\"指示\"><h2 class=\"text-base font-semibold text-ink\">指示</h2><pre class=\"max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-4 font-sans text-sm text-ink\" data-task-prompt>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(v.Prompt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 183, Col: 162}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 183, Col: 172}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -863,14 +863,14 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<pre class=\"max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-3 text-sm text-ink\" data-task-result>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<pre class=\"max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-4 font-sans text-sm text-ink\" data-task-result>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(v.ResultText)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 192, Col: 167}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 192, Col: 177}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -1094,7 +1094,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" class=\"mt-1 block text-xs link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\" data-step-audit>監査ログを見る</a>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" class=\"mt-1 block text-sm link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\" data-step-audit>監査ログを見る</a>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
