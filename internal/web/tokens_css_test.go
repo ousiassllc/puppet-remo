@@ -102,6 +102,20 @@ func TestCheckboxFocusUsesRing(t *testing.T) {
 	}
 }
 
+// M1: スピナーの回転はガイドの 0.9s を :root の --spinner-duration 1 か所で持ち、.spinner はそれを参照する（独自の秒数を直書きしない）。
+func TestSpinnerDurationIsOneToken(t *testing.T) {
+	css := readAppCSS(t)
+	if got := strings.Count(css, "--spinner-duration: 0.9s;"); got != 1 {
+		t.Errorf("--spinner-duration: 0.9s defined %d times, want 1", got)
+	}
+	if !strings.Contains(css, "animation: motion-spin var(--spinner-duration) linear infinite;") {
+		t.Error(".spinner must use var(--spinner-duration)")
+	}
+	if strings.Contains(css, "0.8s linear") {
+		t.Error("app.css must not hard-code a spinner duration")
+	}
+}
+
 // C8: 暗幕（--scrim）は大きな面なので、ダークでも純黒にせず --bone（#050505）系にする（ライトは 0.4、ダークは 0.6）。
 func TestScrimIsNeverPureBlack(t *testing.T) {
 	css := readAppCSS(t)

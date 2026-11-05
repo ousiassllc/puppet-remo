@@ -618,6 +618,15 @@ describe("<remo-screen-viewer>", () => {
       expect(overlayText(viewer)).to.equal("接続できませんでした。ページを再読み込みしてください。");
     });
 
+    // M1: スピナーの回転は :root の --spinner-duration（ガイドの 0.9s）を参照する（Shadow DOM にも継承される）。
+    it("スピナーの回転は --spinner-duration を参照する", async () => {
+      const { viewer } = await connect({ lease: heldByMe });
+      viewer.style.setProperty("--spinner-duration", "0.9s");
+      const spinner = viewer.shadowRoot?.querySelector(".overlay .spinner");
+      expect(spinner).to.not.equal(null);
+      expect(getComputedStyle(spinner as Element).animationDuration).to.equal("0.9s");
+    });
+
     // C4: 状態はアイコン + 文言（+ 状態色）で伝える。接続中・再接続中はスピナー、失敗は danger、キルスイッチは warning。
     it("接続中・再接続中はスピナー、失敗は danger のアイコン、キルスイッチは warning のアイコンを添える", async () => {
       const { viewer, socket } = await connect({ lease: heldByMe });

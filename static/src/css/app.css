@@ -430,6 +430,8 @@
   --motion-fade-in: 320ms;
   --motion-fade-out: 240ms;
   --motion-shift: 8px;
+  /* スピナーの 1 回転（ガイドの Feedback 節のとおり 0.9s）。ページの .spinner と Lit のビューアが参照する。reduced-motion でも変えない。 */
+  --spinner-duration: 0.9s;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
@@ -593,7 +595,7 @@
     border: 2px solid var(--accent-soft);
     border-top-color: var(--accent);
     border-radius: var(--radius-full);
-    animation: motion-spin 0.8s linear infinite;
+    animation: motion-spin var(--spinner-duration) linear infinite;
   }
 
   /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */

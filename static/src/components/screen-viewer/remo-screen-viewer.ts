@@ -151,7 +151,7 @@ export class RemoScreenViewer extends LitElement {
     .tone-warning {
       color: var(--warning);
     }
-    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px。回転は reduced-motion でも止めない。 */
+    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。回転は reduced-motion でも止めない。 */
     .spinner {
       width: 20px;
       height: 20px;
@@ -160,7 +160,7 @@ export class RemoScreenViewer extends LitElement {
       border: 2px solid var(--accent-soft);
       border-top-color: var(--accent);
       border-radius: var(--r-full);
-      animation: overlay-spin 0.8s linear infinite;
+      animation: overlay-spin var(--spinner-duration) linear infinite;
     }
     @keyframes overlay-spin {
       to {
