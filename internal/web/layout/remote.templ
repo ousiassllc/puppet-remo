@@ -27,7 +27,7 @@ templ Remote(title string) {
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
 			<header class="flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink">puppet-remo</header>
-			<div class="mx-auto max-w-7xl space-y-4 p-4">
+			<div class="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
 				@organisms.AlertRoot("")
 				{ children... }
 			</div>

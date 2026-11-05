@@ -3,14 +3,14 @@ package molecules
 // FormField はラベル・入力・ヒント・エラーの組。入力は children で受ける。
 // Error があるときだけ描画する（role=alert。クライアント側の検証 JS は持たない）。
 templ FormField(id, label, hint, errMsg string) {
-	<div class="space-y-1">
-		<label for={ id } class="block text-sm text-ink">{ label }</label>
+	<div>
+		<label for={ id } class="mb-2 block text-sm text-ink">{ label }</label>
 		{ children... }
 		if hint != "" {
-			<p class="text-xs text-mute">{ hint }</p>
+			<p class="mt-1 text-xs text-mute">{ hint }</p>
 		}
 		if errMsg != "" {
-			<p class="motion-rise-in text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
+			<p class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
 		}
 	</div>
 }
