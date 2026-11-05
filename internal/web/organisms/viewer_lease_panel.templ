@@ -49,7 +49,7 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 		if v.Task != nil {
 			<div class="mt-2">
 				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-lease-task": true}) {
-					<p class="font-semibold">AI エージェントのタスク実行中</p>
+					<h3 class="text-base font-semibold">AI エージェントのタスク実行中</h3>
 					<dl class="space-y-0.5 text-xs">
 						<div class="flex gap-2"><dt class="w-16 text-mute">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
 						<div class="flex gap-2"><dt class="w-16 text-mute">ステップ</dt><dd class="font-mono" data-task-steps>{ v.Task.Steps }</dd></div>
