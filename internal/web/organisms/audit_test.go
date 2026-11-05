@@ -44,6 +44,8 @@ func TestAuditFiltersFieldErrorsAndSelection(t *testing.T) {
 		Errors: view.AuditFilterErrors{From: "日時が不正です", Paging: "limit が不正です"},
 	}))
 	has(t, out, `data-field-error="audit-from"`, "日時が不正です", `data-field-error="audit-paging"`, `type="hidden" name="limit" value="20"`, `value="tool" selected`, `hx-target-422="#audit-list"`, "novalidate")
+	// ページ送りのエラーも、入力のエラーと同じ 14px（T3）でフェードインする。
+	has(t, out, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="audit-paging"`)
 	hasNot(t, out, `data-field-error="audit-to"`)
 	webtest.AssertCSPCompliantHTML(t, out)
 }
