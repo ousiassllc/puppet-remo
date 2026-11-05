@@ -149,7 +149,7 @@ func ApprovalDialog(v view.ApprovalDialog) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</h1><dl class=\"grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm\"><dt class=\"text-mute\">クライアント</dt><dd class=\"text-ink\" data-approval-client>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</h1><dl class=\"grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm\"><dt class=\"text-mute\">クライアント</dt><dd class=\"text-ink\" data-approval-client>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

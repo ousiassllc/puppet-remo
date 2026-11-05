@@ -73,7 +73,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 				}
 			}
 			if v.Updatable {
-				<div class="flex flex-wrap items-center gap-3">
+				<div class="flex flex-wrap items-center gap-2">
 					@atoms.Button(atoms.ButtonProps{Label: "今すぐ確認", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 						"hx-post": "/update/check", "hx-target": "#update-panel", "hx-swap": "outerHTML",
 						"hx-disabled-elt": "this", "hx-indicator": "#update-spinner",
