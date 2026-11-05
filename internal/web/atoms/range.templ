@@ -10,7 +10,8 @@ type RangeProps struct {
 }
 
 // Range はスライダー（P1）。1 行入力欄の枠（高さ・border・背景・padding）は付けない。
-// つまみ・進捗の --accent は app.css の input[type="range"]。値の表示（<output>）は呼び出し側が横に置く。
+// トラック（高さ 4・未充填 --accent-soft・充填 --accent）とつまみ（16 の円・--surface + 1px --border）は app.css の input[type="range"]（O11）。
+// Blink の充填は --_v（値の割合）で、app.ts が読み込み時・入力時・HTMX の差し替え後に設定する。値の表示（<output>）は呼び出し側が横に置く。
 templ Range(p RangeProps) {
 	<input
 		id={ p.ID }

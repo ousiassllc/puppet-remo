@@ -323,9 +323,61 @@
     background-repeat: no-repeat;
   }
 
-  /* スライダー（P1）: つまみ・進捗を --accent にする。 */
+  /* スライダー（O11・P1）: OS 標準の見た目にしない。トラックは高さ 4・--r-full で、未充填 --accent-soft・充填 --accent。
+   * つまみは 16 の円（--surface 地 + 1px --border）。フォーカスはつまみに --ring の 3px（outline は透明で残し、ハイコントラストでは枠として見える）。
+   * Blink（WebView2・Chromium）には充填部の疑似要素が無いので、--_v（値の割合。app.ts が style.setProperty で更新する）でグラデーションの境目を作る。
+   * Firefox は ::-moz-range-progress が充填する。 */
   input[type="range"] {
-    accent-color: var(--accent);
+    appearance: none;
+    height: 16px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(to right, var(--accent) var(--_v, 0%), var(--accent-soft) var(--_v, 0%));
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--accent-soft);
+  }
+  input[type="range"]::-moz-range-progress {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+  }
+  input[type="range"]::-moz-range-thumb {
+    box-sizing: border-box;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+  }
+  input[type="range"]:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+  }
+  input[type="range"]:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  input[type="range"]:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  input[type="range"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 

@@ -18,7 +18,8 @@ type RangeProps struct {
 }
 
 // Range はスライダー（P1）。1 行入力欄の枠（高さ・border・背景・padding）は付けない。
-// つまみ・進捗の --accent は app.css の input[type="range"]。値の表示（<output>）は呼び出し側が横に置く。
+// トラック（高さ 4・未充填 --accent-soft・充填 --accent）とつまみ（16 の円・--surface + 1px --border）は app.css の input[type="range"]（O11）。
+// Blink の充填は --_v（値の割合）で、app.ts が読み込み時・入力時・HTMX の差し替え後に設定する。値の表示（<output>）は呼び出し側が横に置く。
 func Range(p RangeProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -47,7 +48,7 @@ func Range(p RangeProps) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(p.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/range.templ`, Line: 16, Col: 11}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/range.templ`, Line: 17, Col: 11}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -60,7 +61,7 @@ func Range(p RangeProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/range.templ`, Line: 17, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/range.templ`, Line: 18, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -73,7 +74,7 @@ func Range(p RangeProps) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(p.Value)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/range.templ`, Line: 19, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/range.templ`, Line: 20, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

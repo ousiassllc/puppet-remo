@@ -255,15 +255,38 @@ document.addEventListener("remo:error", (event) => {
   showErrorAlert(typeof message === "string" && message !== "" ? message : "操作を実行できませんでした。");
 });
 
-// 5. スライダー（画質・FPS）の値の表示。送信は離したとき（change）にサーバーへ送られ、サーバーが再描画する。
+// 5. スライダー（画質・FPS）。送信は離したとき（change）にサーバーへ送られ、サーバーが再描画する。
+// 横の数値（<output>）を追従させ、充填の幅（--_v。app.css の Blink 用のトラック）を値の割合にする。style 属性は CSP で使えないので CSSOM で設定する。
+function syncRangeFill(range: HTMLInputElement): void {
+  const min = range.min === "" ? 0 : Number(range.min);
+  const max = range.max === "" ? 100 : Number(range.max);
+  const ratio = max > min ? (Number(range.value) - min) / (max - min) : 0;
+  range.style.setProperty("--_v", `${Math.min(Math.max(ratio, 0), 1) * 100}%`);
+}
+
+function syncRangeFills(root: ParentNode): void {
+  for (const range of root.querySelectorAll<HTMLInputElement>('input[type="range"]')) {
+    syncRangeFill(range);
+  }
+}
+
 document.addEventListener("input", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement) || target.type !== "range") {
     return;
   }
+  syncRangeFill(target);
   const output = document.getElementById(target.dataset.rangeOutput ?? "");
   if (output) {
     output.textContent = target.value;
+  }
+});
+
+// 読み込み時と、HTMX が差し込んだ新しい要素（ツールバーの再描画）の充填を合わせる。
+syncRangeFills(document);
+document.addEventListener("htmx:load", (event) => {
+  if (event.target instanceof Element) {
+    syncRangeFills(event.target);
   }
 });
 
