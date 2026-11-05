@@ -183,6 +183,20 @@
     border-color: var(--focus);
     box-shadow: 0 0 0 2px var(--ring);
   }
+
+  /* 不正な入力欄（aria-invalid。atoms.Input / Textarea が付ける）は、枠が --danger なので、フォーカスの輪も --danger の 40% にする（C3・C4）。 */
+  input:not([type="checkbox"], [type="radio"], [type="range"])[aria-invalid="true"]:focus-visible,
+  select[aria-invalid="true"]:focus-visible,
+  textarea[aria-invalid="true"]:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
+  }
+
+  /* プレースホルダーは --mute（C6）。Tailwind の既定（文字色の 50% 混色）にしない。 */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--mute);
+    opacity: 1;
+  }
 }
 
 @layer components {
