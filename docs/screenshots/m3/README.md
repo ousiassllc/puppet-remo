@@ -47,10 +47,10 @@ google-chrome --headless=new --no-sandbox --no-first-run --ozone-platform=headle
 | `overlay.png` | 操作中オーバーレイ（`GET /overlay`。枠線とラベル「操作中: demo-desktop（mcp）」だけを描き、背景は透明）。撮影のため、背後に架空のデスクトップ（メモ帳）を敷いてある（実機のオーバーレイは透過ウィンドウで、下のアプリがそのまま見え・操作できる）。**Wails のウィンドウとしての実表示（クリック透過・キャプチャ除外・全モニター）は Linux では撮れていない** |
 | `viewer-lease-pending-202.png` | Web の「操作権を取得」を押した直後。POST は待たずに 202 を返し、パネルが承認待ち（「ホストの承認を待っています。」）になっている（取得ボタンを押してから約 150 ms） |
 | `approval-dialog-queue.png` | 承認ダイアログ（`/approvals/{id}`）。要求が重なったときは届いた順に 1 つずつ開き、残り時間は各要求の届いた時刻から数える |
-| `viewer-lease-denied-toast.png` | ホストが拒否したあと。WebSocket の `error`（`approval_denied`）がこのビューアだけにトースト（右下「ホストが操作権の取得を拒否しました。」）で届き、パネルは空きに戻っている。直後 30 秒は同じクライアントの取得がダイアログなしで `approval_denied` になる（クールダウン） |
+| `viewer-lease-denied-toast.png` | ホストが拒否したあと。WebSocket の `error`（`approval_denied`）がこのビューアだけにトースト（右下「ホストが操作権の取得を拒否しました。」）で届き、パネルは空きに戻っている。直後 30 秒は同じクライアントの取得がダイアログなしで `approval_denied` になる（クールダウン）。**当時はトースト。現在はエラーのインラインアラート**（#128。この画像は撮り直していない） |
 
 ### 撮れていない状態
 
-- **タイムアウト（`approval_timeout`）のトースト**: 撮っていない（60 秒待つ必要があるため。`error` メッセージの経路は拒否と同じで、サービスと ws のテストで確認している）。
+- **タイムアウト（`approval_timeout`）のトースト**（現在はエラーのインラインアラート）: 撮っていない（60 秒待つ必要があるため。`error` メッセージの経路は拒否と同じで、サービスと ws のテストで確認している）。
 - **Windows 実機の承認ダイアログ・オーバーレイ**（`WDA_EXCLUDEFROMCAPTURE`・`WS_EX_TRANSPARENT`・マルチモニター・DPI 混在）: CI・Linux では確かめられない（`docs/operations/smoke-windows.md`）。
 - 監査ログの Web（リモート）画面は M3 には無い（リモートルーターでは `/audit*` は 404）。
