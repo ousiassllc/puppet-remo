@@ -171,14 +171,14 @@ func connectionRequestList(v view.RequestList, oob bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"><div class=\"flex flex-wrap items-baseline justify-between gap-2\"><h3 class=\"text-base font-semibold text-ink\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"><div class=\"flex flex-wrap items-baseline justify-between gap-2\"><h3 class=\"text-xl font-semibold text-ink\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(r.DisplayName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/requests.templ`, Line: 43, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/requests.templ`, Line: 43, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -262,7 +262,7 @@ func connectionRequestList(v view.RequestList, oob bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " まで有効</p><form class=\"mt-3 grid gap-3 sm:grid-cols-2\" hx-post=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " まで有効</p><form class=\"mt-3 grid gap-4 sm:grid-cols-2\" hx-post=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -323,7 +323,7 @@ func connectionRequestList(v view.RequestList, oob bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<fieldset class=\"space-y-1 sm:col-span-2\"><legend class=\"text-sm text-ink\">使える機能</legend> <label class=\"mr-4 inline-flex items-center gap-2 text-sm\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<fieldset class=\"space-y-2 sm:col-span-2\"><legend class=\"text-sm text-ink\">使える機能</legend> <label class=\"mr-4 inline-flex items-center gap-2 text-sm\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

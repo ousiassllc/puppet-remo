@@ -10,6 +10,7 @@ type InputProps struct {
 	Required    bool
 	Readonly    bool
 	Invalid     bool
+	Mono        bool // true なら JetBrains Mono（トークンなど、文字の判読が要る識別子）
 	Attrs       Attrs
 }
 
@@ -20,8 +21,12 @@ func inputType(t string) string {
 	return t
 }
 
-func inputClass(invalid bool) string {
-	return fieldClass("h-10 px-3 ", invalid)
+func inputClass(invalid, mono bool) string {
+	size := "h-10 px-3 "
+	if mono {
+		size += "font-mono "
+	}
+	return fieldClass(size, invalid)
 }
 
 // textareaClass は複数行の入力欄のクラス（高さは行数で決まるので、高さの指定は持たない）。
@@ -47,7 +52,7 @@ templ Input(p InputProps) {
 		type={ inputType(p.Type) }
 		value={ p.Value }
 		placeholder={ p.Placeholder }
-		class={ inputClass(p.Invalid) }
+		class={ inputClass(p.Invalid, p.Mono) }
 		required?={ p.Required }
 		readonly?={ p.Readonly }
 		aria-invalid?={ p.Invalid }

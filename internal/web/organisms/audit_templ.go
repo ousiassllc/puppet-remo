@@ -47,7 +47,7 @@ func AuditFilters(f view.AuditFilters) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form class=\"space-y-3 rounded-lg border border-border bg-surface p-4\" method=\"get\" action=\"/audit\" novalidate aria-label=\"絞り込み\" data-audit-filters hx-get=\"/audit\" hx-target=\"#audit-list\" hx-target-422=\"#audit-list\" hx-swap=\"outerHTML\" hx-push-url=\"true\" hx-disabled-elt=\"find button[type=submit]\"><div class=\"grid gap-3 sm:grid-cols-2 lg:grid-cols-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form class=\"space-y-4 rounded-lg border border-border bg-surface p-4\" method=\"get\" action=\"/audit\" novalidate aria-label=\"絞り込み\" data-audit-filters hx-get=\"/audit\" hx-target=\"#audit-list\" hx-target-422=\"#audit-list\" hx-swap=\"outerHTML\" hx-push-url=\"true\" hx-disabled-elt=\"find button[type=submit]\"><div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -615,7 +615,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</dl><section class=\"space-y-2\" aria-label=\"引数\"><h2 class=\"text-base font-semibold text-ink\">引数</h2>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</dl><section class=\"space-y-2\" aria-label=\"引数\"><h2 class=\"text-2xl font-semibold text-ink\">引数</h2>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -684,7 +684,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</section><section class=\"space-y-2\" aria-label=\"サムネイル\"><h2 class=\"text-base font-semibold text-ink\">サムネイル</h2>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</section><section class=\"space-y-2\" aria-label=\"サムネイル\"><h2 class=\"text-2xl font-semibold text-ink\">サムネイル</h2>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

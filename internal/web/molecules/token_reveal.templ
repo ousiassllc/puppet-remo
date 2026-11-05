@@ -15,7 +15,7 @@ templ TokenReveal(v view.TokenReveal) {
 		<h3 class="text-base font-semibold">「{ v.Label }」のトークンを発行しました</h3>
 		<p>このトークンは今だけ表示されます。閉じると二度と確認できないので、いま安全な場所に控えてください。（有効期限: { v.ExpiresAt }）</p>
 		<div class="flex gap-2 pt-2">
-			@atoms.Input(atoms.InputProps{ID: "issued-token", Name: "issued_token", Value: v.Plaintext, Readonly: true, Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false", "data-token-plaintext": true}})
+			@atoms.Input(atoms.InputProps{ID: "issued-token", Name: "issued_token", Value: v.Plaintext, Readonly: true, Mono: true, Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false", "data-token-plaintext": true}})
 			@atoms.Button(atoms.ButtonProps{Label: "コピー", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{"data-copy-target": "issued-token", "data-copy-status": "copy-status"}})
 			@atoms.Button(atoms.ButtonProps{Label: "閉じる", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{"data-clear": "#token-result"}})
 		</div>

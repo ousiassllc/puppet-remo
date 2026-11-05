@@ -48,14 +48,14 @@ func Modal(m view.ConfirmModal) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"modal\" class=\"motion-fade-in fixed inset-0 z-(--z-modal) flex items-center justify-center bg-scrim\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"modal-title\"><div class=\"motion-rise-in w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-modal\"><h2 id=\"modal-title\" class=\"text-base font-semibold text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"modal\" class=\"motion-fade-in fixed inset-0 z-(--z-modal) flex items-center justify-center bg-scrim p-4 md:p-6\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"modal-title\"><div class=\"motion-rise-in w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-modal\"><h2 id=\"modal-title\" class=\"text-lg font-semibold text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(m.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 25, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 25, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {

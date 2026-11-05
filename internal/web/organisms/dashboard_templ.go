@@ -100,14 +100,14 @@ func ServerStatusBody(v view.ServerStatus) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<dt class=\"text-mute\">ポート</dt><dd data-field=\"port\" class=\"mb-1 min-w-0 sm:mb-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<dt class=\"text-mute\">ポート</dt><dd data-field=\"port\" class=\"mb-1 min-w-0 font-mono sm:mb-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Port))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 33, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 33, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -145,7 +145,7 @@ func ServerStatusBody(v view.ServerStatus) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if v.Reason != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"mt-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"mt-6\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -511,7 +511,7 @@ func LeasePanelBody(v view.Lease) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if v.CanRevoke {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<div class=\"mt-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<div class=\"mt-6\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -841,7 +841,7 @@ func killSwitchPanel(v view.KillSwitch, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\" data-poll-rev><h2 class=\"border-b border-border px-6 py-3 text-base font-semibold text-ink\">キルスイッチ</h2><div class=\"space-y-3 p-6\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "\" data-poll-rev><h2 class=\"border-b border-border px-6 py-3 text-2xl font-semibold text-ink\">キルスイッチ</h2><div class=\"space-y-6 p-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

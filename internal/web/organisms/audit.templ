@@ -20,7 +20,7 @@ func auditSelectOptions(opts []view.AuditFilterOption) []atoms.SelectOption {
 // 日時は RFC 3339 の文字列で入力する（API 仕様 §7.3 の from / to と同じ）。
 templ AuditFilters(f view.AuditFilters) {
 	<form
-		class="space-y-3 rounded-lg border border-border bg-surface p-4"
+		class="space-y-4 rounded-lg border border-border bg-surface p-4"
 		method="get"
 		action="/audit"
 		novalidate
@@ -33,7 +33,7 @@ templ AuditFilters(f view.AuditFilters) {
 		hx-push-url="true"
 		hx-disabled-elt="find button[type=submit]"
 	>
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			@molecules.FormField("audit-from", "開始日時", "RFC 3339（例: 2026-11-02T09:00:00+09:00）。この日時以降。", f.Errors.From) {
 				@atoms.Input(atoms.InputProps{ID: "audit-from", Name: "from", Value: f.From, Placeholder: "2026-11-02T09:00:00+09:00", Invalid: f.Errors.From != "", Attrs: atoms.Attrs{"autocomplete": "off"}})
 			}
@@ -170,7 +170,7 @@ templ AuditDetail(v view.AuditDetail) {
 			@auditField("所要時間", v.Duration, "duration")
 		</dl>
 		<section class="space-y-2" aria-label="引数">
-			<h2 class="text-base font-semibold text-ink">引数</h2>
+			<h2 class="text-2xl font-semibold text-ink">引数</h2>
 			if len(v.Args) == 0 {
 				@molecules.EmptyState("audit-args") {
 					記録された引数はありません。
@@ -197,7 +197,7 @@ templ AuditDetail(v view.AuditDetail) {
 			}
 		</section>
 		<section class="space-y-2" aria-label="サムネイル">
-			<h2 class="text-base font-semibold text-ink">サムネイル</h2>
+			<h2 class="text-2xl font-semibold text-ink">サムネイル</h2>
 			if v.ThumbURL != "" {
 				<img
 					src={ v.ThumbURL }

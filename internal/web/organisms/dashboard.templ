@@ -30,7 +30,7 @@ templ ServerStatusBody(v view.ServerStatus) {
 			<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs">{ v.DNSName }</code></dd>
 		}
 		<dt class="text-mute">ポート</dt>
-		<dd data-field="port" class="mb-1 min-w-0 sm:mb-0">{ strconv.Itoa(v.Port) }</dd>
+		<dd data-field="port" class="mb-1 min-w-0 font-mono sm:mb-0">{ strconv.Itoa(v.Port) }</dd>
 		<dt class="text-mute">待ち受け</dt>
 		<dd class="flex min-w-0 flex-wrap items-center gap-2">
 			@atoms.Badge(tone(v.ListenTone), v.ListenLabel)
@@ -40,7 +40,7 @@ templ ServerStatusBody(v view.ServerStatus) {
 		</dd>
 	</dl>
 	if v.Reason != "" {
-		<div class="mt-3">
+		<div class="mt-6">
 			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status"}) {
 				{ v.Reason }
 			}
@@ -106,7 +106,7 @@ templ LeaseDisplay(v view.Lease) {
 templ LeasePanelBody(v view.Lease) {
 	@LeaseDisplay(v)
 	if v.CanRevoke {
-		<div class="mt-3">
+		<div class="mt-6">
 			@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 				"hx-get": "/lease/revoke/confirm", "hx-target": "#modal-root", "hx-swap": "innerHTML",
 			}})
@@ -170,8 +170,8 @@ templ killSwitchPanel(v view.KillSwitch, oob bool) {
 		{ oobAttrs(oob)... }
 	>
 		<input type="hidden" name="rev_killswitch" value={ v.Rev } data-poll-rev/>
-		<h2 class="border-b border-border px-6 py-3 text-base font-semibold text-ink">キルスイッチ</h2>
-		<div class="space-y-3 p-6">
+		<h2 class="border-b border-border px-6 py-3 text-2xl font-semibold text-ink">キルスイッチ</h2>
+		<div class="space-y-6 p-6">
 			if v.Active {
 				@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "status", "data-killswitch": "active"}) {
 					発動中です。すべての操作権を剥奪し、リモートからの要求を断っています。

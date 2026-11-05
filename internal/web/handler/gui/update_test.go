@@ -50,9 +50,9 @@ func TestUpdatePageShowsVerifiedUpdate(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, `data-update="latest"`, `data-field="latest-version"`, "0.1.1", "署名を確認済み", "修正: foo", "更新する",
 		`hx-get="/update/apply/confirm"`, `hx-target="#modal-root"`)
-	// 入れ子パネルの角丸は md（8px。S1。sm の 4px はタグ・チェック用）。
+	// 入れ子パネルの角丸は md（8px。S1。sm の 4px はタグ・チェック用）。padding はカードの値に合わせた p-4（S2）。
 	// リリースノートは自然文なので、<pre> でも等幅にせず Sora + Noto Sans JP（T1）。
-	contains(t, res, `rounded-md bg-bone p-2 font-sans text-sm text-ink" data-field="release-notes"`)
+	contains(t, res, `rounded-md bg-bone p-4 font-sans text-sm text-ink" data-field="release-notes"`)
 	lacks(t, res, `data-update="reject"`)
 }
 
