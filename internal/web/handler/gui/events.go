@@ -35,7 +35,7 @@ var sseTopics = []string{
 //	lease                 → #lease の中身
 //	connection-requests   → サイドバーの件数バッジ
 //	killswitch            → ヘッダーの状態バッジ
-//	toast                 → #toast-root に追加するトースト
+//	toast                 → info は #toast-root に追加するトースト、error は #alert-root のインラインアラート
 //
 // 接続が切れても HTMX の SSE 拡張が再接続するため、接続直後に各イベントの現在値を 1 回送る（toast を除く）。
 func (h *Handler) Events(c *gin.Context) {

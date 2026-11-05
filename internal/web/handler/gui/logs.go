@@ -23,7 +23,7 @@ const (
 // OpenLogFolder は POST /logs/open-folder（FR-H13。#54）。ログ画面のボタンが送る。
 // 本文・クエリ・パスは読まない: 開く場所は service.AppLog の実装が固定し（ログファイルのあるフォルダー）、
 // リクエストの値で決まるものは無い。ログの内容には触れず（読み取り専用）、監査もしない（設定・状態を変えない）。
-// 成功は 200 で、トーストだけを OOB で返す（ボタンの hx-swap="none"）。フォルダーが無ければ 404、その他の失敗は 500
+// 成功は 200 で、完了のトーストだけを OOB で返す（ボタンの hx-swap="none"）。フォルダーが無ければ 404、その他の失敗は 500
 // （どちらもエラーのインラインアラート。固定の文言で、パス・OS のエラー文は出さない）。
 func (h *Handler) OpenLogFolder(c *gin.Context) {
 	err := h.d.Logs.OpenFolder(c.Request.Context())

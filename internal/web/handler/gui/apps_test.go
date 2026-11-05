@@ -331,7 +331,7 @@ func TestDeleteApp(t *testing.T) {
 	contains(t, res, `data-error-code="not_found"`)
 }
 
-func TestWriteFailureIsAnInternalErrorToastWithoutDetails(t *testing.T) {
+func TestWriteFailureIsAnInternalErrorAlertWithoutDetails(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) {
 		seedApp(f, "app1", "メモ帳", notepad)
 		f.Apps.WriteErr = errors.New("db: " + notepad + " " + argSecret)
@@ -404,7 +404,7 @@ func TestPickFileCancelIs204AndLeavesTheFieldAlone(t *testing.T) {
 	}
 }
 
-func TestPickFileErrorIsAnInternalErrorToastWithoutThePath(t *testing.T) {
+func TestPickFileErrorIsAnInternalErrorAlertWithoutThePath(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) {
 		f.Apps.PickFunc = func(context.Context) (string, bool, error) { return "", false, errors.New("dialog failed " + notepad) }
 	})

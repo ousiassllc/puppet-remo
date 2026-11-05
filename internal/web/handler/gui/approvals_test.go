@@ -106,7 +106,7 @@ func TestAllowAndDenyResolveTheApproval(t *testing.T) {
 	}
 }
 
-// 失効（60 秒）・解決済み・存在しない id・Resolve が失効を返す競合は、410 approval_timeout（トースト）。closeWindow は出さない。
+// 失効（60 秒）・解決済み・存在しない id・Resolve が失効を返す競合は、410 approval_timeout（インラインアラート）。closeWindow は出さない。
 func TestApprovalGoneIs410(t *testing.T) {
 	t.Run("unknown id", func(t *testing.T) {
 		r := newRig(t)

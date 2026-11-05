@@ -19,7 +19,7 @@ import (
 
 // このファイルはエージェント設定の画面（FR-H11、FR-G14、FR-G22）。保存・検証・監査は service.AgentSettings が行い、ここは描画と受け付けだけ。
 //
-// API キー（NFR-S14）: キーは PUT の本文（api_key）だけで受け取る（URL・クエリでは受けない）。応答・トースト・エラー・ログのどこにも
+// API キー（NFR-S14）: キーは PUT の本文（api_key）だけで受け取る（URL・クエリでは受けない）。応答・通知・エラー・ログのどこにも
 // 出さず（登録の有無は AgentSettingsView の真偽値だけ）、キーに関わる応答は Cache-Control: no-store にする。
 // 入力欄は value を持たない（atoms.SecretInput）。
 
