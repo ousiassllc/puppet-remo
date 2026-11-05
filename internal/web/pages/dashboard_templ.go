@@ -66,7 +66,7 @@ func dashboardBody(v view.Dashboard) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div><div class=\"flex flex-wrap gap-3 text-sm\"><a href=\"/requests\" class=\"inline-flex items-center gap-2 link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">接続要求を確認する")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div><div class=\"flex flex-wrap gap-2 text-sm\"><a href=\"/requests\" class=\"inline-flex items-center gap-2 link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">接続要求を確認する")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

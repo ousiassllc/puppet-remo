@@ -87,7 +87,7 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint")
 	v.RevokeHint = "タスクが中断されます"
 	// 警告は Notice（アイコン + 本文色 + 状態色の枠）で出す（C4）。
-	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning/40", "<svg", "タスクが中断されます")
+	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning-line", "<svg", "タスクが中断されます")
 	// 剥奪できない保持者には、ヒントがあってもボタンごと出さない。
 	v.CanRevoke = false
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint", "強制剥奪")
@@ -110,8 +110,8 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 // タスク詳細のステップの引数: キーだけが補助（text-mute）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<dl class="mt-1 space-y-1 text-sm text-ink" data-step-args>`, `<dt class="text-mute">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
-	hasNot(t, out, `class="mt-1 space-y-1 text-xs text-mute"`)
+	has(t, out, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
+	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
 // タスク・監査ログの詳細: h2 で始まるセクション同士は、48（--gap-section-sm。space-y-12）で区切る（S5）。
@@ -208,6 +208,17 @@ func TestConnectionRequestListApprovalModeOnlyShowsAvailableModes(t *testing.T) 
 	hasNot(t, empty, "<button", "/approve")
 }
 
+// 補助テキスト（text-mute）の段落に入れた <code> チップは、--accent-soft 地の上で AA 4.5:1 を保つため文字色を --ink にする（C6）。
+func TestMuteParagraphCodeChipsAreInk(t *testing.T) {
+	chip := func(v string) string {
+		return `<code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">` + v + `</code>`
+	}
+	client := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc", NodeID: "node-1"}))
+	has(t, client, chip("node-1"))
+	request := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", RemoteIP: "100.64.0.9"}}}))
+	has(t, request, chip("100.64.0.9"))
+}
+
 // 接続要求の履歴: 6 列の表・結果のバッジ・読み取り専用（操作なし）。前後のページへのリンクは、その向きのページがあるときだけ出る。
 func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	rows := []view.HistoryRow{
@@ -243,6 +254,10 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	// O7・P0: タブは非選択が --mute・選択が --ink（下線 2px の --accent と合わせて現在のタブを伝える）。色の変化は --motion-base。
 	has(t, tabs, "border-accent text-ink", "border-transparent text-mute hover:border-mute hover:text-ink", "motion-hover")
 	hasNot(t, tabs, "border-transparent text-ink")
+	// O7: タブの 2px の下線がタブ列の 1px の罫線に重なる（-mb-px）。重ならないと罫線の上に積まれて 1px 厚くなる。
+	if got := strings.Count(tabs, "-mb-px"); got != 2 {
+		t.Errorf("both tabs must overlap the tab row border with -mb-px, got %d:\n%s", got, tabs)
+	}
 }
 
 // 監査ログと更新の項目（FR-S07・FR-S09）: 平文の注意書きは常に出る。値は入力のとおり描画し、エラーは項目別に出す。
@@ -321,6 +336,8 @@ func TestAppListRowsAndEditingRow(t *testing.T) {
 	// ユーザー入力はエスケープされる。
 	evil := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a4", Label: `<script>alert(1)</script>`, ExePath: `"><script>x</script>`, Args: []string{`<script>`}}))
 	hasNot(t, evil, "<script>")
+	// 引数の並びの行間は 8（--list-gap。space-y-2）。
+	has(t, webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: `C:\c.exe`, Args: []string{"--x"}})), `<ul class="space-y-2" data-app-args>`)
 }
 
 // 読めない行は、引数の代わりに警告を出す（「なし」とは出さない）。
@@ -462,7 +479,7 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	}
 	out := webtest.Render(t, organisms.AppLog(v))
 	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
-		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<", `<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink">`,
+		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<", `<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-2 text-sm text-ink">`,
 		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
 		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
 	has(t, out, "auth failed &lt;b&gt;")
@@ -491,6 +508,16 @@ func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
 	webtest.AssertCSPCompliantHTML(t, out)
 }
 
+// S2: API キーのパネルとクリップボードの送信フォームは、項目 → 項目を 16px（`--gap-field` = space-y-4）で並べる。
+// クリップボードはラベル → テキスト欄だけを 8px（space-y-2）にまとめ、その外側（テキスト欄のブロック → 送信ボタン）を 16px にする。
+func TestSubmitFormsUseFieldGap(t *testing.T) {
+	key := webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", PutURL: "/agent/api-key"}))
+	has(t, key, `<div id="agent-key" class="space-y-4"`)
+	hasNot(t, key, "space-y-3", "space-y-2")
+	clip := webtest.Render(t, organisms.ClipboardPanel())
+	has(t, clip, `class="space-y-4" novalidate hx-post="/viewer/clipboard/send"`, `<div class="space-y-2"><label for="clipboard-text"`)
+}
+
 // エージェントと高速パスのフォームは、別々の同意（別々のチェックボックスと文言）を持つ。既定の値は入力のとおりに描画する。
 func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
 	agent := webtest.Render(t, organisms.AgentForm(view.AgentForm{
@@ -508,6 +535,9 @@ func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
 	has(t, fast, `hx-put="/agent/fastpath"`, `data-consent="typesafe"`, "TypeSafe（api.typesafe.ai）に送信される", "ウィンドウのタイトル", "直近 5 件",
 		"スクリーンショット、要素の値", `data-consent-at="typesafe"`, "2026-10-30 12:00", `step="0.05"`, `max="1"`, "別の同意", "checked")
 	hasNot(t, fast, "OpenAI に送信される", `data-consent="openai"`)
+	// 同意の枠の段落同士は 16（mt-4。S2）。
+	has(t, agent, `<p class="mt-4">API のデータは`)
+	has(t, fast, `<p class="mt-4">スクリーンショット、要素の値`)
 	webtest.AssertCSPCompliantHTML(t, agent)
 	webtest.AssertCSPCompliantHTML(t, fast)
 }
@@ -640,7 +670,7 @@ func TestStatusMessagesUseNotice(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"/40", "bg-"+tt.tone+"/10", "text-ink", "<svg")...)
+			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"-line", "bg-"+tt.tone+"-wash", "text-ink", "<svg")...)
 			// 操作の結果として現れるもの（422 の再描画・アクションの応答・状態の切り替わり）はフェードイン、常設のものは静か（M5）。
 			if tt.rises {
 				has(t, tt.out, "motion-rise-in")
@@ -663,6 +693,9 @@ func TestAppLogFilterChips(t *testing.T) {
 func TestCardPaddingsFollowScale(t *testing.T) {
 	update := webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "v1.2.3", Verified: true}}))
 	has(t, update, `class="space-y-2 rounded-md bg-bone p-4" data-update="latest"`)
+	// カード内のまとまり同士は 24（--gap-card-section。space-y-6）。
+	has(t, update, `class="space-y-6 p-6"`)
+	hasNot(t, update, `class="space-y-4 p-6"`)
 	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
 	has(t, lease, "rounded-lg border border-border bg-surface p-4")
 	hasNot(t, lease, "bg-surface p-3")
@@ -686,4 +719,21 @@ func TestFormAndNestedPanelSpacing(t *testing.T) {
 	has(t, webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc"})), `<p class="mt-2 text-xs text-mute">`)
 	dlg := webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Detail: "詳細", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30}}))
 	has(t, dlg, `rounded-md bg-bone p-4 text-sm text-ink" data-approval-detail`)
+}
+
+// S2: 一覧画面の「絞り込み → 表 → ページ送り」を縦に積む外側のラッパーは、他の一覧と同じ 16px（space-y-4）にする。
+func TestListWrappersUseSectionGap(t *testing.T) {
+	row := view.LogRow{Time: "2026-11-01 09:00:01", Level: "INFO", LevelTone: view.ToneOK, Message: "m"}
+	for _, c := range map[string]struct {
+		out string
+		id  string
+	}{
+		"app_log":         {webtest.Render(t, organisms.AppLog(view.AppLog{Rows: []view.LogRow{row}})), "app-log"},
+		"audit":           {webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1"}}})), "audit-list"},
+		"tasks":           {webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}})), "task-list"},
+		"request_history": {webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: []view.HistoryRow{{ID: "r1"}}})), "request-history"},
+	} {
+		has(t, c.out, `<div id="`+c.id+`" class="space-y-4"`)
+		hasNot(t, c.out, `id="`+c.id+`" class="space-y-3"`)
+	}
 }

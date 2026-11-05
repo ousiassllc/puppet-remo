@@ -149,7 +149,7 @@ func AppLog(v view.AppLog) templ.Component {
 			templ_7745c5c3_Var7 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div id=\"app-log\" class=\"space-y-3\" data-log-filter=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div id=\"app-log\" class=\"space-y-4\" data-log-filter=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -335,7 +335,7 @@ func AppLog(v view.AppLog) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				if len(r.Attrs) > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<dl class=\"mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<dl class=\"mt-1 flex flex-wrap gap-x-4 gap-y-2 text-sm text-ink\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

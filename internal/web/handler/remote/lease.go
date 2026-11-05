@@ -39,7 +39,7 @@ func (h *Handler) ConfirmRevokeLease(c *gin.Context) {
 	}
 	h.render(c, http.StatusOK, molecules.Modal(view.ConfirmModal{
 		Title: "操作権を強制剥奪しますか？", Message: message,
-		ConfirmURL: "/viewer/lease/revoke", Method: "post", Target: "#lease-panel", Swap: "outerHTML", Label: "剥奪する",
+		ConfirmURL: "/viewer/lease/revoke", Method: "post", Target: "#lease-panel", Swap: "outerHTML", Label: "剥奪する", Destructive: true,
 	}))
 }
 

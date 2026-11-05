@@ -47,6 +47,6 @@ func (h *Handler) ConfirmRevokeLease(c *gin.Context) {
 	}
 	h.confirm(c, view.ConfirmModal{
 		Title: "操作権を強制剥奪しますか？", Message: message,
-		ConfirmURL: "/lease/revoke", Method: "post", Target: "#lease", Swap: "innerHTML", Label: "剥奪する",
+		ConfirmURL: "/lease/revoke", Method: "post", Target: "#lease", Swap: "innerHTML", Label: "剥奪する", Destructive: true,
 	})
 }

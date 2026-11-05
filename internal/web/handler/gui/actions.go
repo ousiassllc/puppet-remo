@@ -257,7 +257,7 @@ func (h *Handler) ConfirmDeleteClient(c *gin.Context) {
 	h.confirm(c, view.ConfirmModal{
 		Title:      "クライアントを削除しますか？",
 		Message:    "「" + client.DisplayName + "」を許可リストから外します。発行済みのトークンは削除され、接続中のセッションは切断されます。",
-		ConfirmURL: "/clients/" + client.ID, Method: "delete", Target: "#client-list", Swap: "outerHTML", Label: "削除する",
+		ConfirmURL: "/clients/" + client.ID, Method: "delete", Target: "#client-list", Swap: "outerHTML", Label: "削除する", Destructive: true,
 	})
 }
 
@@ -277,7 +277,7 @@ func (h *Handler) ConfirmRevokeToken(c *gin.Context) {
 		h.confirm(c, view.ConfirmModal{
 			Title:      "トークンを失効しますか？",
 			Message:    "「" + t.Label + "」を失効します。このトークンで接続中の MCP セッションは切断され、元に戻せません。",
-			ConfirmURL: "/clients/" + id + "/tokens/" + tokenID, Method: "delete", Target: "#token-list", Swap: "outerHTML", Label: "失効する",
+			ConfirmURL: "/clients/" + id + "/tokens/" + tokenID, Method: "delete", Target: "#token-list", Swap: "outerHTML", Label: "失効する", Destructive: true,
 		})
 		return
 	}

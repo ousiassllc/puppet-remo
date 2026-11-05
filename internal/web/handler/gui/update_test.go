@@ -25,7 +25,7 @@ func TestUpdatePageNoUpdate(t *testing.T) {
 	res := r.get("/update")
 	status(t, res, http.StatusOK)
 	contains(t, res, "<html", `id="update-panel"`, `data-field="current-version"`, "0.1.0", "正式版", "ホストが確認してから適用する",
-		"2026-10-30 11:59", `data-update="up-to-date"`, `hx-post="/update/check"`, "今すぐ確認",
+		"2026-10-30 11:59", `class="font-mono" data-field="last-checked"`, `data-update="up-to-date"`, `hx-post="/update/check"`, "今すぐ確認",
 		`href="/update"`, `aria-current="page"`)
 	lacks(t, res, "更新する", `data-update="latest"`, `data-update="error"`, `data-update="key-unset"`)
 }
@@ -159,6 +159,7 @@ func TestConfirmApplyUpdate(t *testing.T) {
 	res := r.get("/update/apply/confirm", hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `role="dialog"`, "更新を適用しますか？", "0.1.1", `hx-post="/update/apply"`, `hx-target="#update-panel"`, "キャンセル", `data-clear="#modal-root"`)
+	lacks(t, res, "text-danger", "border-danger") // インストーラの起動は破壊的でないので、確定は危険色にしない（O7）
 
 	// 適用できる更新がなければ、モーダルを出さない。
 	r = newRig(t)

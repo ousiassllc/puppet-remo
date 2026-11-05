@@ -242,3 +242,28 @@ describe("アラートを見える位置へ寄せる", () => {
     expect(root.querySelector("[data-alert-message]")?.textContent).to.equal(first.querySelector("[data-alert-message]")?.textContent);
   });
 });
+
+describe("スライダーの充填と数値", () => {
+  const sliderMarkup = html`<div>
+    <input id="s" type="range" min="1" max="30" step="1" value="1" data-range-output="s-out" />
+    <output id="s-out">1</output>
+  </div>`;
+
+  it("input で、数値の表示と充填の割合（--_v）が値に追従する", async () => {
+    const holder = await fixture<HTMLDivElement>(sliderMarkup);
+    const range = holder.querySelector<HTMLInputElement>("#s")!;
+    range.value = "30";
+    range.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(holder.querySelector("#s-out")?.textContent).to.equal("30");
+    expect(range.style.getPropertyValue("--_v")).to.equal("100%");
+    range.value = "1";
+    range.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(range.style.getPropertyValue("--_v")).to.equal("0%");
+  });
+
+  it("HTMX が差し込んだ要素（htmx:load）の充填を、値に合わせる", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div><input type="range" min="0" max="100" value="25" /></div>`);
+    holder.dispatchEvent(new CustomEvent("htmx:load", { bubbles: true }));
+    expect(holder.querySelector("input")?.style.getPropertyValue("--_v")).to.equal("25%");
+  });
+});

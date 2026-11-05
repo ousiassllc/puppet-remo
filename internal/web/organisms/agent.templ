@@ -9,7 +9,7 @@ import (
 // APIKeyPanel は API キーの登録パネル（FR-H11、NFR-S14）。登録の有無（真偽値）だけを描画し、キーの値は入力欄にも出さない
 // （SecretInput は value 属性を持たない。失敗の再描画でも入力は空に戻る）。登録は PUT、削除は確認モーダルを経る。
 templ APIKeyPanel(p view.APIKeyPanel) {
-	<div id={ p.ID } class="space-y-3" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) }>
+	<div id={ p.ID } class="space-y-4" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) }>
 		<div class="flex flex-wrap items-center gap-2">
 			<span class="text-sm text-ink">{ p.Provider } API キー</span>
 			if p.Registered {
@@ -19,7 +19,7 @@ templ APIKeyPanel(p view.APIKeyPanel) {
 			}
 		</div>
 		<form
-			class="space-y-2"
+			class="space-y-4"
 			novalidate
 			autocomplete="off"
 			hx-put={ p.PutURL }
@@ -96,7 +96,7 @@ templ AgentForm(f view.AgentForm) {
 				@atoms.Checkbox("agent-consent", "consent", f.Values.Consent)
 				<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span>
 			</label>
-			<p>API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
+			<p class="mt-4">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
 			if f.ConsentAt != "" {
 				<p class="text-xs text-mute" data-consent-at="openai">同意済み: { f.ConsentAt }</p>
 			}
@@ -122,7 +122,7 @@ templ AgentForm(f view.AgentForm) {
 		@molecules.FormField("agent-approve", "毎回承認するプロセス（1 行に 1 つ）", "これらが前面のウィンドウのとき、操作ごとにホストの承認を求めます。", f.Errors.ApproveProcesses) {
 			@atoms.Textarea(atoms.TextareaProps{ID: "agent-approve", Name: "approve_processes", Value: f.Values.ApproveProcesses, Rows: 3, Invalid: f.Errors.ApproveProcesses != "", Attrs: atoms.Attrs{"spellcheck": "false"}})
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Spinner("agent-spinner")
 		</div>
@@ -158,7 +158,7 @@ templ FastpathForm(f view.FastpathForm) {
 				@atoms.Checkbox("fastpath-consent", "consent", f.Values.Consent)
 				<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span>
 			</label>
-			<p>スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>
+			<p class="mt-4">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>
 			if f.ConsentAt != "" {
 				<p class="text-xs text-mute" data-consent-at="typesafe">同意済み: { f.ConsentAt }</p>
 			}
@@ -178,7 +178,7 @@ templ FastpathForm(f view.FastpathForm) {
 		@molecules.FormField("fastpath-excluded", "除外するラベル（1 行に 1 つ）", "ラベルにこれを含む要素は候補から外します（大文字小文字を区別しない部分一致）。", f.Errors.ExcludedLabels) {
 			@atoms.Textarea(atoms.TextareaProps{ID: "fastpath-excluded", Name: "excluded_labels", Value: f.Values.ExcludedLabels, Rows: 5, Invalid: f.Errors.ExcludedLabels != "", Attrs: atoms.Attrs{"spellcheck": "false"}})
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Spinner("fastpath-spinner")
 		</div>

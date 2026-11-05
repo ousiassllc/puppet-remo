@@ -162,6 +162,12 @@ func TestTaskDetailPage(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, "<html", "<title>タスクの詳細 - puppet-remo</title>", `data-task-detail="`+idFinished+`"`,
 		"メモ帳を開いて「こんにちは」と書く", "claude-desktop", "gpt-6.1-sol", "ステップ 50 ・ 600 秒",
+		// 日時・ID・数値は Mono、文章の項目は Regular のまま（ガイド T5）
+		`class="break-all text-ink font-mono" data-task-field="id"`, `class="break-all text-ink font-mono" data-task-field="input-tokens"`,
+		`class="break-all text-ink font-mono" data-task-field="created"`, `class="break-all text-ink" data-task-field="client"`,
+		// 日本語の文章を含む値（上限・ステップ数）は Mono にしない（T5）。
+		`class="break-all text-ink" data-task-field="limits">ステップ 50 ・ 600 秒`,
+		`class="break-all text-ink" data-task-field="step-count">3（高速パス 1 ・ OpenAI 2）`,
 		// step_count = fast + openai
 		"3（高速パス 1 ・ OpenAI 2）", `data-task-steps>3 / 50<`,
 		"確信度がしきい値に届かなかった（low_confidence）", "12345", "678",

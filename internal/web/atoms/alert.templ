@@ -26,13 +26,13 @@ func alertClass(t AlertTone) string {
 	base := "motion-rise-in flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
 	switch t {
 	case AlertSuccess:
-		return base + "border-success/40 bg-success/10 text-success"
+		return base + "border-success-line bg-success-wash text-success"
 	case AlertWarning:
-		return base + "border-warning/40 bg-warning/10 text-warning"
+		return base + "border-warning-line bg-warning-wash text-warning"
 	case AlertDanger:
-		return base + "border-danger/40 bg-danger/10 text-danger"
+		return base + "border-danger-line bg-danger-wash text-danger"
 	default:
-		return base + "border-info/40 bg-info/10 text-info"
+		return base + "border-info-line bg-info-wash text-info"
 	}
 }
 
@@ -67,10 +67,10 @@ templ Alert(p AlertProps) {
 		@Icon(alertIcon(p.Tone), IconMD)
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold">{ p.Heading }</h3>
-			<p class="text-ink" data-alert-message>{ p.Message }</p>
+			<p class="mt-2 text-ink" data-alert-message>{ p.Message }</p>
 		</div>
 		if p.Dismissible {
-			<button type="button" class="motion-hover shrink-0 rounded-full text-mute hover:text-ink" aria-label="閉じる" data-clear="#alert-root" data-ripple>
+			<button type="button" class="motion-hover inline-flex size-8 shrink-0 items-center justify-center rounded-md text-mute hover:bg-accent-soft hover:text-ink" aria-label="閉じる" data-clear="#alert-root" data-ripple>
 				@Icon(IconXmark, IconMD)
 			</button>
 		}
@@ -84,13 +84,13 @@ func noticeClass(t AlertTone, animated bool) string {
 	}
 	switch t {
 	case AlertSuccess:
-		return base + "border-success/40 bg-success/10"
+		return base + "border-success-line bg-success-wash"
 	case AlertWarning:
-		return base + "border-warning/40 bg-warning/10"
+		return base + "border-warning-line bg-warning-wash"
 	case AlertDanger:
-		return base + "border-danger/40 bg-danger/10"
+		return base + "border-danger-line bg-danger-wash"
 	default:
-		return base + "border-info/40 bg-info/10"
+		return base + "border-info-line bg-info-wash"
 	}
 }
 
@@ -132,7 +132,7 @@ templ notice(tone AlertTone, attrs Attrs, animated bool) {
 		<span class={ noticeIconClass(tone) }>
 			@Icon(alertIcon(tone), IconSM)
 		</span>
-		<div class="min-w-0 flex-1 space-y-1">
+		<div class="min-w-0 flex-1 space-y-2">
 			{ children... }
 		</div>
 	</div>

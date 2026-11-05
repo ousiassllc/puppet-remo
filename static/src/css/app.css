@@ -1,7 +1,7 @@
 /* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
  * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
  * <style> と style= は使わない（CSP。§7.1）。
- * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide 622ea73）のトークンで、この 1 か所に定義する（§8.4）。
+ * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide 73d8cf6）のトークンで、この 1 か所に定義する（§8.4）。
  * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
  * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
@@ -16,7 +16,7 @@
   color-scheme: light;
   --ink: #050505;
   --bone: #f5f5f4;
-  --mute: #8b8b8e;
+  --mute: #6b6b6e;
   --surface: #ffffff;
   --border: #e7e7e5;
   --accent: #050505;
@@ -27,12 +27,14 @@
   --danger: #7a4545;
   --info: #4a5a6a;
   --scrim: rgb(5 5 5 / 0.4);
+  --select-arrow: var(--select-arrow-light);
   --ring: color-mix(in srgb, var(--focus) 40%, transparent);
   --shadow-modal-color: rgb(0 0 0 / 0.06);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
+  --mute: #8b8b8e;
   --ink: #ffffff;
   --bone: #050505;
   --surface: #141414;
@@ -44,13 +46,14 @@
   --warning: #c4b87a;
   --danger: #c49a9a;
   --info: #9aabbc;
-  --scrim: rgb(0 0 0 / 0.6);
-  --shadow-modal-color: rgb(0 0 0 / 0.4);
+  --scrim: rgb(5 5 5 / 0.6);
+  --select-arrow: var(--select-arrow-dark);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
+    --mute: #8b8b8e;
     --ink: #ffffff;
     --bone: #050505;
     --surface: #141414;
@@ -62,12 +65,12 @@
     --warning: #c4b87a;
     --danger: #c49a9a;
     --info: #9aabbc;
-    --scrim: rgb(0 0 0 / 0.6);
-    --shadow-modal-color: rgb(0 0 0 / 0.4);
+    --scrim: rgb(5 5 5 / 0.6);
+    --select-arrow: var(--select-arrow-dark);
   }
 }
 
-/* Tailwind 既定のパレットは消し、トークンだけを使えるようにする（bg-bone・text-ink・border-border・bg-danger/10 など）。 */
+/* Tailwind 既定のパレットは消し、トークンだけを使えるようにする（bg-bone・text-ink・border-border・border-danger-line・bg-danger-wash など）。 */
 @theme {
   --color-*: initial;
   --color-transparent: transparent;
@@ -89,6 +92,18 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
+
+  /* 状態色の枠（-line）と地（-wash）。ガイド C4 の式（in srgb の 40% / 10%）のとおり。Tailwind の /40・/10 は in oklab で混色するので使わない。 */
+  --color-success-line: color-mix(in srgb, var(--success) 40%, transparent);
+  --color-success-wash: color-mix(in srgb, var(--success) 10%, transparent);
+  --color-warning-line: color-mix(in srgb, var(--warning) 40%, transparent);
+  --color-warning-wash: color-mix(in srgb, var(--warning) 10%, transparent);
+  --color-danger-line: color-mix(in srgb, var(--danger) 40%, transparent);
+  --color-danger-wash: color-mix(in srgb, var(--danger) 10%, transparent);
+  /* 危険ボタンの枠だけは 45%（ガイドの .ui .dan）。 */
+  --color-danger-line-strong: color-mix(in srgb, var(--danger) 45%, transparent);
+  --color-info-line: color-mix(in srgb, var(--info) 40%, transparent);
+  --color-info-wash: color-mix(in srgb, var(--info) 10%, transparent);
 }
 
 /* ---- 形・余白・線・影（S1〜S4）----
@@ -146,6 +161,12 @@
   --icon-lg: 24px;
   --icon-xl: 32px;
 
+  /* CSS の疑似要素・背景で出す Iconoir のアイコン（regular。atoms/icon.templ と同じ path・線の太さ 1.5・丸い端）。CSP の img-src は data: を許す。
+   * check はマスク（色は background-color で塗る）。nav-arrow-down は select の背景（疑似要素を持てない）なので、線の色を --mute の値（ライト #6b6b6e・ダーク #8b8b8e）で直に持つ。 */
+  --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13L9 17L19 7'/%3E%3C/svg%3E");
+  --select-arrow-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b6b6e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
+  --select-arrow-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b8e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
+
   --table-head-size: 12px;
   --table-body-size: 14px;
   --table-row-hover: var(--accent-soft);
@@ -166,7 +187,7 @@
   --shadow-*: initial;
 }
 
-/* モーダルの影の色だけをテーマで切り替える（ライト 6%・ダーク 40%。:root・[data-theme="dark"] の --shadow-modal-color）。
+/* モーダルの影（S3）はガイドの 1 値（0 1px 2px rgba(0,0,0,.06)）で、ライト・ダークで変えない。色は :root の --shadow-modal-color 1 か所。
  * 値を埋め込まず変数のまま参照させるため inline にする。 */
 @theme inline {
   --shadow-modal: 0 1px 2px var(--shadow-modal-color);
@@ -278,7 +299,7 @@
     text-decoration-color: var(--ink);
   }
 
-  /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック。 */
+  /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック（Iconoir の check を --icon-sm でマスクし、--bone で塗る）。 */
   input[type="checkbox"] {
     appearance: none;
     display: inline-grid;
@@ -293,10 +314,10 @@
   input[type="checkbox"]::before {
     content: "";
     display: none;
-    width: 10px;
-    height: 10px;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
     background-color: var(--bone);
-    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
+    mask: var(--icon-check) center / contain no-repeat;
   }
   input[type="checkbox"]:checked {
     border-color: var(--accent);
@@ -305,27 +326,81 @@
   input[type="checkbox"]:checked::before {
     display: block;
   }
+  /* フォーカスは入力欄・スライダーと同じ --ring の 3px（outline は透明で残し、ハイコントラストでは枠として見える）。 */
+  input[type="checkbox"]:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+    box-shadow: 0 0 0 3px var(--ring);
+  }
   input[type="checkbox"]:disabled {
-    opacity: 0.4;
+    opacity: 0.5;
     cursor: not-allowed;
   }
 
-  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の矢印を重ねる（右 padding 36 は select.templ）。 */
+  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の Iconoir nav-arrow-down（--icon-sm）を重ねる（右 padding 36 は select.templ）。 */
   select {
     appearance: none;
-    background-image:
-      linear-gradient(45deg, transparent 50%, var(--mute) 50%),
-      linear-gradient(135deg, var(--mute) 50%, transparent 50%);
-    background-position:
-      calc(100% - 20px) center,
-      calc(100% - 15px) center;
-    background-size: 5px 5px;
+    background-image: var(--select-arrow);
+    background-position: right 12px center;
+    background-size: var(--icon-sm) var(--icon-sm);
     background-repeat: no-repeat;
   }
 
-  /* スライダー（P1）: つまみ・進捗を --accent にする。 */
+  /* スライダー（O11・P1）: OS 標準の見た目にしない。トラックは高さ 4・--r-full で、未充填 --accent-soft・充填 --accent。
+   * つまみは 16 の円（--surface 地 + 1px --border）。フォーカスはつまみに --ring の 3px（outline は透明で残し、ハイコントラストでは枠として見える）。
+   * Blink（WebView2・Chromium）には充填部の疑似要素が無いので、--_v（値の割合。app.ts が style.setProperty で更新する）でグラデーションの境目を作る。
+   * Firefox は ::-moz-range-progress が充填する。 */
   input[type="range"] {
-    accent-color: var(--accent);
+    appearance: none;
+    height: 16px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(to right, var(--accent) var(--_v, 0%), var(--accent-soft) var(--_v, 0%));
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--accent-soft);
+  }
+  input[type="range"]::-moz-range-progress {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+  }
+  input[type="range"]::-moz-range-thumb {
+    box-sizing: border-box;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+  }
+  input[type="range"]:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+  }
+  input[type="range"]:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  input[type="range"]:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  input[type="range"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 
@@ -355,6 +430,8 @@
   --motion-fade-in: 320ms;
   --motion-fade-out: 240ms;
   --motion-shift: 8px;
+  /* スピナーの 1 回転（ガイドの Feedback 節のとおり 0.9s）。ページの .spinner と Lit のビューアが参照する。reduced-motion でも変えない。 */
+  --spinner-duration: 0.9s;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
@@ -518,7 +595,7 @@
     border: 2px solid var(--accent-soft);
     border-top-color: var(--accent);
     border-radius: var(--radius-full);
-    animation: motion-spin 0.8s linear infinite;
+    animation: motion-spin var(--spinner-duration) linear infinite;
   }
 
   /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */

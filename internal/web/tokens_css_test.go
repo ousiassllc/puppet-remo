@@ -54,21 +54,143 @@ func TestTailwindThemeReferencesTheNamedTokens(t *testing.T) {
 	}
 }
 
-// S3・C5: モーダルの影の色はテーマで切り替える。ライトは 6%、ダークは 40%（--bone の背面に載る --surface のモーダルで影が見えるように）。
-// ダークの値は [data-theme="dark"] と prefers-color-scheme の 2 か所に置く。
-func TestModalShadowColorIsDarkAware(t *testing.T) {
+// S3: モーダルの影はガイドの 1 値（0 1px 2px rgba(0,0,0,.06)）で、ライト・ダークで変えない。
+// 色は :root の --shadow-modal-color 1 か所だけで、ダークの再定義（[data-theme="dark"]・prefers-color-scheme）は置かない。
+func TestModalShadowColorIsASingleValue(t *testing.T) {
 	css := readAppCSS(t)
-	if got := strings.Count(css, "--shadow-modal-color: rgb(0 0 0 / 0.06);"); got != 1 {
-		t.Errorf("light --shadow-modal-color defined %d times, want 1", got)
+	if got := strings.Count(css, "--shadow-modal-color:"); got != 1 {
+		t.Errorf("--shadow-modal-color defined %d times, want 1 (no per-theme override)", got)
 	}
-	if got := strings.Count(css, "--shadow-modal-color: rgb(0 0 0 / 0.4);"); got != 2 {
-		t.Errorf("dark --shadow-modal-color defined %d times, want 2 ([data-theme=\"dark\"] and prefers-color-scheme)", got)
+	if !regexp.MustCompile(`(?s):root \{[^}]*--shadow-modal-color: rgb\(0 0 0 / 0\.06\);`).MatchString(css) {
+		t.Error("--shadow-modal-color must be rgb(0 0 0 / 0.06) in :root")
 	}
 	if !strings.Contains(css, "--shadow-modal: 0 1px 2px var(--shadow-modal-color);") {
 		t.Error("--shadow-modal must reference --shadow-modal-color")
 	}
 	if !regexp.MustCompile(`@theme inline \{[^}]*--shadow-modal:`).MatchString(css) {
-		t.Error("--shadow-modal must be in @theme inline so that the utility keeps the variable instead of inlining the light value")
+		t.Error("--shadow-modal must be in @theme inline so that the utility keeps the variable")
+	}
+}
+
+// C4: 状態色の枠・地はガイドの式（in srgb の 40% / 10%）で混色する名前付きの色（-line・-wash）。Tailwind の /40・/10 は in oklab になる。
+func TestStatusLineAndWashColorsMixInSRGB(t *testing.T) {
+	css := readAppCSS(t)
+	for _, tone := range []string{"success", "warning", "danger", "info"} {
+		for suffix, pct := range map[string]string{"line": "40", "wash": "10"} {
+			want := "--color-" + tone + "-" + suffix + ": color-mix(in srgb, var(--" + tone + ") " + pct + "%, transparent);"
+			if !strings.Contains(css, want) {
+				t.Errorf("app.css must contain %q", want)
+			}
+		}
+	}
+}
+
+// C4: 危険ボタンの枠（45%）も in srgb の名前付きの色にする（Tailwind の /45 は in oklab）。
+func TestDangerButtonBorderMixesInSRGB(t *testing.T) {
+	css := readAppCSS(t)
+	want := "--color-danger-line-strong: color-mix(in srgb, var(--danger) 45%, transparent);"
+	if !strings.Contains(css, want) {
+		t.Errorf("app.css must contain %q", want)
+	}
+}
+
+// C3: チェックボックスのフォーカスは、入力欄・スライダーと同じ --ring の 3px（--focus の outline のままにしない）。
+func TestCheckboxFocusUsesRing(t *testing.T) {
+	css := readAppCSS(t)
+	if !regexp.MustCompile(`input\[type="checkbox"\]:focus-visible \{\s*outline: 2px solid transparent;\s*outline-offset: 0;\s*box-shadow: 0 0 0 3px var\(--ring\);`).MatchString(css) {
+		t.Error("app.css must give the checkbox :focus-visible a --ring 3px box-shadow with a transparent outline")
+	}
+}
+
+// M1: スピナーの回転はガイドの 0.9s を :root の --spinner-duration 1 か所で持ち、.spinner はそれを参照する（独自の秒数を直書きしない）。
+func TestSpinnerDurationIsOneToken(t *testing.T) {
+	css := readAppCSS(t)
+	if got := strings.Count(css, "--spinner-duration: 0.9s;"); got != 1 {
+		t.Errorf("--spinner-duration: 0.9s defined %d times, want 1", got)
+	}
+	if !strings.Contains(css, "animation: motion-spin var(--spinner-duration) linear infinite;") {
+		t.Error(".spinner must use var(--spinner-duration)")
+	}
+	if strings.Contains(css, "0.8s linear") {
+		t.Error("app.css must not hard-code a spinner duration")
+	}
+}
+
+// C8: 暗幕（--scrim）は大きな面なので、ダークでも純黒にせず --bone（#050505）系にする（ライトは 0.4、ダークは 0.6）。
+func TestScrimIsNeverPureBlack(t *testing.T) {
+	css := readAppCSS(t)
+	if got := strings.Count(css, "--scrim: rgb(5 5 5 / 0.4);"); got != 1 {
+		t.Errorf("light --scrim defined %d times, want 1", got)
+	}
+	if got := strings.Count(css, "--scrim: rgb(5 5 5 / 0.6);"); got != 2 {
+		t.Errorf("dark --scrim defined %d times, want 2 ([data-theme=\"dark\"] and prefers-color-scheme)", got)
+	}
+	if strings.Contains(css, "--scrim: rgb(0 0 0") {
+		t.Error("--scrim must not be pure black")
+	}
+}
+
+// I1・I2: チェックボックスのチェックと select の矢印は、自作の形（clip-path・グラデーション）ではなく Iconoir（check・nav-arrow-down。線 1.5・丸い端）の SVG を data URI で出す。
+// select の矢印は疑似要素を持てず色を変数にできないので、線の色は --mute の値（ライト #6b6b6e・ダーク #8b8b8e）で持つ。
+func TestCSSIconsAreIconoir(t *testing.T) {
+	css := readAppCSS(t)
+	for _, bad := range []string{"clip-path", "linear-gradient(45deg", "linear-gradient(135deg"} {
+		if strings.Contains(css, bad) {
+			t.Errorf("app.css must not draw icons with %s", bad)
+		}
+	}
+	for name, pattern := range map[string]string{
+		"--icon-check":         `--icon-check: url\("data:image/svg\+xml,[^"]*stroke-width='1\.5' stroke-linecap='round' stroke-linejoin='round'[^"]*d='M5 13L9 17L19 7'`,
+		"--select-arrow-light": `--select-arrow-light: url\("data:image/svg\+xml,[^"]*stroke='%236b6b6e' stroke-width='1\.5'[^"]*d='M6 9L12 15L18 9'`,
+		"--select-arrow-dark":  `--select-arrow-dark: url\("data:image/svg\+xml,[^"]*stroke='%238b8b8e' stroke-width='1\.5'[^"]*d='M6 9L12 15L18 9'`,
+	} {
+		if !regexp.MustCompile(pattern).MatchString(css) {
+			t.Errorf("app.css must define %s as an Iconoir data URI", name)
+		}
+	}
+	if !regexp.MustCompile(`input\[type="checkbox"\]::before \{[^}]*width: var\(--icon-sm\);[^}]*mask: var\(--icon-check\)`).MatchString(css) {
+		t.Error("the checkbox check must be the --icon-check mask at --icon-sm")
+	}
+	if !regexp.MustCompile(`select \{[^}]*background-image: var\(--select-arrow\);[^}]*background-size: var\(--icon-sm\)`).MatchString(css) {
+		t.Error("the select arrow must be --select-arrow at --icon-sm")
+	}
+	// ダークの矢印は [data-theme="dark"] と prefers-color-scheme の 2 か所で切り替える。
+	if got := strings.Count(css, "--select-arrow: var(--select-arrow-dark);"); got != 2 {
+		t.Errorf("--select-arrow switched to dark %d times, want 2", got)
+	}
+	if got := strings.Count(css, "--select-arrow: var(--select-arrow-light);"); got != 1 {
+		t.Errorf("--select-arrow defaults to light %d times, want 1", got)
+	}
+}
+
+// O7: フォーム部品（チェックボックス・スライダー）の無効は、入力欄・選択欄（disabled:opacity-50）と同じ opacity .5。ボタンだけ .4。
+func TestFormControlsDisabledOpacityIsHalf(t *testing.T) {
+	css := readAppCSS(t)
+	for _, sel := range []string{`input\[type="checkbox"\]:disabled`, `input\[type="range"\]:disabled`} {
+		if !regexp.MustCompile(sel + ` \{\s*opacity: 0\.5;`).MatchString(css) {
+			t.Errorf("app.css must give %s opacity 0.5", sel)
+		}
+	}
+}
+
+// C6: --mute はライトが #6b6b6e（--bone・--surface 上で AA 4.5:1）、ダークが #8b8b8e。
+// ダークの値は [data-theme="dark"] と prefers-color-scheme の 2 か所に置く。
+func TestMuteTokenIsSplitByTheme(t *testing.T) {
+	css := readAppCSS(t)
+	if got := strings.Count(css, "--mute: #6b6b6e;"); got != 1 {
+		t.Errorf("light --mute: #6b6b6e defined %d times, want 1", got)
+	}
+	if got := strings.Count(css, "--mute: #8b8b8e;"); got != 2 {
+		t.Errorf("dark --mute: #8b8b8e defined %d times, want 2 ([data-theme=\"dark\"] and prefers-color-scheme)", got)
+	}
+	if !regexp.MustCompile(`(?s):root \{[^}]*--mute: #6b6b6e;`).MatchString(css) {
+		t.Error("light --mute must be in :root")
+	}
+	if !regexp.MustCompile(`(?s)\[data-theme="dark"\] \{[^}]*--mute: #8b8b8e;`).MatchString(css) {
+		t.Error("dark --mute must be in [data-theme=\"dark\"]")
+	}
+	if !regexp.MustCompile(`(?s):root:not\(\[data-theme="light"\]\) \{[^}]*--mute: #8b8b8e;`).MatchString(css) {
+		t.Error("dark --mute must be in the prefers-color-scheme: dark :root:not([data-theme=\"light\"]) block")
 	}
 }
 

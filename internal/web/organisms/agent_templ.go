@@ -50,7 +50,7 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"space-y-3\" data-api-key=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"space-y-4\" data-api-key=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -104,7 +104,7 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><form class=\"space-y-2\" novalidate autocomplete=\"off\" hx-put=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><form class=\"space-y-4\" novalidate autocomplete=\"off\" hx-put=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -315,7 +315,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span></label><p>API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span></label><p class=\"mt-4\">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -486,7 +486,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"flex items-center gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -594,7 +594,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span></label><p>スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span></label><p class=\"mt-4\">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -721,7 +721,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div class=\"flex items-center gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div class=\"flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

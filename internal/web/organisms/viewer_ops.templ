@@ -38,15 +38,17 @@ templ ClipboardPanel() {
 		@molecules.Card("クリップボード") {
 			<div class="space-y-6">
 				<form
-					class="space-y-2"
+					class="space-y-4"
 					novalidate
 					hx-post="/viewer/clipboard/send"
 					hx-target="#clipboard-status"
 					hx-swap="innerHTML"
 					hx-disabled-elt="find button[type=submit]"
 				>
-					<label for="clipboard-text" class="block text-sm text-ink">ホストへ送るテキスト</label>
-					@atoms.Textarea(atoms.TextareaProps{ID: "clipboard-text", Name: "text", Placeholder: "ここに貼り付け（Ctrl+V）または入力して、送信します", Rows: 3})
+					<div class="space-y-2">
+						<label for="clipboard-text" class="block text-sm text-ink">ホストへ送るテキスト</label>
+						@atoms.Textarea(atoms.TextareaProps{ID: "clipboard-text", Name: "text", Placeholder: "ここに貼り付け（Ctrl+V）または入力して、送信します", Rows: 3})
+					</div>
 					@atoms.Button(atoms.ButtonProps{Label: "ホストのクリップボードへ送信", Variant: atoms.ButtonPrimary, Type: "submit"})
 				</form>
 				<div class="space-y-2">

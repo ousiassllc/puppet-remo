@@ -31,7 +31,7 @@ templ ClientCard(c view.Client) {
 			<span class="text-xs text-mute" data-approval-mode>承認モード: { c.Approved }</span>
 		</div>
 		<p class="mt-2 text-xs text-mute">
-			ユーザー { c.LoginName } ・ ノード <code class="rounded-sm bg-accent-soft px-2 py-1">{ c.NodeID }</code>
+			ユーザー { c.LoginName } ・ ノード <code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">{ c.NodeID }</code>
 		</p>
 		<ul class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
 			for _, f := range c.Flags {
@@ -42,7 +42,7 @@ templ ClientCard(c view.Client) {
 				</li>
 			}
 		</ul>
-		<div class="mt-3 flex flex-wrap items-end gap-3" data-approval-controls>
+		<div class="mt-3 flex flex-wrap items-end gap-2" data-approval-controls>
 			<form
 				class="flex items-center gap-2"
 				hx-patch={ c.UpdateURL }

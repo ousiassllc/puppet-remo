@@ -11,7 +11,7 @@ import (
 templ UpdatePanel(v view.UpdatePanel) {
 	<section id="update-panel" class="rounded-lg border border-border bg-surface">
 		<h2 class="border-b border-border px-6 py-3 text-2xl font-semibold text-ink">アプリの更新</h2>
-		<div class="space-y-4 p-6">
+		<div class="space-y-6 p-6">
 			<dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2">
 				<dt class="text-mute">現在の版</dt>
 				<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-field="current-version">{ v.CurrentVersion }</code></dd>
@@ -20,7 +20,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 				<dt class="text-mute">適用方法</dt>
 				<dd class="mb-1 sm:mb-0" data-field="apply-mode">{ v.ApplyModeLabel }</dd>
 				<dt class="text-mute">最後の確認</dt>
-				<dd data-field="last-checked">
+				<dd class="font-mono" data-field="last-checked">
 					if v.LastChecked == "" {
 						<span class="text-mute">未確認</span>
 					} else {
@@ -73,7 +73,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 				}
 			}
 			if v.Updatable {
-				<div class="flex flex-wrap items-center gap-3">
+				<div class="flex flex-wrap items-center gap-2">
 					@atoms.Button(atoms.ButtonProps{Label: "今すぐ確認", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 						"hx-post": "/update/check", "hx-target": "#update-panel", "hx-swap": "outerHTML",
 						"hx-disabled-elt": "this", "hx-indicator": "#update-spinner",

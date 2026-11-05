@@ -17,7 +17,7 @@ import (
 )
 
 func requestsTabClass(active bool) string {
-	base := "motion-hover inline-flex items-center border-b-2 px-3 py-2 text-sm "
+	base := "motion-hover -mb-px inline-flex items-center border-b-2 px-3 py-2 text-sm "
 	if active {
 		return base + "border-accent text-ink"
 	}
@@ -320,7 +320,7 @@ func ConnectionRequestHistory(v view.RequestHistory) templ.Component {
 			templ_7745c5c3_Var17 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div id=\"request-history\" class=\"space-y-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div id=\"request-history\" class=\"space-y-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -15,7 +15,7 @@ type SelectOption struct {
 	Selected bool
 }
 
-// Select は選択欄。矢印は app.css の select（appearance: none + --mute の矢印）。右 padding 36 は矢印の分。
+// Select は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding 36 は矢印の分。
 func Select(id, name string, options []SelectOption) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

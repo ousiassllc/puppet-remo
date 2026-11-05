@@ -158,7 +158,7 @@ func TestDeleteClient(t *testing.T) {
 	// 確認のモーダルはサーバーが描画し、確定のボタンだけが DELETE を送る。
 	conf := r.get("/clients/c1/delete/confirm", hx...)
 	status(t, conf, http.StatusOK)
-	contains(t, conf, `role="dialog"`, "alice-desktop", `hx-delete="/clients/c1"`, `hx-target="#client-list"`, "削除する")
+	contains(t, conf, `role="dialog"`, "alice-desktop", `hx-delete="/clients/c1"`, `hx-target="#client-list"`, "削除する", "text-danger") // 削除は破壊的なので確定は危険色（O7）
 	lacks(t, conf, "<html")
 	must(t, len(r.f.Admin.Cs) == 2, "confirmation must not delete")
 

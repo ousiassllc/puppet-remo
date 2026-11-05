@@ -42,7 +42,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"lease-panel\" class=\"rounded-lg border border-border bg-surface p-4\" aria-label=\"操作権\" hx-get=\"/viewer/lease\" hx-trigger=\"remo:lease-changed from:#viewer-root\" hx-target=\"this\" hx-swap=\"outerHTML\"><h2 class=\"mb-6 text-2xl font-semibold text-ink\">操作権</h2><div class=\"flex flex-wrap items-center gap-3\" data-lease-state=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"lease-panel\" class=\"rounded-lg border border-border bg-surface p-4\" aria-label=\"操作権\" hx-get=\"/viewer/lease\" hx-trigger=\"remo:lease-changed from:#viewer-root\" hx-target=\"this\" hx-swap=\"outerHTML\"><h2 class=\"mb-6 text-2xl font-semibold text-ink\">操作権</h2><div class=\"flex flex-wrap items-center gap-2\" data-lease-state=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -125,7 +125,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<h3 class=\"text-base font-semibold\">AI エージェントのタスク実行中</h3><dl class=\"space-y-1 text-sm\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">状態</dt><dd data-task-status>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<h3 class=\"text-base font-semibold\">AI エージェントのタスク実行中</h3><dl class=\"space-y-2 text-sm\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">状態</dt><dd data-task-status>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

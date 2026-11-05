@@ -83,6 +83,12 @@ export class RemoScreenViewer extends LitElement {
       position: relative;
       min-height: 8rem;
     }
+    /* キー入力を受けている間（IME 用の入力要素にフォーカスがある間）は、ホストの外側に --focus のリング（C3）。
+       入力要素は見えず、Shadow DOM の中なので、グローバルの :focus-visible は届かない。 */
+    :host(:focus-within) {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
     canvas {
       display: block;
       width: 100%;
@@ -145,7 +151,7 @@ export class RemoScreenViewer extends LitElement {
     .tone-warning {
       color: var(--warning);
     }
-    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px。回転は reduced-motion でも止めない。 */
+    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。回転は reduced-motion でも止めない。 */
     .spinner {
       width: 20px;
       height: 20px;
@@ -154,7 +160,7 @@ export class RemoScreenViewer extends LitElement {
       border: 2px solid var(--accent-soft);
       border-top-color: var(--accent);
       border-radius: var(--r-full);
-      animation: overlay-spin 0.8s linear infinite;
+      animation: overlay-spin var(--spinner-duration) linear infinite;
     }
     @keyframes overlay-spin {
       to {

@@ -34,13 +34,13 @@ func alertClass(t AlertTone) string {
 	base := "motion-rise-in flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
 	switch t {
 	case AlertSuccess:
-		return base + "border-success/40 bg-success/10 text-success"
+		return base + "border-success-line bg-success-wash text-success"
 	case AlertWarning:
-		return base + "border-warning/40 bg-warning/10 text-warning"
+		return base + "border-warning-line bg-warning-wash text-warning"
 	case AlertDanger:
-		return base + "border-danger/40 bg-danger/10 text-danger"
+		return base + "border-danger-line bg-danger-wash text-danger"
 	default:
-		return base + "border-info/40 bg-info/10 text-info"
+		return base + "border-info-line bg-info-wash text-info"
 	}
 }
 
@@ -138,14 +138,14 @@ func Alert(p AlertProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</h3><p class=\"text-ink\" data-alert-message>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</h3><p class=\"mt-2 text-ink\" data-alert-message>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 70, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 70, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -156,7 +156,7 @@ func Alert(p AlertProps) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if p.Dismissible {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button type=\"button\" class=\"motion-hover shrink-0 rounded-full text-mute hover:text-ink\" aria-label=\"閉じる\" data-clear=\"#alert-root\" data-ripple>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button type=\"button\" class=\"motion-hover inline-flex size-8 shrink-0 items-center justify-center rounded-md text-mute hover:bg-accent-soft hover:text-ink\" aria-label=\"閉じる\" data-clear=\"#alert-root\" data-ripple>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -184,13 +184,13 @@ func noticeClass(t AlertTone, animated bool) string {
 	}
 	switch t {
 	case AlertSuccess:
-		return base + "border-success/40 bg-success/10"
+		return base + "border-success-line bg-success-wash"
 	case AlertWarning:
-		return base + "border-warning/40 bg-warning/10"
+		return base + "border-warning-line bg-warning-wash"
 	case AlertDanger:
-		return base + "border-danger/40 bg-danger/10"
+		return base + "border-danger-line bg-danger-wash"
 	default:
-		return base + "border-info/40 bg-info/10"
+		return base + "border-info-line bg-info-wash"
 	}
 }
 
@@ -386,7 +386,7 @@ func notice(tone AlertTone, attrs Attrs, animated bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</span><div class=\"min-w-0 flex-1 space-y-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</span><div class=\"min-w-0 flex-1 space-y-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
