@@ -220,6 +220,19 @@ func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	hasNot(t, out, "shadow-xl", "z-40")
 }
 
+// O7: 確認モーダルの確定ボタンは、破壊的な操作（Destructive）だけ危険（--danger）。そうでない確認は主。既定の見た目は持たない（Destructive を付けなければ主）。
+func TestModalConfirmButtonFollowsDestructive(t *testing.T) {
+	base := view.ConfirmModal{Title: "確認", Message: "本当に？", Label: "実行", ConfirmURL: "/x", Method: "post", Target: "#t", Swap: "outerHTML"}
+	destructive := base
+	destructive.Destructive = true
+	out := webtest.Render(t, molecules.Modal(destructive))
+	has(t, out, "border border-danger/45 bg-transparent text-danger")
+	hasNot(t, out, "bg-accent text-bone")
+	out = webtest.Render(t, molecules.Modal(base))
+	has(t, out, "bg-accent text-bone", ">実行<")
+	hasNot(t, out, "text-danger", "border-danger")
+}
+
 // T5: Mono を指定した入力欄だけ font-mono（識別子・トークンの判読用）。既定は Sora のまま。
 func TestInputMonoIsOptIn(t *testing.T) {
 	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")

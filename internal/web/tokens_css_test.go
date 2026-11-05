@@ -132,6 +132,16 @@ func TestCSSIconsAreIconoir(t *testing.T) {
 	}
 }
 
+// O7: フォーム部品（チェックボックス・スライダー）の無効は、入力欄・選択欄（disabled:opacity-50）と同じ opacity .5。ボタンだけ .4。
+func TestFormControlsDisabledOpacityIsHalf(t *testing.T) {
+	css := readAppCSS(t)
+	for _, sel := range []string{`input\[type="checkbox"\]:disabled`, `input\[type="range"\]:disabled`} {
+		if !regexp.MustCompile(sel + ` \{\s*opacity: 0\.5;`).MatchString(css) {
+			t.Errorf("app.css must give %s opacity 0.5", sel)
+		}
+	}
+}
+
 // C6: --mute はライトが #6b6b6e（--bone・--surface 上で AA 4.5:1）、ダークが #8b8b8e。
 // ダークの値は [data-theme="dark"] と prefers-color-scheme の 2 か所に置く。
 func TestMuteTokenIsSplitByTheme(t *testing.T) {

@@ -138,6 +138,7 @@ func TestTriggerAndReleaseKillSwitch(t *testing.T) {
 	res = r.get("/killswitch/release/confirm", hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `role="dialog"`, `hx-post="/killswitch/release"`, `hx-target="#killswitch-panel"`, "解除する", `data-clear="#modal-root"`)
+	lacks(t, res, "text-danger", "border-danger") // 受付の再開は破壊的でないので、確定は危険色にしない（O7）
 
 	res = r.post("/killswitch/release", nil, hx...)
 	status(t, res, http.StatusOK)

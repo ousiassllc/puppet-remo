@@ -219,7 +219,7 @@ func (h *Handler) ConfirmDeleteApp(c *gin.Context) {
 	h.render(c, http.StatusOK, molecules.Modal(view.ConfirmModal{
 		Title:      "アプリを許可リストから外しますか？",
 		Message:    "「" + app.Label + "」を許可リストから外します。以後は launch_app で起動できなくなります。すでに起動しているプロセスには影響しません。",
-		ConfirmURL: appItemURL(app.ID), Method: "delete", Target: "#app-list", Swap: "outerHTML", Label: "外す",
+		ConfirmURL: appItemURL(app.ID), Method: "delete", Target: "#app-list", Swap: "outerHTML", Label: "外す", Destructive: true,
 	}))
 }
 

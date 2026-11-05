@@ -367,7 +367,7 @@ func (h *Handler) ConfirmDeleteOpenAIKey(c *gin.Context) {
 	h.confirmDeleteKey(c, func(s service.AgentSettingsView) bool { return s.OpenAIKeyRegistered }, view.ConfirmModal{
 		Title:      "OpenAI API キーを削除しますか？",
 		Message:    "資格情報マネージャーからキーを削除します。エージェントは無効になり、実行中のタスクは中断されます。もう一度使うには、キーを登録して有効にし直してください。",
-		ConfirmURL: agentKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する",
+		ConfirmURL: agentKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する", Destructive: true,
 	})
 }
 
@@ -376,7 +376,7 @@ func (h *Handler) ConfirmDeleteTypeSafeKey(c *gin.Context) {
 	h.confirmDeleteKey(c, func(s service.AgentSettingsView) bool { return s.TypeSafeKeyRegistered }, view.ConfirmModal{
 		Title:      "TypeSafe API キーを削除しますか？",
 		Message:    "資格情報マネージャーからキーを削除します。高速パスは無効になり、同意も取り消されます。実行中のタスクは失敗にせず、OpenAI だけで続けます。",
-		ConfirmURL: fastpathKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する",
+		ConfirmURL: fastpathKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する", Destructive: true,
 	})
 }
 

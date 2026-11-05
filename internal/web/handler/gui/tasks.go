@@ -322,6 +322,6 @@ func (h *Handler) ConfirmCancelTask(c *gin.Context) {
 	h.confirm(c, view.ConfirmModal{
 		Title:      "タスクを中断しますか？",
 		Message:    "実行中のエージェントタスクを止めます。途中までの操作は元に戻りません。",
-		ConfirmURL: taskDetailURL(d.ID) + "/cancel", Method: "post", Target: "#" + taskStatusDOMID(d.ID), Swap: "outerHTML", Label: "中断する",
+		ConfirmURL: taskDetailURL(d.ID) + "/cancel", Method: "post", Target: "#" + taskStatusDOMID(d.ID), Swap: "outerHTML", Label: "中断する", Destructive: true,
 	})
 }
