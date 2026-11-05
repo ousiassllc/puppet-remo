@@ -805,11 +805,11 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = taskField("上限", "ステップ "+strconv.Itoa(v.MaxSteps)+" ・ "+strconv.Itoa(v.MaxDurationSec)+" 秒", "limits", true).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = taskField("上限", "ステップ "+strconv.Itoa(v.MaxSteps)+" ・ "+strconv.Itoa(v.MaxDurationSec)+" 秒", "limits", false).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = taskField("ステップ数", strconv.Itoa(v.StepCount)+"（高速パス "+strconv.Itoa(v.FastSteps)+" ・ OpenAI "+strconv.Itoa(v.OpenAISteps)+"）", "step-count", true).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = taskField("ステップ数", strconv.Itoa(v.StepCount)+"（高速パス "+strconv.Itoa(v.FastSteps)+" ・ OpenAI "+strconv.Itoa(v.OpenAISteps)+"）", "step-count", false).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
