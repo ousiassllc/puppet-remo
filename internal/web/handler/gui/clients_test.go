@@ -283,6 +283,7 @@ func TestResetClientApproval(t *testing.T) {
 	res := r.post("/clients/c2/approval/reset", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="client-c2"`, "未承認（次のリース取得で承認が必要です）", "承認を取り消しました")
+	lacks(t, res, "承認を取り消しました。次のリース取得から")
 	lacks(t, res, "<html", "承認を取り消す</button>")
 	if r.f.Admin.Cs[1].ApprovedAt != nil || r.f.Admin.Cs[1].ApprovalMode != domain.ApprovalFirstTime {
 		t.Errorf("client = %+v, want first_time with approved_at NULL", r.f.Admin.Cs[1])

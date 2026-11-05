@@ -128,7 +128,7 @@ func (h *Handler) ResetApproval(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	h.render(c, http.StatusOK, organisms.ClientCard(h.clientView(updated, c.Query("view") != "detail")), organisms.ToastOOB(infoToast("承認を取り消しました。次のリース取得から承認が必要です。")))
+	h.render(c, http.StatusOK, organisms.ClientCard(h.clientView(updated, c.Query("view") != "detail")), organisms.ToastOOB(infoToast("承認を取り消しました。")))
 }
 
 // DeleteClient は DELETE /clients/:id。応答は一覧のフラグメント。
