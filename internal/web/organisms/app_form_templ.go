@@ -167,7 +167,7 @@ func AppForm(f view.AppForm, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" novalidate class=\"space-y-4 rounded-lg border border-border bg-surface p-4 shadow-sm\" data-app-form=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" novalidate class=\"space-y-4 rounded-lg border border-border bg-surface p-4\" data-app-form=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

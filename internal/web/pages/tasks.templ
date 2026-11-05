@@ -14,7 +14,7 @@ const (
 templ tasksBody(v view.TaskListPage) {
 	<div class="space-y-4">
 		<h1 class="text-3xl font-semibold text-ink">タスク</h1>
-		<p class="text-base text-ink">MCP クライアントが <code class="rounded bg-accent-soft px-1 py-0.5 text-xs">run_task</code> で依頼した、ホスト内蔵エージェントのタスクです。新しい順に表示します。実行中のタスクは詳細の画面（またはダッシュボード）から中断できます。ステップごとの操作と画像は、タスクの詳細と監査ログで確認できます。</p>
+		<p class="text-base text-ink">MCP クライアントが <code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">run_task</code> で依頼した、ホスト内蔵エージェントのタスクです。新しい順に表示します。実行中のタスクは詳細の画面（またはダッシュボード）から中断できます。ステップごとの操作と画像は、タスクの詳細と監査ログで確認できます。</p>
 		@organisms.TaskList(v.List)
 	</div>
 }

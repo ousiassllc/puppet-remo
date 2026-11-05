@@ -4,20 +4,21 @@ import (
 	"strconv"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
 // AppCard は起動許可アプリ 1 件（表示名・実行ファイル・引数・作業ディレクトリ・編集・削除）。PUT /apps/{id} の応答もこのフラグメント。
 // パス・引数・作業ディレクトリは、ホスト所有者だけが見る GUI に出す（リモートには出さない。FR-H12）。
 templ AppCard(a view.AppRow) {
-	<article id={ appCardID(a) } class="rounded-lg border border-border bg-surface p-4 shadow-sm" data-app={ a.ID }>
+	<article id={ appCardID(a) } class="rounded-lg border border-border bg-surface p-4" data-app={ a.ID }>
 		<h3 class="text-base font-semibold text-ink">{ a.Label }</h3>
 		if a.Unlaunchable {
 			<p class="mt-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert" data-app-unlaunchable>この設定のままでは起動できません（MCP のクライアントにも表示されません）。削除するか、編集して保存し直してください。</p>
 		}
 		<dl class="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
 			<dt class="text-mute">実行ファイル</dt>
-			<dd class="min-w-0 break-all"><code class="rounded bg-accent-soft px-1 py-0.5 text-xs" data-app-exe>{ a.ExePath }</code></dd>
+			<dd class="min-w-0 break-all"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs" data-app-exe>{ a.ExePath }</code></dd>
 			<dt class="text-mute">引数</dt>
 			<dd class="min-w-0">
 				if a.Corrupt {
@@ -27,7 +28,7 @@ templ AppCard(a view.AppRow) {
 				} else {
 					<ul class="space-y-0.5" data-app-args>
 						for _, arg := range a.Args {
-							<li class="break-all"><code class="rounded bg-accent-soft px-1 py-0.5 text-xs">{ arg }</code></li>
+							<li class="break-all"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ arg }</code></li>
 						}
 					</ul>
 				}
@@ -37,7 +38,7 @@ templ AppCard(a view.AppRow) {
 				if a.WorkingDir == "" {
 					<span class="text-mute">実行ファイルのあるディレクトリ</span>
 				} else {
-					<code class="rounded bg-accent-soft px-1 py-0.5 text-xs" data-app-dir>{ a.WorkingDir }</code>
+					<code class="rounded-sm bg-accent-soft px-2 py-1 text-xs" data-app-dir>{ a.WorkingDir }</code>
 				}
 			</dd>
 		</dl>
@@ -58,9 +59,9 @@ templ AppList(v view.AppList) {
 	<div id="app-list" class="space-y-4">
 		<p class="text-xs text-mute" data-app-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
 		if len(v.Rows) == 0 {
-			<p class="rounded-lg border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-mute" data-empty="apps">
+			@molecules.EmptyState("apps") {
 				起動を許可したアプリはまだありません。下のフォームから追加すると、MCP のクライアントが <code>launch_app</code> で起動できます。
-			</p>
+			}
 		}
 		for _, row := range v.Rows {
 			if row.Form != nil {

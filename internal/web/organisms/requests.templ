@@ -33,18 +33,18 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 	<div id="request-list" class="space-y-4" { oobAttrs(oob)... }>
 		<input type="hidden" name="rev_requests" value={ v.Rev } data-poll-rev/>
 		if len(v.Rows) == 0 {
-			<p class="rounded-lg border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-mute" data-empty="requests">
+			@molecules.EmptyState("requests") {
 				未処理の接続要求はありません。未登録のデバイスが接続しようとすると、ここに表示されます。
-			</p>
+			}
 		}
 		for _, r := range v.Rows {
-			<article class="rounded-lg border border-border bg-surface p-4 shadow-sm" data-request={ r.ID }>
+			<article class="rounded-lg border border-border bg-surface p-4" data-request={ r.ID }>
 				<div class="flex flex-wrap items-baseline justify-between gap-2">
 					<h3 class="text-base font-semibold text-ink">{ r.DisplayName }</h3>
 					<span class="text-xs text-mute">{ strconv.Itoa(r.Count) } 回の要求 ・ 初回 { r.FirstSeen } ・ 最終 { r.LastSeen }</span>
 				</div>
 				<p class="mt-1 text-xs text-mute">
-					ユーザー { r.LoginName } ・ 接続元 <code class="rounded bg-accent-soft px-1 py-0.5">{ r.RemoteIP }</code> ・ { r.ExpiresAt } まで有効
+					ユーザー { r.LoginName } ・ 接続元 <code class="rounded-sm bg-accent-soft px-2 py-1">{ r.RemoteIP }</code> ・ { r.ExpiresAt } まで有効
 				</p>
 				<form
 					class="mt-3 grid gap-3 sm:grid-cols-2"

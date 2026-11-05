@@ -24,7 +24,7 @@ func sliderAttrs(out, min, max string) atoms.Attrs {
 templ ViewerToolbar(v view.ViewerToolbar) {
 	<form
 		id="viewer-toolbar"
-		class="flex flex-wrap items-start gap-4 rounded-lg border border-border bg-surface p-3 shadow-sm"
+		class="flex flex-wrap items-start gap-4 rounded-lg border border-border bg-surface p-3"
 		novalidate
 		hx-post="/viewer/settings"
 		hx-trigger="change"

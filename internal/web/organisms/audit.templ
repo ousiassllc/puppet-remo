@@ -20,7 +20,7 @@ func auditSelectOptions(opts []view.AuditFilterOption) []atoms.SelectOption {
 // 日時は RFC 3339 の文字列で入力する（API 仕様 §7.3 の from / to と同じ）。
 templ AuditFilters(f view.AuditFilters) {
 	<form
-		class="space-y-3 rounded-lg border border-border bg-surface p-4 shadow-sm"
+		class="space-y-3 rounded-lg border border-border bg-surface p-4"
 		method="get"
 		action="/audit"
 		novalidate
@@ -84,12 +84,12 @@ templ AuditList(v view.AuditList) {
 		if len(v.Rows) == 0 {
 			// 値が不正で検索しなかったとき（422）は、「該当なし」とは言わない。
 			if !v.Filters.Errors.Any() {
-				<p class="rounded-lg border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-mute" data-empty="audit-list">
+				@molecules.EmptyState("audit-list") {
 					条件に合う監査ログはありません。
-				</p>
+				}
 			}
 		} else {
-			<div class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm">
+			<div class="overflow-x-auto rounded-lg border border-border bg-surface">
 				<table class="min-w-full divide-y divide-border text-sm">
 					<thead class="bg-bone text-left text-xs font-semibold text-mute">
 						<tr>
@@ -135,7 +135,7 @@ templ AuditList(v view.AuditList) {
 			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
 				<a
 					href={ templ.SafeURL(v.NextURL) }
-					class="rounded-md border border-border bg-surface px-3 py-1.5 text-ink hover:bg-accent-soft"
+					class="rounded-md border border-border bg-surface inline-flex h-8 items-center px-3 text-ink hover:bg-accent-soft"
 					hx-get={ v.NextURL }
 					hx-target="#audit-list"
 					hx-swap="outerHTML"
@@ -150,7 +150,7 @@ templ AuditList(v view.AuditList) {
 // AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。
 templ AuditDetail(v view.AuditDetail) {
 	<div class="space-y-4" data-audit-detail={ v.Event }>
-		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-4 text-sm shadow-sm sm:grid-cols-2">
+		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2">
 			@auditField("日時", v.Time, "time")
 			@auditField("種別", v.Kind, "kind")
 			@auditField("イベント", v.Event, "event")
@@ -171,9 +171,11 @@ templ AuditDetail(v view.AuditDetail) {
 		<section class="space-y-2" aria-label="引数">
 			<h2 class="text-base font-semibold text-ink">引数</h2>
 			if len(v.Args) == 0 {
-				<p class="text-sm text-mute" data-empty="audit-args">記録された引数はありません。</p>
+				@molecules.EmptyState("audit-args") {
+					記録された引数はありません。
+				}
 			} else {
-				<div class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm">
+				<div class="overflow-x-auto rounded-lg border border-border bg-surface">
 					<table class="min-w-full divide-y divide-border text-sm" data-audit-args>
 						<thead class="bg-bone text-left text-xs font-semibold text-mute">
 							<tr>
@@ -201,11 +203,13 @@ templ AuditDetail(v view.AuditDetail) {
 					alt="操作の直後の縮小スクリーンショット"
 					width={ v.ThumbW }
 					height={ v.ThumbH }
-					class="max-w-full rounded-lg border border-border bg-surface shadow-sm"
+					class="max-w-full rounded-lg border border-border bg-surface"
 					data-audit-thumb
 				/>
 			} else {
-				<p class="text-sm text-mute" data-empty="audit-thumb">{ v.ThumbNote }</p>
+				@molecules.EmptyState("audit-thumb") {
+					{ v.ThumbNote }
+				}
 			}
 		</section>
 		<a

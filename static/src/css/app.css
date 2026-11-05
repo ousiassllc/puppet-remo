@@ -88,6 +88,23 @@
   --color-info: var(--info);
 }
 
+/* ---- 形・余白・線・影（S1〜S4）----
+ * 角丸は none 0 / sm 4（タグ・チェック）/ md 8（入力・ボタン）/ lg 12（カード）/ xl 16（モーダル）/ full（ピル・アバター）。
+ * 影は使わない。モーダルだけ shadow-modal（カード・パネル・入力・トーストは影なしで、1px の --border で区切る）。
+ * 余白は 4px 基準（Tailwind の spacing の倍数）。スケール外の値（2・6・10・20px）は使わない。 */
+@theme {
+  --radius-*: initial;
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
 /* ---- タイポグラフィ（T1〜T4）----
  * フォントは Sora + Noto Sans JP（UI）と JetBrains Mono（コード・桁を揃える数値）。@font-face は scripts/copy-fonts.mjs が生成する。
  * サイズはガイドのスケール（xs 12 / sm 14 / base 16 / lg 18 / xl 24 / 2xl 32 / 3xl 40）と行間。スケール外のサイズは使えない。

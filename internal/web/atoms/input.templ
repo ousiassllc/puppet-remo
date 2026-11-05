@@ -31,7 +31,7 @@ func textareaClass(invalid bool) string {
 
 // fieldClass は入力欄・選択欄・複数行の入力欄に共通のクラス。本文と同じ 16px・Regular。
 func fieldClass(size string, invalid bool) string {
-	base := "block w-full min-w-0 rounded-md border bg-surface text-base shadow-sm read-only:bg-bone " + size
+	base := "block w-full min-w-0 rounded-md border bg-surface text-base read-only:bg-bone " + size
 	if invalid {
 		return base + "border-danger"
 	}

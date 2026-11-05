@@ -12,8 +12,8 @@ const TOAST_ROOT = "toast-root";
 const TOAST_LIFETIME_MS = 8000;
 
 const toastClasses = {
-  error: "pointer-events-auto flex items-start gap-3 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger shadow",
-  info: "pointer-events-auto flex items-start gap-3 rounded-md border border-border bg-surface px-4 py-3 text-sm text-ink shadow",
+  error: "pointer-events-auto flex items-start gap-3 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger",
+  info: "pointer-events-auto flex items-start gap-3 rounded-md border border-border bg-surface px-4 py-3 text-sm text-ink",
 };
 
 function showErrorToast(message: string): void {

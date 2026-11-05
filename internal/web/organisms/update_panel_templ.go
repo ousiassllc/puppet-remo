@@ -37,14 +37,14 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"update-panel\" class=\"rounded-lg border border-border bg-surface shadow-sm\"><h2 class=\"border-b border-border px-4 py-2.5 text-base font-semibold text-ink\">アプリの更新</h2><div class=\"space-y-4 p-4\"><dl class=\"grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2\"><dt class=\"text-mute\">現在の版</dt><dd class=\"mb-1 min-w-0 sm:mb-0\"><code class=\"break-all rounded bg-accent-soft px-1.5 py-0.5 text-xs\" data-field=\"current-version\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"update-panel\" class=\"rounded-lg border border-border bg-surface\"><h2 class=\"border-b border-border px-6 py-3 text-base font-semibold text-ink\">アプリの更新</h2><div class=\"space-y-4 p-6\"><dl class=\"grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2\"><dt class=\"text-mute\">現在の版</dt><dd class=\"mb-1 min-w-0 sm:mb-0\"><code class=\"break-all rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-field=\"current-version\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(v.CurrentVersion)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 17, Col: 153}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 17, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -138,14 +138,14 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 			}
 		}
 		if v.Latest != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"space-y-2 rounded-md border border-border p-3\" data-update=\"latest\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"text-sm text-ink\">新しい版: <code class=\"break-all rounded bg-accent-soft px-1.5 py-0.5 text-xs\" data-field=\"latest-version\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"space-y-2 rounded-md border border-border p-3\" data-update=\"latest\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"text-sm text-ink\">新しい版: <code class=\"break-all rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-field=\"latest-version\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.Latest.Version)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 50, Col: 166}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 50, Col: 165}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -209,14 +209,14 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 				}
 			}
 			if v.Latest.Notes != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<pre class=\"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-bone p-2 text-xs text-ink\" data-field=\"release-notes\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<pre class=\"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-bone p-2 text-xs text-ink\" data-field=\"release-notes\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(v.Latest.Notes)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 64, Col: 154}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 64, Col: 157}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {

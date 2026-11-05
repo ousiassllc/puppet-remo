@@ -16,7 +16,7 @@ func leaseButtonAttrs(url string) atoms.Attrs {
 templ ViewerLeasePanel(v view.ViewerLease) {
 	<section
 		id="lease-panel"
-		class="rounded-lg border border-border bg-surface p-3 shadow-sm"
+		class="rounded-lg border border-border bg-surface p-3"
 		aria-label="操作権"
 		hx-get="/viewer/lease"
 		hx-trigger="remo:lease-changed from:#viewer-root"
@@ -47,7 +47,7 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 			}
 		</div>
 		if v.Task != nil {
-			<div class="mt-2 rounded border border-info/40 bg-info/10 p-2 text-xs text-ink" data-lease-task>
+			<div class="mt-2 rounded-sm border border-info/40 bg-info/10 p-2 text-xs text-ink" data-lease-task>
 				<p class="text-info">AI エージェントのタスク実行中</p>
 				<dl class="mt-1 space-y-0.5">
 					<div class="flex gap-2"><dt class="w-16 text-mute">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>

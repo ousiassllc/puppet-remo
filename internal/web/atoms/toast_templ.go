@@ -11,7 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 import "github.com/ousiassllc/puppet-remo/internal/web/view"
 
 func toastClass(l view.ToastLevel) string {
-	base := "pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm shadow "
+	base := "pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
 	if l == view.ToastError {
 		return base + "border-danger/40 bg-danger/10 text-danger"
 	}
