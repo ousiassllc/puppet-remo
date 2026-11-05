@@ -34,6 +34,19 @@ func alertClass(t AlertTone) string {
 	}
 }
 
+func alertIcon(t AlertTone) IconName {
+	switch t {
+	case AlertSuccess:
+		return IconCheckCircle
+	case AlertWarning:
+		return IconWarningTriangle
+	case AlertDanger:
+		return IconXmarkCircle
+	default:
+		return IconInfoCircle
+	}
+}
+
 func alertAttrs(p AlertProps) Attrs {
 	a := Attrs{"data-alert-tone": string(p.Tone)}
 	if p.Code != "" {
@@ -46,9 +59,15 @@ func alertAttrs(p AlertProps) Attrs {
 // （アクションルート）に返すエラーのフラグメントと、アクションの失敗の表示先（#alert-root）に使う。
 templ Alert(p AlertProps) {
 	<div role="alert" class={ alertClass(p.Tone) } { alertAttrs(p)... }>
+		@Icon(alertIcon(p.Tone), IconMD)
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold">{ p.Heading }</h3>
 			<p class="text-ink">{ p.Message }</p>
 		</div>
+		if p.Dismissible {
+			<button type="button" class="shrink-0 text-mute hover:text-ink" aria-label="閉じる" data-clear="#alert-root">
+				@Icon(IconXmark, IconMD)
+			</button>
+		}
 	</div>
 }

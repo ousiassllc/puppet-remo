@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/layout"
 	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
@@ -33,7 +34,10 @@ templ ClientsBoosted(v view.Clients) {
 
 templ clientDetailBody(v view.ClientDetail) {
 	<div class="space-y-4">
-		<a href={ templ.SafeURL(v.BackURL) } class="text-sm link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">← クライアント一覧</a>
+		<a href={ templ.SafeURL(v.BackURL) } class="inline-flex items-center gap-2 text-sm link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">
+			@atoms.Icon(atoms.IconArrowLeft, atoms.IconSM)
+			クライアント一覧
+		</a>
 		@organisms.ClientCard(v.Client)
 		@molecules.Card("Bearer トークン") {
 			<div class="space-y-4">

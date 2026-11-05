@@ -20,7 +20,7 @@ const (
 
 // badgeClass はステータスピル。状態色の細枠 + 薄い地 + 文言（色だけで意味を伝えない）。
 func badgeClass(t BadgeTone) string {
-	base := "inline-flex items-center rounded-full border px-2 py-1 text-xs "
+	base := "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs "
 	switch t {
 	case BadgeOK:
 		return base + "border-success/40 bg-success/10 text-success"
@@ -33,7 +33,21 @@ func badgeClass(t BadgeTone) string {
 	}
 }
 
-// Badge は状態を示す小さなラベル。
+// badgeIcon は状態のアイコン（色だけで意味を伝えない）。中立（種別・件数などの状態でない表示）には付けない。
+func badgeIcon(t BadgeTone) (IconName, bool) {
+	switch t {
+	case BadgeOK:
+		return IconCheckCircle, true
+	case BadgeWarn:
+		return IconWarningTriangle, true
+	case BadgeDanger:
+		return IconXmarkCircle, true
+	default:
+		return "", false
+	}
+}
+
+// Badge は状態を示す小さなラベル。状態色の枠・アイコン・文言で伝える。
 func Badge(tone BadgeTone, text string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -77,10 +91,16 @@ func Badge(tone BadgeTone, text string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		if name, ok := badgeIcon(tone); ok {
+			templ_7745c5c3_Err = Icon(name, IconSM).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 30, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 48, Col: 8}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

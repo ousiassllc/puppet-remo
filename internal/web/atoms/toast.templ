@@ -22,6 +22,8 @@ func toastAttrs(t view.Toast) Attrs {
 templ Toast(t view.Toast) {
 	<div class={ toastClass(t.Level) } role="alert" { toastAttrs(t)... }>
 		<span>{ t.Message }</span>
-		<button type="button" class="ml-auto text-mute hover:text-ink" aria-label="閉じる" data-toast-dismiss>×</button>
+		<button type="button" class="ml-auto text-mute hover:text-ink" aria-label="閉じる" data-toast-dismiss>
+			@Icon(IconXmark, IconMD)
+		</button>
 	</div>
 }

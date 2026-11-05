@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/layout"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -19,8 +20,14 @@ templ dashboardBody(v view.Dashboard) {
 			@organisms.SessionList(v.Sessions)
 		</div>
 		<div class="flex flex-wrap gap-3 text-sm">
-			<a href="/requests" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">接続要求を確認する →</a>
-			<a href="/clients" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">クライアントを管理する →</a>
+			<a href="/requests" class="inline-flex items-center gap-2 link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">
+				接続要求を確認する
+				@atoms.Icon(atoms.IconArrowRight, atoms.IconSM)
+			</a>
+			<a href="/clients" class="inline-flex items-center gap-2 link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">
+				クライアントを管理する
+				@atoms.Icon(atoms.IconArrowRight, atoms.IconSM)
+			</a>
 		</div>
 	</div>
 }
