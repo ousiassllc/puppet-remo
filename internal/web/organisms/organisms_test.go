@@ -442,7 +442,7 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	}
 	out := webtest.Render(t, organisms.AppLog(v))
 	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
-		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<",
+		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<", `<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink">`,
 		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
 		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
 	has(t, out, "auth failed &lt;b&gt;")
