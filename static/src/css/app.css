@@ -1,7 +1,7 @@
 /* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
  * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
  * <style> と style= は使わない（CSP。§7.1）。
- * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide 622ea73）のトークンで、この 1 か所に定義する（§8.4）。
+ * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide 73d8cf6）のトークンで、この 1 か所に定義する（§8.4）。
  * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
  * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
@@ -16,7 +16,7 @@
   color-scheme: light;
   --ink: #050505;
   --bone: #f5f5f4;
-  --mute: #8b8b8e;
+  --mute: #6b6b6e;
   --surface: #ffffff;
   --border: #e7e7e5;
   --accent: #050505;
@@ -33,6 +33,7 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
+  --mute: #8b8b8e;
   --ink: #ffffff;
   --bone: #050505;
   --surface: #141414;
@@ -51,6 +52,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
+    --mute: #8b8b8e;
     --ink: #ffffff;
     --bone: #050505;
     --surface: #141414;

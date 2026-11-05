@@ -511,7 +511,7 @@ graph LR
 
 ### 8.4 デザインガイドの適用（Ousiass 共通デザインガイド）
 
-見た目の値（色・書体・サイズ・角丸・影・モーション・z-index・表の余白）は、Ousiass 共通デザインガイド（brand-guide `622ea73`）のトークンで、`static/src/css/app.css` の 1 か所に定義する。Templ と Lit はトークン（Tailwind のユーティリティ `bg-bone` `text-ink` `text-mute` `bg-surface` `border-border` `bg-accent` `bg-accent-soft` `text-danger` や CSS の `var(--ink)`）だけを参照し、Tailwind 既定のパレット・ハードコードの色・ガイドに無い値を使わない（`@theme` で既定のパレット・サイズ・角丸・影を空にしてあるので、既定の `slate-*` などは生成されない）。
+見た目の値（色・書体・サイズ・角丸・影・モーション・z-index・表の余白）は、Ousiass 共通デザインガイド（brand-guide `73d8cf6`）のトークンで、`static/src/css/app.css` の 1 か所に定義する。Templ と Lit はトークン（Tailwind のユーティリティ `bg-bone` `text-ink` `text-mute` `bg-surface` `border-border` `bg-accent` `bg-accent-soft` `text-danger` や CSS の `var(--ink)`）だけを参照し、Tailwind 既定のパレット・ハードコードの色・ガイドに無い値を使わない（`@theme` で既定のパレット・サイズ・角丸・影を空にしてあるので、既定の `slate-*` などは生成されない）。
 
 | 領域 | 実装 |
 |------|------|
