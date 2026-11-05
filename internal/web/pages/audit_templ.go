@@ -40,7 +40,7 @@ func auditBody(v view.AuditListPage) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-ink\">監査ログ</h1><p class=\"text-sm text-ink\">認証・クライアント・トークン・リース・ツールの実行・Web の入力・キルスイッチ・設定の変更の記録です。新しい順に表示し、日時・クライアント・種別・結果で絞り込めます。<code class=\"rounded bg-accent-soft px-1 py-0.5 text-xs\">type</code> の本文とクリップボードの本文は、設定で有効にしない限り記録されません（文字数のみ）。接続要求の履歴（接続要求画面）・アプリのログ（ログ画面）とは別のものです。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-3xl font-semibold text-ink\">監査ログ</h1><p class=\"text-base text-ink\">認証・クライアント・トークン・リース・ツールの実行・Web の入力・キルスイッチ・設定の変更の記録です。新しい順に表示し、日時・クライアント・種別・結果で絞り込めます。<code class=\"rounded bg-accent-soft px-1 py-0.5 text-xs\">type</code> の本文とクリップボードの本文は、設定で有効にしない限り記録されません（文字数のみ）。接続要求の履歴（接続要求画面）・アプリのログ（ログ画面）とは別のものです。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -173,7 +173,7 @@ func auditDetailBody(v view.AuditDetail) templ.Component {
 			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-ink\">監査ログの詳細</h1>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"space-y-4\"><h1 class=\"text-3xl font-semibold text-ink\">監査ログの詳細</h1>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

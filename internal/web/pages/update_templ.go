@@ -37,7 +37,7 @@ func updateBody(v view.Update) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-2xl space-y-4\"><h1 class=\"text-xl font-semibold text-ink\">更新</h1><p class=\"text-sm text-ink\">GitHub の Release から新しい版を確認し、署名（Ed25519）を検証できたものだけを適用します。適用すると、アプリは一度終了します。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-2xl space-y-4\"><h1 class=\"text-3xl font-semibold text-ink\">更新</h1><p class=\"text-base text-ink\">GitHub の Release から新しい版を確認し、署名（Ed25519）を検証できたものだけを適用します。適用すると、アプリは一度終了します。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

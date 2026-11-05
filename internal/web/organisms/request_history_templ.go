@@ -16,7 +16,7 @@ import (
 )
 
 func requestsTabClass(active bool) string {
-	base := "inline-flex items-center border-b-2 px-3 py-2 text-sm font-medium "
+	base := "inline-flex items-center border-b-2 px-3 py-2 text-sm "
 	if active {
 		return base + "border-accent text-ink"
 	}
@@ -162,7 +162,7 @@ func requestHistoryPager(v view.RequestHistory) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" class=\"rounded-md border border-border bg-surface px-3 py-1.5 font-medium text-ink hover:bg-accent-soft\" hx-get=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" class=\"rounded-md border border-border bg-surface px-3 py-1.5 text-ink hover:bg-accent-soft\" hx-get=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -229,7 +229,7 @@ func requestHistoryPager(v view.RequestHistory) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" class=\"rounded-md border border-border bg-surface px-3 py-1.5 font-medium text-ink hover:bg-accent-soft\" hx-get=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" class=\"rounded-md border border-border bg-surface px-3 py-1.5 text-ink hover:bg-accent-soft\" hx-get=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -293,7 +293,7 @@ func ConnectionRequestHistory(v view.RequestHistory) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"overflow-x-auto rounded-lg border border-border bg-surface shadow-sm\"><table class=\"min-w-full divide-y divide-border text-sm\"><thead class=\"bg-bone text-left text-xs font-semibold text-ink\"><tr><th scope=\"col\" class=\"px-3 py-2\">届いた日時</th><th scope=\"col\" class=\"px-3 py-2\">デバイス名</th><th scope=\"col\" class=\"px-3 py-2\">tailnet IP</th><th scope=\"col\" class=\"px-3 py-2\">ユーザー</th><th scope=\"col\" class=\"px-3 py-2\">結果</th><th scope=\"col\" class=\"px-3 py-2\">処理した日時</th></tr></thead> <tbody class=\"divide-y divide-border\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"overflow-x-auto rounded-lg border border-border bg-surface shadow-sm\"><table class=\"min-w-full divide-y divide-border text-sm\"><thead class=\"bg-bone text-left text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-3 py-2\">届いた日時</th><th scope=\"col\" class=\"px-3 py-2\">デバイス名</th><th scope=\"col\" class=\"px-3 py-2\">tailnet IP</th><th scope=\"col\" class=\"px-3 py-2\">ユーザー</th><th scope=\"col\" class=\"px-3 py-2\">結果</th><th scope=\"col\" class=\"px-3 py-2\">処理した日時</th></tr></thead> <tbody class=\"divide-y divide-border\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -337,14 +337,14 @@ func ConnectionRequestHistory(v view.RequestHistory) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</td><td class=\"px-3 py-2 font-medium text-ink\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</td><td class=\"px-3 py-2 text-ink\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(r.DisplayName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/request_history.templ`, Line: 109, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/request_history.templ`, Line: 109, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {

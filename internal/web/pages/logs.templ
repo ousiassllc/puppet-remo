@@ -17,10 +17,10 @@ func openLogFolderAttrs(url string) atoms.Attrs {
 
 templ logsBody(v view.AppLogPage) {
 	<div class="space-y-4">
-		<h1 class="text-xl font-semibold text-ink">ログ</h1>
-		<p class="text-sm text-ink">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p>
+		<h1 class="text-3xl font-semibold text-ink">ログ</h1>
+		<p class="text-base text-ink">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p>
 		<div class="flex flex-wrap items-center gap-3">
-			<p class="text-sm text-ink">ログファイル: <code class="break-all rounded bg-accent-soft px-1 py-0.5 text-xs" data-log-path>{ v.Path }</code></p>
+			<p class="text-base text-ink">ログファイル: <code class="break-all rounded bg-accent-soft px-1 py-0.5 text-xs" data-log-path>{ v.Path }</code></p>
 			@atoms.Button(atoms.ButtonProps{Label: "ログフォルダーを開く", Variant: atoms.ButtonSecondary, Attrs: openLogFolderAttrs(v.OpenFolderURL)})
 		</div>
 		@organisms.AppLog(v.Log)

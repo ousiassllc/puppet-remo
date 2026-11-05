@@ -40,7 +40,7 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 		for _, r := range v.Rows {
 			<article class="rounded-lg border border-border bg-surface p-4 shadow-sm" data-request={ r.ID }>
 				<div class="flex flex-wrap items-baseline justify-between gap-2">
-					<h3 class="text-sm font-semibold text-ink">{ r.DisplayName }</h3>
+					<h3 class="text-base font-semibold text-ink">{ r.DisplayName }</h3>
 					<span class="text-xs text-mute">{ strconv.Itoa(r.Count) } 回の要求 ・ 初回 { r.FirstSeen } ・ 最終 { r.LastSeen }</span>
 				</div>
 				<p class="mt-1 text-xs text-mute">
@@ -60,7 +60,7 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 						@atoms.Select("mode-"+r.ID, "approval_mode", approvalOptions(r.Modes))
 					}
 					<fieldset class="space-y-1 sm:col-span-2">
-						<legend class="text-sm font-medium text-ink">使える機能</legend>
+						<legend class="text-sm text-ink">使える機能</legend>
 						<label class="mr-4 inline-flex items-center gap-2 text-sm">
 							@atoms.Checkbox("web-"+r.ID, "web_enabled", true)
 							Web

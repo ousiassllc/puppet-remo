@@ -23,7 +23,7 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 		hx-target="this"
 		hx-swap="outerHTML"
 	>
-		<h2 class="mb-2 text-sm font-semibold text-ink">操作権</h2>
+		<h2 class="mb-2 text-base font-semibold text-ink">操作権</h2>
 		<div class="flex flex-wrap items-center gap-3" data-lease-state={ leaseState(v) }>
 			if v.Pending {
 				@molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel)
@@ -37,24 +37,24 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 				@atoms.Badge(atoms.BadgeOK, "あなた")
 			}
 			if v.CanAcquire {
-				@atoms.Button(atoms.ButtonProps{Label: "操作権を取得", Variant: atoms.ButtonPrimary, Attrs: leaseButtonAttrs("/viewer/lease/acquire")})
+				@atoms.Button(atoms.ButtonProps{Label: "操作権を取得", Small: true, Variant: atoms.ButtonPrimary, Attrs: leaseButtonAttrs("/viewer/lease/acquire")})
 			}
 			if v.CanRelease {
-				@atoms.Button(atoms.ButtonProps{Label: "解放", Variant: atoms.ButtonSecondary, Attrs: leaseButtonAttrs("/viewer/lease/release")})
+				@atoms.Button(atoms.ButtonProps{Label: "解放", Small: true, Variant: atoms.ButtonSecondary, Attrs: leaseButtonAttrs("/viewer/lease/release")})
 			}
 			if v.CanRevoke {
-				@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Variant: atoms.ButtonDanger, Attrs: leaseButtonAttrs("/viewer/lease/revoke")})
+				@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: leaseButtonAttrs("/viewer/lease/revoke")})
 			}
 		</div>
 		if v.Task != nil {
 			<div class="mt-2 rounded border border-info/40 bg-info/10 p-2 text-xs text-ink" data-lease-task>
-				<p class="font-semibold text-info">AI エージェントのタスク実行中</p>
+				<p class="text-info">AI エージェントのタスク実行中</p>
 				<dl class="mt-1 space-y-0.5">
 					<div class="flex gap-2"><dt class="w-16 text-mute">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
-					<div class="flex gap-2"><dt class="w-16 text-mute">ステップ</dt><dd class="tabular-nums" data-task-steps>{ v.Task.Steps }</dd></div>
-					<div class="flex gap-2"><dt class="w-16 text-mute">経過</dt><dd class="tabular-nums" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-mute">ステップ</dt><dd class="font-mono" data-task-steps>{ v.Task.Steps }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-mute">経過</dt><dd class="font-mono" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
 					if v.Task.StartedAt != "" {
-						<div class="flex gap-2"><dt class="w-16 text-mute">開始</dt><dd class="tabular-nums" data-task-started>{ v.Task.StartedAt }</dd></div>
+						<div class="flex gap-2"><dt class="w-16 text-mute">開始</dt><dd class="font-mono" data-task-started>{ v.Task.StartedAt }</dd></div>
 					}
 					<div class="flex gap-2"><dt class="w-16 text-mute">依頼元</dt><dd data-task-requester>{ v.Task.Requester }</dd></div>
 				</dl>

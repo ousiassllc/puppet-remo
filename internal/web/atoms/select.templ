@@ -9,7 +9,7 @@ type SelectOption struct {
 
 // Select は選択欄。
 templ Select(id, name string, options []SelectOption) {
-	<select id={ id } name={ name } class="block w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm shadow-sm">
+	<select id={ id } name={ name } class={ fieldClass("h-10 px-3 ", false) }>
 		for _, o := range options {
 			<option value={ o.Value } selected?={ o.Selected }>{ o.Label }</option>
 		}

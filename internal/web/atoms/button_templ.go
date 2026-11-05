@@ -18,10 +18,12 @@ const (
 )
 
 // ButtonProps はボタンの引数。Type が空なら "button"（フォーム送信は "submit" を明示する）。
+// Small は小ボタン（高さ 32・14px。一覧の行・カードの中の操作）で、既定は高さ 40・16px。
 type ButtonProps struct {
 	Label   string
 	Variant ButtonVariant
 	Type    string
+	Small   bool
 	Attrs   Attrs
 }
 
@@ -32,8 +34,13 @@ func buttonType(t string) string {
 	return "button"
 }
 
-func buttonClass(v ButtonVariant) string {
-	base := "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 "
+func buttonClass(v ButtonVariant, small bool) string {
+	base := "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 "
+	if small {
+		base += "h-8 px-3 text-sm "
+	} else {
+		base += "h-10 px-4 text-base "
+	}
 	switch v {
 	case ButtonDanger:
 		return base + "bg-danger text-bone hover:bg-danger/90"
@@ -66,7 +73,7 @@ func Button(p ButtonProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{buttonClass(p.Variant)}
+		var templ_7745c5c3_Var2 = []any{buttonClass(p.Variant, p.Small)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -78,7 +85,7 @@ func Button(p ButtonProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(buttonType(p.Type))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 41, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 48, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -112,7 +119,7 @@ func Button(p ButtonProps) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 41, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 48, Col: 103}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {

@@ -38,7 +38,7 @@ func clientsBody(v view.Clients) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-ink\">クライアント管理</h1><p class=\"text-sm text-ink\">許可リストに登録されたクライアントです。機能ごとの有効化、Bearer トークンの発行・失効、削除ができます。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-3xl font-semibold text-ink\">クライアント管理</h1><p class=\"text-base text-ink\">許可リストに登録されたクライアントです。機能ごとの有効化、Bearer トークンの発行・失効、削除ができます。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -60,7 +60,7 @@ templ SessionListBody(v view.Sessions) {
 		<ul class="divide-y divide-border text-sm">
 			for _, s := range v.Items {
 				<li class="flex items-center justify-between py-2" data-session>
-					<span class="font-medium text-ink">{ s.ClientLabel }</span>
+					<span class="text-ink">{ s.ClientLabel }</span>
 					<span class="flex items-center gap-2">
 						@atoms.Badge(atoms.BadgeNeutral, s.KindLabel)
 						<span class="text-xs text-mute">{ s.Since } から</span>
@@ -100,7 +100,7 @@ templ LeasePanelBody(v view.Lease) {
 	@LeaseDisplay(v)
 	if v.CanRevoke {
 		<div class="mt-3">
-			@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+			@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 				"hx-post": "/lease/revoke", "hx-target": "#lease", "hx-swap": "innerHTML", "hx-disabled-elt": "this",
 			}})
 			if v.RevokeHint != "" {
@@ -159,7 +159,7 @@ templ killSwitchPanel(v view.KillSwitch, oob bool) {
 		{ oobAttrs(oob)... }
 	>
 		<input type="hidden" name="rev_killswitch" value={ v.Rev } data-poll-rev/>
-		<h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-ink">キルスイッチ</h2>
+		<h2 class="border-b border-border px-4 py-2.5 text-base font-semibold text-ink">キルスイッチ</h2>
 		<div class="space-y-3 p-4">
 			if v.Active {
 				<p class="text-sm text-danger" data-killswitch="active">
@@ -169,7 +169,7 @@ templ killSwitchPanel(v view.KillSwitch, oob bool) {
 					<p class="text-xs text-mute">{ v.Since } に発動（{ v.Source }）</p>
 				}
 			} else {
-				<p class="text-sm text-ink" data-killswitch="inactive">
+				<p class="text-base text-ink" data-killswitch="inactive">
 					緊急時に、すべての操作権を剥奪し、リモートからの要求を断ちます。
 				</p>
 			}

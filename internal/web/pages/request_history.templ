@@ -10,9 +10,9 @@ const requestsHistoryTitle = "接続要求の履歴"
 
 templ requestsHistoryBody(v view.RequestsHistory) {
 	<div class="space-y-4">
-		<h1 class="text-xl font-semibold text-ink">接続要求</h1>
+		<h1 class="text-3xl font-semibold text-ink">接続要求</h1>
 		@organisms.RequestsTabs(view.RequestsTabHistory)
-		<p class="text-sm text-ink">これまでの接続要求です（許可・拒否・失効・未処理）。届いた日時の新しい順に、ページを分けて表示します。保持期間（最後に要求が届いてから 7 日）を過ぎたものは消えます。操作ログの閲覧画面（監査ログ）とは別のものです。</p>
+		<p class="text-base text-ink">これまでの接続要求です（許可・拒否・失効・未処理）。届いた日時の新しい順に、ページを分けて表示します。保持期間（最後に要求が届いてから 7 日）を過ぎたものは消えます。操作ログの閲覧画面（監査ログ）とは別のものです。</p>
 		@organisms.ConnectionRequestHistory(v.History)
 	</div>
 }

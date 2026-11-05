@@ -40,13 +40,13 @@ templ ViewerToolbar(v view.ViewerToolbar) {
 		@molecules.FormField("viewer-quality", "画質（1〜100）", "", v.Errors.Quality) {
 			<div class="flex items-center gap-2">
 				@atoms.Input(atoms.InputProps{ID: "viewer-quality", Name: "quality", Type: "range", Value: v.Quality, Invalid: v.Errors.Quality != "", Attrs: sliderAttrs("viewer-quality-out", "1", "100")})
-				<output id="viewer-quality-out" for="viewer-quality" class="w-8 text-sm tabular-nums text-ink">{ v.Quality }</output>
+				<output id="viewer-quality-out" for="viewer-quality" class="w-8 text-sm font-mono text-ink">{ v.Quality }</output>
 			</div>
 		}
 		@molecules.FormField("viewer-fps", "フレームレート（1〜30 fps）", "", v.Errors.FPS) {
 			<div class="flex items-center gap-2">
 				@atoms.Input(atoms.InputProps{ID: "viewer-fps", Name: "fps", Type: "range", Value: v.FPS, Invalid: v.Errors.FPS != "", Attrs: sliderAttrs("viewer-fps-out", "1", "30")})
-				<output id="viewer-fps-out" for="viewer-fps" class="w-8 text-sm tabular-nums text-ink">{ v.FPS }</output>
+				<output id="viewer-fps-out" for="viewer-fps" class="w-8 text-sm font-mono text-ink">{ v.FPS }</output>
 			</div>
 		}
 		@atoms.Spinner("viewer-toolbar-spinner")

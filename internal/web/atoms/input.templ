@@ -21,7 +21,17 @@ func inputType(t string) string {
 }
 
 func inputClass(invalid bool) string {
-	base := "block w-full min-w-0 rounded-md border bg-surface px-3 py-1.5 text-sm shadow-sm read-only:bg-bone "
+	return fieldClass("h-10 px-3 ", invalid)
+}
+
+// textareaClass は複数行の入力欄のクラス（高さは行数で決まるので、高さの指定は持たない）。
+func textareaClass(invalid bool) string {
+	return fieldClass("px-3 py-2 ", invalid)
+}
+
+// fieldClass は入力欄・選択欄・複数行の入力欄に共通のクラス。本文と同じ 16px・Regular。
+func fieldClass(size string, invalid bool) string {
+	base := "block w-full min-w-0 rounded-md border bg-surface text-base shadow-sm read-only:bg-bone " + size
 	if invalid {
 		return base + "border-danger"
 	}

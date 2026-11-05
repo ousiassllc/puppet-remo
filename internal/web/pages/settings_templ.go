@@ -38,7 +38,7 @@ func settingsBody(v view.Settings) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-xl space-y-4\"><h1 class=\"text-xl font-semibold text-ink\">設定</h1><p class=\"text-sm text-ink\" data-notice=\"agent-link\">内蔵エージェント（既定は無効）と API キーの設定は、<a href=\"/agent\" class=\"link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">エージェント</a>の画面にあります。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-xl space-y-4\"><h1 class=\"text-3xl font-semibold text-ink\">設定</h1><p class=\"text-base text-ink\" data-notice=\"agent-link\">内蔵エージェント（既定は無効）と API キーの設定は、<a href=\"/agent\" class=\"link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">エージェント</a>の画面にあります。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

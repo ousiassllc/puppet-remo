@@ -172,7 +172,7 @@ func ClipboardPanel() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"space-y-3\"><form class=\"space-y-2\" novalidate hx-post=\"/viewer/clipboard/send\" hx-target=\"#clipboard-status\" hx-swap=\"innerHTML\" hx-disabled-elt=\"find button[type=submit]\"><label for=\"clipboard-text\" class=\"block text-sm font-medium text-ink\">ホストへ送るテキスト</label>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"space-y-3\"><form class=\"space-y-2\" novalidate hx-post=\"/viewer/clipboard/send\" hx-target=\"#clipboard-status\" hx-swap=\"innerHTML\" hx-disabled-elt=\"find button[type=submit]\"><label for=\"clipboard-text\" class=\"block text-sm text-ink\">ホストへ送るテキスト</label>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -277,7 +277,7 @@ func ClipboardFetched(text string) templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<label for=\"clipboard-fetched\" class=\"block text-sm font-medium text-ink\">ホストのクリップボード（選択してコピーしてください）</label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<label for=\"clipboard-fetched\" class=\"block text-sm text-ink\">ホストのクリップボード（選択してコピーしてください）</label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -342,7 +342,7 @@ func KeyMenu(items []view.KeyMenuItem) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, k := range items {
-				templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: k.Label, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

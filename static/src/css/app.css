@@ -5,6 +5,7 @@
  * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
  * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
+@import "./fonts.generated.css";
 @source "../../../internal/web/**/*.templ";
 
 /* ---- 色（C1〜C5）----
@@ -87,6 +88,31 @@
   --color-info: var(--info);
 }
 
+/* ---- タイポグラフィ（T1〜T4）----
+ * フォントは Sora + Noto Sans JP（UI）と JetBrains Mono（コード・桁を揃える数値）。@font-face は scripts/copy-fonts.mjs が生成する。
+ * サイズはガイドのスケール（xs 12 / sm 14 / base 16 / lg 18 / xl 24 / 2xl 32 / 3xl 40）と行間。スケール外のサイズは使えない。
+ * ウェイトは本文・リンク・ナビ・フォームが Regular（400）、SemiBold（600）は見出しとボタンだけ。 */
+@theme {
+  --font-sans: Sora, "Noto Sans JP", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-*: initial;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.6;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.7;
+  --text-base: 1rem;
+  --text-base--line-height: 1.8;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.7;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.5;
+  --text-2xl: 2rem;
+  --text-2xl--line-height: 1.4;
+  --text-3xl: 2.5rem;
+  --text-3xl--line-height: 1.3;
+}
+
 @layer base {
   /* Tailwind v4 の既定の罫線色は currentColor。ガイドの --border を既定にする。 */
   *,
@@ -95,6 +121,12 @@
   ::backdrop,
   ::file-selector-button {
     border-color: var(--border);
+  }
+
+  /* 本文は 16px・行間 1.8（日本語の長文を詰めない）。 */
+  html {
+    font-size: 16px;
+    line-height: var(--text-base--line-height);
   }
 
   body {

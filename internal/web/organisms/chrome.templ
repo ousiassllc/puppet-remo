@@ -37,7 +37,7 @@ templ HeaderKillSwitchOOB(active bool) {
 // RequestsBadge はサイドバーの接続要求の件数（0 件なら何も出さない）。
 templ RequestsBadge(n int) {
 	if n > 0 {
-		<span class="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-xs font-semibold text-bone" data-pending-count={ strconv.Itoa(n) }>{ strconv.Itoa(n) }</span>
+		<span class="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger px-1.5 font-mono text-xs text-bone" data-pending-count={ strconv.Itoa(n) }>{ strconv.Itoa(n) }</span>
 	}
 }
 
@@ -68,7 +68,7 @@ var navItems = []navItem{
 }
 
 func navLinkClass(active bool) string {
-	base := "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium "
+	base := "flex items-center gap-2 rounded-md px-3 py-2 text-sm "
 	if active {
 		return base + "bg-accent-soft text-ink"
 	}
@@ -93,7 +93,7 @@ func oobAttrs(oob bool) atoms.Attrs {
 // ブートされた遷移の応答は oob = true で添えて、現在のページの強調を更新する。
 templ Sidebar(c view.Chrome, oob bool) {
 	<nav id="sidebar-nav" class="flex w-full shrink-0 flex-wrap gap-1 border-b border-border bg-surface p-3 md:block md:w-56 md:space-y-1 md:border-b-0 md:border-r" aria-label="メイン" { oobAttrs(oob)... }>
-		<p class="w-full px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-mute">メニュー</p>
+		<p class="w-full px-3 pb-2 pt-1 text-xs text-mute">メニュー</p>
 		for _, it := range navItems {
 			<a
 				href={ templ.SafeURL(it.URL) }

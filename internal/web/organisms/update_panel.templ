@@ -10,7 +10,7 @@ import (
 // 「更新する」は、署名の検証に成功した新版があるときだけ出す（確認モーダルを経て POST /update/apply）。
 templ UpdatePanel(v view.UpdatePanel) {
 	<section id="update-panel" class="rounded-lg border border-border bg-surface shadow-sm">
-		<h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-ink">アプリの更新</h2>
+		<h2 class="border-b border-border px-4 py-2.5 text-base font-semibold text-ink">アプリの更新</h2>
 		<div class="space-y-4 p-4">
 			<dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2">
 				<dt class="text-mute">現在の版</dt>
@@ -42,12 +42,12 @@ templ UpdatePanel(v view.UpdatePanel) {
 				</p>
 			}
 			if v.Updatable && v.Latest == nil && v.Error == "" && v.LastChecked != "" {
-				<p class="text-sm text-ink" data-update="up-to-date">新しい版はありません。</p>
+				<p class="text-base text-ink" data-update="up-to-date">新しい版はありません。</p>
 			}
 			if v.Latest != nil {
 				<div class="space-y-2 rounded-md border border-border p-3" data-update="latest">
 					<div class="flex flex-wrap items-center gap-2">
-						<span class="text-sm font-medium text-ink">新しい版: <code class="break-all rounded bg-accent-soft px-1.5 py-0.5 text-xs" data-field="latest-version">{ v.Latest.Version }</code></span>
+						<span class="text-sm text-ink">新しい版: <code class="break-all rounded bg-accent-soft px-1.5 py-0.5 text-xs" data-field="latest-version">{ v.Latest.Version }</code></span>
 						if v.Latest.Verified {
 							@atoms.Badge(atoms.BadgeOK, "署名を確認済み")
 						} else {

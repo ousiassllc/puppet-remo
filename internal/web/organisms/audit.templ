@@ -61,7 +61,7 @@ templ AuditFilters(f view.AuditFilters) {
 		}
 		<div class="flex items-center gap-3">
 			@atoms.Button(atoms.ButtonProps{Label: "絞り込む", Variant: atoms.ButtonPrimary, Type: "submit"})
-			<a href="/audit" class="text-sm font-medium text-ink hover:underline" hx-get="/audit" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true" data-audit-reset>条件をクリア</a>
+			<a href="/audit" class="text-sm text-ink hover:underline" hx-get="/audit" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true" data-audit-reset>条件をクリア</a>
 		</div>
 	</form>
 }
@@ -91,14 +91,14 @@ templ AuditList(v view.AuditList) {
 		} else {
 			<div class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm">
 				<table class="min-w-full divide-y divide-border text-sm">
-					<thead class="bg-bone text-left text-xs font-semibold text-ink">
+					<thead class="bg-bone text-left text-xs font-semibold text-mute">
 						<tr>
 							<th scope="col" class="px-3 py-2">日時</th>
 							<th scope="col" class="px-3 py-2">クライアント</th>
 							<th scope="col" class="px-3 py-2">種別</th>
 							<th scope="col" class="px-3 py-2">イベント</th>
 							<th scope="col" class="px-3 py-2">結果</th>
-							<th scope="col" class="px-3 py-2">所要時間</th>
+							<th scope="col" class="px-3 py-2 text-right">所要時間</th>
 							<th scope="col" class="px-3 py-2">画像</th>
 						</tr>
 					</thead>
@@ -106,7 +106,7 @@ templ AuditList(v view.AuditList) {
 						for _, r := range v.Rows {
 							<tr data-audit-row={ r.DetailURL } data-result={ r.Result }>
 								<td class="whitespace-nowrap px-3 py-2 text-ink">{ r.Time }</td>
-								<td class="px-3 py-2 font-medium text-ink">{ r.Client }</td>
+								<td class="px-3 py-2 text-ink">{ r.Client }</td>
 								<td class="px-3 py-2 text-ink">{ r.Kind }</td>
 								<td class="px-3 py-2">
 									<a
@@ -121,7 +121,7 @@ templ AuditList(v view.AuditList) {
 								<td class="px-3 py-2">
 									@atoms.Badge(badgeTone(r.ResultTone), r.Result)
 								</td>
-								<td class="whitespace-nowrap px-3 py-2 text-ink">{ r.Duration }</td>
+								<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-ink">{ r.Duration }</td>
 								<td class="px-3 py-2">
 									@auditThumbCell(r.HasThumb)
 								</td>
@@ -135,7 +135,7 @@ templ AuditList(v view.AuditList) {
 			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
 				<a
 					href={ templ.SafeURL(v.NextURL) }
-					class="rounded-md border border-border bg-surface px-3 py-1.5 font-medium text-ink hover:bg-accent-soft"
+					class="rounded-md border border-border bg-surface px-3 py-1.5 text-ink hover:bg-accent-soft"
 					hx-get={ v.NextURL }
 					hx-target="#audit-list"
 					hx-swap="outerHTML"
@@ -160,7 +160,7 @@ templ AuditDetail(v view.AuditDetail) {
 			@auditField("リース", v.LeaseID, "lease")
 			@auditField("ツール", v.Tool, "tool")
 			<div class="flex gap-2">
-				<dt class="w-28 shrink-0 font-semibold text-ink">結果</dt>
+				<dt class="w-28 shrink-0 text-mute">結果</dt>
 				<dd data-audit-field="result">
 					@atoms.Badge(badgeTone(v.ResultTone), v.Result)
 				</dd>
@@ -169,13 +169,13 @@ templ AuditDetail(v view.AuditDetail) {
 			@auditField("所要時間", v.Duration, "duration")
 		</dl>
 		<section class="space-y-2" aria-label="引数">
-			<h2 class="text-sm font-semibold text-ink">引数</h2>
+			<h2 class="text-base font-semibold text-ink">引数</h2>
 			if len(v.Args) == 0 {
 				<p class="text-sm text-mute" data-empty="audit-args">記録された引数はありません。</p>
 			} else {
 				<div class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm">
 					<table class="min-w-full divide-y divide-border text-sm" data-audit-args>
-						<thead class="bg-bone text-left text-xs font-semibold text-ink">
+						<thead class="bg-bone text-left text-xs font-semibold text-mute">
 							<tr>
 								<th scope="col" class="px-3 py-2">キー</th>
 								<th scope="col" class="px-3 py-2">値</th>
@@ -184,7 +184,7 @@ templ AuditDetail(v view.AuditDetail) {
 						<tbody class="divide-y divide-border">
 							for _, a := range v.Args {
 								<tr>
-									<th scope="row" class="whitespace-nowrap px-3 py-2 text-left font-medium text-ink">{ a.Key }</th>
+									<th scope="row" class="whitespace-nowrap px-3 py-2 text-left text-ink">{ a.Key }</th>
 									<td class="break-all px-3 py-2 text-ink">{ a.Value }</td>
 								</tr>
 							}
@@ -194,7 +194,7 @@ templ AuditDetail(v view.AuditDetail) {
 			}
 		</section>
 		<section class="space-y-2" aria-label="サムネイル">
-			<h2 class="text-sm font-semibold text-ink">サムネイル</h2>
+			<h2 class="text-base font-semibold text-ink">サムネイル</h2>
 			if v.ThumbURL != "" {
 				<img
 					src={ v.ThumbURL }
@@ -223,7 +223,7 @@ templ AuditDetail(v view.AuditDetail) {
 templ auditField(label, value, name string) {
 	if value != "" {
 		<div class="flex gap-2">
-			<dt class="w-28 shrink-0 font-semibold text-ink">{ label }</dt>
+			<dt class="w-28 shrink-0 text-mute">{ label }</dt>
 			<dd class="break-all text-ink" data-audit-field={ name }>{ value }</dd>
 		</div>
 	}

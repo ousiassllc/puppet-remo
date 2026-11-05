@@ -21,7 +21,7 @@ templ ApprovalRemaining(v view.ApprovalRemaining) {
 		hx-select="#approval-remaining"
 		hx-swap="outerHTML"
 	>
-		残り <span class="font-semibold tabular-nums text-ink">{ strconv.Itoa(v.Seconds) }</span> 秒で拒否されます
+		残り <span class="font-mono text-ink">{ strconv.Itoa(v.Seconds) }</span> 秒で拒否されます
 	</p>
 }
 
@@ -34,7 +34,7 @@ templ ApprovalDialog(v view.ApprovalDialog) {
 		<h1 class="text-base font-semibold text-ink">{ v.Heading }</h1>
 		<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
 			<dt class="text-mute">クライアント</dt>
-			<dd class="font-medium text-ink" data-approval-client>{ v.ClientLabel }</dd>
+			<dd class="text-ink" data-approval-client>{ v.ClientLabel }</dd>
 			<dt class="text-mute">種別</dt>
 			<dd data-approval-kind>@atoms.Badge(atoms.BadgeNeutral, v.KindLabel)</dd>
 			<dt class="text-mute">要求の内容</dt>
@@ -64,9 +64,9 @@ func approvalButtonAttrs(url string) atoms.Attrs {
 templ ApprovalDone(v view.ApprovalDone) {
 	<section id="approval-dialog" class="rounded-lg border border-border bg-surface p-5 shadow-sm" data-approval-done>
 		if v.Allowed {
-			<p class="text-sm text-ink">許可しました。</p>
+			<p class="text-base text-ink">許可しました。</p>
 		} else {
-			<p class="text-sm text-ink">拒否しました。</p>
+			<p class="text-base text-ink">拒否しました。</p>
 		}
 	</section>
 }
@@ -74,6 +74,6 @@ templ ApprovalDone(v view.ApprovalDone) {
 // ApprovalGone は承認要求がすでに終わっている（失効・解決済み）ときの表示。
 templ ApprovalGone(v view.ApprovalGone) {
 	<section id="approval-dialog" class="rounded-lg border border-border bg-surface p-5 shadow-sm" data-approval-gone data-error-code={ v.Code }>
-		<p class="text-sm text-ink">{ v.Message }</p>
+		<p class="text-base text-ink">{ v.Message }</p>
 	</section>
 }

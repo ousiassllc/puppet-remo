@@ -11,7 +11,7 @@ import (
 templ APIKeyPanel(p view.APIKeyPanel) {
 	<div id={ p.ID } class="space-y-3" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) }>
 		<div class="flex flex-wrap items-center gap-2">
-			<span class="text-sm font-medium text-ink">{ p.Provider } API キー</span>
+			<span class="text-sm text-ink">{ p.Provider } API キー</span>
 			if p.Registered {
 				@atoms.Badge(atoms.BadgeOK, "登録済み")
 			} else {
@@ -84,7 +84,7 @@ templ AgentForm(f view.AgentForm) {
 		if f.Errors.General != "" {
 			<p class="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger" role="alert" data-form-error="agent">{ f.Errors.General }</p>
 		}
-		<label class="flex items-center gap-2 text-sm font-medium text-ink">
+		<label class="flex items-center gap-2 text-sm text-ink">
 			@atoms.Checkbox("agent-enabled", "enabled", f.Values.Enabled)
 			エージェントを有効にする
 		</label>
@@ -144,7 +144,7 @@ templ FastpathForm(f view.FastpathForm) {
 		if f.Errors.General != "" {
 			<p class="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger" role="alert" data-form-error="fastpath">{ f.Errors.General }</p>
 		}
-		<label class="flex items-center gap-2 text-sm font-medium text-ink">
+		<label class="flex items-center gap-2 text-sm text-ink">
 			@atoms.Checkbox("fastpath-enabled", "enabled", f.Values.Enabled)
 			高速パスを有効にする
 		</label>

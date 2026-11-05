@@ -4,13 +4,13 @@ package molecules
 // Error があるときだけ描画する（role=alert。クライアント側の検証 JS は持たない）。
 templ FormField(id, label, hint, errMsg string) {
 	<div class="space-y-1">
-		<label for={ id } class="block text-sm font-medium text-ink">{ label }</label>
+		<label for={ id } class="block text-sm text-ink">{ label }</label>
 		{ children... }
 		if hint != "" {
 			<p class="text-xs text-mute">{ hint }</p>
 		}
 		if errMsg != "" {
-			<p class="text-xs text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
+			<p class="text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
 		}
 	</div>
 }

@@ -10,8 +10,8 @@ const agentTitle = "エージェント"
 
 templ agentBody(v view.AgentSettings) {
 	<div class="max-w-3xl space-y-4">
-		<h1 class="text-xl font-semibold text-ink">エージェント</h1>
-		<p class="text-sm text-ink" data-notice="agent-default-off">ホストに内蔵のエージェントは、既定では無効です。有効にしたときだけ、依頼を受けたタスクを OpenAI のモデルが画面を見て実行します。API キーと同意はこの画面（ホストの GUI）でだけ設定できます。</p>
+		<h1 class="text-3xl font-semibold text-ink">エージェント</h1>
+		<p class="text-base text-ink" data-notice="agent-default-off">ホストに内蔵のエージェントは、既定では無効です。有効にしたときだけ、依頼を受けたタスクを OpenAI のモデルが画面を見て実行します。API キーと同意はこの画面（ホストの GUI）でだけ設定できます。</p>
 		@organisms.AgentSections(v)
 	</div>
 }

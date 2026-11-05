@@ -6,7 +6,7 @@ import "github.com/ousiassllc/puppet-remo/internal/web/atoms"
 templ LeasePendingBadge(holder, kind string) {
 	<span class="inline-flex items-center gap-2 text-sm" data-lease-pending>
 		@atoms.Badge(atoms.BadgeWarn, "承認待ち")
-		<span class="font-medium text-ink">{ holder }</span>
+		<span class="text-ink">{ holder }</span>
 		@atoms.Badge(atoms.BadgeNeutral, kind)
 	</span>
 }
@@ -16,7 +16,7 @@ templ LeaseBadge(held bool, holder, kind string) {
 	if held {
 		<span class="inline-flex items-center gap-2 text-sm">
 			@atoms.Badge(atoms.BadgeOK, "保持中")
-			<span class="font-medium text-ink">{ holder }</span>
+			<span class="text-ink">{ holder }</span>
 			@atoms.Badge(atoms.BadgeNeutral, kind)
 		</span>
 	} else {

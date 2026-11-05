@@ -78,14 +78,14 @@ func ClientCard(c view.Client) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div class=\"flex flex-wrap items-baseline justify-between gap-2\"><h3 class=\"text-sm font-semibold text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div class=\"flex flex-wrap items-baseline justify-between gap-2\"><h3 class=\"text-base font-semibold text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(c.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 29, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 29, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -169,7 +169,7 @@ func ClientCard(c view.Client) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: flagActionLabel(f), Variant: atoms.ButtonSecondary, Attrs: flagAttrs(f, cardID(c))}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: flagActionLabel(f), Small: true, Variant: atoms.ButtonSecondary, Attrs: flagAttrs(f, cardID(c))}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -249,7 +249,7 @@ func ClientCard(c view.Client) templ.Component {
 			}
 		}
 		if c.CanResetApproval {
-			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "承認を取り消す", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "承認を取り消す", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 				"hx-post": c.ResetApprovalURL, "hx-target": "#" + cardID(c), "hx-swap": "outerHTML", "hx-disabled-elt": "this",
 			}}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
@@ -279,13 +279,13 @@ func ClientCard(c view.Client) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" class=\"inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bone hover:bg-accent/90\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">トークンと詳細</a> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" class=\"inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-sm text-bone hover:bg-accent/90\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">トークンと詳細</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if c.CanDelete {
-				templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "削除", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+				templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "削除", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 					"hx-get": c.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
 				}}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
@@ -429,7 +429,7 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<table class=\"min-w-full text-left text-sm\"><thead class=\"text-xs uppercase text-mute\"><tr><th class=\"py-2 pr-4 font-medium\">ラベル</th><th class=\"py-2 pr-4 font-medium\">接頭辞</th><th class=\"py-2 pr-4 font-medium\">状態</th><th class=\"py-2 pr-4 font-medium\">発行</th><th class=\"py-2 pr-4 font-medium\">有効期限</th><th class=\"py-2 pr-4 font-medium\">最終使用</th><th class=\"py-2 font-medium\"></th></tr></thead> <tbody class=\"divide-y divide-border\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<table class=\"min-w-full text-left text-sm\"><thead class=\"text-xs text-mute\"><tr><th class=\"py-2 pr-4\">ラベル</th><th class=\"py-2 pr-4\">接頭辞</th><th class=\"py-2 pr-4\">状態</th><th class=\"py-2 pr-4\">発行</th><th class=\"py-2 pr-4\">有効期限</th><th class=\"py-2 pr-4\">最終使用</th><th class=\"py-2\"></th></tr></thead> <tbody class=\"divide-y divide-border\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -447,14 +447,14 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\"><td class=\"py-2 pr-4 font-medium text-ink\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\"><td class=\"py-2 pr-4 text-ink\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 135, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 135, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -525,7 +525,7 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				if t.CanRevoke {
-					templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "失効", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+					templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 						"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
 					}}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {

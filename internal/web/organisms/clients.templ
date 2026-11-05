@@ -26,7 +26,7 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 templ ClientCard(c view.Client) {
 	<article id={ cardID(c) } class="rounded-lg border border-border bg-surface p-4 shadow-sm" data-client={ c.ID }>
 		<div class="flex flex-wrap items-baseline justify-between gap-2">
-			<h3 class="text-sm font-semibold text-ink">{ c.DisplayName }</h3>
+			<h3 class="text-base font-semibold text-ink">{ c.DisplayName }</h3>
 			<span class="text-xs text-mute" data-approval-mode>承認モード: { c.Approved }</span>
 		</div>
 		<p class="mt-1 text-xs text-mute">
@@ -37,7 +37,7 @@ templ ClientCard(c view.Client) {
 				<li class="flex items-center gap-2 text-sm" data-flag={ f.Field }>
 					<span class="text-ink">{ f.Label }</span>
 					@flagBadgeView(f)
-					@atoms.Button(atoms.ButtonProps{Label: flagActionLabel(f), Variant: atoms.ButtonSecondary, Attrs: flagAttrs(f, cardID(c))})
+					@atoms.Button(atoms.ButtonProps{Label: flagActionLabel(f), Small: true, Variant: atoms.ButtonSecondary, Attrs: flagAttrs(f, cardID(c))})
 				</li>
 			}
 		</ul>
@@ -57,7 +57,7 @@ templ ClientCard(c view.Client) {
 				<span class="text-xs text-ink" data-first-time-status>{ c.FirstTimeStatus }</span>
 			}
 			if c.CanResetApproval {
-				@atoms.Button(atoms.ButtonProps{Label: "承認を取り消す", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+				@atoms.Button(atoms.ButtonProps{Label: "承認を取り消す", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 					"hx-post": c.ResetApprovalURL, "hx-target": "#" + cardID(c), "hx-swap": "outerHTML", "hx-disabled-elt": "this",
 				}})
 			}
@@ -67,7 +67,7 @@ templ ClientCard(c view.Client) {
 				if c.CanOpenDetail {
 					<a
 						href={ templ.SafeURL(c.DetailURL) }
-						class="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bone hover:bg-accent/90"
+						class="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-sm text-bone hover:bg-accent/90"
 						hx-boost="true"
 						hx-target="#main"
 						hx-target-error="#main"
@@ -75,7 +75,7 @@ templ ClientCard(c view.Client) {
 					>トークンと詳細</a>
 				}
 				if c.CanDelete {
-					@atoms.Button(atoms.ButtonProps{Label: "削除", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+					@atoms.Button(atoms.ButtonProps{Label: "削除", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 						"hx-get": c.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
 					}})
 				}
@@ -118,21 +118,21 @@ templ TokenList(v view.TokenList, oob bool) {
 			<p class="text-sm text-mute" data-empty="tokens">発行済みのトークンはありません。</p>
 		} else {
 			<table class="min-w-full text-left text-sm">
-				<thead class="text-xs uppercase text-mute">
+				<thead class="text-xs text-mute">
 					<tr>
-						<th class="py-2 pr-4 font-medium">ラベル</th>
-						<th class="py-2 pr-4 font-medium">接頭辞</th>
-						<th class="py-2 pr-4 font-medium">状態</th>
-						<th class="py-2 pr-4 font-medium">発行</th>
-						<th class="py-2 pr-4 font-medium">有効期限</th>
-						<th class="py-2 pr-4 font-medium">最終使用</th>
-						<th class="py-2 font-medium"></th>
+						<th class="py-2 pr-4">ラベル</th>
+						<th class="py-2 pr-4">接頭辞</th>
+						<th class="py-2 pr-4">状態</th>
+						<th class="py-2 pr-4">発行</th>
+						<th class="py-2 pr-4">有効期限</th>
+						<th class="py-2 pr-4">最終使用</th>
+						<th class="py-2"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-border">
 					for _, t := range v.Items {
 						<tr data-token={ t.ID }>
-							<td class="py-2 pr-4 font-medium text-ink">{ t.Label }</td>
+							<td class="py-2 pr-4 text-ink">{ t.Label }</td>
 							<td class="py-2 pr-4"><code class="rounded bg-accent-soft px-1 py-0.5 text-xs">{ t.Prefix }…</code></td>
 							<td class="py-2 pr-4">@atoms.Badge(tone(t.StatusTone), t.Status)</td>
 							<td class="py-2 pr-4 text-ink">{ t.CreatedAt }</td>
@@ -140,7 +140,7 @@ templ TokenList(v view.TokenList, oob bool) {
 							<td class="py-2 pr-4 text-ink">{ t.LastUsedAt }</td>
 							<td class="py-2 text-right">
 								if t.CanRevoke {
-									@atoms.Button(atoms.ButtonProps{Label: "失効", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+									@atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 										"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
 									}})
 								}
