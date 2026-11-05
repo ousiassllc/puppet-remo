@@ -203,6 +203,8 @@ func TestApplyUpdateRefusals(t *testing.T) {
 			status(t, res, tc.code)
 			contains(t, res, tc.want...)
 			lacks(t, res, "puppet-remo-update", "boom", `C:\`) // 内部のパス・エラー文は出さない
+			// 確認モーダルの確定の失敗は、アラートが暗幕の背面に隠れないようモーダルを閉じる。
+			contains(t, res, `id="modal-root" hx-swap-oob="true"`)
 			if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
 				t.Errorf("HX-Retarget = %q", got)
 			}

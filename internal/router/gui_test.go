@@ -79,9 +79,11 @@ func TestEveryResponseCarriesCSP(t *testing.T) {
 		{http.MethodGet, "/poll", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/killswitch/trigger", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/lease/revoke", []string{"HX-Request", "true"}},
+		{http.MethodGet, "/lease/revoke/confirm", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/tasks", nil},
 		{http.MethodGet, "/tasks/unknown", nil},
 		{http.MethodPost, "/tasks/unknown/cancel", []string{"HX-Request", "true"}},
+		{http.MethodGet, "/tasks/unknown/cancel/confirm", []string{"HX-Request", "true"}},
 		{http.MethodPost, "/requests/x/approve", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/static/js/app.js", nil},
 		{http.MethodGet, "/static/missing.js", nil},
@@ -202,6 +204,13 @@ func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 	}
 	if rec := do(h, http.MethodPost, "/tasks/nope/cancel", "HX-Request", "true"); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `data-error-code="not_found"`) {
 		t.Errorf("POST /tasks/nope/cancel: status %d, want 404 with data-error-code=not_found", rec.Code)
+	}
+	// 中断・強制剥奪の確認モーダル（GET）も GUI ルーターにある。無い id は 404、保持者がいなければ 409（どちらもハンドラの応答。経路なしの 404 と区別する）。
+	if rec := do(h, http.MethodGet, "/tasks/nope/cancel/confirm", "HX-Request", "true"); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `data-error-code="not_found"`) {
+		t.Errorf("GET /tasks/nope/cancel/confirm: status %d, want 404 with data-error-code=not_found", rec.Code)
+	}
+	if rec := do(h, http.MethodGet, "/lease/revoke/confirm", "HX-Request", "true"); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `data-error-code="conflict"`) {
+		t.Errorf("GET /lease/revoke/confirm: status %d, want 409 with data-error-code=conflict", rec.Code)
 	}
 	// 承認ダイアログ（M3。#68）は GUI ルーターにある。承認要求が無い id は 410 approval_timeout。
 	if rec := do(h, http.MethodGet, "/approvals/a"); rec.Code != http.StatusGone {

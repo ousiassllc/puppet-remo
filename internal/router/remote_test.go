@@ -236,6 +236,7 @@ func TestRemoteExposesNothingButTheDocumentedRoutes(t *testing.T) {
 		"/audit", "/audit/1", "/audit/1/thumbnail", // 監査ログの閲覧（FR-AU05）はホスト GUI だけ
 		"/update", "/update/check", "/update/apply", "/update/apply/confirm", // 更新（FR-H09）はホスト GUI だけ
 		"/apps", "/apps/new", "/apps/pick", "/apps/pick-file", "/apps/a1/edit", "/apps/a1/delete/confirm", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
+		"/lease/revoke/confirm", "/tasks/t1/cancel/confirm", // 強制剥奪・タスク中断の確認モーダルはホスト GUI だけ（リモートは /viewer/lease/revoke/confirm）
 	}
 	for _, p := range paths {
 		if rec := k.do(http.MethodGet, p); rec.Code != http.StatusNotFound {
