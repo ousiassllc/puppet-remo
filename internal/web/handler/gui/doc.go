@@ -6,5 +6,5 @@
 //
 // 応答は常に HTML（JSON に切り替えない）。ページルートは HX-Request で分岐し（フルページ / フラグメント）、
 // アクションルートは常にフラグメントを返す。失敗は data-error-code 付きのフラグメントを同じステータスで返し、
-// HX-Retarget で #toast-root（トースト）へ差し込む。トークン平文を返す応答は Cache-Control: no-store。
+// HX-Retarget で #alert-root（インラインアラート）へ差し込む。トークン平文を返す応答は Cache-Control: no-store。
 package gui

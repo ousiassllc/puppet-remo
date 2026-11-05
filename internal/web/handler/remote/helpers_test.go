@@ -109,6 +109,7 @@ func (r *rig) do(method, target string, form url.Values, headers ...string) resp
 	rec := httptest.NewRecorder()
 	r.h.ServeHTTP(rec, req)
 	res := rec.Result()
+	res.Request = req
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		r.t.Fatal(err)
@@ -181,13 +182,20 @@ func status(t *testing.T, r resp, want int) {
 	}
 }
 
-// failed はアクションの失敗: 同じステータス・data-error-code 付きのトースト・#toast-root への HX-Retarget。
+// failed はアクションの失敗: 同じステータス・data-error-code 付きのインラインアラート・#alert-root への HX-Retarget。
 func failed(t *testing.T, r resp, wantStatus int, code string) {
 	t.Helper()
 	status(t, r, wantStatus)
 	contains(t, r, `data-error-code="`+code+`"`)
-	if got := r.Header.Get("HX-Retarget"); got != "#toast-root" {
-		t.Errorf("HX-Retarget = %q, want #toast-root", got)
+	if got := r.Header.Get("HX-Retarget"); got != "#alert-root" {
+		t.Errorf("HX-Retarget = %q, want #alert-root", got)
+	}
+	// 確認モーダルの確定（GET 以外）の失敗は、アラートが暗幕の背面に隠れないようモーダルを閉じる。GET（確認モーダルの取得、
+	// remo:lease-changed の GET /viewer/lease）の失敗では、開いているモーダルを巻き込まないよう閉じない。
+	if r.Request.Method == http.MethodGet {
+		lacks(t, r, `id="modal-root"`)
+	} else {
+		contains(t, r, `id="modal-root" hx-swap-oob="true"`)
 	}
 	lacks(t, r, "<html")
 }

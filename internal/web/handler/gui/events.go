@@ -35,7 +35,7 @@ var sseTopics = []string{
 //	lease                 → #lease の中身
 //	connection-requests   → サイドバーの件数バッジ
 //	killswitch            → ヘッダーの状態バッジ
-//	toast                 → #toast-root に追加するトースト
+//	toast                 → info は #toast-root に追加するトースト、error は #alert-root のインラインアラート
 //
 // 接続が切れても HTMX の SSE 拡張が再接続するため、接続直後に各イベントの現在値を 1 回送る（toast を除く）。
 func (h *Handler) Events(c *gin.Context) {
@@ -112,26 +112,30 @@ func (h *Handler) topicComponent(ctx context.Context, topic string, data any) te
 	case service.TopicKillSwitch:
 		return organisms.HeaderKillSwitch(h.d.KillSwitch.Active())
 	case service.TopicToast:
-		t, ok := toastView(data)
-		if !ok {
-			return nil
-		}
-		return atoms.Toast(t)
+		return toastComponent(data, false)
 	}
 	return nil
 }
 
-// toastView は toast イベントの Data（service.Toast）を表示用のトーストにする。SSE と GET /poll で共通。
-func toastView(data any) (view.Toast, bool) {
+// toastComponent は toast イベントの Data（service.Toast）を表示にする。SSE と GET /poll で共通。完了の通知（info）はトースト、
+// エラー（error）はインラインアラートで出す（エラーの詳細はトーストにしない）。oob は GET /poll の応答に添える形（OOB）にするとき。
+func toastComponent(data any, oob bool) templ.Component {
 	t, ok := data.(service.Toast)
 	if !ok {
-		return view.Toast{}, false
+		return nil
 	}
-	level := view.ToastInfo
 	if t.Level == "error" {
-		level = view.ToastError
+		p := errorAlert("", t.Message)
+		if oob {
+			return organisms.AlertOOB(p)
+		}
+		return atoms.Alert(p)
 	}
-	return view.Toast{Level: level, Message: t.Message}, true
+	toast := view.Toast{Message: t.Message}
+	if oob {
+		return organisms.ToastOOB(toast)
+	}
+	return atoms.Toast(toast)
 }
 
 // writeSSE は 1 イベントを書く。HTML の改行は data: 行に分ける（受信側が改行で連結し直す）。

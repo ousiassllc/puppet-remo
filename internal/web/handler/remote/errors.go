@@ -4,10 +4,12 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/a-h/templ"
 	"github.com/gin-gonic/gin"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
@@ -62,8 +64,8 @@ func inputBlockedMessage(err error) string {
 	return "ホストの前面のウィンドウには入力できません。"
 }
 
-// fail はアクションルートの失敗を、data-error-code 付きのトーストのフラグメントとして、対応するステータスで返す。
-// 画面の領域は現状維持で、HX-Retarget / HX-Reswap で #toast-root へ追加する（response-targets は HX-Retarget 付きの
+// fail はアクションルートの失敗を、data-error-code 付きのインラインアラートのフラグメントとして、対応するステータスで返す。
+// 画面の領域は現状維持で、HX-Retarget / HX-Reswap で #alert-root の中身を置き換える（response-targets は HX-Retarget 付きの
 // 非 200 応答を差し込む）。想定外のエラー（5xx）はログに残す。
 func (h *Handler) fail(c *gin.Context, err error) {
 	f := classify(err)
@@ -73,11 +75,17 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	h.failMessage(c, f.status, f.code, f.message)
 }
 
-// failMessage は message を指定して fail と同じ形で返す。
+// failMessage は message を指定して fail と同じ形で返す。確認モーダル（強制剥奪）の確定（GET 以外）が失敗したとき、アラートが暗幕の
+// 背面に隠れないように、応答にモーダルを閉じる OOB（organisms.ModalClear）を添える。GET には添えない: 確認モーダル自体の取得は失敗しても
+// #modal-root が空で閉じる意味がなく、remo:lease-changed の GET /viewer/lease の失敗で、開いている強制剥奪のモーダルを閉じてしまうため。
 func (h *Handler) failMessage(c *gin.Context, status int, code, message string) {
-	c.Header("HX-Retarget", "#toast-root")
-	c.Header("HX-Reswap", "beforeend")
-	h.render(c, status, atoms.Toast(view.Toast{Level: view.ToastError, Message: message, ErrorCode: code}))
+	c.Header("HX-Retarget", "#alert-root")
+	c.Header("HX-Reswap", "innerHTML")
+	comps := []templ.Component{atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: code, Heading: "エラー", Message: message, Dismissible: true})}
+	if c.Request.Method != http.MethodGet {
+		comps = append(comps, organisms.ModalClear())
+	}
+	h.render(c, status, comps...)
 }
 
 // failPage はページルートの失敗を、エラーページ（HX-Request なら同じ領域に出すフラグメント）として返す。
@@ -91,7 +99,7 @@ func (h *Handler) failPage(c *gin.Context, err error) {
 
 func (h *Handler) renderErrorPage(c *gin.Context, f failure) {
 	if fragmentRequest(c) {
-		h.render(c, f.status, atoms.Alert(f.code, f.message))
+		h.render(c, f.status, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: f.code, Heading: "エラー", Message: f.message}))
 		return
 	}
 	h.render(c, f.status, pages.RemoteError(view.RemoteError{Code: f.code, Title: "ビューアを表示できません", Message: f.message}))

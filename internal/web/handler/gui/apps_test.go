@@ -189,7 +189,7 @@ func TestCreateAppConflictWhenFull(t *testing.T) {
 	res := r.post("/apps", appForm("one more", calc, "", ""), hx...)
 	status(t, res, http.StatusConflict)
 	contains(t, res, `data-error-code="conflict"`, "50 件")
-	if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
+	if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
 		t.Errorf("HX-Retarget = %q", got)
 	}
 	if len(r.f.Apps.Rows) != domain.MaxLaunchableApps {
@@ -331,7 +331,7 @@ func TestDeleteApp(t *testing.T) {
 	contains(t, res, `data-error-code="not_found"`)
 }
 
-func TestWriteFailureIsAnInternalErrorToastWithoutDetails(t *testing.T) {
+func TestWriteFailureIsAnInternalErrorAlertWithoutDetails(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) {
 		seedApp(f, "app1", "メモ帳", notepad)
 		f.Apps.WriteErr = errors.New("db: " + notepad + " " + argSecret)
@@ -375,7 +375,7 @@ func TestPickFileSelectedReturnsExePathFieldWithoutRegistering(t *testing.T) {
 	status(t, res, http.StatusOK)
 	// 入力欄だけのフラグメント。手で編集できる（readonly ではない）。選ばれたパスを入れる。
 	contains(t, res, `data-field="exe_path"`, `id="app-form-app1-exe-path"`, `name="exe_path"`, `value="`+notepad+`"`, `hx-post="/apps/pick-file"`)
-	lacks(t, res, "<html", "<form", "readonly", "stale", `id="app-list"`)
+	lacks(t, res, "<html", "<form", " readonly", "stale", `id="app-list"`)
 	if r.f.Apps.Picks != 1 || len(r.f.Apps.Created) != 0 || len(r.f.Apps.Rows) != 0 {
 		t.Errorf("picking must not register: picks=%d created=%v", r.f.Apps.Picks, r.f.Apps.Created)
 	}
@@ -404,7 +404,7 @@ func TestPickFileCancelIs204AndLeavesTheFieldAlone(t *testing.T) {
 	}
 }
 
-func TestPickFileErrorIsAnInternalErrorToastWithoutThePath(t *testing.T) {
+func TestPickFileErrorIsAnInternalErrorAlertWithoutThePath(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) {
 		f.Apps.PickFunc = func(context.Context) (string, bool, error) { return "", false, errors.New("dialog failed " + notepad) }
 	})

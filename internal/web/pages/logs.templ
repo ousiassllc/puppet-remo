@@ -10,17 +10,17 @@ import (
 const logsTitle = "ログ"
 
 // openLogFolderAttrs は「ログフォルダーを開く」ボタンの hx-* 属性。本文は送らず（開く場所はサーバーが固定する）、
-// 応答の OOB のトースト（成功・失敗とも）だけを反映する。画面は差し替えない。
+// 応答の OOB のトースト（成功）と #alert-root のアラート（失敗）だけを反映する。画面は差し替えない。
 func openLogFolderAttrs(url string) atoms.Attrs {
 	return atoms.Attrs{"hx-post": url, "hx-swap": "none", "hx-disabled-elt": "this", "data-log-open-folder": ""}
 }
 
 templ logsBody(v view.AppLogPage) {
-	<div class="space-y-4">
-		<h1 class="text-xl font-semibold text-slate-900">ログ</h1>
-		<p class="text-sm text-slate-600">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p>
+	<div class="space-y-6">
+		<h1 class="text-3xl font-semibold text-ink">ログ</h1>
+		<p class="text-base text-ink">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p>
 		<div class="flex flex-wrap items-center gap-3">
-			<p class="text-sm text-slate-600">ログファイル: <code class="break-all rounded bg-slate-100 px-1 py-0.5 text-xs" data-log-path>{ v.Path }</code></p>
+			<p class="text-base text-ink">ログファイル: <code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-log-path>{ v.Path }</code></p>
 			@atoms.Button(atoms.ButtonProps{Label: "ログフォルダーを開く", Variant: atoms.ButtonSecondary, Attrs: openLogFolderAttrs(v.OpenFolderURL)})
 		</div>
 		@organisms.AppLog(v.Log)

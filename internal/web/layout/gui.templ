@@ -25,14 +25,16 @@ templ GUI(title string, c view.Chrome) {
 			<script type="module" src="/static/js/app.js"></script>
 		</head>
 		<body
-			class="min-h-screen bg-slate-100 text-slate-900 antialiased"
+			class="min-h-screen bg-bone text-ink antialiased"
 			hx-ext="response-targets"
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
 			<div class="flex min-h-screen flex-col md:flex-row">
+				@organisms.NavScrim()
 				@organisms.Sidebar(c, false)
 				<div class="flex min-w-0 flex-1 flex-col">
 					@organisms.Header(c.Header)
+					@organisms.AlertRoot("px-4 pt-4 md:px-6")
 					<main id="main" class="flex-1 p-4 md:p-6">
 						{ children... }
 					</main>
@@ -68,10 +70,11 @@ templ Dialog(title string) {
 			<script type="module" src="/static/js/app.js"></script>
 		</head>
 		<body
-			class="min-h-screen bg-slate-100 p-4 text-slate-900 antialiased"
+			class="min-h-screen bg-bone p-4 text-ink antialiased"
 			hx-ext="response-targets"
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
+			@organisms.AlertRoot("pb-4")
 			<main id="approval-root">
 				{ children... }
 			</main>

@@ -1,0 +1,16 @@
+package molecules
+
+import "github.com/ousiassllc/puppet-remo/internal/web/atoms"
+
+// EmptyState は空状態（データがないとき）の表示。破線の枠・角丸 lg・padding 48/24 に、案内の文言を出す。
+// name は data-empty の値（テストと画面の判別に使う）。
+templ EmptyState(name string) {
+	<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-surface px-6 py-12 text-center text-base text-ink" data-empty={ name }>
+		<span class="text-mute">
+			@atoms.Icon(atoms.IconEmptyPage, atoms.IconXL)
+		</span>
+		<p>
+			{ children... }
+		</p>
+	</div>
+}

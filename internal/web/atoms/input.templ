@@ -10,6 +10,7 @@ type InputProps struct {
 	Required    bool
 	Readonly    bool
 	Invalid     bool
+	Mono        bool // true なら JetBrains Mono（トークンなど、文字の判読が要る識別子）
 	Attrs       Attrs
 }
 
@@ -20,12 +21,27 @@ func inputType(t string) string {
 	return t
 }
 
-func inputClass(invalid bool) string {
-	base := "block w-full min-w-0 rounded-md border bg-white px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 read-only:bg-slate-50 "
-	if invalid {
-		return base + "border-red-400 focus:ring-red-400"
+func inputClass(invalid, mono bool) string {
+	size := "h-10 px-3 "
+	if mono {
+		size += "font-mono "
 	}
-	return base + "border-slate-300 focus:ring-indigo-400"
+	return fieldClass(size, invalid)
+}
+
+// textareaClass は複数行の入力欄のクラス（高さは行数で決まるので、高さの指定は持たない）。
+func textareaClass(invalid bool) string {
+	return fieldClass("px-3 py-2 ", invalid)
+}
+
+// fieldClass は入力欄・選択欄・複数行の入力欄に共通のクラス。本文と同じ 16px・Regular。読み取り専用（readonly 属性）だけ --bone 地にする
+// （:read-only は select にも一致するので使わない）。無効（disabled）は opacity .5（O7）。
+func fieldClass(size string, invalid bool) string {
+	base := "block w-full min-w-0 rounded-md border bg-surface text-base [&[readonly]]:bg-bone disabled:cursor-not-allowed disabled:opacity-50 " + size
+	if invalid {
+		return base + "border-danger"
+	}
+	return base + "border-border"
 }
 
 // Input は 1 行の入力欄。
@@ -36,7 +52,7 @@ templ Input(p InputProps) {
 		type={ inputType(p.Type) }
 		value={ p.Value }
 		placeholder={ p.Placeholder }
-		class={ inputClass(p.Invalid) }
+		class={ inputClass(p.Invalid, p.Mono) }
 		required?={ p.Required }
 		readonly?={ p.Readonly }
 		aria-invalid?={ p.Invalid }

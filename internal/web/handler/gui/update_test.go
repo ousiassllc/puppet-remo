@@ -3,6 +3,7 @@ package gui_test
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,9 @@ func TestUpdatePageShowsVerifiedUpdate(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, `data-update="latest"`, `data-field="latest-version"`, "0.1.1", "署名を確認済み", "修正: foo", "更新する",
 		`hx-get="/update/apply/confirm"`, `hx-target="#modal-root"`)
+	// 入れ子パネルの角丸は md（8px。S1。sm の 4px はタグ・チェック用）。padding はカードの値に合わせた p-4（S2）。
+	// リリースノートは自然文なので、<pre> でも等幅にせず Sora + Noto Sans JP（T1）。
+	contains(t, res, `rounded-md bg-bone p-4 font-sans text-sm text-ink" data-field="release-notes"`)
 	lacks(t, res, `data-update="reject"`)
 }
 
@@ -77,7 +81,13 @@ func TestUpdatePageKeyNotConfiguredAndDevBuild(t *testing.T) {
 	res := r.get("/update")
 	contains(t, res, `data-update="not-updatable"`, "dev")
 	lacks(t, res, "今すぐ確認", "更新する", "新しい版はありません")
+	// 状態メッセージはアイコン付きの atoms.Notice（C4）。素の段落ではない。
+	if !notUpdatableNotice.MatchString(res.Body) {
+		t.Errorf("not-updatable is not an icon Notice\n%s", res.Body)
+	}
 }
+
+var notUpdatableNotice = regexp.MustCompile(`<div [^>]*data-update="not-updatable"[^>]*>\s*<span[^>]*>\s*<svg`)
 
 func TestUpdatePageShowsCheckFailure(t *testing.T) {
 	for code, want := range map[string]string{
@@ -163,6 +173,7 @@ func TestApplyUpdate(t *testing.T) {
 	res := r.post("/update/apply", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="update-panel"`, `data-update="applying"`, "更新を開始しました。", `id="modal-root"`)
+	lacks(t, res, "更新を開始しました。アプリを終了")
 	lacks(t, res, "<html", `hx-get="/update/apply/confirm"`) // 適用中は「更新する」を出さない
 	if got := r.f.Updates.Applied; len(got) != 1 || got[0] != domain.ActorHost {
 		t.Errorf("Apply calls = %v, want one by the host", got)
@@ -192,7 +203,9 @@ func TestApplyUpdateRefusals(t *testing.T) {
 			status(t, res, tc.code)
 			contains(t, res, tc.want...)
 			lacks(t, res, "puppet-remo-update", "boom", `C:\`) // 内部のパス・エラー文は出さない
-			if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
+			// 確認モーダルの確定の失敗は、アラートが暗幕の背面に隠れないようモーダルを閉じる。
+			contains(t, res, `id="modal-root" hx-swap-oob="true"`)
+			if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
 				t.Errorf("HX-Retarget = %q", got)
 			}
 			if len(r.f.Updates.Applied) != 0 {
