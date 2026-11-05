@@ -240,6 +240,9 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	if got := strings.Count(tabs, `aria-current="page"`); got != 1 || !strings.Contains(tabs[strings.Index(tabs, `aria-current`):], "履歴") {
 		t.Errorf("exactly the history tab must be current:\n%s", tabs)
 	}
+	// O7・P0: タブは非選択が --mute・選択が --ink（下線 2px の --accent と合わせて現在のタブを伝える）。色の変化は --motion-base。
+	has(t, tabs, "border-accent text-ink", "border-transparent text-mute hover:border-mute hover:text-ink", "motion-hover")
+	hasNot(t, tabs, "border-transparent text-ink")
 }
 
 // 監査ログと更新の項目（FR-S07・FR-S09）: 平文の注意書きは常に出る。値は入力のとおり描画し、エラーは項目別に出す。

@@ -130,14 +130,16 @@ func TestToastIsAShortInkPill(t *testing.T) {
 }
 
 // ボタン: 4 種（主・サブ・ゴースト・危険）。SemiBold・disabled は opacity .4・高さ 40（小は 32）。押下のリップルの対象。
+// 危険は塗りでなく、透明地・--danger の文字・--danger 45% の枠（O7。主より弱い見た目）。
 func TestButtonVariantsAndSizes(t *testing.T) {
 	for v, want := range map[atoms.ButtonVariant]string{
-		atoms.ButtonPrimary: "bg-accent text-bone", atoms.ButtonDanger: "bg-danger text-bone",
+		atoms.ButtonPrimary: "bg-accent text-bone", atoms.ButtonDanger: "border border-danger/45 bg-transparent text-danger hover:bg-danger/10",
 		atoms.ButtonSecondary: "border border-border", atoms.ButtonGhost: "bg-transparent text-ink",
 	} {
 		out := webtest.Render(t, atoms.Button(atoms.ButtonProps{Label: "操作", Variant: v}))
 		has(t, out, want, "font-semibold", "disabled:opacity-40", "rounded-md", "h-10", "data-ripple", "motion-hover")
 		hasNot(t, out, "font-medium", "disabled:opacity-50")
+		hasNot(t, out, "bg-danger text-bone")
 	}
 	small := webtest.Render(t, atoms.Button(atoms.ButtonProps{Label: "操作", Small: true}))
 	has(t, small, "h-8", "text-sm")
