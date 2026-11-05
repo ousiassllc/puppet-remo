@@ -1,0 +1,24 @@
+package atoms
+
+// RangeProps はスライダーの引数。
+type RangeProps struct {
+	ID      string
+	Name    string
+	Value   string
+	Invalid bool
+	Attrs   Attrs
+}
+
+// Range はスライダー（P1）。1 行入力欄の枠（高さ・border・背景・padding）は付けない。
+// つまみ・進捗の --accent は app.css の input[type="range"]。値の表示（<output>）は呼び出し側が横に置く。
+templ Range(p RangeProps) {
+	<input
+		id={ p.ID }
+		name={ p.Name }
+		type="range"
+		value={ p.Value }
+		class="w-full min-w-0"
+		aria-invalid?={ p.Invalid }
+		{ p.Attrs... }
+	/>
+}
