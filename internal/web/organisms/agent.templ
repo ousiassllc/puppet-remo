@@ -82,7 +82,7 @@ templ AgentForm(f view.AgentForm) {
 		hx-indicator="#agent-spinner"
 	>
 		if f.Errors.General != "" {
-			@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "agent"}) {
+			@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "agent"}) {
 				{ f.Errors.General }
 			}
 		}
@@ -144,7 +144,7 @@ templ FastpathForm(f view.FastpathForm) {
 		hx-indicator="#fastpath-spinner"
 	>
 		if f.Errors.General != "" {
-			@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "fastpath"}) {
+			@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "fastpath"}) {
 				{ f.Errors.General }
 			}
 		}

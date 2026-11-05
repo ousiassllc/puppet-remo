@@ -100,6 +100,25 @@ func TestNoticeTonesIconsAndBody(t *testing.T) {
 	}
 }
 
+// 操作の結果として現れる Notice は Alert・FormField のエラーと同じフェードイン（M5）。常設の Notice は静かなまま。
+func TestNoticeAnimatedRisesInOnlyWhenAsked(t *testing.T) {
+	body := templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
+		_, err := io.WriteString(w, "本文")
+		return err
+	})
+	render := func(c templ.Component) string {
+		var sb strings.Builder
+		if err := c.Render(templ.WithChildren(context.Background(), body), &sb); err != nil {
+			t.Fatal(err)
+		}
+		return sb.String()
+	}
+	attrs := atoms.Attrs{"role": "alert", "data-notice": "n"}
+	animated := render(atoms.NoticeAnimated(atoms.AlertDanger, attrs))
+	has(t, animated, `class="motion-rise-in flex items-start gap-2`, `role="alert"`, `data-notice="n"`, "border-danger/40", "<svg", ">本文</div>")
+	hasNot(t, render(atoms.Notice(atoms.AlertDanger, attrs)), "motion-")
+}
+
 // トースト: 完了の短い通知。ピル・インク地・role や閉じるボタンは持たない（3 秒で自動消去）。エラーの表示には使わない。
 func TestToastIsAShortInkPill(t *testing.T) {
 	out := webtest.Render(t, atoms.Toast(view.Toast{Message: "保存しました。"}))

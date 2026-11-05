@@ -34,7 +34,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 				}
 			}
 			if v.Error != "" {
-				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}) {
+				@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}) {
 					{ v.Error }
 				}
 			}
@@ -68,7 +68,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 				</div>
 			}
 			if v.Applying {
-				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "applying"}) {
+				@atoms.NoticeAnimated(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "applying"}) {
 					インストーラを起動しました。アプリを終了して更新します。
 				}
 			}
