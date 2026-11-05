@@ -508,10 +508,54 @@ func TestToastAndAlertRoots(t *testing.T) {
 // サイドナビ: 幅 240・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
 func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
 	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}, false))
-	has(t, nav, "md:w-60", "md:space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
+	has(t, nav, "w-60", "space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
 	hasNot(t, nav, "bg-slate", "md:w-56")
 	header := webtest.Render(t, organisms.Header(view.Header{}))
 	has(t, header, "h-14", "border-b", "border-border")
+}
+
+// モバイルナビ（P0）: ヘッダーのハンバーガーはドロワーを開閉し（aria-expanded・aria-controls）、md 以上では出さない。
+// スクラムはナビの外にあり、md 以上では出さない。
+func TestMobileNavToggleAndScrim(t *testing.T) {
+	header := webtest.Render(t, organisms.Header(view.Header{}))
+	has(t, header, "data-nav-toggle", `aria-controls="sidebar-nav"`, `aria-expanded="false"`, `aria-label="メニューを開く"`, "md:hidden", "<svg", `d="M3 12H21"`)
+	scrim := webtest.Render(t, organisms.NavScrim())
+	has(t, scrim, `id="nav-scrim"`, "nav-scrim", "bg-scrim", "md:hidden", "z-(--z-drawer)", `aria-hidden="true"`)
+	for _, out := range []string{header, scrim} {
+		webtest.AssertCSPCompliantHTML(t, out)
+	}
+}
+
+// 通知バッジ数（P1）: --accent 地 + --bone 字・11px Mono・最小 18px。状態色にしない。99 を超える件数は 99+。
+func TestRequestsBadgeFollowsTheNotificationBadgeSpec(t *testing.T) {
+	out := webtest.Render(t, organisms.RequestsBadge(3))
+	has(t, out, "bg-accent", "text-bone", "font-mono", "text-2xs", "min-w-4.5", `data-pending-count="3"`, ">3<")
+	hasNot(t, out, "bg-danger", "text-xs")
+	has(t, webtest.Render(t, organisms.RequestsBadge(99)), ">99<")
+	over := webtest.Render(t, organisms.RequestsBadge(100))
+	has(t, over, ">99+<", `data-pending-count="100"`)
+	hasNot(t, webtest.Render(t, organisms.RequestsBadge(0)), "data-pending-count")
+}
+
+// ページ送りのボタンは高さ 36・rounded-md（P1 ページネーション）。小ボタン（32）ではない。
+func TestPagerButtonsAre36pxHigh(t *testing.T) {
+	history := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3",
+		Rows: []view.HistoryRow{{ID: "r1"}}}))
+	has(t, history, "h-9", "rounded-md", "data-pager-prev", "data-pager-next")
+	hasNot(t, history, "h-8")
+	audit := webtest.Render(t, organisms.AuditList(view.AuditList{NextURL: "/audit?cursor=1", Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1"}}}))
+	has(t, audit, "h-9", "data-pager-next")
+	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, NextURL: "/logs?page=2", Rows: []view.LogRow{{Time: "t", Level: "INFO"}}}))
+	has(t, log, "h-9", "data-pager-next")
+	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{NextURL: "/tasks?page=2", Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}}))
+	has(t, tasks, "h-9", "data-pager-next")
+}
+
+// 絞り込みの「条件をクリア」は本文のリンク（.link。下線 --mute）で、ほかのリンクと同じ見た目。
+func TestAuditResetIsABodyLink(t *testing.T) {
+	out := webtest.Render(t, organisms.AuditFilters(view.AuditFilters{}))
+	has(t, out, `class="text-sm link"`, "data-audit-reset")
+	hasNot(t, out, "hover:underline")
 }
 
 // 表: 見出し行は SemiBold 12 の --mute・背景なし。行ホバーは --accent-soft。padding は --table-pad-*。数値列（所要時間）は Mono・右寄せ。

@@ -82,26 +82,24 @@ func TestDashboardKillSwitchIsStateDriven(t *testing.T) {
 	})
 }
 
-// 狭い幅（約 360px）でサイドバーの固定幅がページを横に広げない（#51）。見た目は Go のテストで測れないので、
-// 固定幅が md 以上だけに掛かっていること（md 未満は w-full で本文の上に積む）を、クラスで押さえる。
-func TestSidebarIsFixedWidthOnlyFromMdUp(t *testing.T) {
+// 狭い幅（約 360px）でサイドバーがページを横に広げない（#51）。md 未満のナビは本文の外に出る左のドロワー（fixed。ハンバーガーで開き、
+// スクラムで閉じる。P0）で、md 以上だけ常時見える左のカラム（static）になる。見た目は Go のテストで測れないので、クラスで押さえる。
+func TestSidebarIsADrawerBelowMd(t *testing.T) {
 	res := newRig(t).get("/")
 	start := strings.Index(res.Body, `<nav id="sidebar-nav"`)
 	if start < 0 {
 		t.Fatal("no sidebar nav")
 	}
 	nav := res.Body[start : start+strings.Index(res.Body[start:], ">")]
-	for _, want := range []string{"w-full", "md:w-60", "md:block"} {
+	for _, want := range []string{"nav-drawer", "fixed", "inset-y-0", "left-0", "z-(--z-drawer)", "w-60", "max-w-[85vw]", "md:static"} {
 		if !strings.Contains(nav, want) {
 			t.Errorf("sidebar nav lacks %q: %s", want, nav)
 		}
 	}
-	for _, tok := range strings.Fields(strings.SplitN(strings.SplitN(nav, `class="`, 2)[1], `"`, 2)[0]) {
-		if tok == "w-60" {
-			t.Errorf("sidebar nav has the bare fixed width w-60 (it must be md:w-60): %s", nav)
-		}
+	contains(t, res, `id="nav-scrim"`, "md:hidden", `data-nav-toggle`, `aria-controls="sidebar-nav"`, `aria-expanded="false"`, "flex-col md:flex-row", "p-4 md:p-6")
+	if strings.Index(res.Body, `id="nav-scrim"`) > start {
+		t.Error("the scrim must come before the nav (both are fixed at the same z-index)")
 	}
-	contains(t, res, "flex-col md:flex-row", "p-4 md:p-6")
 }
 
 func TestDashboardHTMXRequestsReturnFragments(t *testing.T) {

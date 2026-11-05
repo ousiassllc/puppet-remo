@@ -233,7 +233,7 @@ func AuditFilters(f view.AuditFilters) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<a href=\"/audit\" class=\"text-sm text-ink hover:underline\" hx-get=\"/audit\" hx-target=\"#audit-list\" hx-swap=\"outerHTML\" hx-push-url=\"true\" data-audit-reset>条件をクリア</a></div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<a href=\"/audit\" class=\"text-sm link\" hx-get=\"/audit\" hx-target=\"#audit-list\" hx-swap=\"outerHTML\" hx-push-url=\"true\" data-audit-reset>条件をクリア</a></div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -480,7 +480,7 @@ func AuditList(v view.AuditList) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var21 = []any{atoms.ButtonClass(atoms.ButtonSecondary, true)}
+			var templ_7745c5c3_Var21 = []any{atoms.PagerButtonClass()}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var21...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

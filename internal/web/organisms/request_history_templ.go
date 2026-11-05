@@ -150,7 +150,7 @@ func requestHistoryPager(v view.RequestHistory) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if v.PrevURL != "" {
-			var templ_7745c5c3_Var7 = []any{atoms.ButtonClass(atoms.ButtonSecondary, true)}
+			var templ_7745c5c3_Var7 = []any{atoms.PagerButtonClass()}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var7...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -235,7 +235,7 @@ func requestHistoryPager(v view.RequestHistory) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if v.NextURL != "" {
-			var templ_7745c5c3_Var13 = []any{atoms.ButtonClass(atoms.ButtonSecondary, true)}
+			var templ_7745c5c3_Var13 = []any{atoms.PagerButtonClass()}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var13...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

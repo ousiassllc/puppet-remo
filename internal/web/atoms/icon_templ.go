@@ -21,6 +21,7 @@ const (
 	IconInfoCircle      IconName = "info-circle"
 	IconXmarkCircle     IconName = "xmark-circle"
 	IconEmptyPage       IconName = "empty-page"
+	IconMenu            IconName = "menu"
 )
 
 // IconSize はアイコンの大きさ（ガイド I2）。sm 16 / md 20 / lg 24。xl 32 は空状態だけ。
@@ -38,6 +39,7 @@ var iconPaths = map[IconName][]string{
 	IconXmark:      {"M6.75827 17.2426L12.0009 12M17.2435 6.75736L12.0009 12M12.0009 12L6.75827 6.75736M12.0009 12L17.2435 17.2426"},
 	IconArrowLeft:  {"M21 12L3 12M3 12L11.5 3.5M3 12L11.5 20.5"},
 	IconArrowRight: {"M3 12L21 12M21 12L12.5 3.5M21 12L12.5 20.5"},
+	IconMenu:       {"M3 5H21", "M3 12H21", "M3 19H21"},
 	IconCheckCircle: {
 		"M7 12.5L10 15.5L17 8.5",
 		"M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z",
@@ -129,7 +131,7 @@ func Icon(name IconName, size IconSize) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(d)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/icon.templ`, Line: 76, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/icon.templ`, Line: 78, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {

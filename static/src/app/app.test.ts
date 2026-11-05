@@ -111,3 +111,53 @@ describe("ボタンの押下のリップル", () => {
     expect(plain.querySelector(".ripple")).to.equal(null);
   });
 });
+
+describe("モバイルナビのドロワー", () => {
+  const markup = html`
+    <div>
+      <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
+      <div id="nav-scrim"></div>
+      <nav id="sidebar-nav"><a href="#a" id="nav-first">一覧</a></nav>
+    </div>
+  `;
+  const isOpen = (): boolean => document.body.hasAttribute("data-nav-open");
+
+  afterEach(() => {
+    document.body.removeAttribute("data-nav-open");
+  });
+
+  it("ハンバーガーで開閉し、aria-expanded とラベルを追従させ、開いたら先頭のリンクにフォーカスする", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const toggle = root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+    toggle.click();
+    expect(isOpen()).to.equal(true);
+    expect(toggle.getAttribute("aria-expanded")).to.equal("true");
+    expect(toggle.getAttribute("aria-label")).to.equal("メニューを閉じる");
+    expect(document.activeElement?.id).to.equal("nav-first");
+    toggle.click();
+    expect(isOpen()).to.equal(false);
+    expect(toggle.getAttribute("aria-expanded")).to.equal("false");
+    expect(toggle.getAttribute("aria-label")).to.equal("メニューを開く");
+  });
+
+  it("スクラム・ナビのリンクのクリックで閉じる", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    root.querySelector<HTMLElement>("#nav-scrim")!.click();
+    expect(isOpen()).to.equal(false);
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    root.querySelector<HTMLElement>("#nav-first")!.click();
+    expect(isOpen()).to.equal(false);
+  });
+
+  it("Esc で閉じて、フォーカスをハンバーガーに戻す。閉じているときの Esc は何もしない", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const toggle = root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.activeElement).to.not.equal(toggle);
+    toggle.click();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(isOpen()).to.equal(false);
+    expect(document.activeElement).to.equal(toggle);
+  });
+});

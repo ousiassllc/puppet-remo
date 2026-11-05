@@ -27,7 +27,7 @@ func logFilterAttrs(active bool) atoms.Attrs {
 templ logPagerLink(url, label string, attrs atoms.Attrs) {
 	<a
 		href={ templ.SafeURL(url) }
-		class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+		class={ atoms.PagerButtonClass() }
 		data-ripple
 		hx-get={ url }
 		hx-target="#app-log"

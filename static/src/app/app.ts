@@ -6,6 +6,7 @@
 //   4. 確認モーダルのキャンセル・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をインラインアラートにする
+//   7. モバイルナビ（md 未満の左のドロワー）の開閉（ハンバーガー・スクラム・リンク・Esc）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 const TOAST_ROOT = "toast-root";
@@ -70,6 +71,35 @@ document.addEventListener("htmx:responseError", (event) => {
   }
 });
 
+// 7. モバイルナビのドロワー（P0）。開閉の状態は body の data-nav-open で持ち、見た目は app.css の .nav-drawer・.nav-scrim が決める
+// （md 以上では CSS が無視する）。ナビは OOB で差し替わるので、状態はナビの外（body）に置く。開いたら先頭のリンクにフォーカスを移し、
+// Esc で閉じてハンバーガーに戻す。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
+const NAV_OPEN_ATTR = "data-nav-open";
+const desktopWidth = window.matchMedia("(min-width: 768px)");
+
+function setNavOpen(open: boolean): void {
+  document.body.toggleAttribute(NAV_OPEN_ATTR, open);
+  const toggle = document.querySelector<HTMLElement>("[data-nav-toggle]");
+  toggle?.setAttribute("aria-expanded", String(open));
+  toggle?.setAttribute("aria-label", open ? "メニューを閉じる" : "メニューを開く");
+  if (open) {
+    document.querySelector<HTMLElement>("#sidebar-nav a")?.focus();
+  }
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.body.hasAttribute(NAV_OPEN_ATTR)) {
+    setNavOpen(false);
+    document.querySelector<HTMLElement>("[data-nav-toggle]")?.focus();
+  }
+});
+
+desktopWidth.addEventListener("change", (event) => {
+  if (event.matches) {
+    setNavOpen(false);
+  }
+});
+
 // 2. トークンのコピー。クリップボードに書けなければ、全選択して Ctrl+C を案内する（フォールバックの文言は常に描画されている）。
 document.addEventListener("click", (event) => {
   const target = event.target;
@@ -77,6 +107,15 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  // 7. モバイルナビ（md 未満の左のドロワー）: ハンバーガーで開閉し、スクラム・リンクのクリックで閉じる。
+  if (target.closest("[data-nav-toggle]")) {
+    setNavOpen(!document.body.hasAttribute(NAV_OPEN_ATTR));
+    return;
+  }
+  if (target.id === "nav-scrim" || target.closest("#sidebar-nav a")) {
+    setNavOpen(false);
+    return;
+  }
   const copyButton = target.closest<HTMLElement>("[data-copy-target]");
   if (copyButton) {
     const input = document.getElementById(copyButton.dataset.copyTarget ?? "");
