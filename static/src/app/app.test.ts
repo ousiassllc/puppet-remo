@@ -18,10 +18,7 @@ describe("確認モーダルを閉じる", () => {
     const holder = await fixture<HTMLDivElement>(modalMarkup);
     holder.querySelector<HTMLElement>("#panel")?.click();
     holder.querySelector<HTMLElement>("button")?.click();
-    // 閉じる処理が走るなら、数フレームのうちに data-leaving が付くか、中身が空になる。
-    for (let i = 0; i < 5; i++) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    }
+    // 閉じる処理が走るなら、クリックの同期の中で data-leaving が付く。
     expect(holder.querySelector("#modal")).to.not.equal(null);
     expect(holder.querySelector("#modal")?.hasAttribute("data-leaving")).to.equal(false);
   });
@@ -44,6 +41,19 @@ describe("確認モーダルを閉じる", () => {
     expect(detail.shouldSwap).to.equal(false);
     expect(holder.querySelector("#modal")?.hasAttribute("data-leaving")).to.equal(true);
     await until(() => holder.children.length === 0, "the modal is removed");
+  });
+
+  it("フェード中に差し込まれた新しい子は、取り除かない", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div id="modal-root"><div id="modal"></div></div>`);
+    const fragment = document.createDocumentFragment();
+    fragment.append(Object.assign(document.createElement("div"), { id: "modal-root" }));
+    const detail = { target: holder, fragment, shouldSwap: true };
+    holder.dispatchEvent(new CustomEvent("htmx:oobBeforeSwap", { bubbles: true, detail }));
+    const fresh = document.createElement("div");
+    fresh.id = "fresh-modal";
+    holder.append(fresh);
+    await until(() => holder.querySelector("#modal") === null, "the leaving modal is removed");
+    expect(holder.querySelector("#fresh-modal")).to.not.equal(null);
   });
 });
 
@@ -159,5 +169,55 @@ describe("モバイルナビのドロワー", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(isOpen()).to.equal(false);
     expect(document.activeElement).to.equal(toggle);
+  });
+});
+
+describe("アラートを見える位置へ寄せる", () => {
+  const alertMarkup = html`
+    <div id="alert-root"></div>
+    <template id="alert-template"><div data-alert-tone="danger"><p data-alert-message></p></div></template>
+  `;
+
+  // scrollIntoView の呼び出しを記録する（実際のスクロールはしない）。
+  function recordScroll(root: Element): ScrollIntoViewOptions[] {
+    const calls: ScrollIntoViewOptions[] = [];
+    root.scrollIntoView = (arg?: boolean | ScrollIntoViewOptions) => {
+      calls.push(typeof arg === "object" ? arg : {});
+    };
+    return calls;
+  }
+
+  it("アクションの失敗の差し込み（afterSwap）と OOB（oobAfterSwap）のあと、block: nearest で寄せる", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div>${alertMarkup}</div>`);
+    const root = holder.querySelector("#alert-root")!;
+    const calls = recordScroll(root);
+    root.append(document.createElement("div"));
+    root.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: root } }));
+    root.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: root } }));
+    expect(calls).to.deep.equal([{ block: "nearest" }, { block: "nearest" }]);
+  });
+
+  it("アラートが空のとき、#alert-root 以外の差し込みでは寄せない", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div>${alertMarkup}<div id="elsewhere"><i></i></div></div>`);
+    const root = holder.querySelector("#alert-root")!;
+    const other = holder.querySelector("#elsewhere")!;
+    const rootCalls = recordScroll(root);
+    const otherCalls = recordScroll(other);
+    root.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: root } }));
+    other.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: other } }));
+    expect(rootCalls.length + otherCalls.length).to.equal(0);
+  });
+
+  it("remo:error のアラートも寄せ、同じ文言のときは置き換えない", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div>${alertMarkup}</div>`);
+    const root = holder.querySelector("#alert-root")!;
+    const calls = recordScroll(root);
+    const detail = { code: "input_blocked", message: "blocked" };
+    document.dispatchEvent(new CustomEvent("remo:error", { detail }));
+    const first = root.firstElementChild;
+    expect(first).to.not.equal(null);
+    document.dispatchEvent(new CustomEvent("remo:error", { detail }));
+    expect(root.firstElementChild).to.equal(first);
+    expect(calls.length).to.equal(2);
   });
 });

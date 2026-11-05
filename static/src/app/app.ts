@@ -22,20 +22,18 @@ function leave(el: Element, after: () => void): void {
   void Promise.allSettled(animations.map((a) => a.finished)).then(after);
 }
 
-// root の子をフェードアウトさせてから、root を空にする。
+// root の子をフェードアウトさせ、終わったものから取り除く。フェード中に差し込まれた新しい子（data-leaving の付いていないもの）は残す。
 function clearWithFade(root: Element): void {
-  const children = [...root.children];
-  if (children.length === 0) {
-    return;
+  for (const child of [...root.children]) {
+    leave(child, () => child.remove());
   }
-  let remaining = children.length;
-  for (const child of children) {
-    leave(child, () => {
-      remaining -= 1;
-      if (remaining === 0) {
-        root.replaceChildren();
-      }
-    });
+}
+
+// 縦に長い画面の下のほうで失敗しても見えるように、差し込んだアラートを表示領域に入れる（すでに見えていれば動かない）。
+// behavior は既定（auto）のまま滑らせない（prefers-reduced-motion を尊重する）。
+function revealAlerts(root: Element): void {
+  if (root.firstElementChild) {
+    root.scrollIntoView({ block: "nearest" });
   }
 }
 
@@ -45,6 +43,11 @@ function showErrorAlert(message: string): void {
   const root = document.getElementById(ALERT_ROOT);
   const template = document.getElementById(ALERT_TEMPLATE);
   if (!root || !(template instanceof HTMLTemplateElement)) {
+    return;
+  }
+  // 同じ文言のアラートがすでにあれば置き換えない（ちらつきと、スクリーンリーダーの再読み上げを防ぐ）。
+  if (root.querySelector("[data-alert-message]")?.textContent === message) {
+    revealAlerts(root);
     return;
   }
   const alert = template.content.firstElementChild?.cloneNode(true);
@@ -57,6 +60,7 @@ function showErrorAlert(message: string): void {
     text.textContent = message;
   }
   root.replaceChildren(alert);
+  revealAlerts(root);
 }
 
 // 1. サーバーが HTML で返さないエラー（接続できない、想定外の 5xx）だけをクライアントで扱う。
@@ -278,5 +282,15 @@ document.addEventListener("htmx:oobAfterSwap", (event) => {
   const target = (event as CustomEvent<{ target?: Element }>).detail?.target;
   if (target?.id === TOAST_ROOT) {
     settleToasts(target);
+  } else if (target?.id === ALERT_ROOT) {
+    revealAlerts(target);
+  }
+});
+
+// アクションの失敗（HX-Retarget: #alert-root の応答）の差し込み。アラートが見える位置へ寄せる（OOB は上の oobAfterSwap）。
+document.addEventListener("htmx:afterSwap", (event) => {
+  const target = (event as CustomEvent<{ target?: Element }>).detail?.target;
+  if (target?.id === ALERT_ROOT) {
+    revealAlerts(target);
   }
 });

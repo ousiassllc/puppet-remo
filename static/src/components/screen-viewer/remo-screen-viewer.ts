@@ -153,7 +153,7 @@ export class RemoScreenViewer extends LitElement {
       box-sizing: border-box;
       border: 2px solid var(--accent-soft);
       border-top-color: var(--accent);
-      border-radius: var(--radius-full);
+      border-radius: var(--r-full);
       animation: overlay-spin 0.8s linear infinite;
     }
     @keyframes overlay-spin {
