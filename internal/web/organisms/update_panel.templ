@@ -29,9 +29,9 @@ templ UpdatePanel(v view.UpdatePanel) {
 				</dd>
 			</dl>
 			if !v.Updatable {
-				<p class="rounded-md bg-bone px-3 py-2 text-sm text-ink" role="status" data-update="not-updatable">
+				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "not-updatable"}) {
 					この版（開発用のビルド）は、更新の確認も適用もしません。
-				</p>
+				}
 			}
 			if v.Error != "" {
 				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}) {

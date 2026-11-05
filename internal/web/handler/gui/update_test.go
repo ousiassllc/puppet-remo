@@ -3,6 +3,7 @@ package gui_test
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -79,7 +80,13 @@ func TestUpdatePageKeyNotConfiguredAndDevBuild(t *testing.T) {
 	res := r.get("/update")
 	contains(t, res, `data-update="not-updatable"`, "dev")
 	lacks(t, res, "今すぐ確認", "更新する", "新しい版はありません")
+	// 状態メッセージはアイコン付きの atoms.Notice（C4）。素の段落ではない。
+	if !notUpdatableNotice.MatchString(res.Body) {
+		t.Errorf("not-updatable is not an icon Notice\n%s", res.Body)
+	}
 }
+
+var notUpdatableNotice = regexp.MustCompile(`<div [^>]*data-update="not-updatable"[^>]*>\s*<span[^>]*>\s*<svg`)
 
 func TestUpdatePageShowsCheckFailure(t *testing.T) {
 	for code, want := range map[string]string{
