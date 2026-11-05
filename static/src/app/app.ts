@@ -7,6 +7,8 @@
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をインラインアラートにする
 //   7. モバイルナビ（md 未満の左のドロワー）の開閉（ハンバーガー・スクラム・リンク・Esc）
+//   8. アラートの差し込み（afterSwap・oobAfterSwap・新規作成）のあと、縦に長い画面でも見える位置へ寄せる（revealAlerts）
+//   9. クライアントで出すエラーのアラートは、同じ文言がすでに表示中（退出中でない）なら置き換えない（ちらつき・再読み上げの防止）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 const TOAST_ROOT = "toast-root";
@@ -25,7 +27,13 @@ function leave(el: Element, after: () => void): void {
 // root の子をフェードアウトさせ、終わったものから取り除く。フェード中に差し込まれた新しい子（data-leaving の付いていないもの）は残す。
 function clearWithFade(root: Element): void {
   for (const child of [...root.children]) {
-    leave(child, () => child.remove());
+    leave(child, () => {
+      child.remove();
+      // 空白のテキストノードが残ると :empty が外れるので、子要素が無くなったら中身ごと空にする。
+      if (root.children.length === 0) {
+        root.replaceChildren();
+      }
+    });
   }
 }
 
@@ -45,9 +53,9 @@ function showErrorAlert(message: string): void {
   if (!root || !(template instanceof HTMLTemplateElement)) {
     return;
   }
-  // 同じ文言のアラートがすでにあれば置き換えない（ちらつきと、スクリーンリーダーの再読み上げを防ぐ）。
-  if (root.querySelector("[data-alert-message]")?.textContent === message) {
-    revealAlerts(root);
+  // 同じ文言のアラートがすでに表示中（退出中の data-leaving の下にあるものは除く）なら置き換えない（ちらつきと、スクリーンリーダーの再読み上げを防ぐ）。
+  const shown = [...root.querySelectorAll("[data-alert-message]")].find((el) => !el.closest("[data-leaving]"));
+  if (shown?.textContent === message) {
     return;
   }
   const alert = template.content.firstElementChild?.cloneNode(true);
