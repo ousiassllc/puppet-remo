@@ -172,6 +172,7 @@ func TestApplyUpdate(t *testing.T) {
 	res := r.post("/update/apply", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="update-panel"`, `data-update="applying"`, "更新を開始しました。", `id="modal-root"`)
+	lacks(t, res, "更新を開始しました。アプリを終了")
 	lacks(t, res, "<html", `hx-get="/update/apply/confirm"`) // 適用中は「更新する」を出さない
 	if got := r.f.Updates.Applied; len(got) != 1 || got[0] != domain.ActorHost {
 		t.Errorf("Apply calls = %v, want one by the host", got)

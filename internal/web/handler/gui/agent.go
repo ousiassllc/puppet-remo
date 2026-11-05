@@ -396,12 +396,12 @@ func (h *Handler) confirmDeleteKey(c *gin.Context, registered func(service.Agent
 
 // DeleteOpenAIKey は DELETE /agent/api-key。キーを削除してエージェントを無効にし、実行中のタスクを中断する（実体が行う）。
 func (h *Handler) DeleteOpenAIKey(c *gin.Context) {
-	h.deleteKey(c, h.d.AgentSettings.DeleteOpenAIKey, "OpenAI API キーを削除しました。エージェントは無効です。")
+	h.deleteKey(c, h.d.AgentSettings.DeleteOpenAIKey, "OpenAI API キーを削除しました。")
 }
 
 // DeleteTypeSafeKey は DELETE /agent/fastpath/api-key。キーを削除して高速パスを無効にし、同意を取り消す（実体が行う）。
 func (h *Handler) DeleteTypeSafeKey(c *gin.Context) {
-	h.deleteKey(c, h.d.AgentSettings.DeleteTypeSafeKey, "TypeSafe API キーを削除しました。高速パスは無効です。")
+	h.deleteKey(c, h.d.AgentSettings.DeleteTypeSafeKey, "TypeSafe API キーを削除しました。")
 }
 
 // deleteKey は削除の確定の共通部分。有効・同意の状態も変わるため、画面の本体（#agent-sections）を読み直して差し替える。

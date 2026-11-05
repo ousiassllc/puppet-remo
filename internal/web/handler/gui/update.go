@@ -76,7 +76,7 @@ func (h *Handler) ApplyUpdate(c *gin.Context) {
 	h.render(c, http.StatusOK,
 		organisms.UpdatePanel(h.updatePanelView(h.d.Updates.Status(ctx))),
 		organisms.ModalClear(),
-		organisms.ToastOOB(infoToast("更新を開始しました。アプリを終了して更新します。")),
+		organisms.ToastOOB(infoToast("更新を開始しました。")),
 	)
 }
 

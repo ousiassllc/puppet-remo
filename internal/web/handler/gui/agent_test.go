@@ -518,6 +518,7 @@ func TestKeyDeleteConfirmThenDeleteDisablesAgent(t *testing.T) {
 	res = r.do(http.MethodDelete, "/agent/api-key", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="agent-sections"`, `id="modal-root" hx-swap-oob="true"`, "OpenAI API キーを削除しました", `hx-swap-oob="beforeend:#toast-root"`)
+	lacks(t, res, "エージェントは無効です。") // トーストは結果だけの 1 文（状態は #agent-sections が示す）
 	if got := res.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q", got)
 	}
@@ -547,6 +548,7 @@ func TestFastpathKeyDeleteClearsConsentAndKeepsAgent(t *testing.T) {
 	res = r.do(http.MethodDelete, "/agent/fastpath/api-key", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="agent-sections"`, "TypeSafe API キーを削除しました")
+	lacks(t, res, "高速パスは無効です。")
 	lacks(t, res, `data-consent-at="typesafe"`)
 	st := r.f.AgentSettings.State()
 	if st.TypeSafeKeyRegistered || st.Fastpath.Enabled || st.Fastpath.ConsentAt != nil || !st.Enabled || !st.OpenAIKeyRegistered {
