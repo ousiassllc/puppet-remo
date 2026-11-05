@@ -25,7 +25,7 @@ func TestUpdatePageNoUpdate(t *testing.T) {
 	res := r.get("/update")
 	status(t, res, http.StatusOK)
 	contains(t, res, "<html", `id="update-panel"`, `data-field="current-version"`, "0.1.0", "正式版", "ホストが確認してから適用する",
-		"2026-10-30 11:59", `data-update="up-to-date"`, `hx-post="/update/check"`, "今すぐ確認",
+		"2026-10-30 11:59", `class="font-mono" data-field="last-checked"`, `data-update="up-to-date"`, `hx-post="/update/check"`, "今すぐ確認",
 		`href="/update"`, `aria-current="page"`)
 	lacks(t, res, "更新する", `data-update="latest"`, `data-update="error"`, `data-update="key-unset"`)
 }
