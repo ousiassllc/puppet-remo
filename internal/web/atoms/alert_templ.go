@@ -26,6 +26,8 @@ type AlertProps struct {
 	Heading     string
 	Message     string
 	Dismissible bool
+	// Template は app.ts が複製するための雛形（ページに常に置くので role は付けず、複製したときに app.ts が付ける）。
+	Template bool
 }
 
 func alertClass(t AlertTone) string {
@@ -57,6 +59,9 @@ func alertIcon(t AlertTone) IconName {
 
 func alertAttrs(p AlertProps) Attrs {
 	a := Attrs{"data-alert-tone": string(p.Tone)}
+	if !p.Template {
+		a["role"] = "alert"
+	}
 	if p.Code != "" {
 		a["data-error-code"] = p.Code
 	}
@@ -91,7 +96,7 @@ func Alert(p AlertProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div role=\"alert\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -127,20 +132,20 @@ func Alert(p AlertProps) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(p.Heading)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 64, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 69, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</h3><p class=\"text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</h3><p class=\"text-ink\" data-alert-message>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 65, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 70, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {

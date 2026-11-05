@@ -1,15 +1,17 @@
 // ホスト GUI の最小限のクライアントコード（docs/architecture/frontend.md §5.6・§7）。
 // 状態とロジックはサーバーが持つ。ここにあるのは、サーバーに頼れない次のものだけ:
-//   1. ネットワーク障害・想定外の 5xx の汎用トースト
+//   1. ネットワーク障害・想定外の 5xx の汎用エラー（インラインアラート。サーバーの応答が無いので、ページに置いた雛形から作る）
 //   2. トークンのコピー
-//   3. トースト（サーバーが OOB で追加する）の閉じる操作と自動消去
+//   3. トースト（サーバーが OOB で追加する完了の短い通知）の自動消去（3 秒）と、新しいものが前を置き換える動作
 //   4. 確認モーダルのキャンセル・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
-//   6. <remo-screen-viewer> の remo:error（入力の拒否など）をトーストにする
+//   6. <remo-screen-viewer> の remo:error（入力の拒否など）をインラインアラートにする
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 const TOAST_ROOT = "toast-root";
-const TOAST_LIFETIME_MS = 8000;
+const TOAST_LIFETIME_MS = 3000;
+const ALERT_ROOT = "alert-root";
+const ALERT_TEMPLATE = "alert-template";
 
 // 退出のモーション（app.css の `.motion-*-in[data-leaving]`）。data-leaving を付けると CSS のフェードアウトが始まり、終わったら after を呼ぶ。
 // アニメーションが無い（reduced-motion で 0 など）ときは、すぐ after を呼ぶ。
@@ -36,36 +38,35 @@ function clearWithFade(root: Element): void {
   }
 }
 
-const toastClasses = {
-  error: "pointer-events-auto flex items-start gap-3 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger",
-  info: "pointer-events-auto flex items-start gap-3 rounded-md border border-border bg-surface px-4 py-3 text-sm text-ink",
-};
-
-function showErrorToast(message: string): void {
-  const root = document.getElementById(TOAST_ROOT);
-  if (!root) {
+// エラーのインラインアラートを #alert-root に出す（前のアラートは置き換える）。見た目は、サーバーが出すアラート（atoms.Alert）と
+// 同じ雛形（#alert-template）の複製で、本文だけを textContent で差し込む。
+function showErrorAlert(message: string): void {
+  const root = document.getElementById(ALERT_ROOT);
+  const template = document.getElementById(ALERT_TEMPLATE);
+  if (!root || !(template instanceof HTMLTemplateElement)) {
     return;
   }
-  const toast = document.createElement("div");
-  toast.className = toastClasses.error;
-  toast.setAttribute("role", "alert");
-  toast.setAttribute("data-toast", "");
-  toast.setAttribute("data-toast-level", "error");
-  const text = document.createElement("span");
-  text.textContent = message;
-  toast.append(text);
-  root.append(toast);
+  const alert = template.content.firstElementChild?.cloneNode(true);
+  if (!(alert instanceof HTMLElement)) {
+    return;
+  }
+  alert.setAttribute("role", "alert");
+  const text = alert.querySelector("[data-alert-message]");
+  if (text) {
+    text.textContent = message;
+  }
+  root.replaceChildren(alert);
 }
 
 // 1. サーバーが HTML で返さないエラー（接続できない、想定外の 5xx）だけをクライアントで扱う。
 document.addEventListener("htmx:sendError", () => {
-  showErrorToast("サーバーに接続できませんでした。");
+  showErrorAlert("サーバーに接続できませんでした。");
 });
 document.addEventListener("htmx:responseError", (event) => {
   const xhr = (event as CustomEvent<{ xhr?: XMLHttpRequest }>).detail?.xhr;
   // サーバーがエラーのフラグメントを返したとき（HX-Retarget 付き）は、それが表示される。
   if (xhr && xhr.status >= 500 && !xhr.getResponseHeader("HX-Retarget")) {
-    showErrorToast("サーバーでエラーが発生しました。");
+    showErrorAlert("サーバーでエラーが発生しました。");
   }
 });
 
@@ -104,14 +105,12 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+});
 
-  // 3. トーストを閉じる。
-  const dismiss = target.closest("[data-toast-dismiss]");
-  if (dismiss) {
-    const toast = dismiss.closest("[data-toast]");
-    if (toast) {
-      leave(toast, () => toast.remove());
-    }
+// ページ遷移（hx-boost の #main の差し替え）では、前のページのエラーのアラートを消す。
+document.addEventListener("htmx:beforeSwap", (event) => {
+  if ((event as CustomEvent<{ target?: Element }>).detail?.target?.id === "main") {
+    document.getElementById(ALERT_ROOT)?.replaceChildren();
   }
 });
 
@@ -202,7 +201,7 @@ document.addEventListener("remo:error", (event) => {
   const code = detail?.code;
   const mapped = typeof code === "string" && Object.hasOwn(wsErrorMessages, code) ? wsErrorMessages[code] : undefined;
   const message = mapped ?? detail?.message;
-  showErrorToast(typeof message === "string" && message !== "" ? message : "操作を実行できませんでした。");
+  showErrorAlert(typeof message === "string" && message !== "" ? message : "操作を実行できませんでした。");
 });
 
 // 5. スライダー（画質・FPS）の値の表示。送信は離したとき（change）にサーバーへ送られ、サーバーが再描画する。
@@ -217,16 +216,28 @@ document.addEventListener("input", (event) => {
   }
 });
 
-// 3. サーバーが追加したトーストを一定時間後に消す。
-const toastRoot = document.getElementById(TOAST_ROOT);
-if (toastRoot) {
-  new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (node instanceof HTMLElement && node.hasAttribute("data-toast")) {
-          window.setTimeout(() => leave(node, () => node.remove()), TOAST_LIFETIME_MS);
-        }
-      }
+// 3. サーバーが OOB（beforeend:#toast-root）で追加したトースト。同時に表示するのは 1 つで、新しいものが前を置き換える。
+// 表示は 3 秒で、フェードアウトして消える。
+function settleToasts(root: Element): void {
+  const toasts = [...root.querySelectorAll<HTMLElement>("[data-toast]")];
+  const latest = toasts.pop();
+  for (const previous of toasts) {
+    previous.remove();
+  }
+  if (!latest || latest.hasAttribute("data-toast-timer")) {
+    return;
+  }
+  latest.setAttribute("data-toast-timer", "");
+  window.setTimeout(() => {
+    if (latest.isConnected) {
+      leave(latest, () => latest.remove());
     }
-  }).observe(toastRoot, { childList: true });
+  }, TOAST_LIFETIME_MS);
 }
+
+document.addEventListener("htmx:oobAfterSwap", (event) => {
+  const target = (event as CustomEvent<{ target?: Element }>).detail?.target;
+  if (target?.id === TOAST_ROOT) {
+    settleToasts(target);
+  }
+});

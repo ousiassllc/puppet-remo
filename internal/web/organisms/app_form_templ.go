@@ -290,7 +290,7 @@ func AppForm(f view.AppForm, oob bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if f.ID != "" {
-			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonGhost, Attrs: atoms.Attrs{
 				"hx-get": f.CancelURL, "hx-target": "#app-list", "hx-swap": "outerHTML",
 			}}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {

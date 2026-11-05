@@ -33,6 +33,7 @@ templ GUI(title string, c view.Chrome) {
 				@organisms.Sidebar(c, false)
 				<div class="flex min-w-0 flex-1 flex-col">
 					@organisms.Header(c.Header)
+					@organisms.AlertRoot("px-4 pt-4 md:px-6")
 					<main id="main" class="flex-1 p-4 md:p-6">
 						{ children... }
 					</main>
@@ -72,6 +73,7 @@ templ Dialog(title string) {
 			hx-ext="response-targets"
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
+			@organisms.AlertRoot("pb-4")
 			<main id="approval-root">
 				{ children... }
 			</main>

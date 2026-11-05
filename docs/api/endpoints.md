@@ -376,7 +376,8 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | GET | `/viewer/lease` | リースパネルのフラグメント | 200 HTML。保持者種別・名前・状態と、状態に応じたボタンのみ。保持者（承認待ちなら要求者）が `agent` のときは、実行中のタスクの要約（`[data-lease-task]`: 「AI エージェントのタスク実行中」・状態・ステップ数 / 上限・経過時間と上限・開始時刻・依頼元のクライアント名）を添える。**指示（prompt）と最終回答は出さない**（ビューアは依頼元とは別のクライアント。FR-W08）。タスクを読めないときは要約なしで描画する |
 | POST | `/viewer/lease/acquire` | 操作権を取得 | 承認が要らなければ 200 リースパネル。**承認が要るクライアントは、ホストの結果を待たず 202 で承認待ちのパネル（`pending_approval`・本人）を即座に返す**。結果は WebSocket で届く（許可は `lease` の `held`、拒否・タイムアウトは `error` の `approval_denied` / `approval_timeout`。§5.3）。承認待ちのあいだの再試行は新しい承認を作らず同じ 202。他者が保持中・承認待ちなら 409 `lease_held_by_other`。拒否・タイムアウトの直後 30 秒は、承認を求めず 403 `approval_denied`（クールダウン。トースト。パネルは空きのまま） |
 | POST | `/viewer/lease/release` | 操作権を解放 | 200 リースパネル |
-| POST | `/viewer/lease/revoke` | 他者のリースを強制剥奪（保持者が `agent` ならそのタスクを中断。FR-L06） | 200 リースパネル（保持者は `idle` になる）。自身が取得するには改めて `acquire` する |
+| GET | `/viewer/lease/revoke/confirm` | 強制剥奪の確認モーダル（`#viewer-root` の `#modal-root` に差し込む。確定のボタンが `POST /viewer/lease/revoke`） | 200 確認モーダル（フラグメント）。剥奪できるとき（他者の保持中）だけ描画し、そうでなければ 409 `conflict` |
+| POST | `/viewer/lease/revoke` | 他者のリースを強制剥奪（保持者が `agent` ならそのタスクを中断。FR-L06） | 200 リースパネル（保持者は `idle` になる。確認モーダルを閉じる OOB を添える）。自身が取得するには改めて `acquire` する |
 | POST | `/viewer/settings` | このビューアのモニター・品質・FPS | フォーム `monitor`, `quality`（1〜100）, `fps`（1〜30）。200 ツールバーのフラグメント。WebSocket の `config` に反映される |
 | POST | `/viewer/clipboard/send` | テキストをホストのクリップボードに設定（FR-W07） | フォーム `text`（1 MiB まで）。要操作権。200 フラグメント |
 | POST | `/viewer/clipboard/fetch` | ホストのクリップボードを取得して表示 | 要操作権。200 フラグメント（`<textarea readonly>`。利用者が手動でコピーする） |
@@ -391,7 +392,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 **Web UI の入力とエラー**（M2。#62）:
 
 - フォームは `application/x-www-form-urlencoded`、本文は 1 MiB まで（超過・読めないときは 400 `invalid_argument`。クリップボードの `text` は本文の上限の内側でも 1 MiB まで）。ビューアのセッションは `X-Viewer-Id`（§4.1）で伝え、無い・未知・期限切れ・別のクライアントに束縛されたものは、アクションルートも `GET /viewer/lease` も 400 `invalid_argument`
-- アクションの失敗は、同じステータス・`data-error-code` 付きのトースト（`HX-Retarget: #toast-root`）。`POST /viewer/settings` の検証エラー（`monitor` が存在しない・`quality`・`fps` が範囲外・整数でない）は 422 `invalid_argument` で、入力値とメッセージ付きのツールバー（`#viewer-toolbar`）を再描画する（`hx-target-422`。ホスト GUI の検証エラーと同じ）。接続していない `viewer_id` の設定変更は 400 `invalid_argument`（`ViewerSessions.Configure`）
+- アクションの失敗は、同じステータス・`data-error-code` 付きのインラインアラート（`HX-Retarget: #alert-root`・`HX-Reswap: innerHTML`）。`POST /viewer/settings` の検証エラー（`monitor` が存在しない・`quality`・`fps` が範囲外・整数でない）は 422 `invalid_argument` で、入力値とメッセージ付きのツールバー（`#viewer-toolbar`）を再描画する（`hx-target-422`。ホスト GUI の検証エラーと同じ）。接続していない `viewer_id` の設定変更は 400 `invalid_argument`（`ViewerSessions.Configure`）
 - `POST /viewer/lease/revoke` は、自分が保持しているときは 409 `conflict`（解放を使う）。保持者がいなければ何もせず現在のパネルを返す。リースの 3 つのルートと `GET /viewer/lease` の応答は、リースパネル（`#lease-panel`）に、操作権の有無で変わるクリップボード・ショートカットの領域（`#viewer-ops`）を OOB で添える（持っていないときは空）
 - `POST /viewer/clipboard/send` の 200 は送った文字数だけを返し、本文は返さない。動的な応答はすべて `Cache-Control: no-store`
 
@@ -546,7 +547,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 
 | メソッド | パス | リクエスト | 応答 |
 |---------|------|-----------|------|
-| POST | `/lease/revoke` | なし | 200 リースのフラグメント（`#lease` の中身。保持者を剥奪して空きにする。`agent` ならタスクを中断）。**M2 から**（FR-H02、FR-L06）。操作主体は `host` で、監査は `lease.revoke`（`actor_type = host`）。**保持者がいなければ何もせず 200**（冪等。トーストも出さない）。剥奪できるのは `mcp` / `web` / `agent` の保持者（保持者の種別から決める）で、`agent` の剥奪はそのタスクを `cancelled` にする（M4。FR-L08）。成功すると「操作権を剥奪しました。」のトーストを OOB で添える |
+| GET | `/lease/revoke/confirm` | なし | 200 強制剥奪の確認モーダル（フラグメント。保持者の名前を表示し、`agent` ならタスクが中断される旨を添える。確定のボタンが `POST /lease/revoke`）。剥奪できる保持者（`mcp` / `web` / `agent`）がいなければ 409 `conflict`（モーダルなし） |
+| POST | `/lease/revoke` | なし | 200 リースのフラグメント（`#lease` の中身。保持者を剥奪して空きにする。`agent` ならタスクを中断。確認モーダルを閉じる OOB を添える）。**M2 から**（FR-H02、FR-L06）。操作主体は `host` で、監査は `lease.revoke`（`actor_type = host`）。**保持者がいなければ何もせず 200**（冪等。トーストも出さない）。剥奪できるのは `mcp` / `web` / `agent` の保持者（保持者の種別から決める）で、`agent` の剥奪はそのタスクを `cancelled` にする（M4。FR-L08）。成功すると「操作権を剥奪しました。」のトーストを OOB で添える |
 | POST | `/logs/open-folder` | なし（本文・クエリ・パスを読まない） | 200（OOB のトースト「ログフォルダーを開きました。」だけ。ボタンは `hx-swap="none"`）。**ログ画面（FR-H13）のボタンの操作で、開く場所は実装（`service.AppLog.OpenFolder` の実体 `app.LogReader`）が固定する**: ログファイルのあるフォルダー（`%LOCALAPPDATA%\puppet-remo\logs\`）ちょうど 1 つを OS のファイルマネージャー（Windows は `ShellExecute` の `open`。シェル・コマンドラインを経由しない）で開く。パス・ファイル名・フォルダーをリクエストで指定する手段は無く、ファイルは開かず、フォルダーは作らない。フォルダーが無ければ 404 `not_found`（「ログフォルダーが見つかりません。」）、それ以外の失敗は 500 `internal`（「ログフォルダーを開けませんでした。」）で、どちらもエラーのトースト（固定の文言。パス・OS のエラー文は出さない）。GUI ルーターだけにあり（リモートルーターに同名の経路は作らない）、POST だけ（GET は 404）。ログの内容は変えず、監査はしない（設定・状態を変えない）。FR-H13 |
 | POST | `/killswitch/trigger` | なし | 200 ダッシュボードのフラグメント（FR-H06 の手順。1 秒以内） |
 | POST | `/killswitch/release` | なし | 200（解除。受付を再開）。ダッシュボードのキルスイッチのパネルを返し、ヘッダーのバッジの更新・確認モーダルを閉じる・トーストを OOB で添える |
@@ -600,7 +602,8 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `#killswitch-panel`（outerHTML） | キルスイッチのパネル（状態駆動: 発動中は解除だけ） | `rev_killswitch` があり、現在の版と違うとき |
 | `#request-list`（outerHTML） | 接続要求の一覧 | `rev_requests` があり、現在の版と違うとき |
 | `#chatgpt-card`（outerHTML） | ChatGPT のプランのカード（サインインの完了・失敗・タイムアウト、認可切れ、使用量の上限、再開、解除などの状態の変化） | `rev_chatgpt` があり、現在の版と違うとき。版は、状態・アカウントの表示・選んだモデル・OpenAI API キーの登録の有無・初回の確認を出すかの表示モデルのハッシュで、秘密を含まない |
-| `#toast-root`（beforeend） | 前回の呼び出し以降に溜まった `toast`（取り出した分は次の応答に出ない） | あるとき |
+| `#toast-root`（beforeend） | 前回の呼び出し以降に溜まった完了の通知（`toast` の `info`。取り出した分は次の応答に出ない） | あるとき |
+| `#alert-root`（innerHTML） | 前回の呼び出し以降に溜まったエラー（`toast` の `error`）のインラインアラート | あるとき |
 
 版（`rev_*`）は、描画した表示モデルのハッシュで、一覧・パネルの隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）が持つ。レイアウトの `#live-poll` が `hx-include="[data-poll-rev]"` で送り返す。版が同じ領域は差し替えない（入力中の許可フォームを、ポーリングで消さないため）。応答に秘密（トークンなど）は含めない。`approval`（M3）は、この経路の対象外。`tasks`（M4）はダッシュボードの `#running-tasks`（`rev_tasks`。実行中・承認待ちのタスクの表示。経過時間を含むので、実行中は毎回差し替わる。無いときは中身が空の同じ要素）で、タスクの一覧・詳細は対象にしない。
 
@@ -736,3 +739,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.42 | 2026-11-02 | §2 に `audit_unavailable`（503。`launch_app` の起動の「試行」を監査に書けないと起動しない）、§3.3 の `launch_app` に fail-closed の 2 行の監査を追記。§3.4 に、監査に残すスキーマ違反は `launch_app` だけであることを明記 | #37・#38 |
 | 1.43 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー）に対応: §1 のホスト専用の操作・§2 の `agent_disabled`（`detail.reason`）と `chatgpt_*` の失敗理由・§3.3 の `run_task`・`get_task`（`connection`、`error_code`、`openai_steps` の数え方）、§7.1 の `/agent`、§7.3 の `PUT /agent` の更新と `PUT /agent/connection`・API キーへの切り替えの確認モーダル・`/agent/chatgpt/*`（サインイン・中止・解除・再開・使用量の管理・モデル・初回の確認）、§7.4 の `rev_chatgpt`・`#chatgpt-card`、§7.5 の方針、§7.6（コールバック受信口）、§8 の決定事項・検証事項 | #49 |
 | 1.44 | 2026-11-02 | §1・§2・§3.4 に `data-error-reason` と `agent_disabled` の `detail.reason`、`POST /agent/chatgpt/signin` の 409 の条件（`signed_out`・`reauth_required` 以外）、`signin/cancel` の監査を `detail.reason = cancelled` に統一 | #49（レビュー指摘） |
+| 1.45 | 2026-11-05 | デザインガイド準拠（#90〜#95）: アクションの失敗を、トースト（`#toast-root`）からインラインアラート（`HX-Retarget: #alert-root`）へ。`GET /lease/revoke/confirm`・`GET /viewer/lease/revoke/confirm`（強制剥奪の確認モーダル）を追加。`GET /poll` のエラーの通知は `#alert-root` へ | #90〜#95 |

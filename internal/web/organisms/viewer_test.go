@@ -14,7 +14,7 @@ func TestViewerLeasePanelRendersOnlyAvailableActions(t *testing.T) {
 	const (
 		acquire = `hx-post="/viewer/lease/acquire"`
 		release = `hx-post="/viewer/lease/release"`
-		revoke  = `hx-post="/viewer/lease/revoke"`
+		revoke  = `hx-get="/viewer/lease/revoke/confirm"`
 	)
 	tests := []struct {
 		name string

@@ -189,7 +189,7 @@ func TestCreateAppConflictWhenFull(t *testing.T) {
 	res := r.post("/apps", appForm("one more", calc, "", ""), hx...)
 	status(t, res, http.StatusConflict)
 	contains(t, res, `data-error-code="conflict"`, "50 件")
-	if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
+	if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
 		t.Errorf("HX-Retarget = %q", got)
 	}
 	if len(r.f.Apps.Rows) != domain.MaxLaunchableApps {

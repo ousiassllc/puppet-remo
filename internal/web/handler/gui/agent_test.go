@@ -231,7 +231,7 @@ func TestSaveAgentWithoutKeyIsConflict(t *testing.T) {
 	res := r.do(http.MethodPut, "/agent", validAgentForm(), hx...)
 	status(t, res, http.StatusConflict)
 	contains(t, res, `data-error-code="agent_disabled"`, "API キー")
-	if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
+	if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
 		t.Errorf("HX-Retarget = %q", got)
 	}
 	lacks(t, res, "<html")

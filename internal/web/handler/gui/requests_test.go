@@ -119,7 +119,7 @@ func TestApproveRequestNotPendingIsConflict(t *testing.T) {
 	status(t, res, http.StatusConflict)
 	contains(t, res, `data-error-code="conflict"`, `role="alert"`)
 	lacks(t, res, "<html", `id="request-list"`)
-	if res.Header.Get("HX-Retarget") != "#toast-root" {
+	if res.Header.Get("HX-Retarget") != "#alert-root" {
 		t.Errorf("HX-Retarget = %q", res.Header.Get("HX-Retarget"))
 	}
 	res = r.post("/requests/unknown/deny", nil, hx...)

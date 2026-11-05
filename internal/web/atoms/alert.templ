@@ -18,6 +18,8 @@ type AlertProps struct {
 	Heading     string
 	Message     string
 	Dismissible bool
+	// Template は app.ts が複製するための雛形（ページに常に置くので role は付けず、複製したときに app.ts が付ける）。
+	Template bool
 }
 
 func alertClass(t AlertTone) string {
@@ -49,6 +51,9 @@ func alertIcon(t AlertTone) IconName {
 
 func alertAttrs(p AlertProps) Attrs {
 	a := Attrs{"data-alert-tone": string(p.Tone)}
+	if !p.Template {
+		a["role"] = "alert"
+	}
 	if p.Code != "" {
 		a["data-error-code"] = p.Code
 	}
@@ -58,11 +63,11 @@ func alertAttrs(p AlertProps) Attrs {
 // Alert はインラインアラート。状態は色だけでなく見出しと本文でも伝える。ミドルウェアが拒否した状態変更のリクエスト
 // （アクションルート）に返すエラーのフラグメントと、アクションの失敗の表示先（#alert-root）に使う。
 templ Alert(p AlertProps) {
-	<div role="alert" class={ alertClass(p.Tone) } { alertAttrs(p)... }>
+	<div class={ alertClass(p.Tone) } { alertAttrs(p)... }>
 		@Icon(alertIcon(p.Tone), IconMD)
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold">{ p.Heading }</h3>
-			<p class="text-ink">{ p.Message }</p>
+			<p class="text-ink" data-alert-message>{ p.Message }</p>
 		</div>
 		if p.Dismissible {
 			<button type="button" class="motion-hover shrink-0 rounded-full text-mute hover:text-ink" aria-label="閉じる" data-clear="#alert-root" data-ripple>

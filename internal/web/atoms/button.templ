@@ -7,6 +7,7 @@ const (
 	ButtonPrimary   ButtonVariant = "primary"
 	ButtonSecondary ButtonVariant = "secondary"
 	ButtonDanger    ButtonVariant = "danger"
+	ButtonGhost     ButtonVariant = "ghost"
 )
 
 // ButtonProps はボタンの引数。Type が空なら "button"（フォーム送信は "submit" を明示する）。
@@ -26,7 +27,8 @@ func buttonType(t string) string {
 	return "button"
 }
 
-func buttonClass(v ButtonVariant, small bool) string {
+// ButtonClass はボタンのクラス。ボタンの見た目にするリンク（<a>）が atoms.Button と同じ見た目になるように、公開している。
+func ButtonClass(v ButtonVariant, small bool) string {
 	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 "
 	if small {
 		base += "h-8 px-3 text-sm "
@@ -36,6 +38,8 @@ func buttonClass(v ButtonVariant, small bool) string {
 	switch v {
 	case ButtonDanger:
 		return base + "bg-danger text-bone hover:bg-danger/90"
+	case ButtonGhost:
+		return base + "bg-transparent text-ink hover:bg-accent-soft"
 	case ButtonSecondary:
 		return base + "border border-border bg-transparent text-ink hover:bg-accent-soft"
 	default:
@@ -45,5 +49,5 @@ func buttonClass(v ButtonVariant, small bool) string {
 
 // Button は操作ボタン。hx-* は Attrs で渡す。
 templ Button(p ButtonProps) {
-	<button type={ buttonType(p.Type) } class={ buttonClass(p.Variant, p.Small) } data-ripple { p.Attrs... }>{ p.Label }</button>
+	<button type={ buttonType(p.Type) } class={ ButtonClass(p.Variant, p.Small) } data-ripple { p.Attrs... }>{ p.Label }</button>
 }

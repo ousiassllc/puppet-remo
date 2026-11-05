@@ -1,18 +1,8 @@
 package view
 
-// ToastLevel はトーストの種別。
-type ToastLevel string
-
-const (
-	ToastInfo  ToastLevel = "info"
-	ToastError ToastLevel = "error"
-)
-
-// Toast は通知 1 件。ErrorCode が空でなければ data-error-code に出す。
+// Toast は完了の短い通知 1 件（保存しました、など）。エラーは通知にせず、インラインアラート（atoms.Alert）で出す。
 type Toast struct {
-	Level     ToastLevel
-	Message   string
-	ErrorCode string
+	Message string
 }
 
 // Header はヘッダー・サイドバーの全画面共通の表示（キルスイッチの状態と、接続要求の件数）。

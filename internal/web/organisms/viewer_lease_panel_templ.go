@@ -99,7 +99,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 			}
 		}
 		if v.CanRevoke {
-			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: leaseButtonAttrs("/viewer/lease/revoke")}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{"hx-get": "/viewer/lease/revoke/confirm", "hx-target": "#modal-root", "hx-swap": "innerHTML"}}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

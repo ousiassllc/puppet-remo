@@ -68,7 +68,8 @@ templ ClientCard(c view.Client) {
 				if c.CanOpenDetail {
 					<a
 						href={ templ.SafeURL(c.DetailURL) }
-						class="inline-flex items-center rounded-md bg-accent inline-flex h-8 items-center px-3 text-sm text-bone hover:bg-accent/90"
+						class={ atoms.ButtonClass(atoms.ButtonPrimary, true) }
+						data-ripple
 						hx-boost="true"
 						hx-target="#main"
 						hx-target-error="#main"
@@ -121,28 +122,28 @@ templ TokenList(v view.TokenList, oob bool) {
 			}
 		} else {
 			<table class="min-w-full text-left text-sm">
-				<thead class="text-xs text-mute">
+				<thead class="border-b border-border text-xs font-semibold text-mute">
 					<tr>
-						<th class="py-2 pr-4">ラベル</th>
-						<th class="py-2 pr-4">接頭辞</th>
-						<th class="py-2 pr-4">状態</th>
-						<th class="py-2 pr-4">発行</th>
-						<th class="py-2 pr-4">有効期限</th>
-						<th class="py-2 pr-4">最終使用</th>
-						<th class="py-2"></th>
+						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">ラベル</th>
+						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">接頭辞</th>
+						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">状態</th>
+						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">発行</th>
+						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">有効期限</th>
+						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">最終使用</th>
+						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-border">
 					for _, t := range v.Items {
-						<tr data-token={ t.ID }>
-							<td class="py-2 pr-4 text-ink">{ t.Label }</td>
-							<td class="py-2 pr-4"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ t.Prefix }…</code></td>
-							<td class="py-2 pr-4">@atoms.Badge(tone(t.StatusTone), t.Status)
+						<tr class="hover:bg-accent-soft" data-token={ t.ID }>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.Label }</td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ t.Prefix }…</code></td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">@atoms.Badge(tone(t.StatusTone), t.Status)
 </td>
-							<td class="py-2 pr-4 text-ink">{ t.CreatedAt }</td>
-							<td class="py-2 pr-4 text-ink">{ t.ExpiresAt }</td>
-							<td class="py-2 pr-4 text-ink">{ t.LastUsedAt }</td>
-							<td class="py-2 text-right">
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.CreatedAt }</td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.ExpiresAt }</td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.LastUsedAt }</td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-right">
 								if t.CanRevoke {
 									@atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 										"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",

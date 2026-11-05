@@ -211,6 +211,7 @@ func (h *Handler) Clients(c *gin.Context) {
 | トークンを失効（GUI） | トークン一覧 | トースト |
 | キルスイッチを発動・解除（GUI） | ダッシュボード | ヘッダーの状態バッジ |
 | 設定を保存（GUI） | フォーム | トースト |
+| 強制剥奪（GUI・Web）の確定 | リースの表示 | モーダルを閉じる、トースト |
 
 ### 5.3 状態の更新: ポーリング `GET /poll`（ホスト GUI のみ）
 
@@ -232,7 +233,7 @@ func (h *Handler) Clients(c *gin.Context) {
 - `hx-swap="none"` でも OOB の差し替えは行われる。`#live-poll` は `#main` の外にあるため、ページ遷移（`hx-boost`）で消えない
 - **表示中の領域だけを更新する**: 一覧・パネルのように作り直す領域（接続要求の一覧、キルスイッチのパネル）は、描画した状態の版を隠し入力（`<input type="hidden" name="rev_…" data-poll-rev>`）に持つ。`hx-include="[data-poll-rev]"` がそれを `/poll` のクエリで送り返し、サーバーは**版が変わった領域だけ**を差し替える。そのページに無い領域は版が送られないため、差し込み先の無い OOB を返さない。入力中の許可フォームなどを、ポーリングで消さないための仕組み
 - ヘッダーのキルスイッチのバッジとサイドバーの件数バッジは、軽い差し替え（中身だけ）で常に返す
-- トーストは、`Bus` の `toast` を `gui.Handler` が `New` で購読して溜めておき、`GET /poll` が取り出して `#toast-root` に追加する OOB にする（取り出したものは次の応答に出ない。バッファは `Bus` の購読者ごとの上限 16 件で、超えた分は古いものから捨てる）
+- トーストは、`Bus` の `toast` を `gui.Handler` が `New` で購読して溜めておき、`GET /poll` が取り出して、完了の通知（`info`）は `#toast-root` に追加する OOB に、エラー（`error`）は `#alert-root` を置き換えるインラインアラートの OOB（`organisms.AlertOOB`）にする（取り出したものは次の応答に出ない。バッファは `Bus` の購読者ごとの上限 16 件で、超えた分は古いものから捨てる）
 - `approval` のイベントは DOM を更新しない。承認ダイアログのウィンドウは Go 側（`app` の `approvalDialogs` が `Bus` から購読）が開き、`approval-closed`（承認待ちの終了）で閉じる（ポーリングの対象外。M3・#68）。ダイアログの残り時間（60 秒のカウントダウン）だけは、ダイアログのページ自身が HTMX の `hx-trigger="every 1s"` で `GET /approvals/{id}` を呼んで `#approval-remaining` を差し替える（`#live-poll` は使わない。専用ウィンドウにレイアウトのポーリングは無い。Lit は使わない。§6 の基準）。許可・拒否の応答の `HX-Trigger: closeWindow` は `static/src/app/app.ts` が受け、Wails のランタイム（`/wails/runtime.js`。同一オリジンの外部スクリプト）の `Window.Close` でウィンドウを閉じる（CSP を守る。インラインスクリプト・ハンドラ属性は使わない）
 - `GET /events`（SSE）は仕様のまま残す。ストリームを流せる経路で GUI を配信するとき・テストのために使える。`sse` 拡張の JS（`dist/js/sse.min.js`）も配信物に残すが、レイアウトは読み込まない
 - ポーリングの間隔は 3 秒。画面が隠れている間の停止は行わない（`hx-trigger` のフィルターは eval が要るため CSP の都合で使えない。§7）
@@ -287,11 +288,11 @@ func (h *Handler) Clients(c *gin.Context) {
 | 種類 | 扱い |
 |------|------|
 | バリデーション（422） | フォームを入力値とエラーメッセージ付きで再描画する。クライアント側のバリデーション JS は書かない。表示先は `hx-target-422` |
-| ビジネスエラー（403 / 404 / 409 など。API 仕様 §2 の `code`） | エラーのフラグメントを同じステータスで返す（`data-error-code="<code>"` を付ける）。メインの領域は現状維持にして、OOB でトーストを出す |
-| ページ遷移（`hx-boost`）が返した 4xx / 5xx | htmx は既定で 4xx / 5xx を差し替えないため、`hx-boost` のリンクには `hx-target-error="#main"` を付け、エラーページを `#main` に出す（`body` には付けない。アクションの失敗は `HX-Retarget` でトーストへ回す） |
+| ビジネスエラー（403 / 404 / 409 など。API 仕様 §2 の `code`） | エラーのフラグメント（インラインアラート `atoms.Alert`）を同じステータスで返す（`data-error-code="<code>"` を付ける）。メインの領域は現状維持にして、`HX-Retarget: #alert-root` / `HX-Reswap: innerHTML` でアラートの置き場（`#alert-root`。前のアラートは置き換わる）へ回す。トーストはエラー・検証・確認・破壊的操作には使わず、「保存しました」などの完了の短い通知だけに使う（O3） |
+| ページ遷移（`hx-boost`）が返した 4xx / 5xx | htmx は既定で 4xx / 5xx を差し替えないため、`hx-boost` のリンクには `hx-target-error="#main"` を付け、エラーページを `#main` に出す（`body` には付けない。アクションの失敗は `HX-Retarget` でアラートの置き場（`#alert-root`）へ回す） |
 | 未登録デバイス（403 `device_not_registered`） | 接続要求の待機ページ（フルページ。FR-W02） |
 | 認証・認可の失敗など、ミドルウェアが拒否したもの | ページルートはエラーページ、アクションルートはエラーのフラグメント |
-| ネットワーク障害・想定外の 5xx | クライアント側で唯一処理する。`htmx:responseError` / `htmx:sendError` のグローバルリスナーで汎用トーストを出す |
+| ネットワーク障害・想定外の 5xx | クライアント側で唯一処理する。`htmx:responseError` / `htmx:sendError` のグローバルリスナーで、ページに置いた雛形（`#alert-template`。`atoms.Alert` と同じ見た目）から汎用のインラインアラートを `#alert-root` に出す |
 
 ```html
 <form hx-post="/clients/01J.../tokens"
@@ -352,7 +353,7 @@ func (h *Handler) Clients(c *gin.Context) {
 | イベント | `detail` | 用途 |
 |---------|---------|------|
 | `remo:lease-changed` | WebSocket の `lease` メッセージの内容 | HTMX がリースパネルを再取得する（`hx-trigger`） |
-| `remo:error` | `{ code, message }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がトーストを出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、トーストは `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
+| `remo:error` | `{ code, message }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がインラインアラート（`#alert-root`）を出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、トーストは `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
 
 **状態とライフサイクル**
 
@@ -396,7 +397,7 @@ stateDiagram-v2
 
 - Lit 側は Shadow DOM 内の `css` テンプレートリテラルで書き、外部の CSS の影響を受けない。`css` は constructable stylesheets（`adoptedStyleSheets`）として適用されるため、CSP の `style-src 'self'` のままで動く（`unsafe-inline` 不要。§7.1）
 - Templ 側は Tailwind のユーティリティクラス（外部ファイルの `dist/css/app.css`）
-- ダークモードは CSS カスタム変数で切り替える
+- ライト／ダークは CSS カスタム変数で切り替える（`:root` がライト、`[data-theme="dark"]` がダーク。`<html data-theme="light|dark">` で明示でき、指定が無ければ `prefers-color-scheme` に従う。§8.5）。Lit の `css` もハードコードの色を使わず `var(--ink)` などを参照する（カスタムプロパティは Shadow DOM へ継承される）
 
 ### 6.4 `lib/ws.ts`
 
@@ -453,6 +454,7 @@ graph LR
     T[".templ"] -- "templ generate" --> G["_templ.go"]
     TS["src/**/*.ts<br/>(components, app, htmx-config)"] -- "esbuild" --> JS["dist/js/*.js"]
     CSS["src/css/app.css"] -- "Tailwind CLI" --> C["dist/css/app.css"]
+    F["@fontsource-variable/*"] -- "copy-fonts" --> C
     H["htmx.org / htmx-ext-*"] -- "copy" --> JS
     G --> BIN["Go ビルド"]
     JS --> E["go:embed (production)"]
@@ -462,7 +464,8 @@ graph LR
 ```
 
 - esbuild: エントリーポイントは各 Web Component（`screen-viewer`）と `src/app/` の 2 ファイル。出力形式は下記。本番は minify、開発は sourcemap
-- Tailwind CLI: `src/css/app.css` → `dist/css/app.css`（minify）。Templ のファイルをコンテンツとして走査する
+- Tailwind CLI: `src/css/app.css` → `dist/css/app.css`（minify）。Templ のファイルをコンテンツとして走査する。デザインガイドのトークンはここで定義する（§8.5）
+- フォント: `scripts/copy-fonts.mjs` が `@fontsource-variable/*` の woff2 を `dist/fonts/` にコピーし、`src/css/fonts.generated.css`（`app.css` が `@import` する）を生成する（Tailwind より前に実行する）
 - HTMX: `htmx.min.js`、`response-targets`、`sse` を `dist/js/` にコピーする（HTMX の拡張は別パッケージ）。**版の固定の手順**: 実装の着手時に `bun add htmx.org@2 htmx-ext-response-targets@2 htmx-ext-sse@2` で最新の 2.x を入れ、`bun.lock` をコミットして固定する。以降の更新は意図的に行い、E2E の CSP 違反の検査（§7.1）を通す
 - esbuild の出力形式: `htmx-config.ts` は IIFE（classic スクリプト。htmx の直後に同期で読み込む）、`app.ts` と Web Component は ES モジュール。Templ の `<script>` タグは外部ファイルの参照のみ（§7.1）で、モジュールには `type="module"` を付ける
 - 成果物は両ルーターが同じ `dist/` から配信する。`Cache-Control: no-cache` + `ETag`（ビルド ID。§2）
@@ -472,13 +475,14 @@ graph LR
 ```json
 {
   "scripts": {
-    "build": "bun run clean && bun run build:css && bun run build:js && bun run copy:htmx",
+    "build": "bun run clean && bun run build:fonts && bun run build:css && bun run build:js && bun run copy:htmx",
     "clean": "bun scripts/clean.mjs",
+    "build:fonts": "bun scripts/copy-fonts.mjs",
     "build:js": "bun esbuild.config.mjs",
     "build:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
     "copy:htmx": "bun scripts/copy-htmx.mjs",
     "dev": "bun --bun concurrently \"bun run dev:css\" \"bun run dev:js\"",
-    "dev:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
+    "dev:css": "bun run build:fonts && bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
     "dev:js": "bun esbuild.config.mjs --watch",
     "test": "bun --bun web-test-runner \"src/**/*.test.ts\" --node-resolve"
   }
@@ -486,6 +490,21 @@ graph LR
 ```
 
 `esbuild.config.mjs` は `--watch` のとき、ウォッチに加えて esbuild の `serve`（`servedir: "dist"`）を、環境変数 `WAILS_VITE_PORT`（`wails3 dev` が設定。既定 9245）のポートで開始する。環境変数の展開が OS のシェルに依存しないよう、ポートはシェルではなく `esbuild.config.mjs`（`process.env`）が読む。
+
+### 8.5 デザインガイドの適用（Ousiass 共通デザインガイド）
+
+見た目の値（色・書体・サイズ・角丸・影・モーション・z-index・表の余白）は、Ousiass 共通デザインガイド（brand-guide `622ea73`）のトークンで、`static/src/css/app.css` の 1 か所に定義する。Templ と Lit はトークン（Tailwind のユーティリティ `bg-bone` `text-ink` `text-mute` `bg-surface` `border-border` `bg-accent` `bg-accent-soft` `text-danger` や CSS の `var(--ink)`）だけを参照し、Tailwind 既定のパレット・ハードコードの色・ガイドに無い値を使わない（`@theme` で既定のパレット・サイズ・角丸・影を空にしてあるので、既定の `slate-*` などは生成されない）。
+
+| 領域 | 実装 |
+|------|------|
+| 色・ダーク（C） | `:root`（ライト）と `[data-theme="dark"]`（ダーク。`prefers-color-scheme` でも初期値）に `--ink` `--bone` `--mute` `--surface` `--border` `--accent` `--accent-soft` `--focus` と状態色 `--success` `--warning` `--danger` `--info`。`--scrim`（モーダルの暗幕）はガイドに値が無い暫定値。フォーカスは `:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px }`、フォームは枠線 `--focus` + `--ring`。プリズム色は使わない。状態はアイコン + 文言 + 状態色（`atoms.Badge`・`atoms.Alert`） |
+| タイポグラフィ（T） | Sora + Noto Sans JP（UI）と JetBrains Mono（コード・桁を揃える数値。表の数値列は右寄せ）。いずれも OFL で、`@fontsource-variable/*`（`bun.lock` で固定）の woff2 を `scripts/copy-fonts.mjs` が `dist/fonts/` にコピーし、`@font-face`（`src/css/fonts.generated.css`。Git に入れない）を生成する。外部の CDN は使わない（CSP `default-src 'self'` の範囲）。サイズはガイドのスケール（xs 12〜3xl 40。本文 16px・行間 1.8）、ウェイトは Regular（400）と SemiBold（600。見出しとボタンだけ） |
+| 形・余白・線（S） | 角丸 `rounded-sm/md/lg/xl/full` = 4 / 8 / 12 / 16 / 9999。余白は 4px 基準（カード `p-6`・入力の高さ `h-10`）。影はモーダルだけ（`shadow-modal`）。カード・パネルは 1px `--border`。空状態は `molecules.EmptyState`（破線・`rounded-lg`・padding 48/24・アイコン + 文言） |
+| アイコン（I） | Iconoir（MIT）の regular の SVG を `atoms.Icon`（`currentColor`・線 1.5・16/20/24px）で出す。使うアイコンは `atoms/icon.templ` に path を写して足す |
+| モーション（M） | `--motion-fast/base/slow/fade-in/fade-out` と `--ease-*`。出現はフェードイン 320ms（`motion-fade-in`・`motion-rise-in`）、退出は `app.ts` が `data-leaving` を付けてフェードアウト 240ms のあとに取り除く。ボタン・クローズ（`data-ripple`）の押下はリップル（280ms）。`prefers-reduced-motion: reduce` では移動を 0 に、フェードを 100ms にし、リップルは出さない（スピナーなど処理中の表示は維持） |
+| 部品・オーバーレイ（O） | 確認・破壊的操作は中央モーダル（`--z-modal`・`rounded-xl`・`shadow-modal`。外側のスクラムのクリックで閉じる。強制剥奪も確認モーダルを経る）。トーストは画面下中央（`--z-toast`）・ピル・3 秒・同時に 1 つ。エラーはインラインアラート（`#alert-root`）。ボタンは主 / サブ / ゴースト / 危険（SemiBold・`rounded-md`・disabled は opacity .4）。サイドナビは幅 240・項目高さ 40・間隔 8・現在は `--accent-soft` + `--ink`、ヘッダーは高さ 56。表は見出し行 SemiBold 12 `--mute` + 下線、行ホバー `--accent-soft`、padding `--table-pad-*`。スピナーは 20px・2px |
+
+ライト／ダークの実描画の確認は `task gui:demo`（loopback。`prefers-color-scheme` または `<html data-theme>` で切り替える）で行う。
 
 ### 8.3 開発ワークフロー（Wails 流）
 
@@ -607,3 +626,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.29 | 2026-11-02 | §9 の CI の実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。Chromium は `--with-deps` 付きで導入 | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
 | 1.30 | 2026-11-02 | §5.4 に、エージェント設定画面の ChatGPT のプランのカード（状態駆動の表示・サインイン / 解除 / 使用量の管理 / 再開 / API キーへの切り替えの確認モーダル・初回の確認・`/poll` での反映）と、§10 のトレースを追記。設計のみ | #49 |
 | 1.31 | 2026-11-02 | §9 の「tailnet の IP だけで Listen する」に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |
+| 1.32 | 2026-11-05 | Ousiass 共通デザインガイドへの準拠（#90〜#95）: §8.5 を新設（トークン・フォント・形・アイコン・モーション・部品）、§6.3 のダークモードの実装、§5.2・§5.6 のエラーをトーストからインラインアラート（`#alert-root`）へ、強制剥奪の確認モーダル、§8.1・§8.2 のフォントのビルド | #90〜#95（ousiass-design-check） |

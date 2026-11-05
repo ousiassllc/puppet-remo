@@ -62,7 +62,11 @@ func Remote(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"border-b border-border bg-surface px-4 py-2 text-sm font-semibold text-ink\">puppet-remo</header><div class=\"mx-auto max-w-7xl space-y-4 p-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink\">puppet-remo</header><div class=\"mx-auto max-w-7xl space-y-4 p-4\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = organisms.AlertRoot("").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -116,7 +120,7 @@ func RemoteNotice(title string) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/remote.templ`, Line: 46, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/remote.templ`, Line: 47, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {

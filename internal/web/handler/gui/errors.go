@@ -9,7 +9,6 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
-	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
 // codeNotFound は対象（クライアント・トークン）が無いときの data-error-code。API 仕様 §2 に該当するコードが無いため GUI 内で定める。
@@ -40,22 +39,25 @@ func classify(err error) failure {
 	return failure{http.StatusInternalServerError, string(domain.CodeInternal), "内部エラーが発生しました。"}
 }
 
-// fail はアクションルートの失敗を、data-error-code 付きのトーストのフラグメントとして同じステータスで返す。
-// メインの領域は現状維持で、HX-Retarget / HX-Reswap で #toast-root へ追加する（response-targets は
+// errorAlert はエラーのインラインアラート（data-error-code 付き）。アクションの失敗と、応答に添えるエラー（OOB）の共通の見た目。
+func errorAlert(code, message string) atoms.AlertProps {
+	return atoms.AlertProps{Tone: atoms.AlertDanger, Code: code, Heading: "エラー", Message: message, Dismissible: true}
+}
+
+// fail はアクションルートの失敗を、data-error-code 付きのインラインアラートのフラグメントとして同じステータスで返す。
+// メインの領域は現状維持で、HX-Retarget / HX-Reswap で #alert-root の中身を置き換える（response-targets は
 // HX-Retarget 付きの非 200 応答を差し込む）。想定外のエラー（5xx）はログに残す。
 func (h *Handler) fail(c *gin.Context, err error) {
 	f := classify(err)
 	if f.status >= 500 {
 		h.log.Error("gui action failed", "method", c.Request.Method, "path", c.Request.URL.Path, "error", err)
 	}
-	c.Header("HX-Retarget", "#toast-root")
-	c.Header("HX-Reswap", "beforeend")
-	h.render(c, f.status, atoms.Toast(view.Toast{Level: view.ToastError, Message: f.message, ErrorCode: f.code}))
+	h.failMessage(c, f.status, f.code, f.message)
 }
 
 // failMessage は message を指定して fail と同じ形で返す。
 func (h *Handler) failMessage(c *gin.Context, status int, code, message string) {
-	c.Header("HX-Retarget", "#toast-root")
-	c.Header("HX-Reswap", "beforeend")
-	h.render(c, status, atoms.Toast(view.Toast{Level: view.ToastError, Message: message, ErrorCode: code}))
+	c.Header("HX-Retarget", "#alert-root")
+	c.Header("HX-Reswap", "innerHTML")
+	h.render(c, status, atoms.Alert(errorAlert(code, message)))
 }

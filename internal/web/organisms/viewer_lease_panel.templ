@@ -43,7 +43,7 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 				@atoms.Button(atoms.ButtonProps{Label: "解放", Small: true, Variant: atoms.ButtonSecondary, Attrs: leaseButtonAttrs("/viewer/lease/release")})
 			}
 			if v.CanRevoke {
-				@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: leaseButtonAttrs("/viewer/lease/revoke")})
+				@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{"hx-get": "/viewer/lease/revoke/confirm", "hx-target": "#modal-root", "hx-swap": "innerHTML"}})
 			}
 		</div>
 		if v.Task != nil {

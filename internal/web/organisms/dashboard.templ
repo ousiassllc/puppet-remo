@@ -102,7 +102,7 @@ templ LeasePanelBody(v view.Lease) {
 	if v.CanRevoke {
 		<div class="mt-3">
 			@atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-				"hx-post": "/lease/revoke", "hx-target": "#lease", "hx-swap": "innerHTML", "hx-disabled-elt": "this",
+				"hx-get": "/lease/revoke/confirm", "hx-target": "#modal-root", "hx-swap": "innerHTML",
 			}})
 			if v.RevokeHint != "" {
 				<p class="mt-1 text-xs text-mute" data-revoke-hint>{ v.RevokeHint }</p>

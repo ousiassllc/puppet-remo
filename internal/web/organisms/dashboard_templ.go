@@ -480,7 +480,7 @@ func LeasePanelBody(v view.Lease) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "強制剥奪", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-				"hx-post": "/lease/revoke", "hx-target": "#lease", "hx-swap": "innerHTML", "hx-disabled-elt": "this",
+				"hx-get": "/lease/revoke/confirm", "hx-target": "#modal-root", "hx-swap": "innerHTML",
 			}}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

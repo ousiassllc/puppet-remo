@@ -140,6 +140,19 @@
     border-color: var(--border);
   }
 
+  /* 表の見出しセルは、ブラウザの既定（太字）にせず、thead のクラスで決める（SemiBold は見出し行だけ。T2）。 */
+  th {
+    font-weight: inherit;
+  }
+
+  /* 強調（<strong>）はウェイトでなく下線で表す（SemiBold は見出しとボタンだけ。T2）。 */
+  strong {
+    font-weight: inherit;
+    text-decoration-line: underline;
+    text-decoration-color: var(--mute);
+    text-underline-offset: 0.2em;
+  }
+
   /* 本文は 16px・行間 1.8（日本語の長文を詰めない）。 */
   html {
     font-size: 16px;
@@ -215,6 +228,21 @@
   }
 }
 
+/* ---- 重なり順・表・進捗（O4・O7）---- */
+:root {
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-drawer: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  --table-pad-y: 10px;
+  --table-pad-x: 12px;
+  --table-pad-y-compact: 6px;
+  --table-pad-x-compact: 8px;
+}
+
 /* ---- モーション（M1〜M5）----
  * 動きは次のトークンだけで定義する（時間・イージング・移動量）。静かに・短く・状態の変化を伝えるときだけ動かす。
  * prefers-reduced-motion: reduce では、移動を 0 に、フェードを 100ms 以下（ホバーなどの色の変化はなし）にまとめて切り替える。
@@ -265,6 +293,12 @@
   to {
     opacity: 0;
     transform: translateY(var(--motion-shift));
+  }
+}
+
+@keyframes motion-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -323,6 +357,21 @@
   @media (prefers-reduced-motion: reduce) {
     .ripple {
       display: none;
+    }
+  }
+
+  /* スピナー（O7）: 20px・2px（track --accent-soft・先端 --accent）。reduced-motion では回転を止め、静止した円と文言で処理中を伝える。 */
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--accent-soft);
+    border-top-color: var(--accent);
+    border-radius: 9999px;
+    animation: motion-spin 0.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
     }
   }
 

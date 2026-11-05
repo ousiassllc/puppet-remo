@@ -48,13 +48,46 @@ describe("確認モーダルを閉じる", () => {
 });
 
 describe("トースト", () => {
-  it("閉じるボタンでフェードアウトのあとに取り除く", async () => {
-    const holder = await fixture<HTMLDivElement>(
-      html`<div><div data-toast><span>保存しました。</span><button data-toast-dismiss>x</button></div></div>`,
+  it("OOB で追加された新しいトーストは、前のトーストを置き換える（同時に 1 つ）", async () => {
+    const root = await fixture<HTMLDivElement>(
+      html`<div id="toast-root"><div data-toast>古い</div><div data-toast>新しい</div></div>`,
     );
-    holder.querySelector<HTMLElement>("[data-toast-dismiss]")?.click();
-    expect(holder.querySelector("[data-toast]")?.hasAttribute("data-leaving")).to.equal(true);
-    await until(() => holder.querySelector("[data-toast]") === null, "the toast is removed");
+    root.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: root } }));
+    const left = [...root.querySelectorAll("[data-toast]")];
+    expect(left.length).to.equal(1);
+    expect(left[0].textContent).to.equal("新しい");
+    expect(left[0].hasAttribute("data-toast-timer")).to.equal(true);
+  });
+
+  it("#toast-root 以外への OOB には触らない", async () => {
+    const other = await fixture<HTMLDivElement>(html`<div id="elsewhere"><div data-toast>a</div><div data-toast>b</div></div>`);
+    other.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: other } }));
+    expect(other.querySelectorAll("[data-toast]").length).to.equal(2);
+  });
+});
+
+describe("エラーのアラート", () => {
+  const alertMarkup = html`
+    <div id="alert-root"><div data-stale>前のアラート</div></div>
+    <template id="alert-template"><div data-alert-tone="danger"><p data-alert-message></p></div></template>
+  `;
+
+  it("サーバーに接続できないとき、雛形から作ったアラートで、前のアラートを置き換える", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div>${alertMarkup}</div>`);
+    document.dispatchEvent(new CustomEvent("htmx:sendError"));
+    const root = holder.querySelector("#alert-root");
+    expect(root?.children.length).to.equal(1);
+    expect(root?.querySelector("[data-stale]")).to.equal(null);
+    const alert = root?.firstElementChild;
+    expect(alert?.getAttribute("role")).to.equal("alert");
+    expect(alert?.querySelector("[data-alert-message]")?.textContent).to.equal("サーバーに接続できませんでした。");
+  });
+
+  it("ページ遷移（#main の差し替え）で、前のページのアラートを消す", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div>${alertMarkup}<main id="main"></main></div>`);
+    const main = holder.querySelector("#main");
+    main?.dispatchEvent(new CustomEvent("htmx:beforeSwap", { bubbles: true, detail: { target: main } }));
+    expect(holder.querySelector("#alert-root")?.children.length).to.equal(0);
   });
 });
 

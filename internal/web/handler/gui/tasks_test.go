@@ -332,7 +332,7 @@ func TestCancelTask(t *testing.T) {
 		status(t, res, http.StatusNotFound)
 		contains(t, res, `data-error-code="not_found"`, `role="alert"`)
 		lacks(t, res, "<html")
-		if res.Header.Get("HX-Retarget") != "#toast-root" || res.Header.Get("HX-Reswap") != "beforeend" {
+		if res.Header.Get("HX-Retarget") != "#alert-root" || res.Header.Get("HX-Reswap") != "innerHTML" {
 			t.Errorf("retarget headers = %q / %q", res.Header.Get("HX-Retarget"), res.Header.Get("HX-Reswap"))
 		}
 	})

@@ -94,7 +94,7 @@ templ AppForm(f view.AppForm, oob bool) {
 		<div class="flex items-center gap-3">
 			@atoms.Button(atoms.ButtonProps{Label: appFormSubmitLabel(f), Variant: atoms.ButtonPrimary, Type: "submit"})
 			if f.ID != "" {
-				@atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+				@atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonGhost, Attrs: atoms.Attrs{
 					"hx-get": f.CancelURL, "hx-target": "#app-list", "hx-swap": "outerHTML",
 				}})
 			}
