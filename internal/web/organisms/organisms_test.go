@@ -208,6 +208,17 @@ func TestConnectionRequestListApprovalModeOnlyShowsAvailableModes(t *testing.T) 
 	hasNot(t, empty, "<button", "/approve")
 }
 
+// 補助テキスト（text-mute）の段落に入れた <code> チップは、--accent-soft 地の上で AA 4.5:1 を保つため文字色を --ink にする（C6）。
+func TestMuteParagraphCodeChipsAreInk(t *testing.T) {
+	chip := func(v string) string {
+		return `<code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">` + v + `</code>`
+	}
+	client := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc", NodeID: "node-1"}))
+	has(t, client, chip("node-1"))
+	request := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", RemoteIP: "100.64.0.9"}}}))
+	has(t, request, chip("100.64.0.9"))
+}
+
 // 接続要求の履歴: 6 列の表・結果のバッジ・読み取り専用（操作なし）。前後のページへのリンクは、その向きのページがあるときだけ出る。
 func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	rows := []view.HistoryRow{
