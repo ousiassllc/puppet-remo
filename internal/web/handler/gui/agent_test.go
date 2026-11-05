@@ -240,7 +240,7 @@ func TestSaveAgentWithoutKeyIsConflict(t *testing.T) {
 	}
 }
 
-func TestSaveAgentUnexpectedErrorIsGenericToast(t *testing.T) {
+func TestSaveAgentUnexpectedErrorIsGenericAlert(t *testing.T) {
 	r := newRig(t, registered(true, false), func(f *guitest.Fakes) {
 		f.AgentSettings.SaveErr = errors.New("sqlite: disk I/O error at C:/secret/path")
 	})
@@ -461,7 +461,7 @@ func TestSetKeyRejectsEmptyOverlongAndOddKeysWithoutEcho(t *testing.T) {
 	}
 }
 
-// 保存の失敗（実体のエラー文にキーが入っていても）は、トーストにもログにも出さない。
+// 保存の失敗（実体のエラー文にキーが入っていても）は、アラートにもログにも出さない。
 func TestSetKeyFailureNeverLeaksKey(t *testing.T) {
 	f := guitest.New()
 	f.AgentSettings.SetKeyErr = errors.New("credential manager failed for " + canaryKey)

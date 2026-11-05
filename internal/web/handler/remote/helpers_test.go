@@ -189,5 +189,7 @@ func failed(t *testing.T, r resp, wantStatus int, code string) {
 	if got := r.Header.Get("HX-Retarget"); got != "#alert-root" {
 		t.Errorf("HX-Retarget = %q, want #alert-root", got)
 	}
+	// 確認モーダルの確定の失敗は、アラートが暗幕の背面に隠れないようモーダルを閉じる（確認を経ない要求では #modal-root は空で無害）。
+	contains(t, r, `id="modal-root" hx-swap-oob="true"`)
 	lacks(t, r, "<html")
 }

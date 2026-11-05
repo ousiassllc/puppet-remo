@@ -335,7 +335,7 @@ func TestCancelTask(t *testing.T) {
 		r := newRig(t)
 		res := r.post("/tasks/nope/cancel", nil, hx...)
 		status(t, res, http.StatusNotFound)
-		contains(t, res, `data-error-code="not_found"`, `role="alert"`)
+		contains(t, res, `data-error-code="not_found"`, `role="alert"`, `id="modal-root" hx-swap-oob="true"`) // 確認モーダルを閉じる
 		lacks(t, res, "<html")
 		if res.Header.Get("HX-Retarget") != "#alert-root" || res.Header.Get("HX-Reswap") != "innerHTML" {
 			t.Errorf("retarget headers = %q / %q", res.Header.Get("HX-Retarget"), res.Header.Get("HX-Reswap"))

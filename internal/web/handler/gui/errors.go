@@ -9,6 +9,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 )
 
 // codeNotFound は対象（クライアント・トークン）が無いときの data-error-code。API 仕様 §2 に該当するコードが無いため GUI 内で定める。
@@ -55,9 +56,10 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	h.failMessage(c, f.status, f.code, f.message)
 }
 
-// failMessage は message を指定して fail と同じ形で返す。
+// failMessage は message を指定して fail と同じ形で返す。確認モーダルの確定が失敗したとき、アラートが暗幕の背面に
+// 隠れないように、応答にモーダルを閉じる OOB（organisms.ModalClear）を添える（確認を経ないリクエストでは #modal-root が空で、無害）。
 func (h *Handler) failMessage(c *gin.Context, status int, code, message string) {
 	c.Header("HX-Retarget", "#alert-root")
 	c.Header("HX-Reswap", "innerHTML")
-	h.render(c, status, atoms.Alert(errorAlert(code, message)))
+	h.render(c, status, atoms.Alert(errorAlert(code, message)), organisms.ModalClear())
 }

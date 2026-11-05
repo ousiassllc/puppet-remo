@@ -172,7 +172,7 @@ func TestDeleteClient(t *testing.T) {
 
 	for _, res := range []resp{r.get("/clients/c1/delete/confirm", hx...), r.do(http.MethodDelete, "/clients/c1", nil, hx...)} {
 		status(t, res, http.StatusNotFound)
-		contains(t, res, `data-error-code="not_found"`)
+		contains(t, res, `data-error-code="not_found"`, `id="modal-root" hx-swap-oob="true"`) // 確認モーダルの確定の失敗は、モーダルを閉じる
 	}
 }
 

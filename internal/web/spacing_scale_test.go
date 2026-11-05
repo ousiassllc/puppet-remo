@@ -10,7 +10,7 @@ import (
 )
 
 // S2: 余白は 4px 基準（4/8/12/16/24/32/48/64）。2px（`*-0.5`）などスケール外の値は、どの templ でも使わない
-// （docs/architecture/frontend.md §8.5）。
+// （docs/architecture/frontend.md §8.4）。
 func TestTemplsDoNotUseOffScaleSpacing(t *testing.T) {
 	offScale := regexp.MustCompile(`\b(?:-?(?:m|p)[trblxy]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left)-(?:0\.5|1\.5|2\.5|3\.5|5|7)\b`)
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
@@ -34,7 +34,7 @@ func TestTemplsDoNotUseOffScaleSpacing(t *testing.T) {
 }
 
 // S2: ページの見出し（h1）の下は 24px（`--gap-h1`）。ページの外枠は `space-y-6`（24）で、h1 の直前の行で開く
-// （docs/architecture/frontend.md §8.5）。外枠が `space-y-4`（16）や `space-y-2`（8）だと、ページごとに h1 の下の間隔が違ってしまう。
+// （docs/architecture/frontend.md §8.4）。外枠が `space-y-4`（16）や `space-y-2`（8）だと、ページごとに h1 の下の間隔が違ってしまう。
 func TestPageH1HasGapH1BelowIt(t *testing.T) {
 	const h1 = `<h1 class="text-3xl`
 	found := 0
@@ -68,7 +68,7 @@ func TestPageH1HasGapH1BelowIt(t *testing.T) {
 
 // S2: セクションの見出し（h2・`text-2xl`）の下は 24px（`--gap-h2`）。枠線つきのカード見出し（`border-b`）は
 // 下に padding があるので対象外で、それ以外の h2 は直前の行が `space-y-6` のセクション、または自身が `mb-6`
-// （docs/architecture/frontend.md §8.5）。8px（`space-y-2`・`mb-2`）だと 32px の見出しの直下に本文が詰まる。
+// （docs/architecture/frontend.md §8.4）。8px（`space-y-2`・`mb-2`）だと 32px の見出しの直下に本文が詰まる。
 func TestSectionH2HasGapH2BelowIt(t *testing.T) {
 	const h2 = `<h2 class="text-2xl`
 	const h2WithMargin = `<h2 class="mb-6 text-2xl`

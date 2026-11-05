@@ -8,6 +8,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
@@ -73,11 +74,12 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	h.failMessage(c, f.status, f.code, f.message)
 }
 
-// failMessage は message を指定して fail と同じ形で返す。
+// failMessage は message を指定して fail と同じ形で返す。確認モーダル（強制剥奪）の確定が失敗したとき、アラートが暗幕の
+// 背面に隠れないように、応答にモーダルを閉じる OOB（organisms.ModalClear）を添える（確認を経ないリクエストでは #modal-root が空で、無害）。
 func (h *Handler) failMessage(c *gin.Context, status int, code, message string) {
 	c.Header("HX-Retarget", "#alert-root")
 	c.Header("HX-Reswap", "innerHTML")
-	h.render(c, status, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: code, Heading: "エラー", Message: message, Dismissible: true}))
+	h.render(c, status, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: code, Heading: "エラー", Message: message, Dismissible: true}), organisms.ModalClear())
 }
 
 // failPage はページルートの失敗を、エラーページ（HX-Request なら同じ領域に出すフラグメント）として返す。

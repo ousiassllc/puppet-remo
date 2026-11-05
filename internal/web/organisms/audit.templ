@@ -136,7 +136,7 @@ templ AuditList(v view.AuditList) {
 				<a
 					href={ templ.SafeURL(v.NextURL) }
 					class={ atoms.PagerButtonClass() }
-		data-ripple
+					data-ripple
 					hx-get={ v.NextURL }
 					hx-target="#audit-list"
 					hx-swap="outerHTML"

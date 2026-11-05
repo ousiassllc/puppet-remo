@@ -56,7 +56,7 @@ templ requestHistoryPager(v view.RequestHistory) {
 			<a
 				href={ templ.SafeURL(v.PrevURL) }
 				class={ atoms.PagerButtonClass() }
-		data-ripple
+				data-ripple
 				hx-get={ v.PrevURL }
 				hx-target="#request-history"
 				hx-swap="outerHTML"
@@ -71,7 +71,7 @@ templ requestHistoryPager(v view.RequestHistory) {
 			<a
 				href={ templ.SafeURL(v.NextURL) }
 				class={ atoms.PagerButtonClass() }
-		data-ripple
+				data-ripple
 				hx-get={ v.NextURL }
 				hx-target="#request-history"
 				hx-swap="outerHTML"

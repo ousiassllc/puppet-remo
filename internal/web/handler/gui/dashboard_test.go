@@ -147,7 +147,7 @@ func TestTriggerAndReleaseKillSwitch(t *testing.T) {
 }
 
 func TestKillSwitchErrors(t *testing.T) {
-	t.Run("cleanup failure still shows active state with an error toast", func(t *testing.T) {
+	t.Run("cleanup failure still shows active state with an error alert", func(t *testing.T) {
 		r := newRig(t, func(f *guitest.Fakes) { f.KillSwitch.TriggerErr = errCleanup })
 		res := r.post("/killswitch/trigger", nil, hx...)
 		status(t, res, http.StatusOK)
@@ -195,7 +195,7 @@ func TestUnknownRoutes(t *testing.T) {
 		res := r.do(route[0], route[1], nil, hx...)
 		status(t, res, http.StatusNotFound)
 	}
-	// HTMX の部分更新の 404 はフラグメント（トースト）。
+	// HTMX の部分更新の 404 はフラグメント（インラインアラート）。
 	res := r.get("/nope", hx...)
 	status(t, res, http.StatusNotFound)
 	lacks(t, res, "<html")
