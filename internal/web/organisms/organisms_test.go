@@ -114,6 +114,16 @@ func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	hasNot(t, out, `class="mt-1 space-y-1 text-xs text-mute"`)
 }
 
+// タスク・監査ログの詳細: h2 で始まるセクション同士は、48（--gap-section-sm。space-y-12）で区切る（S5）。
+func TestDetailPagesSeparateSectionsByGapSectionSm(t *testing.T) {
+	task := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1"}))
+	has(t, task, `class="space-y-12" data-task-detail="t1"`)
+	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click"}))
+	has(t, audit, `class="space-y-12" data-audit-detail="click"`)
+	hasNot(t, task, `class="space-y-4" data-task-detail`)
+	hasNot(t, audit, `class="space-y-4" data-audit-detail`)
+}
+
 // ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
 func TestRunningTasksPanel(t *testing.T) {
 	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Client: "claude", PromptExcerpt: "天気を調べる",
@@ -230,6 +240,9 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	if got := strings.Count(tabs, `aria-current="page"`); got != 1 || !strings.Contains(tabs[strings.Index(tabs, `aria-current`):], "履歴") {
 		t.Errorf("exactly the history tab must be current:\n%s", tabs)
 	}
+	// O7・P0: タブは非選択が --mute・選択が --ink（下線 2px の --accent と合わせて現在のタブを伝える）。色の変化は --motion-base。
+	has(t, tabs, "border-accent text-ink", "border-transparent text-mute hover:border-mute hover:text-ink", "motion-hover")
+	hasNot(t, tabs, "border-transparent text-ink")
 }
 
 // 監査ログと更新の項目（FR-S07・FR-S09）: 平文の注意書きは常に出る。値は入力のとおり描画し、エラーは項目別に出す。

@@ -150,7 +150,7 @@ templ AuditList(v view.AuditList) {
 
 // AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。
 templ AuditDetail(v view.AuditDetail) {
-	<div class="space-y-4" data-audit-detail={ v.Event }>
+	<div class="space-y-12" data-audit-detail={ v.Event }>
 		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2">
 			@auditField("日時", v.Time, "time")
 			@auditField("種別", v.Kind, "kind")

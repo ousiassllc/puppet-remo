@@ -73,6 +73,9 @@ func TestAlertTonesIconsAndDismiss(t *testing.T) {
 		out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: tone, Code: "conflict", Heading: "見出し", Message: "本文"}))
 		has(t, out, `role="alert"`, `data-error-code="conflict"`, `data-alert-tone="`+string(tone)+`"`, "border-"+color+"/40", "<svg", "見出し", "本文", "data-alert-message")
 		hasNot(t, out, "data-clear")
+		// 通知の帯は --r-md（8）。--r-lg（12）はカードで、同じ部品群の Notice と角を揃える（S1）。
+		has(t, out, "rounded-md")
+		hasNot(t, out, "rounded-lg")
 	}
 	out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "h", Message: "m", Dismissible: true}))
 	has(t, out, `data-clear="#alert-root"`, `aria-label="閉じる"`, "data-ripple")
@@ -127,14 +130,16 @@ func TestToastIsAShortInkPill(t *testing.T) {
 }
 
 // ボタン: 4 種（主・サブ・ゴースト・危険）。SemiBold・disabled は opacity .4・高さ 40（小は 32）。押下のリップルの対象。
+// 危険は塗りでなく、透明地・--danger の文字・--danger 45% の枠（O7。主より弱い見た目）。
 func TestButtonVariantsAndSizes(t *testing.T) {
 	for v, want := range map[atoms.ButtonVariant]string{
-		atoms.ButtonPrimary: "bg-accent text-bone", atoms.ButtonDanger: "bg-danger text-bone",
+		atoms.ButtonPrimary: "bg-accent text-bone", atoms.ButtonDanger: "border border-danger/45 bg-transparent text-danger hover:bg-danger/10",
 		atoms.ButtonSecondary: "border border-border", atoms.ButtonGhost: "bg-transparent text-ink",
 	} {
 		out := webtest.Render(t, atoms.Button(atoms.ButtonProps{Label: "操作", Variant: v}))
 		has(t, out, want, "font-semibold", "disabled:opacity-40", "rounded-md", "h-10", "data-ripple", "motion-hover")
 		hasNot(t, out, "font-medium", "disabled:opacity-50")
+		hasNot(t, out, "bg-danger text-bone")
 	}
 	small := webtest.Render(t, atoms.Button(atoms.ButtonProps{Label: "操作", Small: true}))
 	has(t, small, "h-8", "text-sm")
@@ -206,7 +211,9 @@ func TestEmptyState(t *testing.T) {
 // 確認モーダル: --z-modal・rounded-xl・影はモーダルだけ。外側（スクラム）のクリックは app.ts が閉じる（#modal の id が目印）。
 func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	out := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "削除しますか？", Message: "元に戻せません。", Label: "削除する", ConfirmURL: "/x", Method: "delete", Target: "#t", Swap: "outerHTML"}))
-	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "shadow-modal", "motion-fade-in", "motion-rise-in")
+	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "shadow-modal", "motion-modal-in", "motion-modal-rise-in")
+	// M5: モーダルの出現は --motion-slow（280ms）の専用クラス。出現 320ms の motion-fade-in・motion-rise-in は使わない。
+	hasNot(t, out, "motion-fade-in", "motion-rise-in")
 	hasNot(t, out, "shadow-xl", "z-40")
 }
 

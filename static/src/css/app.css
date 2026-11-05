@@ -28,6 +28,7 @@
   --info: #4a5a6a;
   --scrim: rgb(5 5 5 / 0.4);
   --ring: color-mix(in srgb, var(--focus) 40%, transparent);
+  --shadow-modal-color: rgb(0 0 0 / 0.06);
 }
 
 [data-theme="dark"] {
@@ -44,6 +45,7 @@
   --danger: #c49a9a;
   --info: #9aabbc;
   --scrim: rgb(0 0 0 / 0.6);
+  --shadow-modal-color: rgb(0 0 0 / 0.4);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -61,6 +63,7 @@
     --danger: #c49a9a;
     --info: #9aabbc;
     --scrim: rgb(0 0 0 / 0.6);
+    --shadow-modal-color: rgb(0 0 0 / 0.4);
   }
 }
 
@@ -89,20 +92,84 @@
 }
 
 /* ---- 形・余白・線・影（S1〜S4）----
+ * ガイドの名前付きトークン（--r-*・--s-*・--gap-*・--pad-card*・--menu-*・--toast-*・--icon-*・--table-*）は、ここの :root に 1 か所だけ定義する。
+ * Tailwind の --radius-*・--spacing は、これらを var() で参照する（ユーティリティの rounded-md・p-6 と、docs やコメントの名前が同じ値を指す）。
  * 角丸は none 0 / sm 4（タグ・チェック）/ md 8（入力・ボタン）/ lg 12（カード）/ xl 16（モーダル）/ full（ピル・アバター）。
  * 影は使わない。モーダルだけ shadow-modal（カード・パネル・入力・トーストは影なしで、1px の --border で区切る）。
  * 余白は 4px 基準（Tailwind の spacing の倍数）。スケール外の値（2・6・10・20px）は使わない。 */
+:root {
+  --r-none: 0;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-full: 9999px;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  --gap-menu: var(--s-2);
+  --menu-item-h: 40px;
+  --menu-pad-x: var(--s-3);
+  --gap-option: var(--s-1);
+  --gap-grid: var(--s-4);
+  --gap-grid-lg: var(--s-6);
+  --gap-grid-dense: var(--s-3);
+  --gap-label: var(--s-2);
+  --gap-help: var(--s-1);
+  --gap-field: var(--s-4);
+  --gap-h1: var(--s-6);
+  --gap-h2: var(--s-6);
+  --gap-h3: var(--s-3);
+  --gap-heading-body: var(--s-2);
+  --gap-para: var(--s-4);
+  --pad-card: var(--s-6);
+  --pad-card-sm: var(--s-4);
+  --gap-card-section: var(--s-6);
+  --gap-inline: var(--s-2);
+  --gap-section: 72px;
+  --gap-section-sm: var(--s-12);
+
+  --toast-h: 40px;
+  --toast-duration: 3s;
+  --toast-duration-action: 5s;
+  --toast-offset: var(--s-6);
+
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --icon-xl: 32px;
+
+  --table-head-size: 12px;
+  --table-body-size: 14px;
+  --table-row-hover: var(--accent-soft);
+  --table-divider: var(--border);
+}
+
 @theme {
+  --spacing: var(--s-1);
+
   --radius-*: initial;
-  --radius-none: 0;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-full: 9999px;
+  --radius-none: var(--r-none);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-full: var(--r-full);
 
   --shadow-*: initial;
-  --shadow-modal: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+/* モーダルの影の色だけをテーマで切り替える（ライト 6%・ダーク 40%。:root・[data-theme="dark"] の --shadow-modal-color）。
+ * 値を埋め込まず変数のまま参照させるため inline にする。 */
+@theme inline {
+  --shadow-modal: 0 1px 2px var(--shadow-modal-color);
 }
 
 /* ---- タイポグラフィ（T1〜T4）----
@@ -182,6 +249,20 @@
     outline-offset: 0;
     border-color: var(--focus);
     box-shadow: 0 0 0 2px var(--ring);
+  }
+
+  /* 不正な入力欄（aria-invalid。atoms.Input / Textarea が付ける）は、枠が --danger なので、フォーカスの輪も --danger の 40% にする（C3・C4）。 */
+  input:not([type="checkbox"], [type="radio"], [type="range"])[aria-invalid="true"]:focus-visible,
+  select[aria-invalid="true"]:focus-visible,
+  textarea[aria-invalid="true"]:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
+  }
+
+  /* プレースホルダーは --mute（C6）。Tailwind の既定（文字色の 50% 混色）にしない。 */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--mute);
+    opacity: 1;
   }
 }
 
@@ -349,6 +430,20 @@
   .motion-rise-in[data-leaving] {
     animation: motion-rise-out var(--motion-fade-out) var(--ease-in) both;
     pointer-events: none;
+  }
+
+  /* 確認モーダルの出現（M1・M5）: 時間は --motion-slow（280ms）・ease-out。--motion-slow はモバイルナビのドロワー・リップルと同じ帯。
+   * スクラム（#modal）は fade だけ、パネルは rise。退出は #modal（スクラム）だけに data-leaving が付く（app.ts の clearWithFade）ので、
+   * パネル側に退出の規則は要らない。reduced-motion では --motion-slow が 100ms・--motion-shift が 0 になる。 */
+  .motion-modal-in {
+    animation: motion-fade-in var(--motion-slow) var(--ease-out) both;
+  }
+  .motion-modal-in[data-leaving] {
+    animation: motion-fade-out var(--motion-fade-out) var(--ease-in) both;
+    pointer-events: none;
+  }
+  .motion-modal-rise-in {
+    animation: motion-rise-in var(--motion-slow) var(--ease-out) both;
   }
 
   /* ホバーは色・背景だけ・180ms 以内（M1）。 */

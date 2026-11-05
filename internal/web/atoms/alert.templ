@@ -23,7 +23,7 @@ type AlertProps struct {
 }
 
 func alertClass(t AlertTone) string {
-	base := "motion-rise-in flex items-start gap-3 rounded-lg border px-4 py-3 text-sm "
+	base := "motion-rise-in flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
 	switch t {
 	case AlertSuccess:
 		return base + "border-success/40 bg-success/10 text-success"

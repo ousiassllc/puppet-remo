@@ -17,11 +17,11 @@ import (
 )
 
 func requestsTabClass(active bool) string {
-	base := "inline-flex items-center border-b-2 px-3 py-2 text-sm "
+	base := "motion-hover inline-flex items-center border-b-2 px-3 py-2 text-sm "
 	if active {
 		return base + "border-accent text-ink"
 	}
-	return base + "border-transparent text-ink hover:border-mute hover:text-ink"
+	return base + "border-transparent text-mute hover:border-mute hover:text-ink"
 }
 
 func requestsTabAttrs(active bool) atoms.Attrs {
