@@ -432,6 +432,20 @@
     pointer-events: none;
   }
 
+  /* 確認モーダルの出現（M1・M5）: 時間は --motion-slow（280ms）・ease-out。--motion-slow はモバイルナビのドロワー・リップルと同じ帯。
+   * スクラム（#modal）は fade だけ、パネルは rise。退出は #modal（スクラム）だけに data-leaving が付く（app.ts の clearWithFade）ので、
+   * パネル側に退出の規則は要らない。reduced-motion では --motion-slow が 100ms・--motion-shift が 0 になる。 */
+  .motion-modal-in {
+    animation: motion-fade-in var(--motion-slow) var(--ease-out) both;
+  }
+  .motion-modal-in[data-leaving] {
+    animation: motion-fade-out var(--motion-fade-out) var(--ease-in) both;
+    pointer-events: none;
+  }
+  .motion-modal-rise-in {
+    animation: motion-rise-in var(--motion-slow) var(--ease-out) both;
+  }
+
   /* ホバーは色・背景だけ・180ms 以内（M1）。 */
   .motion-hover {
     transition: color var(--motion-base) var(--ease-out), background-color var(--motion-base) var(--ease-out),

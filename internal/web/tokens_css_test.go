@@ -87,3 +87,17 @@ func TestInvalidFieldFocusRingIsDanger(t *testing.T) {
 		t.Error("app.css must give [aria-invalid=\"true\"]:focus-visible a --danger 40% ring")
 	}
 }
+
+// M1・M5: 確認モーダルの出現は --motion-slow（280ms）・--ease-out。退出は #modal（スクラム）の data-leaving で --motion-fade-out。
+func TestModalMotionUsesTheSlowBand(t *testing.T) {
+	css := readAppCSS(t)
+	for name, pattern := range map[string]string{
+		".motion-modal-in":               `\.motion-modal-in \{\s*animation: motion-fade-in var\(--motion-slow\) var\(--ease-out\) both;`,
+		".motion-modal-in[data-leaving]": `\.motion-modal-in\[data-leaving\] \{\s*animation: motion-fade-out var\(--motion-fade-out\) var\(--ease-in\) both;`,
+		".motion-modal-rise-in":          `\.motion-modal-rise-in \{\s*animation: motion-rise-in var\(--motion-slow\) var\(--ease-out\) both;`,
+	} {
+		if !regexp.MustCompile(pattern).MatchString(css) {
+			t.Errorf("app.css must define %s with the --motion-slow band", name)
+		}
+	}
+}
