@@ -91,7 +91,7 @@ func TestSidebarIsADrawerBelowMd(t *testing.T) {
 		t.Fatal("no sidebar nav")
 	}
 	nav := res.Body[start : start+strings.Index(res.Body[start:], ">")]
-	for _, want := range []string{"nav-drawer", "fixed", "inset-y-0", "left-0", "z-(--z-drawer)", "w-60", "max-w-[85vw]", "md:static"} {
+	for _, want := range []string{"nav-drawer", "fixed", "inset-y-0", "left-0", "z-(--z-drawer)", "w-[78%]", "md:w-60", "md:static"} {
 		if !strings.Contains(nav, want) {
 			t.Errorf("sidebar nav lacks %q: %s", want, nav)
 		}
