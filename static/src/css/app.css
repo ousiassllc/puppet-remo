@@ -46,7 +46,6 @@
   --danger: #c49a9a;
   --info: #9aabbc;
   --scrim: rgb(5 5 5 / 0.6);
-  --shadow-modal-color: rgb(0 0 0 / 0.4);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -65,7 +64,6 @@
     --danger: #c49a9a;
     --info: #9aabbc;
     --scrim: rgb(5 5 5 / 0.6);
-    --shadow-modal-color: rgb(0 0 0 / 0.4);
   }
 }
 
@@ -178,7 +176,7 @@
   --shadow-*: initial;
 }
 
-/* モーダルの影の色だけをテーマで切り替える（ライト 6%・ダーク 40%。:root・[data-theme="dark"] の --shadow-modal-color）。
+/* モーダルの影（S3）はガイドの 1 値（0 1px 2px rgba(0,0,0,.06)）で、ライト・ダークで変えない。色は :root の --shadow-modal-color 1 か所。
  * 値を埋め込まず変数のまま参照させるため inline にする。 */
 @theme inline {
   --shadow-modal: 0 1px 2px var(--shadow-modal-color);

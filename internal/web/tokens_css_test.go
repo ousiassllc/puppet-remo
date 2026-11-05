@@ -54,21 +54,21 @@ func TestTailwindThemeReferencesTheNamedTokens(t *testing.T) {
 	}
 }
 
-// S3・C5: モーダルの影の色はテーマで切り替える。ライトは 6%、ダークは 40%（--bone の背面に載る --surface のモーダルで影が見えるように）。
-// ダークの値は [data-theme="dark"] と prefers-color-scheme の 2 か所に置く。
-func TestModalShadowColorIsDarkAware(t *testing.T) {
+// S3: モーダルの影はガイドの 1 値（0 1px 2px rgba(0,0,0,.06)）で、ライト・ダークで変えない。
+// 色は :root の --shadow-modal-color 1 か所だけで、ダークの再定義（[data-theme="dark"]・prefers-color-scheme）は置かない。
+func TestModalShadowColorIsASingleValue(t *testing.T) {
 	css := readAppCSS(t)
-	if got := strings.Count(css, "--shadow-modal-color: rgb(0 0 0 / 0.06);"); got != 1 {
-		t.Errorf("light --shadow-modal-color defined %d times, want 1", got)
+	if got := strings.Count(css, "--shadow-modal-color:"); got != 1 {
+		t.Errorf("--shadow-modal-color defined %d times, want 1 (no per-theme override)", got)
 	}
-	if got := strings.Count(css, "--shadow-modal-color: rgb(0 0 0 / 0.4);"); got != 2 {
-		t.Errorf("dark --shadow-modal-color defined %d times, want 2 ([data-theme=\"dark\"] and prefers-color-scheme)", got)
+	if !regexp.MustCompile(`(?s):root \{[^}]*--shadow-modal-color: rgb\(0 0 0 / 0\.06\);`).MatchString(css) {
+		t.Error("--shadow-modal-color must be rgb(0 0 0 / 0.06) in :root")
 	}
 	if !strings.Contains(css, "--shadow-modal: 0 1px 2px var(--shadow-modal-color);") {
 		t.Error("--shadow-modal must reference --shadow-modal-color")
 	}
 	if !regexp.MustCompile(`@theme inline \{[^}]*--shadow-modal:`).MatchString(css) {
-		t.Error("--shadow-modal must be in @theme inline so that the utility keeps the variable instead of inlining the light value")
+		t.Error("--shadow-modal must be in @theme inline so that the utility keeps the variable")
 	}
 }
 
