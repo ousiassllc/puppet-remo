@@ -24,7 +24,15 @@ func confirmAttrs(m view.ConfirmModal) atoms.Attrs {
 	return a
 }
 
-// Modal は破壊的な操作の確認ダイアログ。サーバーが描画し、確定のボタンだけが実際の操作を送る（§5.4）。
+// confirmVariant は確定ボタンの種類。破壊的な操作だけ危険（--danger）で、キルスイッチの解除・更新の適用のような破壊的でない確認は主（O7）。
+func confirmVariant(m view.ConfirmModal) atoms.ButtonVariant {
+	if m.Destructive {
+		return atoms.ButtonDanger
+	}
+	return atoms.ButtonPrimary
+}
+
+// Modal は確認ダイアログ（O2）。サーバーが描画し、確定のボタンだけが実際の操作を送る（§5.4）。
 // 確認用の GET が #modal-root に差し込み、キャンセルは app.ts が data-clear の対象（#modal-root）を空にする。
 // 確定の応答は OOB で #modal-root を空にする（organisms.ModalClear）。
 func Modal(m view.ConfirmModal) templ.Component {
@@ -55,7 +63,7 @@ func Modal(m view.ConfirmModal) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(m.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 25, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 33, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -68,7 +76,7 @@ func Modal(m view.ConfirmModal) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(m.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 26, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 34, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -82,7 +90,7 @@ func Modal(m view.ConfirmModal) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: m.Label, Variant: atoms.ButtonDanger, Attrs: confirmAttrs(m)}).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: m.Label, Variant: confirmVariant(m), Attrs: confirmAttrs(m)}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

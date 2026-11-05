@@ -87,7 +87,7 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint")
 	v.RevokeHint = "タスクが中断されます"
 	// 警告は Notice（アイコン + 本文色 + 状態色の枠）で出す（C4）。
-	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning/40", "<svg", "タスクが中断されます")
+	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning-line", "<svg", "タスクが中断されます")
 	// 剥奪できない保持者には、ヒントがあってもボタンごと出さない。
 	v.CanRevoke = false
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint", "強制剥奪")
@@ -665,7 +665,7 @@ func TestStatusMessagesUseNotice(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"/40", "bg-"+tt.tone+"/10", "text-ink", "<svg")...)
+			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"-line", "bg-"+tt.tone+"-wash", "text-ink", "<svg")...)
 			// 操作の結果として現れるもの（422 の再描画・アクションの応答・状態の切り替わり）はフェードイン、常設のものは静か（M5）。
 			if tt.rises {
 				has(t, tt.out, "motion-rise-in")

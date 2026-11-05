@@ -225,7 +225,7 @@ type TokenReveal struct {
 	ExpiresAt string
 }
 
-// ConfirmModal は破壊的な操作の確認モーダル（サーバーが描画し、確定のボタンだけが実際の操作を送る）。
+// ConfirmModal は確認モーダル（サーバーが描画し、確定のボタンだけが実際の操作を送る）。
 type ConfirmModal struct {
 	Title      string
 	Message    string
@@ -234,6 +234,9 @@ type ConfirmModal struct {
 	Target     string // 結果を差し込む先の CSS セレクタ
 	Swap       string
 	Label      string // 確定ボタンの文言
+	// Destructive は取り返しのつかない操作（削除・失効・剥奪・中断）か。true なら確定ボタンは危険（--danger）、false なら主（O7）。
+	// 既定の見た目を持たせないので、呼び出し側が必ず明示する。
+	Destructive bool
 }
 
 // SettingsValues は設定フォームの入力値（検証エラー時は入力されたままの文字列）。

@@ -159,6 +159,7 @@ func TestConfirmApplyUpdate(t *testing.T) {
 	res := r.get("/update/apply/confirm", hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `role="dialog"`, "更新を適用しますか？", "0.1.1", `hx-post="/update/apply"`, `hx-target="#update-panel"`, "キャンセル", `data-clear="#modal-root"`)
+	lacks(t, res, "text-danger", "border-danger") // インストーラの起動は破壊的でないので、確定は危険色にしない（O7）
 
 	// 適用できる更新がなければ、モーダルを出さない。
 	r = newRig(t)
