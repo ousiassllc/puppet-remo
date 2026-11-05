@@ -91,7 +91,7 @@ templ TaskList(v view.TaskList) {
 					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
 							<tr class="hover:bg-accent-soft" data-task-row={ r.DetailURL } data-status={ r.Code }>
-								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Created }</td>
+								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Created }</td>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y)">
 									<a
 										href={ templ.SafeURL(r.DetailURL) }
@@ -250,7 +250,7 @@ templ TaskDetail(v view.TaskDetail) {
 									<td class="px-(--table-pad-x) py-(--table-pad-y)">
 										@atoms.Badge(badgeTone(s.ResultTone), s.Result)
 									</td>
-									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ s.At }</td>
+									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ s.At }</td>
 									<td class="px-(--table-pad-x) py-(--table-pad-y)">
 										if s.ThumbURL != "" {
 											<img

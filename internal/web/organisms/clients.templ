@@ -140,9 +140,9 @@ templ TokenList(v view.TokenList, oob bool) {
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ t.Prefix }…</code></td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">@atoms.Badge(tone(t.StatusTone), t.Status)
 </td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.CreatedAt }</td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.ExpiresAt }</td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.LastUsedAt }</td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.CreatedAt }</td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.ExpiresAt }</td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.LastUsedAt }</td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-right">
 								if t.CanRevoke {
 									@atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{

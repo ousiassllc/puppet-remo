@@ -521,6 +521,21 @@ func TestAuditTableFollowsTheTableSpec(t *testing.T) {
 	hasNot(t, out, "bg-slate-50", "shadow-sm", "px-3 py-2")
 }
 
+// 日時の列（桁を揃えて比べる値）は JetBrains Mono（T5）。左寄せのままでよい。
+func TestTableDateTimeCellsUseMono(t *testing.T) {
+	const mono = `font-mono text-ink">`
+	audit := webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1", Time: "2026-11-01 10:00:00"}}}))
+	has(t, audit, mono+"2026-11-01 10:00:00<")
+	history := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1, Rows: []view.HistoryRow{{ID: "r1", ReceivedAt: "2026-11-01 10:00", DecidedAt: "2026-11-01 10:05"}}}))
+	has(t, history, mono+"2026-11-01 10:00<", mono+"2026-11-01 10:05<")
+	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: []view.LogRow{{Time: "2026-11-01 09:00:03", Level: "INFO"}}}))
+	has(t, log, mono+"2026-11-01 09:00:03<")
+	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{{DetailURL: "/tasks/t1", Created: "2026-11-01 08:00"}}}))
+	has(t, tasks, mono+"2026-11-01 08:00<")
+	tokens := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "a", CreatedAt: "2026-10-01", ExpiresAt: "2027-10-01", LastUsedAt: "2026-11-01"}}}, false))
+	has(t, tokens, mono+"2026-10-01<", mono+"2027-10-01<", mono+"2026-11-01<")
+}
+
 // 空状態は molecules.EmptyState（破線・アイコン + 文言）を使う。
 func TestEmptyListsUseTheEmptyState(t *testing.T) {
 	out := webtest.Render(t, organisms.AuditList(view.AuditList{}))

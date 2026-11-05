@@ -105,7 +105,7 @@ templ AuditList(v view.AuditList) {
 					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
 							<tr class="hover:bg-accent-soft" data-audit-row={ r.DetailURL } data-result={ r.Result }>
-								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Time }</td>
+								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Time }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Client }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Kind }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y)">
