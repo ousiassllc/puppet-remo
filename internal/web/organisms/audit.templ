@@ -59,7 +59,7 @@ templ AuditFilters(f view.AuditFilters) {
 		if f.Errors.Paging != "" {
 			@molecules.FieldError("audit-paging", f.Errors.Paging)
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "絞り込む", Variant: atoms.ButtonPrimary, Type: "submit"})
 			<a href="/audit" class="text-sm link" hx-get="/audit" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true" data-audit-reset>条件をクリア</a>
 		</div>

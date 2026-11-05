@@ -114,20 +114,20 @@ func AppCard(a view.AppRow) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<dl class=\"mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]\"><dt class=\"text-mute\">実行ファイル</dt><dd class=\"min-w-0 break-all\"><code class=\"rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-app-exe>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<dl class=\"mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr] sm:gap-y-2\"><dt class=\"text-mute\">実行ファイル</dt><dd class=\"mb-1 min-w-0 break-all sm:mb-0\"><code class=\"rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-app-exe>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(a.ExePath)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_list.templ`, Line: 25, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_list.templ`, Line: 25, Col: 128}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</code></dd><dt class=\"text-mute\">引数</dt><dd class=\"min-w-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</code></dd><dt class=\"text-mute\">引数</dt><dd class=\"mb-1 min-w-0 sm:mb-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

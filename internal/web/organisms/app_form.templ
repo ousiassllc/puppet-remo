@@ -93,7 +93,7 @@ templ AppForm(f view.AppForm, oob bool) {
 		@molecules.FormField(f.DOMID+"-working-dir", "作業ディレクトリ", "省略すると実行ファイルのあるディレクトリで起動します。絶対パスの既存のディレクトリを指定します。", f.Errors.WorkingDir) {
 			@atoms.Input(atoms.InputProps{ID: f.DOMID + "-working-dir", Name: "working_dir", Value: f.Values.WorkingDir, Invalid: f.Errors.WorkingDir != "", Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: appFormSubmitLabel(f), Variant: atoms.ButtonPrimary, Type: "submit"})
 			if f.ID != "" {
 				@atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonGhost, Attrs: atoms.Attrs{

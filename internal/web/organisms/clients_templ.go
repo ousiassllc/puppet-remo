@@ -179,7 +179,7 @@ func ClientCard(c view.Client) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</ul><div class=\"mt-3 flex flex-wrap items-end gap-3\" data-approval-controls><form class=\"flex items-center gap-2\" hx-patch=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</ul><div class=\"mt-3 flex flex-wrap items-end gap-2\" data-approval-controls><form class=\"flex items-center gap-2\" hx-patch=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

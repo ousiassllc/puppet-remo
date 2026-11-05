@@ -100,7 +100,7 @@ templ SettingsForm(f view.SettingsForm) {
 				@atoms.Select("set-update-mode", "update.apply_mode", updateApplyModeOptions(f.Values.UpdateApplyMode))
 			}
 		</fieldset>
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Spinner("settings-spinner")
 		</div>

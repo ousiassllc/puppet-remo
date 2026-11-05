@@ -122,7 +122,7 @@ templ AgentForm(f view.AgentForm) {
 		@molecules.FormField("agent-approve", "毎回承認するプロセス（1 行に 1 つ）", "これらが前面のウィンドウのとき、操作ごとにホストの承認を求めます。", f.Errors.ApproveProcesses) {
 			@atoms.Textarea(atoms.TextareaProps{ID: "agent-approve", Name: "approve_processes", Value: f.Values.ApproveProcesses, Rows: 3, Invalid: f.Errors.ApproveProcesses != "", Attrs: atoms.Attrs{"spellcheck": "false"}})
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Spinner("agent-spinner")
 		</div>
@@ -178,7 +178,7 @@ templ FastpathForm(f view.FastpathForm) {
 		@molecules.FormField("fastpath-excluded", "除外するラベル（1 行に 1 つ）", "ラベルにこれを含む要素は候補から外します（大文字小文字を区別しない部分一致）。", f.Errors.ExcludedLabels) {
 			@atoms.Textarea(atoms.TextareaProps{ID: "fastpath-excluded", Name: "excluded_labels", Value: f.Values.ExcludedLabels, Rows: 5, Invalid: f.Errors.ExcludedLabels != "", Attrs: atoms.Attrs{"spellcheck": "false"}})
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Spinner("fastpath-spinner")
 		</div>
