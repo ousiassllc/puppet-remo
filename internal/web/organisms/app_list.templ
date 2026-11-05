@@ -32,7 +32,7 @@ templ AppCard(a view.AppRow) {
 				} else if len(a.Args) == 0 {
 					<span class="text-mute">なし</span>
 				} else {
-					<ul class="space-y-1" data-app-args>
+					<ul class="space-y-2" data-app-args>
 						for _, arg := range a.Args {
 							<li class="break-all"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ arg }</code></li>
 						}

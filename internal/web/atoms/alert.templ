@@ -67,7 +67,7 @@ templ Alert(p AlertProps) {
 		@Icon(alertIcon(p.Tone), IconMD)
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold">{ p.Heading }</h3>
-			<p class="text-ink" data-alert-message>{ p.Message }</p>
+			<p class="mt-2 text-ink" data-alert-message>{ p.Message }</p>
 		</div>
 		if p.Dismissible {
 			<button type="button" class="motion-hover inline-flex size-8 shrink-0 items-center justify-center rounded-md text-mute hover:bg-accent-soft hover:text-ink" aria-label="閉じる" data-clear="#alert-root" data-ripple>
@@ -132,7 +132,7 @@ templ notice(tone AlertTone, attrs Attrs, animated bool) {
 		<span class={ noticeIconClass(tone) }>
 			@Icon(alertIcon(tone), IconSM)
 		</span>
-		<div class="min-w-0 flex-1 space-y-1">
+		<div class="min-w-0 flex-1 space-y-2">
 			{ children... }
 		</div>
 	</div>

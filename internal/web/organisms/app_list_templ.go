@@ -160,7 +160,7 @@ func AppCard(a view.AppRow) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<ul class=\"space-y-1\" data-app-args>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<ul class=\"space-y-2\" data-app-args>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

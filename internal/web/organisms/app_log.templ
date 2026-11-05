@@ -80,7 +80,7 @@ templ AppLog(v view.AppLog) {
 								<td class="px-(--table-pad-x) py-(--table-pad-y) align-top">
 									<div class="break-words text-ink">{ r.Message }</div>
 									if len(r.Attrs) > 0 {
-										<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink">
+										<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-2 text-sm text-ink">
 											for _, a := range r.Attrs {
 												<div class="break-all"><dt class="inline text-mute">{ a.Key }</dt><dd class="ml-1 inline">{ a.Value }</dd></div>
 											}

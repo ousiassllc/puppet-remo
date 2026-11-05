@@ -71,7 +71,7 @@ func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 func TestAlertTonesIconsAndDismiss(t *testing.T) {
 	for tone, color := range map[atoms.AlertTone]string{atoms.AlertInfo: "info", atoms.AlertSuccess: "success", atoms.AlertWarning: "warning", atoms.AlertDanger: "danger"} {
 		out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: tone, Code: "conflict", Heading: "見出し", Message: "本文"}))
-		has(t, out, `role="alert"`, `data-error-code="conflict"`, `data-alert-tone="`+string(tone)+`"`, "border-"+color+"-line", "<svg", "見出し", "本文", "data-alert-message")
+		has(t, out, `role="alert"`, `data-error-code="conflict"`, `data-alert-tone="`+string(tone)+`"`, "border-"+color+"-line", "<svg", "見出し", "本文", `<p class="mt-2 text-ink" data-alert-message>`)
 		hasNot(t, out, "data-clear")
 		// 通知の帯は --r-md（8）。--r-lg（12）はカードで、同じ部品群の Notice と角を揃える（S1）。
 		has(t, out, "rounded-md")
@@ -100,7 +100,7 @@ func TestNoticeTonesIconsAndBody(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := sb.String()
-		has(t, out, `role="note"`, `data-notice="n"`, "border-"+color+"-line", "bg-"+color+"-wash", "text-"+color, "<svg", "text-sm text-ink", ">本文</div>")
+		has(t, out, `role="note"`, `data-notice="n"`, "border-"+color+"-line", "bg-"+color+"-wash", "text-"+color, "<svg", "text-sm text-ink", `class="min-w-0 flex-1 space-y-2"`, ">本文</div>")
 		hasNot(t, out, "<h3", "<button", "text-xs")
 		webtest.AssertCSPCompliantHTML(t, out)
 	}
