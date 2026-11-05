@@ -1,8 +1,12 @@
 package atoms_test
 
 import (
+	"context"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/a-h/templ"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
@@ -76,6 +80,24 @@ func TestAlertTonesIconsAndDismiss(t *testing.T) {
 	// 雛形（app.ts が複製する）は role を持たない（ページに常に置くので、常時のエラーに見えないようにする）。
 	tmpl := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "h", Template: true}))
 	hasNot(t, tmpl, `role="alert"`)
+}
+
+// 常設の注意書き: 4 種の状態色の枠・アイコン・本文（本文色 ink）。見出しと閉じるボタンは持たず、role などは attrs で渡す。
+func TestNoticeTonesIconsAndBody(t *testing.T) {
+	for tone, color := range map[atoms.AlertTone]string{atoms.AlertInfo: "info", atoms.AlertSuccess: "success", atoms.AlertWarning: "warning", atoms.AlertDanger: "danger"} {
+		body := templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
+			_, err := io.WriteString(w, "本文")
+			return err
+		})
+		var sb strings.Builder
+		if err := atoms.Notice(tone, atoms.Attrs{"role": "note", "data-notice": "n"}).Render(templ.WithChildren(context.Background(), body), &sb); err != nil {
+			t.Fatal(err)
+		}
+		out := sb.String()
+		has(t, out, `role="note"`, `data-notice="n"`, "border-"+color+"/40", "bg-"+color+"/10", "text-"+color, "<svg", "text-sm text-ink", ">本文</div>")
+		hasNot(t, out, "<h3", "<button", "text-xs")
+		webtest.AssertCSPCompliantHTML(t, out)
+	}
 }
 
 // トースト: 完了の短い通知。ピル・インク地・role や閉じるボタンは持たない（3 秒で自動消去）。エラーの表示には使わない。

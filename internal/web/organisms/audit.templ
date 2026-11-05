@@ -61,7 +61,7 @@ templ AuditFilters(f view.AuditFilters) {
 		}
 		<div class="flex items-center gap-3">
 			@atoms.Button(atoms.ButtonProps{Label: "絞り込む", Variant: atoms.ButtonPrimary, Type: "submit"})
-			<a href="/audit" class="text-sm text-ink hover:underline" hx-get="/audit" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true" data-audit-reset>条件をクリア</a>
+			<a href="/audit" class="text-sm link" hx-get="/audit" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true" data-audit-reset>条件をクリア</a>
 		</div>
 	</form>
 }
@@ -105,7 +105,7 @@ templ AuditList(v view.AuditList) {
 					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
 							<tr class="hover:bg-accent-soft" data-audit-row={ r.DetailURL } data-result={ r.Result }>
-								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Time }</td>
+								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Time }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Client }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Kind }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y)">
@@ -135,7 +135,7 @@ templ AuditList(v view.AuditList) {
 			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
 				<a
 					href={ templ.SafeURL(v.NextURL) }
-					class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+					class={ atoms.PagerButtonClass() }
 		data-ripple
 					hx-get={ v.NextURL }
 					hx-target="#audit-list"

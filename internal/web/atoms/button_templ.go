@@ -37,12 +37,19 @@ func buttonType(t string) string {
 
 // ButtonClass はボタンのクラス。ボタンの見た目にするリンク（<a>）が atoms.Button と同じ見た目になるように、公開している。
 func ButtonClass(v ButtonVariant, small bool) string {
-	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 "
 	if small {
-		base += "h-8 px-3 text-sm "
-	} else {
-		base += "h-10 px-4 text-base "
+		return buttonClass(v, "h-8 px-3 text-sm ")
 	}
+	return buttonClass(v, "h-10 px-4 text-base ")
+}
+
+// PagerButtonClass はページ送り（前へ・次へ）のクラス。ガイドのページネーション（P1）は高さ 36・rounded-md で、小ボタン（32）ではない。
+func PagerButtonClass() string {
+	return buttonClass(ButtonSecondary, "h-9 px-3 text-sm ")
+}
+
+func buttonClass(v ButtonVariant, size string) string {
+	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 " + size
 	switch v {
 	case ButtonDanger:
 		return base + "bg-danger text-bone hover:bg-danger/90"
@@ -89,7 +96,7 @@ func Button(p ButtonProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(buttonType(p.Type))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 52, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 59, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -123,7 +130,7 @@ func Button(p ButtonProps) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 52, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 59, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {

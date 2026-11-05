@@ -55,7 +55,7 @@ templ requestHistoryPager(v view.RequestHistory) {
 		if v.PrevURL != "" {
 			<a
 				href={ templ.SafeURL(v.PrevURL) }
-				class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+				class={ atoms.PagerButtonClass() }
 		data-ripple
 				hx-get={ v.PrevURL }
 				hx-target="#request-history"
@@ -70,7 +70,7 @@ templ requestHistoryPager(v view.RequestHistory) {
 		if v.NextURL != "" {
 			<a
 				href={ templ.SafeURL(v.NextURL) }
-				class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+				class={ atoms.PagerButtonClass() }
 		data-ripple
 				hx-get={ v.NextURL }
 				hx-target="#request-history"
@@ -108,14 +108,14 @@ templ ConnectionRequestHistory(v view.RequestHistory) {
 					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
 							<tr class="hover:bg-accent-soft" data-history-request={ r.ID } data-result={ r.ResultCode }>
-								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.ReceivedAt }</td>
+								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.ReceivedAt }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.DisplayName }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y)"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ r.RemoteIP }</code></td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.LoginName }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y)">
 									@atoms.Badge(badgeTone(r.ResultTone), r.Result)
 								</td>
-								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.DecidedAt }</td>
+								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.DecidedAt }</td>
 							</tr>
 						}
 					</tbody>

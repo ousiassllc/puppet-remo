@@ -53,7 +53,7 @@ func logPagerLink(url, label string, attrs atoms.Attrs) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{atoms.ButtonClass(atoms.ButtonSecondary, true)}
+		var templ_7745c5c3_Var2 = []any{atoms.PagerButtonClass()}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -296,14 +296,14 @@ func AppLog(v view.AppLog) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><td class=\"whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) align-top text-ink\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><td class=\"whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) align-top font-mono text-ink\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(r.Time)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_log.templ`, Line: 76, Col: 103}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_log.templ`, Line: 76, Col: 113}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {

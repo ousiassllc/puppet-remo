@@ -19,12 +19,28 @@ templ HeaderKillSwitch(active bool) {
 
 // Header は全画面共通のヘッダー。
 templ Header(h view.Header) {
-	<header class="flex h-14 items-center justify-between border-b border-border bg-surface px-6">
-		<span class="text-base text-ink">puppet-remo ホスト</span>
+	<header class="flex h-14 items-center justify-between border-b border-border bg-surface px-4 md:px-6">
+		<div class="flex items-center gap-2">
+			@navToggle()
+			<span class="text-base text-ink">puppet-remo ホスト</span>
+		</div>
 		<div id="header-killswitch">
 			@HeaderKillSwitch(h.KillSwitchActive)
 		</div>
 	</header>
+}
+
+// navToggle は狭い幅（md 未満）でだけ出す、ナビのドロワーを開閉するハンバーガー（P0）。開閉は app.ts が body の data-nav-open で持つ。
+templ navToggle() {
+	<button type="button" class="motion-hover inline-flex size-10 shrink-0 items-center justify-center rounded-md text-ink hover:bg-accent-soft md:hidden" aria-label="メニューを開く" aria-controls="sidebar-nav" aria-expanded="false" data-nav-toggle data-ripple>
+		@atoms.Icon(atoms.IconMenu, atoms.IconLG)
+	</button>
+}
+
+// NavScrim はドロワーを開いたときの暗幕（O1）。クリックで閉じる（app.ts）。狭い幅のときだけ働く（md 以上はナビが常時見える）。
+// ナビの OOB の差し替え（Sidebar）に巻き込まれないよう、ナビの外に置く。
+templ NavScrim() {
+	<div id="nav-scrim" class="nav-scrim fixed inset-0 z-(--z-drawer) bg-scrim md:hidden" aria-hidden="true"></div>
 }
 
 // HeaderKillSwitchOOB はアクションの応答・GET /poll の応答に添えて、ヘッダーのバッジを更新する（OOB）。
@@ -34,11 +50,18 @@ templ HeaderKillSwitchOOB(active bool) {
 	</div>
 }
 
-// RequestsBadge はサイドバーの接続要求の件数（0 件なら何も出さない）。
+// RequestsBadge はサイドバーの接続要求の件数（0 件なら何も出さない）。通知バッジ数（P1）: --accent 地 + --bone 字・11px Mono・最小 18px。99 を超える件数は 99+ にする。
 templ RequestsBadge(n int) {
 	if n > 0 {
-		<span class="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger px-1.5 font-mono text-xs text-bone" data-pending-count={ strconv.Itoa(n) }>{ strconv.Itoa(n) }</span>
+		<span class="ml-auto inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-accent px-1 font-mono text-2xs text-bone" data-pending-count={ strconv.Itoa(n) }>{ badgeCount(n) }</span>
 	}
+}
+
+func badgeCount(n int) string {
+	if n > 99 {
+		return "99+"
+	}
+	return strconv.Itoa(n)
 }
 
 // RequestsBadgeOOB はアクションの応答・GET /poll の応答に添えて、件数バッジを更新する（OOB）。
@@ -91,9 +114,11 @@ func oobAttrs(oob bool) atoms.Attrs {
 
 // Sidebar はホスト GUI のナビゲーション。ページ遷移は hx-boost で #main だけを差し替える（§5.4）。
 // ブートされた遷移の応答は oob = true で添えて、現在のページの強調を更新する。
+// md（768px）未満では左のドロワー（固定・幅 240。ハンバーガー（navToggle）で開き、スクラム・リンク・Esc で閉じる。P0）、md 以上は常時見える左のカラム。
+// 開閉の状態は body の data-nav-open（app.ts）で、見た目は app.css の .nav-drawer。
 templ Sidebar(c view.Chrome, oob bool) {
-	<nav id="sidebar-nav" class="flex w-full shrink-0 flex-wrap gap-2 border-b border-border bg-surface p-3 md:block md:w-60 md:space-y-2 md:border-b-0 md:border-r" aria-label="メイン" { oobAttrs(oob)... }>
-		<p class="w-full px-3 pb-2 pt-1 text-xs text-mute">メニュー</p>
+	<nav id="sidebar-nav" class="nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-60 max-w-[85vw] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:overflow-visible" aria-label="メイン" { oobAttrs(oob)... }>
+		<p class="px-3 pb-2 pt-1 text-xs text-mute">メニュー</p>
 		for _, it := range navItems {
 			<a
 				href={ templ.SafeURL(it.URL) }

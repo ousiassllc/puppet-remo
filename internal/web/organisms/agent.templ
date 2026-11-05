@@ -31,7 +31,7 @@ templ APIKeyPanel(p view.APIKeyPanel) {
 			@molecules.FormField(p.ID+"-input", keyInputLabel(p.Registered), "", p.Error) {
 				@atoms.SecretInput(p.ID+"-input", "api_key", p.Error != "")
 			}
-			<p class="text-xs text-mute" data-notice="key-storage">
+			<p class="text-sm text-ink" data-notice="key-storage">
 				キーは Windows の資格情報マネージャー（{ p.Target }）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。
 			</p>
 			<div class="flex flex-wrap items-center gap-2">
@@ -88,20 +88,20 @@ templ AgentForm(f view.AgentForm) {
 			@atoms.Checkbox("agent-enabled", "enabled", f.Values.Enabled)
 			エージェントを有効にする
 		</label>
-		<p class="text-xs text-mute">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p>
-		<div class="space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2" data-consent="openai">
-			<label class="flex items-start gap-2 text-sm text-warning">
+		<p class="text-sm text-ink">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p>
+		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "openai"}) {
+			<label class="flex items-start gap-2">
 				@atoms.Checkbox("agent-consent", "consent", f.Values.Consent)
 				<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span>
 			</label>
-			<p class="text-xs text-warning">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
+			<p>API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
 			if f.ConsentAt != "" {
-				<p class="text-xs text-warning" data-consent-at="openai">同意済み: { f.ConsentAt }</p>
+				<p class="text-xs text-mute" data-consent-at="openai">同意済み: { f.ConsentAt }</p>
 			}
 			if f.Errors.Consent != "" {
-				<p class="text-xs text-danger" role="alert" data-field-error="agent-consent">{ f.Errors.Consent }</p>
+				<p class="text-sm text-danger" role="alert" data-field-error="agent-consent">{ f.Errors.Consent }</p>
 			}
-		</div>
+		}
 		@molecules.FormField("agent-model", "モデル", "OpenAI のモデル名。既定は gpt-6.1-sol。", f.Errors.Model) {
 			@atoms.Input(atoms.InputProps{ID: "agent-model", Name: "model", Value: f.Values.Model, Required: true, Invalid: f.Errors.Model != "", Attrs: atoms.Attrs{"autocomplete": "off"}})
 		}
@@ -148,20 +148,20 @@ templ FastpathForm(f view.FastpathForm) {
 			@atoms.Checkbox("fastpath-enabled", "enabled", f.Values.Enabled)
 			高速パスを有効にする
 		</label>
-		<p class="text-xs text-mute">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p>
-		<div class="space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2" data-consent="typesafe">
-			<label class="flex items-start gap-2 text-sm text-warning">
+		<p class="text-sm text-ink">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p>
+		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "typesafe"}) {
+			<label class="flex items-start gap-2">
 				@atoms.Checkbox("fastpath-consent", "consent", f.Values.Consent)
 				<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span>
 			</label>
-			<p class="text-xs text-warning">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>
+			<p>スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>
 			if f.ConsentAt != "" {
-				<p class="text-xs text-warning" data-consent-at="typesafe">同意済み: { f.ConsentAt }</p>
+				<p class="text-xs text-mute" data-consent-at="typesafe">同意済み: { f.ConsentAt }</p>
 			}
 			if f.Errors.Consent != "" {
-				<p class="text-xs text-danger" role="alert" data-field-error="fastpath-consent">{ f.Errors.Consent }</p>
+				<p class="text-sm text-danger" role="alert" data-field-error="fastpath-consent">{ f.Errors.Consent }</p>
 			}
-		</div>
+		}
 		@molecules.FormField("fastpath-model", "モデル", "TypeSafe のモデル名。既定は jev-1.13。", f.Errors.Model) {
 			@atoms.Input(atoms.InputProps{ID: "fastpath-model", Name: "model", Value: f.Values.Model, Required: true, Invalid: f.Errors.Model != "", Attrs: atoms.Attrs{"autocomplete": "off"}})
 		}
@@ -186,7 +186,7 @@ templ FastpathForm(f view.FastpathForm) {
 templ AgentSections(v view.AgentSettings) {
 	<div id="agent-sections" class="space-y-6">
 		@molecules.Card("OpenAI エージェント") {
-			<div class="space-y-5">
+			<div class="space-y-6">
 				@APIKeyPanel(v.AgentKey)
 				<div class="border-t border-border pt-4">
 					@AgentForm(v.Agent)
@@ -194,7 +194,7 @@ templ AgentSections(v view.AgentSettings) {
 			</div>
 		}
 		@molecules.Card("高速パス（TypeSafe）") {
-			<div class="space-y-5">
+			<div class="space-y-6">
 				@APIKeyPanel(v.FastpathKey)
 				<div class="border-t border-border pt-4">
 					@FastpathForm(v.Fastpath)

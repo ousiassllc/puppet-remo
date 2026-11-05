@@ -117,7 +117,8 @@ func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
 		}
 		prev = i
 	}
-	for _, want := range []string{`hx-ext="response-targets"`, `X-Puppet-Remo`, `id="toast-root"`, `id="alert-root"`, `id="viewer-root"`, `<remo-screen-viewer`, `<html lang="ja">`} {
+	// ガター（S5）はモバイル 16px・デスクトップ 24px（ホスト GUI と同じ）。
+	for _, want := range []string{`hx-ext="response-targets"`, `X-Puppet-Remo`, `id="toast-root"`, `id="alert-root"`, `id="viewer-root"`, `<remo-screen-viewer`, `<html lang="ja">`, "space-y-4 p-4 md:p-6"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("remote layout lacks %q", want)
 		}

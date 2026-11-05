@@ -30,6 +30,7 @@ templ GUI(title string, c view.Chrome) {
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
 			<div class="flex min-h-screen flex-col md:flex-row">
+				@organisms.NavScrim()
 				@organisms.Sidebar(c, false)
 				<div class="flex min-w-0 flex-1 flex-col">
 					@organisms.Header(c.Header)

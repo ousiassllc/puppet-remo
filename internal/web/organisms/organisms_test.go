@@ -133,7 +133,7 @@ func TestApprovalDialogKinds(t *testing.T) {
 	sc := base
 	sc.Kind, sc.Heading, sc.Summary, sc.Detail, sc.Note = "safety_check", "安全チェック", "要約", "<b>detail</b>", "note"
 	out2 := webtest.Render(t, organisms.ApprovalDialog(sc))
-	has(t, out2, `data-approval-type="safety_check"`, `data-approval-detail>&lt;b&gt;detail&lt;/b&gt;<`, `data-approval-note>note<`)
+	has(t, out2, `data-approval-type="safety_check"`, `data-approval-detail>&lt;b&gt;detail&lt;/b&gt;<`, `data-approval-note`, `>note</div>`)
 	hasNot(t, out2, "<b>detail</b>")
 	for _, o := range []string{out, out2} {
 		webtest.AssertCSPCompliantHTML(t, o)
@@ -508,10 +508,54 @@ func TestToastAndAlertRoots(t *testing.T) {
 // サイドナビ: 幅 240・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
 func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
 	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}, false))
-	has(t, nav, "md:w-60", "md:space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
+	has(t, nav, "w-60", "space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
 	hasNot(t, nav, "bg-slate", "md:w-56")
 	header := webtest.Render(t, organisms.Header(view.Header{}))
 	has(t, header, "h-14", "border-b", "border-border")
+}
+
+// モバイルナビ（P0）: ヘッダーのハンバーガーはドロワーを開閉し（aria-expanded・aria-controls）、md 以上では出さない。
+// スクラムはナビの外にあり、md 以上では出さない。
+func TestMobileNavToggleAndScrim(t *testing.T) {
+	header := webtest.Render(t, organisms.Header(view.Header{}))
+	has(t, header, "data-nav-toggle", `aria-controls="sidebar-nav"`, `aria-expanded="false"`, `aria-label="メニューを開く"`, "md:hidden", "<svg", `d="M3 12H21"`)
+	scrim := webtest.Render(t, organisms.NavScrim())
+	has(t, scrim, `id="nav-scrim"`, "nav-scrim", "bg-scrim", "md:hidden", "z-(--z-drawer)", `aria-hidden="true"`)
+	for _, out := range []string{header, scrim} {
+		webtest.AssertCSPCompliantHTML(t, out)
+	}
+}
+
+// 通知バッジ数（P1）: --accent 地 + --bone 字・11px Mono・最小 18px。状態色にしない。99 を超える件数は 99+。
+func TestRequestsBadgeFollowsTheNotificationBadgeSpec(t *testing.T) {
+	out := webtest.Render(t, organisms.RequestsBadge(3))
+	has(t, out, "bg-accent", "text-bone", "font-mono", "text-2xs", "min-w-4.5", `data-pending-count="3"`, ">3<")
+	hasNot(t, out, "bg-danger", "text-xs")
+	has(t, webtest.Render(t, organisms.RequestsBadge(99)), ">99<")
+	over := webtest.Render(t, organisms.RequestsBadge(100))
+	has(t, over, ">99+<", `data-pending-count="100"`)
+	hasNot(t, webtest.Render(t, organisms.RequestsBadge(0)), "data-pending-count")
+}
+
+// ページ送りのボタンは高さ 36・rounded-md（P1 ページネーション）。小ボタン（32）ではない。
+func TestPagerButtonsAre36pxHigh(t *testing.T) {
+	history := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3",
+		Rows: []view.HistoryRow{{ID: "r1"}}}))
+	has(t, history, "h-9", "rounded-md", "data-pager-prev", "data-pager-next")
+	hasNot(t, history, "h-8")
+	audit := webtest.Render(t, organisms.AuditList(view.AuditList{NextURL: "/audit?cursor=1", Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1"}}}))
+	has(t, audit, "h-9", "data-pager-next")
+	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, NextURL: "/logs?page=2", Rows: []view.LogRow{{Time: "t", Level: "INFO"}}}))
+	has(t, log, "h-9", "data-pager-next")
+	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{NextURL: "/tasks?page=2", Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}}))
+	has(t, tasks, "h-9", "data-pager-next")
+}
+
+// 絞り込みの「条件をクリア」は本文のリンク（.link。下線 --mute）で、ほかのリンクと同じ見た目。
+func TestAuditResetIsABodyLink(t *testing.T) {
+	out := webtest.Render(t, organisms.AuditFilters(view.AuditFilters{}))
+	has(t, out, `class="text-sm link"`, "data-audit-reset")
+	hasNot(t, out, "hover:underline")
 }
 
 // 表: 見出し行は SemiBold 12 の --mute・背景なし。行ホバーは --accent-soft。padding は --table-pad-*。数値列（所要時間）は Mono・右寄せ。
@@ -519,6 +563,21 @@ func TestAuditTableFollowsTheTableSpec(t *testing.T) {
 	out := webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1", Time: "t", Client: "c", Kind: "tool", Event: "e", Result: "ok", ResultTone: view.ToneOK, Duration: "12 ms"}}}))
 	has(t, out, "text-left text-xs font-semibold text-mute", "hover:bg-accent-soft", "px-(--table-pad-x) py-(--table-pad-y)", "text-right font-mono")
 	hasNot(t, out, "bg-slate-50", "shadow-sm", "px-3 py-2")
+}
+
+// 日時の列（桁を揃えて比べる値）は JetBrains Mono（T5）。左寄せのままでよい。
+func TestTableDateTimeCellsUseMono(t *testing.T) {
+	const mono = `font-mono text-ink">`
+	audit := webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1", Time: "2026-11-01 10:00:00"}}}))
+	has(t, audit, mono+"2026-11-01 10:00:00<")
+	history := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1, Rows: []view.HistoryRow{{ID: "r1", ReceivedAt: "2026-11-01 10:00", DecidedAt: "2026-11-01 10:05"}}}))
+	has(t, history, mono+"2026-11-01 10:00<", mono+"2026-11-01 10:05<")
+	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: []view.LogRow{{Time: "2026-11-01 09:00:03", Level: "INFO"}}}))
+	has(t, log, mono+"2026-11-01 09:00:03<")
+	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{{DetailURL: "/tasks/t1", Created: "2026-11-01 08:00"}}}))
+	has(t, tasks, mono+"2026-11-01 08:00<")
+	tokens := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "a", CreatedAt: "2026-10-01", ExpiresAt: "2027-10-01", LastUsedAt: "2026-11-01"}}}, false))
+	has(t, tokens, mono+"2026-10-01<", mono+"2027-10-01<", mono+"2026-11-01<")
 }
 
 // 空状態は molecules.EmptyState（破線・アイコン + 文言）を使う。

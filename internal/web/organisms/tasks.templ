@@ -91,7 +91,7 @@ templ TaskList(v view.TaskList) {
 					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
 							<tr class="hover:bg-accent-soft" data-task-row={ r.DetailURL } data-status={ r.Code }>
-								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Created }</td>
+								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Created }</td>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y)">
 									<a
 										href={ templ.SafeURL(r.DetailURL) }
@@ -119,7 +119,7 @@ templ TaskList(v view.TaskList) {
 			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
 				<a
 					href={ templ.SafeURL(v.NextURL) }
-					class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+					class={ atoms.PagerButtonClass() }
 		data-ripple
 					hx-get={ v.NextURL }
 					hx-target="#task-list"
@@ -190,7 +190,9 @@ templ TaskDetail(v view.TaskDetail) {
 			} else {
 				<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-3 text-sm text-ink" data-task-result>{ v.ResultText }</pre>
 				if v.ResultNote != "" {
-					<p class="rounded-md bg-warning/10 px-3 py-2 text-xs text-warning" data-task-result-note>{ v.ResultNote }</p>
+					@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-task-result-note": true}) {
+						{ v.ResultNote }
+					}
 				}
 			}
 		</section>
@@ -248,7 +250,7 @@ templ TaskDetail(v view.TaskDetail) {
 									<td class="px-(--table-pad-x) py-(--table-pad-y)">
 										@atoms.Badge(badgeTone(s.ResultTone), s.Result)
 									</td>
-									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-ink">{ s.At }</td>
+									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ s.At }</td>
 									<td class="px-(--table-pad-x) py-(--table-pad-y)">
 										if s.ThumbURL != "" {
 											<img

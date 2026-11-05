@@ -27,7 +27,7 @@ func logFilterAttrs(active bool) atoms.Attrs {
 templ logPagerLink(url, label string, attrs atoms.Attrs) {
 	<a
 		href={ templ.SafeURL(url) }
-		class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+		class={ atoms.PagerButtonClass() }
 		data-ripple
 		hx-get={ url }
 		hx-target="#app-log"
@@ -73,7 +73,7 @@ templ AppLog(v view.AppLog) {
 					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
 							<tr class="hover:bg-accent-soft" data-log-level={ r.Level }>
-								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) align-top text-ink">{ r.Time }</td>
+								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) align-top font-mono text-ink">{ r.Time }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) align-top">
 									@atoms.Badge(badgeTone(r.LevelTone), r.Level)
 								</td>

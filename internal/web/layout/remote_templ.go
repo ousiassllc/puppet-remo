@@ -62,7 +62,7 @@ func Remote(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink\">puppet-remo</header><div class=\"mx-auto max-w-7xl space-y-4 p-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink\">puppet-remo</header><div class=\"mx-auto max-w-7xl space-y-4 p-4 md:p-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

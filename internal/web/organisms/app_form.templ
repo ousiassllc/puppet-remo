@@ -75,11 +75,13 @@ templ AppForm(f view.AppForm, oob bool) {
 		{ appFormAttrs(f, oob)... }
 	>
 		<h3 class="text-base font-semibold text-ink">{ appFormTitle(f) }</h3>
-		<p class="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning" role="note" data-notice="interpreter">
+		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "note", "data-notice": "interpreter"}) {
 			cmd.exe・powershell.exe などのコマンドインタープリタやスクリプトホストを登録すると、リモートの AI に任意のコードの実行を許すことになります。信頼できる、目的の決まったアプリだけを登録してください。
-		</p>
+		}
 		if f.Corrupt {
-			<p class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert" data-app-form-corrupt>保存された設定を読めませんでした。引数を入れ直してください。</p>
+			@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-form-corrupt": true}) {
+				保存された設定を読めませんでした。引数を入れ直してください。
+			}
 		}
 		@AppExePathField(view.AppExePathField{FormID: f.DOMID, Value: f.Values.ExePath, Error: f.Errors.ExePath, PickURL: f.PickURL})
 		@molecules.FormField(f.DOMID+"-label", "表示名", "1〜64 文字。MCP のクライアントにはこの名前が見えます（大文字小文字違いを含む重複は登録できません）。", f.Errors.Label) {

@@ -45,7 +45,9 @@ templ ApprovalDialog(v view.ApprovalDialog) {
 			<p class="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone px-3 py-2 text-sm text-ink" data-approval-detail>{ v.Detail }</p>
 		}
 		if v.Note != "" {
-			<p class="rounded-md bg-warning/10 px-3 py-2 text-xs text-warning" data-approval-note>{ v.Note }</p>
+			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-approval-note": true}) {
+				{ v.Note }
+			}
 		}
 		@ApprovalRemaining(v.Remaining)
 		<div id="approval-actions" class="flex gap-2">
