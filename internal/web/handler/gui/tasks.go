@@ -29,9 +29,10 @@ const shortIDLen = 8
 
 const (
 	taskResultNote = "「完了」はモデル（OpenAI）の申告です。実際に目的を達成したかの確認は、依頼元（呼び出し側）の責任です（FR-G13）。"
-	// taskCancelledToast などは中断の応答のトースト。
+	// taskCancelledToast・taskCancelingToast は中断の応答のトースト（info）。
 	taskCancelledToast = "タスクを中断しました。"
-	taskEndedToast     = "このタスクはすでに終了しています。"
+	// taskEndedMessage は終了済みのタスクの文言。中断の応答のトースト（冪等）と、確認モーダルの 409 conflict のインラインアラートの両方に使う。
+	taskEndedMessage   = "このタスクはすでに終了しています。"
 	taskCancelingToast = "タスクの中断を要求しました。"
 )
 
@@ -300,7 +301,7 @@ func (h *Handler) CancelTask(c *gin.Context) {
 		toast = taskCancelledToast
 	default:
 		if t.Status.Terminal() {
-			toast = taskEndedToast
+			toast = taskEndedMessage
 		}
 	}
 	h.render(c, http.StatusOK, organisms.TaskStatus(h.taskStatusView(t)), organisms.ModalClear(), organisms.ToastOOB(infoToast(toast)))
@@ -315,7 +316,7 @@ func (h *Handler) ConfirmCancelTask(c *gin.Context) {
 		return
 	}
 	if d.Status.Terminal() {
-		h.failMessage(c, http.StatusConflict, string(domain.CodeConflict), taskEndedToast)
+		h.failMessage(c, http.StatusConflict, string(domain.CodeConflict), taskEndedMessage)
 		return
 	}
 	h.confirm(c, view.ConfirmModal{
