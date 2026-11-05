@@ -43,7 +43,7 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 					<h3 class="text-xl font-semibold text-ink">{ r.DisplayName }</h3>
 					<span class="text-xs text-mute">{ strconv.Itoa(r.Count) } 回の要求 ・ 初回 { r.FirstSeen } ・ 最終 { r.LastSeen }</span>
 				</div>
-				<p class="mt-1 text-xs text-mute">
+				<p class="mt-2 text-xs text-mute">
 					ユーザー { r.LoginName } ・ 接続元 <code class="rounded-sm bg-accent-soft px-2 py-1">{ r.RemoteIP }</code> ・ { r.ExpiresAt } まで有効
 				</p>
 				<form
