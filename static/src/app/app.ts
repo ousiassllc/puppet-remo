@@ -219,7 +219,7 @@ document.addEventListener("closeWindow", () => {
   })();
 });
 
-// 6. <remo-screen-viewer> が発火する remo:error（bubbles / composed。detail は { code, message }）のトースト。
+// 6. <remo-screen-viewer> が発火する remo:error（bubbles / composed。detail は { code, message }）のインラインアラート。
 // WebSocket の error の message はドメインエラーの文（英語）で、契約はそのまま。利用者向けには code から日本語にする。
 // 文言は HTMX のアクションの失敗（internal/web/handler/remote/errors.go の failureMessages）と揃える。表に無い code はサーバーの message を出す。
 const wsErrorMessages: Readonly<Record<string, string>> = {
