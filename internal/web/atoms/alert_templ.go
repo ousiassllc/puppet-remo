@@ -156,7 +156,7 @@ func Alert(p AlertProps) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if p.Dismissible {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button type=\"button\" class=\"motion-hover shrink-0 rounded-full text-mute hover:text-ink\" aria-label=\"閉じる\" data-clear=\"#alert-root\" data-ripple>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button type=\"button\" class=\"motion-hover inline-flex size-8 shrink-0 items-center justify-center rounded-md text-mute hover:bg-accent-soft hover:text-ink\" aria-label=\"閉じる\" data-clear=\"#alert-root\" data-ripple>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

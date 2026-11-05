@@ -79,6 +79,9 @@ func TestAlertTonesIconsAndDismiss(t *testing.T) {
 	}
 	out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "h", Message: "m", Dismissible: true}))
 	has(t, out, `data-clear="#alert-root"`, `aria-label="閉じる"`, "data-ripple")
+	// 閉じるボタンはゴースト（アイコン）ボタン: 32px の正方形・--r-md・ホバーで --accent-soft 地（S1。丸にしない）。
+	has(t, out, "size-8", "hover:bg-accent-soft")
+	hasNot(t, out, "rounded-full")
 	hasNot(t, out, "data-error-code")
 	// 雛形（app.ts が複製する）は role を持たない（ページに常に置くので、常時のエラーに見えないようにする）。
 	tmpl := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "h", Template: true}))
