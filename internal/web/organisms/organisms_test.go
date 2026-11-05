@@ -243,6 +243,10 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	// O7・P0: タブは非選択が --mute・選択が --ink（下線 2px の --accent と合わせて現在のタブを伝える）。色の変化は --motion-base。
 	has(t, tabs, "border-accent text-ink", "border-transparent text-mute hover:border-mute hover:text-ink", "motion-hover")
 	hasNot(t, tabs, "border-transparent text-ink")
+	// O7: タブの 2px の下線がタブ列の 1px の罫線に重なる（-mb-px）。重ならないと罫線の上に積まれて 1px 厚くなる。
+	if got := strings.Count(tabs, "-mb-px"); got != 2 {
+		t.Errorf("both tabs must overlap the tab row border with -mb-px, got %d:\n%s", got, tabs)
+	}
 }
 
 // 監査ログと更新の項目（FR-S07・FR-S09）: 平文の注意書きは常に出る。値は入力のとおり描画し、エラーは項目別に出す。
