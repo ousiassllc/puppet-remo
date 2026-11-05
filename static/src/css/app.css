@@ -27,6 +27,7 @@
   --danger: #7a4545;
   --info: #4a5a6a;
   --scrim: rgb(5 5 5 / 0.4);
+  --select-arrow: var(--select-arrow-light);
   --ring: color-mix(in srgb, var(--focus) 40%, transparent);
   --shadow-modal-color: rgb(0 0 0 / 0.06);
 }
@@ -46,6 +47,7 @@
   --danger: #c49a9a;
   --info: #9aabbc;
   --scrim: rgb(5 5 5 / 0.6);
+  --select-arrow: var(--select-arrow-dark);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,6 +66,7 @@
     --danger: #c49a9a;
     --info: #9aabbc;
     --scrim: rgb(5 5 5 / 0.6);
+    --select-arrow: var(--select-arrow-dark);
   }
 }
 
@@ -155,6 +158,12 @@
   --icon-md: 20px;
   --icon-lg: 24px;
   --icon-xl: 32px;
+
+  /* CSS の疑似要素・背景で出す Iconoir のアイコン（regular。atoms/icon.templ と同じ path・線の太さ 1.5・丸い端）。CSP の img-src は data: を許す。
+   * check はマスク（色は background-color で塗る）。nav-arrow-down は select の背景（疑似要素を持てない）なので、線の色を --mute の値（ライト #6b6b6e・ダーク #8b8b8e）で直に持つ。 */
+  --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13L9 17L19 7'/%3E%3C/svg%3E");
+  --select-arrow-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b6b6e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
+  --select-arrow-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b8e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
 
   --table-head-size: 12px;
   --table-body-size: 14px;
@@ -288,7 +297,7 @@
     text-decoration-color: var(--ink);
   }
 
-  /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック。 */
+  /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック（Iconoir の check を --icon-sm でマスクし、--bone で塗る）。 */
   input[type="checkbox"] {
     appearance: none;
     display: inline-grid;
@@ -303,10 +312,10 @@
   input[type="checkbox"]::before {
     content: "";
     display: none;
-    width: 10px;
-    height: 10px;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
     background-color: var(--bone);
-    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
+    mask: var(--icon-check) center / contain no-repeat;
   }
   input[type="checkbox"]:checked {
     border-color: var(--accent);
@@ -320,16 +329,12 @@
     cursor: not-allowed;
   }
 
-  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の矢印を重ねる（右 padding 36 は select.templ）。 */
+  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の Iconoir nav-arrow-down（--icon-sm）を重ねる（右 padding 36 は select.templ）。 */
   select {
     appearance: none;
-    background-image:
-      linear-gradient(45deg, transparent 50%, var(--mute) 50%),
-      linear-gradient(135deg, var(--mute) 50%, transparent 50%);
-    background-position:
-      calc(100% - 20px) center,
-      calc(100% - 15px) center;
-    background-size: 5px 5px;
+    background-image: var(--select-arrow);
+    background-position: right 12px center;
+    background-size: var(--icon-sm) var(--icon-sm);
     background-repeat: no-repeat;
   }
 
