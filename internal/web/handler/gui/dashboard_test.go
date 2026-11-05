@@ -48,7 +48,7 @@ func TestDashboardEmptyAndDegradedStates(t *testing.T) {
 		want   []string
 		not    []string
 	}{
-		{"no sessions and idle lease", func(*guitest.Fakes) {}, []string{"接続中のセッションはありません", "空き", "確認中", "停止中"}, []string{"保持中", "data-session"}},
+		{"no sessions and idle lease", func(*guitest.Fakes) {}, []string{`data-empty="sessions"`, "接続中のセッションはありません", "空き", "確認中", "停止中"}, []string{"保持中", "data-session"}},
 		{"tailscaled needs login", func(f *guitest.Fakes) {
 			f.Status.V = service.ServerStatus{Tailscaled: service.TailscaledNeedsLogin, Port: 8765, Reason: "tailscaled にログインしていません。"}
 		}, []string{"要ログイン", "tailscaled にログインしていません。", "未取得"}, nil},

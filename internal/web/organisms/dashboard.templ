@@ -60,7 +60,9 @@ templ ServerStatusPanel(v view.ServerStatus) {
 // SessionListBody は接続中セッション一覧の中身（SSE の sessions イベントの data と、GET /poll の OOB の中身）。
 templ SessionListBody(v view.Sessions) {
 	if len(v.Items) == 0 {
-		<p class="text-sm text-mute">接続中のセッションはありません。</p>
+		@molecules.EmptyState("sessions") {
+			接続中のセッションはありません。
+		}
 	} else {
 		<ul class="divide-y divide-border text-sm">
 			for _, s := range v.Items {
