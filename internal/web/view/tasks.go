@@ -11,15 +11,14 @@ const NavTasks Nav = "tasks"
 // 中断は元に戻せない破壊的な操作なので、ボタンは確認モーダル（GET ConfirmURL）を開き、確定のボタンだけが POST CancelURL を送る。
 // CancelURL・ConfirmURL が空なら中断のボタンは出さない（終了済み。状態駆動）。
 type TaskStatus struct {
-	DOMID     string // 状態の 1 行の id（確認モーダルの確定が、結果を差し込む先）
-	Code      string // domain.TaskStatus の値
-	Label     string
-	Tone      BadgeTone
-	Steps     string // 「3 / 50」（実行したステップ数 / 上限）
-	Elapsed   string
-	CancelURL string
-	// ConfirmURL は中断の確認モーダルの URL。
-	ConfirmURL string
+	DOMID      string // 状態の 1 行の id（確認モーダルの確定が、結果を差し込む先）
+	Code       string // domain.TaskStatus の値
+	Label      string
+	Tone       BadgeTone
+	Steps      string // 「3 / 50」（実行したステップ数 / 上限）
+	Elapsed    string
+	CancelURL  string // 確認モーダルの確定が POST する URL
+	ConfirmURL string // 中断の確認モーダルの URL（GET）
 }
 
 // TaskRow はタスクの一覧の 1 行。

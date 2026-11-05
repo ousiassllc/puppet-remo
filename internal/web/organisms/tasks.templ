@@ -121,7 +121,7 @@ templ TaskList(v view.TaskList) {
 				<a
 					href={ templ.SafeURL(v.NextURL) }
 					class={ atoms.PagerButtonClass() }
-		data-ripple
+					data-ripple
 					hx-get={ v.NextURL }
 					hx-target="#task-list"
 					hx-swap="outerHTML"
