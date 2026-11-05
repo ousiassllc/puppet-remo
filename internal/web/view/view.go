@@ -235,7 +235,7 @@ type ConfirmModal struct {
 	Swap       string
 	Label      string // 確定ボタンの文言
 	// Destructive は取り返しのつかない操作（削除・失効・剥奪・中断）か。true なら確定ボタンは危険（--danger）、false なら主（O7）。
-	// 既定の見た目を持たせないので、呼び出し側が必ず明示する。
+	// 既定は主（false）。破壊的な操作だけ true にする。
 	Destructive bool
 }
 
