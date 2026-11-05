@@ -73,6 +73,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/overlay", h.Overlay)
 
 	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
+	r.GET("/lease/revoke/confirm", h.ConfirmRevokeLease)
 	r.POST("/lease/revoke", h.RevokeLease)
 
 	// タスクの中断（M4。FR-H02・H10）。ホスト所有者の中断のボタン

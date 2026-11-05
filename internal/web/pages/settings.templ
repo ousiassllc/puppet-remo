@@ -11,9 +11,9 @@ const settingsTitle = "設定"
 
 templ settingsBody(v view.Settings) {
 	<div class="max-w-xl space-y-4">
-		<h1 class="text-xl font-semibold text-slate-900">設定</h1>
-		<p class="text-sm text-slate-600" data-notice="agent-link">
-			内蔵エージェント（既定は無効）と API キーの設定は、<a href="/agent" class="font-medium text-indigo-700 underline" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">エージェント</a>の画面にあります。
+		<h1 class="text-3xl font-semibold text-ink">設定</h1>
+		<p class="text-base text-ink" data-notice="agent-link">
+			内蔵エージェント（既定は無効）と API キーの設定は、<a href="/agent" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">エージェント</a>の画面にあります。
 		</p>
 		@molecules.Card("") {
 			@organisms.SettingsForm(v.Form)

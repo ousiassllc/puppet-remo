@@ -1,16 +1,387 @@
 /* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
  * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
- * <style> と style= は使わない（CSP。§7.1）。 */
+ * <style> と style= は使わない（CSP。§7.1）。
+ * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide 622ea73）のトークンで、この 1 か所に定義する（§8.5）。
+ * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
+ * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
+@import "./fonts.generated.css";
 @source "../../../internal/web/**/*.templ";
 
-/* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
+/* ---- 色（C1〜C5）----
+ * ライトを :root に、ダークを [data-theme="dark"] に定義する。<html data-theme="light|dark"> で明示的に切り替え、
+ * 指定がなければ OS の設定（prefers-color-scheme）に従う（初期値）。ダークの値は 2 か所（下の 2 ブロック）に同じものを置く。
+ * --scrim はガイドに値がない（モーダル背面の暗幕）。ガイドへの追加を提案するまでのこのプロダクトの暫定値。 */
+:root {
+  color-scheme: light;
+  --ink: #050505;
+  --bone: #f5f5f4;
+  --mute: #8b8b8e;
+  --surface: #ffffff;
+  --border: #e7e7e5;
+  --accent: #050505;
+  --accent-soft: #e7e7e5;
+  --focus: #4a72d0;
+  --success: #3d5c4a;
+  --warning: #7a6a3a;
+  --danger: #7a4545;
+  --info: #4a5a6a;
+  --scrim: rgb(5 5 5 / 0.4);
+  --ring: color-mix(in srgb, var(--focus) 40%, transparent);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #ffffff;
+  --bone: #050505;
+  --surface: #141414;
+  --border: #2a2a2a;
+  --accent: #f5f5f4;
+  --accent-soft: #2a2a2a;
+  --focus: #60a5fa;
+  --success: #8fafa0;
+  --warning: #c4b87a;
+  --danger: #c49a9a;
+  --info: #9aabbc;
+  --scrim: rgb(0 0 0 / 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #ffffff;
+    --bone: #050505;
+    --surface: #141414;
+    --border: #2a2a2a;
+    --accent: #f5f5f4;
+    --accent-soft: #2a2a2a;
+    --focus: #60a5fa;
+    --success: #8fafa0;
+    --warning: #c4b87a;
+    --danger: #c49a9a;
+    --info: #9aabbc;
+    --scrim: rgb(0 0 0 / 0.6);
+  }
+}
+
+/* Tailwind 既定のパレットは消し、トークンだけを使えるようにする（bg-bone・text-ink・border-border・bg-danger/10 など）。 */
+@theme {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-bone: var(--bone);
+  --color-mute: var(--mute);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-focus: var(--focus);
+  --color-ring: var(--ring);
+  --color-scrim: var(--scrim);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+}
+
+/* ---- 形・余白・線・影（S1〜S4）----
+ * 角丸は none 0 / sm 4（タグ・チェック）/ md 8（入力・ボタン）/ lg 12（カード）/ xl 16（モーダル）/ full（ピル・アバター）。
+ * 影は使わない。モーダルだけ shadow-modal（カード・パネル・入力・トーストは影なしで、1px の --border で区切る）。
+ * 余白は 4px 基準（Tailwind の spacing の倍数）。スケール外の値（2・6・10・20px）は使わない。 */
+@theme {
+  --radius-*: initial;
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+/* ---- タイポグラフィ（T1〜T4）----
+ * フォントは Sora + Noto Sans JP（UI）と JetBrains Mono（コード・桁を揃える数値）。@font-face は scripts/copy-fonts.mjs が生成する。
+ * サイズはガイドのスケール（xs 12 / sm 14 / base 16 / lg 18 / xl 24 / 2xl 32 / 3xl 40）と行間。スケール外のサイズは使えない。
+ * ウェイトは本文・リンク・ナビ・フォームが Regular（400）、SemiBold（600）は見出しとボタンだけ。 */
+@theme {
+  --font-sans: Sora, "Noto Sans JP", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-*: initial;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.6;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.7;
+  --text-base: 1rem;
+  --text-base--line-height: 1.8;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.7;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.5;
+  --text-2xl: 2rem;
+  --text-2xl--line-height: 1.4;
+  --text-3xl: 2.5rem;
+  --text-3xl--line-height: 1.3;
+}
+
+@layer base {
+  /* Tailwind v4 の既定の罫線色は currentColor。ガイドの --border を既定にする。 */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
+
+  /* 表の見出しセルは、ブラウザの既定（太字）にせず、thead のクラスで決める（SemiBold は見出し行だけ。T2）。 */
+  th {
+    font-weight: inherit;
+  }
+
+  /* 強調（<strong>）はウェイトでなく下線で表す（SemiBold は見出しとボタンだけ。T2）。 */
+  strong {
+    font-weight: inherit;
+    text-decoration-line: underline;
+    text-decoration-color: var(--mute);
+    text-underline-offset: 0.2em;
+  }
+
+  /* 本文は 16px・行間 1.8（日本語の長文を詰めない）。 */
+  html {
+    font-size: 16px;
+    line-height: var(--text-base--line-height);
+  }
+
+  body {
+    background-color: var(--bone);
+    color: var(--ink);
+  }
+
+  /* フォーカスリング（C3）: 2px solid --focus + オフセット 2px。 */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* フォームのフォーカスは枠線を --focus にし、--ring（--focus の 40%）の 2px を足す。
+   * outline は透明で残す（Windows のハイコントラストの表示では枠として見える）。 */
+  input:not([type="checkbox"], [type="radio"], [type="range"]):focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+    border-color: var(--focus);
+    box-shadow: 0 0 0 2px var(--ring);
+  }
+}
+
 @layer components {
+  /* 本文のリンク（C3・C7）: インク色 + --mute の下線。主操作・選択状態以外で色を足さない。 */
+  .link {
+    color: var(--ink);
+    text-decoration-line: underline;
+    text-decoration-color: var(--mute);
+    text-underline-offset: 0.2em;
+  }
+  .link:hover {
+    text-decoration-color: var(--ink);
+  }
+
+  /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック。 */
+  input[type="checkbox"] {
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--mute);
+    border-radius: 4px;
+    background-color: var(--surface);
+  }
+  input[type="checkbox"]::before {
+    content: "";
+    display: none;
+    width: 10px;
+    height: 10px;
+    background-color: var(--bone);
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
+  }
+  input[type="checkbox"]:checked {
+    border-color: var(--accent);
+    background-color: var(--accent);
+  }
+  input[type="checkbox"]:checked::before {
+    display: block;
+  }
+
+  /* スライダー（P1）: つまみ・進捗を --accent にする。 */
+  input[type="range"] {
+    accent-color: var(--accent);
+  }
+}
+
+/* ---- 重なり順・表・進捗（O4・O7）---- */
+:root {
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-drawer: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  --table-pad-y: 10px;
+  --table-pad-x: 12px;
+  --table-pad-y-compact: 6px;
+  --table-pad-x-compact: 8px;
+}
+
+/* ---- モーション（M1〜M5）----
+ * 動きは次のトークンだけで定義する（時間・イージング・移動量）。静かに・短く・状態の変化を伝えるときだけ動かす。
+ * prefers-reduced-motion: reduce では、移動を 0 に、フェードを 100ms 以下（ホバーなどの色の変化はなし）にまとめて切り替える。
+ * スピナーなどの処理中表示は維持する（opacity の切り替えのみ。回転は reduced-motion でも止めない。O7）。 */
+:root {
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 280ms;
+  --motion-fade-in: 320ms;
+  --motion-fade-out: 240ms;
+  --motion-shift: 6px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 100ms;
+    --motion-fade-in: 100ms;
+    --motion-fade-out: 100ms;
+    --motion-shift: 0px;
+  }
+}
+
+@keyframes motion-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes motion-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-shift));
+  }
+}
+
+@keyframes motion-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes motion-rise-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--motion-shift));
+  }
+}
+
+@keyframes motion-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes motion-ripple {
+  from {
+    opacity: 0.2;
+    transform: scale(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@layer components {
+  /* 出現（M5）: フェードイン 320ms・ease-out。rise は 4〜8px の移動を添える（スクラムは fade だけ）。 */
+  .motion-fade-in {
+    animation: motion-fade-in var(--motion-fade-in) var(--ease-out) both;
+  }
+  .motion-rise-in {
+    animation: motion-rise-in var(--motion-fade-in) var(--ease-out) both;
+  }
+  /* 退出（M5）: app.ts が data-leaving を付け、アニメーションの終了後に取り除く。フェードアウト 240ms・ease-in。 */
+  .motion-fade-in[data-leaving] {
+    animation: motion-fade-out var(--motion-fade-out) var(--ease-in) both;
+    pointer-events: none;
+  }
+  .motion-rise-in[data-leaving] {
+    animation: motion-rise-out var(--motion-fade-out) var(--ease-in) both;
+    pointer-events: none;
+  }
+
+  /* ホバーは色・背景だけ・180ms 以内（M1）。 */
+  .motion-hover {
+    transition: color var(--motion-base) var(--ease-out), background-color var(--motion-base) var(--ease-out),
+      border-color var(--motion-base) var(--ease-out);
+  }
+
+  /* ボタン・クローズの押下のリップル（M4）: クリック点から円が広がって消える。app.ts が span.ripple を足す。 */
+  [data-ripple] {
+    position: relative;
+    overflow: hidden;
+  }
+  .ripple {
+    position: absolute;
+    left: var(--ripple-x);
+    top: var(--ripple-y);
+    width: var(--ripple-size);
+    height: var(--ripple-size);
+    margin: calc(var(--ripple-size) / -2) 0 0 calc(var(--ripple-size) / -2);
+    border-radius: 9999px;
+    background-color: currentColor;
+    pointer-events: none;
+    animation: motion-ripple var(--motion-slow) var(--ease-out) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ripple {
+      display: none;
+    }
+  }
+
+  /* スピナー（O7）: 20px・2px（track --accent-soft・先端 --accent）。reduced-motion では回転を止め、静止した円と文言で処理中を伝える。 */
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--accent-soft);
+    border-top-color: var(--accent);
+    border-radius: 9999px;
+    animation: motion-spin 0.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
+  }
+
+  /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
   .htmx-indicator {
-    @apply opacity-0 transition-opacity duration-200;
+    opacity: 0;
+    transition: opacity var(--motion-base) var(--ease-out);
   }
   .htmx-request .htmx-indicator,
   .htmx-request.htmx-indicator {
-    @apply opacity-100;
+    opacity: 1;
   }
 }

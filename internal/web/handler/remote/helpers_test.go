@@ -181,13 +181,13 @@ func status(t *testing.T, r resp, want int) {
 	}
 }
 
-// failed はアクションの失敗: 同じステータス・data-error-code 付きのトースト・#toast-root への HX-Retarget。
+// failed はアクションの失敗: 同じステータス・data-error-code 付きのインラインアラート・#alert-root への HX-Retarget。
 func failed(t *testing.T, r resp, wantStatus int, code string) {
 	t.Helper()
 	status(t, r, wantStatus)
 	contains(t, r, `data-error-code="`+code+`"`)
-	if got := r.Header.Get("HX-Retarget"); got != "#toast-root" {
-		t.Errorf("HX-Retarget = %q, want #toast-root", got)
+	if got := r.Header.Get("HX-Retarget"); got != "#alert-root" {
+		t.Errorf("HX-Retarget = %q, want #alert-root", got)
 	}
 	lacks(t, r, "<html")
 }

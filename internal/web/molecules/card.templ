@@ -2,11 +2,11 @@ package molecules
 
 // Card は見出し付きの枠。
 templ Card(title string) {
-	<section class="rounded-lg border border-slate-200 bg-white shadow-sm">
+	<section class="rounded-lg border border-border bg-surface">
 		if title != "" {
-			<h2 class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">{ title }</h2>
+			<h2 class="border-b border-border px-6 py-3 text-base font-semibold text-ink">{ title }</h2>
 		}
-		<div class="p-4">
+		<div class="p-6">
 			{ children... }
 		</div>
 	</section>

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 	"github.com/ousiassllc/puppet-remo/internal/web/webtest"
@@ -67,7 +68,7 @@ func TestLeasePanelRendersRevokeOnlyWhenCanRevoke(t *testing.T) {
 	revocable := held
 	revocable.CanRevoke = true
 	canRevoke := webtest.Render(t, organisms.LeasePanel(revocable))
-	has(t, canRevoke, "保持中", "claude", "MCP", "5分", "強制剥奪", `hx-post="/lease/revoke"`, `hx-target="#lease"`, `hx-swap="innerHTML"`, `hx-disabled-elt="this"`)
+	has(t, canRevoke, "保持中", "claude", "MCP", "5分", "強制剥奪", `hx-get="/lease/revoke/confirm"`, `hx-target="#modal-root"`, `hx-swap="innerHTML"`)
 
 	// 剥奪できない保持者（view の CanRevoke が false）と、空きのときはボタンが描画されない。
 	cannot := webtest.Render(t, organisms.LeasePanel(held))
@@ -486,4 +487,42 @@ func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
 	hasNot(t, fast, "OpenAI に送信される", `data-consent="openai"`)
 	webtest.AssertCSPCompliantHTML(t, agent)
 	webtest.AssertCSPCompliantHTML(t, fast)
+}
+
+// トースト・アラートの置き場: トーストは画面下の中央（端から 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
+// app.ts が複製する雛形 #alert-template（role なし）。
+func TestToastAndAlertRoots(t *testing.T) {
+	toast := webtest.Render(t, organisms.ToastRoot())
+	has(t, toast, `id="toast-root"`, "bottom-6", "left-1/2", "-translate-x-1/2", "z-(--z-toast)")
+	hasNot(t, toast, "right-4", "z-50")
+	alert := webtest.Render(t, organisms.AlertRoot("px-4"))
+	has(t, alert, `id="alert-root"`, "empty:hidden", "px-4", `id="alert-template"`, "<template", "data-alert-message")
+	hasNot(t, alert, `role="alert"`)
+	oob := webtest.Render(t, organisms.AlertOOB(atoms.AlertProps{Tone: atoms.AlertDanger, Code: "internal", Heading: "エラー", Message: "失敗しました。"}))
+	has(t, oob, `id="alert-root" hx-swap-oob="innerHTML"`, `data-error-code="internal"`, "失敗しました。")
+	for _, out := range []string{toast, alert, oob} {
+		webtest.AssertCSPCompliantHTML(t, out)
+	}
+}
+
+// サイドナビ: 幅 240・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
+func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
+	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}, false))
+	has(t, nav, "md:w-60", "md:space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
+	hasNot(t, nav, "bg-slate", "md:w-56")
+	header := webtest.Render(t, organisms.Header(view.Header{}))
+	has(t, header, "h-14", "border-b", "border-border")
+}
+
+// 表: 見出し行は SemiBold 12 の --mute・背景なし。行ホバーは --accent-soft。padding は --table-pad-*。数値列（所要時間）は Mono・右寄せ。
+func TestAuditTableFollowsTheTableSpec(t *testing.T) {
+	out := webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1", Time: "t", Client: "c", Kind: "tool", Event: "e", Result: "ok", ResultTone: view.ToneOK, Duration: "12 ms"}}}))
+	has(t, out, "text-left text-xs font-semibold text-mute", "hover:bg-accent-soft", "px-(--table-pad-x) py-(--table-pad-y)", "text-right font-mono")
+	hasNot(t, out, "bg-slate-50", "shadow-sm", "px-3 py-2")
+}
+
+// 空状態は molecules.EmptyState（破線・アイコン + 文言）を使う。
+func TestEmptyListsUseTheEmptyState(t *testing.T) {
+	out := webtest.Render(t, organisms.AuditList(view.AuditList{}))
+	has(t, out, `data-empty="audit-list"`, "border-dashed", "<svg")
 }

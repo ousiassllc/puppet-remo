@@ -12,7 +12,6 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
-	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -350,7 +349,7 @@ func (h *Handler) setKey(c *gin.Context, set func(context.Context, string) error
 	h.render(c, http.StatusOK, organisms.APIKeyPanel(panel(s, "")), organisms.ToastOOB(infoToast("API キーを登録しました。")))
 }
 
-// failKey はキーの登録の失敗をトーストで返す。ログに残すエラー文からは、念のため送られたキーを伏せる。
+// failKey はキーの登録の失敗をアラートで返す。ログに残すエラー文からは、念のため送られたキーを伏せる。
 func (h *Handler) failKey(c *gin.Context, err error, key string) {
 	f := classify(err)
 	if f.status >= 500 {
@@ -360,9 +359,7 @@ func (h *Handler) failKey(c *gin.Context, err error, key string) {
 		}
 		h.log.Error("gui api key action failed", "method", c.Request.Method, "path", c.Request.URL.Path, "error", msg)
 	}
-	c.Header("HX-Retarget", "#toast-root")
-	c.Header("HX-Reswap", "beforeend")
-	h.render(c, f.status, atoms.Toast(view.Toast{Level: view.ToastError, Message: f.message, ErrorCode: f.code}))
+	h.failMessage(c, f.status, f.code, f.message)
 }
 
 // ConfirmDeleteOpenAIKey は GET /agent/api-key/delete/confirm。登録済みのときだけ描画する。

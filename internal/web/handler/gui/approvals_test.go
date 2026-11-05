@@ -29,7 +29,7 @@ func TestApprovalDialogPage(t *testing.T) {
 	contains(t, res, "<html", `data-approval="ap-1"`, "claude-desktop", "MCP</span>", "操作権（リース）の取得",
 		`data-approval-remaining="42"`, `hx-get="/approvals/ap-1"`, `hx-trigger="every 1s"`,
 		`hx-post="/approvals/ap-1/allow"`, `hx-post="/approvals/ap-1/deny"`, `hx-disabled-elt="#approval-actions button"`,
-		`id="toast-root"`, "/static/js/app.js")
+		`id="toast-root"`, `id="alert-root"`, "/static/js/app.js")
 	// 専用ウィンドウ: サイドバー・ヘッダー・ポーリング・モーダルは無い。
 	lacks(t, res, `id="live-poll"`, `id="modal-root"`, "ダッシュボード", "キルスイッチ", "接続要求")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" {
@@ -106,7 +106,7 @@ func TestApprovalGoneIs410(t *testing.T) {
 			status(t, res, http.StatusGone)
 			contains(t, res, `data-error-code="approval_timeout"`, `role="alert"`)
 			lacks(t, res, "<html")
-			if res.Header.Get("HX-Retarget") != "#toast-root" || res.Header.Get("HX-Trigger") != "" {
+			if res.Header.Get("HX-Retarget") != "#alert-root" || res.Header.Get("HX-Trigger") != "" {
 				t.Errorf("headers = %v", res.Header)
 			}
 		}

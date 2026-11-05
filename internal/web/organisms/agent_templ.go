@@ -76,14 +76,14 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"text-sm font-medium text-slate-700\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"text-sm text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Provider)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 14, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 14, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -169,7 +169,7 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"text-xs text-slate-500\" data-notice=\"key-storage\">キーは Windows の資格情報マネージャー（")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"text-xs text-mute\" data-notice=\"key-storage\">キーは Windows の資格情報マネージャー（")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -255,14 +255,14 @@ func AgentForm(f view.AgentForm) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if f.Errors.General != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<p class=\"rounded-md bg-red-50 px-3 py-2 text-sm text-red-800\" role=\"alert\" data-form-error=\"agent\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<p class=\"rounded-md bg-danger/10 px-3 py-2 text-sm text-danger\" role=\"alert\" data-form-error=\"agent\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(f.Errors.General)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 85, Col: 121}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 85, Col: 123}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -273,7 +273,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<label class=\"flex items-center gap-2 text-sm font-medium text-slate-800\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<label class=\"flex items-center gap-2 text-sm text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -281,7 +281,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "エージェントを有効にする</label><p class=\"text-xs text-slate-500\">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p><div class=\"space-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2\" data-consent=\"openai\"><label class=\"flex items-start gap-2 text-sm text-amber-950\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "エージェントを有効にする</label><p class=\"text-xs text-mute\">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p><div class=\"space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2\" data-consent=\"openai\"><label class=\"flex items-start gap-2 text-sm text-warning\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -289,19 +289,19 @@ func AgentForm(f view.AgentForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span></label><p class=\"text-xs text-amber-900\">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span></label><p class=\"text-xs text-warning\">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if f.ConsentAt != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<p class=\"text-xs text-amber-900\" data-consent-at=\"openai\">同意済み: ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<p class=\"text-xs text-warning\" data-consent-at=\"openai\">同意済み: ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(f.ConsentAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 99, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 99, Col: 88}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -313,14 +313,14 @@ func AgentForm(f view.AgentForm) templ.Component {
 			}
 		}
 		if f.Errors.Consent != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<p class=\"text-xs text-red-700\" role=\"alert\" data-field-error=\"agent-consent\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<p class=\"text-xs text-danger\" role=\"alert\" data-field-error=\"agent-consent\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(f.Errors.Consent)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 102, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 102, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -515,14 +515,14 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if f.Errors.General != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<p class=\"rounded-md bg-red-50 px-3 py-2 text-sm text-red-800\" role=\"alert\" data-form-error=\"fastpath\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<p class=\"rounded-md bg-danger/10 px-3 py-2 text-sm text-danger\" role=\"alert\" data-form-error=\"fastpath\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(f.Errors.General)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 145, Col: 124}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 145, Col: 126}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -533,7 +533,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<label class=\"flex items-center gap-2 text-sm font-medium text-slate-800\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<label class=\"flex items-center gap-2 text-sm text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -541,7 +541,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "高速パスを有効にする</label><p class=\"text-xs text-slate-500\">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p><div class=\"space-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2\" data-consent=\"typesafe\"><label class=\"flex items-start gap-2 text-sm text-amber-950\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "高速パスを有効にする</label><p class=\"text-xs text-mute\">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p><div class=\"space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2\" data-consent=\"typesafe\"><label class=\"flex items-start gap-2 text-sm text-warning\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -549,19 +549,19 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span></label><p class=\"text-xs text-amber-900\">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span></label><p class=\"text-xs text-warning\">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if f.ConsentAt != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<p class=\"text-xs text-amber-900\" data-consent-at=\"typesafe\">同意済み: ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<p class=\"text-xs text-warning\" data-consent-at=\"typesafe\">同意済み: ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(f.ConsentAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 159, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 159, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -573,14 +573,14 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			}
 		}
 		if f.Errors.Consent != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<p class=\"text-xs text-red-700\" role=\"alert\" data-field-error=\"fastpath-consent\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<p class=\"text-xs text-danger\" role=\"alert\" data-field-error=\"fastpath-consent\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(f.Errors.Consent)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 162, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 162, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -750,7 +750,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"border-t border-slate-200 pt-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"border-t border-border pt-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -788,7 +788,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<div class=\"border-t border-slate-200 pt-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<div class=\"border-t border-border pt-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

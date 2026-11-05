@@ -33,14 +33,14 @@ func Overlay(v view.Overlay) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"operation-overlay\" class=\"pointer-events-none fixed inset-0 border-4 border-rose-500\" data-overlay><div class=\"absolute left-1/2 top-0 max-w-[60%] -translate-x-1/2 rounded-b-lg bg-rose-600/90 px-4 py-1 text-center text-white shadow\"><p class=\"truncate text-sm font-semibold\" data-overlay-label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"operation-overlay\" class=\"pointer-events-none fixed inset-0 border-4 border-danger\" data-overlay><div class=\"absolute left-1/2 top-0 max-w-[60%] -translate-x-1/2 rounded-b-lg bg-danger px-4 py-1 text-center text-bone\"><p class=\"truncate text-sm\" data-overlay-label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(v.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/overlay.templ`, Line: 10, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/overlay.templ`, Line: 10, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {

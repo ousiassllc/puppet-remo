@@ -167,7 +167,7 @@ func AppForm(f view.AppForm, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" novalidate class=\"space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm\" data-app-form=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" novalidate class=\"space-y-4 rounded-lg border border-border bg-surface p-4\" data-app-form=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -188,25 +188,25 @@ func AppForm(f view.AppForm, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "><h3 class=\"text-sm font-semibold text-slate-800\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "><h3 class=\"text-base font-semibold text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(appFormTitle(f))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_form.templ`, Line: 77, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_form.templ`, Line: 77, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</h3><p class=\"rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900\" role=\"note\" data-notice=\"interpreter\">cmd.exe・powershell.exe などのコマンドインタープリタやスクリプトホストを登録すると、リモートの AI に任意のコードの実行を許すことになります。信頼できる、目的の決まったアプリだけを登録してください。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</h3><p class=\"rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning\" role=\"note\" data-notice=\"interpreter\">cmd.exe・powershell.exe などのコマンドインタープリタやスクリプトホストを登録すると、リモートの AI に任意のコードの実行を許すことになります。信頼できる、目的の決まったアプリだけを登録してください。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if f.Corrupt {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800\" role=\"alert\" data-app-form-corrupt>保存された設定を読めませんでした。引数を入れ直してください。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger\" role=\"alert\" data-app-form-corrupt>保存された設定を読めませんでした。引数を入れ直してください。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -290,7 +290,7 @@ func AppForm(f view.AppForm, oob bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if f.ID != "" {
-			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonGhost, Attrs: atoms.Attrs{
 				"hx-get": f.CancelURL, "hx-target": "#app-list", "hx-swap": "outerHTML",
 			}}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {

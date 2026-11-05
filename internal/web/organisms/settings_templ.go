@@ -196,7 +196,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if f.CanSetAutostart {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<label class=\"flex items-center gap-2 text-sm text-slate-700\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<label class=\"flex items-center gap-2 text-sm text-ink\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -209,7 +209,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<fieldset class=\"space-y-4 border-t border-slate-200 pt-4\" data-settings-group=\"audit\"><legend class=\"pr-2 text-sm font-semibold text-slate-800\">監査ログ</legend><p class=\"rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900\" role=\"note\" data-notice=\"audit-plaintext\">サムネイル（スクリーンショットの縮小画像）と、有効にした場合の入力・クリップボードの本文は、暗号化されず<strong>平文</strong>でこのPCのディスクに保存されます。ディスクの紛失・盗難に備えて BitLocker でドライブ全体を暗号化してください。画面の内容を残したくないときは、サムネイルの保存を無効にできます。</p><label class=\"flex items-center gap-2 text-sm text-slate-700\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<fieldset class=\"space-y-4 border-t border-border pt-4\" data-settings-group=\"audit\"><legend class=\"pr-2 text-sm font-semibold text-ink\">監査ログ</legend><p class=\"rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning\" role=\"note\" data-notice=\"audit-plaintext\">サムネイル（スクリーンショットの縮小画像）と、有効にした場合の入力・クリップボードの本文は、暗号化されず<strong>平文</strong>でこのPCのディスクに保存されます。ディスクの紛失・盗難に備えて BitLocker でドライブ全体を暗号化してください。画面の内容を残したくないときは、サムネイルの保存を無効にできます。</p><label class=\"flex items-center gap-2 text-sm text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -217,7 +217,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "サムネイルを保存する</label><div class=\"space-y-1\"><label class=\"flex items-center gap-2 text-sm text-slate-700\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "サムネイルを保存する</label><div class=\"space-y-1\"><label class=\"flex items-center gap-2 text-sm text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -225,7 +225,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "入力（type）とクリップボードの本文を記録する</label><p class=\"text-xs text-red-700\" data-notice=\"audit-record-text\">有効にすると、パスワードなどの入力した内容も平文で保存されることがあります。通常は無効のままにしてください。</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "入力（type）とクリップボードの本文を記録する</label><p class=\"text-xs text-danger\" data-notice=\"audit-record-text\">有効にすると、パスワードなどの入力した内容も平文で保存されることがあります。通常は無効のままにしてください。</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -273,7 +273,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</fieldset><fieldset class=\"space-y-4 border-t border-slate-200 pt-4\" data-settings-group=\"update\"><legend class=\"pr-2 text-sm font-semibold text-slate-800\">更新</legend>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</fieldset><fieldset class=\"space-y-4 border-t border-border pt-4\" data-settings-group=\"update\"><legend class=\"pr-2 text-sm font-semibold text-ink\">更新</legend>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

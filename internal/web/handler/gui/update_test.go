@@ -192,7 +192,7 @@ func TestApplyUpdateRefusals(t *testing.T) {
 			status(t, res, tc.code)
 			contains(t, res, tc.want...)
 			lacks(t, res, "puppet-remo-update", "boom", `C:\`) // 内部のパス・エラー文は出さない
-			if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
+			if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
 				t.Errorf("HX-Retarget = %q", got)
 			}
 			if len(r.f.Updates.Applied) != 0 {

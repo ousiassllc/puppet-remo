@@ -74,7 +74,7 @@ func TestViewerShowsHolderAndOnlyRevokeWhenOthersHold(t *testing.T) {
 		f.Leases.Hold(domain.Actor{Kind: domain.ActorMCP, ClientID: "c9", Label: "claude-desktop", SessionID: "s1"})
 	})
 	res := r.get("/viewer")
-	contains(t, res, "保持中", "claude-desktop", ">mcp<", `data-lease-state="other"`, `hx-post="/viewer/lease/revoke"`, "readonly")
+	contains(t, res, "保持中", "claude-desktop", ">mcp<", `data-lease-state="other"`, `hx-get="/viewer/lease/revoke/confirm"`, "readonly")
 	lacks(t, res, "/viewer/lease/acquire", "/viewer/lease/release")
 }
 

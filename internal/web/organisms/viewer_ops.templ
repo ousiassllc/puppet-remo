@@ -45,7 +45,7 @@ templ ClipboardPanel() {
 					hx-swap="innerHTML"
 					hx-disabled-elt="find button[type=submit]"
 				>
-					<label for="clipboard-text" class="block text-sm font-medium text-slate-700">ホストへ送るテキスト</label>
+					<label for="clipboard-text" class="block text-sm text-ink">ホストへ送るテキスト</label>
 					@atoms.Textarea(atoms.TextareaProps{ID: "clipboard-text", Name: "text", Placeholder: "ここに貼り付け（Ctrl+V）または入力して、送信します", Rows: 3})
 					@atoms.Button(atoms.ButtonProps{Label: "ホストのクリップボードへ送信", Variant: atoms.ButtonPrimary, Type: "submit"})
 				</form>
@@ -55,7 +55,7 @@ templ ClipboardPanel() {
 					}})
 					<div id="clipboard-result"></div>
 				</div>
-				<div id="clipboard-status" role="status" aria-live="polite" class="text-sm text-slate-600"></div>
+				<div id="clipboard-status" role="status" aria-live="polite" class="text-sm text-ink"></div>
 			</div>
 		}
 	</section>
@@ -68,7 +68,7 @@ templ ClipboardSent(chars int) {
 
 // ClipboardFetched はホストのクリップボードの内容を、読み取り専用の表示欄に出す。利用者が選択して手動でコピーする。
 templ ClipboardFetched(text string) {
-	<label for="clipboard-fetched" class="block text-sm font-medium text-slate-700">ホストのクリップボード（選択してコピーしてください）</label>
+	<label for="clipboard-fetched" class="block text-sm text-ink">ホストのクリップボード（選択してコピーしてください）</label>
 	@atoms.Textarea(atoms.TextareaProps{ID: "clipboard-fetched", Name: "fetched", Value: text, Rows: 4, Attrs: atoms.Attrs{"readonly": true, "data-clipboard-fetched": true}})
 }
 
@@ -86,13 +86,13 @@ func keyAttrs(k view.KeyMenuItem) atoms.Attrs {
 templ KeyMenu(items []view.KeyMenuItem) {
 	<section id="key-menu" aria-label="ショートカットの送信">
 		@molecules.Card("ショートカットを送信") {
-			<p class="mb-2 text-xs text-slate-500">ブラウザが先に処理するキー操作を、ホストへ送ります。</p>
+			<p class="mb-2 text-xs text-mute">ブラウザが先に処理するキー操作を、ホストへ送ります。</p>
 			<div class="flex flex-wrap gap-2">
 				for _, k := range items {
-					@atoms.Button(atoms.ButtonProps{Label: k.Label, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)})
+					@atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)})
 				}
 			</div>
-			<div id="keys-status" role="status" aria-live="polite" class="mt-2 text-sm text-slate-600"></div>
+			<div id="keys-status" role="status" aria-live="polite" class="mt-2 text-sm text-ink"></div>
 		}
 	</section>
 }

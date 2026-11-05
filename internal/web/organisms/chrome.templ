@@ -19,8 +19,8 @@ templ HeaderKillSwitch(active bool) {
 
 // Header は全画面共通のヘッダー。
 templ Header(h view.Header) {
-	<header class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
-		<span class="text-sm font-semibold text-slate-800">puppet-remo ホスト</span>
+	<header class="flex h-14 items-center justify-between border-b border-border bg-surface px-6">
+		<span class="text-base text-ink">puppet-remo ホスト</span>
 		<div id="header-killswitch">
 			@HeaderKillSwitch(h.KillSwitchActive)
 		</div>
@@ -37,7 +37,7 @@ templ HeaderKillSwitchOOB(active bool) {
 // RequestsBadge はサイドバーの接続要求の件数（0 件なら何も出さない）。
 templ RequestsBadge(n int) {
 	if n > 0 {
-		<span class="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-semibold text-white" data-pending-count={ strconv.Itoa(n) }>{ strconv.Itoa(n) }</span>
+		<span class="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger px-1.5 font-mono text-xs text-bone" data-pending-count={ strconv.Itoa(n) }>{ strconv.Itoa(n) }</span>
 	}
 }
 
@@ -68,11 +68,11 @@ var navItems = []navItem{
 }
 
 func navLinkClass(active bool) string {
-	base := "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium "
+	base := "motion-hover flex h-10 items-center gap-2 rounded-md px-3 text-base "
 	if active {
-		return base + "bg-slate-800 text-white"
+		return base + "bg-accent-soft text-ink"
 	}
-	return base + "text-slate-300 hover:bg-slate-800 hover:text-white"
+	return base + "text-mute hover:bg-accent-soft hover:text-ink"
 }
 
 func navLinkAttrs(active bool) atoms.Attrs {
@@ -92,8 +92,8 @@ func oobAttrs(oob bool) atoms.Attrs {
 // Sidebar はホスト GUI のナビゲーション。ページ遷移は hx-boost で #main だけを差し替える（§5.4）。
 // ブートされた遷移の応答は oob = true で添えて、現在のページの強調を更新する。
 templ Sidebar(c view.Chrome, oob bool) {
-	<nav id="sidebar-nav" class="flex w-full shrink-0 flex-wrap gap-1 bg-slate-900 p-3 md:block md:w-56 md:space-y-1" aria-label="メイン" { oobAttrs(oob)... }>
-		<p class="w-full px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">メニュー</p>
+	<nav id="sidebar-nav" class="flex w-full shrink-0 flex-wrap gap-2 border-b border-border bg-surface p-3 md:block md:w-60 md:space-y-2 md:border-b-0 md:border-r" aria-label="メイン" { oobAttrs(oob)... }>
+		<p class="w-full px-3 pb-2 pt-1 text-xs text-mute">メニュー</p>
 		for _, it := range navItems {
 			<a
 				href={ templ.SafeURL(it.URL) }
@@ -115,9 +115,27 @@ templ Sidebar(c view.Chrome, oob bool) {
 	</nav>
 }
 
-// ToastRoot はトーストの置き場。エラー・完了の応答（HX-Retarget / OOB）と GET /poll の応答（OOB）がここへ追加する。
+// ToastRoot はトーストの置き場（画面下の中央・端から 24px）。完了の短い通知（OOB の ToastOOB と GET /poll の応答）がここへ追加する。
+// 同時に表示するのは 1 つで、新しいものが前を置き換える（app.ts）。エラーは AlertRoot のインラインアラートに出し、トーストには出さない。
 templ ToastRoot() {
-	<div id="toast-root" class="pointer-events-none fixed bottom-4 right-4 z-50 flex max-w-sm flex-col gap-2"></div>
+	<div id="toast-root" class="pointer-events-none fixed bottom-6 left-1/2 z-(--z-toast) flex max-w-[calc(100vw-3rem)] -translate-x-1/2 flex-col items-center" role="status"></div>
+}
+
+// AlertRoot はアクションの失敗・エラーのインラインアラートの置き場。応答（HX-Retarget: #alert-root・HX-Reswap: innerHTML と、
+// GET /poll の応答の AlertOOB）が差し込み、新しいものが前を置き換える。class は配置の余白（ページごとに違う）。
+// #alert-template は、サーバーの応答を介さないクライアント側のエラー（接続できない・ビューアの入力の拒否）を app.ts が同じ見た目で出すための雛形。
+templ AlertRoot(class string) {
+	<div id="alert-root" class={ "empty:hidden", class }></div>
+	<template id="alert-template">
+		@atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "エラー", Dismissible: true, Template: true})
+	</template>
+}
+
+// AlertOOB は GET /poll などの応答に添えて、#alert-root のアラートを差し替える（OOB）。
+templ AlertOOB(p atoms.AlertProps) {
+	<div id="alert-root" hx-swap-oob="innerHTML">
+		@atoms.Alert(p)
+	</div>
 }
 
 // LivePoller は最新の状態を取りに行く。GET /poll を 3 秒ごとに呼び、応答の OOB のフラグメントで各領域を差し替える（swap は none）。

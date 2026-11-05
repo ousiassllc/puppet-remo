@@ -118,12 +118,12 @@ func TestPollDeliversToastsOnce(t *testing.T) {
 	r.f.Bus.Publish(service.Event{Topic: service.TopicToast, Data: service.Toast{Level: "info", Message: "設定を保存しました。"}})
 
 	first := r.get("/poll", hx...)
-	contains(t, first, `hx-swap-oob="beforeend:#toast-root"`, "ホットキーを登録できませんでした。", `data-toast-level="error"`,
-		"設定を保存しました。", `data-toast-level="info"`)
+	contains(t, first, `id="alert-root" hx-swap-oob="innerHTML"`, `data-alert-tone="danger"`, "ホットキーを登録できませんでした。",
+		`hx-swap-oob="beforeend:#toast-root"`, "設定を保存しました。")
 
 	// 取り出し済みのトーストは、次の応答に出ない。
 	second := r.get("/poll", hx...)
-	lacks(t, second, "toast-root", "ホットキーを登録できませんでした。", "設定を保存しました。")
+	lacks(t, second, "toast-root", "alert-root", "ホットキーを登録できませんでした。", "設定を保存しました。")
 }
 
 func TestPollLeaksNoSecrets(t *testing.T) {

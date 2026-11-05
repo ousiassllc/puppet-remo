@@ -5,9 +5,9 @@ import "github.com/ousiassllc/puppet-remo/internal/web/view"
 // Overlay は操作中オーバーレイの中身（#69）。クリックスルー・透過のウィンドウに重ねて出すので、画面の内容を隠さない作りにする:
 // 背景は透明、枠線は画面の縁の細い線だけ、文言は上端中央の小さな札だけ。入力は受けない（pointer-events-none）。
 templ Overlay(v view.Overlay) {
-	<div id="operation-overlay" class="pointer-events-none fixed inset-0 border-4 border-rose-500" data-overlay>
-		<div class="absolute left-1/2 top-0 max-w-[60%] -translate-x-1/2 rounded-b-lg bg-rose-600/90 px-4 py-1 text-center text-white shadow">
-			<p class="truncate text-sm font-semibold" data-overlay-label>{ v.Label }</p>
+	<div id="operation-overlay" class="pointer-events-none fixed inset-0 border-4 border-danger" data-overlay>
+		<div class="absolute left-1/2 top-0 max-w-[60%] -translate-x-1/2 rounded-b-lg bg-danger px-4 py-1 text-center text-bone">
+			<p class="truncate text-sm" data-overlay-label>{ v.Label }</p>
 			if v.Detail != "" {
 				<p class="truncate text-xs" data-overlay-detail>{ v.Detail }</p>
 			}

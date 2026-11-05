@@ -15,13 +15,16 @@ const (
 	ButtonPrimary   ButtonVariant = "primary"
 	ButtonSecondary ButtonVariant = "secondary"
 	ButtonDanger    ButtonVariant = "danger"
+	ButtonGhost     ButtonVariant = "ghost"
 )
 
 // ButtonProps はボタンの引数。Type が空なら "button"（フォーム送信は "submit" を明示する）。
+// Small は小ボタン（高さ 32・14px。一覧の行・カードの中の操作）で、既定は高さ 40・16px。
 type ButtonProps struct {
 	Label   string
 	Variant ButtonVariant
 	Type    string
+	Small   bool
 	Attrs   Attrs
 }
 
@@ -32,15 +35,23 @@ func buttonType(t string) string {
 	return "button"
 }
 
-func buttonClass(v ButtonVariant) string {
-	base := "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 "
+// ButtonClass はボタンのクラス。ボタンの見た目にするリンク（<a>）が atoms.Button と同じ見た目になるように、公開している。
+func ButtonClass(v ButtonVariant, small bool) string {
+	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 "
+	if small {
+		base += "h-8 px-3 text-sm "
+	} else {
+		base += "h-10 px-4 text-base "
+	}
 	switch v {
 	case ButtonDanger:
-		return base + "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500"
+		return base + "bg-danger text-bone hover:bg-danger/90"
+	case ButtonGhost:
+		return base + "bg-transparent text-ink hover:bg-accent-soft"
 	case ButtonSecondary:
-		return base + "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-400"
+		return base + "border border-border bg-transparent text-ink hover:bg-accent-soft"
 	default:
-		return base + "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-indigo-500"
+		return base + "bg-accent text-bone hover:bg-accent/90"
 	}
 }
 
@@ -66,7 +77,7 @@ func Button(p ButtonProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{buttonClass(p.Variant)}
+		var templ_7745c5c3_Var2 = []any{ButtonClass(p.Variant, p.Small)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -78,7 +89,7 @@ func Button(p ButtonProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(buttonType(p.Type))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 41, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 52, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -97,7 +108,7 @@ func Button(p ButtonProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" data-ripple")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -112,7 +123,7 @@ func Button(p ButtonProps) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 41, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/button.templ`, Line: 52, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {

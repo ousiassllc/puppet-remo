@@ -7,13 +7,16 @@ const (
 	ButtonPrimary   ButtonVariant = "primary"
 	ButtonSecondary ButtonVariant = "secondary"
 	ButtonDanger    ButtonVariant = "danger"
+	ButtonGhost     ButtonVariant = "ghost"
 )
 
 // ButtonProps はボタンの引数。Type が空なら "button"（フォーム送信は "submit" を明示する）。
+// Small は小ボタン（高さ 32・14px。一覧の行・カードの中の操作）で、既定は高さ 40・16px。
 type ButtonProps struct {
 	Label   string
 	Variant ButtonVariant
 	Type    string
+	Small   bool
 	Attrs   Attrs
 }
 
@@ -24,19 +27,27 @@ func buttonType(t string) string {
 	return "button"
 }
 
-func buttonClass(v ButtonVariant) string {
-	base := "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 "
+// ButtonClass はボタンのクラス。ボタンの見た目にするリンク（<a>）が atoms.Button と同じ見た目になるように、公開している。
+func ButtonClass(v ButtonVariant, small bool) string {
+	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 "
+	if small {
+		base += "h-8 px-3 text-sm "
+	} else {
+		base += "h-10 px-4 text-base "
+	}
 	switch v {
 	case ButtonDanger:
-		return base + "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500"
+		return base + "bg-danger text-bone hover:bg-danger/90"
+	case ButtonGhost:
+		return base + "bg-transparent text-ink hover:bg-accent-soft"
 	case ButtonSecondary:
-		return base + "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-400"
+		return base + "border border-border bg-transparent text-ink hover:bg-accent-soft"
 	default:
-		return base + "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-indigo-500"
+		return base + "bg-accent text-bone hover:bg-accent/90"
 	}
 }
 
 // Button は操作ボタン。hx-* は Attrs で渡す。
 templ Button(p ButtonProps) {
-	<button type={ buttonType(p.Type) } class={ buttonClass(p.Variant) } { p.Attrs... }>{ p.Label }</button>
+	<button type={ buttonType(p.Type) } class={ ButtonClass(p.Variant, p.Small) } data-ripple { p.Attrs... }>{ p.Label }</button>
 }

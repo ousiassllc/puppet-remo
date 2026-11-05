@@ -36,18 +36,18 @@ func (h *Handler) Update(c *gin.Context) {
 func (h *Handler) CheckUpdate(c *gin.Context) {
 	ctx := c.Request.Context()
 	st := h.d.Updates.Check(ctx, domain.ActorHost)
-	toast := infoToast("新しい版はありません。")
+	notice := organisms.ToastOOB(infoToast("新しい版はありません。"))
 	switch {
 	case !st.Updatable:
-		toast = infoToast("この版（開発用のビルド）は更新の対象外です。")
+		notice = organisms.ToastOOB(infoToast("この版（開発用のビルド）は更新の対象外です。"))
 	case st.LastError != "":
-		toast = view.Toast{Level: view.ToastError, Message: "更新の確認に失敗しました。", ErrorCode: st.LastError}
+		notice = organisms.AlertOOB(errorAlert(st.LastError, "更新の確認に失敗しました。"))
 	case st.Latest != nil && st.Latest.Verified:
-		toast = infoToast("新しい版 " + st.Latest.Version + " があります。")
+		notice = organisms.ToastOOB(infoToast("新しい版 " + st.Latest.Version + " があります。"))
 	case st.Latest != nil:
-		toast = view.Toast{Level: view.ToastError, Message: "新しい版 " + st.Latest.Version + " は、署名を確認できないため適用できません。"}
+		notice = organisms.AlertOOB(errorAlert("", "新しい版 "+st.Latest.Version+" は、署名を確認できないため適用できません。"))
 	}
-	h.render(c, http.StatusOK, organisms.UpdatePanel(h.updatePanelView(st)), organisms.ToastOOB(toast))
+	h.render(c, http.StatusOK, organisms.UpdatePanel(h.updatePanelView(st)), notice)
 }
 
 // ConfirmApplyUpdate は GET /update/apply/confirm。適用できる新版があるときだけ描画する。
