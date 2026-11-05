@@ -72,6 +72,33 @@ func TestModalShadowColorIsDarkAware(t *testing.T) {
 	}
 }
 
+// C4: 状態色の枠・地はガイドの式（in srgb の 40% / 10%）で混色する名前付きの色（-line・-wash）。Tailwind の /40・/10 は in oklab になる。
+func TestStatusLineAndWashColorsMixInSRGB(t *testing.T) {
+	css := readAppCSS(t)
+	for _, tone := range []string{"success", "warning", "danger", "info"} {
+		for suffix, pct := range map[string]string{"line": "40", "wash": "10"} {
+			want := "--color-" + tone + "-" + suffix + ": color-mix(in srgb, var(--" + tone + ") " + pct + "%, transparent);"
+			if !strings.Contains(css, want) {
+				t.Errorf("app.css must contain %q", want)
+			}
+		}
+	}
+}
+
+// C8: 暗幕（--scrim）は大きな面なので、ダークでも純黒にせず --bone（#050505）系にする（ライトは 0.4、ダークは 0.6）。
+func TestScrimIsNeverPureBlack(t *testing.T) {
+	css := readAppCSS(t)
+	if got := strings.Count(css, "--scrim: rgb(5 5 5 / 0.4);"); got != 1 {
+		t.Errorf("light --scrim defined %d times, want 1", got)
+	}
+	if got := strings.Count(css, "--scrim: rgb(5 5 5 / 0.6);"); got != 2 {
+		t.Errorf("dark --scrim defined %d times, want 2 ([data-theme=\"dark\"] and prefers-color-scheme)", got)
+	}
+	if strings.Contains(css, "--scrim: rgb(0 0 0") {
+		t.Error("--scrim must not be pure black")
+	}
+}
+
 // C6: --mute はライトが #6b6b6e（--bone・--surface 上で AA 4.5:1）、ダークが #8b8b8e。
 // ダークの値は [data-theme="dark"] と prefers-color-scheme の 2 か所に置く。
 func TestMuteTokenIsSplitByTheme(t *testing.T) {

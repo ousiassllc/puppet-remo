@@ -34,13 +34,13 @@ func alertClass(t AlertTone) string {
 	base := "motion-rise-in flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
 	switch t {
 	case AlertSuccess:
-		return base + "border-success/40 bg-success/10 text-success"
+		return base + "border-success-line bg-success-wash text-success"
 	case AlertWarning:
-		return base + "border-warning/40 bg-warning/10 text-warning"
+		return base + "border-warning-line bg-warning-wash text-warning"
 	case AlertDanger:
-		return base + "border-danger/40 bg-danger/10 text-danger"
+		return base + "border-danger-line bg-danger-wash text-danger"
 	default:
-		return base + "border-info/40 bg-info/10 text-info"
+		return base + "border-info-line bg-info-wash text-info"
 	}
 }
 
@@ -184,13 +184,13 @@ func noticeClass(t AlertTone, animated bool) string {
 	}
 	switch t {
 	case AlertSuccess:
-		return base + "border-success/40 bg-success/10"
+		return base + "border-success-line bg-success-wash"
 	case AlertWarning:
-		return base + "border-warning/40 bg-warning/10"
+		return base + "border-warning-line bg-warning-wash"
 	case AlertDanger:
-		return base + "border-danger/40 bg-danger/10"
+		return base + "border-danger-line bg-danger-wash"
 	default:
-		return base + "border-info/40 bg-info/10"
+		return base + "border-info-line bg-info-wash"
 	}
 }
 

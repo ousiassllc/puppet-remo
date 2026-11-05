@@ -110,14 +110,14 @@ func ApprovalDialog(v view.ApprovalDialog) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section id=\"approval-dialog\" class=\"space-y-4 rounded-lg border border-warning/40 bg-surface p-6\" data-approval=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section id=\"approval-dialog\" class=\"space-y-4 rounded-lg border border-warning-line bg-surface p-6\" data-approval=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/approval.templ`, Line: 33, Col: 120}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/approval.templ`, Line: 33, Col: 122}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -130,7 +130,7 @@ func ApprovalDialog(v view.ApprovalDialog) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.Kind)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/approval.templ`, Line: 33, Col: 150}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/approval.templ`, Line: 33, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {

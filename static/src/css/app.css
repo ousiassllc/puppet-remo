@@ -45,7 +45,7 @@
   --warning: #c4b87a;
   --danger: #c49a9a;
   --info: #9aabbc;
-  --scrim: rgb(0 0 0 / 0.6);
+  --scrim: rgb(5 5 5 / 0.6);
   --shadow-modal-color: rgb(0 0 0 / 0.4);
 }
 
@@ -64,12 +64,12 @@
     --warning: #c4b87a;
     --danger: #c49a9a;
     --info: #9aabbc;
-    --scrim: rgb(0 0 0 / 0.6);
+    --scrim: rgb(5 5 5 / 0.6);
     --shadow-modal-color: rgb(0 0 0 / 0.4);
   }
 }
 
-/* Tailwind 既定のパレットは消し、トークンだけを使えるようにする（bg-bone・text-ink・border-border・bg-danger/10 など）。 */
+/* Tailwind 既定のパレットは消し、トークンだけを使えるようにする（bg-bone・text-ink・border-border・border-danger-line・bg-danger-wash など）。 */
 @theme {
   --color-*: initial;
   --color-transparent: transparent;
@@ -91,6 +91,16 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
+
+  /* 状態色の枠（-line）と地（-wash）。ガイド C4 の式（in srgb の 40% / 10%）のとおり。Tailwind の /40・/10 は in oklab で混色するので使わない。 */
+  --color-success-line: color-mix(in srgb, var(--success) 40%, transparent);
+  --color-success-wash: color-mix(in srgb, var(--success) 10%, transparent);
+  --color-warning-line: color-mix(in srgb, var(--warning) 40%, transparent);
+  --color-warning-wash: color-mix(in srgb, var(--warning) 10%, transparent);
+  --color-danger-line: color-mix(in srgb, var(--danger) 40%, transparent);
+  --color-danger-wash: color-mix(in srgb, var(--danger) 10%, transparent);
+  --color-info-line: color-mix(in srgb, var(--info) 40%, transparent);
+  --color-info-wash: color-mix(in srgb, var(--info) 10%, transparent);
 }
 
 /* ---- 形・余白・線・影（S1〜S4）----
