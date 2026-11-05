@@ -37,7 +37,7 @@ func agentBody(v view.AgentSettings) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-3xl space-y-4\"><h1 class=\"text-3xl font-semibold text-ink\">エージェント</h1><p class=\"text-base text-ink\" data-notice=\"agent-default-off\">ホストに内蔵のエージェントは、既定では無効です。有効にしたときだけ、依頼を受けたタスクを OpenAI のモデルが画面を見て実行します。API キーと同意はこの画面（ホストの GUI）でだけ設定できます。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-3xl space-y-6\"><h1 class=\"text-3xl font-semibold text-ink\">エージェント</h1><p class=\"text-base text-ink\" data-notice=\"agent-default-off\">ホストに内蔵のエージェントは、既定では無効です。有効にしたときだけ、依頼を受けたタスクを OpenAI のモデルが画面を見て実行します。API キーと同意はこの画面（ホストの GUI）でだけ設定できます。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
