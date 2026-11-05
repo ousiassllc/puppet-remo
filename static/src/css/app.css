@@ -229,6 +229,19 @@
     cursor: not-allowed;
   }
 
+  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の矢印を重ねる（右 padding 36 は select.templ）。 */
+  select {
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--mute) 50%),
+      linear-gradient(135deg, var(--mute) 50%, transparent 50%);
+    background-position:
+      calc(100% - 20px) center,
+      calc(100% - 15px) center;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+  }
+
   /* スライダー（P1）: つまみ・進捗を --accent にする。 */
   input[type="range"] {
     accent-color: var(--accent);

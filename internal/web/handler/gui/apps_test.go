@@ -375,7 +375,7 @@ func TestPickFileSelectedReturnsExePathFieldWithoutRegistering(t *testing.T) {
 	status(t, res, http.StatusOK)
 	// 入力欄だけのフラグメント。手で編集できる（readonly ではない）。選ばれたパスを入れる。
 	contains(t, res, `data-field="exe_path"`, `id="app-form-app1-exe-path"`, `name="exe_path"`, `value="`+notepad+`"`, `hx-post="/apps/pick-file"`)
-	lacks(t, res, "<html", "<form", "readonly", "stale", `id="app-list"`)
+	lacks(t, res, "<html", "<form", " readonly", "stale", `id="app-list"`)
 	if r.f.Apps.Picks != 1 || len(r.f.Apps.Created) != 0 || len(r.f.Apps.Rows) != 0 {
 		t.Errorf("picking must not register: picks=%d created=%v", r.f.Apps.Picks, r.f.Apps.Created)
 	}

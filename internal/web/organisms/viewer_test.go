@@ -73,6 +73,9 @@ func TestViewerToolbarRendersFieldsAndErrors(t *testing.T) {
 	has(t, out, `id="viewer-toolbar"`, `hx-post="/viewer/settings"`, `hx-target-422="this"`, `<option value="1" selected>`, `name="quality"`, `min="1"`, `max="100"`,
 		`name="fps"`, `max="30"`, `value="70"`, `value="10"`, " novalidate")
 	hasNot(t, out, "data-field-error", "data-error-code")
+	// スライダーの値（<output>）は補助の --mute。スライダー自体は入力欄の枠を持たない（P1）。
+	has(t, out, `<output id="viewer-quality-out" for="viewer-quality" class="w-8 text-sm font-mono text-mute">`, `type="range" value="70" class="w-full min-w-0"`)
+	hasNot(t, out, `text-sm font-mono text-ink`)
 	webtest.AssertCSPCompliantHTML(t, out)
 
 	v.Errors = view.ViewerToolbarErrors{Quality: "1〜100 の整数を指定してください。"}
@@ -86,10 +89,10 @@ func TestViewerRootPlacesTheViewerOutsideHTMXTargets(t *testing.T) {
 		Lease: view.ViewerLease{CanAcquire: true}}
 	out := webtest.Render(t, organisms.ViewerRoot(v))
 	has(t, out, `<main id="viewer-root"`, `X-Viewer-Id`, `VID1`, `<remo-screen-viewer`, `ws-url="ws://h:1/ws/screen?viewer_id=VID1"`,
-		`monitor="1"`, `quality="70"`, `fps="10"`, "readonly")
+		`monitor="1"`, `quality="70"`, `fps="10"`, " readonly")
 	webtest.AssertCSPCompliantHTML(t, out)
 
 	v.Lease = view.ViewerLease{Held: true, Mine: true, CanRelease: true}
 	out = webtest.Render(t, organisms.ViewerRoot(v))
-	hasNot(t, out, "readonly")
+	hasNot(t, out, " readonly")
 }

@@ -30,7 +30,7 @@ func TestViewerFullPage(t *testing.T) {
 		`<remo-screen-viewer`, `src="/static/js/screen-viewer.js"`, `src="/static/js/htmx.min.js"`, `src="/static/js/htmx-config.js"`,
 		`monitor="0"`, `quality="70"`, `fps="10"`,
 		// 操作権がないので readonly。UI から Ctrl+Alt+Del は送れない旨（FR-W08）。
-		`readonly`, `Ctrl+Alt+Del は送れません`,
+		` readonly`, `Ctrl+Alt+Del は送れません`,
 	)
 	if got := res.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
@@ -74,7 +74,7 @@ func TestViewerShowsHolderAndOnlyRevokeWhenOthersHold(t *testing.T) {
 		f.Leases.Hold(domain.Actor{Kind: domain.ActorMCP, ClientID: "c9", Label: "claude-desktop", SessionID: "s1"})
 	})
 	res := r.get("/viewer")
-	contains(t, res, "保持中", "claude-desktop", ">mcp<", `data-lease-state="other"`, `hx-get="/viewer/lease/revoke/confirm"`, "readonly")
+	contains(t, res, "保持中", "claude-desktop", ">mcp<", `data-lease-state="other"`, `hx-get="/viewer/lease/revoke/confirm"`, " readonly")
 	lacks(t, res, "/viewer/lease/acquire", "/viewer/lease/release")
 }
 

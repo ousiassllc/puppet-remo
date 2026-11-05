@@ -139,6 +139,27 @@ func TestFieldsFollowTheFormSpec(t *testing.T) {
 	}
 }
 
+// 読み取り専用の --bone 地は readonly 属性のある要素だけ。:read-only は select・range にも一致するので使わない（使うと select の地が変わる）。
+func TestReadonlyBackgroundNeedsTheReadonlyAttribute(t *testing.T) {
+	ok := webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"}))
+	sel := webtest.Render(t, atoms.Select("s", "s", nil))
+	area := webtest.Render(t, atoms.Textarea(atoms.TextareaProps{ID: "t", Name: "t"}))
+	for _, out := range []string{ok, sel, area} {
+		has(t, out, "[&amp;[readonly]]:bg-bone", "bg-surface")
+		hasNot(t, out, "read-only:")
+	}
+	// 選択欄は標準の矢印を消す（app.css の select）ので、矢印の分の右 padding 36 を持つ。
+	has(t, sel, "pr-9")
+}
+
+// スライダー（P1）: 1 行入力欄の枠（高さ・border・背景・padding）を持たず、幅いっぱいに置く。
+func TestRangeHasNoFieldFrame(t *testing.T) {
+	out := webtest.Render(t, atoms.Range(atoms.RangeProps{ID: "r", Name: "r", Value: "70", Invalid: true, Attrs: atoms.Attrs{"min": "1", "max": "100"}}))
+	has(t, out, `type="range"`, `value="70"`, `min="1"`, `max="100"`, "w-full", "aria-invalid")
+	hasNot(t, out, "h-10", "border", "bg-surface", "px-3", "rounded-md")
+	webtest.AssertCSPCompliantHTML(t, out)
+}
+
 // アイコン: Iconoir の SVG（currentColor・線 1.5）。サイズは sm 16 / md 20 / lg 24 / xl 32。装飾なので読み上げない。
 func TestIconIsAnIconoirSVG(t *testing.T) {
 	for size, class := range map[atoms.IconSize]string{atoms.IconSM: "size-4", atoms.IconMD: "size-5", atoms.IconLG: "size-6", atoms.IconXL: "size-8"} {

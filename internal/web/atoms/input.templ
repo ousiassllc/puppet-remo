@@ -29,9 +29,10 @@ func textareaClass(invalid bool) string {
 	return fieldClass("px-3 py-2 ", invalid)
 }
 
-// fieldClass は入力欄・選択欄・複数行の入力欄に共通のクラス。本文と同じ 16px・Regular。無効（disabled）は opacity .5（O7）。
+// fieldClass は入力欄・選択欄・複数行の入力欄に共通のクラス。本文と同じ 16px・Regular。読み取り専用（readonly 属性）だけ --bone 地にする
+// （:read-only は select にも一致するので使わない）。無効（disabled）は opacity .5（O7）。
 func fieldClass(size string, invalid bool) string {
-	base := "block w-full min-w-0 rounded-md border bg-surface text-base read-only:bg-bone disabled:cursor-not-allowed disabled:opacity-50 " + size
+	base := "block w-full min-w-0 rounded-md border bg-surface text-base [&[readonly]]:bg-bone disabled:cursor-not-allowed disabled:opacity-50 " + size
 	if invalid {
 		return base + "border-danger"
 	}
