@@ -95,8 +95,10 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 
 // 状態駆動: 中断のボタンは、中断できる状態（CancelURL がある）のときだけ描画する。
 func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
-	running := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒", CancelURL: "/tasks/t1/cancel"}))
-	has(t, running, `data-task-status="running"`, `hx-post="/tasks/t1/cancel"`, `hx-target="closest [data-task-status]"`, `hx-swap="outerHTML"`, `hx-disabled-elt="this"`, "3 / 50", "10秒", "中断")
+	running := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒", DOMID: "task-status-t1", CancelURL: "/tasks/t1/cancel", ConfirmURL: "/tasks/t1/cancel/confirm"}))
+	// 中断は破壊的なので、ボタンは確認モーダルを開く（確定のボタンだけが POST を送る。O2）。
+	has(t, running, `id="task-status-t1"`, `data-task-status="running"`, `hx-get="/tasks/t1/cancel/confirm"`, `hx-target="#modal-root"`, `hx-swap="innerHTML"`, "3 / 50", "10秒", "中断")
+	hasNot(t, running, "hx-post")
 	done := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "completed", Label: "完了", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒"}))
 	has(t, done, `data-task-status="completed"`)
 	hasNot(t, done, "<button", "hx-post", "/cancel")
@@ -108,12 +110,12 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 // ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
 func TestRunningTasksPanel(t *testing.T) {
 	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Client: "claude", PromptExcerpt: "天気を調べる",
-		Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "1 / 50", Elapsed: "5秒", CancelURL: "/tasks/t1/cancel"}}
+		Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "1 / 50", Elapsed: "5秒", CancelURL: "/tasks/t1/cancel", ConfirmURL: "/tasks/t1/cancel/confirm"}}
 	empty := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Rev: "abc"}))
 	has(t, empty, `id="running-tasks"`, `name="rev_tasks" value="abc" data-poll-rev`)
 	hasNot(t, empty, "data-running-task", "<button", "hx-swap-oob")
 	full := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Items: []view.RunningTask{item}, Rev: "def"}))
-	has(t, full, "data-running-task", "00RUN001", "claude", "天気を調べる", `hx-post="/tasks/t1/cancel"`, `href="/tasks/t1"`)
+	has(t, full, "data-running-task", "00RUN001", "claude", "天気を調べる", `hx-get="/tasks/t1/cancel/confirm"`, `href="/tasks/t1"`)
 	hasNot(t, full, "hx-swap-oob")
 	oob := webtest.Render(t, organisms.RunningTasksOOB(view.RunningTasks{Items: []view.RunningTask{item}, Rev: "def"}))
 	has(t, oob, `id="running-tasks"`, `hx-swap-oob="true"`, "data-running-task")

@@ -127,6 +127,9 @@ func shortTaskID(id string) string {
 
 func taskDetailURL(id string) string { return "/tasks/" + url.PathEscape(id) }
 
+// taskStatusDOMID は状態の 1 行の id。確認モーダルの確定の応答が、この要素を差し替える。
+func taskStatusDOMID(id string) string { return "task-status-" + id }
+
 func taskSteps(t domain.Task) string {
 	return strconv.Itoa(t.StepCount) + " / " + strconv.Itoa(t.MaxSteps)
 }
@@ -134,9 +137,10 @@ func taskSteps(t domain.Task) string {
 // taskStatusView は状態の 1 行。中断のボタン（CancelURL）は、終了していないタスクにだけ付ける（状態駆動）。
 func (h *Handler) taskStatusView(t domain.Task) view.TaskStatus {
 	label, tone := taskStatusText(t.Status)
-	v := view.TaskStatus{Code: string(t.Status), Label: label, Tone: tone, Steps: taskSteps(t), Elapsed: h.taskElapsed(t)}
+	v := view.TaskStatus{DOMID: taskStatusDOMID(t.ID), Code: string(t.Status), Label: label, Tone: tone, Steps: taskSteps(t), Elapsed: h.taskElapsed(t)}
 	if !t.Status.Terminal() {
 		v.CancelURL = taskDetailURL(t.ID) + "/cancel"
+		v.ConfirmURL = v.CancelURL + "/confirm"
 	}
 	return v
 }
@@ -299,5 +303,24 @@ func (h *Handler) CancelTask(c *gin.Context) {
 			toast = taskEndedToast
 		}
 	}
-	h.render(c, http.StatusOK, organisms.TaskStatus(h.taskStatusView(t)), organisms.ToastOOB(infoToast(toast)))
+	h.render(c, http.StatusOK, organisms.TaskStatus(h.taskStatusView(t)), organisms.ModalClear(), organisms.ToastOOB(infoToast(toast)))
+}
+
+// ConfirmCancelTask は GET /tasks/:id/cancel/confirm（中断の確認モーダル）。中断できる（終了していない）タスクだけ描画する。
+// 無いタスクは 404、終了済みは 409（モーダルなし）。確定のボタンが POST /tasks/:id/cancel を送る。
+func (h *Handler) ConfirmCancelTask(c *gin.Context) {
+	d, err := h.d.Tasks.Detail(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	if d.Status.Terminal() {
+		h.failMessage(c, http.StatusConflict, string(domain.CodeConflict), taskEndedToast)
+		return
+	}
+	h.confirm(c, view.ConfirmModal{
+		Title:      "タスクを中断しますか？",
+		Message:    "実行中のエージェントタスクを止めます。途中までの操作は元に戻りません。",
+		ConfirmURL: taskDetailURL(d.ID) + "/cancel", Method: "post", Target: "#" + taskStatusDOMID(d.ID), Swap: "outerHTML", Label: "中断する",
+	})
 }

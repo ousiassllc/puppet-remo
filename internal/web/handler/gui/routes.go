@@ -76,7 +76,8 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/lease/revoke/confirm", h.ConfirmRevokeLease)
 	r.POST("/lease/revoke", h.RevokeLease)
 
-	// タスクの中断（M4。FR-H02・H10）。ホスト所有者の中断のボタン
+	// タスクの中断（M4。FR-H02・H10）。ホスト所有者の中断のボタン。破壊的なので確認モーダルを経る
+	r.GET("/tasks/:id/cancel/confirm", h.ConfirmCancelTask)
 	r.POST("/tasks/:id/cancel", h.CancelTask)
 
 	// キルスイッチ・設定

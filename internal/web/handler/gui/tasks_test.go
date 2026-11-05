@@ -208,8 +208,8 @@ func TestTaskDetailStates(t *testing.T) {
 		want   []string
 		not    []string
 	}{
-		{"running offers cancel", domain.TaskRunning, nil, []string{`hx-post="/tasks/` + idRunning + `/cancel"`, "実行中", `closest [data-task-status]`}, []string{"data-task-result-note", "エラーコード"}},
-		{"pending approval offers cancel", domain.TaskPendingApproval, nil, []string{`hx-post="/tasks/` + idRunning + `/cancel"`, "承認待ち"}, nil},
+		{"running offers cancel", domain.TaskRunning, nil, []string{`hx-get="/tasks/` + idRunning + `/cancel/confirm"`, `id="task-status-` + idRunning + `"`, "実行中"}, []string{"data-task-result-note", "エラーコード"}},
+		{"pending approval offers cancel", domain.TaskPendingApproval, nil, []string{`hx-get="/tasks/` + idRunning + `/cancel/confirm"`, "承認待ち"}, nil},
 		{"failed shows the error code and no cancel", domain.TaskFailed, func(t *domain.Task) { t.ErrorCode = "safety_check_denied" },
 			[]string{"失敗", "safety_check_denied", "OpenAI の安全チェックをホストが拒否した"}, []string{"hx-post", "data-task-result-note"}},
 		{"unknown error code is shown as is", domain.TaskFailed, func(t *domain.Task) { t.ErrorCode = "something_new" }, []string{"something_new"}, []string{"data-task-field=\"error-label\""}},
@@ -299,7 +299,7 @@ func TestCancelTask(t *testing.T) {
 		r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idRunning, domain.TaskRunning, "p", 1, withSteps(0, 4)) })
 		res := r.post("/tasks/"+idRunning+"/cancel", nil, hx...)
 		status(t, res, http.StatusOK)
-		contains(t, res, `data-task-status="cancelled"`, "中断</span>", "4 / 50", "タスクを中断しました。", `hx-swap-oob="beforeend:#toast-root"`)
+		contains(t, res, `data-task-status="cancelled"`, "中断</span>", "4 / 50", "タスクを中断しました。", `hx-swap-oob="beforeend:#toast-root"`, `id="modal-root" hx-swap-oob="true"`)
 		lacks(t, res, "<html", "/cancel", "hx-post")
 		if got := r.f.Tasks.CancelCalls; len(got) != 1 || got[0] != idRunning {
 			t.Errorf("CancelByHost calls = %v", got)
@@ -361,14 +361,14 @@ func TestDashboardShowsTheRunningTask(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="running-tasks"`, "実行中のエージェントタスク", "data-running-task", "00RUN001", "claude-desktop",
 		"ブラウザで天気を調べる", "実行中", "4 / 50", "1分59秒",
-		`hx-post="/tasks/`+idRunning+`/cancel"`, `hx-target="closest [data-task-status]"`, `href="/tasks/`+idRunning+`"`, `name="rev_tasks"`)
+		`hx-get="/tasks/`+idRunning+`/cancel/confirm"`, `hx-target="#modal-root"`, `href="/tasks/`+idRunning+`"`, `name="rev_tasks"`)
 	// 終了済みのタスクは出さない。
 	lacks(t, res, "finished-prompt", "00FIN002")
 }
 
 func TestDashboardRunningTaskPendingApprovalAndNone(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idRunning, domain.TaskPendingApproval, "p", 1) })
-	contains(t, r.get("/"), "承認待ち", `hx-post="/tasks/`+idRunning+`/cancel"`)
+	contains(t, r.get("/"), "承認待ち", `hx-get="/tasks/`+idRunning+`/cancel/confirm"`)
 	none := newRig(t).get("/")
 	lacks(t, none, "data-running-task", "実行中のエージェントタスク", "/cancel")
 	contains(t, none, `id="running-tasks"`, `name="rev_tasks"`)
@@ -397,7 +397,7 @@ func TestPollSwapsTheRunningTasksPanel(t *testing.T) {
 	// タスクが始まった → 版が違うので OOB で差し替える（中断のボタン付き）。
 	res := r.get(pollURL(url.Values{"rev_tasks": {rev}}), hx...)
 	status(t, res, http.StatusOK)
-	contains(t, res, `id="running-tasks"`, `hx-swap-oob="true"`, "ブラウザで天気を調べる", `hx-post="/tasks/`+idRunning+`/cancel"`, `name="rev_tasks"`)
+	contains(t, res, `id="running-tasks"`, `hx-swap-oob="true"`, "ブラウザで天気を調べる", `hx-get="/tasks/`+idRunning+`/cancel/confirm"`, `name="rev_tasks"`)
 	lacks(t, res, "<html")
 
 	// 中断すると、パネルは空に戻る（中身を出さない）。
@@ -427,4 +427,31 @@ func TestSidebarHasTheTasksEntry(t *testing.T) {
 	res := newRig(t).get("/")
 	contains(t, res, `href="/tasks"`, ">タスク<")
 	contains(t, newRig(t).get("/tasks"), `aria-current="page"`)
+}
+
+// 中断は破壊的なので、中断のボタンは確認モーダルを経る。確定のボタンだけが POST /tasks/{id}/cancel を送り、状態の 1 行を差し替える。
+func TestConfirmCancelTask(t *testing.T) {
+	t.Run("running task shows the confirm modal whose confirm button posts the cancel", func(t *testing.T) {
+		r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idRunning, domain.TaskRunning, "p", 1) })
+		res := r.get("/tasks/"+idRunning+"/cancel/confirm", hx...)
+		status(t, res, http.StatusOK)
+		contains(t, res, `role="dialog"`, "タスクを中断しますか？", "中断する", `hx-post="/tasks/`+idRunning+`/cancel"`,
+			`hx-target="#task-status-`+idRunning+`"`, `hx-swap="outerHTML"`, `data-clear="#modal-root"`)
+		lacks(t, res, "<html")
+		if got := r.f.Tasks.CancelCalls; len(got) != 0 {
+			t.Errorf("opening the confirm modal must not cancel: %v", got)
+		}
+	})
+	t.Run("a finished task is a 409 without a modal", func(t *testing.T) {
+		r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idFinished, domain.TaskCompleted, "p", 10) })
+		res := r.get("/tasks/"+idFinished+"/cancel/confirm", hx...)
+		status(t, res, http.StatusConflict)
+		contains(t, res, `data-error-code="conflict"`)
+		lacks(t, res, `role="dialog"`)
+	})
+	t.Run("unknown id is a 404 without a modal", func(t *testing.T) {
+		res := newRig(t).get("/tasks/nope/cancel/confirm", hx...)
+		status(t, res, http.StatusNotFound)
+		lacks(t, res, `role="dialog"`)
+	})
 }
