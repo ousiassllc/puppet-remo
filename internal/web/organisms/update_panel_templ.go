@@ -37,7 +37,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"update-panel\" class=\"rounded-lg border border-border bg-surface\"><h2 class=\"border-b border-border px-6 py-3 text-2xl font-semibold text-ink\">アプリの更新</h2><div class=\"space-y-4 p-6\"><dl class=\"grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2\"><dt class=\"text-mute\">現在の版</dt><dd class=\"mb-1 min-w-0 sm:mb-0\"><code class=\"break-all rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-field=\"current-version\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"update-panel\" class=\"rounded-lg border border-border bg-surface\"><h2 class=\"border-b border-border px-6 py-3 text-2xl font-semibold text-ink\">アプリの更新</h2><div class=\"space-y-6 p-6\"><dl class=\"grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2\"><dt class=\"text-mute\">現在の版</dt><dd class=\"mb-1 min-w-0 sm:mb-0\"><code class=\"break-all rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-field=\"current-version\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

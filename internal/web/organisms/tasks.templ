@@ -146,7 +146,7 @@ templ taskField(label, value, name string, mono bool) {
 
 templ taskStepArgs(args []view.AuditArg) {
 	if len(args) > 0 {
-		<dl class="mt-1 space-y-1 text-sm text-ink" data-step-args>
+		<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>
 			for _, a := range args {
 				<div class="flex gap-1">
 					<dt class="text-mute">{ a.Key }:</dt>

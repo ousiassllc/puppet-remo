@@ -110,8 +110,8 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 // タスク詳細のステップの引数: キーだけが補助（text-mute）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<dl class="mt-1 space-y-1 text-sm text-ink" data-step-args>`, `<dt class="text-mute">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
-	hasNot(t, out, `class="mt-1 space-y-1 text-xs text-mute"`)
+	has(t, out, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
+	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
 // タスク・監査ログの詳細: h2 で始まるセクション同士は、48（--gap-section-sm。space-y-12）で区切る（S5）。
@@ -336,6 +336,8 @@ func TestAppListRowsAndEditingRow(t *testing.T) {
 	// ユーザー入力はエスケープされる。
 	evil := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a4", Label: `<script>alert(1)</script>`, ExePath: `"><script>x</script>`, Args: []string{`<script>`}}))
 	hasNot(t, evil, "<script>")
+	// 引数の並びの行間は 8（--list-gap。space-y-2）。
+	has(t, webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: `C:\c.exe`, Args: []string{"--x"}})), `<ul class="space-y-2" data-app-args>`)
 }
 
 // 読めない行は、引数の代わりに警告を出す（「なし」とは出さない）。
@@ -477,7 +479,7 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	}
 	out := webtest.Render(t, organisms.AppLog(v))
 	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
-		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<", `<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink">`,
+		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<", `<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-2 text-sm text-ink">`,
 		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
 		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
 	has(t, out, "auth failed &lt;b&gt;")
@@ -533,6 +535,9 @@ func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
 	has(t, fast, `hx-put="/agent/fastpath"`, `data-consent="typesafe"`, "TypeSafe（api.typesafe.ai）に送信される", "ウィンドウのタイトル", "直近 5 件",
 		"スクリーンショット、要素の値", `data-consent-at="typesafe"`, "2026-10-30 12:00", `step="0.05"`, `max="1"`, "別の同意", "checked")
 	hasNot(t, fast, "OpenAI に送信される", `data-consent="openai"`)
+	// 同意の枠の段落同士は 16（mt-4。S2）。
+	has(t, agent, `<p class="mt-4">API のデータは`)
+	has(t, fast, `<p class="mt-4">スクリーンショット、要素の値`)
 	webtest.AssertCSPCompliantHTML(t, agent)
 	webtest.AssertCSPCompliantHTML(t, fast)
 }
@@ -688,6 +693,9 @@ func TestAppLogFilterChips(t *testing.T) {
 func TestCardPaddingsFollowScale(t *testing.T) {
 	update := webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "v1.2.3", Verified: true}}))
 	has(t, update, `class="space-y-2 rounded-md bg-bone p-4" data-update="latest"`)
+	// カード内のまとまり同士は 24（--gap-card-section。space-y-6）。
+	has(t, update, `class="space-y-6 p-6"`)
+	hasNot(t, update, `class="space-y-4 p-6"`)
 	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
 	has(t, lease, "rounded-lg border border-border bg-surface p-4")
 	hasNot(t, lease, "bg-surface p-3")
