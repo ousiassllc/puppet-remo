@@ -69,6 +69,7 @@ func TestViewerToolbarRendersFieldsAndErrors(t *testing.T) {
 		Quality:  "70", FPS: "10",
 	}
 	out := webtest.Render(t, organisms.ViewerToolbar(v))
+	has(t, out, "rounded-lg border border-border bg-surface p-4") // S2: 小さいカードの padding は 16
 	has(t, out, `id="viewer-toolbar"`, `hx-post="/viewer/settings"`, `hx-target-422="this"`, `<option value="1" selected>`, `name="quality"`, `min="1"`, `max="100"`,
 		`name="fps"`, `max="30"`, `value="70"`, `value="10"`, " novalidate")
 	hasNot(t, out, "data-field-error", "data-error-code")

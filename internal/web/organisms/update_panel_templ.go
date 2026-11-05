@@ -166,7 +166,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 			}
 		}
 		if v.Latest != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"space-y-2 rounded-md border border-border p-3\" data-update=\"latest\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"text-sm text-ink\">新しい版: <code class=\"break-all rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-field=\"latest-version\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"space-y-2 rounded-md bg-bone p-4\" data-update=\"latest\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"text-sm text-ink\">新しい版: <code class=\"break-all rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-field=\"latest-version\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

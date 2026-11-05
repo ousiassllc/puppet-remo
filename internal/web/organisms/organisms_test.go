@@ -613,3 +613,19 @@ func TestStatusMessagesUseNotice(t *testing.T) {
 		})
 	}
 }
+
+// S1・P1: ログのレベルの絞り込みはチップ（rounded-full）。選択中は --accent-soft + 通常の枠（太い黒枠にしない）。
+func TestAppLogFilterChips(t *testing.T) {
+	out := webtest.Render(t, organisms.AppLog(view.AppLog{Page: 1, Filter: "warn", Filters: []view.LogFilterLink{{Code: "all", Label: "すべて", URL: "/logs"}, {Code: "warn", Label: "WARN", URL: "/logs?level=warn", Active: true}}}))
+	has(t, out, "rounded-full", "border-border bg-accent-soft")
+	hasNot(t, out, "border-accent ", "h-8 items-center rounded-md")
+}
+
+// S2: カード状の枠の padding は 16（小さいカード）。入れ子のパネルは --bone 地（枠線なし）。
+func TestCardPaddingsFollowScale(t *testing.T) {
+	update := webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "v1.2.3", Verified: true}}))
+	has(t, update, `class="space-y-2 rounded-md bg-bone p-4" data-update="latest"`)
+	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
+	has(t, lease, "rounded-lg border border-border bg-surface p-4")
+	hasNot(t, lease, "bg-surface p-3")
+}

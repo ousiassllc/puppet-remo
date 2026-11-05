@@ -17,9 +17,9 @@ import (
 )
 
 func logFilterClass(active bool) string {
-	base := "motion-hover inline-flex h-8 items-center rounded-md border px-3 text-sm "
+	base := "motion-hover inline-flex h-8 items-center rounded-full border px-3 text-sm "
 	if active {
-		return base + "border-accent bg-accent-soft text-ink"
+		return base + "border-border bg-accent-soft text-ink"
 	}
 	return base + "border-border bg-transparent text-ink hover:bg-accent-soft"
 }
@@ -335,7 +335,7 @@ func AppLog(v view.AppLog) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				if len(r.Attrs) > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<dl class=\"mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-ink\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<dl class=\"mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
