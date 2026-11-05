@@ -87,7 +87,7 @@ templ requestHistoryPager(v view.RequestHistory) {
 // ConnectionRequestHistory は接続要求の履歴（届いた日時の新しい順。FR-H03）。許可・拒否・失効・未処理のすべてを出す。
 // 読み取り専用で、操作は持たない（未処理の許可・拒否は「未処理」タブ）。ポーリングの対象ではない。
 templ ConnectionRequestHistory(v view.RequestHistory) {
-	<div id="request-history" class="space-y-3">
+	<div id="request-history" class="space-y-4">
 		if len(v.Rows) == 0 {
 			@molecules.EmptyState("request-history") {
 				表示できる接続要求の履歴はありません。

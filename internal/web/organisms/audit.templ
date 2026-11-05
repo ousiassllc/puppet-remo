@@ -79,7 +79,7 @@ templ auditThumbCell(has bool) {
 // 絞り込みと「次へ」は #audit-list を差し替える（HX-Request のフラグメント）。戻るはブラウザの履歴（hx-push-url）。
 // 値が表示されるのは AuditReader が伏せたあとのものだけで、templ が HTML エスケープする。
 templ AuditList(v view.AuditList) {
-	<div id="audit-list" class="space-y-3">
+	<div id="audit-list" class="space-y-4">
 		@AuditFilters(v.Filters)
 		if len(v.Rows) == 0 {
 			// 値が不正で検索しなかったとき（422）は、「該当なし」とは言わない。

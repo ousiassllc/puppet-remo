@@ -40,7 +40,7 @@ templ logPagerLink(url, label string, attrs atoms.Attrs) {
 // AppLog はアプリのログ（FR-H13）。レベルの絞り込み・新しい順の表・ページ送り。読み取り専用で、ポーリングの対象ではない。
 // 絞り込みとページ送りのリンクは #app-log を差し替える（HX-Request のフラグメント）。
 templ AppLog(v view.AppLog) {
-	<div id="app-log" class="space-y-3" data-log-filter={ v.Filter }>
+	<div id="app-log" class="space-y-4" data-log-filter={ v.Filter }>
 		<nav class="flex flex-wrap items-center gap-2" aria-label="レベルの絞り込み" data-log-filters>
 			<span class="text-sm text-ink">レベル:</span>
 			for _, f := range v.Filters {
