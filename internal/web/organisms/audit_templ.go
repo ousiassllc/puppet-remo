@@ -615,7 +615,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</dl><section class=\"space-y-2\" aria-label=\"引数\"><h2 class=\"text-2xl font-semibold text-ink\">引数</h2>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</dl><section class=\"space-y-6\" aria-label=\"引数\"><h2 class=\"text-2xl font-semibold text-ink\">引数</h2>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -684,7 +684,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</section><section class=\"space-y-2\" aria-label=\"サムネイル\"><h2 class=\"text-2xl font-semibold text-ink\">サムネイル</h2>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</section><section class=\"space-y-6\" aria-label=\"サムネイル\"><h2 class=\"text-2xl font-semibold text-ink\">サムネイル</h2>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

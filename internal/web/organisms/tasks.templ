@@ -178,11 +178,11 @@ templ TaskDetail(v view.TaskDetail) {
 				@taskField("エラーの内容", v.ErrorLabel, "error-label")
 			</dl>
 		</div>
-		<section class="space-y-2" aria-label="指示">
+		<section class="space-y-6" aria-label="指示">
 			<h2 class="text-2xl font-semibold text-ink">指示</h2>
 			<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-prompt>{ v.Prompt }</pre>
 		</section>
-		<section class="space-y-2" aria-label="最終回答">
+		<section class="space-y-6" aria-label="最終回答">
 			<h2 class="text-2xl font-semibold text-ink">最終回答</h2>
 			if v.ResultText == "" {
 				@molecules.EmptyState("task-result") {
@@ -197,7 +197,7 @@ templ TaskDetail(v view.TaskDetail) {
 				}
 			}
 		</section>
-		<section class="space-y-2" aria-label="ステップ">
+		<section class="space-y-6" aria-label="ステップ">
 			<h2 class="text-2xl font-semibold text-ink">ステップ</h2>
 			if len(v.Steps) == 0 {
 				@molecules.EmptyState("task-steps") {
