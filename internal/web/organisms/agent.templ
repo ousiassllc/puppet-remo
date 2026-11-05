@@ -82,7 +82,9 @@ templ AgentForm(f view.AgentForm) {
 		hx-indicator="#agent-spinner"
 	>
 		if f.Errors.General != "" {
-			<p class="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger" role="alert" data-form-error="agent">{ f.Errors.General }</p>
+			@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "agent"}) {
+				{ f.Errors.General }
+			}
 		}
 		<label class="flex items-center gap-2 text-sm text-ink">
 			@atoms.Checkbox("agent-enabled", "enabled", f.Values.Enabled)
@@ -142,7 +144,9 @@ templ FastpathForm(f view.FastpathForm) {
 		hx-indicator="#fastpath-spinner"
 	>
 		if f.Errors.General != "" {
-			<p class="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger" role="alert" data-form-error="fastpath">{ f.Errors.General }</p>
+			@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-form-error": "fastpath"}) {
+				{ f.Errors.General }
+			}
 		}
 		<label class="flex items-center gap-2 text-sm text-ink">
 			@atoms.Checkbox("fastpath-enabled", "enabled", f.Values.Enabled)

@@ -50,7 +50,7 @@ func ViewerToolbar(v view.ViewerToolbar) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form id=\"viewer-toolbar\" class=\"flex flex-wrap items-start gap-4 rounded-lg border border-border bg-surface p-3\" novalidate hx-post=\"/viewer/settings\" hx-trigger=\"change\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-indicator=\"#viewer-toolbar-spinner\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form id=\"viewer-toolbar\" class=\"flex flex-wrap items-start gap-4 rounded-lg border border-border bg-surface p-4\" novalidate hx-post=\"/viewer/settings\" hx-trigger=\"change\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-indicator=\"#viewer-toolbar-spinner\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

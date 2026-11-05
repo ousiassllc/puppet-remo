@@ -10,15 +10,16 @@ import (
 
 // TaskStatus はタスクの状態の 1 行（状態バッジ・ステップ数・経過時間・中断のボタン。FR-H10・FR-H02）。ダッシュボードの実行中タスクと
 // タスクの詳細が同じ部品を使い、POST /tasks/{id}/cancel の応答はこの部品で、呼び出し元の同じ部品を差し替える
-// （hx-target は closest [data-task-status]）。中断のボタンは、中断できる状態（CancelURL がある）のときだけ描画する（状態駆動）。
+// （確認モーダルの確定が、DOMID の要素を差し替える）。中断は元に戻せないので、ボタンは確認モーダルを開く（破壊的な操作は確認を経る。O2）。
+// ボタンは、中断できる状態（ConfirmURL がある）のときだけ描画する（状態駆動）。
 templ TaskStatus(v view.TaskStatus) {
-	<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" data-task-status={ v.Code }>
+	<div id={ v.DOMID } class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" data-task-status={ v.Code }>
 		@atoms.Badge(badgeTone(v.Tone), v.Label)
 		<span class="text-ink">ステップ <span class="font-mono text-ink" data-task-steps>{ v.Steps }</span></span>
 		<span class="text-ink">経過 <span class="font-mono text-ink" data-task-elapsed>{ v.Elapsed }</span></span>
-		if v.CancelURL != "" {
+		if v.ConfirmURL != "" {
 			@atoms.Button(atoms.ButtonProps{Label: "中断", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-				"hx-post": v.CancelURL, "hx-target": "closest [data-task-status]", "hx-swap": "outerHTML", "hx-disabled-elt": "this",
+				"hx-get": v.ConfirmURL, "hx-target": "#modal-root", "hx-swap": "innerHTML",
 			}})
 		}
 	</div>
@@ -144,7 +145,7 @@ templ taskField(label, value, name string) {
 
 templ taskStepArgs(args []view.AuditArg) {
 	if len(args) > 0 {
-		<dl class="mt-1 space-y-0.5 text-xs text-mute" data-step-args>
+		<dl class="mt-1 space-y-1 text-xs text-mute" data-step-args>
 			for _, a := range args {
 				<div class="flex gap-1">
 					<dt class="text-mute">{ a.Key }:</dt>

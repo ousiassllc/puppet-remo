@@ -51,20 +51,20 @@ func TokenReveal(v view.TokenReveal) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<p class=\"font-semibold\">「")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h3 class=\"text-base font-semibold\">「")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/token_reveal.templ`, Line: 15, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/token_reveal.templ`, Line: 15, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "」のトークンを発行しました</p><p>このトークンは今だけ表示されます。閉じると二度と確認できないので、いま安全な場所に控えてください。（有効期限: ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "」のトークンを発行しました</h3><p>このトークンは今だけ表示されます。閉じると二度と確認できないので、いま安全な場所に控えてください。（有効期限: ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -93,7 +93,7 @@ func TokenReveal(v view.TokenReveal) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div><p id=\"copy-status\" class=\"text-xs text-ink\" role=\"status\" data-copied=\"コピーしました。\" data-fallback=\"コピーできませんでした。入力欄を選択済みなので Ctrl+C でコピーしてください。\"></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div><p id=\"copy-status\" class=\"text-sm text-ink\" role=\"status\" data-copied=\"コピーしました。\" data-fallback=\"コピーできませんでした。入力欄を選択済みなので Ctrl+C でコピーしてください。\"></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

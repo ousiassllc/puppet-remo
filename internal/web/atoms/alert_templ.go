@@ -192,8 +192,8 @@ func noticeClass(t AlertTone) string {
 }
 
 func noticeIconClass(t AlertTone) string {
-	// アイコンの高さを 1 行目（text-sm の行の高さ）の中央に合わせる。
-	base := "mt-0.5 shrink-0 "
+	// アイコンを 1 行目（text-sm・行間 1.7 ≒ 24px）の中央に合わせる（スケール外の 2px の余白で寄せず、行と同じ高さの箱の中央に置く）。
+	base := "flex h-6 shrink-0 items-center "
 	switch t {
 	case AlertSuccess:
 		return base + "text-success"

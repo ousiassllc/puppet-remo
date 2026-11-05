@@ -86,7 +86,8 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 	v := view.Lease{Held: true, CanRevoke: true, HolderLabel: "claude", KindLabel: "エージェント", Since: "2026-10-30 12:00", IdleRemaining: "5分"}
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint")
 	v.RevokeHint = "タスクが中断されます"
-	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint>タスクが中断されます<`)
+	// 警告は Notice（アイコン + 本文色 + 状態色の枠）で出す（C4）。
+	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning/40", "<svg", "タスクが中断されます")
 	// 剥奪できない保持者には、ヒントがあってもボタンごと出さない。
 	v.CanRevoke = false
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint", "強制剥奪")
@@ -94,8 +95,10 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 
 // 状態駆動: 中断のボタンは、中断できる状態（CancelURL がある）のときだけ描画する。
 func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
-	running := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒", CancelURL: "/tasks/t1/cancel"}))
-	has(t, running, `data-task-status="running"`, `hx-post="/tasks/t1/cancel"`, `hx-target="closest [data-task-status]"`, `hx-swap="outerHTML"`, `hx-disabled-elt="this"`, "3 / 50", "10秒", "中断")
+	running := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒", DOMID: "task-status-t1", CancelURL: "/tasks/t1/cancel", ConfirmURL: "/tasks/t1/cancel/confirm"}))
+	// 中断は破壊的なので、ボタンは確認モーダルを開く（確定のボタンだけが POST を送る。O2）。
+	has(t, running, `id="task-status-t1"`, `data-task-status="running"`, `hx-get="/tasks/t1/cancel/confirm"`, `hx-target="#modal-root"`, `hx-swap="innerHTML"`, "3 / 50", "10秒", "中断")
+	hasNot(t, running, "hx-post")
 	done := webtest.Render(t, organisms.TaskStatus(view.TaskStatus{Code: "completed", Label: "完了", Tone: view.ToneOK, Steps: "3 / 50", Elapsed: "10秒"}))
 	has(t, done, `data-task-status="completed"`)
 	hasNot(t, done, "<button", "hx-post", "/cancel")
@@ -107,12 +110,12 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 // ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
 func TestRunningTasksPanel(t *testing.T) {
 	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Client: "claude", PromptExcerpt: "天気を調べる",
-		Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "1 / 50", Elapsed: "5秒", CancelURL: "/tasks/t1/cancel"}}
+		Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "1 / 50", Elapsed: "5秒", CancelURL: "/tasks/t1/cancel", ConfirmURL: "/tasks/t1/cancel/confirm"}}
 	empty := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Rev: "abc"}))
 	has(t, empty, `id="running-tasks"`, `name="rev_tasks" value="abc" data-poll-rev`)
 	hasNot(t, empty, "data-running-task", "<button", "hx-swap-oob")
 	full := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Items: []view.RunningTask{item}, Rev: "def"}))
-	has(t, full, "data-running-task", "00RUN001", "claude", "天気を調べる", `hx-post="/tasks/t1/cancel"`, `href="/tasks/t1"`)
+	has(t, full, "data-running-task", "00RUN001", "claude", "天気を調べる", `hx-get="/tasks/t1/cancel/confirm"`, `href="/tasks/t1"`)
 	hasNot(t, full, "hx-swap-oob")
 	oob := webtest.Render(t, organisms.RunningTasksOOB(view.RunningTasks{Items: []view.RunningTask{item}, Rev: "def"}))
 	has(t, oob, `id="running-tasks"`, `hx-swap-oob="true"`, "data-running-task")
@@ -584,4 +587,47 @@ func TestTableDateTimeCellsUseMono(t *testing.T) {
 func TestEmptyListsUseTheEmptyState(t *testing.T) {
 	out := webtest.Render(t, organisms.AuditList(view.AuditList{}))
 	has(t, out, `data-empty="audit-list"`, "border-dashed", "<svg")
+}
+
+// C4: 状態メッセージは独自の段落でなく Notice（状態色の枠 + アイコン + 本文色）で出す。文字を状態色にしない。
+func TestStatusMessagesUseNotice(t *testing.T) {
+	tests := []struct {
+		name  string
+		out   string
+		attrs []string
+		tone  string
+	}{
+		{"agent form error", webtest.Render(t, organisms.AgentForm(view.AgentForm{Errors: view.AgentErrors{General: "保存できません"}})), []string{`data-form-error="agent"`, `role="alert"`}, "danger"},
+		{"fastpath form error", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{Errors: view.FastpathErrors{General: "保存できません"}})), []string{`data-form-error="fastpath"`, `role="alert"`}, "danger"},
+		{"app unlaunchable", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a6", Label: "x", ExePath: "c.exe", Unlaunchable: true})), []string{"data-app-unlaunchable", `role="alert"`}, "danger"},
+		{"app corrupt", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: "c.exe", Corrupt: true})), []string{"data-app-corrupt", `role="alert"`}, "danger"},
+		{"update error", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Error: "確認できません"})), []string{`data-update="error"`, `role="status"`}, "warning"},
+		{"update key unset", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, KeyNotConfigured: true})), []string{`data-update="key-unset"`}, "warning"},
+		{"update applying", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Applying: true})), []string{`data-update="applying"`}, "info"},
+		{"killswitch active", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true})), []string{`data-killswitch="active"`}, "danger"},
+		{"lease pending", webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{Pending: true, PendingMine: true})), []string{"data-lease-pending-message", `role="status"`}, "warning"},
+		{"token error", webtest.Render(t, organisms.TokenFieldError("入力してください", "validation")), []string{`data-error-code="validation"`, `role="alert"`}, "danger"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"/40", "bg-"+tt.tone+"/10", "text-ink", "<svg")...)
+			hasNot(t, tt.out, `class="text-sm text-`+tt.tone+`"`)
+		})
+	}
+}
+
+// S1・P1: ログのレベルの絞り込みはチップ（rounded-full）。選択中は --accent-soft + 通常の枠（太い黒枠にしない）。
+func TestAppLogFilterChips(t *testing.T) {
+	out := webtest.Render(t, organisms.AppLog(view.AppLog{Page: 1, Filter: "warn", Filters: []view.LogFilterLink{{Code: "all", Label: "すべて", URL: "/logs"}, {Code: "warn", Label: "WARN", URL: "/logs?level=warn", Active: true}}}))
+	has(t, out, "rounded-full", "border-border bg-accent-soft")
+	hasNot(t, out, "border-accent ", "h-8 items-center rounded-md")
+}
+
+// S2: カード状の枠の padding は 16（小さいカード）。入れ子のパネルは --bone 地（枠線なし）。
+func TestCardPaddingsFollowScale(t *testing.T) {
+	update := webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "v1.2.3", Verified: true}}))
+	has(t, update, `class="space-y-2 rounded-md bg-bone p-4" data-update="latest"`)
+	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
+	has(t, lease, "rounded-lg border border-border bg-surface p-4")
+	hasNot(t, lease, "bg-surface p-3")
 }

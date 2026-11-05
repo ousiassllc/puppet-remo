@@ -14,7 +14,11 @@ templ AppCard(a view.AppRow) {
 	<article id={ appCardID(a) } class="rounded-lg border border-border bg-surface p-4" data-app={ a.ID }>
 		<h3 class="text-base font-semibold text-ink">{ a.Label }</h3>
 		if a.Unlaunchable {
-			<p class="mt-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert" data-app-unlaunchable>この設定のままでは起動できません（MCP のクライアントにも表示されません）。削除するか、編集して保存し直してください。</p>
+			<div class="mt-2">
+				@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-unlaunchable": true}) {
+					この設定のままでは起動できません（MCP のクライアントにも表示されません）。削除するか、編集して保存し直してください。
+				}
+			</div>
 		}
 		<dl class="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
 			<dt class="text-mute">実行ファイル</dt>
@@ -22,11 +26,13 @@ templ AppCard(a view.AppRow) {
 			<dt class="text-mute">引数</dt>
 			<dd class="min-w-0">
 				if a.Corrupt {
-					<span class="text-sm text-danger" data-app-corrupt>保存された引数を読めません。</span>
+					@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-corrupt": true}) {
+						保存された引数を読めません。
+					}
 				} else if len(a.Args) == 0 {
 					<span class="text-mute">なし</span>
 				} else {
-					<ul class="space-y-0.5" data-app-args>
+					<ul class="space-y-1" data-app-args>
 						for _, arg := range a.Args {
 							<li class="break-all"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ arg }</code></li>
 						}

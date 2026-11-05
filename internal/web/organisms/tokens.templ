@@ -16,7 +16,9 @@ func expiryOptions(opts []view.ExpiryOption) []atoms.SelectOption {
 
 // TokenFieldError はトークン発行フォームのエラー（422 / 409 の表示先 #token-form-errors の中身）。
 templ TokenFieldError(msg, code string) {
-	<p class="text-sm text-danger" role="alert" data-error-code={ code }>{ msg }</p>
+	@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-error-code": code}) {
+		{ msg }
+	}
 }
 
 func tokenFormAttrs(oob bool) atoms.Attrs {

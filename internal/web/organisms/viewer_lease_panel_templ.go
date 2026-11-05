@@ -42,7 +42,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"lease-panel\" class=\"rounded-lg border border-border bg-surface p-3\" aria-label=\"操作権\" hx-get=\"/viewer/lease\" hx-trigger=\"remo:lease-changed from:#viewer-root\" hx-target=\"this\" hx-swap=\"outerHTML\"><h2 class=\"mb-2 text-base font-semibold text-ink\">操作権</h2><div class=\"flex flex-wrap items-center gap-3\" data-lease-state=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"lease-panel\" class=\"rounded-lg border border-border bg-surface p-4\" aria-label=\"操作権\" hx-get=\"/viewer/lease\" hx-trigger=\"remo:lease-changed from:#viewer-root\" hx-target=\"this\" hx-swap=\"outerHTML\"><h2 class=\"mb-2 text-base font-semibold text-ink\">操作権</h2><div class=\"flex flex-wrap items-center gap-3\" data-lease-state=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -125,7 +125,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<p class=\"font-semibold\">AI エージェントのタスク実行中</p><dl class=\"space-y-0.5 text-xs\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">状態</dt><dd data-task-status>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<h3 class=\"text-base font-semibold\">AI エージェントのタスク実行中</h3><dl class=\"space-y-1 text-xs\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">状態</dt><dd data-task-status>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -229,12 +229,38 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 			}
 		}
 		if v.PendingMine {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<p class=\"mt-2 text-sm text-warning\" role=\"status\" data-lease-pending-message>ホストの承認を待っています。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"mt-2\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Var10 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+				if !templ_7745c5c3_IsBuffer {
+					defer func() {
+						templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err == nil {
+							templ_7745c5c3_Err = templ_7745c5c3_BufErr
+						}
+					}()
+				}
+				ctx = templ.InitializeContext(ctx)
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "ホストの承認を待っています。")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				return nil
+			})
+			templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-lease-pending-message": true}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<p class=\"mt-2 text-xs text-mute\">この画面から Ctrl+Alt+Del は送れません。</p></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<p class=\"mt-2 text-xs text-mute\">この画面から Ctrl+Alt+Del は送れません。</p></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

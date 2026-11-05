@@ -90,8 +90,19 @@ describe("<remo-screen-viewer>", () => {
   const originalWarn = console.warn;
   const originalError = console.error;
 
+  // モーションのトークンは app.css の :root が定義する（テストでは app.css を読み込まないので、同じ値を当てる）。
+  const motionTokens: Record<string, string> = {
+    "--motion-fade-in": "320ms",
+    "--motion-fade-out": "240ms",
+    "--ease-out": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+    "--ease-in": "cubic-bezier(0.4, 0, 1, 1)",
+  };
+
   beforeEach(() => {
     restoreSocket = installFakeWebSocket();
+    for (const [name, value] of Object.entries(motionTokens)) {
+      document.documentElement.style.setProperty(name, value);
+    }
     // 意図したログの出力でテストの出力を汚さない。
     console.warn = () => {};
     console.error = () => {};
@@ -99,6 +110,9 @@ describe("<remo-screen-viewer>", () => {
 
   afterEach(() => {
     restoreSocket();
+    for (const name of Object.keys(motionTokens)) {
+      document.documentElement.style.removeProperty(name);
+    }
     console.warn = originalWarn;
     console.error = originalError;
   });
@@ -156,7 +170,9 @@ describe("<remo-screen-viewer>", () => {
       expect(classifyPixel(canvas, 50, 40)).to.equal("blue");
       await until(() => viewer.status === "open", "status is open");
       await viewer.updateComplete;
-      expect(overlayText(viewer)).to.equal(null);
+      // 退出はフェードアウトのあとに取り除く（M5）。
+      expect(viewer.shadowRoot?.querySelector(".overlay")?.hasAttribute("data-leaving")).to.equal(true);
+      await until(() => overlayText(viewer) === null, "overlay is faded out");
     });
 
     it("差分フレームは既存の内容の上に重ねて描く", async () => {
@@ -501,7 +517,7 @@ describe("<remo-screen-viewer>", () => {
       second.receive(await fullKeyframe(1, "green"));
       await until(() => viewer.status === "open", "status is open again");
       await viewer.updateComplete;
-      expect(overlayText(viewer)).to.equal(null);
+      await until(() => overlayText(viewer) === null, "overlay is faded out");
 
       // 操作権を取り直せば、新しい接続で入力を送れる。
       second.receiveJson({ type: "lease", ...heldByMe });
@@ -581,6 +597,34 @@ describe("<remo-screen-viewer>", () => {
       const viewer = await fixture<RemoScreenViewer>(html`<remo-screen-viewer ws-url=${WS_URL}></remo-screen-viewer>`);
       expect(viewer.status).to.equal("failed");
       expect(overlayText(viewer)).to.equal("接続できませんでした。ページを再読み込みしてください。");
+    });
+
+    // C4: 状態はアイコン + 文言（+ 状態色）で伝える。接続中・再接続中はスピナー、失敗は danger、キルスイッチは warning。
+    it("接続中・再接続中はスピナー、失敗は danger のアイコン、キルスイッチは warning のアイコンを添える", async () => {
+      const { viewer, socket } = await connect({ lease: heldByMe });
+      const overlay = () => viewer.shadowRoot?.querySelector(".overlay");
+      expect(overlay()?.querySelector(".spinner")).to.not.equal(null);
+      expect(overlay()?.querySelector("svg")).to.equal(null);
+
+      socket.serverClose(4401);
+      await viewer.updateComplete;
+      expect(overlay()?.querySelector("svg.tone-danger")).to.not.equal(null);
+      expect(overlay()?.querySelector(".spinner")).to.equal(null);
+    });
+
+    it("キルスイッチは warning のアイコンを添える", async () => {
+      const { viewer, socket } = await connect({ lease: heldByMe });
+      socket.serverClose(4503);
+      await viewer.updateComplete;
+      expect(viewer.shadowRoot?.querySelector(".overlay svg.tone-warning")).to.not.equal(null);
+    });
+
+    // M5: 出現はフェードイン（トークンは :root のカスタムプロパティ。Shadow DOM の css が参照する）。
+    it("オーバーレイの出現はフェードインのアニメーションを持つ", async () => {
+      const viewer = await fixture<RemoScreenViewer>(html`<remo-screen-viewer ws-url=${WS_URL}></remo-screen-viewer>`);
+      const overlay = viewer.shadowRoot?.querySelector(".overlay");
+      const names = overlay?.getAnimations().map((a) => (a as CSSAnimation).animationName) ?? [];
+      expect(names).to.include("overlay-fade-in");
     });
   });
 });

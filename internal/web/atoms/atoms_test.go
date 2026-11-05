@@ -132,6 +132,11 @@ func TestFieldsFollowTheFormSpec(t *testing.T) {
 	area := webtest.Render(t, atoms.Textarea(atoms.TextareaProps{ID: "t", Name: "t"}))
 	has(t, area, "py-2", "rounded-md")
 	hasNot(t, area, "h-10")
+	// 無効（disabled）の見た目は opacity .5（O7）。入力・複数行・選択・秘密の入力が同じ指定を共有する。
+	sel := webtest.Render(t, atoms.Select("s", "s", []atoms.SelectOption{{Value: "a", Label: "A"}}))
+	for _, out := range []string{ok, area, sel} {
+		has(t, out, "disabled:opacity-50", "disabled:cursor-not-allowed")
+	}
 }
 
 // アイコン: Iconoir の SVG（currentColor・線 1.5）。サイズは sm 16 / md 20 / lg 24 / xl 32。装飾なので読み上げない。
