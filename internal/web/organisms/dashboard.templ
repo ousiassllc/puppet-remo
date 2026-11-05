@@ -89,7 +89,7 @@ templ SessionList(v view.Sessions) {
 templ LeaseDisplay(v view.Lease) {
 	if v.Pending {
 		@molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel)
-		<p class="mt-2 text-xs text-mute">{ v.Since } から ・ ホストの承認を待っています（承認ダイアログで許可・拒否します）</p>
+		<p class="mt-2 text-sm text-ink">{ v.Since } から ・ ホストの承認を待っています（承認ダイアログで許可・拒否します）</p>
 	} else {
 		@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
 	}
@@ -109,7 +109,11 @@ templ LeasePanelBody(v view.Lease) {
 				"hx-get": "/lease/revoke/confirm", "hx-target": "#modal-root", "hx-swap": "innerHTML",
 			}})
 			if v.RevokeHint != "" {
-				<p class="mt-1 text-xs text-mute" data-revoke-hint>{ v.RevokeHint }</p>
+				<div class="mt-2">
+					@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-revoke-hint": true}) {
+						{ v.RevokeHint }
+					}
+				</div>
 			}
 		</div>
 	}
@@ -167,9 +171,9 @@ templ killSwitchPanel(v view.KillSwitch, oob bool) {
 		<h2 class="border-b border-border px-6 py-3 text-base font-semibold text-ink">キルスイッチ</h2>
 		<div class="space-y-3 p-6">
 			if v.Active {
-				<p class="text-sm text-danger" data-killswitch="active">
+				@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "status", "data-killswitch": "active"}) {
 					発動中です。すべての操作権を剥奪し、リモートからの要求を断っています。
-				</p>
+				}
 				if v.Since != "" {
 					<p class="text-xs text-mute">{ v.Since } に発動（{ v.Source }）</p>
 				}

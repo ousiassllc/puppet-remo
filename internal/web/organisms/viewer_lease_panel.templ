@@ -63,7 +63,11 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 			</div>
 		}
 		if v.PendingMine {
-			<p class="mt-2 text-sm text-warning" role="status" data-lease-pending-message>ホストの承認を待っています。</p>
+			<div class="mt-2">
+				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-lease-pending-message": true}) {
+					ホストの承認を待っています。
+				}
+			</div>
 		}
 		<p class="mt-2 text-xs text-mute">この画面から Ctrl+Alt+Del は送れません。</p>
 	</section>

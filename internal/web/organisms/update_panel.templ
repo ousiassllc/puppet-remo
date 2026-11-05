@@ -34,12 +34,14 @@ templ UpdatePanel(v view.UpdatePanel) {
 				</p>
 			}
 			if v.Error != "" {
-				<p class="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning" role="status" data-update="error">{ v.Error }</p>
+				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}) {
+					{ v.Error }
+				}
 			}
 			if v.KeyNotConfigured {
-				<p class="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning" role="status" data-update="key-unset">
+				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "key-unset"}) {
 					署名鍵が未設定のため、新しい版があっても適用できません（確認だけ行います）。
-				</p>
+				}
 			}
 			if v.Updatable && v.Latest == nil && v.Error == "" && v.LastChecked != "" {
 				<p class="text-base text-ink" data-update="up-to-date">新しい版はありません。</p>
@@ -58,7 +60,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 						}
 					</div>
 					if !v.Latest.Verified && v.Latest.Reject != "" {
-						<p class="text-sm text-warning" data-update="reject">{ v.Latest.Reject }</p>
+						<p class="text-sm text-ink" data-update="reject">{ v.Latest.Reject }</p>
 					}
 					if v.Latest.Notes != "" {
 						<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-2 text-xs text-ink" data-field="release-notes">{ v.Latest.Notes }</pre>
@@ -66,9 +68,9 @@ templ UpdatePanel(v view.UpdatePanel) {
 				</div>
 			}
 			if v.Applying {
-				<p class="rounded-md border border-info/40 bg-info/10 px-3 py-2 text-sm text-info" role="status" data-update="applying">
+				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "applying"}) {
 					インストーラを起動しました。アプリを終了して更新します。
-				</p>
+				}
 			}
 			if v.Updatable {
 				<div class="flex flex-wrap items-center gap-3">

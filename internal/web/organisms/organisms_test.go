@@ -86,7 +86,8 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 	v := view.Lease{Held: true, CanRevoke: true, HolderLabel: "claude", KindLabel: "エージェント", Since: "2026-10-30 12:00", IdleRemaining: "5分"}
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint")
 	v.RevokeHint = "タスクが中断されます"
-	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint>タスクが中断されます<`)
+	// 警告は Notice（アイコン + 本文色 + 状態色の枠）で出す（C4）。
+	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning/40", "<svg", "タスクが中断されます")
 	// 剥奪できない保持者には、ヒントがあってもボタンごと出さない。
 	v.CanRevoke = false
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint", "強制剥奪")
@@ -584,4 +585,31 @@ func TestTableDateTimeCellsUseMono(t *testing.T) {
 func TestEmptyListsUseTheEmptyState(t *testing.T) {
 	out := webtest.Render(t, organisms.AuditList(view.AuditList{}))
 	has(t, out, `data-empty="audit-list"`, "border-dashed", "<svg")
+}
+
+// C4: 状態メッセージは独自の段落でなく Notice（状態色の枠 + アイコン + 本文色）で出す。文字を状態色にしない。
+func TestStatusMessagesUseNotice(t *testing.T) {
+	tests := []struct {
+		name  string
+		out   string
+		attrs []string
+		tone  string
+	}{
+		{"agent form error", webtest.Render(t, organisms.AgentForm(view.AgentForm{Errors: view.AgentErrors{General: "保存できません"}})), []string{`data-form-error="agent"`, `role="alert"`}, "danger"},
+		{"fastpath form error", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{Errors: view.FastpathErrors{General: "保存できません"}})), []string{`data-form-error="fastpath"`, `role="alert"`}, "danger"},
+		{"app unlaunchable", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a6", Label: "x", ExePath: "c.exe", Unlaunchable: true})), []string{"data-app-unlaunchable", `role="alert"`}, "danger"},
+		{"app corrupt", webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a5", Label: "x", ExePath: "c.exe", Corrupt: true})), []string{"data-app-corrupt", `role="alert"`}, "danger"},
+		{"update error", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Error: "確認できません"})), []string{`data-update="error"`, `role="status"`}, "warning"},
+		{"update key unset", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, KeyNotConfigured: true})), []string{`data-update="key-unset"`}, "warning"},
+		{"update applying", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Applying: true})), []string{`data-update="applying"`}, "info"},
+		{"killswitch active", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true})), []string{`data-killswitch="active"`}, "danger"},
+		{"lease pending", webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{Pending: true, PendingMine: true})), []string{"data-lease-pending-message", `role="status"`}, "warning"},
+		{"token error", webtest.Render(t, organisms.TokenFieldError("入力してください", "validation")), []string{`data-error-code="validation"`, `role="alert"`}, "danger"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"/40", "bg-"+tt.tone+"/10", "text-ink", "<svg")...)
+			hasNot(t, tt.out, `class="text-sm text-`+tt.tone+`"`)
+		})
+	}
 }
