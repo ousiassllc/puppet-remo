@@ -444,6 +444,25 @@ describe("<remo-screen-viewer>", () => {
     });
   });
 
+  // C3: 見えない入力要素にフォーカスがある間（= キー入力がホストへ送られる間）は、ホストの外側に 2px solid・offset 2 のリングを出す。
+  describe("フォーカスリング", () => {
+    it("入力要素にフォーカスがある間だけ、ホストに 2px solid・offset 2 の outline が付く", async () => {
+      const { viewer, sink } = await connect({ lease: heldByMe });
+      viewer.style.setProperty("--focus", "rgb(1, 2, 3)"); // app.css の :root が定義するトークン（テストでは app.css を読まない）
+      expect(getComputedStyle(viewer).outlineStyle).to.equal("none");
+
+      sink.focus();
+      const style = getComputedStyle(viewer);
+      expect(style.outlineStyle).to.equal("solid");
+      expect(style.outlineWidth).to.equal("2px");
+      expect(style.outlineColor).to.equal("rgb(1, 2, 3)");
+      expect(style.outlineOffset).to.equal("2px");
+
+      sink.blur();
+      expect(getComputedStyle(viewer).outlineStyle).to.equal("none");
+    });
+  });
+
   describe("イベント", () => {
     it("ready と lease のたびに remo:lease-changed を（bubbles・composed で）出し、detail は lease の内容", async () => {
       const viewer = await fixture<RemoScreenViewer>(html`<remo-screen-viewer ws-url=${WS_URL}></remo-screen-viewer>`);

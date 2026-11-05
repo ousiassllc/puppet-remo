@@ -100,6 +100,8 @@
   --color-warning-wash: color-mix(in srgb, var(--warning) 10%, transparent);
   --color-danger-line: color-mix(in srgb, var(--danger) 40%, transparent);
   --color-danger-wash: color-mix(in srgb, var(--danger) 10%, transparent);
+  /* 危険ボタンの枠だけは 45%（ガイドの .ui .dan）。 */
+  --color-danger-line-strong: color-mix(in srgb, var(--danger) 45%, transparent);
   --color-info-line: color-mix(in srgb, var(--info) 40%, transparent);
   --color-info-wash: color-mix(in srgb, var(--info) 10%, transparent);
 }
@@ -323,6 +325,12 @@
   }
   input[type="checkbox"]:checked::before {
     display: block;
+  }
+  /* フォーカスは入力欄・スライダーと同じ --ring の 3px（outline は透明で残し、ハイコントラストでは枠として見える）。 */
+  input[type="checkbox"]:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+    box-shadow: 0 0 0 3px var(--ring);
   }
   input[type="checkbox"]:disabled {
     opacity: 0.5;

@@ -85,6 +85,23 @@ func TestStatusLineAndWashColorsMixInSRGB(t *testing.T) {
 	}
 }
 
+// C4: 危険ボタンの枠（45%）も in srgb の名前付きの色にする（Tailwind の /45 は in oklab）。
+func TestDangerButtonBorderMixesInSRGB(t *testing.T) {
+	css := readAppCSS(t)
+	want := "--color-danger-line-strong: color-mix(in srgb, var(--danger) 45%, transparent);"
+	if !strings.Contains(css, want) {
+		t.Errorf("app.css must contain %q", want)
+	}
+}
+
+// C3: チェックボックスのフォーカスは、入力欄・スライダーと同じ --ring の 3px（--focus の outline のままにしない）。
+func TestCheckboxFocusUsesRing(t *testing.T) {
+	css := readAppCSS(t)
+	if !regexp.MustCompile(`input\[type="checkbox"\]:focus-visible \{\s*outline: 2px solid transparent;\s*outline-offset: 0;\s*box-shadow: 0 0 0 3px var\(--ring\);`).MatchString(css) {
+		t.Error("app.css must give the checkbox :focus-visible a --ring 3px box-shadow with a transparent outline")
+	}
+}
+
 // C8: 暗幕（--scrim）は大きな面なので、ダークでも純黒にせず --bone（#050505）系にする（ライトは 0.4、ダークは 0.6）。
 func TestScrimIsNeverPureBlack(t *testing.T) {
 	css := readAppCSS(t)

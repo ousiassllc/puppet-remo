@@ -83,6 +83,12 @@ export class RemoScreenViewer extends LitElement {
       position: relative;
       min-height: 8rem;
     }
+    /* キー入力を受けている間（IME 用の入力要素にフォーカスがある間）は、ホストの外側に --focus のリング（C3）。
+       入力要素は見えず、Shadow DOM の中なので、グローバルの :focus-visible は届かない。 */
+    :host(:focus-within) {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
     canvas {
       display: block;
       width: 100%;
