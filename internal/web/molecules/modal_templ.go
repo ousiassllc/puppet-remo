@@ -48,7 +48,7 @@ func Modal(m view.ConfirmModal) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"modal\" class=\"fixed inset-0 z-40 flex items-center justify-center bg-scrim\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"modal-title\"><div class=\"w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-modal\"><h2 id=\"modal-title\" class=\"text-base font-semibold text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"modal\" class=\"motion-fade-in fixed inset-0 z-40 flex items-center justify-center bg-scrim\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"modal-title\"><div class=\"motion-rise-in w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-modal\"><h2 id=\"modal-title\" class=\"text-base font-semibold text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

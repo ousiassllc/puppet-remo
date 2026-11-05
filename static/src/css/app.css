@@ -215,13 +215,124 @@
   }
 }
 
-/* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
+/* ---- モーション（M1〜M5）----
+ * 動きは次のトークンだけで定義する（時間・イージング・移動量）。静かに・短く・状態の変化を伝えるときだけ動かす。
+ * prefers-reduced-motion: reduce では、移動を 0 に、フェードを 100ms 以下（ホバーなどの色の変化はなし）にまとめて切り替える。
+ * スピナーなどの処理中表示は維持する（opacity の切り替えのみ。回転は reduced-motion でも止めない。O7）。 */
+:root {
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 280ms;
+  --motion-fade-in: 320ms;
+  --motion-fade-out: 240ms;
+  --motion-shift: 6px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 100ms;
+    --motion-fade-in: 100ms;
+    --motion-fade-out: 100ms;
+    --motion-shift: 0px;
+  }
+}
+
+@keyframes motion-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes motion-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-shift));
+  }
+}
+
+@keyframes motion-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes motion-rise-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--motion-shift));
+  }
+}
+
+@keyframes motion-ripple {
+  from {
+    opacity: 0.2;
+    transform: scale(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
 @layer components {
+  /* 出現（M5）: フェードイン 320ms・ease-out。rise は 4〜8px の移動を添える（スクラムは fade だけ）。 */
+  .motion-fade-in {
+    animation: motion-fade-in var(--motion-fade-in) var(--ease-out) both;
+  }
+  .motion-rise-in {
+    animation: motion-rise-in var(--motion-fade-in) var(--ease-out) both;
+  }
+  /* 退出（M5）: app.ts が data-leaving を付け、アニメーションの終了後に取り除く。フェードアウト 240ms・ease-in。 */
+  .motion-fade-in[data-leaving] {
+    animation: motion-fade-out var(--motion-fade-out) var(--ease-in) both;
+    pointer-events: none;
+  }
+  .motion-rise-in[data-leaving] {
+    animation: motion-rise-out var(--motion-fade-out) var(--ease-in) both;
+    pointer-events: none;
+  }
+
+  /* ホバーは色・背景だけ・180ms 以内（M1）。 */
+  .motion-hover {
+    transition: color var(--motion-base) var(--ease-out), background-color var(--motion-base) var(--ease-out),
+      border-color var(--motion-base) var(--ease-out);
+  }
+
+  /* ボタン・クローズの押下のリップル（M4）: クリック点から円が広がって消える。app.ts が span.ripple を足す。 */
+  [data-ripple] {
+    position: relative;
+    overflow: hidden;
+  }
+  .ripple {
+    position: absolute;
+    left: var(--ripple-x);
+    top: var(--ripple-y);
+    width: var(--ripple-size);
+    height: var(--ripple-size);
+    margin: calc(var(--ripple-size) / -2) 0 0 calc(var(--ripple-size) / -2);
+    border-radius: 9999px;
+    background-color: currentColor;
+    pointer-events: none;
+    animation: motion-ripple var(--motion-slow) var(--ease-out) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ripple {
+      display: none;
+    }
+  }
+
+  /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
   .htmx-indicator {
-    @apply opacity-0 transition-opacity duration-200;
+    opacity: 0;
+    transition: opacity var(--motion-base) var(--ease-out);
   }
   .htmx-request .htmx-indicator,
   .htmx-request.htmx-indicator {
-    @apply opacity-100;
+    opacity: 1;
   }
 }

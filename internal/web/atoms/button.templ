@@ -27,7 +27,7 @@ func buttonType(t string) string {
 }
 
 func buttonClass(v ButtonVariant, small bool) string {
-	base := "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 "
+	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 "
 	if small {
 		base += "h-8 px-3 text-sm "
 	} else {
@@ -45,5 +45,5 @@ func buttonClass(v ButtonVariant, small bool) string {
 
 // Button は操作ボタン。hx-* は Attrs で渡す。
 templ Button(p ButtonProps) {
-	<button type={ buttonType(p.Type) } class={ buttonClass(p.Variant, p.Small) } { p.Attrs... }>{ p.Label }</button>
+	<button type={ buttonType(p.Type) } class={ buttonClass(p.Variant, p.Small) } data-ripple { p.Attrs... }>{ p.Label }</button>
 }

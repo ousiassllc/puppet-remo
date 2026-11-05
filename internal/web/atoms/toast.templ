@@ -3,7 +3,7 @@ package atoms
 import "github.com/ousiassllc/puppet-remo/internal/web/view"
 
 func toastClass(l view.ToastLevel) string {
-	base := "pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
+	base := "motion-rise-in pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
 	if l == view.ToastError {
 		return base + "border-danger/40 bg-danger/10 text-danger"
 	}
@@ -22,7 +22,7 @@ func toastAttrs(t view.Toast) Attrs {
 templ Toast(t view.Toast) {
 	<div class={ toastClass(t.Level) } role="alert" { toastAttrs(t)... }>
 		<span>{ t.Message }</span>
-		<button type="button" class="ml-auto text-mute hover:text-ink" aria-label="閉じる" data-toast-dismiss>
+		<button type="button" class="motion-hover ml-auto rounded-full text-mute hover:text-ink" aria-label="閉じる" data-toast-dismiss data-ripple>
 			@Icon(IconXmark, IconMD)
 		</button>
 	</div>

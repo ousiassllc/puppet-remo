@@ -29,7 +29,7 @@ type AlertProps struct {
 }
 
 func alertClass(t AlertTone) string {
-	base := "flex items-start gap-3 rounded-lg border px-4 py-3 text-sm "
+	base := "motion-rise-in flex items-start gap-3 rounded-lg border px-4 py-3 text-sm "
 	switch t {
 	case AlertSuccess:
 		return base + "border-success/40 bg-success/10 text-success"
@@ -151,7 +151,7 @@ func Alert(p AlertProps) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if p.Dismissible {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button type=\"button\" class=\"shrink-0 text-mute hover:text-ink\" aria-label=\"閉じる\" data-clear=\"#alert-root\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button type=\"button\" class=\"motion-hover shrink-0 rounded-full text-mute hover:text-ink\" aria-label=\"閉じる\" data-clear=\"#alert-root\" data-ripple>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

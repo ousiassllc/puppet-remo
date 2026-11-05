@@ -10,7 +10,7 @@ templ FormField(id, label, hint, errMsg string) {
 			<p class="text-xs text-mute">{ hint }</p>
 		}
 		if errMsg != "" {
-			<p class="text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
+			<p class="motion-rise-in text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
 		}
 	</div>
 }

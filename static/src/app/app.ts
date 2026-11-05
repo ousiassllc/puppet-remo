@@ -3,13 +3,38 @@
 //   1. ネットワーク障害・想定外の 5xx の汎用トースト
 //   2. トークンのコピー
 //   3. トースト（サーバーが OOB で追加する）の閉じる操作と自動消去
-//   4. 確認モーダルのキャンセル・トークン表示を閉じる（data-clear）
+//   4. 確認モーダルのキャンセル・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をトーストにする
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 const TOAST_ROOT = "toast-root";
 const TOAST_LIFETIME_MS = 8000;
+
+// 退出のモーション（app.css の `.motion-*-in[data-leaving]`）。data-leaving を付けると CSS のフェードアウトが始まり、終わったら after を呼ぶ。
+// アニメーションが無い（reduced-motion で 0 など）ときは、すぐ after を呼ぶ。
+function leave(el: Element, after: () => void): void {
+  el.setAttribute("data-leaving", "");
+  const animations = el.getAnimations();
+  void Promise.allSettled(animations.map((a) => a.finished)).then(after);
+}
+
+// root の子をフェードアウトさせてから、root を空にする。
+function clearWithFade(root: Element): void {
+  const children = [...root.children];
+  if (children.length === 0) {
+    return;
+  }
+  let remaining = children.length;
+  for (const child of children) {
+    leave(child, () => {
+      remaining -= 1;
+      if (remaining === 0) {
+        root.replaceChildren();
+      }
+    });
+  }
+}
 
 const toastClasses = {
   error: "pointer-events-auto flex items-start gap-3 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger",
@@ -64,15 +89,62 @@ document.addEventListener("click", (event) => {
   // 確認モーダルの確定の応答は、サーバーが OOB で #modal-root を空にする。
   const clear = target.closest<HTMLElement>("[data-clear]");
   if (clear) {
-    document.querySelector(clear.dataset.clear ?? "")?.replaceChildren();
+    const root = document.querySelector(clear.dataset.clear ?? "");
+    if (root) {
+      clearWithFade(root);
+    }
+    return;
+  }
+
+  // 確認モーダルの外側（スクラム）クリックで閉じる。パネルの中のクリックでは閉じない。
+  if (target.id === "modal") {
+    const root = target.closest("#modal-root");
+    if (root) {
+      clearWithFade(root);
+    }
     return;
   }
 
   // 3. トーストを閉じる。
   const dismiss = target.closest("[data-toast-dismiss]");
   if (dismiss) {
-    dismiss.closest("[data-toast]")?.remove();
+    const toast = dismiss.closest("[data-toast]");
+    if (toast) {
+      leave(toast, () => toast.remove());
+    }
   }
+});
+
+// 確認の確定の応答は OOB で #modal-root を空にする（organisms.ModalClear）。そのまま差し替えると退出のフェードが無いので、
+// 差し替えを止めて、フェードアウトのあとに空にする。
+document.addEventListener("htmx:oobBeforeSwap", (event) => {
+  const detail = (event as CustomEvent<{ target: Element; fragment: ParentNode; shouldSwap: boolean }>).detail;
+  if (detail.target.id === "modal-root" && detail.fragment.firstElementChild?.childElementCount === 0) {
+    detail.shouldSwap = false;
+    clearWithFade(detail.target);
+  }
+});
+
+// 4. ボタン・クローズ（data-ripple）の押下のリップル: クリック点から円が広がって消える（app.css の .ripple。reduced-motion では出さない）。
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+document.addEventListener("pointerdown", (event) => {
+  if (reducedMotion.matches || event.button !== 0 || !(event.target instanceof Element)) {
+    return;
+  }
+  const host = event.target.closest<HTMLElement>("[data-ripple]");
+  if (!host || (host instanceof HTMLButtonElement && host.disabled)) {
+    return;
+  }
+  const rect = host.getBoundingClientRect();
+  const ripple = document.createElement("span");
+  ripple.className = "ripple";
+  ripple.setAttribute("aria-hidden", "true");
+  // style 属性（setAttribute）は CSP の style-src で止まるので、CSSOM のプロパティの設定だけを使う。
+  ripple.style.setProperty("--ripple-x", `${event.clientX - rect.left}px`);
+  ripple.style.setProperty("--ripple-y", `${event.clientY - rect.top}px`);
+  ripple.style.setProperty("--ripple-size", `${Math.max(rect.width, rect.height) * 2}px`);
+  ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+  host.append(ripple);
 });
 
 async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<void> {
@@ -152,7 +224,7 @@ if (toastRoot) {
     for (const record of records) {
       for (const node of record.addedNodes) {
         if (node instanceof HTMLElement && node.hasAttribute("data-toast")) {
-          window.setTimeout(() => node.remove(), TOAST_LIFETIME_MS);
+          window.setTimeout(() => leave(node, () => node.remove()), TOAST_LIFETIME_MS);
         }
       }
     }

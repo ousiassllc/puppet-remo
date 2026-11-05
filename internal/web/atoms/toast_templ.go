@@ -11,7 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 import "github.com/ousiassllc/puppet-remo/internal/web/view"
 
 func toastClass(l view.ToastLevel) string {
-	base := "pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
+	base := "motion-rise-in pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
 	if l == view.ToastError {
 		return base + "border-danger/40 bg-danger/10 text-danger"
 	}
@@ -87,7 +87,7 @@ func Toast(t view.Toast) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</span> <button type=\"button\" class=\"ml-auto text-mute hover:text-ink\" aria-label=\"閉じる\" data-toast-dismiss>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</span> <button type=\"button\" class=\"motion-hover ml-auto rounded-full text-mute hover:text-ink\" aria-label=\"閉じる\" data-toast-dismiss data-ripple>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

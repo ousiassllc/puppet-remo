@@ -245,7 +245,7 @@ var navItems = []navItem{
 }
 
 func navLinkClass(active bool) string {
-	base := "flex items-center gap-2 rounded-md px-3 py-2 text-sm "
+	base := "motion-hover flex items-center gap-2 rounded-md px-3 py-2 text-sm "
 	if active {
 		return base + "bg-accent-soft text-ink"
 	}
