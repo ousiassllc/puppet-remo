@@ -31,7 +31,7 @@ func TestViewerLeasePanelRendersOnlyAvailableActions(t *testing.T) {
 			[]string{"agent", "保持中"}, []string{acquire, release, revoke, "<button", "data-lease-task"}},
 		{"agent のタスク実行中", view.ViewerLease{Held: true, HolderLabel: "bot", KindLabel: "agent", CanRevoke: true, Task: &view.ViewerTask{
 			Status: "実行中", Steps: "3 / 50", Elapsed: "45秒", MaxTime: "10分", StartedAt: "09:00:00", Requester: "<b>req</b>"}},
-			[]string{revoke, "data-lease-task", `<h3 class="text-base font-semibold">AI エージェントのタスク実行中</h3>`, "実行中", "3 / 50", "45秒（上限 10分）", "09:00:00", "&lt;b&gt;req&lt;/b&gt;"}, []string{"<b>req</b>"}},
+			[]string{revoke, "data-lease-task", `<h3 class="text-base font-semibold">AI エージェントのタスク実行中</h3>`, `<dl class="space-y-1 text-sm">`, "実行中", "3 / 50", "45秒（上限 10分）", "09:00:00", "&lt;b&gt;req&lt;/b&gt;"}, []string{"<b>req</b>"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
