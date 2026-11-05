@@ -188,14 +188,14 @@ func ApprovalDialog(v view.ApprovalDialog) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if v.Detail != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p class=\"max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone px-3 py-2 text-sm text-ink\" data-approval-detail>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p class=\"max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-4 text-sm text-ink\" data-approval-detail>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(v.Detail)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/approval.templ`, Line: 45, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/approval.templ`, Line: 45, Col: 140}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {

@@ -42,7 +42,7 @@ templ ApprovalDialog(v view.ApprovalDialog) {
 			<dd data-approval-summary>{ v.Summary }</dd>
 		</dl>
 		if v.Detail != "" {
-			<p class="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone px-3 py-2 text-sm text-ink" data-approval-detail>{ v.Detail }</p>
+			<p class="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-4 text-sm text-ink" data-approval-detail>{ v.Detail }</p>
 		}
 		if v.Note != "" {
 			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-approval-note": true}) {

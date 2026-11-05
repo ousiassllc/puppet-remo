@@ -47,7 +47,7 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 					ユーザー { r.LoginName } ・ 接続元 <code class="rounded-sm bg-accent-soft px-2 py-1">{ r.RemoteIP }</code> ・ { r.ExpiresAt } まで有効
 				</p>
 				<form
-					class="mt-3 grid gap-3 sm:grid-cols-2"
+					class="mt-3 grid gap-4 sm:grid-cols-2"
 					hx-post={ r.ApproveURL }
 					hx-target="#request-list"
 					hx-swap="outerHTML"
@@ -59,7 +59,7 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 					@molecules.FormField("mode-"+r.ID, "承認モード", "リースを取得するときの承認の方式です。", "") {
 						@atoms.Select("mode-"+r.ID, "approval_mode", approvalOptions(r.Modes))
 					}
-					<fieldset class="space-y-1 sm:col-span-2">
+					<fieldset class="space-y-2 sm:col-span-2">
 						<legend class="text-sm text-ink">使える機能</legend>
 						<label class="mr-4 inline-flex items-center gap-2 text-sm">
 							@atoms.Checkbox("web-"+r.ID, "web_enabled", true)

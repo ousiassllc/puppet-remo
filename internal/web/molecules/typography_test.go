@@ -37,3 +37,11 @@ func TestTokenRevealPlaintextIsMono(t *testing.T) {
 		t.Errorf("token plaintext input must use font-mono: %q", input)
 	}
 }
+
+// S5: 確認モーダルのスクラムにもガター（モバイル 16・デスクトップ 24）を持たせ、狭い幅でパネルが画面の端に接しない。
+func TestModalScrimHasGutter(t *testing.T) {
+	out := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "確認", Message: "本当に？", Label: "実行", Method: "post"}))
+	if !strings.Contains(out, `bg-scrim p-4 md:p-6"`) {
+		t.Errorf("modal scrim lacks the p-4 md:p-6 gutter:\n%s", out)
+	}
+}

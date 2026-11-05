@@ -255,7 +255,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 				}
 			}
 			if v.Latest.Notes != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<pre class=\"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-2 font-sans text-sm text-ink\" data-field=\"release-notes\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<pre class=\"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-4 font-sans text-sm text-ink\" data-field=\"release-notes\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

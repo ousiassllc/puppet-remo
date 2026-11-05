@@ -651,3 +651,14 @@ func TestServerStatusPortIsMono(t *testing.T) {
 	out := webtest.Render(t, organisms.ServerStatusBody(view.ServerStatus{Port: 8765}))
 	has(t, out, `<dd data-field="port" class="mb-1 min-w-0 font-mono sm:mb-0">8765</dd>`)
 }
+
+// S2: ラベル→入力は 8（mb-2）、項目→項目は 16（gap-4）、入れ子のパネルの padding は 16（p-4）。
+func TestFormAndNestedPanelSpacing(t *testing.T) {
+	has(t, webtest.Render(t, organisms.ClipboardFetched("x")), `class="mb-2 block text-sm text-ink"`)
+	has(t, webtest.Render(t, organisms.AuditFilters(view.AuditFilters{})), `class="space-y-4 `, `class="grid gap-4 `)
+	has(t, webtest.Render(t, organisms.TokenForm(view.TokenForm{}, false)), `class="grid gap-4 `)
+	req := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "x"}}}))
+	has(t, req, `class="mt-3 grid gap-4 sm:grid-cols-2"`, `<fieldset class="space-y-2 sm:col-span-2">`)
+	dlg := webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Detail: "詳細", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30}}))
+	has(t, dlg, `rounded-md bg-bone p-4 text-sm text-ink" data-approval-detail`)
+}

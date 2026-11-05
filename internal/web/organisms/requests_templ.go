@@ -262,7 +262,7 @@ func connectionRequestList(v view.RequestList, oob bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " まで有効</p><form class=\"mt-3 grid gap-3 sm:grid-cols-2\" hx-post=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " まで有効</p><form class=\"mt-3 grid gap-4 sm:grid-cols-2\" hx-post=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -323,7 +323,7 @@ func connectionRequestList(v view.RequestList, oob bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<fieldset class=\"space-y-1 sm:col-span-2\"><legend class=\"text-sm text-ink\">使える機能</legend> <label class=\"mr-4 inline-flex items-center gap-2 text-sm\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<fieldset class=\"space-y-2 sm:col-span-2\"><legend class=\"text-sm text-ink\">使える機能</legend> <label class=\"mr-4 inline-flex items-center gap-2 text-sm\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
