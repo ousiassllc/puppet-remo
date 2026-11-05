@@ -80,7 +80,7 @@ func (h *Handler) ApplyUpdate(c *gin.Context) {
 	)
 }
 
-// failUpdate は適用の失敗を、理由つきのトーストにする。内部のエラー文（パス・OS のメッセージ）は出さない。
+// failUpdate は適用の失敗を、理由つきのインラインアラートにする。内部のエラー文（パス・OS のメッセージ）は出さない。
 func (h *Handler) failUpdate(c *gin.Context, err error) {
 	conflict := string(domain.CodeConflict)
 	var busy *service.UpdateBusyError

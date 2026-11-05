@@ -287,7 +287,7 @@ func (h *Handler) TaskDetail(c *gin.Context) {
 
 // CancelTask は POST /tasks/:id/cancel（中断のボタン。FR-H02・H10）。操作主体は host で、監査は TaskAdmin が記録する。
 // 応答はタスクの状態の 1 行（呼び出し元の同じ部品を差し替える）と完了のトースト。終了済みなら現在の状態をそのまま返す（冪等）。
-// 無いタスクは 404（エラーのトースト）。
+// 無いタスクは 404（エラーのアラート）。
 func (h *Handler) CancelTask(c *gin.Context) {
 	t, err := h.d.Tasks.CancelByHost(c.Request.Context(), c.Param("id"))
 	if err != nil {

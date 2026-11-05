@@ -193,7 +193,7 @@ func TestRoutesAreExactlyTheM1GUISet(t *testing.T) {
 		}
 	}
 	// エージェントのタスク（M4。FR-H10）は GUI ルーターにある。一覧は 200、無い id の詳細は 404（ハンドラの応答）、
-	// 中断は POST だけ（GET は経路なしの 404）、無い id の中断は 404（エラーのトースト）。
+	// 中断は POST だけ（GET は経路なしの 404）、無い id の中断は 404（エラーのアラート）。
 	if rec := do(h, http.MethodGet, "/tasks"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="task-list"`) {
 		t.Errorf("GET /tasks: status %d", rec.Code)
 	}
