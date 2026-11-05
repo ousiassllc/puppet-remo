@@ -1,8 +1,170 @@
 /* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
  * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
- * <style> と style= は使わない（CSP。§7.1）。 */
+ * <style> と style= は使わない（CSP。§7.1）。
+ * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide 622ea73）のトークンで、この 1 か所に定義する（§8.5）。
+ * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
+ * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
 @source "../../../internal/web/**/*.templ";
+
+/* ---- 色（C1〜C5）----
+ * ライトを :root に、ダークを [data-theme="dark"] に定義する。<html data-theme="light|dark"> で明示的に切り替え、
+ * 指定がなければ OS の設定（prefers-color-scheme）に従う（初期値）。ダークの値は 2 か所（下の 2 ブロック）に同じものを置く。
+ * --scrim はガイドに値がない（モーダル背面の暗幕）。ガイドへの追加を提案するまでのこのプロダクトの暫定値。 */
+:root {
+  color-scheme: light;
+  --ink: #050505;
+  --bone: #f5f5f4;
+  --mute: #8b8b8e;
+  --surface: #ffffff;
+  --border: #e7e7e5;
+  --accent: #050505;
+  --accent-soft: #e7e7e5;
+  --focus: #4a72d0;
+  --success: #3d5c4a;
+  --warning: #7a6a3a;
+  --danger: #7a4545;
+  --info: #4a5a6a;
+  --scrim: rgb(5 5 5 / 0.4);
+  --ring: color-mix(in srgb, var(--focus) 40%, transparent);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #ffffff;
+  --bone: #050505;
+  --surface: #141414;
+  --border: #2a2a2a;
+  --accent: #f5f5f4;
+  --accent-soft: #2a2a2a;
+  --focus: #60a5fa;
+  --success: #8fafa0;
+  --warning: #c4b87a;
+  --danger: #c49a9a;
+  --info: #9aabbc;
+  --scrim: rgb(0 0 0 / 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #ffffff;
+    --bone: #050505;
+    --surface: #141414;
+    --border: #2a2a2a;
+    --accent: #f5f5f4;
+    --accent-soft: #2a2a2a;
+    --focus: #60a5fa;
+    --success: #8fafa0;
+    --warning: #c4b87a;
+    --danger: #c49a9a;
+    --info: #9aabbc;
+    --scrim: rgb(0 0 0 / 0.6);
+  }
+}
+
+/* Tailwind 既定のパレットは消し、トークンだけを使えるようにする（bg-bone・text-ink・border-border・bg-danger/10 など）。 */
+@theme {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-bone: var(--bone);
+  --color-mute: var(--mute);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-focus: var(--focus);
+  --color-ring: var(--ring);
+  --color-scrim: var(--scrim);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+}
+
+@layer base {
+  /* Tailwind v4 の既定の罫線色は currentColor。ガイドの --border を既定にする。 */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--bone);
+    color: var(--ink);
+  }
+
+  /* フォーカスリング（C3）: 2px solid --focus + オフセット 2px。 */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* フォームのフォーカスは枠線を --focus にし、--ring（--focus の 40%）の 2px を足す。
+   * outline は透明で残す（Windows のハイコントラストの表示では枠として見える）。 */
+  input:not([type="checkbox"], [type="radio"], [type="range"]):focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+    border-color: var(--focus);
+    box-shadow: 0 0 0 2px var(--ring);
+  }
+}
+
+@layer components {
+  /* 本文のリンク（C3・C7）: インク色 + --mute の下線。主操作・選択状態以外で色を足さない。 */
+  .link {
+    color: var(--ink);
+    text-decoration-line: underline;
+    text-decoration-color: var(--mute);
+    text-underline-offset: 0.2em;
+  }
+  .link:hover {
+    text-decoration-color: var(--ink);
+  }
+
+  /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック。 */
+  input[type="checkbox"] {
+    appearance: none;
+    display: inline-grid;
+    place-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--mute);
+    border-radius: 4px;
+    background-color: var(--surface);
+  }
+  input[type="checkbox"]::before {
+    content: "";
+    display: none;
+    width: 10px;
+    height: 10px;
+    background-color: var(--bone);
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
+  }
+  input[type="checkbox"]:checked {
+    border-color: var(--accent);
+    background-color: var(--accent);
+  }
+  input[type="checkbox"]:checked::before {
+    display: block;
+  }
+
+  /* スライダー（P1）: つまみ・進捗を --accent にする。 */
+  input[type="range"] {
+    accent-color: var(--accent);
+  }
+}
 
 /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
 @layer components {

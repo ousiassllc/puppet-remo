@@ -25,7 +25,7 @@ templ GUI(title string, c view.Chrome) {
 			<script type="module" src="/static/js/app.js"></script>
 		</head>
 		<body
-			class="min-h-screen bg-slate-100 text-slate-900 antialiased"
+			class="min-h-screen bg-bone text-ink antialiased"
 			hx-ext="response-targets"
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
@@ -68,7 +68,7 @@ templ Dialog(title string) {
 			<script type="module" src="/static/js/app.js"></script>
 		</head>
 		<body
-			class="min-h-screen bg-slate-100 p-4 text-slate-900 antialiased"
+			class="min-h-screen bg-bone p-4 text-ink antialiased"
 			hx-ext="response-targets"
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>

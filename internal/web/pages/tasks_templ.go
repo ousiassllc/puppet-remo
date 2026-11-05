@@ -40,7 +40,7 @@ func tasksBody(v view.TaskListPage) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">タスク</h1><p class=\"text-sm text-slate-600\">MCP クライアントが <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs\">run_task</code> で依頼した、ホスト内蔵エージェントのタスクです。新しい順に表示します。実行中のタスクは詳細の画面（またはダッシュボード）から中断できます。ステップごとの操作と画像は、タスクの詳細と監査ログで確認できます。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-ink\">タスク</h1><p class=\"text-sm text-ink\">MCP クライアントが <code class=\"rounded bg-accent-soft px-1 py-0.5 text-xs\">run_task</code> で依頼した、ホスト内蔵エージェントのタスクです。新しい順に表示します。実行中のタスクは詳細の画面（またはダッシュボード）から中断できます。ステップごとの操作と画像は、タスクの詳細と監査ログで確認できます。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -173,7 +173,7 @@ func taskDetailBody(v view.TaskDetail) templ.Component {
 			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">タスクの詳細</h1>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-ink\">タスクの詳細</h1>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

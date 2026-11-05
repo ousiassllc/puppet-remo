@@ -16,14 +16,14 @@ func leaseButtonAttrs(url string) atoms.Attrs {
 templ ViewerLeasePanel(v view.ViewerLease) {
 	<section
 		id="lease-panel"
-		class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+		class="rounded-lg border border-border bg-surface p-3 shadow-sm"
 		aria-label="操作権"
 		hx-get="/viewer/lease"
 		hx-trigger="remo:lease-changed from:#viewer-root"
 		hx-target="this"
 		hx-swap="outerHTML"
 	>
-		<h2 class="mb-2 text-sm font-semibold text-slate-700">操作権</h2>
+		<h2 class="mb-2 text-sm font-semibold text-ink">操作権</h2>
 		<div class="flex flex-wrap items-center gap-3" data-lease-state={ leaseState(v) }>
 			if v.Pending {
 				@molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel)
@@ -47,23 +47,23 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 			}
 		</div>
 		if v.Task != nil {
-			<div class="mt-2 rounded border border-indigo-100 bg-indigo-50 p-2 text-xs text-slate-700" data-lease-task>
-				<p class="font-semibold text-indigo-800">AI エージェントのタスク実行中</p>
+			<div class="mt-2 rounded border border-info/40 bg-info/10 p-2 text-xs text-ink" data-lease-task>
+				<p class="font-semibold text-info">AI エージェントのタスク実行中</p>
 				<dl class="mt-1 space-y-0.5">
-					<div class="flex gap-2"><dt class="w-16 text-slate-500">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
-					<div class="flex gap-2"><dt class="w-16 text-slate-500">ステップ</dt><dd class="tabular-nums" data-task-steps>{ v.Task.Steps }</dd></div>
-					<div class="flex gap-2"><dt class="w-16 text-slate-500">経過</dt><dd class="tabular-nums" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-mute">状態</dt><dd data-task-status>{ v.Task.Status }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-mute">ステップ</dt><dd class="tabular-nums" data-task-steps>{ v.Task.Steps }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-mute">経過</dt><dd class="tabular-nums" data-task-elapsed>{ v.Task.Elapsed }（上限 { v.Task.MaxTime }）</dd></div>
 					if v.Task.StartedAt != "" {
-						<div class="flex gap-2"><dt class="w-16 text-slate-500">開始</dt><dd class="tabular-nums" data-task-started>{ v.Task.StartedAt }</dd></div>
+						<div class="flex gap-2"><dt class="w-16 text-mute">開始</dt><dd class="tabular-nums" data-task-started>{ v.Task.StartedAt }</dd></div>
 					}
-					<div class="flex gap-2"><dt class="w-16 text-slate-500">依頼元</dt><dd data-task-requester>{ v.Task.Requester }</dd></div>
+					<div class="flex gap-2"><dt class="w-16 text-mute">依頼元</dt><dd data-task-requester>{ v.Task.Requester }</dd></div>
 				</dl>
 			</div>
 		}
 		if v.PendingMine {
-			<p class="mt-2 text-sm text-amber-700" role="status" data-lease-pending-message>ホストの承認を待っています。</p>
+			<p class="mt-2 text-sm text-warning" role="status" data-lease-pending-message>ホストの承認を待っています。</p>
 		}
-		<p class="mt-2 text-xs text-slate-500">この画面から Ctrl+Alt+Del は送れません。</p>
+		<p class="mt-2 text-xs text-mute">この画面から Ctrl+Alt+Del は送れません。</p>
 	</section>
 }
 

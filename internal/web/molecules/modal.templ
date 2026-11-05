@@ -20,10 +20,10 @@ func confirmAttrs(m view.ConfirmModal) atoms.Attrs {
 // 確認用の GET が #modal-root に差し込み、キャンセルは app.ts が data-clear の対象（#modal-root）を空にする。
 // 確定の応答は OOB で #modal-root を空にする（organisms.ModalClear）。
 templ Modal(m view.ConfirmModal) {
-	<div id="modal" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-		<div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
-			<h2 id="modal-title" class="text-base font-semibold text-slate-900">{ m.Title }</h2>
-			<p class="mt-2 text-sm text-slate-600">{ m.Message }</p>
+	<div id="modal" class="fixed inset-0 z-40 flex items-center justify-center bg-scrim" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+		<div class="w-full max-w-md rounded-lg border border-border bg-surface p-5 shadow-xl">
+			<h2 id="modal-title" class="text-base font-semibold text-ink">{ m.Title }</h2>
+			<p class="mt-2 text-sm text-ink">{ m.Message }</p>
 			<div class="mt-5 flex justify-end gap-2">
 				@atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{"data-clear": "#modal-root"}})
 				@atoms.Button(atoms.ButtonProps{Label: m.Label, Variant: atoms.ButtonDanger, Attrs: confirmAttrs(m)})

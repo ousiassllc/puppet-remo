@@ -25,14 +25,14 @@ func buttonType(t string) string {
 }
 
 func buttonClass(v ButtonVariant) string {
-	base := "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 "
+	base := "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 "
 	switch v {
 	case ButtonDanger:
-		return base + "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500"
+		return base + "bg-danger text-bone hover:bg-danger/90"
 	case ButtonSecondary:
-		return base + "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-400"
+		return base + "border border-border bg-transparent text-ink hover:bg-accent-soft"
 	default:
-		return base + "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-indigo-500"
+		return base + "bg-accent text-bone hover:bg-accent/90"
 	}
 }
 

@@ -33,7 +33,7 @@ func Overlay(v view.Overlay) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"operation-overlay\" class=\"pointer-events-none fixed inset-0 border-4 border-rose-500\" data-overlay><div class=\"absolute left-1/2 top-0 max-w-[60%] -translate-x-1/2 rounded-b-lg bg-rose-600/90 px-4 py-1 text-center text-white shadow\"><p class=\"truncate text-sm font-semibold\" data-overlay-label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"operation-overlay\" class=\"pointer-events-none fixed inset-0 border-4 border-danger\" data-overlay><div class=\"absolute left-1/2 top-0 max-w-[60%] -translate-x-1/2 rounded-b-lg bg-danger px-4 py-1 text-center text-bone shadow\"><p class=\"truncate text-sm font-semibold\" data-overlay-label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

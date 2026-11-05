@@ -2,5 +2,5 @@ package atoms
 
 // Spinner は読み込み中の表示。hx-indicator の対象にする（.htmx-indicator は app.css が opacity で切り替える）。
 templ Spinner(id string) {
-	<span id={ id } class="htmx-indicator text-xs text-slate-500" role="status">処理中…</span>
+	<span id={ id } class="htmx-indicator text-xs text-mute" role="status">処理中…</span>
 }

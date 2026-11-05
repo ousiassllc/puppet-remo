@@ -14,7 +14,7 @@ templ ViewerRoot(v view.Viewer) {
 		@ViewerLeasePanel(v.Lease)
 		@ViewerOps(v.Ops)
 		<remo-screen-viewer
-			class="block overflow-hidden rounded-lg border border-slate-300 bg-black"
+			class="block overflow-hidden rounded-lg border border-border bg-bone"
 			ws-url={ v.WSURL }
 			readonly?={ !v.Lease.Mine }
 			monitor={ strconv.Itoa(v.Monitor) }

@@ -7,9 +7,9 @@ import (
 
 templ errorBody(v view.ErrorPage) {
 	<div class="space-y-2" data-error-code={ v.Code }>
-		<h1 class="text-xl font-semibold text-slate-900">{ v.Title }</h1>
-		<p class="text-sm text-slate-600">{ v.Message }</p>
-		<a href="/" class="text-sm font-medium text-indigo-700 hover:underline">ダッシュボードへ戻る</a>
+		<h1 class="text-xl font-semibold text-ink">{ v.Title }</h1>
+		<p class="text-sm text-ink">{ v.Message }</p>
+		<a href="/" class="text-sm link">ダッシュボードへ戻る</a>
 	</div>
 }
 

@@ -10,8 +10,8 @@ const appsTitle = "起動許可アプリ"
 
 templ appsBody(v view.Apps) {
 	<div class="max-w-3xl space-y-4">
-		<h1 class="text-xl font-semibold text-slate-900">起動許可アプリ</h1>
-		<p class="text-sm text-slate-600">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリの一覧です。ここに登録したものだけが起動できます。登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>
+		<h1 class="text-xl font-semibold text-ink">起動許可アプリ</h1>
+		<p class="text-sm text-ink">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリの一覧です。ここに登録したものだけが起動できます。登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>
 		@organisms.AppList(v.List)
 		@organisms.AppForm(v.NewForm, false)
 	</div>

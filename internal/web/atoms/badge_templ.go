@@ -18,17 +18,18 @@ const (
 	BadgeDanger  BadgeTone = "danger"
 )
 
+// badgeClass はステータスピル。状態色の細枠 + 薄い地 + 文言（色だけで意味を伝えない）。
 func badgeClass(t BadgeTone) string {
-	base := "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium "
+	base := "inline-flex items-center rounded-full border px-2 py-0.5 text-xs "
 	switch t {
 	case BadgeOK:
-		return base + "bg-emerald-100 text-emerald-800"
+		return base + "border-success/40 bg-success/10 text-success"
 	case BadgeWarn:
-		return base + "bg-amber-100 text-amber-800"
+		return base + "border-warning/40 bg-warning/10 text-warning"
 	case BadgeDanger:
-		return base + "bg-red-100 text-red-800"
+		return base + "border-danger/40 bg-danger/10 text-danger"
 	default:
-		return base + "bg-slate-100 text-slate-700"
+		return base + "border-border bg-accent-soft text-ink"
 	}
 }
 
@@ -79,7 +80,7 @@ func Badge(tone BadgeTone, text string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 29, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 30, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

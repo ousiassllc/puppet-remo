@@ -13,9 +13,9 @@ import "github.com/ousiassllc/puppet-remo/internal/web/view"
 func toastClass(l view.ToastLevel) string {
 	base := "pointer-events-auto flex items-start gap-3 rounded-md border px-4 py-3 text-sm shadow "
 	if l == view.ToastError {
-		return base + "border-red-300 bg-red-50 text-red-800"
+		return base + "border-danger/40 bg-danger/10 text-danger"
 	}
-	return base + "border-slate-300 bg-white text-slate-800"
+	return base + "border-border bg-surface text-ink"
 }
 
 func toastAttrs(t view.Toast) Attrs {
@@ -87,7 +87,7 @@ func Toast(t view.Toast) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</span> <button type=\"button\" class=\"ml-auto text-slate-500 hover:text-slate-800\" aria-label=\"閉じる\" data-toast-dismiss>×</button></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</span> <button type=\"button\" class=\"ml-auto text-mute hover:text-ink\" aria-label=\"閉じる\" data-toast-dismiss>×</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -17,8 +17,8 @@ func TestAuditListResultBadgesLocalTimeAndThumbnailFlag(t *testing.T) {
 	}, NextURL: "/audit?cursor=1"}))
 	has(t, out, `id="audit-list"`, "2026-10-30 20:59:00", `data-audit-row="/audit/3"`, `data-result="ok"`, `data-result="denied"`, `data-result="error"`,
 		"12 ms", "data-pager-next", `hx-get="/audit?cursor=1"`)
-	// 結果バッジの色（ok は緑・denied は黄・error は赤。atoms.Badge と同じ配色）。
-	for result, tone := range map[string]string{"ok": "emerald", "denied": "amber", "error": "red"} {
+	// 結果バッジの状態色（ok は success・denied は warning・error は danger。atoms.Badge と同じトークン）。
+	for result, tone := range map[string]string{"ok": "success", "denied": "warning", "error": "danger"} {
 		i := strings.Index(out, `data-result="`+result+`"`)
 		j := strings.Index(out[i:], "</tr>")
 		if !strings.Contains(out[i:i+j], tone) {

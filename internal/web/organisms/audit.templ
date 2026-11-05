@@ -20,7 +20,7 @@ func auditSelectOptions(opts []view.AuditFilterOption) []atoms.SelectOption {
 // 日時は RFC 3339 の文字列で入力する（API 仕様 §7.3 の from / to と同じ）。
 templ AuditFilters(f view.AuditFilters) {
 	<form
-		class="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+		class="space-y-3 rounded-lg border border-border bg-surface p-4 shadow-sm"
 		method="get"
 		action="/audit"
 		novalidate
@@ -57,11 +57,11 @@ templ AuditFilters(f view.AuditFilters) {
 			<input type="hidden" name="limit" value={ f.Limit }/>
 		}
 		if f.Errors.Paging != "" {
-			<p class="text-xs text-red-700" role="alert" data-field-error="audit-paging">{ f.Errors.Paging }</p>
+			<p class="text-xs text-danger" role="alert" data-field-error="audit-paging">{ f.Errors.Paging }</p>
 		}
 		<div class="flex items-center gap-3">
 			@atoms.Button(atoms.ButtonProps{Label: "絞り込む", Variant: atoms.ButtonPrimary, Type: "submit"})
-			<a href="/audit" class="text-sm font-medium text-slate-600 hover:underline" hx-get="/audit" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true" data-audit-reset>条件をクリア</a>
+			<a href="/audit" class="text-sm font-medium text-ink hover:underline" hx-get="/audit" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true" data-audit-reset>条件をクリア</a>
 		</div>
 	</form>
 }
@@ -71,7 +71,7 @@ templ auditThumbCell(has bool) {
 	if has {
 		@atoms.Badge(atoms.BadgeNeutral, "あり")
 	} else {
-		<span class="text-slate-400">-</span>
+		<span class="text-mute">-</span>
 	}
 }
 
@@ -84,14 +84,14 @@ templ AuditList(v view.AuditList) {
 		if len(v.Rows) == 0 {
 			// 値が不正で検索しなかったとき（422）は、「該当なし」とは言わない。
 			if !v.Filters.Errors.Any() {
-				<p class="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500" data-empty="audit-list">
+				<p class="rounded-lg border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-mute" data-empty="audit-list">
 					条件に合う監査ログはありません。
 				</p>
 			}
 		} else {
-			<div class="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-				<table class="min-w-full divide-y divide-slate-200 text-sm">
-					<thead class="bg-slate-50 text-left text-xs font-semibold text-slate-600">
+			<div class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm">
+				<table class="min-w-full divide-y divide-border text-sm">
+					<thead class="bg-bone text-left text-xs font-semibold text-ink">
 						<tr>
 							<th scope="col" class="px-3 py-2">日時</th>
 							<th scope="col" class="px-3 py-2">クライアント</th>
@@ -102,16 +102,16 @@ templ AuditList(v view.AuditList) {
 							<th scope="col" class="px-3 py-2">画像</th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-slate-100">
+					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
 							<tr data-audit-row={ r.DetailURL } data-result={ r.Result }>
-								<td class="whitespace-nowrap px-3 py-2 text-slate-700">{ r.Time }</td>
-								<td class="px-3 py-2 font-medium text-slate-800">{ r.Client }</td>
-								<td class="px-3 py-2 text-slate-700">{ r.Kind }</td>
+								<td class="whitespace-nowrap px-3 py-2 text-ink">{ r.Time }</td>
+								<td class="px-3 py-2 font-medium text-ink">{ r.Client }</td>
+								<td class="px-3 py-2 text-ink">{ r.Kind }</td>
 								<td class="px-3 py-2">
 									<a
 										href={ templ.SafeURL(r.DetailURL) }
-										class="font-medium text-indigo-700 hover:underline"
+										class="link"
 										hx-boost="true"
 										hx-target="#main"
 										hx-target-error="#main"
@@ -121,7 +121,7 @@ templ AuditList(v view.AuditList) {
 								<td class="px-3 py-2">
 									@atoms.Badge(badgeTone(r.ResultTone), r.Result)
 								</td>
-								<td class="whitespace-nowrap px-3 py-2 text-slate-700">{ r.Duration }</td>
+								<td class="whitespace-nowrap px-3 py-2 text-ink">{ r.Duration }</td>
 								<td class="px-3 py-2">
 									@auditThumbCell(r.HasThumb)
 								</td>
@@ -135,7 +135,7 @@ templ AuditList(v view.AuditList) {
 			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
 				<a
 					href={ templ.SafeURL(v.NextURL) }
-					class="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+					class="rounded-md border border-border bg-surface px-3 py-1.5 font-medium text-ink hover:bg-accent-soft"
 					hx-get={ v.NextURL }
 					hx-target="#audit-list"
 					hx-swap="outerHTML"
@@ -150,7 +150,7 @@ templ AuditList(v view.AuditList) {
 // AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。
 templ AuditDetail(v view.AuditDetail) {
 	<div class="space-y-4" data-audit-detail={ v.Event }>
-		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm sm:grid-cols-2">
+		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-4 text-sm shadow-sm sm:grid-cols-2">
 			@auditField("日時", v.Time, "time")
 			@auditField("種別", v.Kind, "kind")
 			@auditField("イベント", v.Event, "event")
@@ -160,7 +160,7 @@ templ AuditDetail(v view.AuditDetail) {
 			@auditField("リース", v.LeaseID, "lease")
 			@auditField("ツール", v.Tool, "tool")
 			<div class="flex gap-2">
-				<dt class="w-28 shrink-0 font-semibold text-slate-600">結果</dt>
+				<dt class="w-28 shrink-0 font-semibold text-ink">結果</dt>
 				<dd data-audit-field="result">
 					@atoms.Badge(badgeTone(v.ResultTone), v.Result)
 				</dd>
@@ -169,23 +169,23 @@ templ AuditDetail(v view.AuditDetail) {
 			@auditField("所要時間", v.Duration, "duration")
 		</dl>
 		<section class="space-y-2" aria-label="引数">
-			<h2 class="text-sm font-semibold text-slate-800">引数</h2>
+			<h2 class="text-sm font-semibold text-ink">引数</h2>
 			if len(v.Args) == 0 {
-				<p class="text-sm text-slate-500" data-empty="audit-args">記録された引数はありません。</p>
+				<p class="text-sm text-mute" data-empty="audit-args">記録された引数はありません。</p>
 			} else {
-				<div class="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-					<table class="min-w-full divide-y divide-slate-200 text-sm" data-audit-args>
-						<thead class="bg-slate-50 text-left text-xs font-semibold text-slate-600">
+				<div class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm">
+					<table class="min-w-full divide-y divide-border text-sm" data-audit-args>
+						<thead class="bg-bone text-left text-xs font-semibold text-ink">
 							<tr>
 								<th scope="col" class="px-3 py-2">キー</th>
 								<th scope="col" class="px-3 py-2">値</th>
 							</tr>
 						</thead>
-						<tbody class="divide-y divide-slate-100">
+						<tbody class="divide-y divide-border">
 							for _, a := range v.Args {
 								<tr>
-									<th scope="row" class="whitespace-nowrap px-3 py-2 text-left font-medium text-slate-700">{ a.Key }</th>
-									<td class="break-all px-3 py-2 text-slate-800">{ a.Value }</td>
+									<th scope="row" class="whitespace-nowrap px-3 py-2 text-left font-medium text-ink">{ a.Key }</th>
+									<td class="break-all px-3 py-2 text-ink">{ a.Value }</td>
 								</tr>
 							}
 						</tbody>
@@ -194,23 +194,23 @@ templ AuditDetail(v view.AuditDetail) {
 			}
 		</section>
 		<section class="space-y-2" aria-label="サムネイル">
-			<h2 class="text-sm font-semibold text-slate-800">サムネイル</h2>
+			<h2 class="text-sm font-semibold text-ink">サムネイル</h2>
 			if v.ThumbURL != "" {
 				<img
 					src={ v.ThumbURL }
 					alt="操作の直後の縮小スクリーンショット"
 					width={ v.ThumbW }
 					height={ v.ThumbH }
-					class="max-w-full rounded-lg border border-slate-200 bg-white shadow-sm"
+					class="max-w-full rounded-lg border border-border bg-surface shadow-sm"
 					data-audit-thumb
 				/>
 			} else {
-				<p class="text-sm text-slate-500" data-empty="audit-thumb">{ v.ThumbNote }</p>
+				<p class="text-sm text-mute" data-empty="audit-thumb">{ v.ThumbNote }</p>
 			}
 		</section>
 		<a
 			href={ templ.SafeURL(v.BackURL) }
-			class="text-sm font-medium text-indigo-700 hover:underline"
+			class="text-sm link"
 			hx-boost="true"
 			hx-target="#main"
 			hx-target-error="#main"
@@ -223,8 +223,8 @@ templ AuditDetail(v view.AuditDetail) {
 templ auditField(label, value, name string) {
 	if value != "" {
 		<div class="flex gap-2">
-			<dt class="w-28 shrink-0 font-semibold text-slate-600">{ label }</dt>
-			<dd class="break-all text-slate-800" data-audit-field={ name }>{ value }</dd>
+			<dt class="w-28 shrink-0 font-semibold text-ink">{ label }</dt>
+			<dd class="break-all text-ink" data-audit-field={ name }>{ value }</dd>
 		</div>
 	}
 }

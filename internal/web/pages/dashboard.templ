@@ -10,7 +10,7 @@ const dashboardTitle = "ダッシュボード"
 
 templ dashboardBody(v view.Dashboard) {
 	<div class="space-y-6">
-		<h1 class="text-xl font-semibold text-slate-900">ダッシュボード</h1>
+		<h1 class="text-xl font-semibold text-ink">ダッシュボード</h1>
 		@organisms.RunningTasksPanel(v.Tasks)
 		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 			@organisms.ServerStatusPanel(v.Status)
@@ -19,8 +19,8 @@ templ dashboardBody(v view.Dashboard) {
 			@organisms.SessionList(v.Sessions)
 		</div>
 		<div class="flex flex-wrap gap-3 text-sm">
-			<a href="/requests" class="font-medium text-indigo-700 hover:underline" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">接続要求を確認する →</a>
-			<a href="/clients" class="font-medium text-indigo-700 hover:underline" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">クライアントを管理する →</a>
+			<a href="/requests" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">接続要求を確認する →</a>
+			<a href="/clients" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">クライアントを管理する →</a>
 		</div>
 	</div>
 }

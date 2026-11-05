@@ -97,7 +97,7 @@ func writeHTML(w http.ResponseWriter, r *http.Request, status int, rj reject, ti
 	case rj.code == domain.CodeDeviceNotRegistered:
 		comp = notRegisteredPage(rj.connState)
 	case stateChanging(r):
-		comp = atoms.Alert(string(rj.code), msg)
+		comp = atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: string(rj.code), Heading: "エラー", Message: msg})
 	default:
 		comp = pages.RemoteError(view.RemoteError{Code: string(rj.code), Title: title, Message: msg})
 	}

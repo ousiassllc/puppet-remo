@@ -24,18 +24,18 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 // ClientCard はクライアント 1 件（有効・無効の切り替え）。PATCH の応答もこのフラグメントを返す（API 仕様 §7.2）。
 // 切り替えは現在の状態の逆だけを描画する。削除と詳細への導線は、一覧のカードだけに出す。
 templ ClientCard(c view.Client) {
-	<article id={ cardID(c) } class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-client={ c.ID }>
+	<article id={ cardID(c) } class="rounded-lg border border-border bg-surface p-4 shadow-sm" data-client={ c.ID }>
 		<div class="flex flex-wrap items-baseline justify-between gap-2">
-			<h3 class="text-sm font-semibold text-slate-800">{ c.DisplayName }</h3>
-			<span class="text-xs text-slate-500" data-approval-mode>承認モード: { c.Approved }</span>
+			<h3 class="text-sm font-semibold text-ink">{ c.DisplayName }</h3>
+			<span class="text-xs text-mute" data-approval-mode>承認モード: { c.Approved }</span>
 		</div>
-		<p class="mt-1 text-xs text-slate-500">
-			ユーザー { c.LoginName } ・ ノード <code class="rounded bg-slate-100 px-1 py-0.5">{ c.NodeID }</code>
+		<p class="mt-1 text-xs text-mute">
+			ユーザー { c.LoginName } ・ ノード <code class="rounded bg-accent-soft px-1 py-0.5">{ c.NodeID }</code>
 		</p>
 		<ul class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
 			for _, f := range c.Flags {
 				<li class="flex items-center gap-2 text-sm" data-flag={ f.Field }>
-					<span class="text-slate-700">{ f.Label }</span>
+					<span class="text-ink">{ f.Label }</span>
 					@flagBadgeView(f)
 					@atoms.Button(atoms.ButtonProps{Label: flagActionLabel(f), Variant: atoms.ButtonSecondary, Attrs: flagAttrs(f, cardID(c))})
 				</li>
@@ -50,11 +50,11 @@ templ ClientCard(c view.Client) {
 				hx-swap="outerHTML"
 				hx-disabled-elt="find select"
 			>
-				<label for={ "mode-" + c.ID } class="shrink-0 whitespace-nowrap text-sm text-slate-700">承認モード</label>
+				<label for={ "mode-" + c.ID } class="shrink-0 whitespace-nowrap text-sm text-ink">承認モード</label>
 				@atoms.Select("mode-"+c.ID, "approval_mode", approvalOptions(c.Modes))
 			</form>
 			if c.FirstTimeStatus != "" {
-				<span class="text-xs text-slate-600" data-first-time-status>{ c.FirstTimeStatus }</span>
+				<span class="text-xs text-ink" data-first-time-status>{ c.FirstTimeStatus }</span>
 			}
 			if c.CanResetApproval {
 				@atoms.Button(atoms.ButtonProps{Label: "承認を取り消す", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
@@ -67,7 +67,7 @@ templ ClientCard(c view.Client) {
 				if c.CanOpenDetail {
 					<a
 						href={ templ.SafeURL(c.DetailURL) }
-						class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+						class="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bone hover:bg-accent/90"
 						hx-boost="true"
 						hx-target="#main"
 						hx-target-error="#main"
@@ -93,7 +93,7 @@ templ flagBadgeView(f view.ClientFlag) {
 templ ClientList(v view.ClientList) {
 	<div id="client-list" class="space-y-4">
 		if len(v.Items) == 0 {
-			<p class="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500" data-empty="clients">
+			<p class="rounded-lg border border-dashed border-border bg-surface px-4 py-8 text-center text-sm text-mute" data-empty="clients">
 				登録済みのクライアントはありません。接続要求を許可すると、ここに登録されます。
 			</p>
 		}
@@ -115,10 +115,10 @@ func tokenListAttrs(oob bool) atoms.Attrs {
 templ TokenList(v view.TokenList, oob bool) {
 	<div id="token-list" class="overflow-x-auto" { tokenListAttrs(oob)... }>
 		if len(v.Items) == 0 {
-			<p class="text-sm text-slate-500" data-empty="tokens">発行済みのトークンはありません。</p>
+			<p class="text-sm text-mute" data-empty="tokens">発行済みのトークンはありません。</p>
 		} else {
 			<table class="min-w-full text-left text-sm">
-				<thead class="text-xs uppercase text-slate-500">
+				<thead class="text-xs uppercase text-mute">
 					<tr>
 						<th class="py-2 pr-4 font-medium">ラベル</th>
 						<th class="py-2 pr-4 font-medium">接頭辞</th>
@@ -129,15 +129,15 @@ templ TokenList(v view.TokenList, oob bool) {
 						<th class="py-2 font-medium"></th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-slate-100">
+				<tbody class="divide-y divide-border">
 					for _, t := range v.Items {
 						<tr data-token={ t.ID }>
-							<td class="py-2 pr-4 font-medium text-slate-800">{ t.Label }</td>
-							<td class="py-2 pr-4"><code class="rounded bg-slate-100 px-1 py-0.5 text-xs">{ t.Prefix }…</code></td>
+							<td class="py-2 pr-4 font-medium text-ink">{ t.Label }</td>
+							<td class="py-2 pr-4"><code class="rounded bg-accent-soft px-1 py-0.5 text-xs">{ t.Prefix }…</code></td>
 							<td class="py-2 pr-4">@atoms.Badge(tone(t.StatusTone), t.Status)</td>
-							<td class="py-2 pr-4 text-slate-600">{ t.CreatedAt }</td>
-							<td class="py-2 pr-4 text-slate-600">{ t.ExpiresAt }</td>
-							<td class="py-2 pr-4 text-slate-600">{ t.LastUsedAt }</td>
+							<td class="py-2 pr-4 text-ink">{ t.CreatedAt }</td>
+							<td class="py-2 pr-4 text-ink">{ t.ExpiresAt }</td>
+							<td class="py-2 pr-4 text-ink">{ t.LastUsedAt }</td>
 							<td class="py-2 text-right">
 								if t.CanRevoke {
 									@atoms.Button(atoms.ButtonProps{Label: "失効", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{

@@ -62,7 +62,7 @@ export class RemoScreenViewer extends LitElement {
       display: block;
       width: 100%;
       height: auto;
-      background: #000;
+      background: var(--bone);
     }
     /* IME の入力を受ける、見えない入力要素（フォーカスを受ければ IME が動く。表示はしない）。 */
     .ime-sink {
@@ -86,8 +86,8 @@ export class RemoScreenViewer extends LitElement {
       align-items: center;
       justify-content: center;
       padding: 1rem;
-      background: rgb(15 23 42 / 0.75);
-      color: #fff;
+      background: color-mix(in srgb, var(--bone) 85%, transparent);
+      color: var(--ink);
       font-size: 0.875rem;
       text-align: center;
     }

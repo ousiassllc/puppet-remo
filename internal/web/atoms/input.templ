@@ -21,11 +21,11 @@ func inputType(t string) string {
 }
 
 func inputClass(invalid bool) string {
-	base := "block w-full min-w-0 rounded-md border bg-white px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 read-only:bg-slate-50 "
+	base := "block w-full min-w-0 rounded-md border bg-surface px-3 py-1.5 text-sm shadow-sm read-only:bg-bone "
 	if invalid {
-		return base + "border-red-400 focus:ring-red-400"
+		return base + "border-danger"
 	}
-	return base + "border-slate-300 focus:ring-indigo-400"
+	return base + "border-border"
 }
 
 // Input は 1 行の入力欄。

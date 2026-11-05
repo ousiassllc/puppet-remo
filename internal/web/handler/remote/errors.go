@@ -91,7 +91,7 @@ func (h *Handler) failPage(c *gin.Context, err error) {
 
 func (h *Handler) renderErrorPage(c *gin.Context, f failure) {
 	if fragmentRequest(c) {
-		h.render(c, f.status, atoms.Alert(f.code, f.message))
+		h.render(c, f.status, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: f.code, Heading: "エラー", Message: f.message}))
 		return
 	}
 	h.render(c, f.status, pages.RemoteError(view.RemoteError{Code: f.code, Title: "ビューアを表示できません", Message: f.message}))

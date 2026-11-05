@@ -49,7 +49,7 @@ func Remote(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - puppet-remo</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"><script src=\"/static/js/htmx.min.js\"></script><script src=\"/static/js/htmx-config.js\"></script><script src=\"/static/js/response-targets.min.js\"></script><script type=\"module\" src=\"/static/js/app.js\"></script><script type=\"module\" src=\"/static/js/screen-viewer.js\"></script></head><body class=\"min-h-screen bg-slate-100 text-slate-900 antialiased\" hx-ext=\"response-targets\" hx-headers=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - puppet-remo</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"><script src=\"/static/js/htmx.min.js\"></script><script src=\"/static/js/htmx-config.js\"></script><script src=\"/static/js/response-targets.min.js\"></script><script type=\"module\" src=\"/static/js/app.js\"></script><script type=\"module\" src=\"/static/js/screen-viewer.js\"></script></head><body class=\"min-h-screen bg-bone text-ink antialiased\" hx-ext=\"response-targets\" hx-headers=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -62,7 +62,7 @@ func Remote(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white\">puppet-remo</header><div class=\"mx-auto max-w-7xl space-y-4 p-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"border-b border-border bg-surface px-4 py-2 text-sm font-semibold text-ink\">puppet-remo</header><div class=\"mx-auto max-w-7xl space-y-4 p-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
