@@ -170,10 +170,13 @@ func TestDeleteClient(t *testing.T) {
 		t.Errorf("clients = %+v", r.f.Admin.Cs)
 	}
 
-	for _, res := range []resp{r.get("/clients/c1/delete/confirm", hx...), r.do(http.MethodDelete, "/clients/c1", nil, hx...)} {
-		status(t, res, http.StatusNotFound)
-		contains(t, res, `data-error-code="not_found"`, `id="modal-root" hx-swap-oob="true"`) // 確認モーダルの確定の失敗は、モーダルを閉じる
-	}
+	res = r.get("/clients/c1/delete/confirm", hx...)
+	status(t, res, http.StatusNotFound)
+	contains(t, res, `data-error-code="not_found"`)
+	lacks(t, res, `id="modal-root"`) // 確認モーダルの取得の失敗（GET）は、開いているモーダルを閉じない
+	res = r.do(http.MethodDelete, "/clients/c1", nil, hx...)
+	status(t, res, http.StatusNotFound)
+	contains(t, res, `data-error-code="not_found"`, `id="modal-root" hx-swap-oob="true"`) // 確認モーダルの確定（DELETE）の失敗は、モーダルを閉じる
 }
 
 func TestSidebarHighlightsCurrentPage(t *testing.T) {

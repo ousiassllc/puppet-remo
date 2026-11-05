@@ -98,7 +98,8 @@ func writeHTML(w http.ResponseWriter, r *http.Request, status int, rj reject, ti
 		comps = []templ.Component{notRegisteredPage(rj.connState)}
 	case stateChanging(r):
 		// htmx は 4xx / 5xx を既定では差し込まないので、ハンドラの失敗（handler/remote の failMessage）と同じく
-		// HX-Retarget で #alert-root へ回す。確認モーダル（強制剥奪）の確定の拒否でもアラートが暗幕の背面に隠れないよう、モーダルを閉じる OOB を添える。
+		// HX-Retarget で #alert-root へ回す。確認モーダル（強制剥奪）の確定の拒否でもアラートが暗幕の背面に隠れないよう、モーダルを閉じる OOB を添える（stateChanging は GET を含まないので、
+		// GET の失敗で開いているモーダルを閉じることはない）。
 		w.Header().Set("HX-Retarget", "#alert-root")
 		w.Header().Set("HX-Reswap", "innerHTML")
 		comps = []templ.Component{
