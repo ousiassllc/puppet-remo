@@ -52,7 +52,7 @@ func buttonClass(v ButtonVariant, size string) string {
 	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 " + size
 	switch v {
 	case ButtonDanger:
-		return base + "border border-danger/45 bg-transparent text-danger hover:bg-danger/10"
+		return base + "border border-danger-line-strong bg-transparent text-danger hover:bg-danger-wash"
 	case ButtonGhost:
 		return base + "bg-transparent text-ink hover:bg-accent-soft"
 	case ButtonSecondary:

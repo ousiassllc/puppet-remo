@@ -85,6 +85,37 @@ func TestStatusLineAndWashColorsMixInSRGB(t *testing.T) {
 	}
 }
 
+// C4: 危険ボタンの枠（45%）も in srgb の名前付きの色にする（Tailwind の /45 は in oklab）。
+func TestDangerButtonBorderMixesInSRGB(t *testing.T) {
+	css := readAppCSS(t)
+	want := "--color-danger-line-strong: color-mix(in srgb, var(--danger) 45%, transparent);"
+	if !strings.Contains(css, want) {
+		t.Errorf("app.css must contain %q", want)
+	}
+}
+
+// C3: チェックボックスのフォーカスは、入力欄・スライダーと同じ --ring の 3px（--focus の outline のままにしない）。
+func TestCheckboxFocusUsesRing(t *testing.T) {
+	css := readAppCSS(t)
+	if !regexp.MustCompile(`input\[type="checkbox"\]:focus-visible \{\s*outline: 2px solid transparent;\s*outline-offset: 0;\s*box-shadow: 0 0 0 3px var\(--ring\);`).MatchString(css) {
+		t.Error("app.css must give the checkbox :focus-visible a --ring 3px box-shadow with a transparent outline")
+	}
+}
+
+// M1: スピナーの回転はガイドの 0.9s を :root の --spinner-duration 1 か所で持ち、.spinner はそれを参照する（独自の秒数を直書きしない）。
+func TestSpinnerDurationIsOneToken(t *testing.T) {
+	css := readAppCSS(t)
+	if got := strings.Count(css, "--spinner-duration: 0.9s;"); got != 1 {
+		t.Errorf("--spinner-duration: 0.9s defined %d times, want 1", got)
+	}
+	if !strings.Contains(css, "animation: motion-spin var(--spinner-duration) linear infinite;") {
+		t.Error(".spinner must use var(--spinner-duration)")
+	}
+	if strings.Contains(css, "0.8s linear") {
+		t.Error("app.css must not hard-code a spinner duration")
+	}
+}
+
 // C8: 暗幕（--scrim）は大きな面なので、ダークでも純黒にせず --bone（#050505）系にする（ライトは 0.4、ダークは 0.6）。
 func TestScrimIsNeverPureBlack(t *testing.T) {
 	css := readAppCSS(t)
