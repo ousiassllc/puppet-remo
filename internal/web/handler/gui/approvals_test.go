@@ -37,6 +37,15 @@ func TestApprovalDialogPage(t *testing.T) {
 	}
 }
 
+// 見出し（h1）は狭い面のモーダルの見出しと同じ text-lg。本文（text-base）と同じサイズにしない（デザインガイド T3。#120）。
+func TestApprovalDialogHeadingIsTextLg(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) { seedApproval(f, "ap-1", approvalWho) })
+	res := r.get("/approvals/ap-1")
+	status(t, res, http.StatusOK)
+	contains(t, res, `<h1 class="text-lg font-semibold text-ink">`)
+	lacks(t, res, `<h1 class="text-base`)
+}
+
 // クライアント名は HTML エスケープされる。秘密・パス・引数・セッション ID は出さない。
 func TestApprovalDialogEscapesTheClientNameAndLeaksNothing(t *testing.T) {
 	who := domain.Actor{Kind: domain.ActorWeb, ClientID: "c9", Label: `<script>alert(1)</script>`, SessionID: "viewer-session-secret"}
