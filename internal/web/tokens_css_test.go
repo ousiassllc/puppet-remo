@@ -72,6 +72,27 @@ func TestModalShadowColorIsDarkAware(t *testing.T) {
 	}
 }
 
+// C6: --mute はライトが #6b6b6e（--bone・--surface 上で AA 4.5:1）、ダークが #8b8b8e。
+// ダークの値は [data-theme="dark"] と prefers-color-scheme の 2 か所に置く。
+func TestMuteTokenIsSplitByTheme(t *testing.T) {
+	css := readAppCSS(t)
+	if got := strings.Count(css, "--mute: #6b6b6e;"); got != 1 {
+		t.Errorf("light --mute: #6b6b6e defined %d times, want 1", got)
+	}
+	if got := strings.Count(css, "--mute: #8b8b8e;"); got != 2 {
+		t.Errorf("dark --mute: #8b8b8e defined %d times, want 2 ([data-theme=\"dark\"] and prefers-color-scheme)", got)
+	}
+	if !regexp.MustCompile(`(?s):root \{[^}]*--mute: #6b6b6e;`).MatchString(css) {
+		t.Error("light --mute must be in :root")
+	}
+	if !regexp.MustCompile(`(?s)\[data-theme="dark"\] \{[^}]*--mute: #8b8b8e;`).MatchString(css) {
+		t.Error("dark --mute must be in [data-theme=\"dark\"]")
+	}
+	if !regexp.MustCompile(`(?s):root:not\(\[data-theme="light"\]\) \{[^}]*--mute: #8b8b8e;`).MatchString(css) {
+		t.Error("dark --mute must be in the prefers-color-scheme: dark :root:not([data-theme=\"light\"]) block")
+	}
+}
+
 // C6: プレースホルダーは --mute（Tailwind の既定は文字色の 50% 混色）。
 func TestPlaceholderUsesMuteToken(t *testing.T) {
 	css := readAppCSS(t)
