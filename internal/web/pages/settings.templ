@@ -10,7 +10,7 @@ import (
 const settingsTitle = "設定"
 
 templ settingsBody(v view.Settings) {
-	<div class="max-w-xl space-y-4">
+	<div class="max-w-xl space-y-6">
 		<h1 class="text-3xl font-semibold text-ink">設定</h1>
 		<p class="text-base text-ink" data-notice="agent-link">
 			内蔵エージェント（既定は無効）と API キーの設定は、<a href="/agent" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">エージェント</a>の画面にあります。
