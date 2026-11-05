@@ -9,7 +9,7 @@ import (
 // APIKeyPanel は API キーの登録パネル（FR-H11、NFR-S14）。登録の有無（真偽値）だけを描画し、キーの値は入力欄にも出さない
 // （SecretInput は value 属性を持たない。失敗の再描画でも入力は空に戻る）。登録は PUT、削除は確認モーダルを経る。
 templ APIKeyPanel(p view.APIKeyPanel) {
-	<div id={ p.ID } class="space-y-3" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) }>
+	<div id={ p.ID } class="space-y-4" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) }>
 		<div class="flex flex-wrap items-center gap-2">
 			<span class="text-sm text-ink">{ p.Provider } API キー</span>
 			if p.Registered {
@@ -19,7 +19,7 @@ templ APIKeyPanel(p view.APIKeyPanel) {
 			}
 		</div>
 		<form
-			class="space-y-2"
+			class="space-y-4"
 			novalidate
 			autocomplete="off"
 			hx-put={ p.PutURL }

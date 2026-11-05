@@ -491,6 +491,16 @@ func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
 	webtest.AssertCSPCompliantHTML(t, out)
 }
 
+// S2: API キーのパネルとクリップボードの送信フォームは、項目 → 項目を 16px（`--gap-field` = space-y-4）で並べる。
+// クリップボードはラベル → テキスト欄だけを 8px（space-y-2）にまとめ、その外側（テキスト欄のブロック → 送信ボタン）を 16px にする。
+func TestSubmitFormsUseFieldGap(t *testing.T) {
+	key := webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", PutURL: "/agent/api-key"}))
+	has(t, key, `<div id="agent-key" class="space-y-4"`)
+	hasNot(t, key, "space-y-3", "space-y-2")
+	clip := webtest.Render(t, organisms.ClipboardPanel())
+	has(t, clip, `class="space-y-4" novalidate hx-post="/viewer/clipboard/send"`, `<div class="space-y-2"><label for="clipboard-text"`)
+}
+
 // エージェントと高速パスのフォームは、別々の同意（別々のチェックボックスと文言）を持つ。既定の値は入力のとおりに描画する。
 func TestAgentAndFastpathFormsHaveSeparateConsent(t *testing.T) {
 	agent := webtest.Render(t, organisms.AgentForm(view.AgentForm{
