@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/a-h/templ"
 	"github.com/gin-gonic/gin"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -74,12 +75,17 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	h.failMessage(c, f.status, f.code, f.message)
 }
 
-// failMessage は message を指定して fail と同じ形で返す。確認モーダル（強制剥奪）の確定が失敗したとき、アラートが暗幕の
-// 背面に隠れないように、応答にモーダルを閉じる OOB（organisms.ModalClear）を添える（確認を経ないリクエストでは #modal-root が空で、無害）。
+// failMessage は message を指定して fail と同じ形で返す。確認モーダル（強制剥奪）の確定（GET 以外）が失敗したとき、アラートが暗幕の
+// 背面に隠れないように、応答にモーダルを閉じる OOB（organisms.ModalClear）を添える。GET には添えない: 確認モーダル自体の取得は失敗しても
+// #modal-root が空で閉じる意味がなく、remo:lease-changed の GET /viewer/lease の失敗で、開いている強制剥奪のモーダルを閉じてしまうため。
 func (h *Handler) failMessage(c *gin.Context, status int, code, message string) {
 	c.Header("HX-Retarget", "#alert-root")
 	c.Header("HX-Reswap", "innerHTML")
-	h.render(c, status, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: code, Heading: "エラー", Message: message, Dismissible: true}), organisms.ModalClear())
+	comps := []templ.Component{atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: code, Heading: "エラー", Message: message, Dismissible: true})}
+	if c.Request.Method != http.MethodGet {
+		comps = append(comps, organisms.ModalClear())
+	}
+	h.render(c, status, comps...)
 }
 
 // failPage はページルートの失敗を、エラーページ（HX-Request なら同じ領域に出すフラグメント）として返す。

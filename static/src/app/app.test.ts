@@ -43,6 +43,13 @@ describe("確認モーダルを閉じる", () => {
     await until(() => holder.children.length === 0, "the modal is removed");
   });
 
+  it("すべての子が取り除かれたら、空白のテキストノードも消して空にする（:empty）", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div id="modal-root"><div id="modal"><button data-clear="#modal-root">閉じる</button></div> </div>`);
+    holder.querySelector<HTMLElement>("button")?.click();
+    await until(() => holder.children.length === 0, "the modal is removed");
+    expect(holder.childNodes.length).to.equal(0);
+  });
+
   it("フェード中に差し込まれた新しい子は、取り除かない", async () => {
     const holder = await fixture<HTMLDivElement>(html`<div id="modal-root"><div id="modal"></div></div>`);
     const fragment = document.createDocumentFragment();
@@ -218,6 +225,20 @@ describe("アラートを見える位置へ寄せる", () => {
     expect(first).to.not.equal(null);
     document.dispatchEvent(new CustomEvent("remo:error", { detail }));
     expect(root.firstElementChild).to.equal(first);
-    expect(calls.length).to.equal(2);
+    expect(calls.length).to.equal(1); // 新規作成のときだけ。重複の抑止では寄せない
+  });
+
+  it("退出中（data-leaving）のアラートと同じ文言は、置き換える（表示中のものだけを重複と見なす）", async () => {
+    const holder = await fixture<HTMLDivElement>(html`<div>${alertMarkup}</div>`);
+    const root = holder.querySelector("#alert-root")!;
+    const detail = { code: "input_blocked", message: "blocked" };
+    document.dispatchEvent(new CustomEvent("remo:error", { detail }));
+    const first = root.firstElementChild!;
+    first.setAttribute("data-leaving", "");
+    document.dispatchEvent(new CustomEvent("remo:error", { detail }));
+    expect(root.children.length).to.equal(1);
+    expect(root.firstElementChild).to.not.equal(first);
+    expect(root.firstElementChild?.hasAttribute("data-leaving")).to.equal(false);
+    expect(root.querySelector("[data-alert-message]")?.textContent).to.equal(first.querySelector("[data-alert-message]")?.textContent);
   });
 });

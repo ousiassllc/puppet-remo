@@ -109,6 +109,7 @@ func (r *rig) do(method, target string, form url.Values, headers ...string) resp
 	rec := httptest.NewRecorder()
 	r.h.ServeHTTP(rec, req)
 	res := rec.Result()
+	res.Request = req
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		r.t.Fatal(err)
@@ -189,7 +190,12 @@ func failed(t *testing.T, r resp, wantStatus int, code string) {
 	if got := r.Header.Get("HX-Retarget"); got != "#alert-root" {
 		t.Errorf("HX-Retarget = %q, want #alert-root", got)
 	}
-	// 確認モーダルの確定の失敗は、アラートが暗幕の背面に隠れないようモーダルを閉じる（確認を経ない要求では #modal-root は空で無害）。
-	contains(t, r, `id="modal-root" hx-swap-oob="true"`)
+	// 確認モーダルの確定（GET 以外）の失敗は、アラートが暗幕の背面に隠れないようモーダルを閉じる。GET（確認モーダルの取得、
+	// remo:lease-changed の GET /viewer/lease）の失敗では、開いているモーダルを巻き込まないよう閉じない。
+	if r.Request.Method == http.MethodGet {
+		lacks(t, r, `id="modal-root"`)
+	} else {
+		contains(t, r, `id="modal-root" hx-swap-oob="true"`)
+	}
 	lacks(t, r, "<html")
 }
