@@ -360,7 +360,7 @@
     }
   }
 
-  /* スピナー（O7）: 20px・2px（track --accent-soft・先端 --accent）。reduced-motion では回転を止め、静止した円と文言で処理中を伝える。 */
+  /* スピナー（O7）: 20px・2px（track --accent-soft・先端 --accent）。回転は reduced-motion でも止めない（M3: 処理中表示は維持）。 */
   .spinner {
     width: 20px;
     height: 20px;
@@ -368,11 +368,6 @@
     border-top-color: var(--accent);
     border-radius: 9999px;
     animation: motion-spin 0.8s linear infinite;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
   }
 
   /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
