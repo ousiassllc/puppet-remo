@@ -463,8 +463,17 @@ func TestUpdaterVerifiedUpdateIsNotifiedAndApplied(t *testing.T) {
 	if a := e.lastAudit(); a.Kind != "update" || a.ActorType != domain.ActorHost || a.Result != "ok" {
 		t.Errorf("audit entry = %+v", a)
 	}
-	if n := e.toastCount(); n != 1 {
-		t.Errorf("toasts = %d, want 1 for the verified version", n)
+	// トーストは 1 行の短文（操作の案内は付けない。O3）。
+	select {
+	case ev := <-e.toasts:
+		if got, want := ev.Data.(Toast).Message, "新しい版 0.1.1 があります。"; got != want {
+			t.Errorf("toast message = %q, want %q", got, want)
+		}
+	default:
+		t.Error("no toast for the verified version")
+	}
+	if n := e.toastCount(); n != 0 {
+		t.Errorf("extra toasts = %d, want only 1 for the verified version", n)
 	}
 	// 同じ版を再確認しても、取得し直さず・通知も監査も繰り返さない。
 	downloads := e.gh.hitCount("/releases/download/")

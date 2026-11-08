@@ -1,7 +1,7 @@
 // <remo-screen-viewer>: ホスト画面のライブ表示と、操作権を持つときのマウス・キーボード・IME 入力の送信
 // （docs/architecture/frontend.md §6.2、docs/api/endpoints.md §5）。
 // スタイルは Shadow DOM の `css`（constructable stylesheets）だけで、`style` 属性・`<style>` は使わない（CSP。§6.3・§7.1）。
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { createLogger } from "../lib/logger";
 import { MessageTooLargeError, NO_RECONNECT_CLOSE_CODES, WsClient, type WsMessage } from "../lib/ws";
 import { isImeKeyEvent, keyModifiers, mouseButtonName, toStreamPoint, wheelNotches, type MouseButtonName, type StreamPoint } from "./input";
@@ -41,6 +41,30 @@ function overlayText(status: ViewerStatus, closeCode: number): string {
   }
 }
 
+// 接続状態のオーバーレイの先頭に置く印（C4: 状態は色だけにせず、アイコンと文言で伝える）。
+// 接続中・再接続中はスピナー（app.css の .spinner と同じ 20px・2px）、失敗・キルスイッチは Iconoir の SVG（atoms/icon.templ と同じ path）。
+// Shadow DOM にはページの CSS が届かないので、色は css の var(--danger) などで当てる。
+function overlayIcon(status: ViewerStatus): TemplateResult | typeof nothing {
+  switch (status) {
+    case "connecting":
+    case "reconnecting":
+      return html`<span class="spinner" aria-hidden="true"></span>`;
+    case "failed":
+      return html`<svg class="icon tone-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M9.17218 14.8284L12.0006 12M14.829 9.17157L12.0006 12M12.0006 12L9.17218 9.17157M12.0006 12L14.829 14.8284"></path>
+        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"></path>
+      </svg>`;
+    case "killswitch":
+      return html`<svg class="icon tone-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M20.0429 21H3.95705C2.41902 21 1.45658 19.3364 2.22324 18.0031L10.2662 4.01533C11.0352 2.67792 12.9648 2.67791 13.7338 4.01532L21.7768 18.0031C22.5434 19.3364 21.581 21 20.0429 21Z"></path>
+        <path d="M12 9V13"></path>
+        <path d="M12 17.01L12.01 16.9989"></path>
+      </svg>`;
+    case "open":
+      return nothing;
+  }
+}
+
 export class RemoScreenViewer extends LitElement {
   static properties = {
     wsUrl: { attribute: "ws-url" },
@@ -50,6 +74,7 @@ export class RemoScreenViewer extends LitElement {
     fps: { type: Number },
     status: { state: true },
     closeCode: { state: true },
+    leaving: { state: true },
   };
 
   static styles = css`
@@ -58,11 +83,17 @@ export class RemoScreenViewer extends LitElement {
       position: relative;
       min-height: 8rem;
     }
+    /* キー入力を受けている間（IME 用の入力要素にフォーカスがある間）は、ホストの外側に --focus のリング（C3）。
+       入力要素は見えず、Shadow DOM の中なので、グローバルの :focus-visible は届かない。 */
+    :host(:focus-within) {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
     canvas {
       display: block;
       width: 100%;
       height: auto;
-      background: #000;
+      background: var(--bone);
     }
     /* IME の入力を受ける、見えない入力要素（フォーカスを受ければ IME が動く。表示はしない）。 */
     .ime-sink {
@@ -79,17 +110,62 @@ export class RemoScreenViewer extends LitElement {
       overflow: hidden;
       pointer-events: none;
     }
+    /* 出現はフェードイン、退出はフェードアウト（M5）。トークンは :root のカスタムプロパティで、Shadow DOM にも継承される
+       （reduced-motion では 100ms になる）。退出は status が open に戻ったとき、data-leaving を付けて終わるまで残す。 */
     .overlay {
       position: absolute;
       inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 0.5rem;
       padding: 1rem;
-      background: rgb(15 23 42 / 0.75);
-      color: #fff;
+      background: color-mix(in srgb, var(--bone) 85%, transparent);
+      color: var(--ink);
       font-size: 0.875rem;
       text-align: center;
+      animation: overlay-fade-in var(--motion-fade-in) var(--ease-out) both;
+    }
+    .overlay[data-leaving] {
+      animation: overlay-fade-out var(--motion-fade-out) var(--ease-in) both;
+      pointer-events: none;
+    }
+    @keyframes overlay-fade-in {
+      from {
+        opacity: 0;
+      }
+    }
+    @keyframes overlay-fade-out {
+      to {
+        opacity: 0;
+      }
+    }
+    .icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .tone-danger {
+      color: var(--danger);
+    }
+    .tone-warning {
+      color: var(--warning);
+    }
+    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。回転は reduced-motion でも止めない。 */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      box-sizing: border-box;
+      border: 2px solid var(--accent-soft);
+      border-top-color: var(--accent);
+      border-radius: var(--r-full);
+      animation: overlay-spin var(--spinner-duration) linear infinite;
+    }
+    @keyframes overlay-spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
   `;
 
@@ -101,6 +177,8 @@ export class RemoScreenViewer extends LitElement {
   declare fps: number;
   declare status: ViewerStatus;
   declare closeCode: number;
+  // status が open に戻ったあと、フェードアウトが終わるまで残すオーバーレイ（null なら残さない）。
+  declare leaving: { status: ViewerStatus; text: string } | null;
 
   private ws: WsClient | null = null;
   private canvas: HTMLCanvasElement | null = null;
@@ -130,6 +208,7 @@ export class RemoScreenViewer extends LitElement {
     this.fps = 0;
     this.status = "connecting";
     this.closeCode = 0;
+    this.leaving = null;
   }
 
   // 入力が有効: 最後に受信した lease が held かつ mine: true（pending_approval は承認待ちの本人でも readonly 扱い。
@@ -168,8 +247,35 @@ export class RemoScreenViewer extends LitElement {
     sink.addEventListener("blur", this.onBlur);
   }
 
+  protected willUpdate(changed: PropertyValues<this>): void {
+    if (!changed.has("status")) {
+      return;
+    }
+    const previous = changed.get("status");
+    if (this.status !== "open") {
+      this.leaving = null;
+    } else if (previous !== undefined && previous !== "open") {
+      this.leaving = { status: previous, text: overlayText(previous, this.closeCode) };
+    }
+  }
+
+  protected updated(): void {
+    const leaving = this.leaving;
+    const overlay = this.renderRoot.querySelector(".overlay[data-leaving]");
+    if (!leaving || !overlay) {
+      return;
+    }
+    // フェードアウトが終わったら取り除く（アニメーションが無ければすぐ）。
+    void Promise.allSettled(overlay.getAnimations().map((a) => a.finished)).then(() => {
+      if (this.leaving === leaving) {
+        this.leaving = null;
+      }
+    });
+  }
+
   protected render() {
     const text = overlayText(this.status, this.closeCode);
+    const shown = text === "" ? this.leaving : { status: this.status, text };
     return html`
       <canvas width="16" height="9"></canvas>
       <textarea
@@ -180,7 +286,9 @@ export class RemoScreenViewer extends LitElement {
         autocapitalize="off"
         spellcheck="false"
       ></textarea>
-      ${text === "" ? nothing : html`<div class="overlay" role="status">${text}</div>`}
+      ${shown === null
+        ? nothing
+        : html`<div class="overlay" role="status" ?data-leaving=${text === ""}>${overlayIcon(shown.status)}<span>${shown.text}</span></div>`}
     `;
   }
 

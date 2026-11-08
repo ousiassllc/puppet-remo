@@ -18,7 +18,7 @@ import (
 const logsTitle = "ログ"
 
 // openLogFolderAttrs は「ログフォルダーを開く」ボタンの hx-* 属性。本文は送らず（開く場所はサーバーが固定する）、
-// 応答の OOB のトースト（成功・失敗とも）だけを反映する。画面は差し替えない。
+// 応答の OOB のトースト（成功）と #alert-root のアラート（失敗）だけを反映する。画面は差し替えない。
 func openLogFolderAttrs(url string) atoms.Attrs {
 	return atoms.Attrs{"hx-post": url, "hx-swap": "none", "hx-disabled-elt": "this", "data-log-open-folder": ""}
 }
@@ -44,14 +44,14 @@ func logsBody(v view.AppLogPage) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">ログ</h1><p class=\"text-sm text-slate-600\">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p><div class=\"flex flex-wrap items-center gap-3\"><p class=\"text-sm text-slate-600\">ログファイル: <code class=\"break-all rounded bg-slate-100 px-1 py-0.5 text-xs\" data-log-path>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><h1 class=\"text-3xl font-semibold text-ink\">ログ</h1><p class=\"text-base text-ink\">このアプリが出したログです（起動・待ち受け・接続要求・認証の失敗・リース・ツールの実行・キルスイッチなど）。新しい順に、ページを分けて表示します。古いログは、ファイルが大きくなると順に消えます。操作の記録（監査ログ）とは別のものです。</p><div class=\"flex flex-wrap items-center gap-2\"><p class=\"text-base text-ink\">ログファイル: <code class=\"break-all rounded-sm bg-accent-soft px-2 py-1 text-xs\" data-log-path>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(v.Path)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/logs.templ`, Line: 23, Col: 144}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/logs.templ`, Line: 23, Col: 143}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {

@@ -167,10 +167,10 @@ func TestEventsPushesFragmentsOnChange(t *testing.T) {
 		t.Errorf("lease event = %q", e.Data)
 	}
 
-	// toast は Data の内容をそのまま（エスケープして）流す。
+	// toast（エラー）は Data の内容をそのまま（エスケープして）インラインアラートとして流す。
 	r.f.Bus.Publish(service.Event{Topic: service.TopicToast, Data: service.Toast{Level: "error", Message: "<b>壊れた</b>"}})
 	e = s.nextNamed("toast")
-	if !strings.Contains(e.Data, `data-toast-level="error"`) || !strings.Contains(e.Data, "&lt;b&gt;壊れた&lt;/b&gt;") || strings.Contains(e.Data, "<b>") {
+	if !strings.Contains(e.Data, `data-alert-tone="danger"`) || !strings.Contains(e.Data, "&lt;b&gt;壊れた&lt;/b&gt;") || strings.Contains(e.Data, "<b>") {
 		t.Errorf("toast event = %q", e.Data)
 	}
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
-	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -20,7 +19,7 @@ import (
 
 // このファイルはエージェント設定の画面（FR-H11、FR-G14、FR-G22）。保存・検証・監査は service.AgentSettings が行い、ここは描画と受け付けだけ。
 //
-// API キー（NFR-S14）: キーは PUT の本文（api_key）だけで受け取る（URL・クエリでは受けない）。応答・トースト・エラー・ログのどこにも
+// API キー（NFR-S14）: キーは PUT の本文（api_key）だけで受け取る（URL・クエリでは受けない）。応答・通知・エラー・ログのどこにも
 // 出さず（登録の有無は AgentSettingsView の真偽値だけ）、キーに関わる応答は Cache-Control: no-store にする。
 // 入力欄は value を持たない（atoms.SecretInput）。
 
@@ -350,7 +349,7 @@ func (h *Handler) setKey(c *gin.Context, set func(context.Context, string) error
 	h.render(c, http.StatusOK, organisms.APIKeyPanel(panel(s, "")), organisms.ToastOOB(infoToast("API キーを登録しました。")))
 }
 
-// failKey はキーの登録の失敗をトーストで返す。ログに残すエラー文からは、念のため送られたキーを伏せる。
+// failKey はキーの登録の失敗をアラートで返す。ログに残すエラー文からは、念のため送られたキーを伏せる。
 func (h *Handler) failKey(c *gin.Context, err error, key string) {
 	f := classify(err)
 	if f.status >= 500 {
@@ -360,9 +359,7 @@ func (h *Handler) failKey(c *gin.Context, err error, key string) {
 		}
 		h.log.Error("gui api key action failed", "method", c.Request.Method, "path", c.Request.URL.Path, "error", msg)
 	}
-	c.Header("HX-Retarget", "#toast-root")
-	c.Header("HX-Reswap", "beforeend")
-	h.render(c, f.status, atoms.Toast(view.Toast{Level: view.ToastError, Message: f.message, ErrorCode: f.code}))
+	h.failMessage(c, f.status, f.code, f.message)
 }
 
 // ConfirmDeleteOpenAIKey は GET /agent/api-key/delete/confirm。登録済みのときだけ描画する。
@@ -370,7 +367,7 @@ func (h *Handler) ConfirmDeleteOpenAIKey(c *gin.Context) {
 	h.confirmDeleteKey(c, func(s service.AgentSettingsView) bool { return s.OpenAIKeyRegistered }, view.ConfirmModal{
 		Title:      "OpenAI API キーを削除しますか？",
 		Message:    "資格情報マネージャーからキーを削除します。エージェントは無効になり、実行中のタスクは中断されます。もう一度使うには、キーを登録して有効にし直してください。",
-		ConfirmURL: agentKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する",
+		ConfirmURL: agentKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する", Destructive: true,
 	})
 }
 
@@ -379,7 +376,7 @@ func (h *Handler) ConfirmDeleteTypeSafeKey(c *gin.Context) {
 	h.confirmDeleteKey(c, func(s service.AgentSettingsView) bool { return s.TypeSafeKeyRegistered }, view.ConfirmModal{
 		Title:      "TypeSafe API キーを削除しますか？",
 		Message:    "資格情報マネージャーからキーを削除します。高速パスは無効になり、同意も取り消されます。実行中のタスクは失敗にせず、OpenAI だけで続けます。",
-		ConfirmURL: fastpathKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する",
+		ConfirmURL: fastpathKeyRoute, Method: "delete", Target: "#agent-sections", Swap: "outerHTML", Label: "削除する", Destructive: true,
 	})
 }
 
@@ -399,12 +396,12 @@ func (h *Handler) confirmDeleteKey(c *gin.Context, registered func(service.Agent
 
 // DeleteOpenAIKey は DELETE /agent/api-key。キーを削除してエージェントを無効にし、実行中のタスクを中断する（実体が行う）。
 func (h *Handler) DeleteOpenAIKey(c *gin.Context) {
-	h.deleteKey(c, h.d.AgentSettings.DeleteOpenAIKey, "OpenAI API キーを削除しました。エージェントは無効です。")
+	h.deleteKey(c, h.d.AgentSettings.DeleteOpenAIKey, "OpenAI API キーを削除しました。")
 }
 
 // DeleteTypeSafeKey は DELETE /agent/fastpath/api-key。キーを削除して高速パスを無効にし、同意を取り消す（実体が行う）。
 func (h *Handler) DeleteTypeSafeKey(c *gin.Context) {
-	h.deleteKey(c, h.d.AgentSettings.DeleteTypeSafeKey, "TypeSafe API キーを削除しました。高速パスは無効です。")
+	h.deleteKey(c, h.d.AgentSettings.DeleteTypeSafeKey, "TypeSafe API キーを削除しました。")
 }
 
 // deleteKey は削除の確定の共通部分。有効・同意の状態も変わるため、画面の本体（#agent-sections）を読み直して差し替える。

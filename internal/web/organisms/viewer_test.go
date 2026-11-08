@@ -14,7 +14,7 @@ func TestViewerLeasePanelRendersOnlyAvailableActions(t *testing.T) {
 	const (
 		acquire = `hx-post="/viewer/lease/acquire"`
 		release = `hx-post="/viewer/lease/release"`
-		revoke  = `hx-post="/viewer/lease/revoke"`
+		revoke  = `hx-get="/viewer/lease/revoke/confirm"`
 	)
 	tests := []struct {
 		name string
@@ -31,7 +31,7 @@ func TestViewerLeasePanelRendersOnlyAvailableActions(t *testing.T) {
 			[]string{"agent", "保持中"}, []string{acquire, release, revoke, "<button", "data-lease-task"}},
 		{"agent のタスク実行中", view.ViewerLease{Held: true, HolderLabel: "bot", KindLabel: "agent", CanRevoke: true, Task: &view.ViewerTask{
 			Status: "実行中", Steps: "3 / 50", Elapsed: "45秒", MaxTime: "10分", StartedAt: "09:00:00", Requester: "<b>req</b>"}},
-			[]string{revoke, "data-lease-task", "AI エージェントのタスク実行中", "実行中", "3 / 50", "45秒（上限 10分）", "09:00:00", "&lt;b&gt;req&lt;/b&gt;"}, []string{"<b>req</b>"}},
+			[]string{revoke, "data-lease-task", `<h3 class="text-base font-semibold">AI エージェントのタスク実行中</h3>`, `<dl class="space-y-2 text-sm">`, "実行中", "3 / 50", "45秒（上限 10分）", "09:00:00", "&lt;b&gt;req&lt;/b&gt;"}, []string{"<b>req</b>"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,9 +69,13 @@ func TestViewerToolbarRendersFieldsAndErrors(t *testing.T) {
 		Quality:  "70", FPS: "10",
 	}
 	out := webtest.Render(t, organisms.ViewerToolbar(v))
+	has(t, out, "rounded-lg border border-border bg-surface p-4") // S2: 小さいカードの padding は 16
 	has(t, out, `id="viewer-toolbar"`, `hx-post="/viewer/settings"`, `hx-target-422="this"`, `<option value="1" selected>`, `name="quality"`, `min="1"`, `max="100"`,
 		`name="fps"`, `max="30"`, `value="70"`, `value="10"`, " novalidate")
 	hasNot(t, out, "data-field-error", "data-error-code")
+	// スライダーの値（<output>）は補助の --mute。スライダー自体は入力欄の枠を持たない（P1）。
+	has(t, out, `<output id="viewer-quality-out" for="viewer-quality" class="w-8 text-sm font-mono text-mute">`, `type="range" value="70" class="w-full min-w-0"`)
+	hasNot(t, out, `text-sm font-mono text-ink`)
 	webtest.AssertCSPCompliantHTML(t, out)
 
 	v.Errors = view.ViewerToolbarErrors{Quality: "1〜100 の整数を指定してください。"}
@@ -85,10 +89,10 @@ func TestViewerRootPlacesTheViewerOutsideHTMXTargets(t *testing.T) {
 		Lease: view.ViewerLease{CanAcquire: true}}
 	out := webtest.Render(t, organisms.ViewerRoot(v))
 	has(t, out, `<main id="viewer-root"`, `X-Viewer-Id`, `VID1`, `<remo-screen-viewer`, `ws-url="ws://h:1/ws/screen?viewer_id=VID1"`,
-		`monitor="1"`, `quality="70"`, `fps="10"`, "readonly")
+		`monitor="1"`, `quality="70"`, `fps="10"`, " readonly")
 	webtest.AssertCSPCompliantHTML(t, out)
 
 	v.Lease = view.ViewerLease{Held: true, Mine: true, CanRelease: true}
 	out = webtest.Render(t, organisms.ViewerRoot(v))
-	hasNot(t, out, "readonly")
+	hasNot(t, out, " readonly")
 }

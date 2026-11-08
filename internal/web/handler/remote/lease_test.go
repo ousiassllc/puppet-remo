@@ -75,6 +75,33 @@ func TestLeaseRevokeOthers(t *testing.T) {
 	}
 }
 
+// 強制剥奪は確認モーダルを経る（O2）: 確認の GET は他者の保持中だけ描画し、確定のボタンが POST を送る。応答はモーダルを閉じる OOB を添える。
+func TestLeaseRevokeConfirmModal(t *testing.T) {
+	r := newRig(t, func(f *remotetest.Fakes) {
+		f.Leases.Hold(domain.Actor{Kind: domain.ActorMCP, ClientID: "c9", Label: "agent-x", SessionID: "s1"})
+	})
+	_, h := r.viewer()
+	res := r.get("/viewer/lease/revoke/confirm", h...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `role="dialog"`, "操作権を強制剥奪しますか？", "agent-x", `hx-post="/viewer/lease/revoke"`, `hx-target="#lease-panel"`, "剥奪する")
+	if _, ok := r.f.Leases.Holding(); !ok {
+		t.Error("the confirm modal must not revoke")
+	}
+	res = r.post("/viewer/lease/revoke", nil, h...)
+	status(t, res, http.StatusOK)
+	contains(t, res, `id="modal-root" hx-swap-oob="true"`)
+}
+
+func TestLeaseRevokeConfirmNeedsARevocableHolder(t *testing.T) {
+	r := newRig(t)
+	_, h := r.viewer()
+	failed(t, r.get("/viewer/lease/revoke/confirm", h...), http.StatusConflict, "conflict")
+	status(t, r.post("/viewer/lease/acquire", nil, h...), http.StatusOK)
+	failed(t, r.get("/viewer/lease/revoke/confirm", h...), http.StatusConflict, "conflict")
+	// 無効なビューア ID は、ほかのリース操作と同じく 400。
+	failed(t, r.get("/viewer/lease/revoke/confirm", "X-Viewer-Id", "nope"), http.StatusBadRequest, "invalid_argument")
+}
+
 func TestLeaseRevokeWhenIdleIsANoOp(t *testing.T) {
 	r := newRig(t)
 	_, h := r.viewer()
@@ -243,7 +270,7 @@ func TestLeasePanelShowsTheRunningAgentTask(t *testing.T) {
 	res := r.get("/viewer/lease", h...) // r.get は CSP に適合した HTML かも検査する
 	status(t, res, http.StatusOK)
 	contains(t, res, `data-lease-state="other"`, "data-lease-task", "AI エージェントのタスク実行中", "実行中", "3 / 50", "1分35秒", "上限 10分",
-		started.Local().Format("15:04:05"), "requester-9", `hx-post="/viewer/lease/revoke"`)
+		started.Local().Format("15:04:05"), "requester-9", `hx-get="/viewer/lease/revoke/confirm"`)
 	lacks(t, res, "SECRET-PROMPT", "SECRET-RESULT", "task-1", "other-task")
 }
 
@@ -292,7 +319,7 @@ func TestLeasePanelWithoutTheTaskStillRenders(t *testing.T) {
 			_, h := r.viewer()
 			res := r.get("/viewer/lease", h...)
 			status(t, res, http.StatusOK)
-			contains(t, res, "bot-9", `data-lease-state="other"`, `hx-post="/viewer/lease/revoke"`)
+			contains(t, res, "bot-9", `data-lease-state="other"`, `hx-get="/viewer/lease/revoke/confirm"`)
 			lacks(t, res, "data-lease-task", "db is down")
 		})
 	}

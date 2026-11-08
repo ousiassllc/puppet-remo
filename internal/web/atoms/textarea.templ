@@ -25,7 +25,7 @@ templ Textarea(p TextareaProps) {
 		name={ p.Name }
 		rows={ itoa(textareaRows(p.Rows)) }
 		placeholder={ p.Placeholder }
-		class={ inputClass(p.Invalid) }
+		class={ textareaClass(p.Invalid) }
 		aria-invalid?={ p.Invalid }
 		{ p.Attrs... }
 	>{ p.Value }</textarea>

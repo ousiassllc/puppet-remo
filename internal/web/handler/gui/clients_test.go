@@ -158,7 +158,7 @@ func TestDeleteClient(t *testing.T) {
 	// 確認のモーダルはサーバーが描画し、確定のボタンだけが DELETE を送る。
 	conf := r.get("/clients/c1/delete/confirm", hx...)
 	status(t, conf, http.StatusOK)
-	contains(t, conf, `role="dialog"`, "alice-desktop", `hx-delete="/clients/c1"`, `hx-target="#client-list"`, "削除する")
+	contains(t, conf, `role="dialog"`, "alice-desktop", `hx-delete="/clients/c1"`, `hx-target="#client-list"`, "削除する", "text-danger") // 削除は破壊的なので確定は危険色（O7）
 	lacks(t, conf, "<html")
 	must(t, len(r.f.Admin.Cs) == 2, "confirmation must not delete")
 
@@ -170,10 +170,13 @@ func TestDeleteClient(t *testing.T) {
 		t.Errorf("clients = %+v", r.f.Admin.Cs)
 	}
 
-	for _, res := range []resp{r.get("/clients/c1/delete/confirm", hx...), r.do(http.MethodDelete, "/clients/c1", nil, hx...)} {
-		status(t, res, http.StatusNotFound)
-		contains(t, res, `data-error-code="not_found"`)
-	}
+	res = r.get("/clients/c1/delete/confirm", hx...)
+	status(t, res, http.StatusNotFound)
+	contains(t, res, `data-error-code="not_found"`)
+	lacks(t, res, `id="modal-root"`) // 確認モーダルの取得の失敗（GET）は、開いているモーダルを閉じない
+	res = r.do(http.MethodDelete, "/clients/c1", nil, hx...)
+	status(t, res, http.StatusNotFound)
+	contains(t, res, `data-error-code="not_found"`, `id="modal-root" hx-swap-oob="true"`) // 確認モーダルの確定（DELETE）の失敗は、モーダルを閉じる
 }
 
 func TestSidebarHighlightsCurrentPage(t *testing.T) {
@@ -283,6 +286,7 @@ func TestResetClientApproval(t *testing.T) {
 	res := r.post("/clients/c2/approval/reset", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="client-c2"`, "未承認（次のリース取得で承認が必要です）", "承認を取り消しました")
+	lacks(t, res, "承認を取り消しました。次のリース取得から")
 	lacks(t, res, "<html", "承認を取り消す</button>")
 	if r.f.Admin.Cs[1].ApprovedAt != nil || r.f.Admin.Cs[1].ApprovalMode != domain.ApprovalFirstTime {
 		t.Errorf("client = %+v, want first_time with approved_at NULL", r.f.Admin.Cs[1])

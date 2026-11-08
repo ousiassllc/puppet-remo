@@ -1,16 +1,32 @@
 package molecules
 
+import "strings"
+
+// hintClass は補足の見た目。1 文だけの補足は 12px の --mute（C6・T3）。複数文の説明は本文色の 14px にする
+// （12px の --mute は長文を読むにはコントラストが足りない）。
+func hintClass(hint string) string {
+	if strings.Contains(strings.TrimSuffix(hint, "。"), "。") {
+		return "mt-1 text-sm text-ink"
+	}
+	return "mt-1 text-xs text-mute"
+}
+
+// FieldError は入力のエラー文（role=alert）。FormField と、入力の外に出すエラー（絞り込みのページ送りなど）が同じ見た目になるよう共有する。
+templ FieldError(id, errMsg string) {
+	<p class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error={ id }>{ errMsg }</p>
+}
+
 // FormField はラベル・入力・ヒント・エラーの組。入力は children で受ける。
 // Error があるときだけ描画する（role=alert。クライアント側の検証 JS は持たない）。
 templ FormField(id, label, hint, errMsg string) {
-	<div class="space-y-1">
-		<label for={ id } class="block text-sm font-medium text-slate-700">{ label }</label>
+	<div>
+		<label for={ id } class="mb-2 block text-sm text-ink">{ label }</label>
 		{ children... }
 		if hint != "" {
-			<p class="text-xs text-slate-500">{ hint }</p>
+			<p class={ hintClass(hint) }>{ hint }</p>
 		}
 		if errMsg != "" {
-			<p class="text-xs text-red-700" role="alert" data-field-error={ id }>{ errMsg }</p>
+			@FieldError(id, errMsg)
 		}
 	</div>
 }

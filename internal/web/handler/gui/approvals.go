@@ -113,7 +113,7 @@ func (h *Handler) ApprovalDialog(c *gin.Context) {
 }
 
 // approvalGone は 410 approval_timeout を返す。フルページには終了した旨を出し、HTMX の応答（ボタン・残り時間の更新）は
-// data-error-code 付きのトースト（HX-Retarget: #toast-root）にする。
+// data-error-code 付きのインラインアラート（HX-Retarget: #alert-root）にする。
 func (h *Handler) approvalGone(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	if c.GetHeader("HX-Request") != "" {
