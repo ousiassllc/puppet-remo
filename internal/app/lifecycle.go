@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"slices"
 	"sync"
@@ -38,12 +39,23 @@ func (a *App) ServerStatus(ctx context.Context) service.ServerStatus {
 
 // allowedHosts は Host ヘッダーとして許す tailnet の IP・MagicDNS 名と、設定のポート（NFR-S02）。
 func (a *App) allowedHosts() ([]string, int) {
-	st := a.tracker.ServerStatus(context.Background())
+	return hostsOf(a.tracker.ServerStatus(context.Background())), int(a.port.Load())
+}
+
+// hostsOf は st から Host ヘッダーとして許す IP・MagicDNS 名を返す。tailnet の状態（TailnetIPs）は StatusTracker が自分の購読で更新し、
+// Listen の状態（ListenAddrs）は Listener が別の購読で更新する。Listener が先に Listen を始めた短い間は TailnetIPs が空なので、
+// Listen しているアドレス（tailnet の IP だけ。tailnetAddrs で選別済み）も許す。許さないと、その間に届いた正当な要求が 400 invalid_host になる。
+func hostsOf(st service.ServerStatus) []string {
 	hosts := slices.Clone(st.TailnetIPs)
+	for _, addr := range st.ListenAddrs {
+		if host, _, err := net.SplitHostPort(addr); err == nil && !slices.Contains(hosts, host) {
+			hosts = append(hosts, host)
+		}
+	}
 	if st.DNSName != "" {
 		hosts = append(hosts, st.DNSName)
 	}
-	return hosts, int(a.port.Load())
+	return hosts
 }
 
 // triggerKillSwitch はホットキー・トレイからのキルスイッチ。失敗は（段ごとの失敗を含めて）ログに残す。

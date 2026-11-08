@@ -526,6 +526,8 @@ func TestListenerWithWatcherEndToEnd(t *testing.T) {
 	}
 
 	api.setWatchErr(nil)
+	// Watcher の再試行の待ち（After）が登録されてから進める。登録の前に進めると、再試行が発火せず待ちが尽きる（CI の負荷で起きた不安定）。
+	clock.waitPending(t)
 	clock.Advance(defaultRetryInterval)
 	wait(addrsAre(v4a, v6a))
 }
