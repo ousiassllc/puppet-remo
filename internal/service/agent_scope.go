@@ -141,18 +141,6 @@ func (s *agentScope) observe(g domain.Group) (*scopeStop, bool) {
 	return nil, false
 }
 
-// observer は observe を groupObserver にする。メンバーの増減だけで中断するとき、中断された操作の agent.step の行（Control が同じ ctx の
-// AgentStep.ExtraDetail から書く）に detail.reason = group_changed を足す（拒否の行ではない。auditResult は ok にする）。
-func (s *agentScope) observer(extra map[string]any) groupObserver {
-	return func(g domain.Group) (*scopeStop, bool) {
-		stop, yield := s.observe(g)
-		if yield {
-			extra["reason"] = ReasonGroupChanged
-		}
-		return stop, yield
-	}
-}
-
 // observeScreen は新しい画面を PNG で撮る。スコープなしは FR-G06 の規則（プライマリモニター・最大辺は screenshot.max_dimension）、
 // スコープ付きは対象グループの合成画像（GrabGroupFrame。モニター撮影・画面領域の切り出しには切り替えない）を同じ最大辺へ縮小し、
 // 縮小率・原点・メンバーを新しい基準 S に保存する。除外したウィンドウ（所有関係を確かめられない）があればタスクに capture_partial を残す。

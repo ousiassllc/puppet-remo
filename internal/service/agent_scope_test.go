@@ -610,18 +610,20 @@ func TestAgentScopedBatchYieldsWhenTheMenuOpensThenSaves(t *testing.T) {
 	if ae.capturer.GroupGrabCalls() != ae.model.Calls() {
 		t.Errorf("GrabGroup calls = %d, model calls = %d (a capture happened inside a batch)", ae.capturer.GroupGrabCalls(), ae.model.Calls())
 	}
-	// 中断された 2 手目の agent.step の行は拒否に見えない: result ok・error_code なし・detail.reason = group_changed。
-	var yieldedRows int
+	// 中断された 2 手目（実行していない）は agent.step の行を残さない（result ok は「実行して成功」に読めるため）。
+	// 実行した 4 手だけが agent.step の行になり、すべて ok。中断は agent.batch_yielded の 1 行だけが示す。
+	var stepRows int
 	for _, e := range ae.auditOf(got.ID) {
-		if e.Event == agentStepAuditEvent && detailOf(t, e)["reason"] == ReasonGroupChanged {
-			yieldedRows++
-			if e.Result != auditOK || e.ErrorCode != "" {
-				t.Errorf("yielded step row = %s / %q, want ok without an error code", e.Result, e.ErrorCode)
-			}
+		if e.Event != agentStepAuditEvent {
+			continue
+		}
+		stepRows++
+		if e.Result != auditOK || detailOf(t, e)["reason"] == ReasonGroupChanged {
+			t.Errorf("agent.step row = %s %v, want only executed ok rows (no row for a yielded op)", e.Result, detailOf(t, e))
 		}
 	}
-	if yieldedRows != 1 {
-		t.Errorf("yielded agent.step rows = %d, want 1", yieldedRows)
+	if stepRows != 4 { // 1 手目の click・次の応答の click・type・key の 4 つ（中断された 2 手目は含まない）
+		t.Errorf("agent.step rows = %d, want 4 (the yielded op has no row)", stepRows)
 	}
 	if got.OpenAISteps != 4 || got.FastSteps != 0 {
 		t.Errorf("steps = %d openai / %d fast", got.OpenAISteps, got.FastSteps)

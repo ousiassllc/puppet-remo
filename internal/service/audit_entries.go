@@ -58,9 +58,6 @@ func auditResult(err error) string {
 	if errors.Is(err, domain.ErrJudgeDenied) {
 		return auditDenied
 	}
-	if IsGroupChanged(err) {
-		return auditOK // エージェントのバッチの中断（#158）。拒否・失敗ではない。detail.reason = group_changed が残る
-	}
 	switch domain.CodeOf(err) {
 	case "":
 		return auditOK
@@ -77,9 +74,6 @@ func auditResult(err error) string {
 func auditErrorCode(err error) string {
 	if errors.Is(err, domain.ErrJudgeDenied) {
 		return domain.TaskErrorJudgeDenied
-	}
-	if IsGroupChanged(err) {
-		return "" // 中断はエラーではない（auditResult）
 	}
 	return string(domain.CodeOf(err))
 }

@@ -308,6 +308,12 @@ func (e *env) start() {
 func (e *env) waitListening(count int) {
 	e.t.Helper()
 	eventually(e.t, "the listener to bind", func() bool { return len(e.app.listen.State().Addrs) == count })
+	// Host 検査の許可リスト（tailnet の状態）は StatusTracker が別の goroutine で更新する。Listen の完了だけでは、まだ空のことがあり、
+	// その間の要求は 400 invalid_host になる（CI で MCP の initialize が Bad Request になった不安定）。許可リストが揃うまで待つ。
+	eventually(e.t, "the allowed hosts to include the tailnet IP", func() bool {
+		hosts, _ := e.app.allowedHosts()
+		return slices.Contains(hosts, testTailnetIP)
+	})
 }
 
 // registerClient は alice の端末（WhoIs の偽物が返す node）を許可リストに登録し、Bearer トークンの平文を返す。

@@ -23,7 +23,7 @@ go run ./internal/app/internal/remotedemo -agent-demo -agent-scope=foreign   # �
 | `02-dashboard-running-target.png` | 実行中のダッシュボード。実行中のタスクの**対象**（プロセス名・pid）と、種別 `エージェント` のリース |
 | `03-task-detail-failed-foreign-foreground.png` | 前面が別プロセスのウィンドウに替わり `failed`（`input_blocked`）になったタスク詳細。キー入力は注入されていない。reason（`target_not_foreground`）は監査 `agent.task_end` の `detail.block_reason` に残る |
 | `04-audit-target-halted-foreign.png` | 同じ場面の監査ログ。`lease.target_set` → `agent.step`（denied）→ `input.target_halted`（denied）→ `agent.task_end`（denied） |
-| `05-audit-batch-yielded.png` | 1 回の応答 `[click(ファイル), click(名前を付けて保存)]` の 1 手目でメニューが開き、2 手目を実行せずに中断した監査ログ。`agent.batch_yielded`（`ok`。失敗ではない）が残り、続くステップが新しい画像から再計画された。中断された 2 手目の `agent.step` は `result = ok`・`detail.reason = group_changed`（拒否ではない。注入していない）で並ぶ |
+| `05-audit-batch-yielded.png` | 1 回の応答 `[click(ファイル), click(名前を付けて保存)]` の 1 手目でメニューが開き、2 手目を実行せずに中断した監査ログ。`agent.batch_yielded`（`ok`。失敗ではない）が残り、続くステップが新しい画像から再計画された。中断された 2 手目（実行していない）は `agent.step` の行を残さない（`ok` にすると「実行して成功」に読めるため）。実行・一部実行・未実行の件数は `agent.batch_yielded` の行だけが示す |
 | `model-image-1-initial.png` | 偽モデルに渡った最初の画像（グループ合成。T だけ） |
 | `model-image-2-menu-opened.png` | 中断後に撮り直した画像（「ファイル」のメニューが写る。単色の偽ウィンドウ） |
 | `model-image-3-save-dialog-outside-T.png` | 保存ダイアログが開いた画像。**ダイアログが T の矩形の外へはみ出しても写り**、非メンバー・デスクトップの画素は含まれない（空のキャンバス上の合成） |

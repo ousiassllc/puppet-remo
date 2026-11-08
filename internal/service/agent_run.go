@@ -169,7 +169,7 @@ func (r *run) runActions(ctx context.Context, ops []domain.Op) (executed int, yi
 			}
 			// 中断された操作の agent.step の行は、拒否の行に見えないよう、観測が detail.reason = group_changed を足す（auditResult も参照）。
 			step.ExtraDetail = map[string]any{"target_window_id": r.task.TargetWindowID}
-			actx = withGroupObserver(WithPhysicalCoords(actx), r.scope.observer(step.ExtraDetail))
+			actx = withGroupObserver(WithPhysicalCoords(actx), r.scope.observe)
 		}
 		if _, err := r.a.cfg.Control.Do(WithAgentStep(actx, step), r.actor, op); err != nil {
 			if r.scope != nil && IsGroupChanged(err) {

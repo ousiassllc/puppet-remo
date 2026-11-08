@@ -673,3 +673,24 @@ func TestControlThumbnailIsSkippedForScopedLeases(t *testing.T) {
 	}
 	tc.cap.AssertNoMonitorCapture(t)
 }
+
+// launch_app もスコープ付きのリースでは監査のサムネイル（モニター全体）を撮らない。
+func TestControlThumbnailLaunchAppIsSkippedForScopedLeases(t *testing.T) {
+	tc := newThumbCtl(t)
+	app := platformtest.NewFakeApp(tc.windows, tc.input, tc.clipboard)
+	tc.cap.AttachWindows(tc.windows)
+	if _, err := tc.leases.AcquireScoped(context.Background(), ctlAlice, app.Ref()); err != nil {
+		t.Fatal(err)
+	}
+	reg := registerNotepad(t, tc.ctlEnv)
+	if _, err := tc.ctl.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: reg.ID}); err != nil {
+		t.Fatal(err)
+	}
+	got := tc.finish()
+	if len(got) != 1 || got[0].Entry.Event != "tool.launch_app" || got[0].Thumb != nil {
+		t.Fatalf("records = %+v, want one launch_app row without a thumbnail", got)
+	}
+	if g := tc.grabs(); len(g) != 0 {
+		t.Errorf("Grab calls = %v, want none", g)
+	}
+}

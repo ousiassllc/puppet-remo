@@ -277,7 +277,11 @@ func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Resul
 	start := c.clock.Now()
 	var tr judgeTrace
 	res, leaseID, executed, err := c.do(ctx, who, op, &tr)
-	if _, isMove := op.(domain.PointerMove); c.audit != nil && !isMove {
+	// エージェントのバッチの中断（#158）は、実行しなかった（一部だけ注入した）操作なので agent.step の行を残さない
+	// （result を ok にすると「実行して成功」に読めるため。実行・一部実行・未実行の件数と理由は agent.batch_yielded の行に残る）。
+	_, isMove := op.(domain.PointerMove)
+	yielded := who.Kind == domain.ActorAgent && IsGroupChanged(err)
+	if c.audit != nil && !isMove && !yielded {
 		tool, args := describeOp(op, res)
 		took := c.clock.Now().Sub(start)
 		var entry repository.AuditEntry
