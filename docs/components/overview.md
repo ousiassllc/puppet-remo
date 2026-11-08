@@ -682,6 +682,9 @@ type Control interface {
     LaunchableApps(ctx context.Context) (LaunchableList, error)
     // M1.5（FR-M19）。アプリを起動する。呼び出し側が渡せるのは req.AppID（許可リストのアプリ）か、ブラックリスト方式のときだけ req.Path（固定ディスク上の実在の .exe の絶対パス。引数・作業ディレクトリは渡せない）。検査の順序は §5.4.1。
     Launch(ctx context.Context, who domain.Actor, req LaunchRequest) (LaunchResult, error)
+    // #156（§5.4.2）。スコープ付きのリースの全条件を入力せずに確かめる / 保持者の明示的な再開（全条件を再検証して通ったときだけ active）。
+    VerifyTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
+    ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
 }
 ```
 
@@ -778,6 +781,36 @@ type LaunchResult struct {
 `AppRegistry` の実装（`NewAppRegistry`）は `repository.LaunchableApps`・`repository.LaunchDenylist`・`repository.Settings`（`launch.mode`）・`platform.AppLauncher`（`Inspect` と、拒否リストのパスを実体へ解決する `Resolve` だけ。`Launch` は `Control` だけが呼ぶ）・`platform.FilePicker` を受け取る。`Create` / `Update` は表示名の前後の空白を除いて検証し、実行ファイルの存在 → 作業ディレクトリの存在の順に `Inspect` する（`Inspect` はどちらが無いかを区別しないため、作業ディレクトリは実行ファイルがあるときだけ確かめる。形が不正な項目のパスは渡さない）。`Inspect` 自体の失敗（`ErrNotFound` 以外）は項目エラーにせずそのまま返す。`Update` の監査の `changed` は変わった項目だけを `label`・`exe_path`・`args`・`working_dir` の順に並べる。`LaunchMode` は `launch.mode` が未設定・JSON として読めない・定義外の値のとき `allowlist` を返す（手で書き換えられた値は、より厳しい方式として扱う。fail closed）。`SetLaunchMode` は `settings` に JSON 文字列で保存し、変わるときだけ `settings.launch_mode.update`（`{from, to}`）を監査する。`CreateDenied` / `UpdateDenied` は入力の前後の空白を除き、`domain.ClassifyDenied` で分けて、`path` は `Resolve` した実体のパスで保存し、`repository.LaunchDenylist.Create(limit = domain.MaxDeniedApps)` / `Update` の重複（`ErrConflict`）を `AppFieldErrors{"value": …}`、上限（`ErrLimitReached`）を `domain.CodeConflict` に写す。拒否リストの監査（`settings.launch_denylist.create` / `update` / `delete`）は `{id, kind, value}`（`update` は `before_kind`・`before_value` も）を記録する。
 
 `AppRegistry` を `HostAdmin`（§13.5）に統合せず分けるのは、`Control` が読み取り（`Get` / `List`）に使い、`HostAdmin` の責務（クライアント・接続要求・トークンの操作と `SessionCloser` による切断）と依存が重ならないため。ホスト所有者の操作として `actor_type = host` で監査する点と、書き込みを GUI ルーターだけに渡す点（ルーター組み立てのテストで `mcp` / リモート側に `AppRegistry` を渡さないことを検査する）は `HostAdmin` と同じ。
+
+### 5.4.2 入力スコープ（#156。FR-L09〜L14。NFR-S06 の追記）
+
+リースに 1 つのトップレベルウィンドウ T を束縛し、入力を T と**対象グループ G**（T ＋ T との所有関係を検証できる同一プロセスの関連ウィンドウ）に限る。誤入力を止めるガードレールで、セキュリティ境界ではない（`screenshot`・モニター表示は止めない）。判定は `domain`（`ResolveGroup`・`Group.CheckFocus` / `CheckHit`・`LeaseScope`・`ScopedKeyForbidden`）、状態は `LeaseManager`、検証・停止・再開は `Control`（`control_target.go`）。UI（#157）・エージェント（#158）の入口はこの API を使うが、本節の時点では**スコープ付きのリースを作る HTTP / WebSocket / MCP の入口はない**（`LeaseManager` / `Control` のサービス API だけ）。
+
+```go
+// LeaseManager（§5.2）への追加。束縛は固定。変えるには解放して取り直す。
+AcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (Lease, error)
+RequestAcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (l Lease, pending bool, err error)
+Halt(leaseID string, reason domain.GroupReason) bool // Control だけが呼ぶ
+ResumeVerified(who domain.Actor) error               // Control.ResumeTarget だけが呼ぶ（全条件の再検証のあと）
+// Lease・Holder・PendingLease は Scope *domain.LeaseScope（Target・State = active|halted・HaltReason・監査用の Process・Members）を持つ。スコープなしは nil。
+
+// Control への追加。
+VerifyTarget(ctx context.Context, who domain.Actor) (TargetStatus, error) // 入力せずに全条件を確かめる。通らなければ入力のときと同じく halted
+ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error) // 保持者の明示的な再開。全条件を再検証して通ったときだけ active
+// TargetStatus{State, HaltReason, Members, Notices（capture_partial）, Excluded（unverifiable で表示から除外したウィンドウ）}
+```
+
+`LeaseConfig.Windows`（`platform.WindowManager`）が束縛の検査（`domain.ResolveGroup` の `ListAll` 入力。一覧にない・HWND の再利用・検証前の UWP・同一性の値が不明・自ウィンドウ・昇格・最小化は束縛しない）に要る。ない構成では `AcquireScoped` は `invalid_argument`。`agent.deny_processes` は新しい設定を作らず、アクションごとの Judge（§5.5）が、スコープの有無によらず適用する。
+
+**`Do` の検査 3（InputGuard）の代わり**（スコープ付きのリースのみ。スコープなしは byte-for-byte 変わらない）:
+
+1. **実行前（`lockInput` の外。`scopeGate`）**: `ClipboardRead` は常に `clipboard_out_of_scope`（`platform.Clipboard.ReadText` は呼ばない。書き込みだけ許可。**サーバー側の規則なので Web UI・エージェント・MCP のどの入口でも同じ**）。停止中は Esc を含む一切の入力とクリップボード書き込みを `target_halted`（`detail.halt_reason` に停止の理由）。`win` 修飾・Windows キー・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc は `key_out_of_scope`。これらはその操作だけの拒否で停止にしない。座標がモニター上にあること（`invalid_coordinates`）は従来どおり。
+2. **注入の直前と、1 つの操作の複数回の注入の間（`lockInput` の中。`verifyInput`）**: `MoveTo` → クリック・押下 → 離す・文字列は 8 文字ごと。毎回 `WindowManager.ListAll` から `ResolveGroup` で G を求め直し、T の同一性・状態（最小化・昇格・自ウィンドウ）→ キー・文字は `Foreground`（前面と引き上げ前のフォーカスの葉）を `Group.CheckFocus`、座標は `At`（最上位と葉）を `Group.CheckHit` で検証する。自ウィンドウ・昇格は既存の `own_window` / `elevated_window`。`FocusWindow` は G のメンバーだけ（メンバー以外はその操作だけの拒否）。
+3. **撮影の事前確認（操作の最初の検証で 1 回）**: G の検証できたメンバー（T と、最小化・空の矩形でないメンバー。`unverifiable` は含めない）を `platform.GroupCapturer.GrabGroup` で撮れるかを確かめる（画像は使わない）。T が撮れない・撮影そのものの失敗・`Capturer` が `GroupCapturer` を持たない（型アサーション）は `capture_unavailable`、T 以外のメンバーが撮れないのは `capture_member_unavailable`。**モニター撮影（`Capturer.Grab`・`Watch`）・画面領域のコピーには切り替えない**。事前確認を入力ごとに 1 回おこなうのは「撮れない状態で入力しない」ための最小の設計で、表示側（#157・#158）が撮れなくなったことを入力なしで知るには `VerifyTarget` を使う。
+4. **停止（`halt`）**: 2 と 3 のどちらかに通らなければ、**何も注入せず** `InputInjector.ReleaseAll` を呼び、`LeaseManager.Halt` でリースを `halted` にして `input.target_halted`（`kind = input`。`reason`・`window_id`・`process`・`pid`・`members`・`target_window_id`。タイトルは記録しない）を記録し、`ErrInputBlocked`（`detail.reason`、原因のウィンドウがあれば `window_id` と `blocked_by{window_id, process, pid, reason}`）を返す。メンバーの増減だけでは停止しない。`unverifiable` のウィンドウは対象の表示から除外し（`TargetStatus.Notices` = `capture_partial`、`Excluded`）、前面・フォーカスの葉・座標の最上位になったときだけ停止する。
+5. **再開（`ResumeTarget`）**: 保持者だけ。自動では起きない（原因の解消・再取得・`VerifyTarget` では再開しない）。`halted` のリースの全条件（T の同一性・状態、G の求め直し、前面とフォーカスの葉が G の中、撮影の事前確認）を再検証し、すべて通ったときだけ `LeaseManager.ResumeVerified` で `active` に戻す（`lease.target_resumed`）。一つでも通らなければ `halted` のまま。`target_closed` / `target_replaced` / `target_unsupported` は再開できず（`ErrInputBlocked`）、解放して選び直す。`focus_window` は呼ばない（自動で前面にしない）。
+
+**検証状況**: A-1（上記。偽 platform = `FakeWindows`・`FakeCapturer`・`FakeApp`・`FakeClipboard` で検証）は実装済み。**Windows 実機の A-2（成功条件 S1〜S3 = メニューバーのメニュー・右クリックメニュー・同一プロセスの保存ダイアログ）は検証環境がなく「検証待ち」**で、完了・合格とは扱わない。Windows には `GroupCapturer` の実装が**ない**ので、実機のスコープ付きのリースは事前確認で `capture_unavailable` となり安全に停止する（fail closed）。デスクトップの切り抜き・モニター撮影・マスクで補う実装は置かない。
 
 ### 5.5 Judge
 
@@ -1434,3 +1467,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.59 | 2026-11-02 | ChatGPT のプラン経路（FR-G25〜G30）の設計を追加: §1 の `openai` の責務、§3 の `SecretChatGPT`、新設の §4.3.1（`ChatGPTAuth`・`BrowserOpener`・コールバック受信口・ChatGPT 用の `Model` / `History`・`Agent` との関係）、§5.6 のループの違い、§10 のテスト（モックのみ）、§11 のトレース、§12 の決定事項と未確認。実装は未着手 | #49 |
 | 1.60 | 2026-11-03 | §5.4.1 の `LaunchResult.Window` と手順 5b を、起動したアプリのウィンドウ（pid のウィンドウ、無ければ起動の前に無かったプロセス名が同じ新しいウィンドウ。前面でなければ `Focus`）だけにした（前面の別アプリのウィンドウは返さない）。§7 のオーバーレイを、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（WebView2 の全面ウィンドウをやめる）に更新 | #85・#86 |
 | 1.61 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: §2 に `domain.LaunchMode`・`DeniedApp`・`MatchDenied` ほか、§3 の `AppLauncher.Resolve`（固定ディスク上の実体のパス）、§4.1 の `repository.LaunchDenylist`、§5.1 の `AppRegistry` の状態の所有者、§5.4 の `Control.LaunchableApps` が `LaunchableList` を返すことと `Launch` が `LaunchRequest{AppID, Path}` を受けること、§5.4.1 の `AppReader`（`LaunchMode`・`ListDenied`）・`AppRegistry`（`SetLaunchMode`・`CreateDenied`・`UpdateDenied`・`DeleteDenied`）と検査の順序の手順 3（方式別の対象・拒否リストの照合・`app_denied`）・監査の `detail`（`path`・`launch_mode`）、§13 の `mcp`・`app`・テスト・リスクの記述を更新 | #88 |
+| 1.62 | 2026-11-08 | §5.4 の `Control` に `VerifyTarget`・`ResumeTarget`、§5.4.2（入力スコープ）を追加: `LeaseManager.AcquireScoped` / `RequestAcquireScoped` / `Halt` / `ResumeVerified`、`Do` の検証（実行前の規則・注入の直前と間の検証・撮影の事前確認・停止・再開）、Windows 実機の検証待ちと `GrabGroup` 未実装 | #156（A-1） |

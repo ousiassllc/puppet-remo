@@ -106,16 +106,56 @@ const (
 //	pending_approval → idle（理由別）    approval.denied / approval.timeout / approval.withdrawn（取り下げ。detail.reason に理由）
 //
 // 強制剥奪（lease.revoke）の操作主体は剥奪した側（ホスト GUI なら host）で、剥奪された保持者は detail に残す。
+// スコープ付きのリースの held への遷移は、lease.acquire のあとに lease.target_set を足す（束縛した対象。#156）。
+// スコープの再開（halted → active）は lease.target_resumed。停止（active → halted）はここでは記録しない（Control が理由・ウィンドウつきの
+// input.target_halted を記録する）。
 func leaseAuditEntries(ev domain.LeaseEvent) []repository.AuditEntry {
+	var out []repository.AuditEntry
 	switch {
+	case ev.ScopeChange():
+		if !ev.Lease.Scope.Halted() {
+			out = []repository.AuditEntry{scopeAuditEntry(ev, targetResumedAuditEvent)}
+		}
+		return out
 	case ev.To == domain.LeasePendingApproval:
 		return []repository.AuditEntry{approvalAuditEntry(ev, approvalRequestedAuditEvent, auditOK, nil)}
 	case ev.From == domain.LeasePendingApproval && ev.To == domain.LeaseHeld:
-		return []repository.AuditEntry{approvalAuditEntry(ev, approvalGrantedAuditEvent, auditOK, nil), leaseAuditEntry(ev)}
+		out = []repository.AuditEntry{approvalAuditEntry(ev, approvalGrantedAuditEvent, auditOK, nil), leaseAuditEntry(ev)}
 	case ev.From == domain.LeasePendingApproval && ev.To == domain.LeaseIdle:
 		return []repository.AuditEntry{approvalEndAuditEntry(ev)}
+	default:
+		out = []repository.AuditEntry{leaseAuditEntry(ev)}
 	}
-	return []repository.AuditEntry{leaseAuditEntry(ev)}
+	if ev.To == domain.LeaseHeld && ev.Lease.Scope != nil {
+		out = append(out, scopeAuditEntry(ev, targetSetAuditEvent))
+	}
+	return out
+}
+
+// スコープの監査のイベント名（kind = lease。docs/architecture/er.md のカタログ）。input.target_halted は Control が記録する（control_target.go）。
+const (
+	targetSetAuditEvent     = "lease.target_set"
+	targetResumedAuditEvent = "lease.target_resumed"
+)
+
+// scopeAuditEntry はスコープの遷移（束縛・再開）の監査エントリ。detail は window_id・process・pid・members（束縛した時点の G のメンバー数）だけで、
+// ウィンドウのタイトルは入れない。
+func scopeAuditEntry(ev domain.LeaseEvent, event string) repository.AuditEntry {
+	h, s := ev.Lease.Holder, ev.Lease.Scope
+	return repository.AuditEntry{
+		TS:          ev.At,
+		Kind:        "lease",
+		Event:       event,
+		ActorType:   h.Kind,
+		ClientID:    h.ClientID,
+		ClientLabel: h.Label,
+		SessionID:   h.SessionID,
+		LeaseID:     ev.Lease.ID,
+		Result:      auditOK,
+		DetailJSON: marshalDetail(map[string]any{
+			"window_id": s.Target.ID, "process": s.Process, "pid": s.Target.PID, "members": s.Members,
+		}),
+	}
 }
 
 // approvalEndAuditEntry は承認待ちが held にならずに終わった遷移（pending_approval → idle）を、理由で

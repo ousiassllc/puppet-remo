@@ -103,6 +103,12 @@ graph TD
 | FR-L06 | Web クライアントとホスト所有者は、他者保持中のリースを強制剥奪できる。剥奪された側の以後の操作は `lease_revoked` を返す（**次にその保持者が取得に成功するまで**。別の保持者が現れている間は `lease_held_by_other`）。保持者がいないときの強制剥奪は何もしない（エラーにしない）。ホスト GUI からの剥奪は `host` として監査する（`lease.revoke`）。剥奪後に自身が取得する場合は、承認モード（FR-L07。M3 から）が適用される。M2 の保持者種別は `mcp` と `web`。`agent` のリースの剥奪は FR-L08 | M2 |
 | FR-L07 | リース取得時にクライアントの承認モード（常時承認 / 初回のみ承認 / 自動許可）を適用する。承認待ちは 60 秒でタイムアウトし拒否扱い（`approval_timeout`）とする。「初回のみ承認」は一度承認されたクライアントに対し以後の承認を省略し、クライアント設定で取り消せる。新規クライアントの既定は「常時承認」（M3 の移行で、既存のクライアントは「自動許可」に移す）。`run_task` ではタスクの開始時に 1 回だけ適用する（アクションごとではない）。`launch_app` に呼び出しごとの承認は無い（承認はリース取得時の 1 回だけ）。承認が拒否された（またはタイムアウトした）直後の **30 秒間**は、同じクライアントのリース取得を承認なしで即座に `approval_denied` にする（ホストのダイアログを連打させない。取り下げでは始めず、承認のリセット・承認モードの変更・クライアントの削除で解く）。Web の `POST /viewer/lease/acquire` は承認待ちを待たずに 202 で承認待ちのパネルを返し、結果（許可・拒否・タイムアウト）は WebSocket で届ける（API 仕様 §4.2・§5.3）。MCP のリースを取得しうるツールは承認待ちの 60 秒を待てるよう 90 秒のタイムアウトとする。M1・M2 は承認なしで取得でき（FR-L03）、`pending_approval`・承認モードの適用・承認モードの設定（FR-S05）・承認ダイアログ（FR-H05）はこの M3 で入る | M3 |
 | FR-L08 | 保持者種別 `agent`（内蔵エージェントのタスク）は M4 で加わる。`run_task` はタスクの開始時にリース（種別 `agent`）を取得し、タスクの終了（完了・失敗・中断・上限到達）まで保持して、終了時に必ず解放する。`agent` のリースは、アイドルタイムアウト・セッション切断・キルスイッチ・FR-L06 の強制剥奪のほか、タスクの終了でも解放される。エージェントの各アクション実行はリースの活動として数える（FR-L05 のアイドルタイムアウト）。`agent` のリースを剥奪するとそのタスクは中断（`cancelled`）される。リースの保持者が `agent` の間、他の保持者種別（`mcp` の暗黙取得、`web` の取得）は `lease_held_by_other` となる。閲覧系（FR-L02）は引き続き利用できる。エージェントのタスクは同時に 1 件のみ実行でき、実行中の `run_task` は `lease_held_by_other` を返す | M4 |
+| FR-L09 | **入力スコープ（対象ウィンドウ）**: リースに、一覧から選んだトップレベルウィンドウ **T**（`WindowRef` = ID・PID・プロセス開始時刻・クラス。タイトルは含めない）を束縛できる（`LeaseManager.AcquireScoped` / `RequestAcquireScoped`。承認・クールダウン・キルスイッチは通常の取得と同じ）。束縛は**固定**で、変えるには解放して取り直す（保持中に別の T・スコープなしのリースへの `AcquireScoped` は `invalid_argument`）。束縛の時点で、一覧にない・同じ HWND の別ウィンドウは `window_not_found`（`target_closed` / `target_replaced`）、自ウィンドウ・昇格・最小化・検証前の UWP（`ApplicationFrameWindow`）・同一性を確かめる値（PID・開始時刻・クラス）が不明なものは `input_blocked`（`own_window` / `elevated_window` / `target_minimized` / `target_unsupported`）で断る。**対象グループ G** = T ＋ T との所有関係を検証できる**同一プロセス**（PID と開始時刻が T と一致）の関連ウィンドウ（owner 鎖で T に至るダイアログ〔隠しオーナー経由を含む〕・親子・メニューの `hwndMenuOwner` の鎖。最大 16 枚）。PID が同じだけのウィンドウ（`unrelated_same_process`）、別プロセス（`related_cross_process`）、所有関係を確かめられないもの（`related_unverifiable`）は入れない。スコープは誤入力を止めるガードレールで、セキュリティ境界ではない（`screenshot`・モニター表示は止めない）。スコープなしのリースの動きは変わらない。エージェントの拒否プロセス（`agent.deny_processes`）は、スコープの有無によらずアクションごとの Judge（FR-G12）が適用する（新しい設定は作らない） | #156（A-1） |
+| FR-L10 | **入力の検証**: スコープ付きのリースの入力は、**注入の直前に `lockInput` の中で**、さらに 1 つの操作の複数回の注入の間（`MoveTo` → クリック、ボタンの押下 → 離す、文字列の 8 文字ごと）にも検証する。(1) T の同一性（`target_closed` / `target_replaced`）・T の状態（最小化〔`target_minimized`〕・昇格・自ウィンドウ）、(2) キー・文字: 前面と `hwndFocus` の**葉**（`GA_ROOT` に引き上げる前）の PID・開始時刻が G のメンバーのものと一致し、最上位が G のメンバー（違えば `target_not_foreground` / `unrelated_same_process` / `related_cross_process` / `related_unverifiable`）、(3) 座標: 最上位の `At(座標)` が G のメンバーで、その葉の PID・開始時刻が最上位と一致し、座標がそのメンバーの矩形内（違えば `outside_target_group` / `target_obscured`〔`blocked_by{process, pid, reason}`〕/ `related_cross_process`）。**非メンバーが別の場所で T に重なっていても、座標の最上位がメンバーなら通る**。`win` 修飾・Windows キー・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc は `key_out_of_scope`、`focus_window` は G のメンバーだけ（これらはその操作だけの拒否で、停止にしない）。理由コードは API 仕様 §3.4 | #156（A-1） |
+| FR-L11 | **停止（`halted`）**: スコープ付きのリースの停止の原因は**2 つだけ**: (1) 入力の検証の失敗（FR-L10）、(2) **T または検証できたメンバーの撮影の失敗**（`capture_unavailable` = T が撮れない・`GroupCapturer`（`platform.GroupCapturer`）を持たない・撮影そのものの失敗 / `capture_member_unavailable` = T 以外の検証できたメンバーが撮れない）。撮影の事前確認は、操作の最初の注入の前（と明示の `Control.VerifyTarget`・`ResumeTarget`）に、G の検証できたメンバーを `GrabGroup` で撮れるかを確かめる。どちらも**何も注入せず** `input_blocked` を返し、`ReleaseAll`（押下中のキー・ボタンの解放）を呼び、リースを `halted` にする。**モニター撮影（`Grab`・`Watch`）・画面領域のコピーには切り替えない**。`halted` の間は、Esc を含む一切の入力とクリップボード書き込みを `input_blocked`（`target_halted`）で拒否する。メンバーの出入り（メニュー・ダイアログの開閉）それ自体は停止ではなく、次の入力は新しい G で検証する。所有関係を確かめられないウィンドウ（`unverifiable`）は対象の表示から除外して撮らず（通知 `capture_partial` のみ）、前面・フォーカス先・座標の最上位（入力先）になったら `related_unverifiable` で停止する | #156（A-1） |
+| FR-L12 | **再開は自動では起きない**: 原因の解消（関連ウィンドウをホスト側で閉じるなど）は障害の解消にすぎず、`halted` のままにする。再開はリース保持者の**明示的な再開操作**（`Control.ResumeTarget`）だけで、**全条件**（T の同一性・状態、G の求め直し、前面とフォーカスの葉が G の中、G の検証できたメンバーを撮れるか）を再検証し、すべて通ったときだけ `active` に戻す。一つでも通らなければ `halted` のまま（通らなかった条件の `input_blocked`）。自動では前面にしない（`focus_window` を呼ばない）。`target_closed` / `target_replaced` / `target_unsupported` で止まったリースは**再開できず**（同じ同一性のウィンドウが戻っても同じ）、解放して選び直す。保持者以外の再開は `lease_held_by_other`。再開は `lease.target_resumed` で監査する | #156（A-1） |
+| FR-L13 | **クリップボード（D7）はサーバー側の規則**: スコープ付きのリースは `ClipboardWrite` のみ許可し、`ClipboardRead` は**常に** `input_blocked`（`clipboard_out_of_scope`）で拒否する。platform のクリップボード読み取りは呼ばない。規則は `Control` にあり、Web UI・内蔵エージェント・MCP のどの入口も同じ（UI の非表示に頼らない）。スコープなしのリースは従来どおり | #156（A-1） |
+| FR-L14 | **スコープの監査**: `lease.target_set`（束縛。`window_id`・`process`・`pid`・`members`）、`lease.target_resumed`（再開。同）、`input.target_halted`（停止。`reason`・`window_id`・`process`・`pid`〔停止の原因のウィンドウ。なければ T〕・`members`・`target_window_id`）。**ウィンドウのタイトル・入力した文字は記録しない**（FR-AU03）。停止中の拒否は新しい `input.target_halted` を重ねない（通常のツールの監査 `denied` は残る） | #156（A-1） |
 
 ```mermaid
 stateDiagram-v2
@@ -118,6 +124,18 @@ stateDiagram-v2
 ```
 
 M1・M2 は承認が不要なので `idle → held` に直接入る（`pending_approval` を経由する遷移は M3）。「剥奪」の遷移は、キルスイッチは M1、他者による強制剥奪（FR-L06）は M2 から。
+
+スコープ付きのリース（FR-L09〜L14）は `held` の間に、さらに `active` / `halted` の状態を持つ（`held` の内側の状態。他の保持者は `halted` の間も `lease_held_by_other`）。
+
+```mermaid
+stateDiagram-v2
+    [*] --> active: 束縛（AcquireScoped）
+    active --> halted: 入力の検証の失敗 / T・メンバーの撮影の失敗（ReleaseAll）
+    halted --> active: 保持者の明示的な再開（全条件を再検証して通ったときだけ）
+    halted --> [*]: 解放（target_closed / target_replaced / target_unsupported は選び直しのみ）
+```
+
+**入力スコープの検証状況（#156）**: A-1（判定・検証・停止・再開・クリップボード・監査。偽 platform で検証）は実装済み。**A-2（Windows 実機）は未実施で、成功条件 S1（メニューバーのメニュー）・S2（右クリックメニュー）・S3（同一プロセスの保存ダイアログ）は「検証待ち」**（検証環境がない。完了・合格ではない）。Windows の `platform.GroupCapturer`（`GrabGroup`）は**未実装**のため、実機ではスコープ付きのリースは入力の最初の事前確認で `capture_unavailable` となり安全に停止する（fail closed）。S1〜S3 を外す判断は実装者・レビュアーではなく、りお経由で悠太さんの OK が要る。UI（#157）・エージェント（#158）の入口はこれらに依存し、本要件の対象外。
 
 ### MCP ツール（FR-M）
 
@@ -461,3 +479,4 @@ puppet-remo 自身のウィンドウ（ホスト GUI・承認ダイアログ。�
 | 1.38 | 2026-11-02 | FR-A01 に OAuth のコールバック受信口の例外、FR-G02・G23 に `connection`、FR-G24 に API 経路の文書と ChatGPT 経路の未確認の区切り、FR-G28 にサインイン開始の状態の条件、原資料と異なる本書の決定（`chatgpt.tokens.use.direct` 欠落・`invalid_client`・受信口の細部）を追記 | #49（レビュー指摘） |
 | 1.39 | 2026-11-03 | FR-M19 の `window` を、前面のウィンドウから、起動したアプリのウィンドウ（見つからないときは付けない）に改めた。FR-H07 の操作中オーバーレイを、縁の枠と札だけ（真ん中は覆わない）と明記 | #85・#86 |
 | 1.40 | 2026-11-03 | 起動の方式を、ホワイトリスト方式（既定）とブラックリスト方式から選べるようにした（設定 `launch.mode`。FR-S22）: ブラックリスト方式では `launch_app` が `path`（固定ディスク上の `.exe` の絶対パス。引数なし）も受け付け、拒否リストに当たるものを `app_denied`（403）で拒否する。UC-13・UC-14、FR-M18（`mode` を返す）・M19、エラー `app_denied` と `invalid_argument` の範囲、アプリ起動の規約、FR-H12（起動の方式のパネルと拒否リスト。上限 200 件）、FR-AU06（監査）を更新。方式の切り替えと拒否リストの管理はホスト GUI だけ | #88 |
+| 1.41 | 2026-11-08 | 操作リースに入力スコープを追加（FR-L09〜L14）: リースへの対象ウィンドウ T の束縛（固定）・対象グループ G（所有関係を検証できる同一プロセスの関連ウィンドウ）・入力の検証（注入の直前と複数回の注入の間）・停止（入力の検証の失敗と撮影の失敗の 2 つだけ）・明示的な再開（全条件を再検証）・クリップボードのサーバー側の規則・監査。Windows 実機の成功条件 S1〜S3 は検証待ち（Windows の `GrabGroup` は未実装で、実機は `capture_unavailable` で安全に停止する） | #156（A-1） |

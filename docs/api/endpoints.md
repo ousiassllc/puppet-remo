@@ -87,7 +87,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
 | `app_not_found` | 404 | `launch_app` | `app_id` が許可リストに無い（読めない行・起動の再検査を満たさない行を含む。FR-M19。M1.5）。どちらの起動の方式でも同じ |
 | `app_denied` | 403 | `launch_app` | 起動の方式がブラックリストで、起動しようとしたアプリがホスト所有者の拒否リストに当たる（`app_id` で起動する許可リストのアプリも、拒否リストに当たれば拒否する。#88）。MCP は同じ `code` のツールエラー。メッセージは `the host owner does not allow this app to be launched` で固定し、**パス・拒否リストの中身は含めない**。監査は `denied` |
-| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に puppet-remo のウィンドウの範囲を付ける（§3.4） |
+| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に puppet-remo のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
 | `audit_unavailable` | 503 | `launch_app` | 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動できる） |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリ（ブラックリスト方式の `path` 指定を含む）だが OS がプロセスを作成できなかった、または `path` が固定ディスク上の実在する実行ファイルでなかった（FR-M19。M1.5。#88）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。`path` が UNC・ネットワークドライブ・リムーバブルドライブ上なら `access_denied`、存在しなければ `file_missing`。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
@@ -332,7 +332,31 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 }
 ```
 
-`detail` は、コードによって付く追加情報（無ければ省略）。`input_blocked` の `detail.reason` は `own_window` / `elevated_window`（`detail.window_id` も付く）/ `secure_attention_sequence`。`agent_disabled`（接続方式 `chatgpt`）の `detail.reason` は `chatgpt_not_signed_in` / `chatgpt_signing_in` / `chatgpt_reauth_required` / `chatgpt_usage_limited`（§2。FR-G01）。
+`detail` は、コードによって付く追加情報（無ければ省略）。`input_blocked` の `detail.reason` は `own_window` / `elevated_window`（`detail.window_id` も付く）/ `secure_attention_sequence`、スコープ付きのリース（FR-L09〜L14）では下の表の値。`agent_disabled`（接続方式 `chatgpt`）の `detail.reason` は `chatgpt_not_signed_in` / `chatgpt_signing_in` / `chatgpt_reauth_required` / `chatgpt_usage_limited`（§2。FR-G01）。
+
+**スコープ付きのリースの `input_blocked`**（FR-L09〜L14。#156。`acquire_control`・`run_task` の対象指定の入口は #157・#158 で、本書の対象はサービス層の規則とエラーの形）: `detail.reason` に次の値が入る。原因のウィンドウがあれば `detail.window_id` と `detail.blocked_by`（`{ "window_id", "process", "pid", "reason" }`。**ウィンドウのタイトルは含めない**）が付く。「停止」は、入力を注入せずに `ReleaseAll`（押下中のキー・ボタンの解放）を呼び、リースを `halted` にして監査 `input.target_halted` を記録する。
+
+| `reason` | 意味 | 停止 |
+|----------|------|------|
+| `target_closed` | T が一覧にない（閉じた）。選び直しのみ | する（再開不可） |
+| `target_replaced` | T と同じ HWND が別の PID・開始時刻・クラスのウィンドウに再利用された。選び直しのみ | する（再開不可） |
+| `target_unsupported` | 検証前の UWP（`ApplicationFrameWindow`）、または同一性を確かめる値が不明。束縛できない・選び直しのみ | する（再開不可） |
+| `target_minimized` | T が最小化されている | する |
+| `own_window` / `elevated_window` | T・前面・座標の最上位が puppet-remo のウィンドウ / 昇格ウィンドウ（既存の理由） | する |
+| `target_not_foreground` | キー・文字の宛先（前面）が G の外の、所有関係のない別プロセスのウィンドウ・前面なし | する |
+| `unrelated_same_process` | PID が T と同じだけで所有関係のないウィンドウが前面（G に入れない） | する |
+| `related_cross_process` | T と所有関係はあるが別プロセスのウィンドウが前面・座標の最上位、または**引き上げ前の葉**（フォーカス先・座標の子ウィンドウ）が別プロセス | する |
+| `related_unverifiable` | 所有関係を確かめられないウィンドウ（無所有のメニュー、循環・8 段超過の鎖、開始時刻の取得失敗、メンバー 16 超）が前面・座標の最上位、または葉の PID・開始時刻を取れない | する |
+| `outside_target_group` | 座標が G のどのメンバーの範囲にも入らない（デスクトップを含む） | する |
+| `target_obscured` | 座標は G のメンバーの範囲内だが、その座標の最上位は非メンバー（`blocked_by` にそのプロセス）。非メンバーが別の場所で T に重なっていても、座標の最上位がメンバーなら通る | する |
+| `capture_unavailable` | T を撮れない（`GrabGroup` の失敗・撮影不可）、または `Capturer` が `GroupCapturer` を持たない（**Windows は未実装のため、実機のスコープ付きリースはこの理由で停止する**） | する |
+| `capture_member_unavailable` | T 以外の、検証できたメンバー（メニュー・ダイアログ）を撮れない | する |
+| `target_halted` | リースがすでに停止中。Esc を含む一切の入力・クリップボード書き込みを拒否する。`detail.halt_reason` に停止の理由。新しい停止は記録しない | しない（すでに停止中） |
+| `key_out_of_scope` | スコープ付きで `win` 修飾・Windows キー・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc を送ろうとした | しない（その操作だけの拒否） |
+| `clipboard_out_of_scope` | スコープ付きリースで `ClipboardRead`（クリップボードの読み取り。`clipboard_read`・Web の fetch・エージェント）。書き込みだけ許可。platform の読み取りは呼ばない | しない（その操作だけの拒否） |
+| `outside_target_group`（`focus_window`） | `focus_window` の対象が G のメンバーでない（スコープ付きは G のメンバーだけ） | しない（その操作だけの拒否） |
+
+束縛（`LeaseManager.AcquireScoped`）が断る対象は、`window_not_found`（`detail.reason` = `target_closed` / `target_replaced`）と、`input_blocked`（`target_unsupported` / `own_window` / `elevated_window` / `target_minimized`）。再開（`Control.ResumeTarget`）が通らなかったときは、通らなかった条件の `reason` の `input_blocked` で、リースは `halted` のまま。
 
 **`own_window` の `detail.own_windows`**（FR-M20）: AI が避けられるよう、puppet-remo 自身のウィンドウ（スクリーンショットに写らない）の範囲を付ける。`get_ui_tree`・`focus_window` の `own_window` にも付く。
 
@@ -752,3 +776,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.44 | 2026-11-02 | §1・§2・§3.4 に `data-error-reason` と `agent_disabled` の `detail.reason`、`POST /agent/chatgpt/signin` の 409 の条件（`signed_out`・`reauth_required` 以外）、`signin/cancel` の監査を `detail.reason = cancelled` に統一 | #49（レビュー指摘） |
 | 1.45 | 2026-11-03 | §7.1 の `/overlay`（操作中オーバーレイの中身のページ）を削除し、§7.5 のオーバーレイの行を、モニターごとの枠 4 本と札のネイティブウィンドウ（真ん中は覆わない）に改めた。§3.3 の `launch_app` の `window` は、起動したアプリのウィンドウだけを返す（前面の別アプリのウィンドウは返さない） | #86・#85 |
 | 1.46 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: §1 のホスト専用の操作、§2 に `app_denied`（403）と `invalid_argument`・`app_not_found`・`launch_failed` の `launch_app` での扱い、§3.1 の `instructions`、§3.3 のツール表・`list_launchable_apps`（`mode`）・`launch_app`（`path`。`app_id` を省いた結果・検査の順序・エラー・監査の `detail`〔`path` / `launch_mode`〕・スキーマ違反と形の不備の扱い）、§3.4、§7.1 の `/apps`（起動の方式のパネルと拒否リスト）、§7.2 の `PUT /apps/mode`・`/apps/denied*`（リモートルーターには無い）と監査（`settings.launch_mode.update`・`settings.launch_denylist.*`）、§7.5 のルート、§8.2 の実機検証事項 | #88 |
+| 1.47 | 2026-11-08 | §2 の `input_blocked` と §3.4 に、スコープ付きのリース（FR-L09〜L14）の `detail.reason`（`target_closed` / `target_replaced` / `target_unsupported` / `target_minimized` / `target_not_foreground` / `unrelated_same_process` / `related_cross_process` / `related_unverifiable` / `outside_target_group` / `target_obscured` / `capture_unavailable` / `capture_member_unavailable` / `target_halted` / `key_out_of_scope` / `clipboard_out_of_scope`）と `detail.blocked_by` の表を追加。入口（HTTP / WebSocket / MCP）の追加は #157・#158 | #156（A-1） |

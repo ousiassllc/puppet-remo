@@ -65,10 +65,8 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 
 func (g InputGuard) checkPoints(mon []domain.Monitor, points ...domain.Point) error {
 	for _, p := range points {
-		if len(mon) > 0 {
-			if _, ok := domain.MonitorAt(mon, p); !ok {
-				return domain.ErrInvalidCoordinates.WithMsg(fmt.Sprintf("(%d, %d) is outside every monitor", p.X, p.Y))
-			}
+		if err := checkOnMonitor(mon, p); err != nil {
+			return err
 		}
 		hit, ok, err := g.Windows.At(p)
 		if err != nil {
@@ -79,6 +77,17 @@ func (g InputGuard) checkPoints(mon []domain.Monitor, points ...domain.Point) er
 		}
 		if err := domain.CheckInputTarget(hit.Top); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// checkOnMonitor は p がいずれかのモニター上にあることを確かめる（mon が空なら確かめない）。なければ ErrInvalidCoordinates。
+// スコープ付きリースの検査（control_target.go）も同じ規則を使う。
+func checkOnMonitor(mon []domain.Monitor, p domain.Point) error {
+	if len(mon) > 0 {
+		if _, ok := domain.MonitorAt(mon, p); !ok {
+			return domain.ErrInvalidCoordinates.WithMsg(fmt.Sprintf("(%d, %d) is outside every monitor", p.X, p.Y))
 		}
 	}
 	return nil

@@ -38,6 +38,23 @@ type LeaseManager interface {
 	// 拒否・タイムアウト（ErrApprovalDenied・ErrApprovalTimeout）は Bus の lease-result（LeaseResult）で who に伝わる。
 	// who がすでに承認待ちなら、新しい承認を作らずに pending = true を返す（再試行で承認が二重にならない）。失敗は Acquire と同じ。
 	RequestAcquire(ctx context.Context, who domain.Actor) (l Lease, pending bool, err error)
+	// AcquireScoped は Acquire と同じだが、リースにウィンドウ target を束縛する（入力スコープ。#156）。束縛は固定で、変えるには解放して取り直す
+	// （保持中に別の target、またはスコープなしのリースへの AcquireScoped は ErrInvalidArgument。同じ target ならそのリースを返し、停止中のまま）。
+	// 束縛の時点で target を検査する（domain.ResolveGroup）: 一覧になければ ErrWindowNotFound（reason target_closed / target_replaced）、
+	// 検証前の UWP・同一性を確かめられないもの・自ウィンドウ・昇格・最小化は ErrInputBlocked（reason target_unsupported / own_window /
+	// elevated_window / target_minimized）。LeaseConfig.Windows が無ければ ErrInvalidArgument。agent の拒否プロセス（agent.deny_processes）は、
+	// スコープなしと同じく、アクションごとの Judge が適用する。承認・クールダウン・キルスイッチ・監査は Acquire と同じで、成功すると lease.target_set も記録する。
+	AcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (Lease, error)
+	// RequestAcquireScoped は AcquireScoped の待たない版（RequestAcquire と同じ）。
+	RequestAcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (l Lease, pending bool, err error)
+	// Halt は leaseID のスコープ付きリースを停止（halted）にする。停止にしたときだけ true（スコープなし・すでに停止中・別のリースなら false）。
+	// 呼ぶのは Control だけ（入力の検証の失敗・撮影の失敗。ReleaseAll と監査は呼び出し側）。停止中は、保持者の Check は通るが、Control が一切の入力と
+	// クリップボード書き込みを拒否する。停止を解く経路は ResumeVerified だけ。
+	Halt(leaseID string, reason domain.GroupReason) bool
+	// ResumeVerified は who のスコープ付きリースを再開（halted → active）にする。呼ぶのは Control.ResumeTarget だけ（全条件の再検証に通ったあと）。
+	// 検証せずに呼んではならない。選び直しのみの理由（target_closed / target_replaced / target_unsupported）で止まっていれば ErrInputBlocked。
+	// スコープなし → ErrInvalidArgument、すでに active なら何もしない。保持者でなければ Check と同じエラー。
+	ResumeVerified(who domain.Actor) error
 	// ClearApprovalCooldown は clientID の拒否・タイムアウト後のクールダウンを解く（承認のリセット・承認モードの変更・クライアントの削除）。
 	ClearApprovalCooldown(clientID string)
 	// Release は保持者のみ。保持していなければ何もしない。
@@ -72,6 +89,12 @@ type Lease struct {
 	ID     string
 	Holder domain.Actor
 	Since  time.Time
+	// Scope は束縛した対象とその状態。スコープなしのリースは nil。
+	Scope *domain.LeaseScope
+}
+
+func toLease(l domain.Lease) Lease {
+	return Lease{ID: l.ID, Holder: l.Holder, Since: l.Since, Scope: l.Scope}
 }
 
 // Holder は現在のリース保持者（GUI・get_control_status 用）。
@@ -81,13 +104,16 @@ type Holder struct {
 	Since   time.Time
 	// IdleRemaining は、これ以上活動がなくてアイドル解放されるまでの残り時間（Holder を呼んだ時点）。
 	IdleRemaining time.Duration
+	// Scope は束縛した対象とその状態（active / halted と停止の理由）。スコープなしのリースは nil。
+	Scope *domain.LeaseScope
 }
 
 // PendingLease は承認待ちの要求（GUI・状態表示用）。
 type PendingLease struct {
 	LeaseID string // 承認されたときのリースの ID
 	Actor   domain.Actor
-	Since   time.Time // 要求の時刻
+	Since   time.Time          // 要求の時刻
+	Scope   *domain.LeaseScope // 承認されたときに束縛する対象。スコープなしの要求は nil
 }
 
 // LeaseClients は LeaseManager が承認モードの適用に使うクライアントの窓口。repository.Clients が満たす。
@@ -121,6 +147,8 @@ type LeaseConfig struct {
 	Clients  LeaseClients
 	// Bus は RequestAcquire の待ちが拒否・タイムアウトで終わったときに lease-result を出す先。nil なら出さない。
 	Bus *Bus
+	// Windows は AcquireScoped が束縛する対象を検査するために使う（ResolveGroup の入力の ListAll）。nil ならスコープ付きの取得を受け付けない。
+	Windows platform.WindowManager
 }
 
 // HostActor はホスト所有者（ホスト GUI）の操作主体。強制剥奪（LeaseManager.Revoke）の by に使い、監査の actor_type は host になる。
@@ -139,6 +167,7 @@ type leaseManager struct {
 	approval Approval
 	clients  LeaseClients
 	bus      *Bus
+	windows  platform.WindowManager // nil ならスコープ付きの取得（AcquireScoped）は ErrInvalidArgument
 
 	// mu は全遷移（machine・timer・pending）を直列化する。ロックを持ったまま Approval・Audit・購読者を呼ばない。
 	mu       sync.Mutex
@@ -180,6 +209,7 @@ func NewLeaseManager(cfg LeaseConfig) (LeaseManager, error) {
 		approval: cfg.Approval,
 		clients:  cfg.Clients,
 		bus:      cfg.Bus,
+		windows:  cfg.Windows,
 		cooldown: map[string]time.Time{},
 	}
 	if m.log == nil {
@@ -192,14 +222,26 @@ func NewLeaseManager(cfg LeaseConfig) (LeaseManager, error) {
 }
 
 func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, error) {
-	st, _, err := m.begin(ctx, who, false)
+	return m.acquire(ctx, who, nil)
+}
+
+func (m *leaseManager) AcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (Lease, error) {
+	scope, err := m.bindScope(ctx, who, target)
+	if err != nil {
+		return Lease{}, err
+	}
+	return m.acquire(ctx, who, &scope)
+}
+
+func (m *leaseManager) acquire(ctx context.Context, who domain.Actor, scope *domain.LeaseScope) (Lease, error) {
+	st, _, err := m.begin(ctx, who, false, scope)
 	if err != nil {
 		return Lease{}, err
 	}
 	if st.waitCtx != nil {
 		return m.awaitApproval(ctx, st.waitCtx, who, st.lease.ID, st.needs)
 	}
-	return Lease{ID: st.lease.ID, Holder: st.lease.Holder, Since: st.lease.Since}, nil
+	return toLease(st.lease), nil
 }
 
 // asyncAcquireBound は RequestAcquire の待ちを打ち切る上限（承認の失効 DefaultApprovalTimeout に余裕を足した保険）。
@@ -207,20 +249,32 @@ func (m *leaseManager) Acquire(ctx context.Context, who domain.Actor) (Lease, er
 const asyncAcquireBound = DefaultApprovalTimeout + 30*time.Second
 
 func (m *leaseManager) RequestAcquire(ctx context.Context, who domain.Actor) (Lease, bool, error) {
+	return m.requestAcquire(ctx, who, nil)
+}
+
+func (m *leaseManager) RequestAcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (Lease, bool, error) {
+	scope, err := m.bindScope(ctx, who, target)
+	if err != nil {
+		return Lease{}, false, err
+	}
+	return m.requestAcquire(ctx, who, &scope)
+}
+
+func (m *leaseManager) requestAcquire(ctx context.Context, who domain.Actor, scope *domain.LeaseScope) (Lease, bool, error) {
 	// 待ちは呼び出し元のリクエストの終わりに引きずられない（HTTP が先に切れても承認は続く）。値だけ引き継ぎ、時間で縛る。
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), asyncAcquireBound)
-	st, dup, err := m.begin(bg, who, true)
+	st, dup, err := m.begin(bg, who, true, scope)
 	if err != nil || dup || st.waitCtx == nil {
 		cancel()
 		// dup は who がすでに承認待ち（st.lease がその要求）。承認待ちを増やさず、同じ要求を返す。
-		return Lease{ID: st.lease.ID, Holder: st.lease.Holder, Since: st.lease.Since}, dup, err
+		return toLease(st.lease), dup, err
 	}
 	go func() {
 		defer cancel()
 		_, err := m.awaitApproval(bg, st.waitCtx, who, st.lease.ID, st.needs)
 		m.notifyResult(who, err)
 	}()
-	return Lease{ID: st.lease.ID, Holder: st.lease.Holder, Since: st.lease.Since}, true, nil
+	return toLease(st.lease), true, nil
 }
 
 // notifyResult は RequestAcquire の待ちが拒否・タイムアウトで終わったことを、要求者のセッションへ知らせる（許可は lease イベントで伝わる）。
@@ -248,7 +302,7 @@ type acquireStart struct {
 
 // begin は取得の前半: 承認の要否・クールダウン・キルスイッチを見て、idle → held（承認不要）か idle → pending_approval にする。
 // 失敗は監査・ログまで済ませて返す。reuse が true で who がすでに承認待ちなら、何もせず dup = true（二重の承認を作らない）。
-func (m *leaseManager) begin(ctx context.Context, who domain.Actor, reuse bool) (st acquireStart, dup bool, err error) {
+func (m *leaseManager) begin(ctx context.Context, who domain.Actor, reuse bool, scope *domain.LeaseScope) (st acquireStart, dup bool, err error) {
 	// クライアントの読み取りは I/O なので、ロックの外で行う。
 	needs, err := m.approvalNeeds(ctx, who)
 	if err != nil {
@@ -283,12 +337,18 @@ func (m *leaseManager) begin(ctx context.Context, who domain.Actor, reuse bool) 
 	}
 	var events []domain.LeaseEvent
 	if needs.required && !m.holdsLocked(who) {
-		st.lease, events, err = m.machine.Request(who)
+		if scope != nil {
+			st.lease, events, err = m.machine.RequestScoped(who, *scope)
+		} else {
+			st.lease, events, err = m.machine.Request(who)
+		}
 		if err == nil {
 			var cancel context.CancelFunc
 			st.waitCtx, cancel = context.WithCancel(ctx)
 			m.cancelWait = cancel
 		}
+	} else if scope != nil {
+		st.lease, events, err = m.machine.AcquireScoped(who, *scope)
 	} else {
 		st.lease, events, err = m.machine.Acquire(who)
 	}
@@ -404,7 +464,7 @@ func (m *leaseManager) awaitApproval(ctx, waitCtx context.Context, who domain.Ac
 	if needs.firstTime {
 		m.markApproved(ctx, who)
 	}
-	return Lease{ID: l.ID, Holder: l.Holder, Since: l.Since}, nil
+	return toLease(l), nil
 }
 
 // markApproved は first_time のクライアントの承認を approved_at に記録する。記録に失敗しても、承認済みのリースは取り消さない
@@ -497,7 +557,7 @@ func (m *leaseManager) Holder() (Holder, bool) {
 	if !ok {
 		return Holder{}, false
 	}
-	return Holder{LeaseID: l.ID, Actor: l.Holder, Since: l.Since, IdleRemaining: remaining}, true
+	return Holder{LeaseID: l.ID, Actor: l.Holder, Since: l.Since, IdleRemaining: remaining, Scope: l.Scope}, true
 }
 
 func (m *leaseManager) Pending() (PendingLease, bool) {
@@ -507,7 +567,25 @@ func (m *leaseManager) Pending() (PendingLease, bool) {
 	if !ok {
 		return PendingLease{}, false
 	}
-	return PendingLease{LeaseID: p.ID, Actor: p.Holder, Since: p.Since}, true
+	return PendingLease{LeaseID: p.ID, Actor: p.Holder, Since: p.Since, Scope: p.Scope}, true
+}
+
+func (m *leaseManager) Halt(leaseID string, reason domain.GroupReason) bool {
+	m.mu.Lock()
+	events := m.machine.Halt(leaseID, reason)
+	m.settleLocked(events)
+	m.mu.Unlock()
+	m.flush()
+	return len(events) > 0
+}
+
+func (m *leaseManager) ResumeVerified(who domain.Actor) error {
+	m.mu.Lock()
+	events, err := m.machine.Resume(who)
+	m.settleLocked(events)
+	m.mu.Unlock()
+	m.flush()
+	return err
 }
 
 func (m *leaseManager) Subscribe() <-chan domain.LeaseEvent {
@@ -601,6 +679,11 @@ func (m *leaseManager) keepAwake(on bool) {
 // logEvent はリースの取得・解放・剥奪・承認待ちを運用ログに出す（監査とは別。Check の活動の更新は出さない）。
 func (m *leaseManager) logEvent(ev domain.LeaseEvent) {
 	h := ev.Lease.Holder
+	if ev.ScopeChange() {
+		m.log.Info("lease target state changed", "lease_id", ev.Lease.ID, "state", string(ev.Lease.Scope.State),
+			"reason", string(ev.Lease.Scope.HaltReason), "holder_kind", string(h.Kind), "holder", h.Label)
+		return
+	}
 	if ev.To == domain.LeasePendingApproval {
 		m.log.Info("lease approval requested", "lease_id", ev.Lease.ID, "holder_kind", string(h.Kind), "holder", h.Label, "session", h.SessionID)
 		return

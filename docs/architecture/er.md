@@ -466,6 +466,8 @@ erDiagram
 
 強制剥奪の監査（M2。FR-L06）。`kind = lease`、`event = lease.revoke`、`result = ok`、`lease_id` は剥奪されたリースの ID。`actor_type` / `client_id` / `client_label` / `session_id` は**剥奪した側**（ホスト GUI からは `host`・`(host)`）で、`detail_json` に剥奪された保持者を `{ "holder_kind", "holder_client_id", "holder_label" }` で残す。剥奪は `lease.release` とは別に記録する（同じ遷移を二重に記録しない）。保持者がいないときの剥奪は記録しない。
 
+入力スコープの監査（#156。FR-L09〜L14）。`lease.target_set` / `lease.target_resumed` は `kind = lease`、`result = ok`、`lease_id` は対象を束縛したリース、`actor_type` / `client_id` / `client_label` / `session_id` は保持者。`detail_json` は `{ "window_id", "process", "pid", "members" }`（束縛した時点の T の ID・プロセス名・PID と、G のメンバー数）。`input.target_halted` は `kind = input`、`result = denied`、`error_code = input_blocked`、`detail_json` は `{ "reason", "window_id", "process", "pid", "members", "target_window_id" }`（`reason` は停止の理由〔API 仕様 §3.4〕、`window_id`・`process`・`pid` は停止の原因のウィンドウ〔なければ T〕、`target_window_id` は T）。停止中の拒否は新しい `input.target_halted` を重ねない。**どちらもウィンドウのタイトル・入力した文字を記録しない**。
+
 M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、既存の `tool` / `settings` をイベント名で区別する。
 
 | event | kind | actor_type | result | `detail_json` |
@@ -493,6 +495,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | トークンの発行・失効 | `token` | `token.issue` / `token.revoke` | `host` |
 | クライアントの変更 | `client` | `client.replace` / `client.update` / `client.delete` | `host` |
 | リースの取得・解放・剥奪 | `lease` | `lease.acquire`（取得の失敗は `denied`）/ `lease.release` / `lease.revoke` | 保持者（剥奪は剥奪した側） |
+| リースの対象ウィンドウ（入力スコープ。#156） | `lease` / `input` | `lease.target_set`（スコープ付きのリースの束縛。`lease.acquire` の直後。`kind = lease`）/ `lease.target_resumed`（保持者の明示的な再開。`kind = lease`）/ `input.target_halted`（入力の検証の失敗・撮影の失敗による停止。`kind = input`、`result = denied`、`error_code = input_blocked`） | 保持者 |
 | リースの取得要求・承認・拒否（承認モード） | `lease` | `approval.requested`（idle → pending_approval）/ `approval.granted`（pending_approval → held。続けて `lease.acquire`）/ `approval.denied`（ホストの拒否）/ `approval.timeout`（60 秒の失効）/ `approval.withdrawn`（キルスイッチ・切断・クライアントの削除・要求側の取り下げ。`detail.reason` に理由）/ `approval.reset`（承認済みの取り消し。ホスト GUI） | 承認を求めたセッション（`approval.reset` は `host`） |
 | MCP ツール呼び出し | `tool` | `tool.<ツール名>`（`tool.left_click`・`tool.type`・`tool.launch_app` など） | `mcp` |
 | Web UI からの入力操作 | `input` | `tool.<入力種別>`（`tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up`・`tool.type`・`tool.clipboard_read` など。`PointerMove` は記録しない） | `web` |
@@ -633,3 +636,4 @@ erDiagram
 | 1.31 | 2026-11-02 | 内蔵エージェントの接続方式（ChatGPT のプラン〔既定〕/ OpenAI API キー。#49）に対応: 方針のシークレット（ChatGPT の OAuth トークン `puppet-remo/chatgpt:puppet-remo`。識別子は設定）、`settings` に `agent.connection`・`agent.chatgpt.model`・`agent.chatgpt.host_id`・`agent.chatgpt.client_id`・`agent.chatgpt.account_sub`・`agent.chatgpt.account_email`・`agent.chatgpt.welcome_shown`、`agent_tasks` に `connection`（#49 のマイグレーション。番号は実装時に採番〔v5 は #88 の `launch_denylist` が使用済み〕。既存の行は `openai_api_key`）と `error_code`・`openai_steps` の追記、監査イベントのカタログに ChatGPT のサインイン・解除・認可切れ・使用量の上限と接続方式の変更 | #49 |
 | 1.32 | 2026-11-02 | `agent_tasks` に `CHECK (connection IN ('chatgpt','openai_api_key'))`、`agent.task_start` の `detail_json` に `connection`、`agent.chatgpt.signin` の分類は `detail.reason` に統一（`reauth_required`・`usage_limit` は `error_code`）と明記 | #49（レビュー指摘） |
 | 1.33 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: `settings` のキー `launch.mode`（行が無い・不正な値は `allowlist`）、拒否リスト `launch_denylist`（v5 のマイグレーション `0005_launch_denylist.sql`。`path` / `name`・`dedup_key`・上限 200・ホスト GUI だけが書く・照合の規則と既知の限界）を全体 ER 図・テーブル一覧・テーブル定義に追加し、`launchable_apps` の起動時の扱いを方式別に更新。監査イベント `settings.launch_mode.update`・`settings.launch_denylist.create` / `.update` / `.delete` をカタログに追加し、`tool.launch_app`・`tool.launch_app.attempt`・`agent.launch_attempt`・`agent.step` の `detail` に `path`・`launch_mode`（`app_id` は path 起動では無し）を追記 | #88 |
+| 1.34 | 2026-11-08 | 監査イベント `lease.target_set` / `lease.target_resumed`（`kind = lease`）・`input.target_halted`（`kind = input`）をカタログと説明に追加 | #156（A-1） |

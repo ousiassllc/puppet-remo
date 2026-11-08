@@ -150,6 +150,14 @@ func (f *fakeControl) Do(ctx context.Context, who domain.Actor, op domain.Op) (s
 
 func (f *fakeControl) ReleaseInput() error { return nil }
 
+func (f *fakeControl) VerifyTarget(context.Context, domain.Actor) (service.TargetStatus, error) {
+	return service.TargetStatus{}, nil
+}
+
+func (f *fakeControl) ResumeTarget(context.Context, domain.Actor) (service.TargetStatus, error) {
+	return service.TargetStatus{}, nil
+}
+
 func (f *fakeControl) LaunchableApps(context.Context) (service.LaunchableList, error) {
 	if err := f.viewErr(); err != nil {
 		return service.LaunchableList{}, err
