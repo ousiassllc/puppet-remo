@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	pwin "github.com/ousiassllc/puppet-remo/internal/platform/windows"
 )
 
 const (
@@ -321,6 +322,9 @@ func (p *prober) sysMenuAndDialog() {
 		mr := toRectangle(w.Rect)
 		cover := mr.Inset(-8)
 		p.occlusion("menu-sys", "M4b", "開いたメニューに別プロセスの窓を重ねても他アプリの画素が写らない（T も同時）", []uintptr{uintptr(hw), p.tHwnd}, cover)
+		if g, _, err := p.snapshot("menu-sys-occluded"); err == nil {
+			p.groupOcclusion("M4b.grabgroup", "開いたメニューと T に別プロセスの窓を重ねても、製品の GrabGroup の合成に他アプリの画素が混ざらない", g, mr.Union(toRectangle(g.Target.Rect)))
+		}
 	}
 
 	// S1 → S3 の連鎖: 開いているメニューへキーメッセージを投函して「名前を付けて保存」を選ぶ（グローバル入力ではない）。
@@ -459,7 +463,7 @@ func (p *prober) guardCheck(id, title string, g domain.Group, pt domain.Point) {
 // geometry は G のメンバーを撮って合成し、(1) 外接矩形が全メンバーの見た目の枠を含む、(2) 合成画像上の点 → 物理座標 → At → メンバー が一致する、を確かめる。
 // 合成画像は PNG に出す。デスクトップ・モニターの画像は使わない。
 func (p *prober) geometry(stage, id, title string, g domain.Group) {
-	var members []placed
+	var members []pwin.GroupLayer
 	var labels []string
 	for _, m := range g.Members {
 		hw, err := strconv.ParseUint(m.Window.ID, 10, 32)
@@ -471,10 +475,11 @@ func (p *prober) geometry(stage, id, title string, g domain.Group) {
 			continue
 		}
 		wr := image.Rect(cf.WindowRect[0], cf.WindowRect[1], cf.WindowRect[0]+cf.WindowRect[2], cf.WindowRect[1]+cf.WindowRect[3])
-		members = append(members, placed{Frame: toRectangle(m.Window.Rect), Window: wr, Img: img})
+		members = append(members, pwin.GroupLayer{Frame: toRectangle(m.Window.Rect), Window: wr, Img: img})
 		labels = append(labels, m.Window.Class)
 	}
-	canvas, origin := composite(members)
+	canvas, originPt, _ := pwin.ComposeGroup(members) // 製品と同じ合成（A-2 の GrabGroup が使う）
+	origin := image.Pt(originPt.X, originPt.Y)
 	if canvas == nil {
 		p.rep.Add(id, title+": グループ合成と座標の往復", StatusFail, "合成に置けるメンバーがない")
 		return
@@ -515,6 +520,80 @@ func (p *prober) geometry(stage, id, title string, g domain.Group) {
 		statusOf(contains && roundtrip),
 		"メンバー=%v 合成=%dx%d origin=(%d,%d) 外接矩形が全メンバーを含む=%t T の矩形の外にはみ出すメンバーあり=%t 往復の一致=%d/%d（不一致は、点の上に別のウィンドウが重なっている可能性）png=%s",
 		labels, canvas.Bounds().Dx(), canvas.Bounds().Dy(), origin.X, origin.Y, contains, protrude, onMember, total, png)
+	p.grabGroupCheck(id+".grabgroup", title, g, canvas, origin)
+}
+
+// groupRefs は G の撮影対象（T と、最小化されていない・矩形が空でないメンバー。製品の control.grabGroup と同じ選び方）。
+func groupRefs(g domain.Group) []domain.WindowRef {
+	var refs []domain.WindowRef
+	for _, m := range g.Members {
+		if m.Relation == domain.RelationTarget || !m.Window.Minimized && !m.Window.Rect.Empty() {
+			refs = append(refs, domain.RefOf(m.Window))
+		}
+	}
+	return refs
+}
+
+// grabGroupCheck は製品の Capturer.GrabGroup（A-2 の実装）を fixture の G に対して呼び、全メンバーが撮れ、合成が probe 自身の合成と一致することを確かめる。
+// 呼ぶ対象は照合済みの fixture のメンバーだけ（mayCapture を通したものに限る）。
+func (p *prober) grabGroupCheck(id, title string, g domain.Group, probeCanvas *image.RGBA, probeOrigin image.Point) {
+	refs := groupRefs(g)
+	for _, r := range refs {
+		hw, _ := strconv.ParseUint(r.ID, 10, 32)
+		if _, err := p.mayCapture(uintptr(hw)); err != nil {
+			p.rep.Add(id, title+": 製品の GrabGroup", StatusSkip, "照合済みの fixture の窓だけに限る: %v", err)
+			return
+		}
+	}
+	gi, err := pwin.NewCapturer().GrabGroup(p.ctx, refs)
+	if err != nil {
+		p.rep.Add(id, title+": 製品の GrabGroup", StatusFail, "%v", err)
+		return
+	}
+	var bad []string
+	for _, m := range gi.Members {
+		if m.Status != "ok" {
+			bad = append(bad, m.Ref.ID+":"+string(m.Status))
+		}
+	}
+	same := 0.0
+	if gi.Image != nil && probeCanvas != nil && gi.Origin.X == probeOrigin.X && gi.Origin.Y == probeOrigin.Y {
+		same = sameShare(gi.Image, probeCanvas)
+	}
+	p.rep.Add(id, title+": 製品の Capturer.GrabGroup が全メンバー ok で、probe の合成と一致する", statusOf(len(bad) == 0 && gi.Image != nil && same >= sameThreshold),
+		"撮れなかったメンバー=%v 合成=%v origin=(%d,%d) probe の合成との一致=%.4f（メニューのアニメーション・キャレット等で 1 を割ることがある。PNG で確認）",
+		bad, imageSize(gi.Image), gi.Origin.X, gi.Origin.Y, same)
+}
+
+func imageSize(img *image.RGBA) string {
+	if img == nil {
+		return "nil"
+	}
+	return strconv.Itoa(img.Bounds().Dx()) + "x" + strconv.Itoa(img.Bounds().Dy())
+}
+
+// groupOcclusion は G のメンバーの上に別プロセスのマゼンタの窓を重ねた状態で、製品の GrabGroup の合成にマゼンタが 0 画素であることを確かめる
+// （他アプリの画素が混ざらない。重なりは At で確認し、確認できなければ SKIP）。
+func (p *prober) groupOcclusion(id, title string, g domain.Group, cover image.Rectangle) {
+	refs := groupRefs(g)
+	if !placeTopmost(p.interHwn, cover) {
+		p.rep.Add(id, title, StatusSkip, "interferer を動かせなかった")
+		return
+	}
+	defer func() { placeTopmost(p.interHwn, p.parking); p.sleep(200 * time.Millisecond) }()
+	p.sleep(350 * time.Millisecond)
+	pt := domain.Point{X: cover.Min.X + cover.Dx()/2, Y: cover.Min.Y + cover.Dy()/2}
+	if hit, ok, err := p.wm.At(pt); err != nil || !ok || hit.Top.ID != hwndID(p.interHwn) {
+		p.rep.Add(id, title, StatusSkip, "重なりを確認できない（At の最上位が interferer ではない）")
+		return
+	}
+	gi, err := pwin.NewCapturer().GrabGroup(p.ctx, refs)
+	if err != nil || gi.Image == nil {
+		p.rep.Add(id, title, StatusFail, "GrabGroup が失敗: %v", err)
+		return
+	}
+	st := analyzePixels(gi.Image, nil)
+	p.rep.Add(id, title, statusOf(st.Magenta == 0), "重なり確認済み 合成=%s マゼンタ画素=%d（非メンバーの画素が合成に混ざらない）", imageSize(gi.Image), st.Magenta)
 }
 
 // --- 所要時間（M7）と代表アプリの下調べ（M8） ---

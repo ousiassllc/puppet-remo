@@ -238,10 +238,18 @@ func (c *control) checkPoint(g domain.Group, p domain.Point) (*scopeStop, error)
 // capture_member_unavailable。所有関係を確かめられないウィンドウ（unverifiable）は撮らない（表示から除外する通知だけ）。
 // モニター撮影（Capturer.Grab・Watch）には切り替えない。ctx のキャンセルは停止にせず err で返す。
 func (c *control) precheckCapture(ctx context.Context, g domain.Group) (*scopeStop, error) {
+	_, _, stop, err := c.grabGroup(ctx, g)
+	return stop, err
+}
+
+// grabGroup は G の検証できたメンバーを GroupCapturer.GrabGroup で撮り、画像・撮ったメンバーの参照（前面が先）・停止の理由を返す。
+// 撮れないメンバーがあれば stop を返す（T が撮れない・GroupCapturer が無い・撮影そのものの失敗は capture_unavailable、T 以外は capture_member_unavailable）。
+// ctx のキャンセルは停止にせず err で返す。モニター撮影には切り替えない。
+func (c *control) grabGroup(ctx context.Context, g domain.Group) (platform.GroupImage, []domain.WindowRef, *scopeStop, error) {
 	targetBy := byWindow(g.Target)
 	gc, ok := c.capture.(platform.GroupCapturer)
 	if !ok {
-		return &scopeStop{reason: domain.ReasonCaptureUnavailable, by: targetBy}, nil
+		return platform.GroupImage{}, nil, &scopeStop{reason: domain.ReasonCaptureUnavailable, by: targetBy}, nil
 	}
 	var refs []domain.WindowRef
 	for _, m := range g.Members {
@@ -252,9 +260,9 @@ func (c *control) precheckCapture(ctx context.Context, g domain.Group) (*scopeSt
 	img, err := gc.GrabGroup(ctx, refs)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return platform.GroupImage{}, nil, nil, ctx.Err()
 		}
-		return &scopeStop{reason: domain.ReasonCaptureUnavailable, by: targetBy}, nil
+		return platform.GroupImage{}, nil, &scopeStop{reason: domain.ReasonCaptureUnavailable, by: targetBy}, nil
 	}
 	for _, ref := range refs {
 		if mc, found := img.Status(ref.ID); found && mc.Status == platform.CaptureOK {
@@ -265,9 +273,12 @@ func (c *control) precheckCapture(ctx context.Context, g domain.Group) (*scopeSt
 		if ref.ID == g.Target.ID {
 			reason = domain.ReasonCaptureUnavailable
 		}
-		return &scopeStop{reason: reason, by: byWindow(m.Window)}, nil
+		return platform.GroupImage{}, nil, &scopeStop{reason: reason, by: byWindow(m.Window)}, nil
 	}
-	return nil, nil
+	if img.Image == nil { // 全員 ok なのに画像がない（契約違反）。表示不可として止める
+		return platform.GroupImage{}, nil, &scopeStop{reason: domain.ReasonCaptureUnavailable, by: targetBy}, nil
+	}
+	return img, refs, nil, nil
 }
 
 // scopeActive は sr のリースがまだ保持され、停止中でないことを確かめる（操作の間に解放・剥奪された、別の入力が停止させたときは注入しない）。

@@ -93,6 +93,9 @@ type Control interface {
 	// （TargetStatus は halted と、停止の理由。ErrInputBlocked）。自動では前面にしない。target_closed / target_replaced / target_unsupported で止まった
 	// リースは再開できない（ErrInputBlocked。解放して選び直す）。active のリースには何もしない。スコープなしは ErrInvalidArgument。
 	ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
+	// GrabGroupFrame は ref の T と、その時点の対象グループ G を撮って合成した画像（GroupFrame）を返す（#156・#157・#158。リース・保持者は問わない）。
+	// 撮れない・検証できないときは画面全体に切り替えず、ErrInputBlocked（reason: capture_unavailable / capture_member_unavailable / target_*）を返す。
+	GrabGroupFrame(ctx context.Context, ref domain.WindowRef) (GroupFrame, error)
 }
 
 // LaunchRequest は Launch の指定。AppID と Path はどちらか一方だけ（同時指定は ErrInvalidArgument）。

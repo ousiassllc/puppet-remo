@@ -72,49 +72,6 @@ func TestSameShare(t *testing.T) {
 	}
 }
 
-// 合成は空（透明）のキャンバスに置く。メンバーの外は透明のまま（デスクトップの画素を下地にしない）、
-// 前面（先頭）のメンバーが後ろのメンバーの上に来る。座標は origin + p。
-func TestCompositePlacesMembersOnTransparentCanvas(t *testing.T) {
-	green := color.RGBA{G: 200, A: 255}
-	red := color.RGBA{R: 200, A: 255}
-	// T: (100,100)-(200,200)。メニュー: T の右にはみ出す (180,120)-(260,180)。メニューが前面（先頭）。
-	tw := placed{Frame: image.Rect(100, 100, 200, 200), Window: image.Rect(95, 95, 205, 205), Img: solid(110, 110, green)}
-	menu := placed{Frame: image.Rect(180, 120, 260, 180), Window: image.Rect(180, 120, 260, 180), Img: solid(80, 60, red)}
-	img, origin := composite([]placed{menu, tw})
-	if origin != image.Pt(100, 100) {
-		t.Fatalf("origin = %v, want (100,100)", origin)
-	}
-	if img.Bounds().Dx() != 160 || img.Bounds().Dy() != 100 {
-		t.Fatalf("size = %v, want 160x100", img.Bounds().Size())
-	}
-	at := func(px, py int) color.RGBA { return img.RGBAAt(px-origin.X, py-origin.Y) }
-	if got := at(150, 150); got != green {
-		t.Errorf("T の内側 = %v", got)
-	}
-	if got := at(190, 150); got != red {
-		t.Errorf("T とメニューが重なる点は前面のメニュー = %v", got)
-	}
-	if got := at(250, 150); got != red {
-		t.Errorf("T の外のメニュー = %v", got)
-	}
-	if got := at(250, 110); got.A != 0 {
-		t.Errorf("メンバーのない角は透明のまま = %v", got)
-	}
-}
-
-func TestCompositeEmptyAndUnprintedMembers(t *testing.T) {
-	if img, _ := composite(nil); img != nil {
-		t.Error("メンバーなし: nil")
-	}
-	// 画像のないメンバー（撮れなかった）は外接矩形にも入らない。
-	ok := placed{Frame: image.Rect(0, 0, 10, 10), Window: image.Rect(0, 0, 10, 10), Img: solid(10, 10, color.RGBA{R: 1, A: 255})}
-	missing := placed{Frame: image.Rect(500, 500, 600, 600), Window: image.Rect(500, 500, 600, 600)}
-	img, origin := composite([]placed{missing, ok})
-	if img == nil || img.Bounds().Dx() != 10 || origin != (image.Point{}) {
-		t.Errorf("撮れなかったメンバーを外接矩形に含めた: %v %v", img.Bounds(), origin)
-	}
-}
-
 func TestProtocolRoundTrip(t *testing.T) {
 	line := formatMessage("EVT", "save-closed", "saved", "1", "name", "a b.a2p")
 	m, err := parseMessage(line)

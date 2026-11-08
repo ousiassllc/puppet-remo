@@ -160,6 +160,46 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | W7 | 10 fps で 1 時間以上 `Watch` し続ける（GPU メモリ・ハンドルのリークがない） | プロセスのメモリとハンドル数が増え続けない。`ACCESS_LOST` を繰り返し起こしても（ロック・解除を 20 回）同じ |
 | W8 | 表示遅延（NFR-P02 は #59 以降の経路全体で測る） | `Watch` のコマは画面の変化から 1 フレーム間隔（100 ms）以内に届く |
 
+### 3.10 ウィンドウ単位の撮影と入力スコープの成立性（A-2。#156。FR-L09〜L14）
+
+**状態: 未確認（実機のゲート待ち）。** 偽 platform のテストと `GOOS=windows` のビルド・vet だけが済んでいる。ここは S1〜S3（メニューバーのメニュー・右クリックメニュー・同一プロセスの保存ダイアログが対象の表示に写り、操作が完了する）を実機で確かめる手順で、PrintWindow が成り立たないときだけ、他アプリの画素が写らないウィンドウ単位の別方式を同じ項目で測る。画面領域のコピー・モニター撮影・マスクで補う方式は採用しない。
+
+#### 3.10.1 専用プローブ `a2probe`（最初に実行する。fixture だけを測る）
+
+`cmd/a2probe` は、専用のテスト窓（fixture）だけを出して測る使い捨てのプローブ。製品（`cmd/puppet-remo`）には含めない。puppet-remo・tailnet・承認・リースは使わない。製品の `ListAll`・`At`・`Foreground`・`domain.ResolveGroup`・`Capturer.GrabGroup`・`ComposeGroup` をそのまま呼ぶので、実機で初めて動かすこれらのバグも見つかる。
+
+| 項目 | 内容 |
+|---|---|
+| ビルド（開発機） | `GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o a2probe.exe ./cmd/a2probe`（約 3.5 MB。cgo なし）。`sha256sum a2probe.exe` を控え、受け取ったあとで照合する |
+| 実行（Windows。非昇格の PowerShell） | `.\a2probe.exe probe --out "$env:TEMP\a2probe-out-1"`（全体 120 秒で打ち切る。`--monitor N` でテスト窓を置くモニターを選ぶ。4K・混在 DPI・負の原点の確認は、モニターを変えてもう一度実行する） |
+| 出す窓 | T「A2 Target」（メニューバー「ファイル」「色」・標準の `EDIT` 子コントロール）、同一プロセスの無関係な窓（Decoy・Blank・Black の 3 枚）、別プロセスの最前面・非アクティブのマゼンタ一色の窓（interferer。メニューや T に重ねる）、別プロセスが T に所有された窓（作れなければ SKIP）。保存ダイアログは `GetSaveFileNameW`（T が所有する同一プロセス）。専用の一時フォルダーの `a2probe-*.a2p` だけを書く |
+| 触れるもの・触れないもの | 画面に上記の窓が出て、前面を奪う（約 1〜2 分）。**マウス・キーボードは動かさない**（グローバル入力・`SendInput`・カーソル移動なし。fixture へはウィンドウメッセージだけ）。実行中は触らない。**撮るのは READY の PID/HWND を OS の事実と照合した fixture の窓だけ**（`PrintWindow` をメモリ DC へ。画面の DC・`BitBlt`・モニター撮影は使わない）。他アプリの窓のタイトル・文書・件数は読まない・書かない |
+| ネットワーク | 使わない（ソケットを開くコードなし。fixture との通信は標準入出力）。`x/sys/windows` 経由で `net` をリンクするが呼ばない |
+| 出力 | `report.txt`（PASS / FAIL / INFO / SKIP の表と S1〜S3 の部分結果）、`result.json`、fixture の窓の PNG（`t-baseline`・`menu-*`・`dialog`・合成画像 `compose-*`）。他アプリは写らない |
+| 終了コード | 0: FAIL なし / 1: 測定の結果 FAIL あり（成立しなかった事実。ゲートの根拠として持ち帰る）/ 2: 引数 / 3: 対話デスクトップなし（実行しない）/ 4: ツールの失敗 |
+| 後片づけ | 終了時に fixture の窓をすべて閉じ、一時フォルダー（`%TEMP%\a2probe-<日時>-<乱数>`）を消す（消せなければ report の記録に出る）。残る場合は、そのフォルダー・`a2probe.exe`・出力フォルダーだけを削除する。**OS が共通ダイアログの履歴（`ComDlg32` の `LastVisitedPidlMRU` / `OpenSavePidlMRU` の `a2p`・「最近使った項目」）に書くことがある。調べない・消さない**（消すなら別の OK を得てから） |
+| 異常時 | fixture が残ったら、タスクマネージャーで `a2probe.exe` を終了する（fixture は標準入力が閉じる・150 秒で自分から終了する） |
+
+| # | 測るもの | 合格（提案値） | 不合格・SKIP の意味 |
+|---|---|---|---|
+| M0 | fixture の同一性（READY の PID/HWND ↔ OS の事実） | 一致 | 一致しなければ撮影せずに中止（FAIL） |
+| M1 | `ListAll` → `ResolveGroup(T)`: メニュー（`hwndMenuOwner` の鎖）・保存ダイアログ（owner 鎖）が**メンバー**、Decoy は `unrelated_same_process`、interferer は `unrelated_other_process`、別プロセスの所有窓は `related_cross_process` | 期待どおり | メニューが `related_unverifiable` なら所有関係が取れないメニューが現実にある（S1・S2 の範囲の話。#159 の `ListAll` のバグの切り分けも兼ねる） |
+| M2 | クラス（`#32768`・`#32770`） | 期待どおり | 別のクラスのアプリは代表から外す根拠 |
+| M3 | `PrintWindow(PW_RENDERFULLCONTENT)` が TRUE で内容あり（クライアント領域が全黒・一色・未描画でない）。オーナードローのメニューは項目の色が完全一致で写る | 内容あり | 写らないメンバーは「表示不可」で停止する対象（別方式の検討の起点） |
+| M4 | interferer（マゼンタ）を (a) T の半分 (b) 開いたメニュー (c) T 全体に重ねて撮る（重なりは `At` で確認）。(b) は製品の `GrabGroup` の合成でも測る | マゼンタ 0 画素、重ねる前と 99.9% 以上一致 | 0 でなければその方式は不採用 |
+| M5 | 合成の外接矩形が全メンバーを含み、合成画像上の点 → 物理座標 → `At` → メンバーが一致。製品の `GrabGroup` が全メンバー ok で probe の合成と一致 | 一致 | 影・余白・DPI の扱いを A-2 の設計に反映する |
+| M6 | 描かない窓・黒い窓の検出（GPU 描画の黒画像を「写った」と誤判定しない検査器の確認） | 検出できる | 検出できなければ黒い画面を成功と誤る |
+| M7 | `PrintWindow` の所要時間（連続 20 回。実測 FPS の材料） | 記録のみ | — |
+| M8 | 代表アプリの下調べ（`System32\notepad.exe` とパッケージ版エイリアスの有無・ファイルの版。起動しない） | 記録のみ | Win11 のパッケージ版メモ帳なら代表の変更の相談 |
+| M9 | メニュー項目の選択（投函したキー）で保存ダイアログが開く（S1 の fixture 版） | 記録のみ | 失敗しても S1 の写り・所有関係の結果は変わらない |
+| M10 | 実機の前面・フォーカス先・座標が `CheckFocus`・`CheckHit` を通る | 通る | 通らなければ、スコープ付きの入力はそのメンバーへ入らない（S1〜S3 は成り立たない） |
+
+**読み方（部分結果）:** プローブは fixture でのメッセージ駆動の結果で、**S1〜S3 の最終合格ではない**（代表アプリ・スコープ付きの実入力は別）。M3・M4 が全部合格なら PrintWindow で進める見込みが立つ。メニュー・ダイアログの M3 が一部不成立なら、そのメンバーに限って Graphics Capture のウィンドウ単位キャプチャを同じ項目（M3・M4）で測る。M4 で他アプリの画素が出た方式は採用しない。M1 に想定外の `related_unverifiable` が出る、または両方式とも不成立の場合は、完了扱いにせず止め、S1〜S3 のどれかを外す判断は悠太さん（りお経由）に相談する。
+
+#### 3.10.2 実アプリ・ビューア・CUA の確認（プローブの合格後。未確認）
+
+プローブが合格してから、スコープ付きのビューア（#157）・`run_task` の `window_id`（#158）を、代表アプリ（Win32 版メモ帳。存在・版・プロセス構成を記録する）で確認する。確認項目は各 Issue の「Windows 実機の確認手順」に従う。
+
 ## 4. Wails のシェルと結線（S11。実機のみ）
 
 `task windows:build`（または Windows で `go build -tags production -ldflags "-H windowsgui" ./cmd/puppet-remo`）で作った `puppet-remo.exe` を、**tailscaled が動いていて tailnet にログイン済み**の対話デスクトップで実行する。WebView2 ランタイムが要る（インストーラが導入する）。通信相手になる tailnet 上の別端末（MCP クライアント）を 1 台用意する。
