@@ -247,8 +247,9 @@ func (c *control) lockInput(ctx context.Context) (unlock func(), err error) {
 	return unlock, nil
 }
 
-// execute は検査済みの計画を platform で実行する。
-func (c *control) execute(ctx context.Context, p plan) (Result, error) {
+// execute は検査済みの計画を platform で実行する。sr が非 nil（スコープ付きリースの入力）なら、lockInput の中で、注入の直前と、1 つの操作の
+// 複数回の注入の間に、対象グループの検証（verifyInput。control_target.go）を行う。通らなければ、そこから先は注入しない（ReleaseAll・halted）。
+func (c *control) execute(ctx context.Context, p plan, sr *scopeRun) (Result, error) {
 	switch p.op.(type) {
 	case domain.MouseMove, domain.Click, domain.Drag, domain.Scroll, domain.KeyPress, domain.TypeText,
 		domain.PointerMove, domain.MouseButton, domain.Wheel, domain.KeyEvent:
@@ -257,42 +258,104 @@ func (c *control) execute(ctx context.Context, p plan) (Result, error) {
 			return Result{}, err
 		}
 		defer unlock()
+	case domain.FocusWindow:
+		if sr != nil {
+			unlock, err := c.lockInput(ctx)
+			if err != nil {
+				return Result{}, err
+			}
+			defer unlock()
+		}
 	}
+	atPoints := scopeCheck{points: opPoints(p.op)}
+	verify := func(chk scopeCheck) error { return c.verifyInput(ctx, sr, chk) }
 	switch o := p.op.(type) {
 	case domain.MouseMove:
+		if err := verify(atPoints); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.input.MoveTo(ctx, o.At)
 	case domain.Click:
+		chk := atPoints
 		if !p.clickInPlace {
+			if err := verify(atPoints); err != nil {
+				return Result{}, err
+			}
 			if err := c.input.MoveTo(ctx, *o.At); err != nil {
 				return Result{}, err
 			}
+			sr.markInjected()
+		} else if sr != nil {
+			// 現在位置でのクリックは、plan の時点の位置（lockInput の外で読んだもの）ではなく、注入の直前に読み直した位置を検証する。
+			pos, err := c.input.CursorPos()
+			if err != nil {
+				return Result{}, err
+			}
+			chk = scopeCheck{points: []domain.Point{pos}}
+		}
+		if err := verify(chk); err != nil {
+			return Result{}, err
 		}
 		return Result{}, c.input.Click(ctx, o.Button, o.Count, o.Mods)
 	case domain.Drag:
+		if err := verify(atPoints); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.input.Drag(ctx, o.From, o.To, o.Mods)
 	case domain.Scroll:
+		if err := verify(atPoints); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.input.Scroll(ctx, o.At, o.Dir, o.Amount)
 	case domain.PointerMove:
+		if err := verify(atPoints); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.input.MoveTo(ctx, o.At)
 	case domain.MouseButton:
+		if err := verify(atPoints); err != nil {
+			return Result{}, err
+		}
 		if err := c.input.MoveTo(ctx, o.At); err != nil {
+			return Result{}, err
+		}
+		sr.markInjected()
+		if err := verify(atPoints); err != nil {
 			return Result{}, err
 		}
 		return Result{}, c.input.Button(ctx, o.Button, o.Action)
 	case domain.Wheel:
+		if err := verify(atPoints); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.input.Wheel(ctx, o.At, o.DX, o.DY)
 	case domain.KeyEvent:
+		if err := verify(scopeCheck{focus: true}); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.input.KeyEvent(ctx, o)
 	case domain.KeyPress:
+		if err := verify(scopeCheck{focus: true}); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.input.Key(ctx, o.Keys)
 	case domain.TypeText:
+		if sr != nil {
+			return Result{}, c.typeScoped(ctx, sr, o.Text)
+		}
 		return Result{}, c.input.Text(ctx, o.Text)
 	case domain.FocusWindow:
+		if err := verify(scopeCheck{focusID: o.ID}); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.windows.Focus(ctx, o.ID)
 	case domain.ClipboardRead:
 		text, err := c.clipboard.ReadText(ctx)
 		return Result{Text: truncateUTF8(text, maxClipboardBytes)}, err
 	case domain.ClipboardWrite:
+		if err := c.scopeActive(sr); err != nil {
+			return Result{}, err
+		}
 		return Result{}, c.clipboard.WriteText(ctx, o.Text)
 	case domain.GetUITree:
 		tree, err := c.ui.Tree(ctx, o.WindowID, o.MaxDepth, o.MaxNodes)

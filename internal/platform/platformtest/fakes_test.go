@@ -164,11 +164,11 @@ func TestFakeWindowsAtAndFocus(t *testing.T) {
 	ctx := context.Background()
 
 	// 最上位のウィンドウが優先され、最小化されたウィンドウは対象外。
-	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.ID != "100" {
-		t.Errorf("At(150,150) = %q, %v, %v; want window 100", got.ID, ok, err)
+	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.Top.ID != "100" {
+		t.Errorf("At(150,150) = %q, %v, %v; want window 100", got.Top.ID, ok, err)
 	}
-	if got, ok, err := w.At(domain.Point{X: 10, Y: 10}); err != nil || !ok || got.ID != "200" {
-		t.Errorf("At(10,10) = %q, %v, %v; want window 200", got.ID, ok, err)
+	if got, ok, err := w.At(domain.Point{X: 10, Y: 10}); err != nil || !ok || got.Top.ID != "200" {
+		t.Errorf("At(10,10) = %q, %v, %v; want window 200", got.Top.ID, ok, err)
 	}
 	if _, ok, _ := w.At(domain.Point{X: 5000, Y: 5000}); ok {
 		t.Error("At(5000,5000) found a window")
@@ -178,7 +178,7 @@ func TestFakeWindowsAtAndFocus(t *testing.T) {
 		t.Fatal(err)
 	}
 	fg, err := w.Foreground()
-	if err != nil || fg.ID != "300" || fg.Minimized {
+	if err != nil || fg.Foreground.ID != "300" || fg.Foreground.Minimized {
 		t.Errorf("Foreground() = %+v, %v; want window 300 restored", fg, err)
 	}
 	list, _ := w.List(ctx)
@@ -193,11 +193,11 @@ func TestFakeWindowsAtSkipsOverlay(t *testing.T) {
 		domain.WindowInfo{ID: "ov", Own: true, Overlay: true, Rect: domain.Rect{X: 0, Y: 0, W: 1000, H: 1000}},
 		domain.WindowInfo{ID: "dlg", Own: true, Rect: domain.Rect{X: 100, Y: 100, W: 200, H: 200}},
 	)
-	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.ID != "dlg" {
-		t.Errorf("At(150,150) = %q, %v, %v; want the dialog under the overlay", got.ID, ok, err)
+	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.Top.ID != "dlg" {
+		t.Errorf("At(150,150) = %q, %v, %v; want the dialog under the overlay", got.Top.ID, ok, err)
 	}
 	if got, ok, err := w.At(domain.Point{X: 800, Y: 800}); err != nil || ok {
-		t.Errorf("At(800,800) = %q, %v, %v; want no window (overlay only)", got.ID, ok, err)
+		t.Errorf("At(800,800) = %q, %v, %v; want no window (overlay only)", got.Top.ID, ok, err)
 	}
 }
 

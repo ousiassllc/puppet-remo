@@ -74,7 +74,7 @@ func (c *control) launch(ctx context.Context, who domain.Actor, req LaunchReques
 	if c.kill.Active() {
 		return LaunchResult{}, tr, domain.ErrKillSwitchActive
 	}
-	tr.leaseID, err = c.ensureLease(ctx, who)
+	tr.leaseID, _, err = c.ensureLease(ctx, who)
 	if err != nil {
 		return LaunchResult{}, tr, err
 	}

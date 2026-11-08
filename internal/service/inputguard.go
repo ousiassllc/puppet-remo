@@ -65,31 +65,40 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 
 func (g InputGuard) checkPoints(mon []domain.Monitor, points ...domain.Point) error {
 	for _, p := range points {
-		if len(mon) > 0 {
-			if _, ok := domain.MonitorAt(mon, p); !ok {
-				return domain.ErrInvalidCoordinates.WithMsg(fmt.Sprintf("(%d, %d) is outside every monitor", p.X, p.Y))
-			}
+		if err := checkOnMonitor(mon, p); err != nil {
+			return err
 		}
-		w, ok, err := g.Windows.At(p)
+		hit, ok, err := g.Windows.At(p)
 		if err != nil {
 			return err
 		}
 		if !ok {
 			continue // どのウィンドウにもない（デスクトップ）
 		}
-		if err := domain.CheckInputTarget(w); err != nil {
+		if err := domain.CheckInputTarget(hit.Top); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// checkOnMonitor は p がいずれかのモニター上にあることを確かめる（mon が空なら確かめない）。なければ ErrInvalidCoordinates。
+// スコープ付きリースの検査（control_target.go）も同じ規則を使う。
+func checkOnMonitor(mon []domain.Monitor, p domain.Point) error {
+	if len(mon) > 0 {
+		if _, ok := domain.MonitorAt(mon, p); !ok {
+			return domain.ErrInvalidCoordinates.WithMsg(fmt.Sprintf("(%d, %d) is outside every monitor", p.X, p.Y))
+		}
+	}
+	return nil
+}
+
 func (g InputGuard) checkForeground(rule func(domain.WindowInfo) error) error {
-	w, err := g.Windows.Foreground()
+	f, err := g.Windows.Foreground()
 	if err != nil {
 		return err
 	}
-	return rule(w)
+	return rule(f.Foreground)
 }
 
 // checkWindowByID は id のウィンドウに rule を適用する。存在しない id は、実行側（platform）が

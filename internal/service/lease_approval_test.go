@@ -115,7 +115,7 @@ func rebuildLeaseApproval(t *testing.T, e *ctlEnv, mode domain.ApprovalMode, kil
 	e.leases, err = NewLeaseManager(LeaseConfig{
 		Clock: e.clock, IDs: &ctlIDs{}, IdleTimeout: domain.DefaultLeaseIdleTimeout,
 		Audit: e.audit, Kill: kill, AfterFunc: e.timers.AfterFunc, Power: e.power,
-		Approval: le.approval, Clients: le.clients,
+		Approval: le.approval, Clients: le.clients, Windows: e.windows,
 	})
 	if err != nil {
 		t.Fatal(err)

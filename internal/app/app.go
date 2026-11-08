@@ -255,7 +255,7 @@ func (a *App) build(ctx context.Context) error {
 	a.dialogs = newApprovalDialogs(cfg.Windows, a.approval, a.bus, a.log)
 	a.leases, err = service.NewLeaseManager(service.LeaseConfig{
 		Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log,
-		Approval: a.approval, Clients: cfg.Repo.Clients(), Bus: a.bus,
+		Approval: a.approval, Clients: cfg.Repo.Clients(), Bus: a.bus, Windows: cfg.Platform.Windows,
 	})
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)

@@ -294,7 +294,7 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 	e.kill = kill
 	e.leases, err = NewLeaseManager(LeaseConfig{
 		Clock: e.clock, IDs: &ctlIDs{}, IdleTimeout: domain.DefaultLeaseIdleTimeout,
-		Audit: e.audit, Kill: kill, AfterFunc: e.timers.AfterFunc, Power: e.power,
+		Audit: e.audit, Kill: kill, AfterFunc: e.timers.AfterFunc, Power: e.power, Windows: e.windows,
 	})
 	if err != nil {
 		t.Fatal(err)
