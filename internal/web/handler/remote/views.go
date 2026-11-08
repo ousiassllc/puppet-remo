@@ -62,12 +62,16 @@ func (h *Handler) leaseView(ctx context.Context, who domain.Actor) view.ViewerLe
 	}
 	label := actorLabel(holder.Actor)
 	mine := holder.Actor.SameSession(who)
-	return view.ViewerLease{
+	v := view.ViewerLease{
 		Held: true, Mine: mine, HolderLabel: label, KindLabel: string(holder.Actor.Kind),
 		CanRelease: mine,
 		CanRevoke:  !mine && holder.Actor.Kind.CanHoldLease() && who.Kind.CanRevokeLease(),
 		Task:       h.taskView(ctx, holder.Actor),
 	}
+	if mine && holder.Scope != nil {
+		v.ScopedProcess = holder.Scope.Process
+	}
+	return v
 }
 
 // taskView は保持者が agent のとき、そのタスク（Actor.SessionID = task_id）の要約を返す。agent 以外・タスクが見つからない・
@@ -142,8 +146,21 @@ func actorLabel(a domain.Actor) string {
 }
 
 // opsView は操作権を持つときだけ、クリップボードとショートカット送信を出す。
+// スコープ付きリース（#157）では、Alt+Tab・Win など対象の外へ出るキーは無効（灰色）にし、クリップボードの読み取りの UI を出さない。
 func opsView(l view.ViewerLease) view.ViewerOps {
-	return view.ViewerOps{Enabled: l.Mine, Keys: shortcutMenu}
+	scoped := l.ScopedProcess != ""
+	keys := make([]view.KeyMenuItem, len(shortcutMenu))
+	for i, k := range shortcutMenu {
+		keys[i] = k
+		keys[i].Disabled = scoped && scopedKeyForbidden(k.Keys)
+	}
+	return view.ViewerOps{Enabled: l.Mine, Scoped: scoped, Keys: keys}
+}
+
+// scopedKeyForbidden は送信メニューの keys がスコープ付きリースで拒否されるか（domain.ScopedKeyForbidden と同じ規則）。
+func scopedKeyForbidden(keys string) bool {
+	combo, err := domain.ParseKeyCombo(keys)
+	return err == nil && domain.ScopedKeyForbidden(combo.Mods, combo.Key)
 }
 
 // toolbarView は設定フォームの表示。monitors が空なら選択肢も無い。
@@ -200,5 +217,6 @@ func (h *Handler) viewerPage(ctx context.Context, host string, client domain.Cli
 		Toolbar: toolbarView(mons, monitor, strconv.Itoa(settings.ViewerDefaultQuality), strconv.Itoa(settings.ViewerDefaultFPS)),
 		Lease:   lease,
 		Ops:     opsView(lease),
+		Picker:  h.windowPickerView(ctx, actor),
 	}, nil
 }

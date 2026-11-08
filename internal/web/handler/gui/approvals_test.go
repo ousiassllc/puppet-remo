@@ -198,6 +198,18 @@ func TestApprovalDialogLeaseHasNoDetail(t *testing.T) {
 	lacks(t, res, "data-approval-detail", "data-approval-note", "should-not-appear")
 }
 
+// スコープ付きリース（#157）の承認は、ウィンドウ 1 枚と関連するダイアログ・メニューに限定することと、対象のプロセス名を出す。
+// ウィンドウのタイトルは出さず、プロセス名は HTML エスケープされる。
+func TestApprovalDialogScopedLeaseShowsTheScopeAndProcess(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedApproval(f, "ap-1", approvalWho)
+		f.Approval.Reqs[0].Scope = &domain.LeaseScope{Target: domain.WindowRef{ID: "1001"}, Process: "<b>notepad.exe</b>"}
+	})
+	res := r.get("/approvals/ap-1")
+	contains(t, res, `data-approval-type="lease"`, "ウィンドウ 1 枚と関連するダイアログ・メニューに限定", "対象のプロセス: &lt;b&gt;notepad.exe&lt;/b&gt;", "data-approval-detail")
+	lacks(t, res, "<b>notepad.exe</b>")
+}
+
 // Detail は HTML エスケープされ、長ければ 500 文字で切る。
 func TestApprovalDetailIsEscapedAndBounded(t *testing.T) {
 	for _, kind := range []string{service.ApprovalKindSafetyCheck, service.ApprovalKindJudgeAction} {

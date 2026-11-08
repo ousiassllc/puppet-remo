@@ -294,10 +294,13 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `prompt` | string | はい | 自然言語の指示（10,000 文字まで） |
 | `max_steps` | integer | いいえ | ステップ上限。設定値（FR-S12）以下のみ指定できる |
 | `max_duration_sec` | integer | いいえ | 実行時間の上限（秒）。設定値以下のみ |
+| `window_id` | string | いいえ | `list_windows` の `window_id`。指定すると、エージェントが見る画像と操作を、その 1 ウィンドウ T と、所有関係を検証できる同一プロセスのダイアログ・メニューに限る（#158。FR-G04・G06・G07。**実機未確認**（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10））。省略すると画面全体（従来どおり） |
 
 出力（即時）: `{ "task_id": "01J…", "status": "pending_approval" | "running" }`。長時間実行になるため、完了は `get_task` で確認する（1 回の MCP 呼び出しは 1 秒以内に返る。NFR-P08）。エージェント無効・選んだ接続方式が使えない状態なら `agent_disabled`（接続方式 `chatgpt` のときは `detail.reason` が §2 の 4 種のいずれか。FR-G01）、他者がリースを保持していれば `lease_held_by_other`、キルスイッチ中は `kill_switch_active`。`prompt` が空・10,000 文字（rune）超、`max_steps` / `max_duration_sec` が 1 未満・設定値超は `invalid_argument`（`prompt` の欠落・型違いは SDK が入力スキーマで拒否する）。**接続方式は呼び出し側が指定できない**（ホスト GUI の設定 `agent.connection` で決まり、タスクの開始時に固定される。FR-G25）。
 
-**高速パス（FR-G16）は `run_task` から透過**: 引数も出力も増えず、呼び出し側は使う・使わないを指定できない。使うかどうかはホストの設定 `agent.fastpath.enabled`（既定 off。GUI のみで変更。FR-S14）だけで決まり、キー未登録・同意なし・無効のときは黙ってスキップして OpenAI のみで実行する。接続方式が `chatgpt` のときも黙ってスキップする（併用は対象外。FR-G25）。タスクの完了は常に OpenAI が確認用スクリーンショットを見て宣言する（FR-G20）。どちらの経路で実行したかは `get_task` の `fast_steps` / `openai_steps` / `handoff_reason` で分かる。
+**`window_id` つきの `run_task`**（#158）: 開始時に、自ウィンドウ・昇格ウィンドウ・最小化・検証前の UWP は `input_blocked`（`detail.reason` = `own_window` / `elevated_window` / `target_minimized` / `target_unsupported`）、一覧にない対象は `window_not_found`（`detail.reason` = `target_closed`）、プロセス名が設定 `agent.deny_processes` に当たる対象は `input_blocked`（`detail.reason` = `denied_process`）でタスクを開始しない（行もリースも作らない）。開始できたタスクは種別 `agent` のリースを T に束縛して動き、実行中に T の移動・リサイズ（`target_moved`）・置き換え（`target_replaced`）・閉鎖（`target_closed`）、前面・フォーカス・座標の最上位が T と関連ウィンドウの外（`target_not_foreground` / `target_obscured` / `outside_target_group` / `related_cross_process` / `related_unverifiable` / `unrelated_same_process`）、T または検証できたメンバーの撮影失敗（`capture_unavailable` / `capture_member_unavailable`。モニター撮影には切り替えない）はタスクを `failed`（`error_code = input_blocked`。理由は監査 `agent.task_end` の `detail.block_reason`）にする。再開は無い（新しいタスクで取り直す）。メニュー・ダイアログの出入りだけは失敗ではなく、残りのアクションを実行せずに新しい画像から計画し直す（監査 `agent.batch_yielded`。FR-G04）。`monitor` を伴う座標は `invalid_argument` で失敗する。クリップボードの規則は FR-L12（エージェントの `computer` ツールにクリップボード操作は無く、直接の `ClipboardRead` は `clipboard_out_of_scope`）。`get_task` には `target`（`{ "window_id", "process", "pid" }`。ウィンドウのタイトルは含めない）が付く（`window_id` なしのタスクでは省略）。
+
+**高速パス（FR-G16）は `run_task` から透過**: 引数も出力も増えず（`window_id` を除く）、呼び出し側は使う・使わないを指定できない。**`window_id` つきのタスクでは高速パスを使わない**（`FastPath` も TypeSafe への送信・UI Automation の読み取りも起きず、`fast_steps = 0`・`handoff_reason` なし。設定で有効・同意済みでも黙ってスキップする。FR-G16・G22）。`window_id` なしでは、使うかどうかはホストの設定 `agent.fastpath.enabled`（既定 off。GUI のみで変更。FR-S14）だけで決まり、キー未登録・同意なし・無効のときは黙ってスキップして OpenAI のみで実行する。接続方式が `chatgpt` のときも黙ってスキップする（併用は対象外。FR-G25）。タスクの完了は常に OpenAI が確認用スクリーンショットを見て宣言する（FR-G20）。どちらの経路で実行したかは `get_task` の `fast_steps` / `openai_steps` / `handoff_reason` で分かる。
 
 **`get_task`**: `task_id`\*。出力:
 
@@ -342,6 +345,8 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `target_replaced` | T と同じ HWND が別の PID・開始時刻・クラスのウィンドウに再利用された。選び直しのみ | する（再開不可） |
 | `target_unsupported` | 検証前の UWP（`ApplicationFrameWindow`）、または同一性を確かめる値が不明。束縛できない・選び直しのみ | する（再開不可） |
 | `target_minimized` | T が最小化されている | する |
+| `target_moved` | `run_task`（`window_id` つき。#158）で、基準 S（モデルが見た最後の撮影）と比べて T または既存メンバーの矩形が違う（移動・リサイズ。どの k でも）。注入しない | する（タスクは `failed`） |
+| `denied_process` | `run_task` の `window_id` のプロセスが `agent.deny_processes` に当たる。タスクを開始しない | しない（開始前の拒否） |
 | `own_window` / `elevated_window` | T・前面・座標の最上位が puppet-remo のウィンドウ / 昇格ウィンドウ（既存の理由） | する |
 | `target_not_foreground` | キー・文字の宛先（前面）が G の外の、所有関係のない別プロセスのウィンドウ・前面なし | する |
 | `unrelated_same_process` | PID が T と同じだけで所有関係のないウィンドウが前面（G に入れない） | する |
@@ -349,7 +354,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `related_unverifiable` | 所有関係を確かめられないウィンドウ（無所有のメニュー、循環・8 段超過の鎖、開始時刻の取得失敗、メンバー 16 超）が前面・座標の最上位、または葉の PID・開始時刻を取れない | する |
 | `outside_target_group` | 座標が G のどのメンバーの範囲にも入らない（デスクトップを含む） | する |
 | `target_obscured` | 座標は G のメンバーの範囲内だが、その座標の最上位は非メンバー（`blocked_by` にそのプロセス）。非メンバーが別の場所で T に重なっていても、座標の最上位がメンバーなら通る | する |
-| `capture_unavailable` | T を撮れない（`GrabGroup` の失敗・撮影不可）、または `Capturer` が `GroupCapturer` を持たない（**Windows は未実装のため、実機のスコープ付きリースはこの理由で停止する**） | する |
+| `capture_unavailable` | T を撮れない（`GrabGroup` の失敗・撮影不可）、または `Capturer` が `GroupCapturer` を持たない（Windows の `GrabGroup` は PrintWindow で実装済みだが**実機未確認**。撮れなければこの理由で停止する） | する |
 | `capture_member_unavailable` | T 以外の、検証できたメンバー（メニュー・ダイアログ）を撮れない | する |
 | `target_halted` | リースがすでに停止中。Esc を含む一切の入力・クリップボード書き込みを拒否する。`detail.halt_reason` に停止の理由。新しい停止は記録しない | しない（すでに停止中） |
 | `key_out_of_scope` | スコープ付きで `win` 修飾・Windows キー・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc を送ろうとした | しない（その操作だけの拒否） |
@@ -406,6 +411,9 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | POST | `/viewer/lease/acquire` | 操作権を取得 | 承認が要らなければ 200 リースパネル。**承認が要るクライアントは、ホストの結果を待たず 202 で承認待ちのパネル（`pending_approval`・本人）を即座に返す**。結果は WebSocket で届く（許可は `lease` の `held`、拒否・タイムアウトは `error` の `approval_denied` / `approval_timeout`。§5.3）。承認待ちのあいだの再試行は新しい承認を作らず同じ 202。他者が保持中・承認待ちなら 409 `lease_held_by_other`。拒否・タイムアウトの直後 30 秒は、承認を求めず 403 `approval_denied`（クールダウン。トースト。パネルは空きのまま） |
 | POST | `/viewer/lease/release` | 操作権を解放 | 200 リースパネル |
 | POST | `/viewer/lease/revoke` | 他者のリースを強制剥奪（保持者が `agent` ならそのタスクを中断。FR-L06） | 200 リースパネル（保持者は `idle` になる）。自身が取得するには改めて `acquire` する |
+| GET | `/viewer/windows` | 「操作するウィンドウ」の一覧のフラグメント（#157。FR-W10。**実機未確認** — 成立性ゲート待ち。docs/operations/smoke-windows.md §3.10） | 200 HTML（`#window-picker`）。選べるウィンドウ（自ウィンドウ・オーバーレイ・メニュー・ダイアログ・タイトルなしを除く最上位）を、タイトル・プロセス名・前面か・最小化かつきで返す。昇格・最小化・検証前の種類（UWP など）は `aria-disabled="true"` の灰色の行（「選ぶ」ボタンなし・理由つき）。操作権が他者のとき・自分が保持しているときは、一覧の代わりに状態（スコープ付きなら対象のプロセス名と「別のウィンドウを選ぶ」）を出す。HTMX が 3 秒ごと・更新ボタン・`remo:lease-changed` で再取得する。ウィンドウのタイトルはこの応答にだけ出る（ログ・監査・承認ダイアログには出さない） |
+| POST | `/viewer/target` | ウィンドウ T を選んでスコープ付きのリースを取得（#157。FR-W10。実機未確認） | フォーム `window_id`・`pid`・`process_start`（一覧の行の値。サーバーが一覧から T を求め直す）。承認が要らなければ 200 リースパネル（`ready` / `config` の源はリースの取得を契機に WebSocket 側でグループへ切り替わる）。承認が要るクライアントは 202（承認ダイアログに「ウィンドウ 1 枚と関連するダイアログ・メニューに限定」とプロセス名）。一致する T が一覧に無ければ 404 `window_not_found`、昇格・最小化・検証前の種類は 409 `input_blocked`（`detail.reason` = `elevated_window` / `target_minimized` / `target_unsupported`）、自分が既に保持していれば 409 `conflict`（先に解放する）、他者が保持していれば 409 `lease_held_by_other` |
+| POST | `/viewer/target/release` | スコープ付きのリースを解放して一覧に戻る（#157。「別のウィンドウを選ぶ」） | 200 一覧のフラグメント。ビューアはモニター表示に戻る（WebSocket の `target` は `none`） |
 | POST | `/viewer/settings` | このビューアのモニター・品質・FPS | フォーム `monitor`, `quality`（1〜100）, `fps`（1〜30）。200 ツールバーのフラグメント。WebSocket の `config` に反映される |
 | POST | `/viewer/clipboard/send` | テキストをホストのクリップボードに設定（FR-W07） | フォーム `text`（1 MiB まで）。要操作権。200 フラグメント |
 | POST | `/viewer/clipboard/fetch` | ホストのクリップボードを取得して表示 | 要操作権。200 フラグメント（`<textarea readonly>`。利用者が手動でコピーする） |
@@ -457,17 +465,19 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 | type | 内容 |
 |------|------|
-| `ready` | 接続直後に 1 回（画面フレームより前）。`{ "monitors": [...], "monitor": 0, "width": 2560, "height": 1440, "quality": 70, "fps": 10, "lease": {…} }`。`width` / `height` はストリームの座標空間（選択モニターの物理ピクセル）。`monitors[]` の各要素は `get_screen_info`（§3.3）から縮小に関する項目（`scale`・`scaled`）を除いた `{ "index", "name", "primary", "origin": { "x", "y" }, "physical": { "width", "height" }, "dpi_scale" }`。`lease` は下の `lease` メッセージと同じ形 |
-| `config` | 設定の反映結果。`{ "monitor", "width", "height", "quality", "fps" }`。モニター変更時はキーフレームが続く。WebSocket の `config` だけでなく、`POST /viewer/settings` で変えたときにも届く |
+| `ready` | 接続直後に 1 回（画面フレームより前）。`{ "monitors": [...], "monitor": 0, "source": "monitor", "width": 2560, "height": 1440, "origin"?, "quality": 70, "fps": 10, "lease": {…} }`。`source` は配信の源（`monitor`＝選択モニター、`group`＝スコープ付きのリースの対象グループの合成画像。#157。実機未確認）。`monitor` 源では `width` / `height` はストリームの座標空間（選択モニターの物理ピクセル）、**`group` 源では合成画像の大きさ（最初のコマまでは 0）で、`origin` は合成画像の左上の物理座標**（物理座標 = `origin` + 画像内の座標）。`monitors[]` の各要素は `get_screen_info`（§3.3）から縮小に関する項目（`scale`・`scaled`）を除いた `{ "index", "name", "primary", "origin": { "x", "y" }, "physical": { "width", "height" }, "dpi_scale" }`。`lease` は下の `lease` メッセージと同じ形 |
+| `config` | 設定の反映結果。`{ "monitor", "source", "width", "height", "origin"?, "quality", "fps" }`（`source` と `origin` は `ready` と同じ）。モニター変更時はキーフレームが続く。WebSocket の `config` だけでなく、`POST /viewer/settings` で変えたときにも届く。**グループ源では、メニュー・ダイアログの開閉などで合成画像の大きさか原点が変わったとき、その最初のコマの前に `config` を送る**（クライアントは canvas を作り直してキーフレームを待つ） |
+| `target` | 対象ウィンドウ（スコープ付きのリース。#157。FR-W13。実機未確認）の状態。`{ "state": "none" \| "active" \| "halted", "process"?, "reason"?, "reselect"?, "blocked_by"?: { "window_id", "process", "pid", "reason" }, "members": 1, "notices"?: ["capture_partial"], "excluded"?: [{…}] }`。接続直後（`ready` の次）と、状態が変わるたび（重複は送らない）に配信する。`none` はスコープ付きのリースがないとき（モニター表示）、`halted` の `reason` は §3.4 の `detail.reason`（`target_closed` / `target_replaced` / `target_unsupported` / `target_minimized` / `target_not_foreground` / `unrelated_same_process` / `related_cross_process` / `related_unverifiable` / `outside_target_group` / `target_obscured` / `capture_unavailable` / `capture_member_unavailable`）。`reselect: true` は「再開」ができず選び直しのみ（`target_closed` / `target_replaced` / `target_unsupported`）。`notices` の `capture_partial` は**停止ではなく通知**（所有関係を確かめられず表示から除外したウィンドウがある。`excluded` に分類つきで並べる。そのウィンドウが前面・フォーカス先・座標の最上位になったときに停止する）。ウィンドウのタイトルは載せない |
 | `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のときだけ省く（M3: `pending_approval` では承認待ちの要求者の `holder` を付け、`mine` は要求者が自分のビューアかどうか。承認待ちでは入力が許されない）。リースの変化は、承認待ちの開始（`pending_approval`）・許可（`held`）・拒否・タイムアウト・取り下げ（`idle`）のたびに全ビューアへ送る。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
 | `killswitch` | `{ "active": true }`。続けて 4503 で閉じる。以降の接続も 4503 で閉じられる |
-| `error` | `{ "code", "message" }`。入力の拒否と、`POST /viewer/lease/acquire` の承認待ちの失敗。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`、承認待ちの失敗の `approval_denied`（ホストが拒否）/ `approval_timeout`（60 秒の無応答）。承認待ちの失敗の `error` は、要求したビューアの接続だけに送り（他のビューアには送らない）、同時に `lease`（`idle`）が全ビューアへ届く。`internal` の `message` は詳細を含まない固定文。切断はしない |
+| `error` | `{ "code", "message" }`。入力の拒否と、`POST /viewer/lease/acquire` の承認待ちの失敗。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`、承認待ちの失敗の `approval_denied`（ホストが拒否）/ `approval_timeout`（60 秒の無応答）。承認待ちの失敗の `error` は、要求したビューアの接続だけに送り（他のビューアには送らない）、同時に `lease`（`idle`）が全ビューアへ届く。`internal` の `message` は詳細を含まない固定文。切断はしない。**`input_blocked` には `reason`（§3.4 の `detail.reason`。`halted` の理由・`key_out_of_scope`・`clipboard_out_of_scope`・`target_halted` など。#157）を付ける** |
 
 **クライアント → サーバー**
 
 | type | 内容 |
 |------|------|
 | `config` | `{ "monitor": 0, "quality": 70, "fps": 10 }`（任意の項目のみ。省いた項目は今の値のまま。範囲外は 4400。`quality` は 1〜100、`fps` は 1〜30、`monitor` は `ready` の `monitors[]` の `index`） |
+| `target.resume` | `{}`。スコープ付きのリースの「再開」（#157。FR-W13）。保持者だけ。サーバーが全条件を再検証し（`Control.ResumeTarget`）、通れば `target` が `active`、通らなければ理由を更新した `halted`（`error` は返さず `target` で返す）。**停止中でもこれだけは受け付ける**（Esc・クリック・文字・クリップボード書き込みなどの入力は受け付けない。自動では再開しない）。リースを保持していなければ `error`（`lease_required` など）、スコープ付きでなければ `error`（`invalid_argument`） |
 | `input.mouse` | `{ "action": "move" \| "down" \| "up" \| "wheel", "x": 100, "y": 200, "button": "left" \| "right" \| "middle", "dx": 0, "dy": 1 }`。`x` / `y` は**ストリームの座標**（モニターの物理ピクセル。MCP の縮小座標ではない）。`wheel` は `dx` / `dy` を使い、**単位はノッチ**（数値。小数可。MCP `scroll` の `amount` と同じ単位。下記） |
 | `input.key` | `{ "action": "down" \| "up", "code": "KeyA", "key": "a", "modifiers": ["ctrl"] }`。`code` はブラウザの `KeyboardEvent.code` で、サーバーがスキャンコードに変換する |
 | `input.text` | `{ "text": "こんにちは" }`。IME で確定した文字列を Unicode で送る |
@@ -490,13 +500,15 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | オフセット | 型 | 内容 |
 |-----------|----|------|
 | 0 | u8 | バージョン（1） |
-| 1 | u8 | フラグ（bit0: キーフレーム = 全面） |
-| 2 | u16 | モニター index |
+| 1 | u8 | フラグ（bit0: キーフレーム = 全面、bit1: グループ源。#157） |
+| 2 | u16 | モニター index（グループ源は `0xFFFF`） |
 | 4 | u32 | 連番（フレームごとに +1） |
 | 8 | u16 | フレームの幅（px） |
 | 10 | u16 | フレームの高さ（px） |
 | 12 | u16 | タイル数 N |
 | 14〜 | N 個 | `u16 x, u16 y, u16 w, u16 h, u32 jpeg_len, jpeg_len バイトの JPEG` |
+
+**グループ源のフレーム**（フラグの bit1。#157。実機未確認）: ヘッダー（14 バイト）の直後に `i32 originX, i32 originY`（合成画像の左上の物理座標。8 バイト）が入り、その後ろに N 個のタイルが続く。フレームの幅・高さは合成画像の大きさ（T と関連ウィンドウの外接矩形。物理ピクセル）で、画素は透明なキャンバスに合成した T と関連ウィンドウだけ（他のウィンドウ・デスクトップの画素を含まない）。クライアントの入力の座標は合成画像内の座標 p で、サーバーが `origin + p` を物理座標にして、含まれるモニターのストリーム座標へ直し、既存の入力経路へ渡す（画像の外の座標は 4400 ではなく `invalid_coordinates` の `error`）。画像の大きさか原点が変わるコマの前には `config`（§5.3）を送る。
 
 - タイルは変化した 64×64 の格子を矩形にまとめたもの。クライアントは `createImageBitmap` で復号し、`canvas` の `(x, y)` に描画する
 - キーフレームは接続直後、モニター変更時、一定間隔（既定 5 秒）に、フレーム全体を覆うタイル群として送る
@@ -777,3 +789,5 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.45 | 2026-11-03 | §7.1 の `/overlay`（操作中オーバーレイの中身のページ）を削除し、§7.5 のオーバーレイの行を、モニターごとの枠 4 本と札のネイティブウィンドウ（真ん中は覆わない）に改めた。§3.3 の `launch_app` の `window` は、起動したアプリのウィンドウだけを返す（前面の別アプリのウィンドウは返さない） | #86・#85 |
 | 1.46 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: §1 のホスト専用の操作、§2 に `app_denied`（403）と `invalid_argument`・`app_not_found`・`launch_failed` の `launch_app` での扱い、§3.1 の `instructions`、§3.3 のツール表・`list_launchable_apps`（`mode`）・`launch_app`（`path`。`app_id` を省いた結果・検査の順序・エラー・監査の `detail`〔`path` / `launch_mode`〕・スキーマ違反と形の不備の扱い）、§3.4、§7.1 の `/apps`（起動の方式のパネルと拒否リスト）、§7.2 の `PUT /apps/mode`・`/apps/denied*`（リモートルーターには無い）と監査（`settings.launch_mode.update`・`settings.launch_denylist.*`）、§7.5 のルート、§8.2 の実機検証事項 | #88 |
 | 1.47 | 2026-11-08 | §2 の `input_blocked` と §3.4 に、スコープ付きのリース（FR-L09〜L14）の `detail.reason`（`target_closed` / `target_replaced` / `target_unsupported` / `target_minimized` / `target_not_foreground` / `unrelated_same_process` / `related_cross_process` / `related_unverifiable` / `outside_target_group` / `target_obscured` / `capture_unavailable` / `capture_member_unavailable` / `target_halted` / `key_out_of_scope` / `clipboard_out_of_scope`）と `detail.blocked_by` の表を追加。入口（HTTP / WebSocket / MCP）の追加は #157・#158 | #156（A-1） |
+| 1.48 | 2026-11-09 | §3.3 の `run_task` に `window_id`（#158。開始時の選択検査・失敗・中断・高速パスのスキップ。実機未確認）、`get_task` に `target` を追加。§3.4 の `reason` に `target_moved`・`denied_process` を追加 | #158 |
+| 1.49 | 2026-11-09 | ビューアのウィンドウ選択（#157）: §4.2 に `GET /viewer/windows`・`POST /viewer/target`・`POST /viewer/target/release`、§5.3 に `ready` / `config` の `source`・`origin`、サーバー → クライアントの `target`、クライアント → サーバーの `target.resume`、`error` の `reason`、§5.4 にグループ源のフレーム（フラグ bit1・モニター index `0xFFFF`・原点 `i32` ×2）。実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10） | #157 |

@@ -192,6 +192,9 @@ type conn struct {
 	sess    service.ViewerSession
 	pressed pressed // 押下中のボタン・キー。セッションの終わりで離す
 
+	// グループ源・対象ウィンドウ（#157。target.go）。
+	tgt targetState
+
 	closeOnce sync.Once
 }
 
@@ -285,9 +288,9 @@ func (c *conn) sendReady() error {
 		return err
 	}
 	cfg := c.sess.Config()
-	w, h := streamSize(mons, cfg.Monitor)
+	src, w, h, origin := c.geometry(cfg, mons)
 	return c.writeJSON(readyMessage{
-		Type: typeReady, Monitors: monitorBodies(mons), Monitor: cfg.Monitor, Width: w, Height: h,
+		Type: typeReady, Monitors: monitorBodies(mons), Monitor: cfg.Monitor, Source: src, Width: w, Height: h, Origin: origin,
 		Quality: cfg.Quality, FPS: cfg.FPS, Lease: c.leaseBody(),
 	})
 }
@@ -326,6 +329,7 @@ func (c *conn) leaseBody() leaseBody {
 // writeLoop は Streamer のフレーム・設定の変化・リースの変化・セッションの終わりを書き出す。
 func (c *conn) writeLoop(leaseEvents <-chan service.Event) {
 	frames := c.sess.Viewer().Frames
+	groupStatus := c.sess.Viewer().Group
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -335,7 +339,16 @@ func (c *conn) writeLoop(leaseEvents <-chan service.Event) {
 				frames = nil
 				continue
 			}
-			if err := c.write(websocket.MessageBinary, b); err != nil {
+			if err := c.writeFrame(b); err != nil {
+				c.finish(0, "")
+				return
+			}
+		case st, ok := <-groupStatus:
+			if !ok {
+				groupStatus = nil
+				continue
+			}
+			if err := c.onGroupStatus(st); err != nil {
 				c.finish(0, "")
 				return
 			}
@@ -366,7 +379,11 @@ func (c *conn) writeLeaseEvent(ev service.Event) error {
 		}
 		return c.writeJSON(errorFor(res.Err))
 	}
-	return c.writeJSON(leaseMessage{Type: typeLease, leaseBody: c.leaseBody()})
+	if err := c.writeJSON(leaseMessage{Type: typeLease, leaseBody: c.leaseBody()}); err != nil {
+		return err
+	}
+	c.syncTarget()
+	return c.sendTarget()
 }
 
 func (c *conn) sendConfig(cfg service.ViewerConfig) error {
@@ -374,8 +391,7 @@ func (c *conn) sendConfig(cfg service.ViewerConfig) error {
 	if err != nil {
 		return c.writeJSON(errorFor(err))
 	}
-	w, h := streamSize(mons, cfg.Monitor)
-	return c.writeJSON(configMessage{Type: typeConfig, Monitor: cfg.Monitor, Width: w, Height: h, Quality: cfg.Quality, FPS: cfg.FPS})
+	return c.writeConfig(cfg, mons)
 }
 
 // closeForReason はセッションが終わった理由を閉じコードにして閉じる（API 仕様 §5.2）。
@@ -466,6 +482,12 @@ func (c *conn) handle(data []byte) error {
 		if err != nil {
 			return err
 		}
+		if cfg, err = c.applySource(msg, cfg); err != nil {
+			if errors.Is(err, errInvalidMessage) {
+				return err
+			}
+			return c.writeJSON(errorFor(err))
+		}
 		if err := c.sess.Configure(cfg); err != nil {
 			if errors.Is(err, domain.ErrInvalidArgument) {
 				return errInvalidMessage // 未知のモニターなど
@@ -474,11 +496,19 @@ func (c *conn) handle(data []byte) error {
 		}
 		return nil // 反映後の設定は ConfigChanged から config メッセージで返る
 	case typeInputMouse, typeInputKey, typeInputText:
-		op, err := msg.op(c.sess.Config().Monitor)
+		cfg := c.sess.Config()
+		op, err := msg.op(cfg.Monitor)
 		if err != nil {
 			return err
 		}
+		if cfg.Target != (domain.WindowRef{}) {
+			if op, err = c.groupOp(op); err != nil {
+				return c.writeJSON(errorFor(err))
+			}
+		}
 		return c.input(op)
+	case typeClientTargetResume:
+		return c.resumeTarget()
 	}
 	return errInvalidMessage
 }
@@ -495,7 +525,11 @@ func (c *conn) input(op domain.Op) error {
 		if domain.CodeOf(err) == domain.CodeInternal {
 			c.h.log.Warn("websocket: input failed", "error", err)
 		}
-		return c.writeJSON(errorFor(err))
+		if err := c.writeJSON(errorFor(err)); err != nil {
+			return err
+		}
+		c.noteBlocked(err)
+		return c.sendTarget()
 	}
 	return nil
 }

@@ -62,6 +62,10 @@ func (c *client) Step(ctx context.Context, in StepInput) (StepOutput, error) {
 	if in.Model == "" || in.History == nil {
 		return StepOutput{}, errors.New("openai: model and history are required")
 	}
+	input, err := in.History.input() // 出力の欠けた・重複した call_id は、API へ送る前に拒否する
+	if err != nil {
+		return StepOutput{}, err
+	}
 	key, err := c.key(ctx)
 	if err != nil {
 		return StepOutput{}, fmt.Errorf("openai: read api key: %w", err)
@@ -74,7 +78,7 @@ func (c *client) Step(ctx context.Context, in StepInput) (StepOutput, error) {
 	defer cancel()
 
 	var httpRes *http.Response
-	res, err := c.svc.New(ctx, c.params(in), option.WithAPIKey(key), option.WithResponseInto(&httpRes))
+	res, err := c.svc.New(ctx, c.params(in, input), option.WithAPIKey(key), option.WithResponseInto(&httpRes))
 	if err != nil {
 		// SDK のエラー（*apierror.Error）は Request（Authorization ヘッダー）を抱えるので、そのまま返さない。
 		if httpRes != nil && httpRes.StatusCode >= http.StatusBadRequest {
@@ -86,10 +90,10 @@ func (c *client) Step(ctx context.Context, in StepInput) (StepOutput, error) {
 }
 
 // params は要求を組み立てる。store: false 固定、previous_response_id なし（FR-G24）、ツールは GA の computer。
-func (c *client) params(in StepInput) responses.ResponseNewParams {
+func (c *client) params(in StepInput, input responses.ResponseInputParam) responses.ResponseNewParams {
 	p := responses.ResponseNewParams{
 		Model: in.Model,
-		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: in.History.input()},
+		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: input},
 		Store: param.NewOpt(false),
 		Tools: []responses.ToolUnionParam{{OfComputer: &responses.ComputerToolParam{}}},
 	}

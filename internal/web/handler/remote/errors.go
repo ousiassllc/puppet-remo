@@ -33,6 +33,7 @@ var failureMessages = map[domain.Code]string{
 	domain.CodeConflict:           "現在の状態と合わないため実行できませんでした。",
 	domain.CodeKillSwitchActive:   "キルスイッチが発動中です。",
 	domain.CodeDesktopUnavailable: "ホストの画面を操作できません（ロック画面など）。",
+	domain.CodeWindowNotFound:     "選んだウィンドウは閉じられたか、別のウィンドウに置き換わりました。一覧を更新してください。",
 }
 
 func classify(err error) failure {
@@ -57,6 +58,16 @@ func inputBlockedMessage(err error) string {
 			return "ホストの前面のウィンドウは管理者権限で動いているため、入力できません。"
 		case domain.ReasonOwnWindow:
 			return "ホストの前面のウィンドウは puppet-remo 自身のため、入力できません。"
+		case string(domain.ReasonTargetMinimized):
+			return "選んだウィンドウは最小化されています。"
+		case string(domain.ReasonTargetUnsupported):
+			return "このウィンドウは対象にできません（検証前の種類）。"
+		case string(domain.ReasonClipboardOutOfScope):
+			return "ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。"
+		case string(domain.ReasonKeyOutOfScope):
+			return "ウィンドウを選んだ操作中は、このキー操作（Alt+Tab・Win など）は使えません。"
+		case string(domain.ReasonTargetHalted):
+			return "対象の操作は停止中です。ホスト側で原因を取り除き、「再開」を押してください。"
 		}
 	}
 	return "ホストの前面のウィンドウには入力できません。"

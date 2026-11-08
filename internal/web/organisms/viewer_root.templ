@@ -12,6 +12,8 @@ templ ViewerRoot(v view.Viewer) {
 	<main id="viewer-root" class="space-y-4" hx-headers={ templ.JSONString(map[string]string{"X-Viewer-Id": v.ViewerID}) }>
 		@ViewerToolbar(v.Toolbar)
 		@ViewerLeasePanel(v.Lease)
+		@WindowPicker(v.Picker)
+		@WindowReselectTrigger()
 		@ViewerOps(v.Ops)
 		<remo-screen-viewer
 			class="block overflow-hidden rounded-lg border border-slate-300 bg-black"

@@ -685,6 +685,9 @@ type Control interface {
     // #156（§5.4.2）。スコープ付きのリースの全条件を入力せずに確かめる / 保持者の明示的な再開（全条件を再検証して通ったときだけ active）。
     VerifyTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
     ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
+    // #156・#157・#158（§5.4.2）。T と、その時点の対象グループ G を撮って合成した画像（GroupFrame）。撮れないときはモニター撮影に切り替えず、
+    // ErrInputBlocked（capture_unavailable / capture_member_unavailable / target_*）を返す。ビューアの配信とエージェントの観測が使う。
+    GrabGroupFrame(ctx context.Context, ref domain.WindowRef) (GroupFrame, error)
 }
 ```
 
@@ -784,7 +787,7 @@ type LaunchResult struct {
 
 ### 5.4.2 入力スコープ（#156。FR-L09〜L14。NFR-S06 の追記）
 
-リースに 1 つのトップレベルウィンドウ T を束縛し、入力を T と**対象グループ G**（T ＋ T との所有関係を検証できる同一プロセスの関連ウィンドウ）に限る。誤入力を止めるガードレールで、セキュリティ境界ではない（`screenshot`・モニター表示は止めない）。判定は `domain`（`ResolveGroup`・`Group.CheckFocus` / `CheckHit`・`LeaseScope`・`ScopedKeyForbidden`）、状態は `LeaseManager`、検証・停止・再開は `Control`（`control_target.go`）。UI（#157）・エージェント（#158）の入口はこの API を使うが、本節の時点では**スコープ付きのリースを作る HTTP / WebSocket / MCP の入口はない**（`LeaseManager` / `Control` のサービス API だけ）。
+リースに 1 つのトップレベルウィンドウ T を束縛し、入力を T と**対象グループ G**（T ＋ T との所有関係を検証できる同一プロセスの関連ウィンドウ）に限る。誤入力を止めるガードレールで、セキュリティ境界ではない（`screenshot`・モニター表示は止めない）。判定は `domain`（`ResolveGroup`・`Group.CheckFocus` / `CheckHit`・`LeaseScope`・`ScopedKeyForbidden`）、状態は `LeaseManager`、検証・停止・再開は `Control`（`control_target.go`）。UI（#157）・エージェント（#158）の入口はこの API を使う。ビューア（#157。実機未確認）の入口は、`POST /viewer/target`（`LeaseManager.RequestAcquireScoped`）でスコープ付きのリースを取得し、WebSocket（`internal/ws`）がリースに従って配信の源をグループ合成画像（`Control.GrabGroupFrame`。`Streamer` の源 `sourceKey`。モニターのキャプチャには切り替えない）に切り替え、`target` メッセージ・`target.resume`（`Control.VerifyTarget` / `ResumeTarget`）・合成画像内の座標の入力（原点を足して `Control.Do`）を中継する（API 仕様 §4.2・§5.3・§5.4）。
 
 ```go
 // LeaseManager（§5.2）への追加。束縛は固定。変えるには解放して取り直す。
@@ -809,6 +812,8 @@ ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error) // 保
 3. **撮影の事前確認（操作の最初の検証で 1 回）**: G の検証できたメンバー（T と、最小化・空の矩形でないメンバー。`unverifiable` は含めない）を `platform.GroupCapturer.GrabGroup` で撮れるかを確かめる（画像は使わない）。T が撮れない・撮影そのものの失敗・`Capturer` が `GroupCapturer` を持たない（型アサーション）は `capture_unavailable`、T 以外のメンバーが撮れないのは `capture_member_unavailable`。**モニター撮影（`Capturer.Grab`・`Watch`）・画面領域のコピーには切り替えない**。事前確認を入力ごとに 1 回おこなうのは「撮れない状態で入力しない」ための最小の設計で、表示側（#157・#158）が撮れなくなったことを入力なしで知るには `VerifyTarget` を使う。
 4. **停止（`halt`）**: 2 と 3 のどちらかに通らなければ、**何も注入せず** `InputInjector.ReleaseAll` を呼び、`LeaseManager.Halt` でリースを `halted` にして `input.target_halted`（`kind = input`。`reason`・`window_id`・`process`・`pid`・`members`・`target_window_id`。タイトルは記録しない）を記録し、`ErrInputBlocked`（`detail.reason`、原因のウィンドウがあれば `window_id` と `blocked_by{window_id, process, pid, reason}`）を返す。メンバーの増減だけでは停止しない。`unverifiable` のウィンドウは対象の表示から除外し（`TargetStatus.Notices` = `capture_partial`、`Excluded`）、前面・フォーカスの葉・座標の最上位になったときだけ停止する。
 5. **再開（`ResumeTarget`）**: 保持者だけ。自動では起きない（原因の解消・再取得・`VerifyTarget` では再開しない）。`halted` のリースの全条件（T の同一性・状態、G の求め直し、前面とフォーカスの葉が G の中、撮影の事前確認）を再検証し、すべて通ったときだけ `LeaseManager.ResumeVerified` で `active` に戻す（`lease.target_resumed`）。一つでも通らなければ `halted` のまま。`target_closed` / `target_replaced` / `target_unsupported` は再開できず（`ErrInputBlocked`）、解放して選び直す。`focus_window` は呼ばない（自動で前面にしない）。
+
+6. **エージェントの観測（#158。`run_task` の `window_id`。§5.6）**: `Control.Do` は ctx に載せた 2 つの部品を読む。(a) `WithPhysicalCoords`: 座標は呼び出し側（エージェント）が基準 S の原点・縮小率で物理座標へ変換済みなので、縮小座標の変換をしない（モニター上にあるかの検査は残る）。(b) グループの観測（`withGroupObserver`）: `check` が `ResolveGroup` で G を求め直した直後（前面・座標の検証より先）に呼ばれ、基準との差を判定する — T または既存メンバーの矩形が違えば `target_moved`、同一性が違えば `target_replaced`（どちらも通常の停止。`halt`）、メンバーの増減だけなら以後を注入せず停止もしない `ErrGroupChanged`（`reason = group_changed`。操作がすでに一部を注入していれば `detail.partial = true`。エージェントが中断として扱う）。観測がある操作は、撮影の事前確認（上の 3）を省く（バッチの中で画像を撮らない。次の撮影はエージェントが `GrabGroupFrame` で行う）。観測は 1 回の操作の複数回の注入の間にも毎回呼ばれる。
 
 **検証状況**: A-1（上記。偽 platform = `FakeWindows`・`FakeCapturer`・`FakeApp`・`FakeClipboard` で検証）は実装済み。**Windows 実機の A-2（成功条件 S1〜S3 = メニューバーのメニュー・右クリックメニュー・同一プロセスの保存ダイアログ）は検証環境がなく「検証待ち」**で、完了・合格とは扱わない。Windows には `GroupCapturer` の実装が**ない**ので、実機のスコープ付きのリースは事前確認で `capture_unavailable` となり安全に停止する（fail closed）。デスクトップの切り抜き・モニター撮影・マスクで補う実装は置かない。
 
@@ -838,6 +843,18 @@ type Agent interface {
 ```
 
 **所有する状態**: 実行中のタスク `*run`（`id`、`cancel context.CancelFunc`、`done chan struct{}`、ステップ数 `steps` / `fastSteps` / `openaiSteps`、`*openai.History`）を 1 つだけ。`Start` は排他リース（種別 `agent`）の取得に成功した場合だけ goroutine を起動する。実行状態はメモリのみ（NFR-A08）。
+
+**`window_id` つきの `run_task`（#158。FR-G04・G06・G07・G16・G22）**: `StartInput.WindowID` を `Start` が `bindTarget` と同じ選択検査（自ウィンドウ・昇格・最小化・不在・検証前の UWP）と `agent.deny_processes`（プロセス名。`domain.ReasonDeniedProcess`）で検査し、通らなければタスクの行・リースを作らずに拒否する（`AgentServiceConfig.Windows` が `ListAll` の入力）。通ったタスクは `LeaseManager.AcquireScoped`（種別 `agent`）で T に束縛し、`agent_tasks` の `target_window_id` / `target_process` / `target_pid`（0006。タイトルは持たない）と監査 `agent.task_start` / `agent.task_end` の `detail.target`、タスク画面の「対象ウィンドウ」に対象を出す。`run` は `agentScope`（T の `WindowRef`、基準 S = 縮小率・原点・各メンバーの ID・PID・開始時刻・クラス・矩形・集合、直前の検証の G）を持ち、
+
+- **見るもの**: `observeScreen`（`capture` の代わり）が `Control.GrabGroupFrame`（空のキャンバス上のグループ合成。モニター撮影・画面領域の切り出しには切り替えない）を `screenshot.max_dimension` へ縮小し、新しい S を保存する。撮れなければ `failed`（`capture_unavailable` / `capture_member_unavailable`）。所有関係を確かめられず除外したウィンドウがあれば `agent_tasks.capture_partial = 1`（停止ではない）
+- **座標**: 縮小座標 → 物理座標は S の原点・縮小率で、バッチの最後まで同じ（`agentScope.convert`。`monitor` の指定は `invalid_argument`）。`Control.Do` へは `WithPhysicalCoords` で渡す
+- **判定**: 入力の注入の直前ごと（複数回の注入の間を含む）に `Control` が G を求め直し、`agentScope.observe`（`withGroupObserver`。§5.4.2 の 6）が直前の検証の G（k = 1 は S）と比べる。矩形の差 → `target_moved`、同一性の差 → `target_replaced`（`failed`）、メンバーの増減だけ → 中断。差がなければ #156 の検証（前面・座標の最上位・葉が G = S のメンバー）
+- **中断**（`runActions` → `noteYield`）: 残りのアクションを実行せず、新しい撮影の `computer_call_output` を同じ `call_id` に 1 件だけ（`AddComputerOutput`）追加し、その直後に `History.AddUserNote`（`role: "user"` の `input_text`。実行済み E 件・残りは未実行。件数は `actions[]` を Op に写した数。操作の途中で中断したときは、その Op を未実行とせず「一部だけ実行済み」と伝える）を足す。監査 `agent.batch_yielded`（`step`・`executed`・`not_executed`・`reason = group_changed`・`added`・`removed`、一部だけ実行した Op があれば `partially_executed = 1`。タイトル・入力文字なし）。中断された Op の `agent.step` の行は `result = ok`・`detail.reason = group_changed`（`auditResult` が `IsGroupChanged` を ok にする。拒否の行に見せない）。中断も 1 回のモデル呼び出しを使うので `max_steps`・`max_duration_sec` が歯止めになる。実行済みの入力は再実行も再送もしない（`Model.Step` は再試行しない）
+- **履歴の対応検査**: `History.input` が、すべての `computer_call` / `function_call` に `call_id` が一致する出力がちょうど 1 件あること（欠落・重複は `openai.ErrCallPairing`）を送る前に確かめる（`function_call_output` の追加は ChatGPT 経路の実装で行う）
+- **高速パスは使わない**: `r.scope != nil` のとき `loop()` は `FastPath.Enabled` も `Run` も呼ばない（`fast_steps = 0`・`handoff_reason` なし。UIA の読み取り・TypeSafe への送信なし）。ChatGPT 経路はもともと併用しない
+- **クリップボード**: エージェントのツールにクリップボード操作は無く、増やさない。直接の `ClipboardRead` は §5.4.2 の 1 で `clipboard_out_of_scope`
+
+**検証状況**: 上は偽 platform（`FakeApp`・`FakeWindows`・`FakeCapturer`）と台本つきの偽モデル・ループバックのモックの `/v1/responses` で試験した。**Windows 実機の成立性ゲート（S1〜S3）と、実 OpenAI での確認は実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10）**で、完了・合格とは扱わない。ChatGPT のプラン経路（関数ツール）は未実装。
 
 ループの擬似コード（FR-G04〜G10、G16〜G24 と一致）:
 
@@ -1390,7 +1407,7 @@ M4（#19）で `internal/mcp` に内蔵エージェントの 3 ツール（`tool
 | `TaskAdmin`（`task_admin.go`。GUI のタスク画面・ダッシュボード・オーバーレイ） | `List`・`Running` は `repository.Tasks` を読むだけ。`Detail` はタスク行と、`audit.ListByTask` の行のうち `agent.step`・`agent.judge`・`agent.safety_check` を `TaskStep`（番号・種類 `Kind`・経路・ツール名・結果・要約）にしたもの。`Kind` は `action`（アクションを実行した行。**ステップ数に数えるのはこれだけ**）/ `pass`（行動しないパス）/ `judge` / `safety_check`。後ろの 3 つはステップの補助の行で、番号は所属するステップのもの。ホスト GUI は補助の行に番号を出さず種類のラベルを付ける（同じ番号のステップが 2 つあるように見せない）（サムネイルの参照は監査の行のまま。ホストの GUI だけが読める）。要約には入力した文字列・キー名を入れない |
 | 保守・起動 | `Maintenance.AbortActiveTasks` は `App.Start` が、Listener と Agent より前に**同期で**呼び（NFR-A08。前回の異常終了で `running` / `pending_approval` のまま残ったタスクを `aborted`（`error_code` は NULL）にする。FR-G03・NFR-A08）、`Maintenance.Run` は二重に呼ばない。`App.Shutdown` は `Updater.Close` のあと・MCP のセッションを閉じる前に `Agent.Close` を呼ぶ。`UpdaterConfig.RunningTasks` は `Agent.RunningTasks`（実行中のタスクがあると更新を適用しない） |
 | `app` の結線（`app.go`） | `buildAgent` が OpenAI クライアント（`service.NewAgentModel`）と TypeSafe クライアント（`service.NewAgentChooser`）を作る（`app` は `openai`・`typesafe` を import できないので、組み立ては `service` が持つ。`service/agent_clients.go`）。どちらも API キーは `SecretStore` から**呼び出しのたびに**読む（キーを保持しない。NFR-S14）。`Config.OpenAIModel`（`service.AgentModel`）・`Config.TypeSafeChooser`（`service.AgentChooser`）はテスト・デモが差し替える口（nil なら本物）。`Control` には `Judge`（`FailClosed(Chain(RuleJudge), 2 秒)`）と `Approval` を渡す |
-| デモ（`internal/app/internal/remotedemo`） | `-agent-demo`（オフライン。台本つきの偽の `openai.Model`（`service/agenttest` の別名・応答の作り方で書く）、ダミーのキー、ダミーのトークンで、MCP の `run_task` から最後まで動く）、`-agent-safety-check`（2 ステップ目に安全チェックを付ける）。デモのバイナリは loopback で待ち受けるが、接続の `LocalAddr` を偽の tailnet アドレスに見せる（MCP の SDK が loopback 宛ての接続に loopback 以外の `Host` を 403 にするため。本番は tailnet の IP で待ち受けるので当たらない）。使い方は `remotedemo` の doc comment |
+| デモ（`internal/app/internal/remotedemo`） | `-agent-demo`（オフライン。台本つきの偽の `openai.Model`（`service/agenttest` の別名・応答の作り方で書く）、ダミーのキー、ダミーのトークンで、MCP の `run_task` から最後まで動く）、`-agent-safety-check`（2 ステップ目に安全チェックを付ける）、`-agent-scope=save|foreign`（#158。`window_id` つきの `run_task` の台本。偽のメモ帳〔`platformtest.FakeApp`。window_id 1001〕を対象に、save はメニューを開いて保存ダイアログまで〔1 バッチ内の click→click が中断される〕、foreign は前面が別のウィンドウに替わって `failed`。偽 platform で、実機の代わりにならない。スクリーンショットは `docs/screenshots/issue-158/`）。デモのバイナリは loopback で待ち受けるが、接続の `LocalAddr` を偽の tailnet アドレスに見せる（MCP の SDK が loopback 宛ての接続に loopback 以外の `Host` を 403 にするため。本番は tailnet の IP で待ち受けるので当たらない）。使い方は `remotedemo` の doc comment |
 
 ### 13.13 テスト専用サーバー（ビルドタグ `e2e`。#64。§10）
 
@@ -1468,3 +1485,5 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.60 | 2026-11-03 | §5.4.1 の `LaunchResult.Window` と手順 5b を、起動したアプリのウィンドウ（pid のウィンドウ、無ければ起動の前に無かったプロセス名が同じ新しいウィンドウ。前面でなければ `Focus`）だけにした（前面の別アプリのウィンドウは返さない）。§7 のオーバーレイを、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（WebView2 の全面ウィンドウをやめる）に更新 | #85・#86 |
 | 1.61 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: §2 に `domain.LaunchMode`・`DeniedApp`・`MatchDenied` ほか、§3 の `AppLauncher.Resolve`（固定ディスク上の実体のパス）、§4.1 の `repository.LaunchDenylist`、§5.1 の `AppRegistry` の状態の所有者、§5.4 の `Control.LaunchableApps` が `LaunchableList` を返すことと `Launch` が `LaunchRequest{AppID, Path}` を受けること、§5.4.1 の `AppReader`（`LaunchMode`・`ListDenied`）・`AppRegistry`（`SetLaunchMode`・`CreateDenied`・`UpdateDenied`・`DeleteDenied`）と検査の順序の手順 3（方式別の対象・拒否リストの照合・`app_denied`）・監査の `detail`（`path`・`launch_mode`）、§13 の `mcp`・`app`・テスト・リスクの記述を更新 | #88 |
 | 1.62 | 2026-11-08 | §5.4 の `Control` に `VerifyTarget`・`ResumeTarget`、§5.4.2（入力スコープ）を追加: `LeaseManager.AcquireScoped` / `RequestAcquireScoped` / `Halt` / `ResumeVerified`、`Do` の検証（実行前の規則・注入の直前と間の検証・撮影の事前確認・停止・再開）、Windows 実機の検証待ちと `GrabGroup` 未実装 | #156（A-1） |
+| 1.63 | 2026-11-09 | §5.4.2 に エージェントの観測（`WithPhysicalCoords`・グループの観測・`target_moved`）、§5.6 に `window_id` つきの `run_task`（対象の検査・基準 S・座標・判定・中断の結果の形式・履歴の対応検査・高速パスのスキップ。実機未確認）を追加 | #158 |
+| 1.64 | 2026-11-09 | §5.4 の `Control` に `GrabGroupFrame`（T と G の合成画像。モニター撮影に切り替えない）を追加。Windows の `Capturer.GrabGroup`（PrintWindow をメモリ DC へ。空のキャンバスへ合成する `ComposeGroup`）を追加（**実機未確認**）。スコープ付きのリースの操作は、監査のサムネイル（モニター全体の撮影）を撮らない。実機の成立性を測る専用プローブ `cmd/a2probe`（製品に含めない）を追加 | #156（A-2。ゲート待ち） |

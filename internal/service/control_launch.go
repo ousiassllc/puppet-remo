@@ -54,7 +54,7 @@ func (c *control) Launch(ctx context.Context, who domain.Actor, req LaunchReques
 			entry.Result = auditDenied // 指定の不備（app_id と path の同時指定・allowlist での path）は、入力スキーマ違反と同じく拒否として残す
 		}
 		var shot *thumbTarget
-		if err == nil {
+		if err == nil && !tr.scoped { // スコープ付きのリースでは撮らない（Capturer.Grab は他アプリの画素を含む）
 			shot = &thumbTarget{monitor: domain.MonitorPrimary} // 起動したウィンドウのモニターは問わず、プライマリを撮る
 		}
 		c.recordAudit(ctx, entry, shot)
@@ -67,6 +67,7 @@ type launchTrace struct {
 	label   string            // 許可リストを引けたときの表示名
 	leaseID string            // 保持者のリース ID
 	mode    domain.LaunchMode // 検査した方式（読めたとき）
+	scoped  bool              // 保持者のリースがウィンドウに束縛されている（監査のサムネイル＝モニター全体の撮影を撮らない）
 }
 
 // launch は検査と起動を行い、結果と監査用の値を返す。
@@ -74,10 +75,12 @@ func (c *control) launch(ctx context.Context, who domain.Actor, req LaunchReques
 	if c.kill.Active() {
 		return LaunchResult{}, tr, domain.ErrKillSwitchActive
 	}
-	tr.leaseID, _, err = c.ensureLease(ctx, who)
+	var scope *domain.LeaseScope
+	tr.leaseID, scope, err = c.ensureLease(ctx, who)
 	if err != nil {
 		return LaunchResult{}, tr, err
 	}
+	tr.scoped = scope != nil
 	tr.mode, err = c.apps.LaunchMode(ctx)
 	if err != nil {
 		return LaunchResult{}, tr, err

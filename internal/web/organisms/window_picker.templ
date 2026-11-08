@@ -1,0 +1,100 @@
+package organisms
+
+import (
+	"encoding/json"
+
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+func selectWindowAttrs(r view.WindowRow) atoms.Attrs {
+	vals, err := json.Marshal(map[string]string{"window_id": r.ID, "pid": r.PID, "process_start": r.Start})
+	if err != nil { // map[string]string は常に変換できる
+		panic(err)
+	}
+	return atoms.Attrs{
+		"hx-post": "/viewer/target", "hx-vals": string(vals), "hx-target": "#lease-panel", "hx-swap": "outerHTML", "hx-disabled-elt": "this",
+	}
+}
+
+// WindowPicker は起動中のウィンドウの一覧と選択（#157）。選べるのは所有されていない最上位のウィンドウだけで（ダイアログ・メニューは、
+// 選ぶと自動で対象に入るので出さない）、昇格・最小化・検証前の種類は灰色で選べない。更新ボタン、自動更新（3 秒）、リースの変化で再取得する。
+// リースを保持中・他者が保持・承認待ちのあいだは一覧を出さず、状態を示す。「別のウィンドウを選ぶ」はリースの解放（バナーの
+// ボタンが remo:reselect を出し、下の隠し要素が解放を送る）。
+templ WindowPicker(v view.WindowPicker) {
+	<section
+		id="window-picker"
+		class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+		aria-label="操作するウィンドウ"
+		hx-get="/viewer/windows"
+		hx-trigger="every 3s, remo:lease-changed from:#viewer-root"
+		hx-target="this"
+		hx-swap="outerHTML"
+	>
+		<div class="mb-2 flex items-center justify-between gap-2">
+			<h2 class="text-sm font-semibold text-slate-700">操作するウィンドウ</h2>
+			if v.CanSelect || v.Error != "" {
+				@atoms.Button(atoms.ButtonProps{Label: "一覧を更新", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+					"hx-get": "/viewer/windows", "hx-target": "#window-picker", "hx-swap": "outerHTML", "hx-disabled-elt": "this", "data-window-refresh": true,
+				}})
+			}
+		</div>
+		if v.ScopedProcess != "" {
+			<p class="text-sm text-slate-700" data-window-scoped>対象のウィンドウ: <span class="font-medium">{ v.ScopedProcess }</span>（ウィンドウ 1 枚と関連するダイアログ・メニューだけを表示・操作します）</p>
+		} else if v.Message != "" {
+			<p class="text-sm text-slate-600" role="status" data-window-message>{ v.Message }</p>
+		} else if v.Error != "" {
+			<p class="text-sm text-red-700" role="alert" data-window-error>{ v.Error }</p>
+		} else if len(v.Rows) == 0 {
+			<p class="text-sm text-slate-600" data-window-empty>選べるウィンドウがありません。</p>
+		} else {
+			<ul class="divide-y divide-slate-100" data-window-list>
+				for _, r := range v.Rows {
+					@windowRow(r)
+				}
+			</ul>
+		}
+	</section>
+}
+
+templ windowRow(r view.WindowRow) {
+	<li class="flex items-center justify-between gap-3 py-2" data-window-id={ r.ID } data-selectable?={ r.Selectable } if !r.Selectable { aria-disabled="true" }>
+		<div class={ rowTextClass(r) }>
+			<p class="truncate text-sm font-medium" data-window-title>{ r.Title }</p>
+			<p class="flex flex-wrap items-center gap-2 text-xs">
+				<span data-window-process>{ r.Process }</span>
+				if r.Foreground {
+					@atoms.Badge(atoms.BadgeOK, "前面")
+				}
+				if r.Minimized {
+					@atoms.Badge(atoms.BadgeNeutral, "最小化")
+				}
+				if r.Note != "" {
+					<span data-window-note>{ r.Note }</span>
+				}
+			</p>
+		</div>
+		if r.Selectable {
+			@atoms.Button(atoms.ButtonProps{Label: "選ぶ", Variant: atoms.ButtonPrimary, Attrs: selectWindowAttrs(r)})
+		}
+	</li>
+}
+
+func rowTextClass(r view.WindowRow) string {
+	if r.Selectable {
+		return "min-w-0 text-slate-800"
+	}
+	return "min-w-0 text-slate-400"
+}
+
+// WindowReselectTrigger は、バナーの「別のウィンドウを選ぶ」（<remo-screen-viewer> の remo:reselect）でリースを解放する隠し要素。
+// 解放すると配信はモニター表示へ戻り、一覧が出る（remo:lease-changed）。
+templ WindowReselectTrigger() {
+	<div
+		hidden
+		hx-post="/viewer/target/release"
+		hx-trigger="remo:reselect from:#viewer-root"
+		hx-target="#lease-panel"
+		hx-swap="outerHTML"
+	></div>
+}

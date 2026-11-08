@@ -19,6 +19,7 @@ const (
 	typeKillSwitch = "killswitch"
 	typeError      = "error"
 	typePong       = "pong"
+	typeTarget     = "target"
 )
 
 // クライアント → サーバーのメッセージの type。
@@ -28,6 +29,14 @@ const (
 	typeInputKey     = "input.key"
 	typeInputText    = "input.text"
 	typeClientPing   = "ping"
+	// typeClientTargetResume は停止（halted）中のスコープ付きリースの、保持者の明示的な再開（Control.ResumeTarget。#157）。
+	typeClientTargetResume = "target.resume"
+)
+
+// 配信の源（ready・config の source。API 仕様 §5.3）。
+const (
+	sourceMonitor = "monitor"
+	sourceGroup   = "group"
 )
 
 // maxWheelNotches は 1 メッセージの wheel の dx / dy の絶対値の上限（ノッチ。API 仕様 §5.3）。超過は閉じコード 4400。
@@ -87,20 +96,46 @@ type readyMessage struct {
 	Type     string        `json:"type"`
 	Monitors []monitorBody `json:"monitors"`
 	Monitor  int           `json:"monitor"`
-	Width    int           `json:"width"`
-	Height   int           `json:"height"`
+	Source   string        `json:"source"`           // monitor | group
+	Width    int           `json:"width"`            // グループ源は合成画像の大きさ（最初のコマまでは 0）
+	Height   int           `json:"height"`           //
+	Origin   *pointBody    `json:"origin,omitempty"` // グループ源の原点（物理座標 = origin + 画像の座標）。最初のコマまでは無い
 	Quality  int           `json:"quality"`
 	FPS      int           `json:"fps"`
 	Lease    leaseBody     `json:"lease"`
 }
 
 type configMessage struct {
-	Type    string `json:"type"`
-	Monitor int    `json:"monitor"`
-	Width   int    `json:"width"`
-	Height  int    `json:"height"`
-	Quality int    `json:"quality"`
-	FPS     int    `json:"fps"`
+	Type    string     `json:"type"`
+	Monitor int        `json:"monitor"`
+	Source  string     `json:"source"`
+	Width   int        `json:"width"`
+	Height  int        `json:"height"`
+	Origin  *pointBody `json:"origin,omitempty"`
+	Quality int        `json:"quality"`
+	FPS     int        `json:"fps"`
+}
+
+// blockedByBody は停止の原因のウィンドウ（blocked_by・excluded[]）。ウィンドウのタイトルは含めない。
+type blockedByBody struct {
+	WindowID string `json:"window_id,omitempty"`
+	Process  string `json:"process,omitempty"`
+	PID      uint32 `json:"pid,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// targetMessage はこのビューアのスコープ付きリース（対象ウィンドウ）の状態（#157）。state は none（スコープ付きのリースを持たない）・
+// active・halted。halted のとき reason が停止の理由で、reselect が true なら再開できず選び直しが要る。
+type targetMessage struct {
+	Type      string          `json:"type"`
+	State     string          `json:"state"`
+	Process   string          `json:"process,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
+	Reselect  bool            `json:"reselect,omitempty"`
+	BlockedBy *blockedByBody  `json:"blocked_by,omitempty"`
+	Members   int             `json:"members"`
+	Notices   []string        `json:"notices,omitempty"`  // capture_partial（通知。停止ではない）
+	Excluded  []blockedByBody `json:"excluded,omitempty"` // 所有関係を確かめられず、表示から除外したウィンドウ
 }
 
 type leaseMessage struct {
@@ -117,6 +152,8 @@ type errorMessage struct {
 	Type    string      `json:"type"`
 	Code    domain.Code `json:"code"`
 	Message string      `json:"message"`
+	// Reason は input_blocked の detail.reason（own_window・target_halted・clipboard_out_of_scope など）。無ければ省く。
+	Reason string `json:"reason,omitempty"`
 }
 
 type typeOnly struct {
@@ -135,7 +172,22 @@ func errorFor(err error) errorMessage {
 			msg = de.Msg
 		}
 	}
-	return errorMessage{Type: typeError, Code: code, Message: msg}
+	m := errorMessage{Type: typeError, Code: code, Message: msg}
+	if code == domain.CodeInputBlocked {
+		m.Reason = detailString(err, "reason")
+	}
+	return m
+}
+
+// detailString は err の domain.Error の detail[key]（文字列）。無ければ空。
+func detailString(err error, key string) string {
+	var de *domain.Error
+	if errors.As(err, &de) {
+		if s, ok := de.Detail[key].(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 // clientMessage はクライアント → サーバーのメッセージの和集合。型ごとに使う項目だけを検査する。
@@ -147,6 +199,8 @@ type clientMessage struct {
 	Monitor *int `json:"monitor"`
 	Quality *int `json:"quality"`
 	FPS     *int `json:"fps"`
+	// Source は配信の源の切り替え（monitor | group）。省けば今の源のまま。monitor を今のものと違う値で指定すると monitor 源になる。
+	Source *string `json:"source"`
 
 	// input.mouse
 	Action string   `json:"action"`
@@ -175,14 +229,21 @@ func decodeClientMessage(data []byte) (clientMessage, error) {
 }
 
 // viewerConfig は config メッセージを service.ViewerConfig にする。monitor を省いたときは今のモニター（current）のまま。
+// 配信の源（Target）は今のまま。monitor を今のものと違う値にすると monitor 源に戻る（source は呼び出し側が扱う）。
 // quality（1〜100）・fps（1〜30）の範囲外は errInvalidMessage（閉じコード 4400）。モニターの範囲は Configure が検査する。
 func (m clientMessage) viewerConfig(current service.ViewerConfig) (service.ViewerConfig, error) {
-	c := service.ViewerConfig{Monitor: current.Monitor}
+	c := service.ViewerConfig{Monitor: current.Monitor, Target: current.Target}
 	if m.Monitor != nil {
 		if *m.Monitor < 0 {
 			return service.ViewerConfig{}, errInvalidMessage
 		}
+		if *m.Monitor != current.Monitor {
+			c.Target = domain.WindowRef{}
+		}
 		c.Monitor = *m.Monitor
+	}
+	if m.Source != nil && *m.Source != sourceMonitor && *m.Source != sourceGroup {
+		return service.ViewerConfig{}, errInvalidMessage
 	}
 	if m.Quality != nil {
 		if *m.Quality < 1 || *m.Quality > 100 {

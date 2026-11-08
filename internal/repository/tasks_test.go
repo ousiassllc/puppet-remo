@@ -539,3 +539,31 @@ func TestAuditListByTaskIsCapped(t *testing.T) {
 			len(got), *got[0].StepNo, *got[len(got)-1].StepNo, MaxTaskStepEntries)
 	}
 }
+
+// run_task の対象ウィンドウ（0006。#158）は Create・Get で往復し、capture_partial は Update で変わる。タイトルを持つ列は無い。
+func TestTasksTargetRoundTripAndCapturePartial(t *testing.T) {
+	db, clock := openTestDB(t)
+	ctx := context.Background()
+	task := taskAt("01TS", clock.Now())
+	task.TargetWindowID, task.TargetProcess, task.TargetPID = "1001", "notepad.exe", 4242
+	mustCreateTask(t, db, task)
+	got, err := db.Tasks().Get(ctx, "01TS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, task) {
+		t.Errorf("Get = %+v, want %+v", got, task)
+	}
+	task.CapturePartial = true
+	if err := db.Tasks().Update(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = db.Tasks().Get(ctx, "01TS"); !got.CapturePartial || !got.Scoped() {
+		t.Errorf("after Update = %+v", got)
+	}
+	// スコープなしの行は対象の列が NULL（従来どおり）。
+	mustCreateTask(t, db, taskAt("01TU", clock.Now()))
+	if n := count(t, db, `SELECT COUNT(*) FROM agent_tasks WHERE id = '01TU' AND target_window_id IS NULL AND target_process IS NULL AND target_pid IS NULL`); n != 1 {
+		t.Errorf("unscoped task has target columns set")
+	}
+}

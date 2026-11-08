@@ -18,6 +18,7 @@ type Fakes struct {
 	Control  *Control
 	Settings *Settings
 	Tasks    *Tasks
+	Windows  *Windows
 	Clock    *Clock
 }
 
@@ -36,13 +37,39 @@ func New() *Fakes {
 		}},
 		Settings: &Settings{Values: service.HostSettings{ViewerDefaultQuality: 70, ViewerDefaultFPS: 10}},
 		Tasks:    &Tasks{},
+		Windows:  &Windows{},
 		Clock:    &Clock{T: Now},
 	}
 }
 
 // Deps は Handler の依存先。
 func (f *Fakes) Deps() remote.Deps {
-	return remote.Deps{Sessions: f.Sessions, Leases: f.Leases, Control: f.Control, Settings: f.Settings, Tasks: f.Tasks, Clock: f.Clock}
+	return remote.Deps{Sessions: f.Sessions, Leases: f.Leases, Control: f.Control, Settings: f.Settings, Tasks: f.Tasks, Windows: f.Windows, Clock: f.Clock}
+}
+
+// Windows はウィンドウ選択の一覧の偽物。
+type Windows struct {
+	mu    sync.Mutex
+	list  []domain.PickCandidate
+	Err   error
+	Calls int
+}
+
+// Set は一覧を置き換える。
+func (w *Windows) Set(c ...domain.PickCandidate) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.list = c
+}
+
+func (w *Windows) Candidates(context.Context) ([]domain.PickCandidate, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.Calls++
+	if w.Err != nil {
+		return nil, w.Err
+	}
+	return append([]domain.PickCandidate(nil), w.list...), nil
 }
 
 // Clock は固定の時計。
@@ -138,6 +165,8 @@ type Leases struct {
 	Revokers         []domain.Actor // Revoke を呼んだ操作主体
 	Acquires         int
 	Releases         int
+	Scoped           []domain.WindowRef // RequestAcquireScoped に渡された対象
+	scope            *domain.LeaseScope
 }
 
 // Hold は actor が保持している状態にする（テストの準備）。
@@ -193,12 +222,27 @@ func (l *Leases) RequestAcquire(_ context.Context, who domain.Actor) (service.Le
 	return lease, false, nil
 }
 
+// RequestAcquireScoped は RequestAcquire と同じ規則で、束縛した対象を Scoped に記録する（スコープ付きのリースは Holder の Scope に出る）。
+func (l *Leases) RequestAcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (service.Lease, bool, error) {
+	lease, pending, err := l.RequestAcquire(ctx, who)
+	if err != nil {
+		return lease, pending, err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.Scoped = append(l.Scoped, target)
+	scope := domain.LeaseScope{Target: target, Process: "app.exe", Members: 1, State: domain.ScopeActive}
+	l.scope = &scope
+	lease.Scope = &scope
+	return lease, pending, nil
+}
+
 func (l *Leases) Release(who domain.Actor) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.Releases++
 	if l.holder != nil && l.holder.SameSession(who) {
-		l.holder = nil
+		l.holder, l.scope = nil, nil
 	}
 }
 
@@ -222,7 +266,7 @@ func (l *Leases) Holder() (service.Holder, bool) {
 	if l.holder == nil {
 		return service.Holder{}, false
 	}
-	return service.Holder{LeaseID: "lease-1", Actor: *l.holder, Since: time.Unix(0, 0)}, true
+	return service.Holder{LeaseID: "lease-1", Actor: *l.holder, Since: time.Unix(0, 0), Scope: l.scope}, true
 }
 
 func (l *Leases) Pending() (service.PendingLease, bool) {

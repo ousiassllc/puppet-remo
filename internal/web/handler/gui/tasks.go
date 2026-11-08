@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -141,6 +142,25 @@ func (h *Handler) taskStatusView(t domain.Task) view.TaskStatus {
 	return v
 }
 
+// taskTargetText は window_id つきのタスクの対象（プロセス名・pid。ダッシュボード用）。スコープなしは空。ウィンドウのタイトルは載せない。
+func taskTargetText(t domain.Task) string {
+	if !t.Scoped() {
+		return ""
+	}
+	if t.TargetProcess == "" {
+		return fmt.Sprintf("pid %d", t.TargetPID)
+	}
+	return fmt.Sprintf("%s（pid %d）", t.TargetProcess, t.TargetPID)
+}
+
+// taskTargetDetailText はタスク詳細の対象（プロセス名・pid・window_id）。スコープなしは空。
+func taskTargetDetailText(t domain.Task) string {
+	if !t.Scoped() {
+		return ""
+	}
+	return fmt.Sprintf("%s ・ window_id %s", taskTargetText(t), t.TargetWindowID)
+}
+
 // runningTasksView はダッシュボードの実行中タスク（実行中・承認待ち。高々 1 件）。取得できなければ空として扱い、ログに残す
 // （ダッシュボードは出す）。
 func (h *Handler) runningTasksView(ctx context.Context) view.RunningTasks {
@@ -152,7 +172,7 @@ func (h *Handler) runningTasksView(ctx context.Context) view.RunningTasks {
 	for _, t := range tasks {
 		v.Items = append(v.Items, view.RunningTask{
 			ShortID: shortTaskID(t.ID), DetailURL: taskDetailURL(t.ID), Client: taskClientLabel(t),
-			PromptExcerpt: promptExcerpt(t.Prompt), Status: h.taskStatusView(t),
+			PromptExcerpt: promptExcerpt(t.Prompt), Target: taskTargetText(t), Status: h.taskStatusView(t),
 		})
 	}
 	v.Rev = revision(v)
@@ -259,6 +279,10 @@ func (h *Handler) taskDetailView(c *gin.Context, d service.TaskDetail) view.Task
 		if text, ok := taskHandoffTexts[d.HandoffReason]; ok {
 			v.Handoff = text + "（" + string(d.HandoffReason) + "）"
 		}
+	}
+	v.Target = taskTargetDetailText(d.Task)
+	if d.CapturePartial {
+		v.CapturePartial = "所有関係を確かめられないウィンドウをモデルへ渡す画像から除外した（capture_partial。停止ではない）"
 	}
 	if d.ResultText != "" && d.Status == domain.TaskCompleted {
 		v.ResultNote = taskResultNote

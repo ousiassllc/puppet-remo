@@ -172,6 +172,18 @@ func (c *control) check(ctx context.Context, sr *scopeRun, chk scopeCheck) (g do
 	if s, blocked := targetStateStop(g.Target); blocked {
 		return g, &s, nil
 	}
+	if obs := groupObserverFrom(ctx); obs != nil {
+		// run_task（#158）の観測: 基準との差（移動・置き換えは停止、メンバーの増減だけは中断）を、前面・座標の検証より先に見る。
+		// バッチの中では画像を撮らない（撮影の事前確認は省く）。
+		sr.captured = true
+		stop, yield := obs(g)
+		if yield {
+			return g, nil, groupChangedPartial(sr.injected) // この操作がすでに一部を注入していれば partial
+		}
+		if stop != nil {
+			return g, stop, nil
+		}
+	}
 	if chk.focus {
 		if stop, err = c.checkFocus(g); stop != nil || err != nil {
 			return g, stop, err

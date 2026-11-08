@@ -631,3 +631,45 @@ func TestControlWithoutThumbnailAuditNeverGrabs(t *testing.T) {
 		t.Fatalf("entries = %v grabs = %d", ev, len(e.capturer.CallsTo("Grab")))
 	}
 }
+
+// スコープ付きのリースの操作は、監査のサムネイル（Capturer.Grab = モニター全体）を撮らない。監査の行は残る。
+// 撮ると他アプリの画素を含む画像が保存され、「モニター撮影・画面領域の切り出しに切り替えない」規則（#156）に反する。
+func TestControlThumbnailIsSkippedForScopedLeases(t *testing.T) {
+	e := newCtlEnv(t)
+	app := platformtest.NewFakeApp(e.windows, e.input, e.clipboard)
+	tc := &thumbCtl{
+		ctlEnv: e,
+		cap:    &thumbCapturer{FakeCapturer: platformtest.NewFakeCapturer(thumbMonitors...), started: make(chan struct{}, 64)},
+		audit:  newThumbFakeAudit(),
+		logs:   &bytes.Buffer{},
+	}
+	tc.cap.AttachWindows(e.windows)
+	ctl, err := NewControl(ControlConfig{
+		Capturer: tc.cap, Input: app, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
+		Launcher: e.launcher, Apps: e.apps, Leases: e.leases, Kill: e.kill, Settings: e.settings,
+		Audit: tc.audit, Clock: e.clock,
+		Sleep: func(context.Context, time.Duration) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc.ctl = ctl
+	tc.shooter = ctl.(*control).thumbs
+	if _, err := e.leases.AcquireScoped(context.Background(), ctlAlice, app.Ref()); err != nil {
+		t.Fatal(err)
+	}
+	if err := tc.do(ctlAlice, domain.KeyPress{Keys: domain.KeyCombo{Key: "a"}}); err != nil {
+		t.Fatal(err)
+	}
+	got := tc.finish()
+	if len(got) != 1 || got[0].Entry.Event != "tool.key" || got[0].Entry.Result != auditOK {
+		t.Fatalf("records = %+v, want one ok key row", got)
+	}
+	if got[0].Thumb != nil {
+		t.Error("a scoped operation must not carry a monitor thumbnail")
+	}
+	if g := tc.grabs(); len(g) != 0 {
+		t.Errorf("Grab calls = %v, want none (monitor capture is forbidden for a scoped lease)", g)
+	}
+	tc.cap.AssertNoMonitorCapture(t)
+}

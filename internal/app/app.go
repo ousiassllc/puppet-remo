@@ -321,6 +321,7 @@ func (a *App) build(ctx context.Context) error {
 	// NewViewerSessions が登録する。WebSocket は閉じた理由から閉じコード 4503 で閉じる。
 	streamer, err := service.NewStreamer(service.StreamerConfig{
 		Capturer: p.Capturer, Clock: cfg.Clock, IDs: cfg.IDs, Settings: settings, Logger: a.log,
+		Groups: control, // ビューアのウィンドウ選択（スコープ付きリース。#157）の源。モニター撮影には切り替えない
 	})
 	if err != nil {
 		return fmt.Errorf("streamer: %w", err)
@@ -387,6 +388,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 	a.web, err = webremote.New(webremote.Deps{
 		Sessions: a.viewers, Leases: a.leases, Control: control, Settings: a.settings, Tasks: a.tasks, Clock: cfg.Clock, Logger: a.log,
+		Windows: service.NewWindowPicker(p.Windows, killMgr),
 	})
 	if err != nil {
 		return fmt.Errorf("web ui: %w", err)
@@ -463,7 +465,7 @@ func (a *App) buildAgent(control service.Control, kill *service.KillSwitchManage
 	}
 	a.agent, err = service.NewAgent(service.AgentServiceConfig{
 		Tasks: cfg.Repo.Tasks(), Clients: cfg.Repo.Clients(), Settings: a.agentCfg, Control: control, Leases: a.leases, Kill: kill,
-		Approval: a.approval, Model: model, Fast: fast, Audit: a.audit, Bus: a.bus, Disabler: a.agentCfg, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
+		Approval: a.approval, Model: model, Windows: cfg.Platform.Windows, Fast: fast, Audit: a.audit, Bus: a.bus, Disabler: a.agentCfg, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
 	})
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)

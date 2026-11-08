@@ -288,7 +288,8 @@ func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Resul
 			entry = ToolAuditEntry(who, tool, args, leaseID, err, took)
 		}
 		var shot *thumbTarget
-		if err == nil && opChangesScreen(executed) {
+		// スコープ付きのリースの操作は、監査のサムネイルを撮らない（Capturer.Grab はモニター全体＝他アプリの画素を含む。モニター撮影に切り替えない規則）。
+		if err == nil && !tr.scoped && opChangesScreen(executed) {
 			t := thumbTargetOf(who, executed)
 			shot = &t
 		}
@@ -320,6 +321,7 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if err != nil {
 		return Result{}, "", nil, err
 	}
+	tr.scoped = scope != nil
 	p, err := c.plan(ctx, op)
 	if err != nil {
 		return Result{}, leaseID, nil, err

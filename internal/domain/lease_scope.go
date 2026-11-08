@@ -29,6 +29,11 @@ const (
 	ReasonKeyOutOfScope       GroupReason = "key_out_of_scope"       // win 修飾・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc
 	ReasonClipboardOutOfScope GroupReason = "clipboard_out_of_scope" // ClipboardRead（スコープ付きは書き込みだけ）
 
+	// 対象の移動・リサイズ（エージェントの基準 S と比べて T または既存メンバーの矩形が違う。#158。入力の注入の前に検出する）。
+	ReasonTargetMoved GroupReason = "target_moved"
+	// run_task の対象が agent.deny_processes に当たる（タスクを開始しない。#158）。
+	ReasonDeniedProcess GroupReason = "denied_process"
+
 	// 停止中（halted）に入力・クリップボード書き込みを拒否するときの reason。detail.halt_reason に停止の理由が入る。
 	ReasonTargetHalted GroupReason = "target_halted"
 )

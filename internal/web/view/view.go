@@ -607,6 +607,8 @@ type ViewerLease struct {
 	CanRelease  bool
 	CanRevoke   bool
 	Task        *ViewerTask
+	// ScopedProcess は自分が保持するリースが対象ウィンドウに束縛されているとき（#157）の、対象のプロセス名。スコープなしは空。
+	ScopedProcess string
 }
 
 // ViewerTask はビューアのリースパネルに出す、実行中のエージェントのタスクの要約（FR-W08）。ビューアはタスクの依頼元とは別の
@@ -624,12 +626,41 @@ type ViewerTask struct {
 type KeyMenuItem struct {
 	Label string
 	Keys  string
+	// Disabled はスコープ付きリース（#157）で送れないキー（Alt+Tab・Win など。サーバーも key_out_of_scope で拒否する）。
+	Disabled bool
 }
 
 // ViewerOps はクリップボードとショートカット送信（操作権が要る操作。FR-W06・W07）。Enabled のときだけ描画する。
 type ViewerOps struct {
 	Enabled bool
-	Keys    []KeyMenuItem
+	// Scoped はスコープ付きリース（#157）。クリップボードは書き込みだけ（読み取りの UI を出さない。サーバーも clipboard_out_of_scope で拒否する）。
+	Scoped bool
+	Keys   []KeyMenuItem
+}
+
+// WindowRow はウィンドウ選択の一覧の 1 件（#157）。選べないとき（Selectable が false）は灰色で、Note が理由。
+type WindowRow struct {
+	ID         string
+	PID        string
+	Start      string // プロセスの開始時刻（同一性を確かめる値。POST /viewer/target に付ける）
+	Title      string
+	Process    string
+	Foreground bool
+	Minimized  bool
+	Selectable bool
+	Note       string
+}
+
+// WindowPicker はウィンドウ選択の領域（#window-picker）。CanSelect は、リースが空いていて選べるとき。
+// ScopedProcess が空でなければ、このビューアがスコープ付きのリースを保持している（一覧は出さず、対象のプロセスを示す）。
+// Message は選べない理由（他者が保持中・承認待ち・解放が先）。
+type WindowPicker struct {
+	CanSelect     bool
+	ScopedProcess string
+	Message       string
+	Rows          []WindowRow
+	// Error は一覧を読めなかったとき（キルスイッチ中・一覧の失敗）の利用者向けの文。
+	Error string
 }
 
 // Viewer はビューアのページ。ViewerID は X-Viewer-Id と ws-url に埋め込む。
@@ -642,6 +673,7 @@ type Viewer struct {
 	Toolbar  ViewerToolbar
 	Lease    ViewerLease
 	Ops      ViewerOps
+	Picker   WindowPicker
 }
 
 // RemoteError はリモートの Web UI のエラーページ。

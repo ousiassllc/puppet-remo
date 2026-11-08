@@ -39,6 +39,9 @@ type ApprovalRequest struct {
 	// Detail は承認ダイアログに出す内容の説明（M4。safety_check は OpenAI の安全チェックの文面、judge_action は対象アクションの要約）。
 	// 呼び出し側が秘密・入力した文字列の本文・パス・引数を除いた短い文字列にして渡す（呼び出し側が 500 文字以内に切る）。lease は空。
 	Detail string
+	// Scope は lease の承認で、承認されたときに束縛する対象（スコープ付きの取得。#156・#157）。承認ダイアログは「ウィンドウ 1 枚と関連する
+	// ダイアログ・メニューに限定」と Scope.Process（プロセス名）を出す。スコープなしの取得・ほかの kind は nil。ウィンドウのタイトルは持たない。
+	Scope *domain.LeaseScope
 }
 
 // Decision はホストの結果。
