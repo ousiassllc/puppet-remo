@@ -64,7 +64,7 @@ func TestControlLaunchFlagsAnExistingWindowBroughtForward(t *testing.T) {
 	if res.Window != nil {
 		t.Errorf("Window = %+v, want none: the foreground window is not the launched app's window", res.Window)
 	}
-	if fg, err := e.windows.Foreground(); err != nil || fg.ID != "77" {
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "77" {
 		t.Errorf("foreground = %+v (%v), want the existing window 77 untouched", fg, err)
 	}
 	if len(e.slept) != launchWindowPollAttempts-1 {
@@ -119,7 +119,7 @@ func TestControlLaunchReturnsTheLaunchedWindowNotTheForegroundOne(t *testing.T) 
 	if res.Window == nil || res.Window.ID != "88" || res.Window.PID != res.PID || !res.Window.Foreground {
 		t.Errorf("Window = %+v, want the launched window 88, brought to the front", res.Window)
 	}
-	if fg, err := e.windows.Foreground(); err != nil || fg.ID != "88" {
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "88" {
 		t.Errorf("foreground = %+v (%v), want window 88 focused", fg, err)
 	}
 }
@@ -185,7 +185,7 @@ func TestControlLaunchDoesNotFlagWhenANewWindowOfAnotherPIDOpens(t *testing.T) {
 	if res.Window == nil || res.Window.ID != "88" || !res.Window.Foreground {
 		t.Errorf("Window = %+v, want the new window 88 (handed-over process), brought to the front", res.Window)
 	}
-	if fg, err := e.windows.Foreground(); err != nil || fg.ID != "88" {
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "88" {
 		t.Errorf("foreground = %+v (%v), want the new window 88 focused", fg, err)
 	}
 	if d := auditDetail(t, lastLaunchEntry(t, e)); d["reused_existing_window"] != false {
@@ -211,7 +211,7 @@ func TestControlLaunchDoesNotReturnANewWindowOfAnotherApp(t *testing.T) {
 	if res.ReusedExistingWindow {
 		t.Error("ReusedExistingWindow = true, want false: a new window exists")
 	}
-	if fg, err := e.windows.Foreground(); err != nil || fg.ID != "77" {
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "77" {
 		t.Errorf("foreground = %+v (%v), want the existing window 77 untouched", fg, err)
 	}
 }
@@ -292,7 +292,7 @@ func TestControlLaunchDoesNotFocusWhenTheKillSwitchFiresDuringTheWait(t *testing
 	if res.Window == nil || res.Window.ID != "88" || res.Window.Foreground {
 		t.Errorf("Window = %+v, want the launched window 88, not brought to the front", res.Window)
 	}
-	if fg, err := e.windows.Foreground(); err != nil || fg.ID != "5" {
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "5" {
 		t.Errorf("foreground = %+v (%v), want the other app's window 5 untouched after the kill switch", fg, err)
 	}
 }

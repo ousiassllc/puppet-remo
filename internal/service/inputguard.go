@@ -70,14 +70,14 @@ func (g InputGuard) checkPoints(mon []domain.Monitor, points ...domain.Point) er
 				return domain.ErrInvalidCoordinates.WithMsg(fmt.Sprintf("(%d, %d) is outside every monitor", p.X, p.Y))
 			}
 		}
-		w, ok, err := g.Windows.At(p)
+		hit, ok, err := g.Windows.At(p)
 		if err != nil {
 			return err
 		}
 		if !ok {
 			continue // どのウィンドウにもない（デスクトップ）
 		}
-		if err := domain.CheckInputTarget(w); err != nil {
+		if err := domain.CheckInputTarget(hit.Top); err != nil {
 			return err
 		}
 	}
@@ -85,11 +85,11 @@ func (g InputGuard) checkPoints(mon []domain.Monitor, points ...domain.Point) er
 }
 
 func (g InputGuard) checkForeground(rule func(domain.WindowInfo) error) error {
-	w, err := g.Windows.Foreground()
+	f, err := g.Windows.Foreground()
 	if err != nil {
 		return err
 	}
-	return rule(w)
+	return rule(f.Foreground)
 }
 
 // checkWindowByID は id のウィンドウに rule を適用する。存在しない id は、実行側（platform）が

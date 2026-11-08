@@ -72,7 +72,8 @@ func (c *control) observeLaunchedWindow(ctx context.Context, pid uint32, exePath
 // observeWindows は 1 回の観測。一覧が読めなかったときは、前面のウィンドウだけで pid のウィンドウの有無を判断する。
 func (c *control) observeWindows(ctx context.Context, pid uint32, exe string, before map[string]struct{}) launchObservation {
 	var obs launchObservation
-	if fg, err := c.windows.Foreground(); err == nil {
+	if focus, err := c.windows.Foreground(); err == nil {
+		fg := focus.Foreground
 		fg.Foreground = true
 		obs.foreground = &fg
 		if fg.PID == pid {

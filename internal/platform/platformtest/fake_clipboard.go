@@ -42,3 +42,10 @@ func (f *FakeClipboard) WriteText(ctx context.Context, s string) error {
 	f.SetText(s)
 	return nil
 }
+
+// peek は記録せずに現在のテキストを返す（FakeApp の貼り付け用。ReadText の呼び出し回数に数えない）。
+func (f *FakeClipboard) peek() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.text
+}
