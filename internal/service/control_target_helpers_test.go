@@ -217,11 +217,22 @@ func detailOf(t *testing.T, e repository.AuditEntry) map[string]any {
 	return d
 }
 
-// hookInput は MoveTo・Text の直後に hook を呼ぶ InputInjector（注入の間に画面が変わる状況を作る）。
+// hookInput は MoveTo・Text・CursorPos（最初の 1 回だけ）の直後に hook を呼ぶ InputInjector（注入の間に画面が変わる状況を作る）。
 type hookInput struct {
 	platform.InputInjector
-	afterMoveTo func()
-	afterText   func()
+	afterMoveTo    func()
+	afterText      func()
+	afterCursorPos func() // 最初の CursorPos の直後に 1 回だけ呼ぶ（plan と lockInput の間の変化）
+}
+
+func (h *hookInput) CursorPos() (domain.Point, error) {
+	p, err := h.InputInjector.CursorPos()
+	if err == nil && h.afterCursorPos != nil {
+		hook := h.afterCursorPos
+		h.afterCursorPos = nil
+		hook()
+	}
+	return p, err
 }
 
 func (h *hookInput) MoveTo(ctx context.Context, p domain.Point) error {

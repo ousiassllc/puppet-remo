@@ -276,6 +276,7 @@ func (c *control) execute(ctx context.Context, p plan, sr *scopeRun) (Result, er
 		}
 		return Result{}, c.input.MoveTo(ctx, o.At)
 	case domain.Click:
+		chk := atPoints
 		if !p.clickInPlace {
 			if err := verify(atPoints); err != nil {
 				return Result{}, err
@@ -283,8 +284,16 @@ func (c *control) execute(ctx context.Context, p plan, sr *scopeRun) (Result, er
 			if err := c.input.MoveTo(ctx, *o.At); err != nil {
 				return Result{}, err
 			}
+			sr.markInjected()
+		} else if sr != nil {
+			// 現在位置でのクリックは、plan の時点の位置（lockInput の外で読んだもの）ではなく、注入の直前に読み直した位置を検証する。
+			pos, err := c.input.CursorPos()
+			if err != nil {
+				return Result{}, err
+			}
+			chk = scopeCheck{points: []domain.Point{pos}}
 		}
-		if err := verify(atPoints); err != nil {
+		if err := verify(chk); err != nil {
 			return Result{}, err
 		}
 		return Result{}, c.input.Click(ctx, o.Button, o.Count, o.Mods)
@@ -310,6 +319,7 @@ func (c *control) execute(ctx context.Context, p plan, sr *scopeRun) (Result, er
 		if err := c.input.MoveTo(ctx, o.At); err != nil {
 			return Result{}, err
 		}
+		sr.markInjected()
 		if err := verify(atPoints); err != nil {
 			return Result{}, err
 		}

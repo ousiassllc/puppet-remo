@@ -15,14 +15,16 @@ import (
 //
 //   - 実行前（lockInput の外。scopeGate）: ClipboardRead は常に clipboard_out_of_scope（platform のクリップボード読み取りは呼ばない。
 //     書き込みだけ許可）。停止中（halted）は、Esc を含む一切の入力とクリップボード書き込みを target_halted で拒否する。win 修飾・win キー・
-//     Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc は key_out_of_scope。これらはその操作だけの拒否で、停止にはしない。
+//     Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc は key_out_of_scope。これらはその操作だけの拒否で、停止にはしない。Ctrl+Alt+Delete（SAS）は
+//     スコープなしと同じ secure_attention_sequence（domain.CheckKeyCombo・CheckKeyEvent）で、同じくその操作だけの拒否。
 //   - 実行中（lockInput の中。verifyInput）: 入力の注入の直前と、1 つの操作の複数回の注入の間（MoveTo → click、押下 → 離す、
 //     文字列は scopedTypeChunkRunes 文字ごと）に、T の同一性（target_closed / target_replaced）・T の状態（自ウィンドウ・昇格・最小化）・
 //     キー・文字は前面とフォーカスの葉、座標は最上位の At と葉・Rect を対象グループ G（domain.ResolveGroup）で検証する。
 //     そのうえで、操作の最初の注入の前に 1 回だけ、G の検証できたメンバー（最小化されていないもの）を GroupCapturer.GrabGroup で撮れるかを確かめる
 //     （撮影の事前確認。モニター撮影・画面コピーには切り替えない。GroupCapturer を持たない Capturer は capture_unavailable）。
 //   - どちらかに通らなければ、何も注入せず ReleaseAll を呼び、リースを halted にして ErrInputBlocked を返す（監査 input.target_halted）。
-//     メンバーが増減するだけでは停止しない（次の入力は新しい G で検証する）。
+//     メンバーが増減するだけでは停止しない（次の入力は新しい G で検証する）。検証そのものが platform の失敗で終わるときは、その操作がすでに
+//     注入していれば ReleaseAll を呼んでからエラーを返す（停止にはしない）。At を省略した Click は、lockInput の中で読み直したカーソル位置を検証する。
 //
 // 停止後は自動では戻らない。ResumeTarget が保持者の明示的な再開で、全条件を再検証して通ったときだけ active に戻す。
 
@@ -64,6 +66,16 @@ type scopeRun struct {
 	target  domain.WindowRef
 	// captured は撮影の事前確認が通ったか。操作の最初の検証でだけ確かめる。
 	captured bool
+	// injected は、この操作がすでに 1 回以上入力を注入したか（押下中のキー・ボタンが残りうる）。以降の検証が platform の失敗で
+	// 終わるときは、ReleaseAll を呼んでから返す。
+	injected bool
+}
+
+// markInjected は、この操作が入力を注入したことを記録する。スコープなしの操作（sr が nil）では何もしない。
+func (sr *scopeRun) markInjected() {
+	if sr != nil {
+		sr.injected = true
+	}
 }
 
 // scopeCheck は 1 回の検証で確かめる入力の宛先。
@@ -121,8 +133,14 @@ func scopeGate(s domain.LeaseScope, op domain.Op) error {
 	var forbidden bool
 	switch o := op.(type) {
 	case domain.KeyPress:
+		if err := domain.CheckKeyCombo(o.Keys); err != nil {
+			return err // Ctrl+Alt+Delete（SAS）はスコープなしと同じ拒否（NFR-S06）
+		}
 		forbidden = domain.ScopedKeyForbidden(o.Keys.Mods, o.Keys.Key)
 	case domain.KeyEvent:
+		if err := domain.CheckKeyEvent(o); err != nil {
+			return err
+		}
 		forbidden = domain.ScopedKeyForbidden(o.Mods, o.Code) || domain.ScopedKeyForbidden(o.Mods, o.Key)
 	case domain.Click:
 		forbidden = domain.ScopedKeyForbidden(o.Mods, "")
@@ -270,23 +288,35 @@ func (c *control) scopeActive(sr *scopeRun) error {
 
 // verifyInput は入力の注入の直前の検証（スコープ付きリース）。scopeActive に通らなければ注入しない。検証に通らなければ
 // halt（ReleaseAll・halted・監査）して ErrInputBlocked。スコープなしの操作（sr が nil）では何もしない。
+// 検証そのものが platform の失敗（ウィンドウ一覧・前面・At・ctx のキャンセル）で終わるとき、この操作がすでに注入していれば
+// （押下中のキー・ボタンが残りうる）、ReleaseAll を呼んでから返す。
 func (c *control) verifyInput(ctx context.Context, sr *scopeRun, chk scopeCheck) error {
 	if sr == nil {
 		return nil
 	}
 	if err := c.scopeActive(sr); err != nil {
-		return err
+		return c.releaseIfInjected(sr, err)
 	}
 	g, stop, err := c.check(ctx, sr, chk)
 	switch {
 	case err != nil:
-		return err
+		return c.releaseIfInjected(sr, err)
 	case stop == nil:
 		return nil
 	case stop.refuse:
 		return c.withOwnWindows(ctx, stop.err())
 	}
 	return c.halt(ctx, sr, g, *stop)
+}
+
+// releaseIfInjected は sr の操作がすでに注入していれば ReleaseAll を呼び、err をそのまま返す。
+func (c *control) releaseIfInjected(sr *scopeRun, err error) error {
+	if sr.injected {
+		if rerr := c.input.ReleaseAll(); rerr != nil {
+			c.log.Warn("release input after the scoped verification failed", "error", rerr)
+		}
+	}
+	return err
 }
 
 // halt は入力の検証・撮影の失敗でリースを停止にする: ReleaseAll → halted → 監査（input.target_halted）→ ErrInputBlocked。
@@ -340,6 +370,7 @@ func (c *control) typeScoped(ctx context.Context, sr *scopeRun, text string) err
 		if err := c.input.Text(ctx, string(rs[:n])); err != nil {
 			return err
 		}
+		sr.injected = true
 		rs = rs[n:]
 	}
 	return nil
