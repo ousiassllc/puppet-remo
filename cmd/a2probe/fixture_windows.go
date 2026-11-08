@@ -393,7 +393,7 @@ func openSaveDialog(owner uintptr) {
 		return
 	}
 	path := windows.UTF16ToString(buf)
-	if !strings.EqualFold(filepath.Dir(path), filepath.Clean(fx.saveDir)) || !strings.EqualFold(filepath.Ext(path), ".a2p") {
+	if !sameDir(filepath.Dir(path), fx.saveDir) || !strings.EqualFold(filepath.Ext(path), ".a2p") {
 		fx.emit("EVT", "save-closed", "saved", "0", "reason", "outside_savedir")
 		return
 	}
@@ -496,6 +496,9 @@ func handleCommand(m message) {
 		down := uintptr(1) | scan<<16
 		up := down | 1<<30 | 1<<31
 		postMessage(fx.hT, wmKeyDown, uintptr(vk), down)
+		if vk >= 'A' && vk <= 'Z' { // ニーモニックは WM_CHAR で処理される。投函した WM_KEYDOWN が TranslateMessage を通る保証がないので文字も投函する
+			postMessage(fx.hT, wmChar, uintptr(vk-'A'+'a'), down)
+		}
 		postMessage(fx.hT, wmKeyUp, uintptr(vk), up)
 	case "save-open":
 		ack()
@@ -550,4 +553,11 @@ func boolStr(b bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+// sameDir は a と b が同じフォルダーか（8.3 の短い名前・大文字小文字の違いを OS に解決させて比べる）。
+func sameDir(a, b string) bool {
+	ai, errA := os.Stat(a)
+	bi, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(ai, bi)
 }

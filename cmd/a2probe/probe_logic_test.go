@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"image/color"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -115,14 +116,57 @@ func TestReportTextKeepsOnlyRecordedFacts(t *testing.T) {
 	}
 }
 
-// 測定結果の型に、他アプリの窓のタイトル・件数を書く欄がないこと（保存しない方針を型で保つ）。
-func TestReportHasNoFieldForForeignWindowTitles(t *testing.T) {
-	r := newReport()
-	r.Windows = append(r.Windows, WindowFact{Role: "main"})
-	js, _ := r.JSON()
-	for _, banned := range []string{`"title"`, `"count"`, `"others"`} {
-		if strings.Contains(string(js), banned) {
-			t.Errorf("result.json に %s の欄がある", banned)
+// 窓・撮影・リンクの記録の型に、タイトル・件数・他アプリを表す欄がないこと（他アプリの窓を保存しない方針を型で保つ）。
+// 空値は omitempty で JSON から消えるので、JSON ではなく型のフィールドを調べる。
+func TestRecordedTypesHaveNoFieldForTitlesOrCounts(t *testing.T) {
+	for _, typ := range []reflect.Type{reflect.TypeFor[WindowFact](), reflect.TypeFor[CaptureFact](), reflect.TypeFor[LinkFact]()} {
+		for i := range typ.NumField() {
+			f := typ.Field(i)
+			name := strings.ToLower(f.Name + " " + f.Tag.Get("json"))
+			for _, banned := range []string{"title", "count", "other", "document"} {
+				if strings.Contains(name, banned) {
+					t.Errorf("%s.%s: タイトル・件数・他アプリを記録する欄は持たない", typ.Name(), f.Name)
+				}
+			}
 		}
+	}
+}
+
+// 撮影の安全規則: 照合済みでない PID・別プロセス（interferer・foreign）の同じクラスの窓は撮らない。
+func TestCaptureAllowedOnlyVerifiedFixtureWindows(t *testing.T) {
+	verified := map[uint32]string{100: "main", 200: "interferer", 300: "foreign"}
+	named := map[uintptr]string{1: "t", 2: "interferer"}
+	tests := []struct {
+		name  string
+		pid   uint32
+		hwnd  uintptr
+		class string
+		want  bool
+	}{
+		{"main の名乗った窓", 100, 1, "A2ProbeTarget", true},
+		{"main のメニュー（名乗っていない）", 100, 50, "#32768", true},
+		{"main のダイアログ（名乗っていない）", 100, 51, "#32770", true},
+		{"main の名乗っていない別クラスの窓は撮らない", 100, 52, "SomethingElse", false},
+		{"interferer の名乗った窓", 200, 2, "A2ProbeInterferer", true},
+		{"interferer のプロセスの #32768 は撮らない", 200, 60, "#32768", false},
+		{"foreign のプロセスの #32770 は撮らない", 300, 61, "#32770", false},
+		{"照合していない PID の #32768 は撮らない", 999, 70, "#32768", false},
+		{"HWND が別プロセスに再利用されたら（PID が違う）名乗った HWND でも撮らない", 999, 1, "A2ProbeTarget", false},
+	}
+	for _, tt := range tests {
+		if _, got := captureAllowed(verified, named, tt.pid, tt.hwnd, tt.class); got != tt.want {
+			t.Errorf("%s: allowed = %t, want %t", tt.name, got, tt.want)
+		}
+	}
+}
+
+// マゼンタの許容差の境界（±16 は数え、±17 は数えない）。模様の色（赤など）は遠いので数えない。
+func TestMagentaToleranceBoundary(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 3, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 255 - magentaTolerance, G: magentaTolerance, B: 255 - magentaTolerance, A: 255})
+	img.SetRGBA(1, 0, color.RGBA{R: 255 - magentaTolerance - 1, G: 0, B: 255, A: 255})
+	img.SetRGBA(2, 0, color.RGBA{R: 200, G: 40, B: 40, A: 255})
+	if got := analyzePixels(img, nil).Magenta; got != 1 {
+		t.Errorf("Magenta = %d, want 1（許容差ちょうどだけ数える）", got)
 	}
 }

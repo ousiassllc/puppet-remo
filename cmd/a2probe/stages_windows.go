@@ -21,15 +21,15 @@ import (
 )
 
 const (
-	pwFull   = pwRenderFullConten // PW_RENDERFULLCONTENT: 主の方式
-	pwPlain  = 0                  // 比較用（フラグなし）
-	vkDown   = 0x28
-	vkReturn = 0x0D
+	pwFull      = pwRenderFullConten // PW_RENDERFULLCONTENT: 主の方式
+	pwPlain     = 0                  // 比較用（フラグなし）
+	vkMnemonicA = 0x41               // 項目のニーモニック A
 
 	// 一致判定の閾値（提案値。実測を見て調整する）。
 	sameThreshold  = 0.999 // 重ね前後で画素が一致する割合
 	minWatchPixels = 500   // オーナードローの色が写ったとみなす画素数
 	minPatternPx   = 1000  // T の模様の各色が写ったとみなす画素数
+	minTextColors  = 8     // システム描画のメニューに文字が写ったとみなす異なる色の数
 )
 
 // rectOf は hwnd の見た目の枠（ListAll の Rect）を返す。
@@ -103,6 +103,13 @@ func (p *prober) baseline() {
 	expect("M1.interferer", "別プロセスの無関係な窓は G に入らない", p.interHwn, domain.ReasonUnrelatedOtherProcess)
 	if fh := p.hwndByName("foreign"); fh != 0 {
 		expect("M1.foreign", "別プロセスが T に所有された窓は G に入らず停止の対象（related_cross_process）", fh, domain.ReasonRelatedCrossProcess)
+	}
+
+	// foreign は所有関係の判定（M1.foreign）にだけ使う。T と入力状態が結びつくので、以降のメニュー・ダイアログの測定を乱さないよう、ここで終了する。
+	if p.foreignF != nil {
+		p.foreignF.quit()
+		delete(p.hwnds, p.hwndByName("foreign"))
+		p.rep.Note("foreign（別プロセスが T に所有された窓）は、M1 の判定のあとで終了した（メニュー・ダイアログの測定に影響させない）")
 	}
 
 	cf, _, err := p.capture("baseline", p.tHwnd, pwFull, "t-baseline")
@@ -198,13 +205,15 @@ func (p *prober) occlusion(stage, id, title string, targets []uintptr, cover ima
 			continue
 		}
 		same := sameShare(refs[i].img, img)
-		good := cf.Returned && cf.Magenta == 0 && same >= sameThreshold
+		good := cf.Returned && cf.Verdict == verdictContent && cf.Magenta == 0 && same >= sameThreshold
 		ok = ok && good
 		detail = append(detail, fmt.Sprintf("%s: 重なり確認済み(interferer が最上位) PrintWindow=%t マゼンタ画素=%d 重ねる前との一致=%.4f", p.label(t), cf.Returned, cf.Magenta, same))
 	}
+	// 重なりを確認できなかった対象が 1 つでもあれば、全体を PASS にしない（確認できた対象だけが通っても、その他は未検証）。
 	st := statusOf(ok)
-	if skipped == len(targets) {
+	if ok && skipped > 0 {
 		st = StatusSkip
+		detail = append(detail, "一部の対象は重なりを確認できず未検証のため、全体は SKIP（確認できた対象の結果は上のとおり）")
 	}
 	p.rep.Add(id, title, st, "%s", strings.Join(detail, "\n"))
 }
@@ -285,7 +294,9 @@ func (p *prober) analyzeMenu(sp menuSpec, w domain.WindowInfo) (domain.WindowInf
 			}
 			detail += "\n" + watchedDetail(cf, sp.watch)
 		} else {
-			detail += "\n（システム描画。項目の写りは PNG を人が目視して確認する）"
+			// システム描画のメニューは文字（アンチエイリアスで多色）が写るはず。枠と区切り線だけの画像を「内容あり」にしない。
+			ok = ok && cf.Distinct >= minTextColors
+			detail += fmt.Sprintf("\n（システム描画。文字が写っていれば色数が %d 以上になる。項目の写りは PNG を人が目視して確認する）", minTextColors)
 		}
 		p.rep.Add("M3."+sp.id, sp.title+": PrintWindow(PW_RENDERFULLCONTENT) で写る", statusOf(ok), "%s", detail)
 	}
@@ -330,7 +341,7 @@ func (p *prober) sysMenuAndDialog() {
 	// S1 → S3 の連鎖: 開いているメニューへキーメッセージを投函して「名前を付けて保存」を選ぶ（グローバル入力ではない）。
 	knownDlg := p.currentIDs("#32770")
 	var chainErr error
-	for _, vk := range []int{vkDown, vkReturn} {
+	for _, vk := range []int{vkMnemonicA} { // 「名前を付けて保存(&A)...」のニーモニック。先頭項目の選択状態に依存しない
 		if _, err := p.mainF.command(p.ctx, "menu-key", "vk", strconv.Itoa(vk)); err != nil {
 			chainErr = err
 			break
@@ -439,7 +450,7 @@ func (p *prober) dialogStage(dlg domain.WindowInfo) {
 	saved := ev.Fields["saved"] == "1" && rerr == nil && strings.TrimSpace(string(body)) == "a2probe"
 	gone := p.windowGone(dlg.ID, 3*time.Second)
 	p.rep.Add("S3.save", "S3 ファイル名を入力して保存し、ダイアログが閉じる（fixture 内のメッセージ駆動）", statusOf(saved && gone),
-		"saved=%s file_written=%t dialog_gone=%t（実入力での保存は最終ゲート）", ev.Fields["saved"], rerr == nil, gone)
+		"saved=%s file_written=%t dialog_gone=%t reason=%s cderr=%s（実入力での保存は最終ゲート）", ev.Fields["saved"], rerr == nil, gone, ev.Fields["reason"], ev.Fields["cderr"])
 }
 
 // guardCheck は実機の事実（Foreground・At）を、製品と同じ検証（Group.CheckFocus・CheckHit）に通す。メニュー・ダイアログが開いている間、
@@ -464,7 +475,7 @@ func (p *prober) guardCheck(id, title string, g domain.Group, pt domain.Point) {
 // 合成画像は PNG に出す。デスクトップ・モニターの画像は使わない。
 func (p *prober) geometry(stage, id, title string, g domain.Group) {
 	var members []pwin.GroupLayer
-	var labels []string
+	var labels, dropped []string
 	for _, m := range g.Members {
 		hw, err := strconv.ParseUint(m.Window.ID, 10, 32)
 		if err != nil {
@@ -472,6 +483,7 @@ func (p *prober) geometry(stage, id, title string, g domain.Group) {
 		}
 		cf, img, err := p.capture(stage+"-compose", uintptr(hw), pwFull, "")
 		if err != nil || !cf.Returned || img == nil {
+			dropped = append(dropped, m.Window.Class)
 			continue
 		}
 		wr := image.Rect(cf.WindowRect[0], cf.WindowRect[1], cf.WindowRect[0]+cf.WindowRect[2], cf.WindowRect[1]+cf.WindowRect[3])
@@ -517,9 +529,9 @@ func (p *prober) geometry(stage, id, title string, g domain.Group) {
 	}
 	roundtrip := total >= 10 && onMember == total
 	p.rep.Add(id, title+": 合成の外接矩形が全メンバーを含み、合成画像上の点 → 物理座標(Origin+p) → At → メンバーが一致する",
-		statusOf(contains && roundtrip),
-		"メンバー=%v 合成=%dx%d origin=(%d,%d) 外接矩形が全メンバーを含む=%t T の矩形の外にはみ出すメンバーあり=%t 往復の一致=%d/%d（不一致は、点の上に別のウィンドウが重なっている可能性）png=%s",
-		labels, canvas.Bounds().Dx(), canvas.Bounds().Dy(), origin.X, origin.Y, contains, protrude, onMember, total, png)
+		statusOf(contains && roundtrip && len(dropped) == 0),
+		"メンバー=%v 撮れず合成から落ちたメンバー=%v 合成=%dx%d origin=(%d,%d) 外接矩形が全メンバーを含む=%t T の矩形の外にはみ出すメンバーあり=%t 往復の一致=%d/%d（不一致は、点の上に別のウィンドウが重なっている可能性）png=%s",
+		labels, dropped, canvas.Bounds().Dx(), canvas.Bounds().Dy(), origin.X, origin.Y, contains, protrude, onMember, total, png)
 	p.grabGroupCheck(id+".grabgroup", title, g, canvas, origin)
 }
 
@@ -587,13 +599,26 @@ func (p *prober) groupOcclusion(id, title string, g domain.Group, cover image.Re
 		p.rep.Add(id, title, StatusSkip, "重なりを確認できない（At の最上位が interferer ではない）")
 		return
 	}
+	for _, r := range refs {
+		hw, _ := strconv.ParseUint(r.ID, 10, 32)
+		if _, err := p.mayCapture(uintptr(hw)); err != nil {
+			p.rep.Add(id, title, StatusSkip, "照合済みの fixture の窓だけに限る: %v", err)
+			return
+		}
+	}
 	gi, err := pwin.NewCapturer().GrabGroup(p.ctx, refs)
 	if err != nil || gi.Image == nil {
 		p.rep.Add(id, title, StatusFail, "GrabGroup が失敗: %v", err)
 		return
 	}
+	var bad []string
+	for _, m := range gi.Members {
+		if m.Status != "ok" {
+			bad = append(bad, m.Ref.ID+":"+string(m.Status))
+		}
+	}
 	st := analyzePixels(gi.Image, nil)
-	p.rep.Add(id, title, statusOf(st.Magenta == 0), "重なり確認済み 合成=%s マゼンタ画素=%d（非メンバーの画素が合成に混ざらない）", imageSize(gi.Image), st.Magenta)
+	p.rep.Add(id, title, statusOf(len(bad) == 0 && st.Magenta == 0), "重なり確認済み 合成=%s マゼンタ画素=%d 撮れなかったメンバー=%v（全メンバーが ok のうえで、非メンバーの画素が合成に混ざらない）", imageSize(gi.Image), st.Magenta, bad)
 }
 
 // --- 所要時間（M7）と代表アプリの下調べ（M8） ---
@@ -703,6 +728,6 @@ func (p *prober) summarize() {
 	p.rep.Note("S1（メニューバー）の部分結果: システム描画 %s / オーナードロー %s", p.statusOfIDs("M1.sys", "M2.sys", "M3.sys", "M4b"), p.statusOfIDs("M1.od", "M2.od", "M3.od"))
 	p.rep.Note("S2（右クリックメニュー）の部分結果: %s", p.statusOfIDs("M1.ctx", "M2.ctx", "M3.ctx"))
 	p.rep.Note("S3（同一プロセスの保存ダイアログ）の部分結果: %s", p.statusOfIDs("M1.dialog", "M2.dialog", "M3.dialog", "S3.fill", "S3.save"))
-	p.rep.Note("これらは専用 fixture でのメッセージ駆動の結果で、S1〜S3 の最終合格（代表アプリ・スコープ付きの実入力・GrabGroup）ではない。FAIL・SKIP の意味と次の判断は、報告の「実機確認の読み方」に従う。")
+	p.rep.Note("これらは専用 fixture でのメッセージ駆動の結果で、S1〜S3 の最終合格（代表アプリ・スコープ付きの実入力・GrabGroup）ではない。FAIL・SKIP の意味と次の判断は、docs/operations/smoke-windows.md §3.10.1 の「読み方（部分結果）」に従う。")
 	p.rep.Note("取らなかったもの: 他アプリの窓のタイトル・文書・件数、デスクトップ・画面領域・モニターの画像。グローバル入力（SendInput・カーソル移動）は使っていない。")
 }

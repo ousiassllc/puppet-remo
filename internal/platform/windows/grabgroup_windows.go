@@ -5,6 +5,7 @@ package windows
 import (
 	"context"
 	"image"
+	"time"
 	"unsafe"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -13,7 +14,10 @@ import (
 
 var _ platform.GroupCapturer = (*Capturer)(nil)
 
-var w32PrintWindow = w32User32.NewProc("PrintWindow")
+var (
+	w32PrintWindow     = w32User32.NewProc("PrintWindow")
+	w32IsHungAppWindow = w32User32.NewProc("IsHungAppWindow")
+)
 
 const pwRenderFullContent = 0x00000002 // PW_RENDERFULLCONTENT
 
@@ -36,16 +40,13 @@ func (*Capturer) GrabGroup(ctx context.Context, members []domain.WindowRef) (pla
 	}
 	out := platform.GroupImage{Members: make([]platform.MemberCapture, len(members))}
 	layers := make([]GroupLayer, len(members))
-	cache := newProcessCache()
 	for i, ref := range members {
 		if err := ctx.Err(); err != nil {
 			return platform.GroupImage{}, err
 		}
-		mc := platform.MemberCapture{Ref: ref, Status: platform.CaptureGone}
-		layer, status := grabMember(ref, cache)
-		mc.Status = status
+		layer, status := grabMemberWithin(ctx, ref)
 		layers[i] = layer
-		out.Members[i] = mc
+		out.Members[i] = platform.MemberCapture{Ref: ref, Status: status}
 	}
 	img, origin, rects := ComposeGroup(layers)
 	out.Image, out.Origin = img, origin
@@ -62,10 +63,38 @@ func (*Capturer) GrabGroup(ctx context.Context, members []domain.WindowRef) (pla
 	return out, nil
 }
 
+// grabMemberTimeout は 1 枚の撮影を待つ上限。PrintWindow は対象のウィンドウへ WM_PRINT を同期で送るので、応答しないアプリで戻らないことがある。
+// 超えたら撮れなかったもの（CaptureNotPrintable）として扱う（呼び出し側の入力ロックを握り続けない）。
+const grabMemberTimeout = 3 * time.Second
+
+type memberShot struct {
+	layer  GroupLayer
+	status platform.CaptureStatus
+}
+
+// grabMemberWithin は grabMember を別 goroutine で動かし、grabMemberTimeout か ctx で打ち切る。打ち切ったあとも goroutine は PrintWindow が戻るまで残り、
+// 自分で DIB を解放する（結果は捨てる）。
+func grabMemberWithin(ctx context.Context, ref domain.WindowRef) (GroupLayer, platform.CaptureStatus) {
+	done := make(chan memberShot, 1)
+	go func() {
+		l, s := grabMember(ref, newProcessCache())
+		done <- memberShot{l, s}
+	}()
+	timer := time.NewTimer(grabMemberTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.layer, r.status
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+	return GroupLayer{}, platform.CaptureNotPrintable
+}
+
 // grabMember は ref のウィンドウ 1 枚を撮る。同一性の確認は撮影の直前（HWND の再利用を別のウィンドウの撮影にしない）。
 func grabMember(ref domain.WindowRef, cache *processCache) (GroupLayer, platform.CaptureStatus) {
 	hwnd, ok := parseWindowID(ref.ID)
-	if !ok {
+	if !ok || !ref.Known() { // 同一性を確かめる値（ID・PID・開始時刻・クラス）が揃わないものは撮らない（fail closed）
 		return GroupLayer{}, platform.CaptureGone
 	}
 	if r, _, _ := w32IsWindow.Call(hwnd); r == 0 {
@@ -77,6 +106,9 @@ func grabMember(ref domain.WindowRef, cache *processCache) (GroupLayer, platform
 		return GroupLayer{}, platform.CaptureGone
 	}
 	if minimized, _, _ := w32IsIconic.Call(hwnd); minimized != 0 {
+		return GroupLayer{}, platform.CaptureNotPrintable
+	}
+	if hung, _, _ := w32IsHungAppWindow.Call(hwnd); hung != 0 { // 応答しないアプリへ PrintWindow を送らない
 		return GroupLayer{}, platform.CaptureNotPrintable
 	}
 	frame := windowRect(hwnd)
@@ -125,7 +157,20 @@ func printWindowRGBA(hwnd uintptr, w, h int) (*image.RGBA, bool) {
 	}
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	bgraToRGBA(img.Pix, pix)
+	markDrawn(img.Pix)
 	return img, true
+}
+
+// markDrawn は PrintWindow が描いた画素のアルファを 255 に、触られていない画素（sentinel と完全に同じ色）を 0 にそろえる。
+// GDI はアルファを書かないので、これがないと描いた画素と描かなかった画素を合成で区別できない（角丸の外に sentinel の色が混ざる）。
+func markDrawn(rgba []byte) {
+	for i := 0; i < len(rgba); i += 4 {
+		if rgba[i] == printSentinel[2] && rgba[i+1] == printSentinel[1] && rgba[i+2] == printSentinel[0] {
+			rgba[i+3] = 0
+		} else {
+			rgba[i+3] = 255
+		}
+	}
 }
 
 // untouched は pix のほぼ全面（99% 以上）が sentinel のままか（PrintWindow が描かなかったか）を返す。

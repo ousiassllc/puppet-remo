@@ -67,6 +67,10 @@ func runProbe(args []string) int {
 	if *out == "" {
 		*out = filepath.Join(os.TempDir(), "a2probe-out-"+time.Now().Format("20060102-150405"))
 	}
+	if entries, err := os.ReadDir(*out); err == nil && len(entries) > 0 {
+		fmt.Fprintln(os.Stderr, "出力先が空でない。既存のファイルを上書きしないので、新しい --out を指定する:", *out)
+		return exitUsage
+	}
 	if err := os.MkdirAll(*out, 0o700); err != nil {
 		fmt.Fprintln(os.Stderr, "出力先を作れない:", err)
 		return exitToolError
@@ -85,11 +89,21 @@ func runProbe(args []string) int {
 	}
 	p := &prober{ctx: ctx, out: *out, rep: newReport(), wm: wm, verified: map[uint32]string{}, hwnds: map[uintptr]string{}}
 
-	runErr := p.run(*monitor)
+	runErr := func() (err error) {
+		defer p.cleanup() // panic でも fixture を終了し、作った一時フォルダーを消す
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("probe の内部エラー（panic）: %v", r)
+			}
+		}()
+		return p.run(*monitor)
+	}()
 	if runErr != nil {
 		p.rep.Add("RUN", "測定の実行", StatusFail, "%v", runErr)
 	}
-	p.cleanup()
+	if ctx.Err() != nil {
+		p.rep.Add("RUN.timeout", "全体の制限時間", StatusFail, "制限時間（%v）に達した。以降の項目は測れていない: %v", *timeout, ctx.Err())
+	}
 	p.summarize()
 	if err := p.writeOutputs(); err != nil {
 		fmt.Fprintln(os.Stderr, "出力に失敗:", err)
@@ -101,6 +115,15 @@ func runProbe(args []string) int {
 		return exitMeasuredFail
 	}
 	return exitOK
+}
+
+// deadlineArg は fixture が自分で終了するまでの時間（probe の制限時間より少し長く）。
+func (p *prober) deadlineArg() string {
+	d := 150 * time.Second
+	if dl, ok := p.ctx.Deadline(); ok {
+		d = time.Until(dl) + 30*time.Second
+	}
+	return "--deadline=" + d.Round(time.Second).String()
 }
 
 func (p *prober) writeOutputs() error {
@@ -139,6 +162,9 @@ func (p *prober) run(monitorIdx int) error {
 	if err != nil {
 		return fmt.Errorf("monitors: %w", err)
 	}
+	if len(mons) == 0 {
+		return errors.New("モニターが 1 台も取れない")
+	}
 	mon := mons[0]
 	for _, m := range mons {
 		if (monitorIdx < 0 && m.Primary) || m.Index == monitorIdx {
@@ -148,21 +174,22 @@ func (p *prober) run(monitorIdx int) error {
 	p.recordEnv(mons, mon)
 	p.checkNotepad()
 
-	p.saveDir = filepath.Join(os.TempDir(), fmt.Sprintf("a2probe-%s-%06d", time.Now().Format("20060102-150405"), rand.IntN(1_000_000)))
-	if err := os.MkdirAll(p.saveDir, 0o700); err != nil {
+	saveDir := filepath.Join(os.TempDir(), fmt.Sprintf("a2probe-%s-%06d", time.Now().Format("20060102-150405"), rand.IntN(1_000_000)))
+	if err := os.Mkdir(saveDir, 0o700); err != nil { // 既存なら失敗にする（自分が作ったフォルダーだけを cleanup で消す）
 		return err
 	}
+	p.saveDir = saveDir
 
 	w := min(720, mon.Size.W-120)
 	h := min(520, mon.Size.H-300)
 	tx, ty := mon.Origin.X+60, mon.Origin.Y+60
-	p.mainF, err = startFixture(p.ctx, "main", "--x="+strconv.Itoa(tx), "--y="+strconv.Itoa(ty), "--w="+strconv.Itoa(w), "--h="+strconv.Itoa(h), "--savedir="+p.saveDir)
+	p.mainF, err = startFixture(p.ctx, "main", p.deadlineArg(), "--x="+strconv.Itoa(tx), "--y="+strconv.Itoa(ty), "--w="+strconv.Itoa(w), "--h="+strconv.Itoa(h), "--savedir="+p.saveDir)
 	if err != nil {
 		return err
 	}
 	p.verified[p.mainF.pid] = "main"
 	p.parking = image.Rect(mon.Origin.X+mon.Size.W-160, mon.Origin.Y+20, mon.Origin.X+mon.Size.W-20, mon.Origin.Y+100)
-	p.interF, err = startFixture(p.ctx, "interferer", "--x="+strconv.Itoa(p.parking.Min.X), "--y="+strconv.Itoa(p.parking.Min.Y), "--w="+strconv.Itoa(p.parking.Dx()), "--h="+strconv.Itoa(p.parking.Dy()))
+	p.interF, err = startFixture(p.ctx, "interferer", p.deadlineArg(), "--x="+strconv.Itoa(p.parking.Min.X), "--y="+strconv.Itoa(p.parking.Min.Y), "--w="+strconv.Itoa(p.parking.Dx()), "--h="+strconv.Itoa(p.parking.Dy()))
 	if err != nil {
 		return err
 	}
@@ -253,7 +280,7 @@ func (p *prober) verifyInterferer() error {
 }
 
 func (p *prober) startForeign(x, y int) error {
-	f, err := startFixture(p.ctx, "foreign", "--owner="+strconv.FormatUint(uint64(uint32(p.tHwnd)), 10),
+	f, err := startFixture(p.ctx, "foreign", p.deadlineArg(), "--owner="+strconv.FormatUint(uint64(uint32(p.tHwnd)), 10),
 		"--x="+strconv.Itoa(x), "--y="+strconv.Itoa(y), "--w=200", "--h=120")
 	if err != nil {
 		return err
@@ -396,19 +423,13 @@ func (p *prober) windowGone(id string, timeout time.Duration) bool {
 var errNotVerified = errors.New("照合済みの fixture の窓ではない。撮影しない")
 
 // mayCapture は hwnd が照合済みの fixture の窓か（READY で名乗って OS の事実と一致した窓、または照合済みの main の PID のメニュー・ダイアログ）を確かめる。
+// PID は撮影のたびに OS から取り直す（HWND が別プロセスに再利用されても通さない）。
 func (p *prober) mayCapture(hwnd uintptr) (role string, err error) {
-	pid := windowPID(hwnd)
-	role, ok := p.verified[pid]
+	role, ok := captureAllowed(p.verified, p.hwnds, windowPID(hwnd), hwnd, className(hwnd))
 	if !ok {
 		return "", errNotVerified
 	}
-	if _, named := p.hwnds[hwnd]; named {
-		return role, nil
-	}
-	if class := className(hwnd); role == "main" && (class == domain.ClassMenu || class == "#32770") {
-		return role, nil
-	}
-	return "", errNotVerified
+	return role, nil
 }
 
 var allWatch = []color.RGBA{

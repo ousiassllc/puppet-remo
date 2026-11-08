@@ -12,14 +12,15 @@ type GroupLayer struct {
 	Frame image.Rectangle
 	// Window は Img が覆う矩形（GetWindowRect。影・不可視の枠を含みうる）。
 	Window image.Rectangle
-	// Img は PrintWindow の結果（Window と同じ大きさ。アルファは見ない）。
+	// Img は PrintWindow の結果（Window と同じ大きさ）。アルファが 0 の画素（PrintWindow が描かなかった。角丸の外など）は置かない。
+	// GDI の描画はアルファを 0 のままにするので、呼び出し側が撮影のあとに描いた画素を 255 にそろえておく。
 	Img *image.RGBA
 }
 
 // ComposeGroup は layers（前面が先）を、見た目の枠の外接矩形の**空（透明）のキャンバス**に、後ろから順に置いて返す（platform.GroupImage の合成）。
 // デスクトップ・画面領域・モニターの画像は下地に使わない（キャンバスはメンバーの画素以外が透明のまま）。
 // 置く範囲は Frame ∩ Window（画像が実際に覆っている見た目の枠）。画像のない（撮れなかった）メンバー・空の枠は外接矩形にも入らない。
-// 置いた画素はアルファ 255 にする。origin はキャンバスの左上の物理座標（合成画像の座標 p → 物理座標は origin + p）。置けるメンバーがなければ nil。
+// 置いた画素はアルファ 255 にする（Img のアルファが 0 の画素は置かない）。origin はキャンバスの左上の物理座標（合成画像の座標 p → 物理座標は origin + p）。置けるメンバーがなければ nil。
 func ComposeGroup(layers []GroupLayer) (img *image.RGBA, origin domain.Point, rects []domain.Rect) {
 	rects = make([]domain.Rect, len(layers))
 	var bounds image.Rectangle
@@ -45,7 +46,9 @@ func ComposeGroup(layers []GroupLayer) (img *image.RGBA, origin domain.Point, re
 			src := l.Img.PixOffset(area.Min.X-l.Window.Min.X, y-l.Window.Min.Y)
 			dst := canvas.PixOffset(area.Min.X-bounds.Min.X, y-bounds.Min.Y)
 			for x := 0; x < area.Dx(); x++ {
-				canvas.Pix[dst], canvas.Pix[dst+1], canvas.Pix[dst+2], canvas.Pix[dst+3] = l.Img.Pix[src], l.Img.Pix[src+1], l.Img.Pix[src+2], 255
+				if l.Img.Pix[src+3] != 0 { // アルファ 0 は PrintWindow が描かなかった画素（角丸の外など）。透明のまま残す
+					canvas.Pix[dst], canvas.Pix[dst+1], canvas.Pix[dst+2], canvas.Pix[dst+3] = l.Img.Pix[src], l.Img.Pix[src+1], l.Img.Pix[src+2], 255
+				}
 				src += 4
 				dst += 4
 			}

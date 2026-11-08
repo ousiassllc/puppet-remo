@@ -81,6 +81,7 @@ const (
 	wmEraseBkgnd    = 0x0014
 	wmKeyDown       = 0x0100
 	wmKeyUp         = 0x0101
+	wmChar          = 0x0102
 	wmCommand       = 0x0111
 	wmSysCommand    = 0x0112
 	wmContextMenu   = 0x007B
@@ -341,8 +342,12 @@ func printWindow(hwnd uintptr, flags uint32) printResult {
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for i := 0; i < len(pix); i += 4 { // BGRA → RGBA
-		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pix[i+2], pix[i+1], pix[i], pix[i+3]
+	for i := 0; i < len(pix); i += 4 { // BGRA → RGBA。アルファは「PrintWindow が描いた画素=255、触られていない sentinel=0」にそろえる（製品の GrabGroup と同じ約束）
+		a := byte(255)
+		if pix[i] == sentinel.B && pix[i+1] == sentinel.G && pix[i+2] == sentinel.R {
+			a = 0
+		}
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pix[i+2], pix[i+1], pix[i], a
 	}
 	res.Img = img
 	return res
