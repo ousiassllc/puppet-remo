@@ -40,7 +40,7 @@ func TestConfirmLaunchModeModalDoesNotSwitch(t *testing.T) {
 	r := newRig(t)
 	res := r.get("/apps/mode/confirm?mode=denylist", hx...)
 	status(t, res, http.StatusOK)
-	contains(t, res, `role="dialog"`, "ブラックリスト方式に切り替えますか？", "何でも起動できる", `hx-put="/apps/mode"`, `{&#34;mode&#34;:&#34;denylist&#34;}`, `hx-target="#launch-mode"`)
+	contains(t, res, `role="dialog"`, "ブラックリスト方式に切り替えますか？", "何でも起動できる", `hx-put="/apps/mode"`, `{&#34;mode&#34;:&#34;denylist&#34;}`, `hx-target="#launch-mode"`, "border-danger-line-strong")
 	if len(r.f.Apps.ModeSets) != 0 {
 		t.Error("opening the confirmation must not switch the mode")
 	}
@@ -96,7 +96,7 @@ func TestDeniedCreateUpdateDelete(t *testing.T) {
 
 	modal := r.get("/apps/denied/"+id+"/delete/confirm", hx...)
 	status(t, modal, http.StatusOK)
-	contains(t, modal, `role="dialog"`, `hx-delete="/apps/denied/`+id+`"`, `hx-target="#denied-section"`, "拒否リストから外しますか？")
+	contains(t, modal, `role="dialog"`, `hx-delete="/apps/denied/`+id+`"`, `hx-target="#denied-section"`, "拒否リストから外しますか？", "border-danger-line-strong")
 	if len(r.f.Apps.Denied) != 1 {
 		t.Error("opening the confirmation must not delete")
 	}
