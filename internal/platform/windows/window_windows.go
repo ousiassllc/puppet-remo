@@ -39,7 +39,7 @@ func (wm *WindowManager) List(ctx context.Context) ([]domain.WindowInfo, error) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	all, err := wm.snapshot()
+	all, err := wm.snapshot(false)
 	if err != nil {
 		return nil, err
 	}
@@ -52,33 +52,81 @@ func (wm *WindowManager) List(ctx context.Context) ([]domain.WindowInfo, error) 
 	return windowsOut, nil
 }
 
+// ListAll は可視で cloaked でないすべてのトップレベルウィンドウを、Z オーダー（前面が先）で返す。タイトルのないウィンドウ・
+// ツールウィンドウ・ポップアップ・メニューを含み、所有関係の鎖・クラス・プロセスの開始時刻・スタイルを埋める（対象グループの判定用）。
+// 取れなかった事実は不明（零値、鎖は検証不能の印）のままにする。
+func (wm *WindowManager) ListAll(ctx context.Context) ([]domain.WindowInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return wm.snapshot(true)
+}
+
 // At は p 上の最前面のウィンドウを返す。タイトルのないウィンドウも対象にする。最小化されたウィンドウは含めない。
-// 操作中オーバーレイ（クリックスルーの自ウィンドウ。全モニターを覆う）は入力が下へ通るので飛ばし、その下の実ウィンドウを返す
+// 操作中オーバーレイ（クリックスルーの自ウィンドウ。モニターの縁の枠と札）は入力が下へ通るので飛ばし、その下の実ウィンドウを返す
 // （下にある承認ダイアログなどが own_window の判定から漏れないようにする。#69）。
-func (wm *WindowManager) At(p domain.Point) (domain.WindowInfo, bool, error) {
-	all, err := wm.snapshot()
+// 葉（GA_ROOT に引き上げる前の子ウィンドウ）は WindowFromPoint で求め、その最上位が返すウィンドウと一致したときだけ採る。
+// 一致しない・取れないときは葉を不明（零値）にし、判定側が止める（推測しない）。
+func (wm *WindowManager) At(p domain.Point) (domain.HitInfo, bool, error) {
+	all, err := wm.snapshot(true)
 	if err != nil {
-		return domain.WindowInfo{}, false, err
+		return domain.HitInfo{}, false, err
 	}
 	for _, w := range all {
 		if !w.Minimized && !w.Overlay && w.Rect.Contains(p) {
-			return w, true, nil
+			return domain.HitInfo{Top: w, Leaf: wm.leafAt(p, w)}, true, nil
 		}
 	}
-	return domain.WindowInfo{}, false, nil
+	return domain.HitInfo{}, false, nil
 }
 
-// Foreground は前面のウィンドウを返す。前面のウィンドウがなければ ErrWindowNotFound（デスクトップを使えなければ ErrDesktopUnavailable）。
-func (wm *WindowManager) Foreground() (domain.WindowInfo, error) {
+// leafAt は p にある最も深いウィンドウ（WindowFromPoint）を、top の配下にあるときだけ葉として返す。
+func (wm *WindowManager) leafAt(p domain.Point, top domain.WindowInfo) domain.LeafRef {
+	topHWND, ok := parseWindowID(top.ID)
+	if !ok {
+		return domain.LeafRef{}
+	}
+	leaf := windowFromPoint(p)
+	if leaf == 0 || rootOf(leaf) != topHWND {
+		return domain.LeafRef{}
+	}
+	if leaf == topHWND {
+		return domain.LeafOf(top)
+	}
+	f := wm.facts(leaf, newProcessCache())
+	if f.link.Unverifiable {
+		return domain.LeafRef{}
+	}
+	return domain.LeafRef{WindowRef: domain.WindowRef{ID: f.link.ID, PID: f.link.PID, ProcessStart: f.link.ProcessStart, Class: f.link.Class}, Process: f.process}
+}
+
+// Foreground は前面のウィンドウと、そのスレッドのフォーカス先の葉（GetGUIThreadInfo の hwndFocus。GA_ROOT に引き上げる前）を返す。
+// 前面のウィンドウがなければ ErrWindowNotFound（デスクトップを使えなければ ErrDesktopUnavailable）。
+// hwndFocus が無い（フォーカスのある子がない）ときは前面のウィンドウ自身を葉にし、GetGUIThreadInfo が失敗したときは葉を不明（零値）にする。
+func (wm *WindowManager) Foreground() (domain.FocusInfo, error) {
 	hwnd, _, _ := w32GetForegroundWindow.Call()
 	if hwnd == 0 {
 		if !desktopAvailable() {
-			return domain.WindowInfo{}, domain.ErrDesktopUnavailable.WithMsg("the input desktop is not accessible")
+			return domain.FocusInfo{}, domain.ErrDesktopUnavailable.WithMsg("the input desktop is not accessible")
 		}
-		return domain.WindowInfo{}, domain.ErrWindowNotFound.WithMsg("there is no foreground window")
+		return domain.FocusInfo{}, domain.ErrWindowNotFound.WithMsg("there is no foreground window")
 	}
 	monitors, _ := listMonitors()
-	return wm.info(hwnd, hwnd, monitors, newProcessCache()), nil
+	cache := newProcessCache()
+	fg := wm.fullInfo(hwnd, hwnd, monitors, cache)
+	focus := domain.FocusInfo{Foreground: fg}
+	gti, ok := guiThreadInfo(hwnd)
+	switch {
+	case !ok:
+	case gti.hwndFocus == 0 || gti.hwndFocus == hwnd:
+		focus.FocusLeaf = domain.LeafOf(fg)
+	default:
+		f := wm.facts(gti.hwndFocus, cache)
+		if !f.link.Unverifiable {
+			focus.FocusLeaf = domain.LeafRef{WindowRef: domain.WindowRef{ID: f.link.ID, PID: f.link.PID, ProcessStart: f.link.ProcessStart, Class: f.link.Class}, Process: f.process}
+		}
+	}
+	return focus, nil
 }
 
 // Focus は id のウィンドウを前面にする（最小化されていれば元に戻す）。
@@ -137,14 +185,28 @@ func bringToForeground(hwnd uintptr) bool {
 
 var (
 	w32GetWindowLongPtr = w32User32.NewProc("GetWindowLongPtrW")
+	w32GetClassNameW    = w32User32.NewProc("GetClassNameW")
+	w32GetWindow        = w32User32.NewProc("GetWindow")
+	w32GetAncestor      = w32User32.NewProc("GetAncestor")
+	w32GetDesktopWindow = w32User32.NewProc("GetDesktopWindow")
+	w32GetGUIThreadInfo = w32User32.NewProc("GetGUIThreadInfo")
+	w32WindowFromPoint  = w32User32.NewProc("WindowFromPoint")
 
 	enumWindowsMu       sync.Mutex
 	enumWindowsResult   []uintptr
 	enumWindowsCallback = sync.OnceValue(func() uintptr { return windows.NewCallback(windowEnumProc) })
 )
 
-// gwlExStyle は GWL_EXSTYLE（-20）。
-const gwlExStyle = ^uintptr(19)
+const (
+	gwlStyle   = ^uintptr(15) // GWL_STYLE（-16）
+	gwlExStyle = ^uintptr(19) // GWL_EXSTYLE（-20）
+
+	gwOwner   = 4 // GW_OWNER
+	gaParent  = 1 // GA_PARENT
+	gaRoot    = 2 // GA_ROOT
+	maxClass  = 256
+	menuClass = domain.ClassMenu
+)
 
 func windowEnumProc(hwnd, _ uintptr) uintptr {
 	enumWindowsResult = append(enumWindowsResult, hwnd)
@@ -152,7 +214,8 @@ func windowEnumProc(hwnd, _ uintptr) uintptr {
 }
 
 // snapshot は可視で cloaked でないトップレベルウィンドウの情報を、Z オーダー（前面が先）で集める。
-func (wm *WindowManager) snapshot() ([]domain.WindowInfo, error) {
+// full が true のときは所有関係の鎖（OwnerChain・MenuOwnerChain）も集める（List は使わないので集めない）。
+func (wm *WindowManager) snapshot(full bool) ([]domain.WindowInfo, error) {
 	enumWindowsMu.Lock()
 	enumWindowsResult = nil
 	r, _, err := w32EnumWindows.Call(enumWindowsCallback(), 0)
@@ -171,7 +234,11 @@ func (wm *WindowManager) snapshot() ([]domain.WindowInfo, error) {
 		if visible, _, _ := w32IsWindowVisible.Call(hwnd); visible == 0 || isCloaked(hwnd) {
 			continue
 		}
-		out = append(out, wm.info(hwnd, fg, monitors, cache))
+		if full {
+			out = append(out, wm.fullInfo(hwnd, fg, monitors, cache))
+		} else {
+			out = append(out, wm.info(hwnd, fg, monitors, cache))
+		}
 	}
 	return out, nil
 }
@@ -184,19 +251,130 @@ func (wm *WindowManager) info(hwnd, fg uintptr, monitors []domain.Monitor, cache
 	minimized, _, _ := w32IsIconic.Call(hwnd)
 	rect := windowRect(hwnd)
 	own := pid == wm.selfPID
+	ex := windowExStyle(hwnd)
 	return domain.WindowInfo{
-		ID:         formatWindowID(hwnd),
-		Title:      windowTitle(hwnd),
-		Process:    proc.name,
-		PID:        pid,
-		Rect:       rect,
-		Monitor:    monitorIndexFor(monitors, rect),
-		Foreground: hwnd == fg,
-		Minimized:  minimized != 0,
-		Elevated:   proc.elevated,
-		Own:        own,
-		Overlay:    own && isOverlayStyle(windowExStyle(hwnd)),
+		ID:           formatWindowID(hwnd),
+		Title:        windowTitle(hwnd),
+		Process:      proc.name,
+		PID:          pid,
+		ProcessStart: proc.start,
+		Class:        windowClass(hwnd),
+		Style:        decodeStyle(windowStyle(hwnd), ex),
+		Rect:         rect,
+		Monitor:      monitorIndexFor(monitors, rect),
+		Foreground:   hwnd == fg,
+		Minimized:    minimized != 0,
+		Elevated:     proc.elevated,
+		Own:          own,
+		Overlay:      own && isOverlayStyle(ex),
 	}
+}
+
+// fullInfo は info に所有関係の鎖を足す。OwnerChain は GW_OWNER（所有者がない子ウィンドウは親）を辿る。
+// メニュー（クラス #32768）は、そのスレッドの hwndMenuOwner（GetGUIThreadInfo）を起点に MenuOwnerChain を作る。
+// hwndMenuOwner が取れない・メニューモードでない（0）ときは MenuOwnerID を空にする（判定側が related_unverifiable で止める）。
+func (wm *WindowManager) fullInfo(hwnd, fg uintptr, monitors []domain.Monitor, cache *processCache) domain.WindowInfo {
+	w := wm.info(hwnd, fg, monitors, cache)
+	fact := func(h uintptr) (domain.WindowLink, bool) {
+		f := wm.facts(h, cache)
+		return f.link, !f.link.Unverifiable
+	}
+	w.OwnerChain = walkLinks(ownerOf(hwnd), hwnd, ownerOf, fact)
+	if w.Class == menuClass {
+		if gti, ok := guiThreadInfo(hwnd); ok && gti.hwndMenuOwner != 0 {
+			w.MenuOwnerID = formatWindowID(gti.hwndMenuOwner)
+			w.MenuOwnerChain = walkLinks(gti.hwndMenuOwner, hwnd, ownerOf, fact)
+		}
+	}
+	return w
+}
+
+// windowFacts は 1 枚のウィンドウの同一性とプロセス名。link.Unverifiable は事実を取れなかった（消えた・PID が取れない）こと。
+type windowFacts struct {
+	link    domain.WindowLink
+	process string
+}
+
+// facts は hwnd の ID・PID・開始時刻・クラスを集める。ウィンドウが消えている・PID が取れないときは link を検証不能にする。
+func (wm *WindowManager) facts(hwnd uintptr, cache *processCache) windowFacts {
+	if r, _, _ := w32IsWindow.Call(hwnd); r == 0 {
+		return windowFacts{link: domain.UnverifiableLink()}
+	}
+	var pid uint32
+	_, _, _ = w32GetWindowThreadProcess.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	if pid == 0 {
+		return windowFacts{link: domain.UnverifiableLink()}
+	}
+	proc := cache.lookup(pid)
+	return windowFacts{
+		link:    domain.WindowLink{ID: formatWindowID(hwnd), PID: pid, ProcessStart: proc.start, Class: windowClass(hwnd)},
+		process: proc.name,
+	}
+}
+
+// ownerOf は hwnd の所有者（GW_OWNER）を返す。所有者がなく子ウィンドウなら親（デスクトップは除く）。なければ 0。
+func ownerOf(hwnd uintptr) uintptr {
+	if owner, _, _ := w32GetWindow.Call(hwnd, gwOwner); owner != 0 {
+		return owner
+	}
+	parent, _, _ := w32GetAncestor.Call(hwnd, gaParent)
+	if desktop, _, _ := w32GetDesktopWindow.Call(); parent == desktop {
+		return 0
+	}
+	return parent
+}
+
+// rootOf は hwnd の最上位の祖先（GA_ROOT。所有者は辿らない）。
+func rootOf(hwnd uintptr) uintptr {
+	root, _, _ := w32GetAncestor.Call(hwnd, gaRoot)
+	return root
+}
+
+// windowFromPoint は p にある最も深いウィンドウ（なければ 0）。POINT は 64 ビットでは 1 つのレジスタに詰めて渡す（このパッケージは amd64 だけ）。
+func windowFromPoint(p domain.Point) uintptr {
+	packed := uint64(uint32(int32(p.X))) | uint64(uint32(int32(p.Y)))<<32
+	hwnd, _, _ := w32WindowFromPoint.Call(uintptr(packed))
+	return hwnd
+}
+
+// w32GUIThreadInfo は GUITHREADINFO。
+type w32GUIThreadInfo struct {
+	cbSize        uint32
+	flags         uint32
+	hwndActive    uintptr
+	hwndFocus     uintptr
+	hwndCapture   uintptr
+	hwndMenuOwner uintptr
+	hwndMoveSize  uintptr
+	hwndCaret     uintptr
+	rcCaret       w32Rect
+}
+
+// guiThreadInfo は hwnd を作ったスレッドの GUITHREADINFO。取れなければ ok=false。
+func guiThreadInfo(hwnd uintptr) (info w32GUIThreadInfo, ok bool) {
+	tid, _, _ := w32GetWindowThreadProcess.Call(hwnd, 0)
+	if tid == 0 {
+		return info, false
+	}
+	info.cbSize = uint32(unsafe.Sizeof(info))
+	r, _, _ := w32GetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&info)))
+	return info, r != 0
+}
+
+// windowClass は hwnd のクラス名。取れなければ空（不明）。
+func windowClass(hwnd uintptr) string {
+	var buf [maxClass]uint16
+	n, _, _ := w32GetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
+// windowStyle は hwnd のスタイル（GWL_STYLE）。取れなければ 0。
+func windowStyle(hwnd uintptr) uintptr {
+	r, _, _ := w32GetWindowLongPtr.Call(hwnd, gwlStyle)
+	return r
 }
 
 // windowExStyle は hwnd の拡張ウィンドウスタイル（GWL_EXSTYLE）。取れなければ 0。
@@ -239,10 +417,11 @@ func isCloaked(hwnd uintptr) bool {
 	return hr == 0 && cloaked != 0
 }
 
-// processInfo はプロセス 1 つの名前と昇格状態。
+// processInfo はプロセス 1 つの名前・昇格状態・開始時刻。
 type processInfo struct {
 	name     string
 	elevated bool
+	start    uint64 // 作成時刻（GetProcessTimes の FILETIME）。0 は不明（開けない・取れない）
 }
 
 // processCache は 1 回の列挙の間、同じ PID の問い合わせを 1 回にする。
@@ -272,6 +451,10 @@ func queryProcess(pid uint32) processInfo {
 	defer func() { _ = windows.CloseHandle(h) }()
 
 	var info processInfo
+	var created, exited, kernel, user windows.Filetime
+	if windows.GetProcessTimes(h, &created, &exited, &kernel, &user) == nil {
+		info.start = filetimeValue(created.HighDateTime, created.LowDateTime)
+	}
 	buf := make([]uint16, windows.MAX_LONG_PATH)
 	size := uint32(len(buf))
 	if windows.QueryFullProcessImageName(h, 0, &buf[0], &size) == nil {

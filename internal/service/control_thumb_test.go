@@ -279,7 +279,7 @@ func TestControlThumbnailLaunchApp(t *testing.T) {
 	tc := newThumbCtl(t)
 	mustAcquire(t, tc.ctlEnv, ctlAlice)
 	app := registerNotepad(t, tc.ctlEnv)
-	if _, err := tc.ctl.Launch(context.Background(), ctlAlice, app.ID); err != nil {
+	if _, err := tc.ctl.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID}); err != nil {
 		t.Fatal(err)
 	}
 	got := tc.finish()
@@ -390,7 +390,7 @@ func TestControlThumbnailSkipsFailedOps(t *testing.T) {
 	t.Run("launch_app failure", func(t *testing.T) {
 		tc := newThumbCtl(t)
 		mustAcquire(t, tc.ctlEnv, ctlAlice)
-		if _, err := tc.ctl.Launch(context.Background(), ctlAlice, "no-such-app"); err == nil {
+		if _, err := tc.ctl.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: "no-such-app"}); err == nil {
 			t.Fatal("want an error")
 		}
 		got := tc.finish()

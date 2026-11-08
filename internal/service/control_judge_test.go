@@ -656,7 +656,7 @@ func TestControlLaunchByAgentDoesNotRunTheJudge(t *testing.T) {
 	je.launcher.AddDir(appWorkMark)
 	app := registerNotepad(t, je.ctlEnv)
 	je.audit.entries = nil
-	if _, err := je.control.Launch(context.Background(), ctlAgent, app.ID); err != nil {
+	if _, err := je.control.Launch(context.Background(), ctlAgent, LaunchRequest{AppID: app.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if judge.calls.Load() != 0 {

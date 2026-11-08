@@ -49,7 +49,8 @@ func (u *UIAutomation) Close() { u.worker.Close() }
 // uiaResolveWindow は windowID（空なら前面）のウィンドウを返す。存在しなければ ErrWindowNotFound。
 func uiaResolveWindow(ctx context.Context, windows platform.WindowManager, windowID string) (domain.WindowInfo, error) {
 	if windowID == "" {
-		return windows.Foreground()
+		f, err := windows.Foreground()
+		return f.Foreground, err
 	}
 	list, err := windows.List(ctx)
 	if err != nil {

@@ -68,9 +68,11 @@ func auditDetail(t *testing.T, e repository.AuditEntry) map[string]any {
 
 func TestNewAppRegistryRequiresDependencies(t *testing.T) {
 	e := newCtlEnv(t)
-	full := AppRegistryConfig{Apps: e.appStore, Launcher: e.launcher, Picker: e.picker, Clock: e.clock, IDs: &ctlIDs{}}
+	full := AppRegistryConfig{Apps: e.appStore, Denied: e.denyStore, Settings: e.settings, Launcher: e.launcher, Picker: e.picker, Clock: e.clock, IDs: &ctlIDs{}}
 	cases := map[string]func(*AppRegistryConfig){
 		"Apps":     func(c *AppRegistryConfig) { c.Apps = nil },
+		"Denied":   func(c *AppRegistryConfig) { c.Denied = nil },
+		"Settings": func(c *AppRegistryConfig) { c.Settings = nil },
 		"Launcher": func(c *AppRegistryConfig) { c.Launcher = nil },
 		"Picker":   func(c *AppRegistryConfig) { c.Picker = nil },
 		"Clock":    func(c *AppRegistryConfig) { c.Clock = nil },

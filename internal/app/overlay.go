@@ -121,7 +121,7 @@ func (o *overlayController) label(ctx context.Context, a domain.Actor) string {
 }
 
 // overlayLabel はオーバーレイに添える文言「操作中: <クライアント名>（<種別>）」。名前が空ならクライアント ID を使う。
-// 長さの制限と HTML のエスケープは、描画する側（GET /overlay）が行う。
+// 長さの制限は、描画する側（splitOverlayLabel）が行う。
 func overlayLabel(a domain.Actor) string {
 	name := a.Label
 	if name == "" {
@@ -131,7 +131,7 @@ func overlayLabel(a domain.Actor) string {
 }
 
 // overlayAgentLabel は agent のオーバーレイの文言（FR-H07）: 1 行目は overlayLabel、2 行目は「エージェント実行中」と指示の要約
-// （空白をたたんで 40 文字まで。指示が無ければ「エージェント実行中」だけ）。2 行は改行で区切る（GET /overlay が分ける）。
+// （空白をたたんで 40 文字まで。指示が無ければ「エージェント実行中」だけ）。2 行は改行で区切る（splitOverlayLabel が分ける）。
 func overlayAgentLabel(a domain.Actor, prompt string) string {
 	line := "エージェント実行中"
 	if summary := summarizePrompt(prompt, overlaySummaryMaxRunes); summary != "" {

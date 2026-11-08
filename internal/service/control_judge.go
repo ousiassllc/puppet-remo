@@ -126,24 +126,24 @@ func (c *control) judgeTargets(ctx context.Context, op domain.Op) ([]domain.Wind
 			return c.windowByID(ctx, o.WindowID)
 		}
 	}
-	w, err := c.windows.Foreground()
+	f, err := c.windows.Foreground()
 	if err != nil {
 		return nil, err
 	}
-	return []domain.WindowInfo{w}, nil
+	return []domain.WindowInfo{f.Foreground}, nil
 }
 
 func (c *control) windowsAt(points ...domain.Point) ([]domain.WindowInfo, error) {
 	out := make([]domain.WindowInfo, 0, len(points))
 	for _, pt := range points {
-		w, ok, err := c.windows.At(pt)
+		hit, ok, err := c.windows.At(pt)
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			w = domain.WindowInfo{} // どのウィンドウにもない（デスクトップ）
+			hit.Top = domain.WindowInfo{} // どのウィンドウにもない（デスクトップ）
 		}
-		out = append(out, w)
+		out = append(out, hit.Top)
 	}
 	return out, nil
 }

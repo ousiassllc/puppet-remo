@@ -28,10 +28,17 @@ var (
 	_ service.SessionCloser = (*Server)(nil)
 )
 
+// methodDiscover は SDK が新しい版のクライアントの最初に送る server/discover。この（ステートフルな）サーバーは拒否し、
+// クライアントは続けて initialize を送る。discover が一時的に作る SDK のセッションは、会話を始めるものではないので表に載せない。
+// 載せると、閉じるまでの間 initialize の前に上限の枠を 1 つ塞ぎ、上限に届いていないのに 409 になる。
+const methodDiscover = "server/discover"
+
 // trackSessions は受信したリクエストのセッションを表に載せる受信ミドルウェア。
 func (s *Server) trackSessions(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
 	return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
-		s.track(req)
+		if method != methodDiscover {
+			s.track(req)
+		}
 		return next(ctx, method, req)
 	}
 }
@@ -67,6 +74,10 @@ func (s *Server) track(req mcpsdk.Request) {
 		rec.tokenID = p.Token.ID
 	}
 	s.sessions[id] = rec
+	// このセッションを作った要求の枠は、表のほうで数えるので返す（openSlot）。
+	if slot, ok := extra.TokenInfo.Extra[openSlotKey].(*openSlot); ok {
+		s.endOpening(slot)
+	}
 	s.mu.Unlock()
 	s.sessionsChanged()
 

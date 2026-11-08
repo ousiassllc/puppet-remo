@@ -21,6 +21,10 @@ type Apps struct {
 	Rows []domain.LaunchableApp
 	// Missing に入れた実行ファイルは存在しない（exe_path のエラーになる）。
 	Missing map[string]bool
+	// Mode は起動の方式（空は allowlist）、Denied は拒否リスト、ModeSets は SetLaunchMode の呼び出しの記録。
+	Mode     domain.LaunchMode
+	Denied   []domain.DeniedApp
+	ModeSets []domain.LaunchMode
 	// 呼び出しの記録。
 	Created  []domain.AppInput
 	Updated  map[string]domain.AppInput
@@ -148,4 +152,114 @@ func (a *Apps) PickExecutable(ctx context.Context) (string, bool, error) {
 		return "", false, nil
 	}
 	return f(ctx)
+}
+
+// 起動の方式と拒否リスト（#88）。本物（service.AppRegistry）と同じ規則: 方式の既定は allowlist、不正な方式・形の不備
+// （domain.ClassifyDenied）・重複（domain.DeniedKey）は項目エラー、200 件に達していれば conflict、無い id は ErrNotFound。
+// パスの解決（実体のパス）と監査は service の責務で、ここでは入力をそのまま（区切りだけそろえて）保存する。
+
+// LaunchMode は現在の方式。空なら allowlist。
+func (a *Apps) LaunchMode(context.Context) (domain.LaunchMode, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Mode == "" {
+		return domain.LaunchModeAllowlist, nil
+	}
+	return a.Mode, nil
+}
+
+func (a *Apps) SetLaunchMode(_ context.Context, mode domain.LaunchMode) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.WriteErr != nil {
+		return a.WriteErr
+	}
+	if !mode.Valid() {
+		return service.AppFieldErrors{domain.AppFieldLaunchMode: "起動の方式は「ホワイトリスト」か「ブラックリスト」を選んでください"}
+	}
+	a.Mode = mode
+	a.ModeSets = append(a.ModeSets, mode)
+	return nil
+}
+
+func (a *Apps) ListDenied(context.Context) ([]domain.DeniedApp, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.ListErr != nil {
+		return nil, a.ListErr
+	}
+	return slices.Clone(a.Denied), nil
+}
+
+func (a *Apps) findDenied(id string) int {
+	return slices.IndexFunc(a.Denied, func(r domain.DeniedApp) bool { return r.ID == id })
+}
+
+// checkDenied は value の形と重複を確かめ、保存する Kind・Value を返す。self は更新の対象の id。
+func (a *Apps) checkDenied(value, self string) (domain.DeniedKind, string, error) {
+	value = strings.TrimSpace(value)
+	kind, msg := domain.ClassifyDenied(value)
+	if msg != "" {
+		return "", "", service.AppFieldErrors{domain.AppFieldDeniedValue: msg}
+	}
+	if kind == domain.DeniedPath {
+		value = domain.NormalizePathForMatch(value)
+	}
+	for _, r := range a.Denied {
+		if r.ID != self && domain.DeniedKey(r.Kind, r.Value) == domain.DeniedKey(kind, value) {
+			return "", "", service.AppFieldErrors{domain.AppFieldDeniedValue: "同じ実行ファイル（パスまたは名前）がすでに拒否リストに登録されています"}
+		}
+	}
+	return kind, value, nil
+}
+
+func (a *Apps) CreateDenied(_ context.Context, value string) (domain.DeniedApp, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.WriteErr != nil {
+		return domain.DeniedApp{}, a.WriteErr
+	}
+	kind, v, err := a.checkDenied(value, "")
+	if err != nil {
+		return domain.DeniedApp{}, err
+	}
+	if len(a.Denied) >= domain.MaxDeniedApps {
+		return domain.DeniedApp{}, domain.NewError(domain.CodeConflict, "the launch denylist is full", nil)
+	}
+	a.next++
+	row := domain.DeniedApp{ID: fmt.Sprintf("den%03d", a.next), Kind: kind, Value: v}
+	a.Denied = append(a.Denied, row)
+	return row, nil
+}
+
+func (a *Apps) UpdateDenied(_ context.Context, id, value string) (domain.DeniedApp, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.WriteErr != nil {
+		return domain.DeniedApp{}, a.WriteErr
+	}
+	i := a.findDenied(id)
+	if i < 0 {
+		return domain.DeniedApp{}, notFound()
+	}
+	kind, v, err := a.checkDenied(value, id)
+	if err != nil {
+		return domain.DeniedApp{}, err
+	}
+	a.Denied[i].Kind, a.Denied[i].Value = kind, v
+	return a.Denied[i], nil
+}
+
+func (a *Apps) DeleteDenied(_ context.Context, id string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.WriteErr != nil {
+		return a.WriteErr
+	}
+	i := a.findDenied(id)
+	if i < 0 {
+		return notFound()
+	}
+	a.Denied = slices.Delete(a.Denied, i, i+1)
+	return nil
 }

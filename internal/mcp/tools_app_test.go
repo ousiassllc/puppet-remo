@@ -41,8 +41,11 @@ func TestListLaunchableApps(t *testing.T) {
 	if res.IsError {
 		t.Fatal(res.text())
 	}
-	if got := res.keys(t); !slices.Equal(got, []string{"apps"}) {
-		t.Errorf("keys = %v, want only apps", got)
+	if got := res.keys(t); !slices.Equal(got, []string{"apps", "mode"}) {
+		t.Errorf("keys = %v, want only apps and mode", got)
+	}
+	if mode := res.StructuredContent.(map[string]any)["mode"]; mode != "allowlist" {
+		t.Errorf("mode = %v, want allowlist (the default)", mode)
 	}
 	apps, _ := res.StructuredContent.(map[string]any)["apps"].([]any)
 	if len(apps) != 2 {
@@ -78,8 +81,8 @@ func TestListLaunchableAppsEmptyIsAnEmptyArray(t *testing.T) {
 	if res.IsError {
 		t.Fatal(res.text())
 	}
-	if got := res.text(); got != `{"apps":[]}` {
-		t.Errorf("text = %s, want {\"apps\":[]}", got)
+	if got := res.text(); got != `{"mode":"allowlist","apps":[]}` {
+		t.Errorf("text = %s, want {\"mode\":\"allowlist\",\"apps\":[]}", got)
 	}
 }
 
@@ -165,15 +168,14 @@ func TestLaunchApp(t *testing.T) {
 	}
 }
 
-// 起動後に前面にあったウィンドウと、既存のウィンドウが前に出ただけのときの印を、そのまま返す（FR-M19）。
-func TestLaunchAppReportsTheForegroundWindow(t *testing.T) {
-	existing := domain.WindowInfo{ID: "77", Title: "無題 - メモ帳", Process: "notepad.exe", PID: 500, Foreground: true}
+// 起動したアプリのウィンドウをそのまま返す（FR-M19。#85）。
+func TestLaunchAppReportsTheLaunchedWindow(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		window *domain.WindowInfo
 		reused bool
 	}{
-		{name: "existing window brought forward", window: &existing, reused: true},
+		{name: "handed over to a process that opened a new window", window: &domain.WindowInfo{ID: "99", Title: "無題 - メモ帳", Process: "notepad.exe", PID: 501}},
 		{name: "new window of the launched pid", window: &domain.WindowInfo{ID: "88", Title: "新規", Process: "notepad.exe", PID: 4120}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -310,11 +312,10 @@ func TestLaunchFailedNeverEchoesAnUnexpectedReason(t *testing.T) {
 func TestLaunchAppRejectsSchemaViolations(t *testing.T) {
 	cases := map[string]map[string]any{
 		"extra args":        {"app_id": sampleApps[0].ID, "args": []string{"--evil"}},
-		"extra path":        {"app_id": sampleApps[0].ID, "path": leakMark},
 		"extra cwd":         {"app_id": sampleApps[0].ID, "cwd": `C:\`},
-		"path only":         {"path": leakMark},
-		"missing app_id":    {},
+		"extra working_dir": {"path": leakMark, "working_dir": `C:\`},
 		"app_id not string": {"app_id": 7},
+		"path not string":   {"path": 7},
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -360,7 +361,7 @@ func TestLaunchAppSchemaViolationIsAudited(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), waitLimit)
 	defer cancel()
 
-	if res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "launch_app", Arguments: map[string]any{"app_id": sampleApps[0].ID, "path": leakMark}}); err != nil || !res.IsError {
+	if res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "launch_app", Arguments: map[string]any{"app_id": sampleApps[0].ID, "args": []string{leakMark}}}); err != nil || !res.IsError {
 		t.Fatalf("CallTool = %+v, %v, want a rejected call", res, err)
 	}
 	got := a.all()
@@ -389,8 +390,28 @@ func TestLaunchAppSchemaViolationIsAudited(t *testing.T) {
 	}
 }
 
-// 公開されるスキーマも app_id だけ（追加のプロパティは許さない）。
-func TestLaunchAppInputSchemaHasOnlyAppID(t *testing.T) {
+// app_id と path は、どちらも省略できる（方式によって使えるものが違うので、検査は Control が行う）。
+// 同時指定・どちらも無しは Control に届いて invalid_argument になる（Control.Launch が監査する）。
+func TestLaunchAppRequestFormErrorsAreRejectedByControl(t *testing.T) {
+	for name, args := range map[string]map[string]any{
+		"neither": {},
+		"both":    {"app_id": sampleApps[0].ID, "path": `C:\Tools\a.exe`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			e.ctl.apps = sampleApps
+			e.ctl.mode = domain.LaunchModeDenylist
+			cs := e.connect("c1")
+			res := callTool(t, cs, "launch_app", args)
+			if !res.IsError || !strings.HasPrefix(res.text(), "invalid_argument") {
+				t.Errorf("result = %q (isError=%v), want invalid_argument", res.text(), res.IsError)
+			}
+		})
+	}
+}
+
+// 公開されるスキーマは app_id と path だけ（追加のプロパティは許さない）。どちらも必須ではない。
+func TestLaunchAppInputSchemaHasOnlyAppIDAndPath(t *testing.T) {
 	e := newEnv(t)
 	cs := e.connect("c1")
 	list, err := cs.ListTools(context.Background(), nil)
@@ -415,7 +436,7 @@ func TestLaunchAppInputSchemaHasOnlyAppID(t *testing.T) {
 		}
 		switch tool.Name {
 		case "launch_app":
-			if len(schema.Properties) != 1 || schema.Properties["app_id"] == nil || !slices.Equal(schema.Required, []string{"app_id"}) {
+			if len(schema.Properties) != 2 || schema.Properties["app_id"] == nil || schema.Properties["path"] == nil || len(schema.Required) != 0 {
 				t.Errorf("launch_app schema = %s", raw)
 			}
 		case "list_launchable_apps":
@@ -423,5 +444,83 @@ func TestLaunchAppInputSchemaHasOnlyAppID(t *testing.T) {
 				t.Errorf("list_launchable_apps takes no input: %s", raw)
 			}
 		}
+	}
+}
+
+// denylist 方式でも、返すのは登録済みのアプリと方式だけ（拒否リストの中身・パスは型に無い）。
+func TestListLaunchableAppsReportsDenylistMode(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.apps = sampleApps
+	e.ctl.mode = domain.LaunchModeDenylist
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "list_launchable_apps", nil)
+	if res.IsError {
+		t.Fatal(res.text())
+	}
+	if got := res.keys(t); !slices.Equal(got, []string{"apps", "mode"}) {
+		t.Errorf("keys = %v, want only apps and mode", got)
+	}
+	m := res.StructuredContent.(map[string]any)
+	if m["mode"] != "denylist" || len(m["apps"].([]any)) != 2 {
+		t.Errorf("structuredContent = %v, want mode denylist and the 2 registered apps", m)
+	}
+}
+
+// path は app_id と同じツールの引数で、Control にそのまま渡る。引数・作業ディレクトリは入力スキーマに無く、SDK が拒否する。
+func TestLaunchAppPathIsPassedToControl(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.apps = sampleApps
+	e.ctl.mode = domain.LaunchModeDenylist
+	e.ctl.launchPID = 777
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "launch_app", map[string]any{"path": `C:\Tools\a.exe`})
+	if res.IsError {
+		t.Fatal(res.text())
+	}
+	got := e.ctl.launchRequestsFull()
+	if len(got) != 1 || got[0].Path != `C:\Tools\a.exe` || got[0].AppID != "" {
+		t.Errorf("Control received %+v, want only the path", got)
+	}
+	m := res.StructuredContent.(map[string]any)
+	if _, has := m["app_id"]; has || m["pid"] != float64(777) {
+		t.Errorf("structuredContent = %v, want pid 777 and no app_id for a path launch", m)
+	}
+
+	for _, extra := range []string{"args", "working_dir", "arguments", "cwd"} {
+		before := len(e.ctl.launchRequestsFull())
+		res := callTool(t, cs, "launch_app", map[string]any{"path": `C:\Tools\a.exe`, extra: "x"})
+		if !res.IsError || len(e.ctl.launchRequestsFull()) != before {
+			t.Errorf("extra property %q reached Control (isError=%v)", extra, res.IsError)
+		}
+	}
+}
+
+// app_denied は 403 相当のドメインエラーとして返り、メッセージに拒否リストの中身もパスも含まない。
+func TestLaunchAppDeniedByTheHost(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.mode = domain.LaunchModeDenylist
+	e.ctl.launchErr = domain.ErrAppDenied
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "launch_app", map[string]any{"path": `C:\Windows\System32\cmd.exe`})
+	if !res.IsError || !strings.HasPrefix(res.text(), "app_denied") {
+		t.Fatalf("result = %q (isError=%v), want app_denied", res.text(), res.IsError)
+	}
+	if strings.Contains(res.text(), "cmd.exe") || strings.Contains(res.text(), `C:\`) {
+		t.Errorf("error message leaks the path: %q", res.text())
+	}
+}
+
+// allowlist 方式（既定）で path を渡すと invalid_argument で拒否され、起動は始まらない。
+func TestLaunchAppPathInAllowlistModeIsRejected(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.apps = sampleApps
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "launch_app", map[string]any{"path": `C:\Tools\a.exe`})
+	if !res.IsError || !strings.HasPrefix(res.text(), "invalid_argument") {
+		t.Errorf("result = %q (isError=%v), want invalid_argument", res.text(), res.IsError)
 	}
 }

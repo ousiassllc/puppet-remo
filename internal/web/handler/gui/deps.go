@@ -86,6 +86,14 @@ type Apps interface {
 	Delete(ctx context.Context, id string) error
 	// PickExecutable はネイティブのファイル選択ダイアログを開き、閉じるまで戻らない。キャンセルは ok=false。
 	PickExecutable(ctx context.Context) (path string, ok bool, err error)
+
+	// 起動の方式（launch.mode）と拒否リスト（FR-H12。#88）。監査（settings.launch_mode.update・settings.launch_denylist.*）も実体が記録する。
+	LaunchMode(ctx context.Context) (domain.LaunchMode, error)
+	SetLaunchMode(ctx context.Context, mode domain.LaunchMode) error
+	ListDenied(ctx context.Context) ([]domain.DeniedApp, error)
+	CreateDenied(ctx context.Context, value string) (domain.DeniedApp, error)
+	UpdateDenied(ctx context.Context, id, value string) (domain.DeniedApp, error)
+	DeleteDenied(ctx context.Context, id string) error
 }
 
 // Logs はアプリのログ（運用ログ。FR-H13）の閲覧。実体は app.LogReader。監査ログ（DB）とは別。

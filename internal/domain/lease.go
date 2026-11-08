@@ -40,6 +40,9 @@ type Lease struct {
 	Holder       Actor
 	Since        time.Time
 	LastActivity time.Time // アイドルタイムアウトの起点
+	// Scope は束縛した対象ウィンドウとその状態（active / halted）。nil ならスコープなしのリースで、従来どおりの動き。
+	// 値は共有しても安全なように、更新するときは新しい LeaseScope に差し替える（中身を書き換えない）。
+	Scope *LeaseScope
 }
 
 // LeaseEvent はリースの状態遷移 1 件。呼び出し側（service の LeaseManager）が監査記録と通知に使う。
@@ -50,6 +53,12 @@ type LeaseEvent struct {
 	// By は強制剥奪（Reason == ReleaseRevoked）をした操作主体（host または web）。それ以外では空。
 	By Actor
 	At time.Time
+}
+
+// ScopeChange はスコープ付きリースの停止（active → halted）・再開（halted → active）の遷移か（From・To はどちらも LeaseHeld）。
+// 遷移後の状態は Lease.Scope.State。
+func (e LeaseEvent) ScopeChange() bool {
+	return e.From == LeaseHeld && e.To == LeaseHeld
 }
 
 // LeaseMachine はリースの状態機械（idle → [pending_approval →] held → idle）。外部 I/O もタイマーも持たない。
@@ -138,6 +147,18 @@ func (m *LeaseMachine) IdleDeadline() (time.Time, bool) {
 //
 // 期限切れのリースがあれば、先に idle_timeout で解放し、そのイベントを返す。
 func (m *LeaseMachine) Acquire(who Actor) (Lease, []LeaseEvent, error) {
+	return m.acquire(who, nil)
+}
+
+// AcquireScoped は Acquire と同じだが、リースに対象 scope.Target を束縛する（State は常に active から始まる。束縛前の選択の検査は呼び出し側）。
+// 束縛は固定で、変えるには解放して取り直す: 自分が保持中のとき、スコープなしのリース・別の Target なら ErrInvalidArgument
+// （同じ Target なら同じリースを返す。停止中のままで、再取得で再開しない）。
+func (m *LeaseMachine) AcquireScoped(who Actor, scope LeaseScope) (Lease, []LeaseEvent, error) {
+	scope.State, scope.HaltReason = ScopeActive, ""
+	return m.acquire(who, &scope)
+}
+
+func (m *LeaseMachine) acquire(who Actor, scope *LeaseScope) (Lease, []LeaseEvent, error) {
 	if err := checkHolder(who); err != nil {
 		return Lease{}, nil, err
 	}
@@ -150,11 +171,14 @@ func (m *LeaseMachine) Acquire(who Actor) (Lease, []LeaseEvent, error) {
 		if !m.cur.Holder.SameSession(who) {
 			return Lease{}, events, m.heldByOther(m.cur.Holder)
 		}
+		if scope != nil && (m.cur.Scope == nil || m.cur.Scope.Target != scope.Target) {
+			return Lease{}, events, ErrInvalidArgument.WithMsg("the lease target is fixed; release the lease and acquire it again to change it")
+		}
 		m.cur.LastActivity = now
 		return *m.cur, events, nil
 	}
 	m.revoked = nil
-	m.cur = &Lease{ID: m.ids.NewID(), Holder: who, Since: now, LastActivity: now}
+	m.cur = &Lease{ID: m.ids.NewID(), Holder: who, Since: now, LastActivity: now, Scope: scope}
 	events = append(events, LeaseEvent{From: LeaseIdle, To: LeaseHeld, Lease: *m.cur, At: now})
 	return *m.cur, events, nil
 }
@@ -167,6 +191,16 @@ func (m *LeaseMachine) Acquire(who Actor) (Lease, []LeaseEvent, error) {
 //
 // 期限切れのリースがあれば、先に idle_timeout で解放し、そのイベントを返す。
 func (m *LeaseMachine) Request(who Actor) (Lease, []LeaseEvent, error) {
+	return m.request(who, nil)
+}
+
+// RequestScoped は Request と同じだが、承認されたあとのリースに対象 scope.Target を束縛する（AcquireScoped と同じ）。
+func (m *LeaseMachine) RequestScoped(who Actor, scope LeaseScope) (Lease, []LeaseEvent, error) {
+	scope.State, scope.HaltReason = ScopeActive, ""
+	return m.request(who, &scope)
+}
+
+func (m *LeaseMachine) request(who Actor, scope *LeaseScope) (Lease, []LeaseEvent, error) {
 	if err := checkHolder(who); err != nil {
 		return Lease{}, nil, err
 	}
@@ -181,7 +215,7 @@ func (m *LeaseMachine) Request(who Actor) (Lease, []LeaseEvent, error) {
 		}
 		return Lease{}, events, m.heldByOther(m.cur.Holder)
 	}
-	m.pending = &Lease{ID: m.ids.NewID(), Holder: who, Since: now, LastActivity: now}
+	m.pending = &Lease{ID: m.ids.NewID(), Holder: who, Since: now, LastActivity: now, Scope: scope}
 	events = append(events, LeaseEvent{From: LeaseIdle, To: LeasePendingApproval, Lease: *m.pending, At: now})
 	return *m.pending, events, nil
 }
@@ -193,7 +227,7 @@ func (m *LeaseMachine) Approve(id string) (Lease, []LeaseEvent, error) {
 	}
 	now := m.clock.Now()
 	m.revoked = nil
-	m.cur = &Lease{ID: m.pending.ID, Holder: m.pending.Holder, Since: now, LastActivity: now}
+	m.cur = &Lease{ID: m.pending.ID, Holder: m.pending.Holder, Since: now, LastActivity: now, Scope: m.pending.Scope}
 	m.pending = nil
 	return *m.cur, []LeaseEvent{{From: LeasePendingApproval, To: LeaseHeld, Lease: *m.cur, At: now}}, nil
 }
@@ -242,6 +276,54 @@ func (m *LeaseMachine) ReleaseAll(reason ReleaseReason) []LeaseEvent {
 		return events
 	}
 	return append(events, m.release(now, reason))
+}
+
+// Halt は id の保持中のリースのスコープを停止（active → halted）にする。スコープなし・すでに停止中・別のリース（id が違う）・期限切れ・idle なら何もしない。
+// イベント（ScopeChange）は、停止したときだけ返す。活動時刻は更新しない。停止を解く唯一の経路は Resume。
+func (m *LeaseMachine) Halt(id string, reason GroupReason) []LeaseEvent {
+	now := m.clock.Now()
+	if m.cur == nil || m.cur.ID != id || m.expired(now) || m.cur.Scope == nil || m.cur.Scope.Halted() {
+		return nil
+	}
+	s := *m.cur.Scope
+	s.State, s.HaltReason = ScopeHalted, reason
+	m.cur.Scope = &s
+	return []LeaseEvent{{From: LeaseHeld, To: LeaseHeld, Lease: *m.cur, At: now}}
+}
+
+// Resume は保持者 who のリースのスコープを再開（halted → active）にする。呼び出し側（service）が、全条件の再検証に通ったあとにだけ呼ぶ。
+//   - idle → ErrLeaseRequired、他者が保持中、または承認待ち → ErrLeaseHeldByOther
+//   - スコープなし → ErrInvalidArgument
+//   - すでに active → 何もしない（イベントなし）
+//   - 停止の理由が選び直しのみ（GroupReason.ReselectOnly）→ ErrInputBlocked（reason は停止の理由）。リースを解放して選び直す
+//
+// 活動時刻を更新する。
+func (m *LeaseMachine) Resume(who Actor) ([]LeaseEvent, error) {
+	now := m.clock.Now()
+	events := m.expireAt(now)
+	switch {
+	case m.pending != nil:
+		return events, m.heldByOther(m.pending.Holder)
+	case m.cur == nil:
+		return events, ErrLeaseRequired
+	case !m.cur.Holder.SameSession(who):
+		return events, m.heldByOther(m.cur.Holder)
+	case m.cur.Scope == nil:
+		return events, ErrInvalidArgument.WithMsg("the lease has no target")
+	}
+	m.cur.LastActivity = now
+	if !m.cur.Scope.Halted() {
+		return events, nil
+	}
+	if reason := m.cur.Scope.HaltReason; reason.ReselectOnly() {
+		return events, ErrInputBlocked.
+			WithMsg("the target cannot be resumed; release the lease and select the target again").
+			WithDetail("reason", string(reason))
+	}
+	s := *m.cur.Scope
+	s.State, s.HaltReason = ScopeActive, ""
+	m.cur.Scope = &s
+	return append(events, LeaseEvent{From: LeaseHeld, To: LeaseHeld, Lease: *m.cur, At: now}), nil
 }
 
 // Revoke は by が保持者を強制剥奪する（held → idle。FR-L06）。idle なら何もせず成功する（冪等）。

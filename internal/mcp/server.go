@@ -63,10 +63,11 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"When the host requires approval for this client, acquiring the lease waits for the host's answer and fails with " +
 	"approval_denied (the host denied) or approval_timeout (no answer in time). " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
-	"you can pass only an app_id, never a path or arguments, and it needs the lease like input tools. " +
+	"you pass an app_id, never arguments or a working directory, and it needs the lease like input tools. " +
+	"Only when list_launchable_apps reports mode denylist may you pass the absolute path of a .exe instead; the host owner's denied apps fail with app_denied. " +
 	"Some apps only bring an already open window forward when launched instead of opening a new one (tabbed single-window apps " +
 	"such as Windows 11 Notepad, browsers, Windows Terminal), and that window may hold the user's unsaved work: " +
-	"launch_app reports the foreground window and sets reused_existing_window when neither a window of the returned pid nor any new window was found, " +
+	"launch_app reports the launched app's own window (omitted when none was found, never another app's foreground window) and sets reused_existing_window when neither a window of the returned pid nor any new window was found, " +
 	"but always confirm the target with a screenshot or list_windows before typing or clicking. " +
 	"puppet-remo's own windows (its host GUI and dialogs) are never captured in screenshots, so they do not appear there, " +
 	"and input into them is blocked: the input tools fail with input_blocked (detail.reason own_window) when the target point or the " +
@@ -136,7 +137,7 @@ type Server struct {
 	handler http.Handler
 
 	mu      sync.Mutex
-	opening int                 // セッションを作っている最中のリクエスト数（上限の判定に数える）
+	opening int                 // 上限の判定に数える「まだセッションを表に載せていない新規セッション要求」の数（openSlot を参照）
 	watched map[string]struct{} // 切断を見張っているセッション ID
 	// sessions は接続中のセッション（sessions.go）。セッション ID をキーにする。
 	sessions map[string]*sessionRecord
@@ -281,6 +282,50 @@ func (s *Server) verify(_ context.Context, _ string, r *http.Request) (*auth.Tok
 	}, nil
 }
 
+// openSlot は、新しいセッションを作りうる 1 件のリクエストが上限の枠を予約していることを表す。
+// 予約は、次のどれかが最初に起きた時に返す（Server.mu で守る。返した後は上限の判定に数えない）。
+//   - 要求が表（sessions）にセッションを載せた（track）。以後は表のほうで数える。残すと 1 つのセッションが二重に数えられる。
+//   - 応答を返し始めた。セッションを作るかどうかはその前に決まる。server/discover のようにセッションを残さない要求は、
+//     クライアントが応答を受け取った時点で枠を空けないと、続く initialize が自分の前の要求に枠を塞がれて 409 になる。
+//   - ハンドラが戻った。
+//
+// 二重に数えたり、応答の後まで予約を持ち越したりすると、上限に届いていないのに 409 になる（TestSessionLimit の不安定）。
+type openSlot struct{ done bool }
+
+// openSlotKey は TokenInfo.Extra に openSlot を入れるキー。track が同じリクエストの枠を特定するのに使う。
+const openSlotKey = "puppet-remo.open-slot"
+
+// endOpening は slot の予約を返す。2 回目以降は何もしない。s.mu を持って呼ぶ。
+func (s *Server) endOpening(slot *openSlot) {
+	if !slot.done {
+		slot.done = true
+		s.opening--
+	}
+}
+
+// slotWriter は応答を返し始めたときに予約を返す http.ResponseWriter。SSE のために Flush と Unwrap を通す。
+type slotWriter struct {
+	http.ResponseWriter
+	end func()
+}
+
+func (w *slotWriter) WriteHeader(code int) {
+	w.end()
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *slotWriter) Write(b []byte) (int, error) {
+	w.end()
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *slotWriter) Flush() {
+	w.end()
+	_ = http.NewResponseController(w.ResponseWriter).Flush() // Flusher でなければ何もしない。
+}
+
+func (w *slotWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 // limitSessions は同時セッションの上限（NFR-C02）を超える新規セッションを拒否する。
 // Mcp-Session-Id の無い POST が新しいセッションを作る。
 func (s *Server) limitSessions(next http.Handler) http.Handler {
@@ -290,19 +335,25 @@ func (s *Server) limitSessions(next http.Handler) http.Handler {
 			return
 		}
 		s.mu.Lock()
-		if len(slices.Collect(s.sdk.Sessions()))+s.opening >= s.maxSessions {
+		if len(s.sessions)+s.opening >= s.maxSessions {
 			s.mu.Unlock()
 			writeSessionLimit(w, s.maxSessions)
 			return
 		}
+		slot := &openSlot{}
 		s.opening++
 		s.mu.Unlock()
-		defer func() {
+		end := func() {
 			s.mu.Lock()
-			s.opening--
+			s.endOpening(slot)
 			s.mu.Unlock()
-		}()
-		next.ServeHTTP(w, r)
+		}
+		defer end()
+		if info := auth.TokenInfoFromContext(r.Context()); info != nil {
+			// verify が要求ごとに作った Extra へ入れる（他の要求とは共有しない）。
+			info.Extra[openSlotKey] = slot
+		}
+		next.ServeHTTP(&slotWriter{ResponseWriter: w, end: end}, r)
 	})
 }
 

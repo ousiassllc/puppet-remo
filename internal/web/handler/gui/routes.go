@@ -31,6 +31,8 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/update", h.Update)
 	r.GET("/apps", h.Apps)
 	r.GET("/apps/new", h.AppNew)
+	r.GET("/apps/denied", h.Denied)
+	r.GET("/apps/denied/:id/edit", h.DeniedEdit)
 	r.GET("/apps/:id/edit", h.AppEdit)
 	r.GET("/agent", h.AgentSettings)
 	r.GET("/events", h.Events)
@@ -53,6 +55,8 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/agent/fastpath/api-key/delete/confirm", h.ConfirmDeleteTypeSafeKey)
 	r.GET("/killswitch/release/confirm", h.ConfirmReleaseKillSwitch)
 	r.GET("/apps/:id/delete/confirm", h.ConfirmDeleteApp)
+	r.GET("/apps/mode/confirm", h.ConfirmLaunchMode)
+	r.GET("/apps/denied/:id/delete/confirm", h.ConfirmDeleteDenied)
 	r.GET("/update/apply/confirm", h.ConfirmApplyUpdate)
 
 	// 起動許可アプリ（M1.5。FR-H12）。許可リストを書き換える経路は、この GUI ルーターだけにある（NFR-S20）
@@ -60,6 +64,11 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.PUT("/apps/:id", h.UpdateApp)
 	r.DELETE("/apps/:id", h.DeleteApp)
 	r.POST("/apps/pick-file", h.PickAppFile)
+	// 起動の方式の切り替えと拒否リスト（#88。FR-H12）。これらもこの GUI ルーターだけにある（NFR-S20）
+	r.PUT("/apps/mode", h.SetLaunchMode)
+	r.POST("/apps/denied", h.CreateDenied)
+	r.PUT("/apps/denied/:id", h.UpdateDenied)
+	r.DELETE("/apps/denied/:id", h.DeleteDenied)
 
 	// ログフォルダーを開く（#54。FR-H13）。パスは受け取らない（開く場所は service.AppLog の実装が固定する）
 	r.POST(logOpenFolderURL, h.OpenLogFolder)
@@ -68,9 +77,6 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/approvals/:id", h.ApprovalDialog)
 	r.POST("/approvals/:id/allow", h.AllowApproval)
 	r.POST("/approvals/:id/deny", h.DenyApproval)
-
-	// 操作中オーバーレイ（M3。#69）。全モニターを覆うクリックスルーの Wails ウィンドウの中身
-	r.GET("/overlay", h.Overlay)
 
 	// リース（M2。FR-L06）。ホスト所有者の強制剥奪
 	r.GET("/lease/revoke/confirm", h.ConfirmRevokeLease)

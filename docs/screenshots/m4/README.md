@@ -9,6 +9,8 @@ M4（Issue #19）の画面を 3 組に分けて載せている。実際のトー
 | B. GUI の見た目（偽の service） | `tasks-*.png`・`dashboard-running-task.png`・`approval-*.png`（`approval-safety-check.png`・`approval-judge-action.png`）・`overlay-agent.png` | 偽の service（`guitest`）に架空のデータを入れて各状態を並べた GUI。実アプリ結線では出しにくい状態（失敗・上限到達・`judge_action` など）を含む | `guidemo` + 静的 HTML（`file://`）。htmx は動いていない |
 | C. エージェント設定 | `agent-*.png` | `/agent`（設定・キーの登録・同意・高速パス） | `guidemo` + Chrome（CDP）。画面操作あり |
 
+> 注: このフォルダーのオーバーレイの図（`run-overlay-agent.png`・`overlay-agent.png`）は、#86 で削除した `GET /overlay` のページの見た目（歴史的な図）。オーバーレイは Win32 のネイティブの枠と札になった。現在の見た目は `../issue-86/`。
+
 ## A. 実アプリ結線のスクリーンショット（`run-*.png`）
 
 `internal/app/internal/remotedemo`（`-agent-demo -agent-safety-check`）は、`app.New` で本物の service・ルーター・WebSocket・MCP サーバー・オーバーレイ制御（`overlayController`）・

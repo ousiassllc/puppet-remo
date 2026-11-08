@@ -24,6 +24,15 @@ type AppLauncher interface {
 	// Inspect は登録・更新時の存在確認: exePath が存在する通常ファイルか、workingDir（空でなければ）が存在するディレクトリか。
 	// どちらかが無ければ ErrNotFound（パスはエラーに含めない）。ctx が取り消し済みなら ctx.Err()。
 	Inspect(ctx context.Context, exePath, workingDir string) error
+
+	// Resolve は exePath の実体のパスを返す（拒否リストとの照合と、パス指定の起動に使う。FR-M19）。
+	// シンボリックリンク・ジャンクション・マウントポイント・8.3 形式の短い名前を解決した、固定ディスク上のドライブ文字つきの
+	// 絶対パス（`\\?\` の接頭辞は付けない。綴りは OS が持つ正規の形）。Launch が受け付ける形（途中にリンクを含まない）なので、
+	// 返したパスをそのまま LaunchSpec.ExePath に渡して起動できる。
+	// 固定ディスク以外（ネットワーク・リムーバブル・UNC に解決されるもの）は *LaunchError（access_denied）、ファイルが無ければ
+	// *LaunchError（file_missing）。エラーにパスは含めない。空・絶対パスでない exePath は domain.ErrInvalidArgument。
+	// ctx が取り消し済みなら ctx.Err()。
+	Resolve(ctx context.Context, exePath string) (string, error)
 }
 
 // LaunchSpec は 1 回の起動の指定。

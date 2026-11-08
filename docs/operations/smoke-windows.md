@@ -1,4 +1,4 @@
-# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8。M2: 継続キャプチャ `Capturer.Watch` は §3.9）
+# Windows 実機スモーク手順（M1: platform・ホットキー・UI Automation・Wails シェル。M1.5: アプリ起動・許可リストは §3.8・§4.8、ブラックリスト方式は §4.16。M2: 継続キャプチャ `Capturer.Watch` は §3.9）
 
 CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップがなく、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけなので、GDI キャプチャ・`SendInput`・ウィンドウ列挙・クリップボード・UI Automation・グローバルホットキー・Wails のウィンドウ／トレイは CI では動かない（[コンポーネント設計](../components/overview.md) §10、NFR-O04）。本書は M1 の実装を**実機で**確かめる唯一の手順書で、§1〜§3 は `internal/platform/windows`（FR-M01〜M14）、§4 は Wails のシェルと結線（FR-H01・FR-H06・FR-S08、S11）、§5 は既知の制約。継続キャプチャ（DXGI・`Capturer.Watch`）は §3.9、操作中オーバーレイは §4.12 で確認する。
 
@@ -250,17 +250,19 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | A1 | ホスト GUI のサイドバーから「起動許可アプリ」を開く | 一覧が空で表示され、`cmd.exe`・`powershell.exe` の登録は任意コードの実行を許す旨の注意が常に見える |
 | A2 | 「参照…」でファイル選択ダイアログを開き、`notepad.exe` を選ぶ（ダイアログを 1 分以上開いたままにしても確認する） | 入力欄に選んだパスが入り、手で編集できる。ダイアログが Wails のメインウィンドウを親にしたモーダルで開く（`WailsHost.MainWindowHandle` の結線。ダイアログの表示中はメインウィンドウを操作できず、前面に出たままになる）。ダイアログを開いている間も WebView が応答待ちのままタイムアウトしない。キャンセルでは入力欄が変わらない（204） |
 | A3 | 表示名 `メモ帳`・パス・引数なしで保存 | 一覧に行が追加される。同じ表示名（大文字小文字違いを含む）・存在しないパス・相対パス・UNC パス・`.exe` 以外・`..` を含むパスは、項目別のエラーで入力値が残る（422） |
-| A4 | MCP クライアントから `list_launchable_apps` | `{ "apps": [ { "id", "label": "メモ帳" } ] }` だけ。パス・引数は出ない |
-| A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid, window, reused_existing_window }` が返る。Windows 10 のメモ帳など新しいウィンドウが開くときは `window.pid` が `pid` と一致し `reused_existing_window: false` |
-| A5b | メモ帳（Windows 11。タブ式）を、書きかけのタブを開いたまま起動する（#46。判定は起動前後のウィンドウ一覧の差。#55） | 新しいウィンドウが開かず既存のウィンドウが前に出るだけなら、`window` が既存のウィンドウ（`pid` が返った `pid` と別）で `reused_existing_window: true`。入力の前に `screenshot` / `list_windows` で確かめられる。新しいタブで打つには AI が「＋」を押す必要がある |
-| A5c | メモ帳（Windows 11）を、書きかけのタブがない状態（または新しいウィンドウで開く設定）で起動する（#55） | 返った `pid` が別（起動したプロセスがすぐ終了して別の `pid` の新しいウィンドウを開く）でも、起動の前に無かった新しいウィンドウがあるので `reused_existing_window: false`。`list_windows` で新しいウィンドウが前面か背面かを確かめられる |
-| A6 | 未登録の `app_id`、パスや引数を含む追加の引数（`args`・`path`）を渡す | 未登録は `app_not_found`。追加の引数は引数検査（スキーマ違反。`isError` のツール結果で、`code` は付かない）で拒否される。いずれも何も起動しない |
+| A4 | MCP クライアントから `list_launchable_apps` | `{ "mode": "allowlist", "apps": [ { "id", "label": "メモ帳" } ] }` だけ（既定の方式は `allowlist`）。パス・引数は出ない |
+| A5 | `launch_app { app_id }`（リース未保持） | リースを暗黙に取得し、メモ帳が標準権限で起動して `{ ok, app_id, pid, window, reused_existing_window }` が返る。Windows 10 のメモ帳など新しいウィンドウが開くときは `window.pid` が `pid` と一致し `reused_existing_window: false`。`window` は起動したメモ帳のウィンドウで、前面に出ている（前面に別のアプリ〔Grok Bot など〕があっても、そのウィンドウは返らない。#85） |
+| A5b | メモ帳（Windows 11。タブ式）を、書きかけのタブを開いたまま起動する（#46。判定は起動前後のウィンドウ一覧の差。#55） | 新しいウィンドウが開かず既存のウィンドウが前に出るだけなら、`reused_existing_window: true` で **`window` は付かない**（前面にある既存のウィンドウ・別のアプリのウィンドウを返さない。#85。v0.1.1 では前面の Grok Bot が返った）。入力の前に `screenshot` / `list_windows` で確かめられる。新しいタブで打つには AI が「＋」を押す必要がある |
+| A5c | メモ帳（Windows 11）を、書きかけのタブがない状態（または新しいウィンドウで開く設定）で起動する（#55） | 返った `pid` が別（起動したプロセスがすぐ終了して別の `pid` の新しいウィンドウを開く）でも、起動の前に無かった新しいウィンドウがあるので `reused_existing_window: false`。`window` はその新しいメモ帳のウィンドウ（`process_name` が `notepad.exe`）で前面に出ている。新しいウィンドウが見つからないときは `window` が付かず、前面の別のアプリのウィンドウは返らない（#85） |
+| A6 | 未登録の `app_id`、引数（`args`）、方式が `allowlist` のまま `path` を渡す。`app_id` と `path` の両方、どちらも無し | 未登録は `app_not_found`。`args` は引数検査（スキーマ違反。`isError` のツール結果で、`code` は付かない）で拒否される。`allowlist` での `path`・同時指定・どちらも無しは `invalid_argument`。いずれも何も起動しない |
 | A7 | 別のセッションがリースを保持している状態で `launch_app` | `lease_held_by_other`。起動しない |
 | A8 | キルスイッチ発動中に `launch_app` / `list_launchable_apps` | `kill_switch_active`（HTTP 503）。解除後は起動できる。キルスイッチは起動済みのメモ帳を終了しない |
 | A9 | 登録した実行ファイルを削除・移動してから `launch_app` | `launch_failed`（`reason: file_missing`）。メッセージにパスが出ない。GUI の一覧の行は残る |
 | A10 | `/apps` で行を編集（実行ファイルを別のものに）・削除してから、同じ `app_id` で `launch_app` | 編集後は新しい実行ファイルが起動し `id` は変わらない。削除後は `app_not_found` |
 | A11 | 監査（DB の `audit_logs`。閲覧 UI は M3） | `tool.launch_app`（`ok` / `denied` / `error`）、`tool.list_launchable_apps`、`settings.launchable_app.create` / `.update` / `.delete`（`actor_type = host`）が追記される。`launch_app` の記録にパス・引数・作業ディレクトリが無く、登録系にも引数・作業ディレクトリが無い（引数の件数だけ） |
 | A12 | 起動したメモ帳（本アプリの子プロセスではあるがジョブに入れていない）を残したまま、本アプリを終了する | メモ帳は終了しない |
+
+> ホワイトリスト方式（既定）の確認は A1〜A12。ブラックリスト方式（起動の方式の切り替え・拒否リスト・`path` での起動）は §4.16。
 
 ### 4.9 監査のサムネイルの置き場（`thumbs\`。M3・FR-AU02・AU04。NFR-S11）
 
@@ -334,13 +336,13 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | U16 | **チャネルの切り替え**: 設定の「更新のチャネル」を「ナイトリー」にして保存 →「今すぐ確認」。正式版へ戻して再確認 | ナイトリーのとき、最新のナイトリー（または新しい正式版）が出る。正式版へ戻すと、ナイトリーの結果は消え、「更新する」を出さない。ナイトリーを使っている状態で、より古い正式版は新版にならない |
 | U17 | 一時ファイルの掃除 | 新版を検出したままアプリを終了すると、`%TEMP%\puppet-remo-update-*` が消える。適用後の次の起動でも古いものが消える |
 
-### 4.12 操作中オーバーレイ（全モニターを覆うクリック透過のウィンドウ。M3・#69。FR-H07、NFR-S06）
+### 4.12 操作中オーバーレイ（モニターの縁の枠と札だけのクリック透過ウィンドウ。M3・#69・#86。FR-H07、NFR-S06）
 
-`app.WailsHost.Windows().ShowOverlay` / `HideOverlay`（`wails_overlay_windows.go`）が作るウィンドウと、`platform/windows.WindowManager` の `Overlay` 判定（`GetWindowLongPtr(GWL_EXSTYLE)`）の確認。実 Wails・WebView2・`WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE`・`WDA_EXCLUDEFROMCAPTURE` が要るため CI（Linux）では確認できない。CI は偽の `Windows`（`FakeWindows`）で「リースの `held` → `ShowOverlay`（全モニター）、保持者の変更でラベル更新、解放・キルスイッチ・シャットダウンで `HideOverlay`」と、InputGuard の「オーバーレイ上の入力は下の実ウィンドウで判定する」を確かめている。**これは未確認**。準備: 2 枚以上のモニター（表示スケールが異なる構成を含む。100% と 150% / 200% の混在、副モニターが左や上にある負座標の配置）。承認モードを「自動許可」にした MCP クライアントと、Web の `/viewer` を使える状態にする。メモ帳を各モニターに 1 つずつ開いておく。
+`app.WailsHost.Windows().ShowOverlay` / `HideOverlay`（`wails_overlay_windows.go`）が作るウィンドウ（モニターごとに縁の細い枠 4 本と上端中央の札の Win32 ネイティブウィンドウ。真ん中のウィンドウは作らない。v0.1.1 の WebView2 の全面ウィンドウは、実機で透明が効かず全モニターが真っ白になった。#86）と、`platform/windows.WindowManager` の `Overlay` 判定（`GetWindowLongPtr(GWL_EXSTYLE)`）の確認。実 Windows の `WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE`・`WDA_EXCLUDEFROMCAPTURE` が要るため CI（Linux）では確認できない。CI は枠・札の配置の計算（`overlay_layout.go`。枠が真ん中にかからない・重ならない・DPI で太さが変わる・札の文言の切り詰め）を単体テストで確かめている（描画の見た目の例: `docs/screenshots/issue-86/`。レイアウトの計算結果を描いた図で、Windows 実機の撮影ではない）。CI は偽の `Windows`（`FakeWindows`）で「リースの `held` → `ShowOverlay`（全モニター）、保持者の変更でラベル更新、解放・キルスイッチ・シャットダウンで `HideOverlay`」と、InputGuard の「オーバーレイ上の入力は下の実ウィンドウで判定する」を確かめている。**これは未確認**。準備: 2 枚以上のモニター（表示スケールが異なる構成を含む。100% と 150% / 200% の混在、副モニターが左や上にある負座標の配置）。承認モードを「自動許可」にした MCP クライアントと、Web の `/viewer` を使える状態にする。メモ帳を各モニターに 1 つずつ開いておく。
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
-| O1 | MCP の `acquire_control` でリースを取る | 1 秒以内に**全モニター**の縁に細い枠と、上端中央に「操作中: <クライアント名>（MCP）」の札が出る。枠は各モニターの端にちょうど沿う（混在 DPI でも欠け・はみ出し・隙間がない）。画面の中身（メモ帳など）は隠れない。タスクバー・Alt+Tab にオーバーレイは出ない |
+| O1 | MCP の `acquire_control` でリースを取る（#86。v0.1.1 では全モニターが真っ白になった） | 1 秒以内に**全モニター**の縁に細い枠（4 本。100% で 4 px 前後、拡大率に比例）と、上端中央に「操作中: <クライアント名>（MCP）」の札（赤系の背景に白い文字）が出る。**モニターの中身は白くならず、取得する前と同じ見た目のまま**（枠と札のほかは 1 px も変わらない。壁紙・メモ帳・ブラウザがそのまま見える）。枠は各モニターの端にちょうど沿う（混在 DPI でも欠け・はみ出し・隙間がない）。タスクバー・Alt+Tab にオーバーレイは出ない |
 | O2 | オーバーレイの表示中に、枠・札の上でクリック・ドラッグ・ホイール・右クリックを手動で行う | **すべて下のウィンドウへ通る**（枠の下にあるメモ帳の文字が選べる、ウィンドウの縁を掴める）。オーバーレイは入力を受けず、前面ウィンドウ（キーボードフォーカス）も変わらない |
 | O3 | オーバーレイの表示中に、`screenshot` ツールと Web の `/viewer` のライブ画面を見る | **オーバーレイが写らない**（`ContentProtectionEnabled` = `WDA_EXCLUDEFROMCAPTURE`）。画面の元の内容だけが見える。`screenshot` の `own_windows` にもオーバーレイの範囲は入らない（避ける場所ではないため） |
 | O4 | オーバーレイの表示中に、メモ帳の上へ MCP の `left_click`・`type`、Web の `input.mouse`・`input.text` を送る | **拒否されず**メモ帳に届く（オーバーレイは `own_window` の対象ではない）。`list_windows` にオーバーレイは出ない（タイトルなし）。メモ帳の `blocked` は `false` |
@@ -351,6 +353,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | O9 | 解放（`release_control`）、アイドルタイムアウト（`lease.idle_timeout_sec` を短くして放置）、強制剥奪（ダッシュボード）、キルスイッチ、MCP の切断、アプリの終了 | いずれもオーバーレイが消える。承認待ち（`pending_approval`）の間は出ない |
 | O10 | オーバーレイの表示中に、モニターを抜き差しする・解像度や表示スケールを変える | 出ている最中は追従しない（枠がずれてよい）。次にリースを取り直したとき（`held` へ）に、新しい構成で全モニターに合う。クラッシュ・ハングしない |
 | O11 | クライアント名に長い文字列（100 文字以上）と HTML の記号（`<script>` など）を付けたクライアントで O1 を行う | 札は 80 文字で `…` に切り詰められ、記号は文字としてそのまま出る（HTML として解釈されない）。札が画面を覆わない |
+| O12 | オーバーレイの表示中に、枠の上でマウスを動かす（#86） | カーソル・ホバーの見た目は枠の下のウィンドウのまま（枠がマウスを受けない）。枠の上でホバーしたウィンドウのボタンが強調される |
 
 ### 4.14 ログフォルダーを開く（ホスト GUI の `/logs`。#54。FR-H13）
 
@@ -372,10 +375,47 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 |---|---------|------|
 | F6 | `go test -run 'TestOpenLogFileDoesNotBlockRenameOrDelete\|TestRotateSucceedsWhileTheLogScreenHasTheFileOpen' -v ./internal/app/` を Windows で実行する（読み出しのために開いたまま、`lumberjack.Logger.Rotate()` と名前の付け替え・削除を行う） | `PASS`。開いたままでも `Rotate()` が共有違反で失敗せず、ローテーションのあとの書き込みも続く |
 
+### 4.16 ブラックリスト方式（起動の方式の切り替え・拒否リスト・`path` での起動。M1.5。#88。FR-M18・M19・H12、NFR-S20）
+
+ホスト GUI の `/apps` で起動の方式を `denylist` に切り替え、拒否リストを登録して、tailnet 上の別端末の MCP クライアントから `launch_app { path }` を呼ぶ。実機でしか確かめられない部分（`platform.AppLauncher.Resolve` の `GetDriveType`・`GetFinalPathNameByHandle`、シンボリックリンク・ジャンクション・8.3 短縮名の解決）が中心。**これらは未確認**（実機での確認は所有者が行う。まだ実行していない）。CI は偽の `AppLauncher` で、方式の読み取り・拒否リストの照合・`app_denied`・監査・GUI の経路を検査している。
+
+準備（ホストの PowerShell / `cmd`。使い捨ての環境で行う）:
+
+- ホワイトリスト方式で A1〜A12 を終え、`メモ帳`（`C:\Windows\System32\notepad.exe`）が許可リストにある状態から始める。
+- テスト用のフォルダーと実行ファイルを作る: `mkdir "C:\SmokeDeny"`、`copy C:\Windows\System32\notepad.exe "C:\SmokeDeny\Tool Long Name.exe"`（長い名前。以下「テスト exe」）。8.3 短縮名は `dir /x C:\` と `dir /x C:\SmokeDeny` で確かめる（例: `C:\SMOKED~1\TOOLLO~1.EXE`。短縮名の生成が無効なボリュームでは D9 を飛ばす）。
+- 名前を変えたコピー: `copy C:\Windows\System32\notepad.exe "C:\SmokeDeny\renamed-np.exe"`。
+- リンク（管理者または開発者モードで）: `mklink "C:\SmokeDeny\link.exe" "C:\SmokeDeny\Tool Long Name.exe"`、`mklink /J "C:\SmokeJunction" "C:\SmokeDeny"`。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| D1 | 更新後（既存の端末）の最初の起動で、`/apps` を開き、MCP の `list_launchable_apps` を呼ぶ。DB の `settings` に `launch.mode` の行があるか見る | 「起動の方式」のパネルが `ホワイトリスト方式（既定）` を示す。`list_launchable_apps` は `mode: "allowlist"`。`launch.mode` の行は無い（マイグレーション v5 は行を書かない）。`launch_app { path }` は `invalid_argument` で何も起動しない |
+| D2 | `/apps` の「起動の方式」で `ブラックリスト方式に切り替える…` を押す | 確認モーダルが開き、拒否リストに載せたアプリ以外はリモートの AI がパスを指定して何でも起動できること（`cmd.exe`・`powershell.exe` などのインタープリタも載せない限り起動できること）、引数・作業ディレクトリは渡せないことの注意が見える。キャンセルでは方式が変わらない。確定すると方式が `ブラックリスト方式` に変わり、「起動の方式」のパネルの表示と「拒否リスト」の欄が切り替わる（拒否リストはブラックリスト方式でだけ効く旨が見える） |
+| D3 | D2 の直後の監査（DB の `audit_logs`。閲覧 UI は M3） | `settings.launch_mode.update`（`kind = settings`・`actor_type = host`・`detail` は `from: allowlist`・`to: denylist`）が 1 件追記される。確認モーダルをキャンセルしたときは追記されない |
+| D4 | 「拒否リスト」の欄で、入力 `notepad.exe`（名前）と、`C:\SmokeDeny\Tool Long Name.exe`（パス）をそれぞれ追加する。続けて `NOTEPAD.EXE`、`C:/SmokeDeny/Tool Long Name.exe`（区切りと大文字小文字違い）、`C:\Windows\System32\`（`.exe` で終わらない）、空欄、`\\localhost\C$\x.exe` を追加する | 2 件が一覧に載り、種別の表示が `実行ファイル名` と `パス` になる（パスは存在するファイルなら実体のパスで保存）。2 件目以降の重複（大文字小文字・区切りを無視して同じ値）・`.exe` 以外・空欄は項目別のエラー（422）で入力値が残る。監査に `settings.launch_denylist.create`（`actor_type = host`・`detail` は `id`・`kind`・`value`）が 2 件追記される |
+| D5 | MCP クライアントから `list_launchable_apps` | `{ "mode": "denylist", "apps": [ { "id", "label": "メモ帳" } ] }` だけ。拒否リストの内容（`notepad.exe`・`C:\SmokeDeny\...`）・パス・引数は出ない |
+| D6 | `launch_app { path: "C:\\Windows\\System32\\mspaint.exe" }`（拒否リストに無い実行ファイル。リース未保持。パスの区切りは `/` でも通る） | リースを暗黙に取得し、ペイント（または `mspaint.exe` が無ければ別の無害な `.exe`）が標準権限で起動して `{ ok, pid, window?, reused_existing_window }` が返る（`app_id` は付かない）。引数なし・作業ディレクトリは実行ファイルのあるフォルダー。起動後にペイントを閉じる |
+| D7 | `launch_app { path: "C:\\Windows\\System32\\notepad.exe" }`（名前 `notepad.exe` に当たる）と、`C:\Windows\notepad.exe`（存在する場合。別フォルダーの同名） | どちらも `app_denied`（HTTP 403。MCP は同じコードのツールエラー）。メッセージは「所有者が、このアプリの起動を許していない」旨で、パス・拒否リストの内容を含まない。メモ帳のプロセスが増えない（`tasklist`） |
+| D8 | `launch_app { path: "C:\\SmokeDeny\\Tool Long Name.exe" }`（パスの項目に当たる）と、大文字小文字違い `c:\\smokedeny\\TOOL LONG NAME.EXE` | どちらも `app_denied`。プロセスは起動しない |
+| D9 | 8.3 短縮名（D の準備の `dir /x` で調べたもの。例: `C:\\SMOKED~1\\TOOLLO~1.EXE`）で `launch_app { path }` | `app_denied`（実体のパスに解決してから照合する）。起動しない |
+| D10 | シンボリックリンク（`C:\\SmokeDeny\\link.exe`）と、ディレクトリジャンクション経由（`C:\\SmokeJunction\\Tool Long Name.exe`）で `launch_app { path }` | どちらも `app_denied`（リンク・ジャンクションを解決した実体のパスで照合する）。起動しない |
+| D10b | `.exe` 名のシンボリックリンクの先が `.bat`（`mklink C:\\SmokeDeny\\link-bat.exe C:\\SmokeDeny\\x.bat`）のとき `launch_app { path: "C:\\SmokeDeny\\link-bat.exe" }` | 起動しない。`launch_failed`（`reason = access_denied`）。実体が `.exe` でないものは、拒否リストに載っていなくても起動しない（CreateProcess が `cmd.exe` 経由で実行して拒否リストをすり抜けるのを防ぐ） |
+| D11 | 名前を変えたコピー（ハードリンクを含む）`launch_app { path: "C:\\SmokeDeny\\renamed-np.exe" }` | **既知の残存リスク**: 名前を変えたコピーは検出できない（`name` の項目は実体のファイル名と要求の綴りのファイル名だけ、`path` の項目は実体のパスだけを比べる）ため、**起動する**（メモ帳が 1 つ増える）。起動後に閉じる。この挙動が仕様（NFR-S20 の残存リスク）で、不具合として扱わない |
+| D12 | 固定ディスク以外のパスで `launch_app { path }`: ネットワークドライブをマップした `Z:\\...\\x.exe`、USB メモリなどのリムーバブルドライブ `E:\\x.exe`（用意できるものだけ。どちらも `.exe` を置いておく） | どちらも `launch_failed`（`reason: access_denied`）。起動しない。メッセージにパスが出ない |
+| D13 | 存在しない `C:\\SmokeDeny\\nope.exe` | `launch_failed`（`reason: file_missing`）。メッセージにパスが出ない |
+| D14 | 形の不正: 相対パス `notepad.exe`、UNC `\\\\localhost\\C$\\Windows\\System32\\notepad.exe`、`..` を含む `C:\\Windows\\..\\Windows\\System32\\notepad.exe`、`.exe` 以外 `C:\\Windows\\System32\\drivers\\etc\\hosts`、使えない文字 `C:\\Smoke*.exe` | すべて `invalid_argument`。何も起動しない |
+| D15 | `launch_app { app_id: "<メモ帳の id>", path: "..." }`（同時指定）と `launch_app {}`（どちらも無し） | どちらも `invalid_argument`。何も起動しない |
+| D16 | 許可リストのアプリを `app_id` で起動する（拒否が優先）: 名前 `notepad.exe` が拒否リストにある状態で `launch_app { app_id: "<メモ帳の id>" }`。続けて `/apps` の拒否リストから `notepad.exe` の行を編集（`mspaint.exe` に変更）してから同じ `app_id` を呼ぶ。最後に `mspaint.exe` の行を削除（確認モーダルを経る） | 編集前は `app_denied`（登録済みでも拒否リストが勝つ）。編集後（`notepad.exe` が拒否リストから外れる）は起動して `{ ok, app_id, pid, ... }`（`app_id` が付く。A5 と同じ）。監査に `settings.launch_denylist.update`（`detail` に `before_kind`・`before_value`）と `.delete` が追記される。以降の D7 の再実行は、`notepad.exe` を拒否リストへ戻してから行う |
+| D17 | 監査（DB の `audit_logs`）: D6〜D16 の行を見る | 起動に進んだ呼び出しは `tool.launch_app.attempt`（起動の前に同期で書かれる）と `tool.launch_app` の 2 行があり、`detail` に `path`（呼び出し側が渡した綴り）・`launch_mode: "denylist"`（`app_id` で起動したときは `app_id`・`label` も）がある。`app_denied` は `result = denied`・`error_code = app_denied`、`invalid_argument` も `denied`（試行の行は無く、結果の行だけ。形の検査を通らない `path` は `detail` に残らない）。`launch_failed` は `error`。引数・作業ディレクトリ・拒否リストの内容はどの行にも無い |
+| D18 | `/apps` の `ホワイトリスト方式に戻す` を押す（確認モーダルは出ない）。続けて MCP で `list_launchable_apps`、`launch_app { path: "C:\\Windows\\System32\\mspaint.exe" }`、`launch_app { app_id: "<メモ帳の id>" }` | 方式が `ホワイトリスト方式（既定）` に戻り、監査に `settings.launch_mode.update`（`from: denylist`・`to: allowlist`）が追記される。`mode: "allowlist"`。`path` は `invalid_argument`（`denied`）で起動しない。`app_id` のメモ帳は起動する（拒否リストは使われない。拒否リストの行は残る） |
+| D19 | 方式を `denylist` にしたまま本アプリを再起動し（トレイの終了と再起動）、`/apps` と `list_launchable_apps` を見る。さらにキルスイッチ発動中の `launch_app { path }` を呼ぶ | 再起動後も `denylist`（`settings` の `launch.mode` が永続）。キルスイッチ中は `kill_switch_active`（HTTP 503）で起動しない。確認のあとホワイトリスト方式に戻す |
+| D20 | `/apps` の見た目の確認（スクリーンショットを残す）: 「起動の方式」のパネル（ホワイトリスト方式・ブラックリスト方式の両方）、確認モーダル、「拒否リスト」の欄（項目の種別の表示・追加フォーム・編集・削除の確認・上限 200 の注意・ブラックリスト方式でだけ効く旨・`cmd.exe` / `powershell.exe` などのインタープリタの注意） | 文言が欠けず、レイアウトが崩れない（WebView2 の表示。§4.3 と同じ観点）。長い値の行がパネルの外へ溢れない。画像は Issue #88 に添付する |
+| D21 | 後始末 | 起動したペイント・メモ帳（`renamed-np.exe` など）をすべて閉じる（`tasklist` で残りが無い）。`rmdir C:\SmokeJunction`、`del C:\SmokeDeny\link.exe`、`rmdir /s /q C:\SmokeDeny`。`/apps` の拒否リストのテスト用の行を削除し、方式をホワイトリスト方式に戻す |
+
 ## 5. 既知の制約（M1）
 
 - キャプチャ: 1 枚撮り（`Grab`）は GDI `BitBlt`、継続キャプチャ（`Watch`）は DXGI（Desktop Duplication）で、使えなければ GDI（M2。§3.9）。DXGI は既定のアダプターに接続されたモニターだけを複製する（別 GPU のモニターは GDI になる）。`Frame.Dirty` は常に全面。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
 - UIPI: 管理者権限のウィンドウへは標準権限のプロセスから入力できない。`SendInput` は UIPI に捨てられても成功を返すことがあるため、`WindowInfo.Elevated` を `service.InputGuard` が先に見て `input_blocked` にする。
+- **ブラックリスト方式（M1.5。#88）**: `denylist` では、拒否リストに無い固定ディスク上の `.exe` を AI が起動できる（インタープリタを含む）。名前を変えたコピーは検出されず、起動する（§4.16 D11）。実体の確認から `CreateProcess` までの間のファイルの差し替え（TOCTOU）は防げない（NFR-S20）。
 - `Key` の記号キーは現在のキーボード配列に依存する（`VkKeyScanEx`）。Ctrl / Alt（AltGr）が要る文字は `invalid_argument`。文字そのものを入力したいときは `Text` を使う。
 - **アプリ起動（M1.5）**: `launch_app` は起動したプロセスを終了・監視しない。キルスイッチ・リースの解放・セッションの切断・本アプリの終了でも、起動済みのプロセスは残る（FR-M19）。
 - **GUI の自動更新は SSE ではなくポーリング**: Wails v3.0.0 の Windows の AssetServer は応答を本文の完了までバッファするため、`text/event-stream` の逐次配信が WebView 内では届かない（`internal/assetserver/webview/responsewriter_windows.go`）。ホスト GUI のレイアウトは SSE（`/events`）を購読せず、`GET /poll`（3 秒ごと）の OOB で更新する（frontend.md §5.3）。画面が隠れている間もポーリングは続く。
@@ -404,3 +444,5 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-11-02 | §4.14（ログフォルダーを開く: エクスプローラーの起動・ログ画面のボタン・フォルダーが無いとき・空白や日本語を含むプロファイル F1〜F5。未確認）を追加。§2 の環境変数表に `PUPPET_REMO_SMOKE_FOLDER` を追加 | #54 |
 | — | 2026-11-02 | §4.8 に A5c（Windows 11 のメモ帳で、別の `pid` の新しいウィンドウが開くときの `reused_existing_window: false`）、A5b に起動前後の一覧の差で判定する旨、§4.15（ログ画面の読み出しとローテーション。F6）を追加。実機の確認は未確認 | #55・#53 |
 | — | 2026-11-02 | §R1 の確認に、ChatGPT のサインイン中だけ `127.0.0.1` の一時ポートで LISTENING になる例外を追記（#49 の実装後の確認項目） | #49（レビュー指摘） |
+| — | 2026-11-03 | §4.12 を、WebView2 の全面ウィンドウから、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウに合わせて更新（O1 に「中身が白くならない」の実機確認、O12 を追加）。§4.8 の A5・A5b・A5c を、`window` が起動したアプリのウィンドウだけになった（見つからなければ付かない）ことに合わせて更新。実機の確認は未確認 | #85・#86 |
+| — | 2026-11-03 | §4.16（ブラックリスト方式: 起動の方式の切り替えと確認モーダル、拒否リストの登録・編集・削除と監査、`path` での起動、名前・パス・大文字小文字・8.3 短縮名・シンボリックリンク・ジャンクションでの拒否、名前を変えたコピーは検出されない既知の制限、固定ディスク外・不在・形の不正、`app_id` との同時指定、許可リストのアプリも拒否が優先、ホワイトリスト方式へ戻す・再起動・キルスイッチ、`/apps` のスクリーンショット D1〜D21。未確認）を追加。§4.8 の A4・A6 を `mode` と `path` の受け付けに合わせ、§5 に残存リスクを追記、タイトルを更新 | #88 |

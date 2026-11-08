@@ -39,8 +39,9 @@ type Windows interface {
 	// （service.ApprovalKind*）で、内容の説明（Detail）を出す safety_check・judge_action は背を高くする。
 	// ウィンドウはキャプチャ除外（ContentProtectionEnabled。NFR-S06）で作り、閉じるのは approvalDialogs（承認の終了・シャットダウン）。
 	OpenApproval(id, kind string) Window
-	// ShowOverlay は操作中オーバーレイ（#69）を monitors の全モニターに出す。クリックスルー・キャプチャ除外・フォーカスを奪わない
-	// ウィンドウを 1 モニターに 1 枚、モニターの物理座標の原点・大きさに合わせて作る。label は枠に添える短い文言。
+	// ShowOverlay は操作中オーバーレイ（#69・#86）を monitors の全モニターに出す。モニターの縁に沿う細い枠と、上端中央の札だけを、
+	// クリックスルー・キャプチャ除外・フォーカスを奪わないネイティブのウィンドウで出す（真ん中は覆わない。配置は overlay_layout.go）。
+	// 座標はモニターの物理座標。label は札の文言（改行で 2 行まで）。
 	// すでに出ていれば、モニター構成が同じなら label だけを更新し、違えば作り直す（出している間のモニター構成の変化は、
 	// 次の ShowOverlay で反映する）。monitors が空なら何もしない。失敗してもリースの取得は妨げない（実装がログに残す）。
 	ShowOverlay(monitors []domain.Monitor, label string)

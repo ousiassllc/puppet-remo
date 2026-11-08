@@ -66,6 +66,13 @@ func checkMods(mods []domain.Modifier) error {
 	return nil
 }
 
+// cursorNow は記録せずにカーソル位置を返す（FakeApp も使う）。
+func (f *FakeInput) cursorNow() domain.Point {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cursor
+}
+
 func (f *FakeInput) moveTo(p domain.Point) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

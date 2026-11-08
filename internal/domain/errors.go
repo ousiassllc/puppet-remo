@@ -33,6 +33,7 @@ const (
 	CodeAgentDisabled       Code = "agent_disabled"
 	CodeTaskNotFound        Code = "task_not_found"
 	CodeAppNotFound         Code = "app_not_found"
+	CodeAppDenied           Code = "app_denied"
 	CodeLaunchFailed        Code = "launch_failed"
 	CodeAuditUnavailable    Code = "audit_unavailable"
 	CodeInternal            Code = "internal"
@@ -63,6 +64,7 @@ var codeStatus = map[Code]int{
 	CodeAgentDisabled:       409,
 	CodeTaskNotFound:        404,
 	CodeAppNotFound:         404,
+	CodeAppDenied:           403,
 	CodeLaunchFailed:        409,
 	CodeAuditUnavailable:    503,
 	CodeInternal:            500,
@@ -151,6 +153,8 @@ var (
 	ErrAgentDisabled      = NewError(CodeAgentDisabled, "the agent is disabled", nil)
 	ErrTaskNotFound       = NewError(CodeTaskNotFound, "task not found", nil)
 	ErrAppNotFound        = NewError(CodeAppNotFound, "app not found", nil)
+	// ErrAppDenied は、拒否リスト方式で、起動しようとした実行ファイルが拒否リストに当たったこと（メッセージに拒否リストの中身・パスは入れない）。
+	ErrAppDenied = NewError(CodeAppDenied, "the host owner does not allow this app to be launched", nil)
 	// ErrLaunchFailed の reason は NewLaunchFailed で付ける。メッセージにも Detail にもパス・引数は入れない。
 	ErrLaunchFailed = NewError(CodeLaunchFailed, "the app could not be launched", nil)
 	// ErrAuditUnavailable は、起動の試行を監査に書けないために起動しなかったこと（fail-closed。NFR-S20）。

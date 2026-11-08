@@ -67,9 +67,11 @@ type fakeControl struct {
 
 	// apps は LaunchableApps が返す許可リスト（id と表示名だけ）。launchPID は Launch が返すプロセス ID。
 	apps      []domain.AppSummary
+	mode      domain.LaunchMode // LaunchableApps が返す方式。空は allowlist
 	launchPID uint32
 	// launches は Launch が受けた app_id の記録。launchErr が非 nil なら、検査（キルスイッチ・リース・許可リスト）の後に Launch がこれを返す。
 	launches  []string
+	launchReq []service.LaunchRequest
 	launchErr error
 	// launchWindow・launchReused は Launch が返す、起動後の前面のウィンドウと再利用の印。
 	launchWindow *domain.WindowInfo
@@ -148,17 +150,31 @@ func (f *fakeControl) Do(ctx context.Context, who domain.Actor, op domain.Op) (s
 
 func (f *fakeControl) ReleaseInput() error { return nil }
 
-func (f *fakeControl) LaunchableApps(context.Context) ([]domain.AppSummary, error) {
+func (f *fakeControl) VerifyTarget(context.Context, domain.Actor) (service.TargetStatus, error) {
+	return service.TargetStatus{}, nil
+}
+
+func (f *fakeControl) ResumeTarget(context.Context, domain.Actor) (service.TargetStatus, error) {
+	return service.TargetStatus{}, nil
+}
+
+func (f *fakeControl) LaunchableApps(context.Context) (service.LaunchableList, error) {
 	if err := f.viewErr(); err != nil {
-		return nil, err
+		return service.LaunchableList{}, err
 	}
-	return f.apps, nil
+	mode := f.mode
+	if mode == "" {
+		mode = domain.LaunchModeAllowlist
+	}
+	return service.LaunchableList{Mode: mode, Apps: f.apps}, nil
 }
 
 // Launch は Control.Launch と同じ順序（キルスイッチ → リース → 許可リスト）で検査する。監査は本物の Control の責務なので記録しない。
-func (f *fakeControl) Launch(ctx context.Context, who domain.Actor, appID string) (service.LaunchResult, error) {
+func (f *fakeControl) Launch(ctx context.Context, who domain.Actor, req service.LaunchRequest) (service.LaunchResult, error) {
+	appID := req.AppID
 	f.mu.Lock()
 	f.launches = append(f.launches, appID)
+	f.launchReq = append(f.launchReq, req)
 	f.mu.Unlock()
 
 	if f.kill.Active() {
@@ -171,6 +187,18 @@ func (f *fakeControl) Launch(ctx context.Context, who domain.Actor, appID string
 	if err != nil {
 		return service.LaunchResult{}, err
 	}
+	if (req.Path == "") == (appID == "") { // 同時指定・どちらも無し
+		return service.LaunchResult{}, domain.ErrInvalidArgument
+	}
+	if req.Path != "" { // path は denylist 方式のときだけ受け付ける（本物の Control と同じ。検査の中身は service のテストが持つ）
+		if f.mode != domain.LaunchModeDenylist {
+			return service.LaunchResult{}, domain.ErrInvalidArgument
+		}
+		if f.launchErr != nil {
+			return service.LaunchResult{}, f.launchErr
+		}
+		return service.LaunchResult{PID: f.launchPID}, nil
+	}
 	if !slices.ContainsFunc(f.apps, func(a domain.AppSummary) bool { return a.ID == appID }) {
 		return service.LaunchResult{}, domain.ErrAppNotFound
 	}
@@ -178,6 +206,13 @@ func (f *fakeControl) Launch(ctx context.Context, who domain.Actor, appID string
 		return service.LaunchResult{}, f.launchErr
 	}
 	return service.LaunchResult{AppID: appID, PID: f.launchPID, Window: f.launchWindow, ReusedExistingWindow: f.launchReused}, nil
+}
+
+// launchRequestsFull は Launch が受けた指定を順に返す。
+func (f *fakeControl) launchRequestsFull() []service.LaunchRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.launchReq)
 }
 
 // launchRequests は Launch が受けた app_id を順に返す。

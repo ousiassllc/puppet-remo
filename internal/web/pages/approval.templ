@@ -22,9 +22,3 @@ templ ApprovalGone(v view.ApprovalGone) {
 	}
 }
 
-// Overlay は操作中オーバーレイのフルページ（GET /overlay。全モニターを覆うクリックスルーの Wails ウィンドウの中身）。
-templ Overlay(v view.Overlay) {
-	@layout.Overlay("操作中") {
-		@organisms.Overlay(v)
-	}
-}

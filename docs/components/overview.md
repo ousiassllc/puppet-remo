@@ -230,6 +230,24 @@ type LaunchFailure string // "file_missing" | "access_denied" | "elevation_requi
 // 定数: LaunchFileMissing / LaunchAccessDenied / LaunchElevationRequired / LaunchOther。
 // ErrAppNotFound（code app_not_found）と ErrLaunchFailed（code launch_failed。Detail["reason"] に LaunchFailure）を §2 のエラー型に加える。
 // reason つきの ErrLaunchFailed は NewLaunchFailed(reason) で作る（未知の reason は LaunchOther に丸め、Detail に任意の文字列が入らないようにする）。
+
+// 起動の方式と拒否リスト（#88。FR-M18・M19・H12、NFR-S20）。外部 I/O を持たない値と判定だけ。
+type LaunchMode string // "allowlist"（既定。許可リストのアプリだけを app_id で起動）| "denylist"（拒否リストに当たらない固定ディスク上の .exe を path でも起動）。定数 LaunchModeAllowlist / LaunchModeDenylist。Valid() で既知の値か確かめる
+type DeniedKind string // "path"（実体のパスで照合）| "name"（実行ファイル名で照合）。定数 DeniedPath / DeniedName
+// path の Value は登録時に解決した実体の絶対パス（解決できないときは入力の綴りの区切りをそろえたもの）、name の Value は実行ファイル名（入力のまま）。
+type DeniedApp struct{ ID string; Kind DeniedKind; Value string; CreatedAt, UpdatedAt time.Time }
+const MaxDeniedApps = 200
+func DeniedKey(kind DeniedKind, value string) string // 重複判定の正規形（kind + ":" + 小文字の value。path は区切りを "\" にそろえる）。launch_denylist.dedup_key
+func NormalizePathForMatch(p string) string          // "/" → "\"、連続する区切りを 1 つに（大文字小文字は畳まない。比較側が EqualFold）
+// 拒否リストの入力を、パス（"\"・"/"・":" を含む）か実行ファイル名に分け、形を検査する（純粋。msg が空なら有効。メッセージに入力値は含めない）。
+//  パス: ValidateLaunchPath と同じ規則。名前: 区切りを含まない .exe の名前（255 文字以内。予約デバイス名・使えない文字・制御文字は不可）。
+func ClassifyDenied(value string) (kind DeniedKind, msg string)
+func ValidateLaunchPath(p string) bool // launch_app の path の形（ExePath と同じパスの規則の絶対パスのローカルの .exe）。固定ディスク・実在は platform.AppLauncher.Resolve が確かめる
+func ExeBaseName(p string) string      // "\" か "/" 区切りの最後の要素
+// 照合: requested は呼び出し側の指定のパス、resolved は AppLauncher.Resolve が返した実体のパス。大文字小文字を区別しない。
+//  path の行は resolved と一致で当たり、name の行は resolved の末尾の名前か requested の末尾の名前と一致で当たる（解決の前後どちらかの名前が一致すれば拒否。fail closed）。
+func MatchDenied(entries []DeniedApp, requested, resolved string) bool
+// 定数 AppFieldDeniedValue / AppFieldLaunchMode（"value" / "mode"）。ErrAppDenied（code app_denied・HTTP 403。メッセージにパス・拒否リストの中身を含めない）を §2 のエラー型に加える。
 ```
 
 **不変条件**: `domain` は他の内部パッケージを import しない。`Monitor.ScaledToPhysical` と `PhysicalToScaled` は丸めの誤差が 1 px を超えない（プロパティテスト）。`CandidateID` は同じ入力に同じ出力を返し、要素の並び・添字・実行時 ID に依存しない。`CandidateTable.Validate` は表に無い文字列を一切受理しない（プロパティテスト）。
@@ -308,6 +326,11 @@ type AppLauncher interface {
     // 登録・更新時の存在確認: exePath が存在する通常ファイルか、workingDir（空でなければ）が存在するディレクトリか。
     // 無ければ platform.ErrNotFound（SecretStore と共通。パスをメッセージに含めない）。ERROR_INVALID_NAME（123）・ERROR_BAD_PATHNAME（161）も「無い」として写す（Windows 実装）。
     Inspect(ctx context.Context, exePath, workingDir string) error
+    // 実体のパス（#88。FR-M19）: exePath の、シンボリックリンク・ジャンクション・マウントポイント・8.3 短縮名を解決した、固定ディスク上のドライブ文字つきの絶対パス（`\\?\` の接頭辞なし）。
+    // 拒否リストとの照合と、path 指定の起動（返したパスをそのまま LaunchSpec.ExePath にする）に使う。Windows 実装は、先に exePath のドライブが固定ディスク（GetDriveType が DRIVE_FIXED）であることを確かめ、
+    // ファイルを開いて GetFinalPathNameByHandle で実体のパスを得て、ドライブ文字のパスに直し、そのドライブも DRIVE_FIXED であることを確かめる（UNC・ボリューム GUID・マップしたネットワークドライブ・リムーバブルは access_denied）。
+    // 固定ディスク以外は *LaunchError（access_denied）、無ければ *LaunchError（file_missing）。メッセージにパスを含めない。空・絶対パスでない exePath は domain.ErrInvalidArgument。
+    Resolve(ctx context.Context, exePath string) (string, error)
 }
 type LaunchSpec struct{ ExePath string; Args []string; WorkingDir string } // WorkingDir が空なら ExePath のディレクトリ
 type LaunchError struct{ Reason domain.LaunchFailure; Err error } // Error() は理由だけ（パス・引数を含めない）。Err は Win32 のエラーコードだけを持つ（errors.Is / As 用）
@@ -386,6 +409,15 @@ type LaunchableApps interface {
     Create(ctx, a domain.LaunchableApp, limit int) error
     Update(ctx, a domain.LaunchableApp) error          // 無ければ ErrNotFound、label の重複は ErrConflict
     Delete(ctx, id string) error                       // 無ければ ErrNotFound
+}
+// #88。起動の拒否リスト（FR-H12）。書き込みは service.AppRegistry だけ。起動の方式（launch.mode）は Settings が持つ。
+type LaunchDenylist interface {
+    Get(ctx, id string) (domain.DeniedApp, error)  // 無ければ ErrNotFound
+    List(ctx) ([]domain.DeniedApp, error)          // kind・value の昇順（NOCASE）
+    // 件数の確認と挿入を同じトランザクションで行う。limit 件に達していれば ErrLimitReached、重複（domain.DeniedKey が同じ）は ErrConflict。
+    Create(ctx, d domain.DeniedApp, limit int) error
+    Update(ctx, d domain.DeniedApp) error          // Kind・Value・UpdatedAt を置き換える。無ければ ErrNotFound、他の行との重複は ErrConflict
+    Delete(ctx, id string) error                   // 無ければ ErrNotFound
 }
 type Audit interface {
     Append(ctx, e AuditEntry) (id int64, err error)
@@ -553,7 +585,7 @@ func New(key func(ctx context.Context) (string, error), cfg Config) Chooser
 | `Approval` | 承認待ちの要求（id → チャネル） | なし（要求ごとの待機は呼び出し側の goroutine） | `sync.Mutex` |
 | `Control` | なし（ステートレス。検査の順序を定義する） | なし | — |
 | `Judge` | なし（設定のスナップショットは都度読む） | なし | — |
-| `AppRegistry` | なし（ステートレス。許可リストの正は `repository.LaunchableApps`） | なし | — |
+| `AppRegistry` | なし（ステートレス。許可リストの正は `repository.LaunchableApps`、拒否リストの正は `repository.LaunchDenylist`、起動の方式の正は `settings` の `launch.mode`） | なし | — |
 | `Agent` | 実行中タスクの `*run`（高々 1 つ。ステップ数・`History`・高速パスのカウンタを含む） | タスクごとに 1 本（ループ。高速パスもこの goroutine で動く） | `sync.Mutex`（`run` の参照の差し替え）。`run` の内部状態は goroutine 1 本だけが触る |
 | `FastPath` | なし（`Agent` の内部部品。タスクごとの状態は `run` が持つ） | なし（`run` の goroutine で同期的に動く） | 不要（候補表は不変の値） |
 | `Streamer` | 閲覧者の一覧、(モニター, 品質, FPS) ごとのプロファイルとエンコード結果 | モニターごとにキャプチャ受信 1 本 + エンコード、閲覧者ごとに送信 1 本 | `sync.RWMutex` |
@@ -646,10 +678,13 @@ type Control interface {
     // M1 で mcp が使う読み取り（リース不要）。CursorPosition は縮小座標とモニター、MaxDimension は設定 `screenshot.max_dimension`（縮小率の算出に使う）。
     CursorPosition(ctx context.Context) (Cursor, error)
     MaxDimension(ctx context.Context) (int, error)
-    // M1.5（FR-M18）。リース不要。許可リストの id と表示名だけを返す（label の昇順）。
-    LaunchableApps(ctx context.Context) ([]domain.AppSummary, error)
-    // M1.5（FR-M19）。許可リストのアプリを起動する。呼び出し側が渡せるのは app_id だけ。検査の順序は §5.4.1。
-    Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
+    // M1.5（FR-M18）。リース不要。起動の方式（launch.mode）と、許可リストの id と表示名だけを返す（label の昇順）。方式によらず登録済みのアプリを返し、拒否リストの中身は返さない。
+    LaunchableApps(ctx context.Context) (LaunchableList, error)
+    // M1.5（FR-M19）。アプリを起動する。呼び出し側が渡せるのは req.AppID（許可リストのアプリ）か、ブラックリスト方式のときだけ req.Path（固定ディスク上の実在の .exe の絶対パス。引数・作業ディレクトリは渡せない）。検査の順序は §5.4.1。
+    Launch(ctx context.Context, who domain.Actor, req LaunchRequest) (LaunchResult, error)
+    // #156（§5.4.2）。スコープ付きのリースの全条件を入力せずに確かめる / 保持者の明示的な再開（全条件を再検証して通ったときだけ active）。
+    VerifyTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
+    ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
 }
 ```
 
@@ -675,11 +710,13 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 ### 5.4.1 AppRegistry と Launch（M1.5。FR-M18・M19・H12）
 
 ```go
-// 許可リストの読み取り専用の面。Control はこれだけを受け取る（ControlConfig.Apps）。AppRegistry が満たす。
+// 許可リスト・起動の方式・拒否リストの読み取り専用の面。Control はこれだけを受け取る（ControlConfig.Apps）。AppRegistry が満たす。
 // 読めない行（args_json が壊れている）は Corrupt を立てて返し、エラーにしない（List が全体失敗しない。GUI が 500 にならず、所有者が削除できる）。
 type AppReader interface {
     List(ctx context.Context) ([]domain.LaunchableApp, error)              // 一覧（パス・引数を含む。GUI 用）
     Get(ctx context.Context, id string) (domain.LaunchableApp, error)     // 無ければ ErrNotFound
+    LaunchMode(ctx context.Context) (domain.LaunchMode, error)            // 未設定・読めない値・定義外の値は LaunchModeAllowlist（fail closed）
+    ListDenied(ctx context.Context) ([]domain.DeniedApp, error)           // 拒否リスト（denylist 方式だけで効く。MCP・リモートには返さない）
 }
 
 // 許可リストの管理。GUI ルーター（web/handler/gui）が使う。書き込みは GUI だけが呼ぶ（mcp・ws は AppRegistry を持たない）。Control には AppReader だけを渡す。
@@ -690,15 +727,33 @@ type AppRegistry interface {
     Create(ctx context.Context, in domain.AppInput) (domain.LaunchableApp, error)
     Update(ctx context.Context, id string, in domain.AppInput) (domain.LaunchableApp, error) // id・CreatedAt は変えない。無ければ ErrNotFound
     Delete(ctx context.Context, id string) error                                        // 無ければ ErrNotFound
+    // 起動の方式の切り替え（#88。ホスト GUI の `/apps` だけ。MCP・Web UI には経路が無い）。定義外の値は AppFieldErrors{"mode": …}。方式が実際に変わるときだけ settings.launch_mode.update を監査する（from・to）。
+    SetLaunchMode(ctx context.Context, mode domain.LaunchMode) error
+    // 拒否リストの登録・更新・削除。value は domain.ClassifyDenied がパスか実行ファイル名かに分ける。パスは登録時に AppLauncher.Resolve で実体のパスへ解決して保存する（ファイルが無い・固定ディスクに無い・解決できないときは入力の綴りの区切りをそろえて保存）。
+    // 不備・重複は AppFieldErrors{"value": …}（GUI が 422 で再描画）、200 件到達は domain.CodeConflict、無い id は ErrNotFound。監査は settings.launch_denylist.create / update / delete（actor host）。
+    CreateDenied(ctx context.Context, value string) (domain.DeniedApp, error)
+    UpdateDenied(ctx context.Context, id, value string) (domain.DeniedApp, error)
+    DeleteDenied(ctx context.Context, id string) error
     // ネイティブのファイル選択ダイアログを開く（platform.FilePicker の委譲。web/handler は platform を import できないため）。キャンセルは ok=false。
     PickExecutable(ctx context.Context) (path string, ok bool, err error)
 }
+// Control.LaunchableApps の結果。
+type LaunchableList struct {
+    Mode domain.LaunchMode // 起動の方式
+    Apps []domain.AppSummary // 登録済みのアプリ（id と表示名だけ）。方式によらず返す
+}
+// Control.Launch の指定。AppID と Path はどちらか一方だけ（同時指定・どちらも無いは ErrInvalidArgument）。
+type LaunchRequest struct {
+    AppID string // 許可リストの id
+    Path  string // ブラックリスト方式のときだけ。固定ディスク上の .exe の絶対パス
+}
 type LaunchResult struct {
-    AppID string
+    AppID string // path 指定の起動では空
     PID   uint32
-    // 起動後に前面にあったウィンドウ。前面を確かめられなかったとき（Foreground の失敗）は nil。Window.PID が PID と違うことがある。
+    // 起動したアプリのウィンドウ（PID のトップレベルウィンドウ。無ければ、起動の前に無かった新しいウィンドウのうちプロセス名が起動した実行ファイルと同じもの）。
+    // 前面でなければ Focus で前面に出す。見つからないときは nil（前面にある別のアプリのウィンドウで代用しない。#85）。Window.PID が PID と違うことがある。
     Window *domain.WindowInfo
-    // PID のトップレベルウィンドウが無く、起動の前に無かった新しいウィンドウも開かないまま別のプロセスのウィンドウが前面にあるとき true（既存のウィンドウが前に出ただけの可能性。FR-M19）。Window が nil なら false。
+    // PID のトップレベルウィンドウが無く、起動の前に無かった新しいウィンドウも開かないまま別のプロセスのウィンドウが前面にあるとき true（既存のウィンドウが前に出ただけの可能性。FR-M19）。このとき Window は nil。
     ReusedExistingWindow bool
 }
 ```
@@ -707,25 +762,55 @@ type LaunchResult struct {
 
 1. `KillSwitch.Active()` → `ErrKillSwitchActive`
 2. `LeaseManager.Check(who)` → リースの検査（暗黙取得が許される `mcp` は、ここで `Acquire` を試みる。FR-L04。**M3 から、クライアントの承認モード（FR-L07）が承認を求めるときは、この `Acquire` がホストの結果を待つ（最大 60 秒）ので、`Do` / `Launch` の呼び出しもその間ブロックする**。拒否・タイムアウト・取り下げなら実行せず、`ErrApprovalDenied` / `ErrApprovalTimeout` などを返し、監査の `result` は `denied`）
-3. `AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。
+3. 起動の方式（`AppReader.LaunchMode`）を読み、対象を決める（`req` は `AppID` か `Path`）。`AppID` と `Path` の同時指定・どちらも無いときは `ErrInvalidArgument`。**ホワイトリスト方式（既定）**: `Path` の指定は `ErrInvalidArgument`（`path` は受け付けない）。`AppReader.Get(appID)` → 無ければ `ErrAppNotFound`。`domain.CheckLaunchTarget` → 満たさない行・読めない行（`Corrupt`）は `ErrAppNotFound`（fail closed。監査 `denied`、label は許可リストを引けたので入る）。**ブラックリスト方式**: `AppID` なら同じ検査に加えて、`exe_path` を `platform.AppLauncher.Resolve` で実体のパスにし、`AppReader.ListDenied` と `domain.MatchDenied` で照合する（当たれば `ErrAppDenied`。拒否が優先で、許可リストにあっても起動しない）。`Path` なら `domain.ValidateLaunchPath`（形。不備は `ErrInvalidArgument`）→ `platform.AppLauncher.Resolve`（固定ディスク上の実在の実体のパス。固定ディスク以外は `launch_failed` の `access_denied`、無ければ `file_missing`）→ 拒否リストとの照合（`ErrAppDenied`）。`Path` で起動するのは `Resolve` が返した実体のパスで、引数・作業ディレクトリは渡さない（`LaunchSpec{ExePath}` だけ）。拒否リスト・方式が読めないときは、起動せずそのエラーを返す（方式は未設定・不正な値なら `allowlist` として扱う）。
 4. `KillSwitch.Active()` を再確認する（1〜3 の間に発動したキルスイッチを取りこぼさない。`Do` の実行直前の再確認と同じ）→ `ErrKillSwitchActive`
 4b. **起動の「試行」の監査を同期で書く**（`SyncAuditRecorder.RecordSync`。#37。fail-closed）: `tool.launch_app.attempt`（`who.Kind = agent` は `agent.launch_attempt`）を、呼び出しのスレッドで DB へ書き終えてから進む。書けなければ**起動せず** `domain.ErrAuditUnavailable`（`audit_unavailable`・503。DB のエラーの中身は載せず、運用ログに Error で出す）を返す。1〜4 で拒否した呼び出しには書かない。同期書き込みの遅延（DB のロック待ちなど）は許容し、新しい上限は足さない（待ちは呼び出しの `ctx`＝MCP は `ToolTimeout` に従う）。`Audit` が nil（テスト用）なら書かない
-5. `platform.AppLauncher.Launch`（Windows 実装は、起動の直前に実行ファイルがローカルの固定ディスク上の実体であること — `GetDriveType` が `DRIVE_FIXED`、`GetFinalPathNameByHandle` の結果が登録されたパスと一致 — を確かめ、違えば `access_denied`）→ 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
-5b. 起動後のウィンドウの観測（`Control` の内部。`platform.WindowManager` の `Foreground` と `List`。成功したときだけ。FR-M19）: 起動の直前に `List()` で（`Own` のウィンドウを除く）ウィンドウ ID の集合を控え、起動後、200 ミリ秒間隔（`launchWindowPollInterval`）で最大 16 回（`launchWindowPollAttempts`。待ちはおよそ 3 秒）、前面のウィンドウの `PID` が起動した `pid` に一致するまで観測する。待ちは `ControlConfig.Sleep`（`Wait` と共通。テストが差し替える）で行い、`ctx` の取り消しなどで待ちが失敗したらそこまでの観測で打ち切る。観測の失敗は起動の失敗にしない。最後の観測で、`Window` は `Foreground()` の結果（失敗したら nil）、`ReusedExistingWindow` は「`Foreground()` が取れて、その `PID` も `List()` のどのウィンドウの `PID` も起動した `pid` でなく、起動の前の集合に無い ID のウィンドウ（`Own` を除く）も無い」とき `true`（`List` が読めなかったときは前面のウィンドウだけで判断し、起動の前の `List` が読めなかったときは新しいウィンドウの有無を使わない。#55）
-6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・4b の `audit_unavailable` と 5 の失敗 `error`。`tool.launch_app`。FR-AU06）。「結果」の行は非同期のキューで記録し、キューが満杯・書き込み失敗のときも起動は取り消さない（4b の試行の行が残っている）。`Audit` は取りこぼしを Warn で運用ログに出す（`audit entry dropped`・`audit append failed`。`launch_app` 以外の書き込みの失敗は従来どおり Error）。試行の行と結果の行は別の行で、どちらも追記だけ（NFR-S20）
+5. `platform.AppLauncher.Launch`（Windows 実装は、起動の直前に実行ファイルがローカルの固定ディスク上の実体であること — `GetDriveType` が `DRIVE_FIXED`、`GetFinalPathNameByHandle` の結果が指定されたパスと一致（`Resolve` が返した実体のパスで起動する `path` 指定では常に一致する）— を確かめ、違えば `access_denied`）→ 失敗は `*platform.LaunchError` の理由を `ErrLaunchFailed{reason}` に写す（コマンドラインに組めない値の `domain.ErrInvalidArgument` も `other`。それ以外の想定外のエラーはそのまま返し、`mcp` が `internal` にする）
+5b. 起動後のウィンドウの観測（`Control` の内部。`platform.WindowManager` の `Foreground` と `List`。成功したときだけ。FR-M19）: 起動の直前に `List()` で（`Own` のウィンドウを除く）ウィンドウ ID の集合を控え、起動後、200 ミリ秒間隔（`launchWindowPollInterval`）で最大 16 回（`launchWindowPollAttempts`。待ちはおよそ 3 秒）、起動したアプリのウィンドウが前面になるまで観測する。待ちは `ControlConfig.Sleep`（`Wait` と共通。テストが差し替える）で行い、`ctx` の取り消しなどで待ちが失敗したらそこまでの観測で打ち切る。観測の失敗は起動の失敗にしない。最後の観測で、`Window` は起動したアプリのウィンドウ（`PID` が起動した `pid` のウィンドウ。無ければ、起動の前の集合に無い ID のウィンドウ〔`Own` を除く〕のうち `Process` が許可リストの実行ファイル名と大文字小文字を無視して一致するもの。複数あれば前面・最小化でないものを優先。どちらも無ければ nil）で、前面でなければ `WindowManager.Focus` で前面に出す（失敗しても起動は成功のまま。`Foreground` は成功したときだけ立てる。#85）。前面にある別のアプリのウィンドウは返さない。`ReusedExistingWindow` は「`Foreground()` が取れて、その `PID` も `List()` のどのウィンドウの `PID` も起動した `pid` でなく、起動の前の集合に無い ID のウィンドウ（`Own` を除く）も無い」とき `true`（`List` が読めなかったときは前面のウィンドウだけで判断し、起動の前の `List` が読めなかったときは新しいウィンドウの有無を使わない。#55）
+6. `Audit.Record`（成功 `ok`・1〜4 の拒否 `denied`・4b の `audit_unavailable` と 5 の失敗 `error`。`tool.launch_app`。FR-AU06）。「結果」の行は非同期のキューで記録し、キューが満杯・書き込み失敗のときも起動は取り消さない（4b の試行の行が残っている）。`Audit` は取りこぼしを Warn で運用ログに出す（`audit entry dropped`・`audit append failed`。`launch_app` 以外の書き込みの失敗は従来どおり Error）。試行の行と結果の行は別の行で、どちらも追記だけ（NFR-S20）。3 で拒否した呼び出し（要求の形の不備・`app_not_found`・`app_denied`・`Resolve` の失敗）は 4b の前なので、試行の行は無く、結果の行だけが残る
 
-- 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。`detail` は `{app_id, label（許可リストを引けたときだけ）, pid と reused_existing_window（成功のみ）, reason（launch_failed のみ）}`。前面のウィンドウのタイトル・id は記録しない。パス・引数・作業ディレクトリは入れない
+- 監査の `result` は `domain.CodeOf` による: `kill_switch_active`・`lease_held_by_other`・`lease_required`・`app_not_found`・`app_denied` は `denied`、`launch_failed` とそれ以外は `error`（`ToolAuditEntry`）。ただし `invalid_argument`（`app_id` と `path` の同時指定・どちらも無い・ホワイトリスト方式での `path`・`path` の形の不備）は、入力スキーマ違反と同じく `denied` で残す（`Control.Launch` が上書きする）。`detail` は `{app_id（指定があったときだけ）, path（指定があり、`domain.ValidateLaunchPath` の形を通ったときだけ。呼び出し側が渡した綴りのまま 1,024 文字までに切り詰める）, label（許可リストを引けたときだけ）, launch_mode: "denylist"（ブラックリスト方式のときだけ。ホワイトリスト方式は従来どおり記録しない）, pid と reused_existing_window（成功のみ）, reason（launch_failed のみ）}`。前面のウィンドウのタイトル・id は記録しない。引数・作業ディレクトリは入れない（受け取らない）。登録済みのアプリの実行ファイルのパスも入れない。試行の行（4b）は `{app_id, path, label, launch_mode}` だけ
 - **InputGuard は通らない**（座標も前面ウィンドウも持たない操作）。`Judge`・`Approval` も M1.5 には無い。M3 の承認モードは、2 の暗黙のリース取得（`LeaseManager.Acquire`）で 1 回だけ適用する（FR-L07。`launch_app` にもかかる）。リースの保持中に `launch_app` の呼び出しごとの承認を足すかは未決で、M3（#66）では足していない
 - 起動の直列化はしない（`Do` の入力セマフォを使わない。プロセスの作成は入力の順序に影響しない）。同じアプリの多重起動を禁止しない（毎回新しいプロセス）
-- `Control` だけが `platform.AppLauncher` を呼べる（`InputInjector` と同じ。パッケージの可視性で保証する）。**M4 の `Agent` がアプリを起動するときも、`Control.Launch`（`who.Kind = agent`）と同じ `AppRegistry` を使い**、別の許可リスト・別の起動経路は作らない（決定事項）。`agent` の `Launch` は Judge・承認を通らない（座標もウィンドウも持たない操作で、起動できるのはホスト所有者が登録した許可リストだけ。M4 の決定。#19）。監査は `kind = agent`・`event = agent.step`（`tool = launch_app`、`task_id` は `Actor.SessionID`。detail は上と同じ）
-- `LaunchableApps` は `AppRegistry.List` のうち、起動できない行（`domain.CheckLaunchTarget` が拒否する行。読めない `Corrupt` の行を含む）を除いて `Summary()` に写して返す。`mcp` はこの型しか受け取らないため、パス・引数を応答に載せる経路が型の上で存在しない
+- `Control` だけが `platform.AppLauncher.Launch` を呼べる（`InputInjector` と同じ。パッケージの可視性で保証する）。`Resolve` はプロセスを作らない読み取りで、`Control`（照合）と `AppRegistry`（拒否リストの登録時）が呼ぶ。**M4 の `Agent` がアプリを起動するときも、`Control.Launch`（`who.Kind = agent`）と同じ `AppRegistry`（同じ方式・同じ拒否リスト）を使い**、別の許可リスト・別の起動経路は作らない（決定事項。FR-G27 のエージェントの道具の一覧には `launch_app` は含まれないが、含める場合も共有する経路はこれ）。`agent` の `Launch` は Judge・承認を通らない（座標もウィンドウも持たない操作で、既定のホワイトリスト方式で起動できるのはホスト所有者が登録した許可リストだけ。ホスト所有者がブラックリスト方式を選んだときだけ、拒否リストに当たらない任意の `.exe` を `path` で起動できる。M4 の決定。#19）。監査は `kind = agent`・`event = agent.step`（`tool = launch_app`、`task_id` は `Actor.SessionID`。detail は上と同じ）
+- `LaunchableApps` は `AppReader.LaunchMode` の方式と、`AppRegistry.List` のうち起動できない行（`domain.CheckLaunchTarget` が拒否する行。読めない `Corrupt` の行を含む）を除いて `Summary()` に写した一覧を、`LaunchableList{Mode, Apps}` で返す（方式によらず登録済みのアプリを返す）。`mcp` はこの型しか受け取らないため、パス・引数・拒否リストの中身を応答に載せる経路が型の上で存在しない
 - 起動後のプロセスは管理しない。`platform` は `CreateProcess` が返したハンドル（プロセス・スレッド）をすぐ閉じる（リークしない）。ジョブオブジェクトに入れない（本アプリの終了・キルスイッチで子プロセスは終了しない）
 - `Control` の `AppReader` が「無い」以外のエラーを返したときは、起動せず、そのエラーを返す（監査は `error` / `internal`。メッセージにパスを含めない）
 - リースの保持者は `mcp`・`web`・`agent`（`domain.ActorKind.CanHoldLease`。`agent` は M4 から）。`agent` は暗黙の取得をせず、`Agent` がタスクの開始時に `Acquire` する（FR-L08）。タスクの無い `agent` の操作は `lease_required` で拒否される（監査の `actor_type` は `agent`）
 
-`AppRegistry` の実装（`NewAppRegistry`）は `repository.LaunchableApps`・`platform.AppLauncher`（`Inspect` だけ。`Launch` は `Control` だけが呼ぶ）・`platform.FilePicker` を受け取る。`Create` / `Update` は表示名の前後の空白を除いて検証し、実行ファイルの存在 → 作業ディレクトリの存在の順に `Inspect` する（`Inspect` はどちらが無いかを区別しないため、作業ディレクトリは実行ファイルがあるときだけ確かめる。形が不正な項目のパスは渡さない）。`Inspect` 自体の失敗（`ErrNotFound` 以外）は項目エラーにせずそのまま返す。`Update` の監査の `changed` は変わった項目だけを `label`・`exe_path`・`args`・`working_dir` の順に並べる。
+`AppRegistry` の実装（`NewAppRegistry`）は `repository.LaunchableApps`・`repository.LaunchDenylist`・`repository.Settings`（`launch.mode`）・`platform.AppLauncher`（`Inspect` と、拒否リストのパスを実体へ解決する `Resolve` だけ。`Launch` は `Control` だけが呼ぶ）・`platform.FilePicker` を受け取る。`Create` / `Update` は表示名の前後の空白を除いて検証し、実行ファイルの存在 → 作業ディレクトリの存在の順に `Inspect` する（`Inspect` はどちらが無いかを区別しないため、作業ディレクトリは実行ファイルがあるときだけ確かめる。形が不正な項目のパスは渡さない）。`Inspect` 自体の失敗（`ErrNotFound` 以外）は項目エラーにせずそのまま返す。`Update` の監査の `changed` は変わった項目だけを `label`・`exe_path`・`args`・`working_dir` の順に並べる。`LaunchMode` は `launch.mode` が未設定・JSON として読めない・定義外の値のとき `allowlist` を返す（手で書き換えられた値は、より厳しい方式として扱う。fail closed）。`SetLaunchMode` は `settings` に JSON 文字列で保存し、変わるときだけ `settings.launch_mode.update`（`{from, to}`）を監査する。`CreateDenied` / `UpdateDenied` は入力の前後の空白を除き、`domain.ClassifyDenied` で分けて、`path` は `Resolve` した実体のパスで保存し、`repository.LaunchDenylist.Create(limit = domain.MaxDeniedApps)` / `Update` の重複（`ErrConflict`）を `AppFieldErrors{"value": …}`、上限（`ErrLimitReached`）を `domain.CodeConflict` に写す。拒否リストの監査（`settings.launch_denylist.create` / `update` / `delete`）は `{id, kind, value}`（`update` は `before_kind`・`before_value` も）を記録する。
 
 `AppRegistry` を `HostAdmin`（§13.5）に統合せず分けるのは、`Control` が読み取り（`Get` / `List`）に使い、`HostAdmin` の責務（クライアント・接続要求・トークンの操作と `SessionCloser` による切断）と依存が重ならないため。ホスト所有者の操作として `actor_type = host` で監査する点と、書き込みを GUI ルーターだけに渡す点（ルーター組み立てのテストで `mcp` / リモート側に `AppRegistry` を渡さないことを検査する）は `HostAdmin` と同じ。
+
+### 5.4.2 入力スコープ（#156。FR-L09〜L14。NFR-S06 の追記）
+
+リースに 1 つのトップレベルウィンドウ T を束縛し、入力を T と**対象グループ G**（T ＋ T との所有関係を検証できる同一プロセスの関連ウィンドウ）に限る。誤入力を止めるガードレールで、セキュリティ境界ではない（`screenshot`・モニター表示は止めない）。判定は `domain`（`ResolveGroup`・`Group.CheckFocus` / `CheckHit`・`LeaseScope`・`ScopedKeyForbidden`）、状態は `LeaseManager`、検証・停止・再開は `Control`（`control_target.go`）。UI（#157）・エージェント（#158）の入口はこの API を使うが、本節の時点では**スコープ付きのリースを作る HTTP / WebSocket / MCP の入口はない**（`LeaseManager` / `Control` のサービス API だけ）。
+
+```go
+// LeaseManager（§5.2）への追加。束縛は固定。変えるには解放して取り直す。
+AcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (Lease, error)
+RequestAcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (l Lease, pending bool, err error)
+Halt(leaseID string, reason domain.GroupReason) bool // Control だけが呼ぶ
+ResumeVerified(who domain.Actor) error               // Control.ResumeTarget だけが呼ぶ（全条件の再検証のあと）
+// Lease・Holder・PendingLease は Scope *domain.LeaseScope（Target・State = active|halted・HaltReason・監査用の Process・Members）を持つ。スコープなしは nil。
+
+// Control への追加。
+VerifyTarget(ctx context.Context, who domain.Actor) (TargetStatus, error) // 入力せずに全条件を確かめる。通らなければ入力のときと同じく halted
+ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error) // 保持者の明示的な再開。全条件を再検証して通ったときだけ active
+// TargetStatus{State, HaltReason, Members, Notices（capture_partial）, Excluded（unverifiable で表示から除外したウィンドウ）}
+```
+
+`LeaseConfig.Windows`（`platform.WindowManager`）が束縛の検査（`domain.ResolveGroup` の `ListAll` 入力。一覧にない・HWND の再利用・検証前の UWP・同一性の値が不明・自ウィンドウ・昇格・最小化は束縛しない）に要る。ない構成では `AcquireScoped` は `invalid_argument`。`agent.deny_processes` は新しい設定を作らず、アクションごとの Judge（§5.5）が、スコープの有無によらず適用する。
+
+**`Do` の検査 3（InputGuard）の代わり**（スコープ付きのリースのみ。スコープなしは byte-for-byte 変わらない）:
+
+1. **実行前（`lockInput` の外。`scopeGate`）**: `ClipboardRead` は常に `clipboard_out_of_scope`（`platform.Clipboard.ReadText` は呼ばない。書き込みだけ許可。**サーバー側の規則なので Web UI・エージェント・MCP のどの入口でも同じ**）。停止中は Esc を含む一切の入力とクリップボード書き込みを `target_halted`（`detail.halt_reason` に停止の理由）。`win` 修飾・Windows キー・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc は `key_out_of_scope`。これらはその操作だけの拒否で停止にしない。座標がモニター上にあること（`invalid_coordinates`）は従来どおり。
+2. **注入の直前と、1 つの操作の複数回の注入の間（`lockInput` の中。`verifyInput`）**: `MoveTo` → クリック・押下 → 離す・文字列は 8 文字ごと。毎回 `WindowManager.ListAll` から `ResolveGroup` で G を求め直し、T の同一性・状態（最小化・昇格・自ウィンドウ）→ キー・文字は `Foreground`（前面と引き上げ前のフォーカスの葉）を `Group.CheckFocus`、座標は `At`（最上位と葉）を `Group.CheckHit` で検証する。自ウィンドウ・昇格は既存の `own_window` / `elevated_window`。`FocusWindow` は G のメンバーだけ（メンバー以外はその操作だけの拒否）。
+3. **撮影の事前確認（操作の最初の検証で 1 回）**: G の検証できたメンバー（T と、最小化・空の矩形でないメンバー。`unverifiable` は含めない）を `platform.GroupCapturer.GrabGroup` で撮れるかを確かめる（画像は使わない）。T が撮れない・撮影そのものの失敗・`Capturer` が `GroupCapturer` を持たない（型アサーション）は `capture_unavailable`、T 以外のメンバーが撮れないのは `capture_member_unavailable`。**モニター撮影（`Capturer.Grab`・`Watch`）・画面領域のコピーには切り替えない**。事前確認を入力ごとに 1 回おこなうのは「撮れない状態で入力しない」ための最小の設計で、表示側（#157・#158）が撮れなくなったことを入力なしで知るには `VerifyTarget` を使う。
+4. **停止（`halt`）**: 2 と 3 のどちらかに通らなければ、**何も注入せず** `InputInjector.ReleaseAll` を呼び、`LeaseManager.Halt` でリースを `halted` にして `input.target_halted`（`kind = input`。`reason`・`window_id`・`process`・`pid`・`members`・`target_window_id`。タイトルは記録しない）を記録し、`ErrInputBlocked`（`detail.reason`、原因のウィンドウがあれば `window_id` と `blocked_by{window_id, process, pid, reason}`）を返す。メンバーの増減だけでは停止しない。`unverifiable` のウィンドウは対象の表示から除外し（`TargetStatus.Notices` = `capture_partial`、`Excluded`）、前面・フォーカスの葉・座標の最上位になったときだけ停止する。
+5. **再開（`ResumeTarget`）**: 保持者だけ。自動では起きない（原因の解消・再取得・`VerifyTarget` では再開しない）。`halted` のリースの全条件（T の同一性・状態、G の求め直し、前面とフォーカスの葉が G の中、撮影の事前確認）を再検証し、すべて通ったときだけ `LeaseManager.ResumeVerified` で `active` に戻す（`lease.target_resumed`）。一つでも通らなければ `halted` のまま。`target_closed` / `target_replaced` / `target_unsupported` は再開できず（`ErrInputBlocked`）、解放して選び直す。`focus_window` は呼ばない（自動で前面にしない）。
+
+**検証状況**: A-1（上記。偽 platform = `FakeWindows`・`FakeCapturer`・`FakeApp`・`FakeClipboard` で検証）は実装済み。**Windows 実機の A-2（成功条件 S1〜S3 = メニューバーのメニュー・右クリックメニュー・同一プロセスの保存ダイアログ）は検証環境がなく「検証待ち」**で、完了・合格とは扱わない。Windows には `GroupCapturer` の実装が**ない**ので、実機のスコープ付きのリースは事前確認で `capture_unavailable` となり安全に停止する（fail closed）。デスクトップの切り抜き・モニター撮影・マスクで補う実装は置かない。
 
 ### 5.5 Judge
 
@@ -958,7 +1043,7 @@ Bearer トークンは `prm_` + base64url（パディングなし）の 32 バ�
 | `router` | GUI ルーターとリモートルーターの組み立て、ミドルウェア連鎖（API 仕様 §1） | `service`、`domain` |
 | `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`killswitch`、`whois`、`allowlist`、`bearer`（API 仕様 §1 の連鎖の順） | `service`（`Authenticator`・`Identity`・`ResolveIdentity`）、`domain`。`tailnet` は import しない（§13.1） |
 | `web/handler` | 機能別の HTTP ハンドラ（viewer、clients、apps（M1.5）、tasks、settings、audit …）。Templ で描画 | `service`、`domain` |
-| `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換。M1.5: `list_launchable_apps`（`Control.LaunchableApps` の `AppSummary` だけを返す）と `launch_app`（引数は `app_id` のみ。`Control.Launch`）。`mcp` は `AppRegistry` を持たない（許可リストを書く経路が無い）。`list_launchable_apps` の監査は `addAuditedTool` が `tool.list_launchable_apps` で記録し、`launch_app` は `Control.Launch` が記録する | `service`、`domain` |
+| `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換。M1.5: `list_launchable_apps`（`Control.LaunchableApps` の結果を `{mode, apps}` で返す。`apps` は `AppSummary` だけで、拒否リストの中身は返さない）と `launch_app`（引数は `app_id` と `path` で、どちらも任意だがちょうど一方が必要。`path` は起動の方式がブラックリストのときだけ受け付ける。`Control.Launch`）。`mcp` は `AppRegistry` を持たない（許可リスト・拒否リスト・起動の方式を書く経路が無い）。`list_launchable_apps` の監査は `addAuditedTool` が `tool.list_launchable_apps` で記録し、`launch_app` は `Control.Launch` が記録する | `service`、`domain` |
 | `ws` | WebSocket のプロトコル（JSON とバイナリフレームの符号化・復号）。入力メッセージを `domain.Op` に変換して `Control` へ。接続の認可（`viewer_id`）・keepalive・閉じコード・`Streamer` の配信の中継（`ws.New(Config{Sessions, Control, Leases, Events, ClientFrom})`。M2・#61） | `service`、`domain` |
 
 **goroutine**: WebSocket 接続ごとに「受信ループ」「送信ループ（`Viewer.Frames`・`config`・`lease`・セッションの終わりを書く）」「keepalive（15 秒ごとに ping。45 秒 pong が無ければ切断）」の 3 本。どれかが終了したら閉じて双方を終了し、`ViewerSession.Close` で `web` リースを解放し `Streamer` から外す。MCP のセッションは SDK が管理する。
@@ -977,7 +1062,7 @@ type Window interface{ Close() } // 閉じる操作。すでに閉じていれ�
 
 - **メイン**: ホスト GUI（GUI ルーターを `AssetOptions.Handler` に渡す）。閉じてもトレイに残る。多重起動は Wails の単一インスタンスで 1 つに制限（FR-H01）
 - **承認ダイアログ**: `Bus` の `approval` を購読して開く。`ContentProtectionEnabled`（キャプチャ除外）を必ず有効にする。`approval-closed`（許可・拒否・失効・取り下げ）とシャットダウンで閉じる。同時に開くのは 1 つ。重なった要求（`kind` は `lease`・`safety_check`・`judge_action` のどれでも同じ。複数クライアントの取得や、エージェントの承認が重なりうる）は到着順（`Approval.Pending` の順）に待たせ、今の要求が終わったら（`approval-closed`）、まだ承認待ちの次の要求のダイアログを開く。各要求の 60 秒はその要求自身の到着時刻から数える（`ExpiresAt`）ので、待たされている間に失効した要求のダイアログは開かない。許可も拒否もせずウィンドウを閉じた場合は、承認待ちが続き、60 秒の失効で拒否になる（ダイアログは開き直さない。待たされている次の要求も、この要求が終わるまで開かない。§13.6）
-- **オーバーレイ**（FR-H07。#69）: リースが `held` の間、**全モニター**に 1 モニター 1 ウィンドウで出す（枠なし・透過背景・最前面・クリック透過 = `IgnoreMouseEvents`（`WS_EX_TRANSPARENT` + `WS_EX_LAYERED`）・タスクバー非表示・フォーカスを奪わない（`WS_EX_NOACTIVATE`）・キャプチャ除外（`ContentProtectionEnabled`））。各ウィンドウは `domain.Monitor` の**物理座標**の原点・大きさに合わせる（Wails の DIP ではなく `SetPhysicalBounds`。DPI の異なるモニターが混在してもずれない）。中身は GUI ルーターの `GET /overlay?label=…`（枠と「操作中: <クライアント名>（種別）」の札だけ。背景は透明で画面の内容を隠さない）。`app` の `overlayController`（`overlay.go`）が `Bus` の `lease` を購読し、`LeaseManager.Holder` の今の状態を真実の源にして出し入れする: `held` → 表示（保持者が変われば隠さずに label を更新）、解放・アイドル解放・強制剥奪・キルスイッチ・切断・`pending_approval` → 消去、`Shutdown` でも消去。モニター一覧が取れない・0 台のときはログに残してオーバーレイを出さないだけで、リースは妨げない。出している間のモニター構成の変化（抜き差し・解像度・DPI）は追わず、次に出すとき（`ShowOverlay`。構成が違えばウィンドウを作り直す）に反映する。`agent` のときの指示の要約の併記は M4（`agent` の保持者種別と同時）
+- **オーバーレイ**（FR-H07。#69）: リースが `held` の間、**全モニター**に、1 モニターにつき縁の細い枠 4 本（上・下・左・右。重ならない。太さは 4 DIP を DPI で拡大）と上端中央の札 1 枚を、Win32 のネイティブウィンドウで出す（`wails_overlay_windows.go`。真ん中のウィンドウは作らないので画面の中身は覆わない。WebView2 の全面ウィンドウは、実機で透明が効かず全モニターが真っ白になったため使わない。#86）。各ウィンドウは最前面・クリック透過（`WS_EX_TRANSPARENT` + `WS_EX_LAYERED`。`WM_NCHITTEST` は `HTTRANSPARENT`）・タスクバー非表示（`WS_EX_TOOLWINDOW`）・フォーカスを奪わない（`WS_EX_NOACTIVATE`・`SW_SHOWNOACTIVATE`・`MA_NOACTIVATE`）・キャプチャ除外（`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`。設定できなければ出さない）で、タイトルは付けない。メッセージループは専用の OS スレッドで回す。配置は `domain.Monitor` の**物理座標**で計算する（`overlay_layout.go`。OS に依存せずテストする。DPI の異なるモニターが混在してもずれない）。札の文言は「操作中: <クライアント名>（種別）」（改行で 2 行まで、各行 80 文字で切り詰め。長いときは札の幅の上限＝モニター幅の 60% で `…`）。`app` の `overlayController`（`overlay.go`）が `Bus` の `lease` を購読し、`LeaseManager.Holder` の今の状態を真実の源にして出し入れする: `held` → 表示（保持者が変われば隠さずに label を更新）、解放・アイドル解放・強制剥奪・キルスイッチ・切断・`pending_approval` → 消去、`Shutdown` でも消去。モニター一覧が取れない・0 台のときはログに残してオーバーレイを出さないだけで、リースは妨げない。出している間のモニター構成の変化（抜き差し・解像度・DPI）は追わず、次に出すとき（`ShowOverlay`。構成が違えばウィンドウを作り直す）に反映する。`agent` のときの指示の要約の併記は M4（`agent` の保持者種別と同時）
 - **トレイ**: キルスイッチ、ダッシュボードを開く、終了。`connection-requests` の件数で通知
 - **ホットキー**: `Hotkey.Register(killswitch.hotkey, killSwitch.Trigger)`。設定変更時は登録し直す
 - 自ウィンドウはすべて `platform.WindowManager` の `Own` 判定の対象（プロセス ID の一致）。ただしクリック透過のオーバーレイ（`Own` かつ `WS_EX_TRANSPARENT` かつ `WS_EX_LAYERED` = `WindowInfo.Overlay`）だけは `InputGuard` が拒否せず（入力は下のウィンドウへ通るため）、`At` は Overlay を飛ばして下の実ウィンドウを返す。ホスト GUI・承認ダイアログなどそのほかの自ウィンドウは、オーバーレイの下にあっても `own_window` で拒否する（NFR-S06。§5.4）
@@ -1027,7 +1112,7 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | `WindowManager` | `InputGuard`（偽の `At` / `Foreground` で `Own` / `Elevated` を網羅） | 実ウィンドウの `Elevated` / `Own` / `Minimized` の取得 |
 | `UIAutomation` | ツリーの切り詰め（`max_depth` / `max_nodes`）、パスワード欄の伏せ字（偽のノード）。`Snapshot` の契約テスト（値を返さないこと、`Truncated`、同じ画面で同じ `Hash`） | 実アプリ（メモ帳・ブラウザ）のツリー、パスワード欄、`Snapshot` の要素（ControlType・画面外・矩形・祖先パス）と `Hash` の安定性 |
 | `Clipboard` | サイズ上限、テキスト以外の扱い | 実クリップボードの往復（日本語） |
-| `AppLauncher` / `FilePicker`（M1.5） | `AppLauncher`: 契約テスト（`platformtest`。偽の実装）で、`Launch` が `pid` を返すこと、存在しない実行ファイル → `file_missing`、拒否 → `access_denied`、昇格が必要 → `elevation_required`、メッセージにパス・引数が入らないこと、`Inspect` の存在確認（ファイル・ディレクトリ）。引数のコマンドライン組み立ては純粋関数として、空白・引用符・バックスラッシュ・日本語を含む表駆動テスト（Linux でも走る）。`FilePicker`: 偽の実装で選択・キャンセル（`ok=false`）・`ctx` の取り消し。`domain` の `ValidateAppInput` / `CheckLaunchTarget` は表駆動（絶対・相対・UNC・`\\?\`・`..`・拡張子・長さ・引数の数と合計長・重複する `label` の大文字小文字）。`AppRegistry`（偽の `repository` と `AppLauncher`）: 検証エラー・存在しない実行ファイル・50 件の上限・`label` の重複・更新で `id` が変わらないこと・監査が `settings.launchable_app.*` で `args` と作業ディレクトリを含まないこと。`Control.Launch`（偽の `KillSwitch`・`LeaseManager`・`AppRegistry`・`AppLauncher`）: 検査の順序（キルスイッチ中・他者のリース・許可リスト外・規則を満たさない行では `AppLauncher` が呼ばれない）、リースの暗黙取得、`pid` を返すこと、毎回 `Launch` が呼ばれること（冪等でない）、`launch_failed` の理由、監査の結果（`ok` / `denied` / `error`）と `detail_json` にパス・引数が出ないこと。`mcp`: `launch_app` のスキーマに `app_id` 以外が無いこと、`list_launchable_apps` の応答に `id` と `label` 以外が出ないこと、エラーの `structuredContent` にパス・引数が出ないこと。`web/handler/gui`: `/apps` の各ルートの 422・409・404・204、一覧・編集のフラグメント、リモートルーターに `/apps` が存在しないこと（404） | 実 `CreateProcess`（`smoke`）: 空白・日本語・引用符を含むパスと引数が登録どおりに渡ること、シェルを経由しないこと、標準権限で起動すること、`requireAdministrator` が `elevation_required` になること、ネイティブのファイル選択ダイアログの選択・キャンセルと、表示中に WebView の応答待ちがタイムアウトしないこと |
+| `AppLauncher` / `FilePicker`（M1.5） | `AppLauncher`: 契約テスト（`platformtest`。偽の実装）で、`Launch` が `pid` を返すこと、存在しない実行ファイル → `file_missing`、拒否 → `access_denied`、昇格が必要 → `elevation_required`、メッセージにパス・引数が入らないこと、`Inspect` の存在確認（ファイル・ディレクトリ）、`Resolve`（実体のパスを返すこと・固定ディスク以外 → `access_denied`・無い → `file_missing`・相対パス → `ErrInvalidArgument`・取り消し済みの `ctx`）。引数のコマンドライン組み立ては純粋関数として、空白・引用符・バックスラッシュ・日本語を含む表駆動テスト（Linux でも走る）。`FilePicker`: 偽の実装で選択・キャンセル（`ok=false`）・`ctx` の取り消し。`domain` の `ValidateAppInput` / `CheckLaunchTarget` は表駆動（絶対・相対・UNC・`\\?\`・`..`・拡張子・長さ・引数の数と合計長・重複する `label` の大文字小文字）。`ClassifyDenied` / `ValidateLaunchPath` / `DeniedKey` / `MatchDenied` も表駆動（パスと実行ファイル名の分け方、区切り・大文字小文字の違い、実体のパスと指定の綴りのどちらかで当たること、`name` の行がどのフォルダーでも当たること）。`AppRegistry`（偽の `repository` と `AppLauncher`）: 検証エラー・存在しない実行ファイル・50 件の上限・`label` の重複・更新で `id` が変わらないこと・監査が `settings.launchable_app.*` で `args` と作業ディレクトリを含まないこと。起動の方式（未設定・不正な値は `allowlist`、切り替えは変わるときだけ `settings.launch_mode.update`）と拒否リスト（登録時のパスの実体への解決・重複・200 件の上限・`settings.launch_denylist.*` の監査）。`Control.Launch`（偽の `KillSwitch`・`LeaseManager`・`AppRegistry`・`AppLauncher`）: 検査の順序（キルスイッチ中・他者のリース・許可リスト外・規則を満たさない行では `AppLauncher` が呼ばれない）、ホワイトリスト方式で `path` を渡すと `invalid_argument`、`app_id` と `path` の同時指定・どちらも無いが `invalid_argument`、ブラックリスト方式の `path` の検査（形・`Resolve` の失敗・拒否リストに当たると `app_denied` で `Launch` が呼ばれないこと・起動するのは実体のパスで引数・作業ディレクトリが空であること）と、許可リストのアプリも拒否リストが優先されること、リースの暗黙取得、`pid` を返すこと、毎回 `Launch` が呼ばれること（冪等でない）、`launch_failed` の理由、監査の結果（`ok` / `denied` / `error`）と `detail_json` に引数が出ないこと（`path` は形の検査を通ったものだけ・1,024 文字まで、`launch_mode` はブラックリスト方式のときだけ）。`mcp`: `launch_app` のスキーマが `app_id` と `path`（どちらも任意）だけであること、`list_launchable_apps` の応答が `mode` と `apps`（`id` と `label` 以外が出ない）であること、エラーの `structuredContent` にパス・引数・拒否リストの中身が出ないこと。`web/handler/gui`: `/apps` の各ルート（`/apps/mode`・`/apps/denied` 系を含む）の 422・409・404・204、一覧・編集のフラグメント、リモートルーターに `/apps` が存在しないこと（404） | 実 `CreateProcess`（`smoke`）: 空白・日本語・引用符を含むパスと引数が登録どおりに渡ること、シェルを経由しないこと、標準権限で起動すること、`requireAdministrator` が `elevation_required` になること、実 `Resolve`（シンボリックリンク・ジャンクション・8.3 短縮名が実体のパスに解決されること、ネットワーク・リムーバブルドライブが `access_denied` になること）、ネイティブのファイル選択ダイアログの選択・キャンセルと、表示中に WebView の応答待ちがタイムアウトしないこと |
 | `Installer`（M3・#74） | 契約テスト（`platformtest.RunInstallerContract`。偽の実装）で、実在の `.exe` を起動できること、空・相対パス・拡張子違い → `invalid_argument`、存在しない → `ErrNotFound`（パスをエラーに含めない）、取り消し済みの `ctx` では起動しないこと。`Updater` のテストは偽の `Installer`・`httptest` の偽の GitHub・テスト専用の鍵・偽の `AfterFunc` | 本物の NSIS のインストーラの起動・UAC・アプリの終了と再起動（`smoke-windows.md` §4.13）。`smoke` タグの `TestSmokeInstaller` は `whoami.exe` の複製で契約だけを流す |
 | `SecretStore` | `Agent` が OpenAI キー、`typesafe` が TypeSafe キーを要求する経路、キーがログ・エラーに出ないこと（偽の store、ログを検査） | 資格情報マネージャーへの保存・削除（実際のターゲット名 `puppet-remo/openai:puppet-remo`、`puppet-remo/typesafe:puppet-remo`）、別ユーザーから読めないこと |
 | `Hotkey` / `Overlay` / `Windows` | キルスイッチの手順（`Trigger` を直接呼ぶ）、`Bus` イベント → ウィンドウ操作の呼び出し（偽の `Windows`） | グローバルホットキーの発動、オーバーレイの表示・クリック透過・キャプチャへの非表示（スクリーンショットにも Web のライブにも写らない）、承認ダイアログが AI の入力を受けない |
@@ -1049,7 +1134,7 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | FR-A（接続・認証・認可） | `tailnet.*`、`Authz`、`web/middleware` |
 | FR-L（リース） | `LeaseManager`、`Approval`、`Control` |
 | FR-M（MCP ツール） | `mcp`、`Control`、`Capturer`、`InputInjector`、`WindowManager`、`UIAutomation`、`Clipboard` |
-| FR-M18・M19・H12・AU06（アプリ起動と許可リスト） | `mcp`、`Control`（`Launch` / `LaunchableApps`）、`AppRegistry`、`repository.LaunchableApps`、`domain.LaunchableApp`、`platform.AppLauncher`、`platform.FilePicker`、`web/handler`（`/apps`）、`Audit` |
+| FR-M18・M19・H12・AU06（アプリ起動と許可リスト・拒否リスト） | `mcp`、`Control`（`Launch` / `LaunchableApps`）、`AppRegistry`、`repository.LaunchableApps`、`repository.LaunchDenylist`、`domain.LaunchableApp`・`domain.LaunchMode`・`domain.DeniedApp`、`platform.AppLauncher`、`platform.FilePicker`、`web/handler`（`/apps`）、`Audit` |
 | FR-G（内蔵エージェント・高速パス） | `Agent`、`FastPath`、`openai.Model`、`typesafe.Chooser`、`domain.CandidateTable`、`UIAutomation.Snapshot`、`Judge`、`Control`、`Approval`、`SecretStore` |
 | FR-G25〜G30（ChatGPT のプラン経路。#49） | `ChatGPTAuth`（service）、`openai.Model`（ChatGPT 用）、`BrowserOpener`、コールバック受信口、`Agent`、`AgentSettings`（接続方式）、`Control`、`SecretStore`、`handler/gui`（`/agent` の ChatGPT のカード） |
 | FR-W（Web UI） | `web/handler`、`ws`、`Streamer`、`<remo-screen-viewer>` |
@@ -1057,7 +1142,7 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | FR-AU（監査） | `Audit`、`Control`、`ThumbStore`、`Maintenance` |
 | FR-S（設定） | `Settings`（service）、`repository.Settings` |
 | NFR-S06（自己保護） | `InputGuard`、`WindowManager.Own`、`app`（キャプチャ除外） |
-| NFR-S20（アプリ起動の制約） | `domain.ValidateAppInput` / `CheckLaunchTarget`、`Control.Launch`（検査の順序）、`platform.AppLauncher`（`lpApplicationName` の明示・シェル非経由）、`router`（GUI ルーターだけに `/apps`）、`mcp`（入力は `app_id` のみ・出力は `AppSummary` のみ） |
+| NFR-S20（アプリ起動の制約） | `domain.ValidateAppInput` / `CheckLaunchTarget` / `ValidateLaunchPath` / `MatchDenied`、`Control.Launch`（検査の順序・方式別の対象の検査）、`platform.AppLauncher`（`lpApplicationName` の明示・シェル非経由・`Resolve` による固定ディスク上の実体のパス）、`router`（GUI ルーターだけに `/apps`。方式の切り替えと拒否リストの書き込みも GUI だけ）、`mcp`（ホワイトリスト方式〔既定〕の入力は `app_id` のみ。`path` はブラックリスト方式のときだけ受け付ける。出力は `AppSummary` と方式のみ） |
 | NFR-S14（API キー） | `SecretStore`、`openai.Model`、`typesafe.Chooser` |
 | NFR-S21・S22（ChatGPT のサインインの防御・接続方式の固定） | `ChatGPTAuth`、コールバック受信口、`BrowserOpener`（固定の URL だけ）、`Agent`、`AgentSettings` |
 | NFR-S17 / S18（高速パスの防御・TypeSafe 呼び出し） | `domain.CandidateTable`（ID の検証）、`FastPath`、`Control`、`Judge`、`typesafe.Chooser` |
@@ -1084,7 +1169,7 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | 配布 | v1 は Authenticode で署名しない（個人利用）。更新の完全性は Ed25519（NFR-S10） |
 | 意図的に設定しないもの | メモリ・帯域の目標は実装後の測定まで設定しない。日程は設定しない。4K 以上の WebSocket は縮小配信せず物理解像度のまま（`config` に後から `scale` を足せる） |
 | OpenAPI の範囲 | Huma は `/api/v1` の JSON API だけを公開する。MCP ツールは `tools/list` が定義 |
-| 起動許可リスト（M1.5） | 起動は許可リストのアプリだけ・入力は `app_id` だけ・応答は `id` と表示名だけ。`Control.Launch` は `Do` の前段（キルスイッチ → リース）を共有し InputGuard と承認は通らない（M3 で承認を足す）。毎回新しいプロセスで、起動後は管理しない。`Agent`（M4）も同じ `AppRegistry` を使う。ファイル選択は `platform.FilePicker`（ホスト GUI の `POST /apps/pick-file` が `AppRegistry.PickExecutable` 経由で呼ぶ） |
+| 起動許可リストと拒否リスト（M1.5・#88） | 既定のホワイトリスト方式では、起動は許可リストのアプリだけ・入力は `app_id` だけ・応答は `id` と表示名（と方式）だけ。ホスト所有者が GUI で選ぶブラックリスト方式では、`path` で拒否リストに当たらない固定ディスク上の任意の `.exe` も起動できる。**残るリスク**: この方式では AI は拒否リストに無いプログラムを何でも起動でき、`cmd.exe`・`powershell.exe` などのインタープリターは所有者が拒否リストに入れない限り任意のコードを実行できる。拒否した実行ファイルの名前を変えたコピーは検出しない（`name` の行は名前、`path` の行は実体のパスだけを比べる）。方式の切り替え（ブラックリスト方式への切り替えは確認モーダルを経る）と拒否リストの書き込みは、ホスト GUI の `/apps` だけ。`Control.Launch` は `Do` の前段（キルスイッチ → リース）を共有し InputGuard と承認は通らない（M3 で承認を足す）。毎回新しいプロセスで、起動後は管理しない。`Agent`（M4）も同じ `AppRegistry`（同じ方式・拒否リスト）を使う。ファイル選択は `platform.FilePicker`（ホスト GUI の `POST /apps/pick-file` が `AppRegistry.PickExecutable` 経由で呼ぶ） |
 | ChatGPT のプラン経路（#49） | 既定の接続方式は `chatgpt`。**上限・認可切れ・エラーのときに API キー経路へ自動で切り替えない**（切り替えは `AgentSettings` の唯一の操作を、GUI の確認モーダルの確定だけが呼ぶ）。高速パスは併用しない（ChatGPT 経路では動かさない）。ChatGPT のアカウントはホスト 1 台 1 つ。トークンは資格情報マネージャーの 1 件にまとめ、更新は同時に 1 つだけ。サインインの受信口は `127.0.0.1` だけで、サインインの間だけ開く。テストはモックのみ |
 
 ### 12.2 実装時に実機・実 API で検証する事項（設計は確定済み。検証の結果で変えるのは値・実装の詳細だけ）
@@ -1198,7 +1283,7 @@ M1 の実装が本書の他の節と異なる点と、本書が定めていて M
 | `ConnRequestStates`（M2・#62。FR-W02） | 未登録デバイスのブラウザへ返すページ（待機・拒否・失効）を選ぶための、接続要求の状態の読み取り専用の参照（`service.NewConnRequestStates(repository.ConnRequests, Clock)`。`State(ctx, nodeID)`）。`repository.ConnRequests.LatestByNode` で最新の 1 件を読み、`pending`（期限内）→ 待機、`denied`（期限内）→ 拒否、期限切れの `pending`・期限切れの `denied`・`expired` → 失効、無い・許可済み → 待機、読めないとき → 待機（エラーはログだけ）。接続要求を作らず更新しないので、FR-A06 の集約・拒否後の抑止には関わらない。`middleware.Allowlist` は照合の結果が `device_not_registered`（HTML の経路）のときだけ引き、応答のステータス・コードは変えない（`RemoteConfig.ConnStates`。nil なら常に待機）。`app` が組み立てて渡す |
 | ホスト GUI の更新 | SSE ではなく `GET /poll`（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。通知（`Bus` の `toast`。`info` はトースト、`error` は `#alert-root` のインラインアラート）は `gui.Handler` が購読して待ち行列にし、`/poll` が取り出す）。SSE の `GET /events` は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが、M1 の GUI は読み込まない（未使用） |
 | `app` の `Windows`（承認ダイアログ・オーバーレイ。M3・#68・#69） | `Windows`（`Main`・`OpenApproval`・`ShowOverlay`・`HideOverlay`） | `Windows`（`Main() MainWindow`・`OpenApproval(id) Window`・`ShowOverlay(monitors []domain.Monitor, label string)`・`HideOverlay()`）と `Window{Close()}`（`internal/app/windows.go`）。`app.Config.Windows` は必須（`New` が検査）。本番は `WailsHost.Windows()`（`wails_windows.go`・`wails_overlay_windows.go`。`//go:build windows`）、テストと開発デモは偽の `FakeWindows`（`windowsfake.go`。`OpenApproval` の呼び出しと `Close`、`ShowOverlay`・`HideOverlay` の呼び出し（`OverlayCalls`・`OverlayEvents`・`OverlayShown`）を記録）。`approvalDialogs`（`approval_dialogs.go`）が `Bus` の `approval`・`approval-closed` を購読して開閉する（`App.Start` が起動し、`runCtx` の終了 = `Shutdown` で開いているダイアログを閉じてから戻る）。`Bus` は遅い購読者のイベントを捨てうるので、イベントの種類ではなく `Approval.Pending` を真実の源にして開閉を合わせる。判断: (1) 同時に開くのは 1 つで、重なった要求は到着順（`Pending` の順）に待たせ、今の要求の `approval-closed` で、まだ承認待ちの次の要求のダイアログを開く（待たされた要求の 60 秒もその要求自身の到着時刻から数える。待っている間に失効した要求は開かない）、(2) 許可も拒否もせずウィンドウを閉じても承認待ちは続き、60 秒の失効で拒否（再度は開かない。docs に定めが無く、承認が勝手に通らない動き）。その要求は終わるまで「今の要求」のままなので、待たされている次の要求のダイアログも、その要求が終わってから開く、(3) `kind` が `lease` 以外（M4）は開かない。Wails のウィンドウ（`OpenApproval`）は、固定サイズ（440×340）・最前面・画面中央・最小化 / 最大化ボタンなし・`ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）・URL `/approvals/{id}`（メインウィンドウと同じ `serveGUI`）で作る。プロセス内のウィンドウなので `platform.WindowManager` の `Own`（プロセス ID の一致）で入力拒否（`own_window`）の対象になる。トレイのメニューに項目は足さない。オーバーレイ（#69）: `overlayController`（`overlay.go`）が `Bus` の `lease` を購読し、`LeaseManager.Holder` を真実の源にして `ShowOverlay`・`HideOverlay` を呼ぶ（`held` → 全モニターへ表示。ラベル `操作中: <クライアント名>（<種別>）`。保持者が変われば隠さずにラベルだけ更新。`held` でなくなる・`pending_approval`・`Shutdown` → 消去）。`Capturer.Monitors` が失敗・0 台ならログに残して出さないだけで、リースは妨げない。Wails の実装（`wails_overlay_windows.go`）は 1 モニター 1 ウィンドウ: `Frameless`・`BackgroundTypeTransparent`・`AlwaysOnTop`・`IgnoreMouseEvents`・`ContentProtectionEnabled: true`・`HiddenOnTaskbar`、`ExStyle` は `WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE`（`ExStyle` を指定すると Wails の組み立てを置き換えるため、`WS_EX_CONTROLPARENT` も含めて全部挙げる）。位置・大きさは `domain.Monitor` の物理座標を `SetPhysicalBounds` に渡し（Wails の `X`・`Y`・`Width`・`Height` は DIP のため混在 DPI でずれる）、`PhysicalBounds` と違えば 1 度置き直す。ページは `GET /overlay?label=…`（`ShowOverlay` が同じモニター構成で呼ばれたときは URL の差し替えだけ）。モニター構成の変化は追わず、次の `ShowOverlay`（構成が違えば作り直す）で反映する。**InputGuard との関係**: `platform/windows` の `WindowManager` が、自プロセスで `WS_EX_TRANSPARENT` かつ `WS_EX_LAYERED` のウィンドウを `WindowInfo.Overlay` にし、`InputBlockReason`・`CheckInputTarget` は Overlay を拒否しない（ダイアログなどそのほかの自ウィンドウは `own_window` のまま）。全モニターを覆うオーバーレイが下のダイアログを隠さないよう、`WindowManager.At`（Windows 実装と `platformtest.FakeWindows`）は Overlay を飛ばして下の実ウィンドウを返す。`OwnWindowRegions` も Overlay を含めない。実機の確認は [`smoke-windows.md`](../operations/smoke-windows.md) §4・§5 |
-| `app`（M1） | M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Windows` インターフェース（承認ダイアログ・オーバーレイ。§7）は M3（#68・#69）で足した。`Platform.Power` は必須。M1.5 で `Platform.Launcher`・`Platform.FilePicker` も必須にし、`AppRegistry` を組み立てて `Control`（読み取りと起動）と、ホスト GUI の `web/handler/gui`（`Deps.Apps`。登録・編集・削除とファイル選択。`/apps`）へ渡す（`mcp` と、`router` の設定には渡さない）。`cmd/puppet-remo` は `FilePicker` を `NewFilePicker(host.MainWindowHandle)` で作る（`WailsHost.MainWindowHandle` が Wails のメインウィンドウの HWND を返し、ウィンドウが無い間は 0 = 親なし）。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
+| `app`（M1） | M1 は `Shell`（トレイ・ダッシュボードを開く・終了）、`MainWindow`、`KillSwitchHotkey`、`Config`（`Repo`・`Platform`・`Watcher`・`WhoIs`・`Static`・`Clock`・`IDs`・`Version`・`Logger`・`ListenFunc`・`Closers` など）、ログ出力（`NewLogger`）、データの置き場（`DataDir`）を持つ。`Windows` インターフェース（承認ダイアログ・オーバーレイ。§7）は M3（#68・#69）で足した。`Platform.Power` は必須。M1.5 で `Platform.Launcher`・`Platform.FilePicker` も必須にし、`AppRegistry` を組み立てて `Control`（読み取りと起動）と、ホスト GUI の `web/handler/gui`（`Deps.Apps`。登録・編集・削除とファイル選択、起動の方式の切り替えと拒否リストの管理。`/apps`）へ渡す（`mcp` と、`router` の設定には渡さない）。`cmd/puppet-remo` は `FilePicker` を `NewFilePicker(host.MainWindowHandle)` で作る（`WailsHost.MainWindowHandle` が Wails のメインウィンドウの HWND を返し、ウィンドウが無い間は 0 = 親なし）。ホスト GUI のウィンドウは `ContentProtectionEnabled: true`（`WDA_EXCLUDEFROMCAPTURE`。NFR-S06）で作る |
 | `cmd/puppet-remo` | Windows 以外では `puppet-remo: Windows only` を出して非ゼロで終了するスタブ（`main_other.go`）。`go build ./...` を Linux の CI で通すため |
 | `web/handler/gui` の監査ログ（M3・#72。FR-AU05、FR-H08） | `/audit*` | `handler/gui/audit.go`。`Deps.Audit`（利用者側のインターフェース `gui.Audit`: `Query`・`Get`・`Thumbnail`。実体は `service.AuditReader`。`app` が `NewAuditReader(repo.Audit(), repo.Thumbs())` を渡す）。`GET /audit`（絞り込み・`cursor`・`limit`。`HX-Request` は `#audit-list` のフラグメント、不正な値は 422）・`GET /audit/:id`（404: 無い・数値でない）・`GET /audit/:id/thumbnail`（`image/jpeg`・`no-store`・`nosniff`。`ErrInvalidArgument`（パスの走査）・`ErrNotFound` は 404）。GUI ルーターだけで、リモートのルーターには無い。偽の `AuditReader` は `guitest.Audit`。`web` は `repository` / `platform` を import しない |
 | 開発・補助 | 開発タスクは `frontend:dev`（`dev:frontend` ではない）。GUI の見た目の確認用に `task gui:demo`（`internal/router/internal/guidemo`。偽の service、loopback）がある。スクリーンショットは `docs/screenshots/m1/`、実機スモークの手順は [`docs/operations/smoke-windows.md`](../operations/smoke-windows.md) |
@@ -1381,3 +1466,6 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.58 | 2026-11-02 | §10 のテストの実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。Chromium は `--with-deps` 付き | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
 | 1.59 | 2026-11-02 | ChatGPT のプラン経路（FR-G25〜G30）の設計を追加: §1 の `openai` の責務、§3 の `SecretChatGPT`、新設の §4.3.1（`ChatGPTAuth`・`BrowserOpener`・コールバック受信口・ChatGPT 用の `Model` / `History`・`Agent` との関係）、§5.6 のループの違い、§10 のテスト（モックのみ）、§11 のトレース、§12 の決定事項と未確認。実装は未着手 | #49 |
 | 1.60 | 2026-11-05 | レビューの指摘の反映（#128）: `Bus` の `toast` の `Level=error`（OpenAI・TypeSafe の 401 など）、`/logs/open-folder` の失敗、ブラウザ側の `remo:error` の説明を、トーストからインラインアラート（`#alert-root`）に直す（`info` の完了の通知はトースト） | #128 |
+| 1.61 | 2026-11-03 | §5.4.1 の `LaunchResult.Window` と手順 5b を、起動したアプリのウィンドウ（pid のウィンドウ、無ければ起動の前に無かったプロセス名が同じ新しいウィンドウ。前面でなければ `Focus`）だけにした（前面の別アプリのウィンドウは返さない）。§7 のオーバーレイを、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（WebView2 の全面ウィンドウをやめる）に更新 | #85・#86 |
+| 1.62 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: §2 に `domain.LaunchMode`・`DeniedApp`・`MatchDenied` ほか、§3 の `AppLauncher.Resolve`（固定ディスク上の実体のパス）、§4.1 の `repository.LaunchDenylist`、§5.1 の `AppRegistry` の状態の所有者、§5.4 の `Control.LaunchableApps` が `LaunchableList` を返すことと `Launch` が `LaunchRequest{AppID, Path}` を受けること、§5.4.1 の `AppReader`（`LaunchMode`・`ListDenied`）・`AppRegistry`（`SetLaunchMode`・`CreateDenied`・`UpdateDenied`・`DeleteDenied`）と検査の順序の手順 3（方式別の対象・拒否リストの照合・`app_denied`）・監査の `detail`（`path`・`launch_mode`）、§13 の `mcp`・`app`・テスト・リスクの記述を更新 | #88 |
+| 1.63 | 2026-11-08 | §5.4 の `Control` に `VerifyTarget`・`ResumeTarget`、§5.4.2（入力スコープ）を追加: `LeaseManager.AcquireScoped` / `RequestAcquireScoped` / `Halt` / `ResumeVerified`、`Do` の検証（実行前の規則・注入の直前と間の検証・撮影の事前確認・停止・再開）、Windows 実機の検証待ちと `GrabGroup` 未実装 | #156（A-1） |

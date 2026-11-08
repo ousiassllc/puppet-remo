@@ -20,6 +20,10 @@ type AppReader interface {
 	List(ctx context.Context) ([]domain.LaunchableApp, error)
 	// Get は id の行を返す。無ければ ErrNotFound。
 	Get(ctx context.Context, id string) (domain.LaunchableApp, error)
+	// LaunchMode は起動の方式（設定 launch.mode）を返す。未設定、または不正な値は domain.LaunchModeAllowlist（fail closed）。
+	LaunchMode(ctx context.Context) (domain.LaunchMode, error)
+	// ListDenied は拒否リストを返す（denylist 方式のときだけ効く。MCP には返さない）。
+	ListDenied(ctx context.Context) ([]domain.DeniedApp, error)
 }
 
 // AppRegistry は起動許可リストの管理（M1.5。FR-M18・M19・H12。docs/components/overview.md §5.4.1）。
@@ -39,6 +43,17 @@ type AppRegistry interface {
 	Update(ctx context.Context, id string, in domain.AppInput) (domain.LaunchableApp, error)
 	// Delete は id の行を消す。無ければ ErrNotFound。起動済みのプロセスには触れない。
 	Delete(ctx context.Context, id string) error
+	// SetLaunchMode は起動の方式（設定 launch.mode）を切り替える（ホスト GUI だけ。MCP・Web UI には経路が無い）。
+	// 不正な値は AppFieldErrors{"mode": …}。変わるときだけ settings.launch_mode.update を監査する（from・to）。
+	SetLaunchMode(ctx context.Context, mode domain.LaunchMode) error
+	// CreateDenied は拒否リストに 1 件登録する。value は実行ファイルのパス（登録時に実体のパスへ解決して保存する。
+	// ファイルが無い・解決できないときは入力の綴りのまま）か、実行ファイル名（cmd.exe など）。domain.ClassifyDenied が分ける。
+	// 不備・重複は AppFieldErrors{"value": …}、200 件に達していれば domain.CodeConflict。settings.launch_denylist.create を監査する。
+	CreateDenied(ctx context.Context, value string) (domain.DeniedApp, error)
+	// UpdateDenied は id の行を value で置き換える（検証は CreateDenied と同じ）。無ければ ErrNotFound。settings.launch_denylist.update を監査する。
+	UpdateDenied(ctx context.Context, id, value string) (domain.DeniedApp, error)
+	// DeleteDenied は id の行を消す。無ければ ErrNotFound。settings.launch_denylist.delete を監査する。
+	DeleteDenied(ctx context.Context, id string) error
 	// PickExecutable はネイティブのファイル選択ダイアログを開く（platform.FilePicker の委譲）。キャンセルは ok=false。
 	PickExecutable(ctx context.Context) (path string, ok bool, err error)
 }
@@ -61,12 +76,20 @@ const (
 	msgAppExeMissing        = "実行ファイルが見つかりません"
 	msgAppWorkingDirMissing = "作業ディレクトリが見つかりません"
 	msgAppLabelTaken        = "同じ表示名のアプリがすでに登録されています"
+	msgDeniedTaken          = "同じ実行ファイル（パスまたは名前）がすでに拒否リストに登録されています"
+	msgLaunchModeInvalid    = "起動の方式は「ホワイトリスト」か「ブラックリスト」を選んでください"
 )
+
+// settingLaunchMode は起動の方式の設定キー（値は "allowlist" / "denylist" の JSON 文字列。未設定は allowlist）。
+const settingLaunchMode = "launch.mode"
 
 // AppRegistryConfig は NewAppRegistry の設定。Audit 以外は必須。
 type AppRegistryConfig struct {
 	Apps repository.LaunchableApps
-	// Launcher は存在確認（Inspect）にだけ使う。起動（Launch）は Control だけが呼ぶ。
+	// Denied は拒否リスト、Settings は起動の方式（launch.mode）の保存先。
+	Denied   repository.LaunchDenylist
+	Settings repository.Settings
+	// Launcher は存在確認（Inspect）と拒否リストのパスの解決（Resolve）にだけ使う。起動（Launch）は Control だけが呼ぶ。
 	Launcher platform.AppLauncher
 	Picker   platform.FilePicker
 	Audit    AuditRecorder // nil なら記録しない
@@ -78,8 +101,8 @@ type appRegistry struct{ cfg AppRegistryConfig }
 
 // NewAppRegistry は AppRegistry を返す。
 func NewAppRegistry(cfg AppRegistryConfig) (AppRegistry, error) {
-	if cfg.Apps == nil || cfg.Launcher == nil || cfg.Picker == nil || cfg.Clock == nil || cfg.IDs == nil {
-		return nil, errors.New("service: app registry requires Apps, Launcher, Picker, Clock and IDs")
+	if cfg.Apps == nil || cfg.Denied == nil || cfg.Settings == nil || cfg.Launcher == nil || cfg.Picker == nil || cfg.Clock == nil || cfg.IDs == nil {
+		return nil, errors.New("service: app registry requires Apps, Denied, Settings, Launcher, Picker, Clock and IDs")
 	}
 	return &appRegistry{cfg: cfg}, nil
 }

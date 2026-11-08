@@ -20,7 +20,14 @@ type Control interface {
 	//  1. KillSwitch → ErrKillSwitchActive
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
 	//  3. 引数の検査と縮小座標 → 物理座標の変換（FR-M16。範囲外は ErrInvalidCoordinates）
-	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI。own_window には puppet-remo のウィンドウの範囲を DetailOwnWindows で付ける）
+	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI。own_window には puppet-remo のウィンドウの範囲を DetailOwnWindows で付ける）。
+	//     スコープ付きのリース（LeaseManager.AcquireScoped。#156）は、これの代わりに対象グループ G の検証を行う（control_target.go）:
+	//     実行前に、クリップボード読み取りの拒否（clipboard_out_of_scope。書き込みだけ許可。platform の読み取りは呼ばない）・停止中の拒否
+	//     （target_halted。Esc を含む一切の入力とクリップボード書き込み）・win 修飾と Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc の拒否
+	//     （key_out_of_scope）。入力の注入の直前と、1 つの操作の複数回の注入の間は lockInput の中で、T の同一性・状態と、キー・文字は前面と
+	//     フォーカスの葉、座標は最上位の At・葉・Rect を G で検証し、操作の最初に G の検証できたメンバーを GroupCapturer.GrabGroup で撮れるかを確かめる。
+	//     どれかに通らなければ何も注入せず、ReleaseAll を呼び、リースを halted にして ErrInputBlocked（reason は検証の失敗の理由か capture_unavailable /
+	//     capture_member_unavailable。監査 input.target_halted）。メンバーの増減だけでは停止しない。FocusWindow は G のメンバーだけ（それ以外はその操作だけの拒否）。
 	//  5. platform の実行
 	//  6. Audit（引数・結果・所要時間。type の本文・クリップボードは既定では文字数だけで、設定 audit.record_text が true のときだけ本文も
 	//     detail_json の text に記録する（FR-AU03、FR-S07）。キー入力はキーの名前を記録しない）
@@ -52,29 +59,57 @@ type Control interface {
 	// MaxDimension は縮小スクリーンショットの最大辺（設定 screenshot.max_dimension。既定 1568）。
 	// get_screen_info の縮小率 domain.Monitor.Scale(maxDim) と、UI ツリー・ウィンドウ矩形の縮小座標への変換に使う。
 	MaxDimension(ctx context.Context) (int, error)
-	// LaunchableApps は許可リストの id と表示名だけを label の昇順で返す（M1.5。FR-M18。リース不要。キルスイッチ中は拒否）。
-	LaunchableApps(ctx context.Context) ([]domain.AppSummary, error)
-	// Launch は許可リストのアプリを新しいプロセスとして起動する（M1.5。FR-M19）。呼び出し側が渡せるのは appID だけ。
+	// LaunchableApps は起動の方式（launch.mode）と、許可リストの id と表示名だけを label の昇順で返す（M1.5。FR-M18。リース不要。キルスイッチ中は拒否）。
+	// 方式によらず登録済みのアプリを返す。拒否リストの中身は返さない。
+	LaunchableApps(ctx context.Context) (LaunchableList, error)
+	// Launch はアプリを新しいプロセスとして起動する（M1.5。FR-M19）。呼び出し側が渡せるのは req の AppID（登録済みのアプリ）か、
+	// denylist 方式のときだけ Path（固定ディスク上の実在の .exe の絶対パス。引数・作業ディレクトリは渡せない）。
+	// mcp も内蔵エージェント（M4）も同じ検査を通る（方式・拒否リストは AppReader が持つ 1 つ）。
 	// 検査の順序は固定で、1 つでも失敗したら起動しない（InputGuard・Judge・承認は通らず、起動を直列化しない）:
 	//
 	//  1. KillSwitch → ErrKillSwitchActive
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
-	//  3. AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）
+	//  3. 方式（AppReader.LaunchMode）と対象:
+	//     - allowlist: AppReader.Get と domain.CheckLaunchTarget（無い・規則外・読めない行は ErrAppNotFound。fail closed）。path の指定は ErrInvalidArgument
+	//     - denylist: AppID なら同じ検査に加えて、Path なら domain.ValidateLaunchPath → AppLauncher.Resolve（実体のパス）→
+	//       拒否リストとの照合（domain.MatchDenied。当たれば ErrAppDenied）。AppID と Path の同時指定は ErrInvalidArgument
 	//  4. KillSwitch の再確認（3 までの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  4b. 起動の「試行」の行を SyncAuditRecorder.RecordSync で同期に書く（書けなければ ErrAuditUnavailable。起動しない。fail-closed。#37・NFR-S20）
 	//  4c. KillSwitch の再確認（同期書き込みの待ちの間に発動したものを取りこぼさない → ErrKillSwitchActive）
 	//  5. platform.AppLauncher.Launch（*platform.LaunchError は ErrLaunchFailed{reason}）
 	//  5b. 起動後のウィンドウの観測（起動の前後のウィンドウの一覧を比べる。LaunchResult.Window / ReusedExistingWindow。観測の失敗は起動の失敗にしない）
 	//  6. 結果の行（tool.launch_app。非同期。書けなくても起動は取り消さない。パス・引数は記録しない。FR-AU06）
-	Launch(ctx context.Context, who domain.Actor, appID string) (LaunchResult, error)
+	Launch(ctx context.Context, who domain.Actor, req LaunchRequest) (LaunchResult, error)
 	// ReleaseInput は押下中のキー・ボタンをすべて離す（InputInjector.ReleaseAll の唯一の入口）。キルスイッチのクローザー `input` と、
 	// エージェントのタスクの終了処理（FR-G10）が呼ぶ。入力の直列化のロックは取らないので、実行中の入力があっても解放できる。
 	ReleaseInput() error
+	// VerifyTarget は who のスコープ付きリースの全条件（T の同一性・状態・G の求め直し・G の検証できたメンバーを撮れるか）を、入力せずに確かめる
+	// （#156。保持者の表示・エージェントの観測が、撮れなくなったことを知るための明示の事前確認）。通れば active、通らなければ ReleaseAll・halted・
+	// input.target_halted（入力のときと同じ。TargetStatus.State は halted、ErrInputBlocked も返す）。すでに halted なら再検証せずその状態を返す。
+	// スコープなしのリースは ErrInvalidArgument、保持者でなければ LeaseManager.Check のエラー。
+	VerifyTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
+	// ResumeTarget は保持者の明示的な再開（#156。復帰は自動では起きない）。halted のリースの全条件（T の同一性・状態・G の求め直し・前面とフォーカスの葉が
+	// G の中・G の検証できたメンバーを撮れるか）を再検証し、すべて通ったときだけ active に戻す。一つでも通らなければ halted のまま
+	// （TargetStatus は halted と、停止の理由。ErrInputBlocked）。自動では前面にしない。target_closed / target_replaced / target_unsupported で止まった
+	// リースは再開できない（ErrInputBlocked。解放して選び直す）。active のリースには何もしない。スコープなしは ErrInvalidArgument。
+	ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
+}
+
+// LaunchRequest は Launch の指定。AppID と Path はどちらか一方だけ（同時指定は ErrInvalidArgument）。
+type LaunchRequest struct {
+	AppID string // 許可リストの id（list_launchable_apps の id）
+	Path  string // denylist 方式のときだけ。固定ディスク上の .exe の絶対パス
+}
+
+// LaunchableList は LaunchableApps の結果。
+type LaunchableList struct {
+	Mode domain.LaunchMode // 起動の方式（launch.mode）
+	Apps []domain.AppSummary
 }
 
 // LaunchResult は Launch の結果。
 type LaunchResult struct {
-	AppID string
+	AppID string // path 指定の起動では空
 	PID   uint32
 	// Window は起動後に前面にあったウィンドウ（プロセスの作成後、pid のウィンドウが前面に出るまで最大およそ 3 秒待って観測する）。
 	// 前面のウィンドウを確かめられなかったときは nil。pid のウィンドウとは限らない（Window.PID が PID と違うことがある）。
@@ -278,7 +313,7 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if w, ok := op.(domain.Wait); ok {
 		return Result{}, "", nil, c.wait(ctx, w)
 	}
-	leaseID, err := c.ensureLease(ctx, who)
+	leaseID, scope, err := c.ensureLease(ctx, who)
 	if err != nil {
 		return Result{}, "", nil, err
 	}
@@ -286,8 +321,9 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if err != nil {
 		return Result{}, leaseID, nil, err
 	}
-	if err := c.guard.Check(ctx, p.op, p.monitors); err != nil {
-		return Result{}, leaseID, nil, c.withOwnWindows(ctx, err)
+	sr, err := c.guardOrScope(ctx, who, leaseID, scope, p)
+	if err != nil {
+		return Result{}, leaseID, nil, err
 	}
 	if who.Kind == domain.ActorAgent {
 		if err := c.judgeAgent(ctx, who, p, tr); err != nil {
@@ -298,28 +334,56 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if c.kill.Active() {
 		return Result{}, leaseID, nil, domain.ErrKillSwitchActive
 	}
-	res, err := c.execute(ctx, p)
+	res, err := c.execute(ctx, p, sr)
 	return res, leaseID, p.op, err
 }
 
-// ensureLease は who のリースを確かめ、保持者のリース ID を返す。
-// 未保持の mcp は暗黙に取得を試みる（FR-L04）。他の種別は取得せず ErrLeaseRequired。
-func (c *control) ensureLease(ctx context.Context, who domain.Actor) (string, error) {
+// guardOrScope は検査 4。スコープなしのリースは InputGuard.Check（NFR-S06）で、検証の文脈は nil。スコープ付きのリースは、実行前の拒否
+// （scopeGate。クリップボードの規則・停止中・win 修飾などのキー）と座標がモニター上にあることを確かめ、入力の検証は実行の中
+// （lockInput の中。execute）に任せる。入力の検証を受けない操作（クリップボード書き込み・UI ツリー）は InputGuard も通す。
+func (c *control) guardOrScope(ctx context.Context, who domain.Actor, leaseID string, scope *domain.LeaseScope, p plan) (*scopeRun, error) {
+	if scope == nil {
+		if err := c.guard.Check(ctx, p.op, p.monitors); err != nil {
+			return nil, c.withOwnWindows(ctx, err)
+		}
+		return nil, nil
+	}
+	if err := scopeGate(*scope, p.op); err != nil {
+		return nil, err
+	}
+	sr := &scopeRun{who: who, leaseID: leaseID, target: scope.Target}
+	if !scopeGoverned(p.op) {
+		if err := c.guard.Check(ctx, p.op, p.monitors); err != nil {
+			return nil, c.withOwnWindows(ctx, err)
+		}
+		return sr, nil
+	}
+	for _, pt := range opPoints(p.op) {
+		if err := checkOnMonitor(p.monitors, pt); err != nil {
+			return nil, err
+		}
+	}
+	return sr, nil
+}
+
+// ensureLease は who のリースを確かめ、保持者のリース ID と、束縛した対象（スコープなしは nil）を返す。
+// 未保持の mcp は暗黙に（スコープなしで）取得を試みる（FR-L04）。他の種別は取得せず ErrLeaseRequired。
+func (c *control) ensureLease(ctx context.Context, who domain.Actor) (string, *domain.LeaseScope, error) {
 	err := c.leases.Check(who)
 	if errors.Is(err, domain.ErrLeaseRequired) && who.Kind == domain.ActorMCP {
 		l, aerr := c.leases.Acquire(ctx, who)
 		if aerr != nil {
-			return "", aerr
+			return "", nil, aerr
 		}
-		return l.ID, nil
+		return l.ID, l.Scope, nil
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if h, ok := c.leases.Holder(); ok && h.Actor.SameSession(who) {
-		return h.LeaseID, nil
+		return h.LeaseID, h.Scope, nil
 	}
-	return "", nil
+	return "", nil, nil
 }
 
 func (c *control) wait(ctx context.Context, w domain.Wait) error {

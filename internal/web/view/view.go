@@ -230,7 +230,8 @@ type ConfirmModal struct {
 	Title      string
 	Message    string
 	ConfirmURL string
-	Method     string // delete | post
+	Method     string // delete | put | post
+	Vals       string // put のとき hx-vals に渡す JSON（空なら付けない）
 	Target     string // 結果を差し込む先の CSS セレクタ
 	Swap       string
 	Label      string // 確定ボタンの文言
@@ -352,11 +353,49 @@ type AppForm struct {
 	Corrupt bool
 }
 
-// Apps は起動許可アプリのページ（一覧と追加フォーム）。
+// Apps は起動許可アプリのページ（起動の方式・一覧・追加フォーム・拒否リスト）。
 type Apps struct {
 	Chrome  Chrome
+	Mode    LaunchModePanel
 	List    AppList
 	NewForm AppForm
+	Denied  DeniedSection
+}
+
+// LaunchModePanel は起動の方式（launch.mode）の表示と切り替え。方式の切り替えはホスト GUI だけにある（NFR-S20）。
+// Denylist が false なら ホワイトリスト方式（既定）。切り替えの操作は、ブラックリストへは確認モーダル、ホワイトリストへは直接。
+type LaunchModePanel struct {
+	Denylist bool
+	// ConfirmURL はブラックリスト方式へ切り替える確認モーダルの URL。ActionURL は切り替えの PUT 先（ホワイトリストへ戻すときに使う）。
+	ConfirmURL string
+	ActionURL  string
+}
+
+// DeniedRow は拒否リストの 1 件。Editing なら行の代わりに編集フォームを出す（EditValue・EditError はその入力）。
+type DeniedRow struct {
+	ID            string
+	IsPath        bool   // パス（実体のパスで照合）か、実行ファイル名か
+	Value         string // ホスト所有者だけが見る GUI にだけ出す
+	EditURL       string
+	DeleteConfirm string
+	Editing       bool
+	EditValue     string
+	EditError     string
+	ActionURL     string // 編集の PUT 先
+}
+
+// DeniedSection は拒否リストの一覧と追加フォーム（#denied-section。操作の応答はこの全体を差し替える）。
+type DeniedSection struct {
+	Rows []DeniedRow
+	// Count / Max は登録数と上限。Active は拒否リストが効いている（ブラックリスト方式）こと。
+	Count, Max int
+	Active     bool
+	AddValue   string // 追加フォームの入力値（検証エラー時は入力されたまま）
+	AddError   string
+	AddURL     string
+	ListURL    string // 編集のキャンセルが取り直す URL
+	// OOB は応答に添えて差し替える（方式の切り替えの応答）とき true。
+	OOB bool
 }
 
 // AppExePathField は実行ファイルの入力欄。ファイル選択（POST /apps/pick-file）の応答が、この欄だけを差し替える。
@@ -638,10 +677,4 @@ type ApprovalDone struct {
 type ApprovalGone struct {
 	Code    string
 	Message string
-}
-
-// Overlay は操作中オーバーレイ（GET /overlay。#69）。画面の枠と短い文言だけを出す（秘密・パス・引数は持たない）。
-type Overlay struct {
-	Label  string // 「操作中: <クライアント名>（<種別>）」。長さは制限済み
-	Detail string // 補足（agent の「エージェント実行中: <指示の要約>」。FR-H07）。無ければ空。長さは制限済み
 }

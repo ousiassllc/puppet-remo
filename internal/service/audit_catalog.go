@@ -20,6 +20,7 @@ var AuditCatalog = []AuditRequirement{
 	{Item: "認証失敗", Events: []string{"auth.bearer_failed", "auth.rate_limited", "auth.connreq_rate_limited"}},
 	{Item: "トークン発行・失効", Events: []string{"token.issue", "token.revoke"}},
 	{Item: "リースの取得・解放・剥奪", Events: []string{"lease.acquire", "lease.release", "lease.revoke"}},
+	{Item: "リースの対象ウィンドウ（入力スコープ。#156）", Events: []string{targetSetAuditEvent, targetResumedAuditEvent, targetHaltedAuditEvent}},
 	{Item: "リースの取得要求・承認・拒否（承認モード）", Events: []string{
 		"approval.requested", "approval.granted", "approval.denied", "approval.timeout", "approval.withdrawn", "approval.reset",
 	}},
@@ -27,6 +28,7 @@ var AuditCatalog = []AuditRequirement{
 	{Item: "キルスイッチ発動・解除", Events: []string{"killswitch.trigger", "killswitch.release"}},
 	{Item: "設定変更", Events: []string{
 		"settings.update", "settings.launchable_app.create", "settings.launchable_app.update", "settings.launchable_app.delete",
+		"settings.launch_mode.update", "settings.launch_denylist.create", "settings.launch_denylist.update", "settings.launch_denylist.delete",
 		"client.replace", "client.update", "client.delete",
 	}},
 	{Item: "更新の確認・適用（kind = update）", Events: []string{

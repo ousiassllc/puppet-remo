@@ -35,3 +35,51 @@ type Frame struct {
 	Dirty []image.Rectangle
 	Seq   uint32
 }
+
+// GroupCapturer は対象グループ（domain.Group）のメンバーだけを撮る、Capturer のオプションの拡張。
+// Capturer には足さない（Windows 実装は実機での成立性の検証が済むまでない）。service は型アサーションで取り、実装がなければ
+// 撮れないもの（capture_unavailable）として止める。**モニター撮影（Grab・Watch）やデスクトップの切り抜きに切り替えてはならない。**
+type GroupCapturer interface {
+	// GrabGroup は members を、各ウィンドウ自身の内容（PrintWindow など、ほかのウィンドウの画素が混ざらない方式）で撮り、
+	// メンバーの可視部分の外接矩形の空（透明）のキャンバスの上に Z オーダーで置いて返す。
+	// members は前面が先（後ろから順に描く）。同一性（domain.WindowRef の ID・PID・ProcessStart・Class）が一致しないウィンドウは撮らず、CaptureGone にする。
+	// 個々のメンバーが撮れないことはエラーにせず GroupImage.Members の Status で返す（T が撮れないのかほかのメンバーなのかを service が見分けるため）。
+	// error は呼び出し全体の失敗（ctx のキャンセル・デスクトップを使えない）だけ。
+	GrabGroup(ctx context.Context, members []domain.WindowRef) (GroupImage, error)
+}
+
+// CaptureStatus はメンバー 1 つの撮影結果。
+type CaptureStatus string
+
+const (
+	CaptureOK           CaptureStatus = "ok"            // 撮れて合成に入った
+	CaptureNotPrintable CaptureStatus = "not_printable" // ウィンドウは見つかったが内容を撮れない（PrintWindow の失敗・最小化など）
+	CaptureGone         CaptureStatus = "gone"          // ウィンドウがない・同一性が違う（HWND の再利用）
+)
+
+// MemberCapture は GrabGroup に渡したメンバー 1 つの結果（members と同じ順）。
+type MemberCapture struct {
+	Ref    domain.WindowRef
+	Status CaptureStatus
+	// Rect は Status が CaptureOK のとき、合成に置いたメンバーの矩形（仮想デスクトップの物理座標）。それ以外は零値。
+	Rect domain.Rect
+}
+
+// GroupImage は GrabGroup の結果。
+type GroupImage struct {
+	// Image は撮れたメンバーだけを置いた透明のキャンバス。大きさは撮れたメンバーの矩形の外接矩形。撮れたメンバーがなければ nil。
+	Image *image.RGBA
+	// Origin は Image の左上（0, 0）の仮想デスクトップ上の物理座標。合成画像の座標 p → 物理座標は Origin + p。
+	Origin  domain.Point
+	Members []MemberCapture
+}
+
+// Status は id のメンバーの撮影結果を返す。渡していない id は ok=false。
+func (g GroupImage) Status(id string) (MemberCapture, bool) {
+	for _, m := range g.Members {
+		if m.Ref.ID == id {
+			return m, true
+		}
+	}
+	return MemberCapture{}, false
+}

@@ -164,11 +164,11 @@ func TestFakeWindowsAtAndFocus(t *testing.T) {
 	ctx := context.Background()
 
 	// 最上位のウィンドウが優先され、最小化されたウィンドウは対象外。
-	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.ID != "100" {
-		t.Errorf("At(150,150) = %q, %v, %v; want window 100", got.ID, ok, err)
+	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.Top.ID != "100" {
+		t.Errorf("At(150,150) = %q, %v, %v; want window 100", got.Top.ID, ok, err)
 	}
-	if got, ok, err := w.At(domain.Point{X: 10, Y: 10}); err != nil || !ok || got.ID != "200" {
-		t.Errorf("At(10,10) = %q, %v, %v; want window 200", got.ID, ok, err)
+	if got, ok, err := w.At(domain.Point{X: 10, Y: 10}); err != nil || !ok || got.Top.ID != "200" {
+		t.Errorf("At(10,10) = %q, %v, %v; want window 200", got.Top.ID, ok, err)
 	}
 	if _, ok, _ := w.At(domain.Point{X: 5000, Y: 5000}); ok {
 		t.Error("At(5000,5000) found a window")
@@ -178,7 +178,7 @@ func TestFakeWindowsAtAndFocus(t *testing.T) {
 		t.Fatal(err)
 	}
 	fg, err := w.Foreground()
-	if err != nil || fg.ID != "300" || fg.Minimized {
+	if err != nil || fg.Foreground.ID != "300" || fg.Foreground.Minimized {
 		t.Errorf("Foreground() = %+v, %v; want window 300 restored", fg, err)
 	}
 	list, _ := w.List(ctx)
@@ -193,11 +193,11 @@ func TestFakeWindowsAtSkipsOverlay(t *testing.T) {
 		domain.WindowInfo{ID: "ov", Own: true, Overlay: true, Rect: domain.Rect{X: 0, Y: 0, W: 1000, H: 1000}},
 		domain.WindowInfo{ID: "dlg", Own: true, Rect: domain.Rect{X: 100, Y: 100, W: 200, H: 200}},
 	)
-	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.ID != "dlg" {
-		t.Errorf("At(150,150) = %q, %v, %v; want the dialog under the overlay", got.ID, ok, err)
+	if got, ok, err := w.At(domain.Point{X: 150, Y: 150}); err != nil || !ok || got.Top.ID != "dlg" {
+		t.Errorf("At(150,150) = %q, %v, %v; want the dialog under the overlay", got.Top.ID, ok, err)
 	}
 	if got, ok, err := w.At(domain.Point{X: 800, Y: 800}); err != nil || ok {
-		t.Errorf("At(800,800) = %q, %v, %v; want no window (overlay only)", got.ID, ok, err)
+		t.Errorf("At(800,800) = %q, %v, %v; want no window (overlay only)", got.Top.ID, ok, err)
 	}
 }
 
@@ -497,5 +497,31 @@ func TestFakeFilePickerDoesNotOpenForCanceledContext(t *testing.T) {
 	waitCancel()
 	if err := f.WaitOpen(waitCtx); !errors.Is(err, context.Canceled) {
 		t.Errorf("WaitOpen = %v, want no dialog to have opened", err)
+	}
+}
+
+func TestFakeAppLauncherResolve(t *testing.T) {
+	l := platformtest.NewFakeAppLauncher()
+	l.AddExecutable(`C:\Windows\System32\cmd.exe`)
+	l.AddLink(`C:\Users\me\Link\run.exe`, `C:\Windows\System32\cmd.exe`)
+	l.AddLink(`C:\WINDOW~1\SYSTEM~1\CMD.EXE`, `C:\Windows\System32\cmd.exe`)
+	l.AddLink(`C:\Windows\System32\net-link.exe`, `Z:\share\cmd.exe`)
+	l.MarkNonFixed(`Z:\share\cmd.exe`)
+	ctx := context.Background()
+
+	for _, in := range []string{
+		`C:\Windows\System32\cmd.exe`, `c:/windows//system32/CMD.EXE`, `C:\Users\me\Link\run.exe`, `C:\WINDOW~1\SYSTEM~1\CMD.EXE`,
+	} {
+		got, err := l.Resolve(ctx, in)
+		if err != nil || got != `C:\Windows\System32\cmd.exe` {
+			t.Errorf("Resolve(%q) = %q, %v, want the canonical spelling", in, got, err)
+		}
+	}
+	var le *platform.LaunchError
+	if _, err := l.Resolve(ctx, `C:\nope.exe`); !errors.As(err, &le) || le.Reason != domain.LaunchFileMissing {
+		t.Errorf("Resolve(missing) = %v, want file_missing", err)
+	}
+	if _, err := l.Resolve(ctx, `C:\Windows\System32\net-link.exe`); !errors.As(err, &le) || le.Reason != domain.LaunchAccessDenied {
+		t.Errorf("Resolve(link to a non-fixed drive) = %v, want access_denied", err)
 	}
 }

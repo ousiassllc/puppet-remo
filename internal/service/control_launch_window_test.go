@@ -19,7 +19,7 @@ func existingNotepad() domain.WindowInfo {
 func launchNotepad(t *testing.T, e *ctlEnv) LaunchResult {
 	t.Helper()
 	app := registerNotepad(t, e)
-	res, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	res, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,8 +51,8 @@ func TestControlLaunchReportsTheNewForegroundWindow(t *testing.T) {
 	}
 }
 
-// 返した pid のウィンドウが無く、既存のウィンドウ（別の pid）が前面にあるだけなら、印を付けてそのウィンドウを返す。
-// 観測は上限の回数で打ち切る。
+// 返した pid のウィンドウが無く、既存のウィンドウ（別の pid）が前面にあるだけなら、印を付け、その別のウィンドウは返さない（#85）。
+// 返してしまうと、続けて送るキー・入力が既存のウィンドウ（書きかけの文書など）や別のアプリに入る。観測は上限の回数で打ち切り、前面は触らない。
 func TestControlLaunchFlagsAnExistingWindowBroughtForward(t *testing.T) {
 	e := newAppEnv(t)
 	e.windows.SetWindows(existingNotepad())
@@ -61,11 +61,11 @@ func TestControlLaunchFlagsAnExistingWindowBroughtForward(t *testing.T) {
 	if !res.ReusedExistingWindow {
 		t.Error("ReusedExistingWindow = false, want true: only a window of another pid is in the foreground")
 	}
-	if res.Window == nil || res.Window.ID != "77" || res.Window.Title != "無題 - メモ帳" || res.Window.PID != userNotepadPID {
-		t.Errorf("Window = %+v, want the existing window 77 of pid %d", res.Window, userNotepadPID)
+	if res.Window != nil {
+		t.Errorf("Window = %+v, want none: the foreground window is not the launched app's window", res.Window)
 	}
-	if res.Window != nil && res.Window.PID == res.PID {
-		t.Errorf("Window.PID = launched pid %d, want a different pid", res.PID)
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "77" {
+		t.Errorf("foreground = %+v (%v), want the existing window 77 untouched", fg, err)
 	}
 	if len(e.slept) != launchWindowPollAttempts-1 {
 		t.Errorf("waited %d times, want %d", len(e.slept), launchWindowPollAttempts-1)
@@ -103,10 +103,11 @@ func TestControlLaunchWaitsForTheWindowToAppear(t *testing.T) {
 	}
 }
 
-// 新しいウィンドウはあるが前面は別のアプリ: 前面のウィンドウをそのまま返し、再利用の印は付けない（pid が違うので見分けられる）。
-func TestControlLaunchNewWindowBehindAnotherAppIsNotFlagged(t *testing.T) {
+// 起動した pid のウィンドウはあるが前面は別のアプリ（Windows の前面ロックなど）: 前面の別アプリのウィンドウは返さず、
+// pid のウィンドウを返して前面に出す。再利用の印は付けない（#85）。
+func TestControlLaunchReturnsTheLaunchedWindowNotTheForegroundOne(t *testing.T) {
 	e := newAppEnv(t)
-	front := domain.WindowInfo{ID: "5", Title: "ブラウザ", PID: 900, Foreground: true}
+	front := domain.WindowInfo{ID: "5", Title: "Grok Bot", Process: "grok.exe", PID: 900, Foreground: true}
 	e.launcher.OnLaunch(func(pid uint32) {
 		e.windows.SetWindows(front, domain.WindowInfo{ID: "88", Title: "無題", PID: pid})
 	})
@@ -115,8 +116,11 @@ func TestControlLaunchNewWindowBehindAnotherAppIsNotFlagged(t *testing.T) {
 	if res.ReusedExistingWindow {
 		t.Error("ReusedExistingWindow = true, want false: a window of the launched pid exists")
 	}
-	if res.Window == nil || res.Window.ID != "5" || res.Window.PID == res.PID {
-		t.Errorf("Window = %+v, want the foreground window 5 of another pid", res.Window)
+	if res.Window == nil || res.Window.ID != "88" || res.Window.PID != res.PID || !res.Window.Foreground {
+		t.Errorf("Window = %+v, want the launched window 88, brought to the front", res.Window)
+	}
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "88" {
+		t.Errorf("foreground = %+v (%v), want window 88 focused", fg, err)
 	}
 }
 
@@ -147,8 +151,8 @@ func TestControlLaunchKeepsTheResultWhenTheWaitIsInterrupted(t *testing.T) {
 	if len(e.slept) != 1 {
 		t.Errorf("waited %d times, want 1", len(e.slept))
 	}
-	if !res.ReusedExistingWindow || res.Window == nil || res.Window.ID != "77" {
-		t.Errorf("result = %+v (window %+v), want the observation so far", res, res.Window)
+	if !res.ReusedExistingWindow || res.Window != nil {
+		t.Errorf("result = %+v (window %+v), want the observation so far (reused, no window)", res, res.Window)
 	}
 }
 
@@ -157,20 +161,20 @@ func TestControlLaunchFailureDoesNotObserveWindows(t *testing.T) {
 	e := newAppEnv(t)
 	app := registerNotepad(t, e)
 	e.launcher.DenyAccess(appNotepad)
-	res, err := e.control.Launch(context.Background(), ctlAlice, app.ID)
+	res, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if err == nil || res.Window != nil || res.ReusedExistingWindow || len(e.slept) != 0 {
 		t.Errorf("res = %+v, err = %v, slept = %v", res, err, e.slept)
 	}
 }
 
 // 起動したプロセスがすぐ終了し、別の pid の新しいウィンドウが開いたときは、既存のウィンドウが前に出ただけではないので、
-// 新しいウィンドウが背面にあっても印は付かない（Windows 11 のメモ帳。#55）。前面は既存のウィンドウのまま返す。
+// 新しいウィンドウが背面にあっても印は付かない（Windows 11 のメモ帳。#55）。起動したアプリ（プロセス名が同じ）の新しいウィンドウを返し、前面に出す（#85）。
 func TestControlLaunchDoesNotFlagWhenANewWindowOfAnotherPIDOpens(t *testing.T) {
 	e := newAppEnv(t)
 	old := existingNotepad()
 	e.windows.SetWindows(old)
 	e.launcher.OnLaunch(func(uint32) {
-		fresh := domain.WindowInfo{ID: "88", Title: "無題 - メモ帳", Process: "notepad.exe", PID: userNotepadPID + 1}
+		fresh := domain.WindowInfo{ID: "88", Title: "無題 - メモ帳", Process: "Notepad.exe", PID: userNotepadPID + 1}
 		e.windows.SetWindows(old, fresh)
 	})
 
@@ -178,11 +182,37 @@ func TestControlLaunchDoesNotFlagWhenANewWindowOfAnotherPIDOpens(t *testing.T) {
 	if res.ReusedExistingWindow {
 		t.Error("ReusedExistingWindow = true, want false: a window that did not exist before the launch is open")
 	}
-	if res.Window == nil || res.Window.ID != "77" {
-		t.Errorf("Window = %+v, want the foreground window (77)", res.Window)
+	if res.Window == nil || res.Window.ID != "88" || !res.Window.Foreground {
+		t.Errorf("Window = %+v, want the new window 88 (handed-over process), brought to the front", res.Window)
+	}
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "88" {
+		t.Errorf("foreground = %+v (%v), want the new window 88 focused", fg, err)
 	}
 	if d := auditDetail(t, lastLaunchEntry(t, e)); d["reused_existing_window"] != false {
 		t.Errorf("detail = %v, want reused_existing_window=false", d)
+	}
+}
+
+// 別のアプリの新しいウィンドウ（プロセス名が違う）が開いただけなら、それは起動したアプリのウィンドウと確かめられないので返さず、
+// 前面にも出さない。再利用の印は #55 のとおり付けない（新しいウィンドウがあるため）。#85: 返したウィンドウへ入力すると別アプリに入る。
+func TestControlLaunchDoesNotReturnANewWindowOfAnotherApp(t *testing.T) {
+	e := newAppEnv(t)
+	old := existingNotepad()
+	e.windows.SetWindows(old)
+	e.launcher.OnLaunch(func(uint32) {
+		other := domain.WindowInfo{ID: "88", Title: "Grok Bot", Process: "grok.exe", PID: 900}
+		e.windows.SetWindows(old, other)
+	})
+
+	res := launchNotepad(t, e)
+	if res.Window != nil {
+		t.Errorf("Window = %+v, want none: no window of the launched app was found", res.Window)
+	}
+	if res.ReusedExistingWindow {
+		t.Error("ReusedExistingWindow = true, want false: a new window exists")
+	}
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "77" {
+		t.Errorf("foreground = %+v (%v), want the existing window 77 untouched", fg, err)
 	}
 }
 
@@ -246,5 +276,38 @@ func TestControlLaunchEmptyListBeforeCountsLaterWindowsAsNew(t *testing.T) {
 	res := launchNotepad(t, e)
 	if res.ReusedExistingWindow {
 		t.Error("ReusedExistingWindow = true, want false: the list before the launch was empty, so a window of another pid is new")
+	}
+}
+
+// 観測の待ちの間にキルスイッチが発動したら、起動したアプリのウィンドウを前面に出さない（Focus を呼ばない）。起動は成功のまま結果を返す。
+func TestControlLaunchDoesNotFocusWhenTheKillSwitchFiresDuringTheWait(t *testing.T) {
+	e := newAppEnv(t)
+	front := domain.WindowInfo{ID: "5", Title: "Grok Bot", Process: "grok.exe", PID: 900, Foreground: true}
+	e.launcher.OnLaunch(func(pid uint32) {
+		e.windows.SetWindows(front, domain.WindowInfo{ID: "88", Title: "無題", PID: pid})
+	})
+	e.onSleep = func() { _ = e.kill.Trigger("test") }
+
+	res := launchNotepad(t, e)
+	if res.Window == nil || res.Window.ID != "88" || res.Window.Foreground {
+		t.Errorf("Window = %+v, want the launched window 88, not brought to the front", res.Window)
+	}
+	if fg, err := e.windows.Foreground(); err != nil || fg.Foreground.ID != "5" {
+		t.Errorf("foreground = %+v (%v), want the other app's window 5 untouched after the kill switch", fg, err)
+	}
+}
+
+// 前面に出せなかったとき（Focus の失敗）も、起動は成功のまま、起動したアプリのウィンドウを Foreground なしで返す。
+func TestControlLaunchKeepsTheResultWhenFocusFails(t *testing.T) {
+	e := newAppEnv(t)
+	front := domain.WindowInfo{ID: "5", Title: "Grok Bot", Process: "grok.exe", PID: 900, Foreground: true}
+	e.launcher.OnLaunch(func(pid uint32) {
+		e.windows.SetWindows(front, domain.WindowInfo{ID: "88", Title: "無題", PID: pid})
+	})
+	e.windows.SetError("Focus", domain.ErrInputBlocked)
+
+	res := launchNotepad(t, e)
+	if res.PID == 0 || res.Window == nil || res.Window.ID != "88" || res.Window.Foreground {
+		t.Errorf("result = %+v (window %+v), want success with window 88 not in the foreground", res, res.Window)
 	}
 }

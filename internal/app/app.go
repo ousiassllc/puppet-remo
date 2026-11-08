@@ -42,6 +42,7 @@ type Repo interface {
 	Audit() repository.Audit
 	Thumbs() repository.ThumbStore
 	LaunchableApps() repository.LaunchableApps
+	LaunchDenylist() repository.LaunchDenylist
 	Tasks() repository.Tasks
 }
 
@@ -254,7 +255,7 @@ func (a *App) build(ctx context.Context) error {
 	a.dialogs = newApprovalDialogs(cfg.Windows, a.approval, a.bus, a.log)
 	a.leases, err = service.NewLeaseManager(service.LeaseConfig{
 		Clock: cfg.Clock, IDs: cfg.IDs, IdleTimeout: idle, Audit: audit, Kill: killMgr, Power: cfg.Platform.Power, Logger: a.log,
-		Approval: a.approval, Clients: cfg.Repo.Clients(), Bus: a.bus,
+		Approval: a.approval, Clients: cfg.Repo.Clients(), Bus: a.bus, Windows: cfg.Platform.Windows,
 	})
 	if err != nil {
 		return fmt.Errorf("lease manager: %w", err)
@@ -264,7 +265,8 @@ func (a *App) build(ctx context.Context) error {
 	p := cfg.Platform
 	// 許可リストの管理。書き込みは GUI だけが呼ぶ（mcp・リモートルーターには渡さない。NFR-S20）。
 	a.apps, err = service.NewAppRegistry(service.AppRegistryConfig{
-		Apps: cfg.Repo.LaunchableApps(), Launcher: p.Launcher, Picker: p.FilePicker, Audit: audit, Clock: cfg.Clock, IDs: cfg.IDs,
+		Apps: cfg.Repo.LaunchableApps(), Denied: cfg.Repo.LaunchDenylist(), Settings: settings,
+		Launcher: p.Launcher, Picker: p.FilePicker, Audit: audit, Clock: cfg.Clock, IDs: cfg.IDs,
 	})
 	if err != nil {
 		return fmt.Errorf("app registry: %w", err)
