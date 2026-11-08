@@ -112,6 +112,12 @@ func (c *conn) applySource(msg clientMessage, cfg service.ViewerConfig) (service
 		if !ok {
 			return cfg, domain.ErrInvalidArgument.WithMsg("no target window is bound to the lease")
 		}
+		if cfg.Target == (domain.WindowRef{}) {
+			// モニター表示から戻る: 画像の大きさ・原点は、最初のグループ源のコマ（と、その前の config）で確定し直す。
+			c.tgt.mu.Lock()
+			c.tgt.geom = groupGeom{}
+			c.tgt.mu.Unlock()
+		}
 		cfg.Target = h.Scope.Target
 	}
 	return cfg, nil
@@ -128,31 +134,38 @@ func (c *conn) scopedHolder() (service.Holder, bool) {
 
 // groupOp は座標を持つ op の At（合成画像の座標）を、物理座標（原点 + p）を含むモニターの座標へ直す。Control は従来どおり
 // モニターのストリーム座標として変換・検証するので、座標の変換のための新しい経路は要らない。どのモニターにも入らない座標・原点が
-// 未確定（最初のコマの前）は invalid_coordinates。
-func (c *conn) groupOp(op domain.Op) (domain.Op, error) {
+// 未確定（最初のコマの前）は invalid_coordinates。seen は入力が座標を読んだ画像の原点・大きさ（クライアントが申告したもの。無ければ nil）で、
+// サーバーの今の画像と違えば注入せず stale_frame を返す（原点が変わる前の画像の座標を、変わったあとの原点で物理座標にして誤った位置へ入れない）。
+func (c *conn) groupOp(op domain.Op, seen *groupGeom) (domain.Op, error) {
 	switch o := op.(type) {
 	case domain.PointerMove:
 		var err error
-		o.At, o.Monitor, err = c.mapGroupPoint(o.At)
+		o.At, o.Monitor, err = c.mapGroupPoint(o.At, seen)
 		return o, err
 	case domain.MouseButton:
 		var err error
-		o.At, o.Monitor, err = c.mapGroupPoint(o.At)
+		o.At, o.Monitor, err = c.mapGroupPoint(o.At, seen)
 		return o, err
 	case domain.Wheel:
 		var err error
-		o.At, o.Monitor, err = c.mapGroupPoint(o.At)
+		o.At, o.Monitor, err = c.mapGroupPoint(o.At, seen)
 		return o, err
 	}
 	return op, nil
 }
 
-func (c *conn) mapGroupPoint(at domain.Point) (domain.Point, int, error) {
+// errStaleFrame は、入力が読んだ画像が、サーバーの今の画像（原点・大きさ）と違うときの拒否。停止にはしない（クライアントは次の config・フレームで読み直す）。
+var errStaleFrame = domain.ErrInvalidCoordinates.WithMsg("the target image changed after the coordinates were read").WithDetail("reason", "stale_frame")
+
+func (c *conn) mapGroupPoint(at domain.Point, seen *groupGeom) (domain.Point, int, error) {
 	c.tgt.mu.Lock()
 	g := c.tgt.geom
 	c.tgt.mu.Unlock()
 	if !g.known {
 		return at, 0, domain.ErrInvalidCoordinates.WithMsg("the target image has not arrived yet")
+	}
+	if seen != nil && *seen != g {
+		return at, 0, errStaleFrame
 	}
 	if at.X < 0 || at.Y < 0 || at.X >= g.width || at.Y >= g.height {
 		return at, 0, domain.ErrInvalidCoordinates.WithMsg(fmt.Sprintf("(%d, %d) is outside the %dx%d target image", at.X, at.Y, g.width, g.height))

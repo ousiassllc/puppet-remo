@@ -541,6 +541,115 @@ func TestScopedReleaseReturnsToTheMonitorSource(t *testing.T) {
 	v.f.target("none", "")
 }
 
+// 入力が座標を読んだ画像（原点・大きさ）が、サーバーの今の画像と違うとき（メニュー・ダイアログの開閉で原点が変わる間に届いた入力）は、
+// 古い画像の座標を新しい原点で物理座標にして誤った位置へ入れず、何も注入せず、停止にもしない（stale_frame）。申告が今の画像と一致すれば通る。
+func TestScopedStaleFrameInputIsRejectedWithoutHaltingOrInjecting(t *testing.T) {
+	e, p := newScopedEnv(t)
+	v := connectViewer(t, e, p)
+	v.selectTarget()
+	v.f.target("active", "")
+
+	v.click(imgFileButton, "left")
+	eventually(t, "the file menu to open", func() bool { return p.app.MenuOpen() == "file" })
+	v.click(imgFileItem, "left")
+	eventually(t, "the save dialog to open", func() bool { return p.app.DialogOpen() })
+	v.f.groupConfig(550, 320, 100, 80) // サーバーの画像は、原点 (100,80)・550x320 に変わった
+
+	withFrame := func(m map[string]any, ox, oy, w, h int) map[string]any {
+		m["ox"], m["oy"], m["w"], m["h"] = ox, oy, w, h
+		return m
+	}
+	capturesBefore, injectedBefore := p.capturer.MonitorCaptureCalls(), p.injected()
+	// 変わる前の画像（原点 (100,100)・400x300）の座標。クライアントがまだ新しい config を読んでいない間に送ったもの。
+	for _, action := range []string{"move", "down", "up"} {
+		m := map[string]any{"type": "input.mouse", "action": action, "x": imgEdit.X, "y": imgEdit.Y}
+		if action != "move" {
+			m["button"] = "left"
+		}
+		v.send(withFrame(m, 100, 100, 400, 300))
+		v.f.errorMsg("invalid_coordinates", "stale_frame")
+	}
+	v.send(withFrame(map[string]any{"type": "input.mouse", "action": "wheel", "x": imgEdit.X, "y": imgEdit.Y, "dy": 1}, 100, 100, 400, 300))
+	v.f.errorMsg("invalid_coordinates", "stale_frame")
+	if got := p.injected() - injectedBefore; got != 0 {
+		t.Fatalf("%d stale inputs reached the platform, want 0", got)
+	}
+	if !p.app.DialogOpen() || p.app.Selected() {
+		t.Errorf("a stale click acted on the app (dialog %v, selected %v)", p.app.DialogOpen(), p.app.Selected())
+	}
+
+	// 停止にはなっていない: 今の画像を申告した入力（Cancel。物理 (520,160) = 画像 (420,80)）は通り、ダイアログが閉じる。
+	at := domain.Point{X: 420, Y: 80}
+	v.send(withFrame(map[string]any{"type": "input.mouse", "action": "move", "x": at.X, "y": at.Y}, 100, 80, 550, 320))
+	v.send(withFrame(map[string]any{"type": "input.mouse", "action": "down", "x": at.X, "y": at.Y, "button": "left"}, 100, 80, 550, 320))
+	v.send(withFrame(map[string]any{"type": "input.mouse", "action": "up", "x": at.X, "y": at.Y, "button": "left"}, 100, 80, 550, 320))
+	eventually(t, "the dialog to close", func() bool { return !p.app.DialogOpen() })
+	v.f.target("active", "")
+	if n := p.capturer.MonitorCaptureCalls(); n != capturesBefore {
+		t.Errorf("monitor capture calls = %d, want %d", n, capturesBefore)
+	}
+
+	// 4 つ揃っていない申告は不正なメッセージ（4400）。
+	v.send(map[string]any{"type": "input.mouse", "action": "move", "x": 1, "y": 1, "ox": 100})
+	select {
+	case code := <-v.f.closed:
+		if code != 4400 {
+			t.Fatalf("closed with %d, want 4400", code)
+		}
+	case <-time.After(waitLimit):
+		t.Fatal("the connection was not closed for the partial frame reference")
+	}
+}
+
+// ツールバーの「モニター表示」「ウィンドウ表示」: スコープ付きのリースを持ったまま config の source で切り替える（D1。モニター表示は権限として残る）。
+// グループ表示のあいだはモニターを撮らず、戻せる。
+func TestScopedViewerSwitchesBetweenMonitorAndWindowViews(t *testing.T) {
+	e, p := newScopedEnv(t)
+	v := connectViewer(t, e, p)
+	v.selectTarget()
+	v.f.target("active", "")
+	inGroup := p.capturer.MonitorCaptureCalls() // グループ表示になるまでのモニターの分（選ぶ前の表示）
+
+	v.send(map[string]any{"type": "config", "source": "monitor"})
+	v.f.expect("config", "monitor config", func(m map[string]any) bool { return m["source"] == "monitor" })
+	eventually(t, "the monitor to be streamed", func() bool { return p.capturer.MonitorCaptureCalls() > inGroup })
+	if _, ok := e.app.leases.Holder(); !ok {
+		t.Fatal("the scoped lease was lost by switching to the monitor view")
+	}
+
+	v.send(map[string]any{"type": "config", "source": "group"})
+	v.f.groupConfig(400, 300, 100, 100)
+	// 戻ったあとの操作はグループの座標で通り、モニター撮影は増えない。
+	v.click(imgFileButton, "left")
+	eventually(t, "the file menu to open", func() bool { return p.app.MenuOpen() == "file" })
+	back := p.capturer.MonitorCaptureCalls()
+	v.click(imgFileItem, "left")
+	eventually(t, "the save dialog to open", func() bool { return p.app.DialogOpen() })
+	v.f.groupConfig(550, 320, 100, 80)
+	if n := p.capturer.MonitorCaptureCalls(); n != back {
+		t.Errorf("monitor capture calls while back in the window view = %d, want %d", n, back)
+	}
+}
+
+// 「ウィンドウ表示」はこのビューアがスコープ付きのリースを保持しているときだけ。保持していない・他のビューアが保持している場合は拒否し、
+// モニター表示のまま（グループ源にもならず、他者の対象も写らない）。
+func TestScopedViewerCannotSwitchToTheWindowViewWithoutTheLease(t *testing.T) {
+	e, p := newScopedEnv(t)
+	other := connectViewer(t, e, p)
+	other.send(map[string]any{"type": "config", "source": "group"})
+	other.f.errorMsg("invalid_argument", "")
+
+	holder := connectViewer(t, e, p)
+	holder.selectTarget()
+	other.send(map[string]any{"type": "config", "source": "group"})
+	other.f.errorMsg("invalid_argument", "")
+	if n := p.capturer.GroupGrabCalls(); n == 0 {
+		t.Fatal("the holder's group was never captured") // 保持者の表示は動いている
+	}
+	other.send(map[string]any{"type": "ping"})
+	other.f.expect("pong", "pong after the rejected switch", func(map[string]any) bool { return true })
+}
+
 type viewerResponse struct {
 	StatusCode int
 	body       string

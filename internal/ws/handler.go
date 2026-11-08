@@ -502,7 +502,11 @@ func (c *conn) handle(data []byte) error {
 			return err
 		}
 		if cfg.Target != (domain.WindowRef{}) {
-			if op, err = c.groupOp(op); err != nil {
+			seen, err := msg.frameRef()
+			if err != nil {
+				return err
+			}
+			if op, err = c.groupOp(op, seen); err != nil {
 				return c.writeJSON(errorFor(err))
 			}
 		}

@@ -367,3 +367,23 @@ test("[偽 platform の表示] 対象を閉じると、選び直しのみ（「�
   // モニター表示（640x480）に戻っている。
   await waitForViewerReady(canvas);
 });
+
+test("[偽 platform の表示] 「モニター表示」「ウィンドウ表示」で、スコープ付きのリースを保ったまま画面全体と対象を行き来できる（モニターが 1 台でも）", async ({ page }) => {
+  const canvas = await openViewer(page);
+  await selectWindow(page, "無題 - FakeNotepad");
+  await waitForImage(canvas, T_IMAGE.w, T_IMAGE.h);
+
+  await page.getByRole("button", { name: "モニター表示" }).click();
+  await waitForImage(canvas, STREAM_WIDTH, STREAM_HEIGHT); // 画面全体（権限として残る。D1）
+  await expect(page.locator("#window-picker [data-window-scoped]")).toBeVisible(); // リースは保たれている
+
+  await page.getByRole("button", { name: "ウィンドウ表示（選択中の対象に戻る）" }).click();
+  await waitForImage(canvas, T_IMAGE.w, T_IMAGE.h);
+  await clickImage(canvas, 25, 15);
+  await expect.poll(async () => (await host.desktop.app()).menu).toBe("file");
+
+  // 解放するとボタンは消え、モニター表示に戻る。
+  await page.getByRole("button", { name: "解放" }).click();
+  await expect(page.getByRole("button", { name: "モニター表示" })).toHaveCount(0);
+  await waitForImage(canvas, STREAM_WIDTH, STREAM_HEIGHT);
+});

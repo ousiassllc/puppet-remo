@@ -6,7 +6,10 @@
 //   4. 確認モーダルのキャンセル・トークン表示を閉じる（data-clear）
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をトーストにする
+//   7. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
+
+import { installPickerRefreshGuard } from "./picker-guard";
 
 const TOAST_ROOT = "toast-root";
 const TOAST_LIFETIME_MS = 8000;
@@ -31,6 +34,9 @@ function showErrorToast(message: string): void {
   toast.append(text);
   root.append(toast);
 }
+
+// 7. ウィンドウの一覧の自動更新の見送り（フォーカス・ポインターの操作中）。
+installPickerRefreshGuard();
 
 // 1. サーバーが HTML で返さないエラー（接続できない、想定外の 5xx）だけをクライアントで扱う。
 document.addEventListener("htmx:sendError", () => {

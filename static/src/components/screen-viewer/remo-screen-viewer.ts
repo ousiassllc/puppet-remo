@@ -5,7 +5,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { createLogger } from "../lib/logger";
 import { MessageTooLargeError, NO_RECONNECT_CLOSE_CODES, WsClient, type WsMessage } from "../lib/ws";
 import { isImeKeyEvent, keyModifiers, mouseButtonName, toStreamPoint, wheelNotches, type MouseButtonName, type StreamPoint } from "./input";
-import { GROUP_MONITOR, parseFrame, parseServerMessage, type Lease, type ScreenFrame, type ServerMessage, type StreamGeometry, type TargetState, type Tile } from "./protocol";
+import { GROUP_MONITOR, parseFrame, parseServerMessage, type Lease, type ScreenFrame, type ServerMessage, type StreamGeometry, type StreamSource, type TargetState, type Tile } from "./protocol";
 
 const log = createLogger("screen-viewer");
 
@@ -104,6 +104,7 @@ export class RemoScreenViewer extends LitElement {
     status: { state: true },
     closeCode: { state: true },
     target: { state: true },
+    source: { state: true },
   };
 
   static styles = css`
@@ -137,6 +138,24 @@ export class RemoScreenViewer extends LitElement {
       resize: none;
       overflow: hidden;
       pointer-events: none;
+    }
+    .sourcebar {
+      /* 「対象を表示できません」の覆いの上に出す（表示できないときこそ、モニター表示へ切り替えられるように）。 */
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: flex-end;
+      padding: 0.25rem 0;
+    }
+    .sourcebar button {
+      border: 1px solid #94a3b8;
+      border-radius: 0.375rem;
+      background: #fff;
+      color: #334155;
+      padding: 0.25rem 0.75rem;
+      font: inherit;
+      font-size: 0.875rem;
+      cursor: pointer;
     }
     .banner {
       /* 「対象を表示できません」の覆い（.overlay。ホスト全体）の上に出す（「再開」「別のウィンドウを選ぶ」を押せるように）。 */
@@ -192,6 +211,8 @@ export class RemoScreenViewer extends LitElement {
   declare status: ViewerStatus;
   declare closeCode: number;
   declare target: TargetState | null;
+  // 配信の源（ready・config の source。#157）。表示の切り替えボタンが読む。
+  declare source: StreamSource;
 
   private ws: WsClient | null = null;
   private canvas: HTMLCanvasElement | null = null;
@@ -201,6 +222,9 @@ export class RemoScreenViewer extends LitElement {
   private epoch = 0;
   private lastSeq = -1;
   private currentMonitor = -1;
+  // グループ源で今 canvas に出している画像の原点・大きさ（#157）。入力の座標はこの画像の座標なので、
+  // マウスのメッセージに添えて送る（サーバーが今の画像と違えば、古い座標として注入しない）。画像が来るまで・モニター源は null。
+  private groupRef: { ox: number; oy: number; w: number; h: number } | null = null;
   private awaitingKeyframe = true;
   private renderChain: Promise<void> = Promise.resolve();
 
@@ -222,6 +246,7 @@ export class RemoScreenViewer extends LitElement {
     this.status = "connecting";
     this.closeCode = 0;
     this.target = null;
+    this.source = "monitor";
   }
 
   // 入力が有効: 最後に受信した lease が held かつ mine: true（pending_approval は承認待ちの本人でも readonly 扱い。
@@ -265,12 +290,15 @@ export class RemoScreenViewer extends LitElement {
   protected render() {
     let text = overlayText(this.status, this.closeCode);
     // 対象を撮れないときは、画像が来ない（接続中のまま）。再接続・失敗・キルスイッチの表示を優先し、それ以外は「表示できません」にする。
-    const cannotDisplay = this.target?.state === "halted" && cannotDisplayReasons.has(this.target.reason ?? "");
+    // 停止は「再開」を押すまで続く（原因が消えて画像が撮れるようになっても、自動では再開しない）ので、覆いも再開まで出す。
+    // モニター表示に切り替えているあいだは、モニターの画像が流れているので出さない。
+    const cannotDisplay = this.source === "group" && this.target?.state === "halted" && cannotDisplayReasons.has(this.target.reason ?? "");
     if (cannotDisplay && (this.status === "open" || this.status === "connecting")) {
-      text = "対象を表示できません。画面全体の表示には切り替えません。";
+      text = "対象を表示できません。画面全体の表示には切り替えません。停止は、原因を取り除いて「再開」を押すまで続きます。";
     }
     const banner = targetBanner(this.target);
     return html`
+      ${this.renderSourceBar()}
       <canvas width="16" height="9"></canvas>
       <textarea
         class="ime-sink"
@@ -284,6 +312,29 @@ export class RemoScreenViewer extends LitElement {
       ${banner === null ? nothing : this.renderBanner(banner)}
     `;
   }
+
+  // 表示の切り替え（#157。D1）: スコープ付きのリースを持つあいだ、モニター表示（画面全体）と、選んだウィンドウの表示を行き来できる。
+  // スコープ付きのリースは切り替えても保たれる。ウィンドウ表示への切り替えは、このビューアが今もそのリースを持つときだけサーバーが受ける。
+  private renderSourceBar() {
+    if (this.target === null) {
+      return nothing;
+    }
+    return html`
+      <div class="sourcebar" data-source-bar>
+        ${this.source === "group"
+          ? html`<button type="button" data-source-monitor @click=${this.onShowMonitor}>モニター表示</button>`
+          : html`<button type="button" data-source-group @click=${this.onShowWindow}>ウィンドウ表示（選択中の対象に戻る）</button>`}
+      </div>
+    `;
+  }
+
+  private onShowMonitor = (): void => {
+    this.sendInput({ type: "config", source: "monitor" });
+  };
+
+  private onShowWindow = (): void => {
+    this.sendInput({ type: "config", source: "group" });
+  };
 
   private renderBanner(banner: TargetBanner) {
     return html`
@@ -337,6 +388,8 @@ export class RemoScreenViewer extends LitElement {
 
   private onOpen(): void {
     this.target = null;
+    this.source = "monitor";
+    this.groupRef = null;
     // 新しい接続はサーバー側で最初からやり直す（連番・キーフレーム）。
     this.epoch++;
     this.lastSeq = -1;
@@ -442,19 +495,32 @@ export class RemoScreenViewer extends LitElement {
   // applyGeometry は、配信の源（モニター・グループ）か解像度が変わったら canvas を作り直し（サイズの設定で内容も消える）、
   // 次のキーフレームまで描画を保留する。グループ源の width / height は合成画像の大きさで、メニュー・ダイアログの開閉で変わる。
   // 入力の座標は canvas の座標（合成画像内の座標。サーバーが原点を足して物理座標にする）なので、大きさが変われば変換も追従する。
+  //
+  // グループ源のまま大きさだけが変わるとき（メニュー・ダイアログの開閉）は、canvas を今は作り直さない（作り直すと内容が消えてちらつく）。
+  // 次のキーフレーム（サーバーは大きさ・原点が変わると必ずキーフレームにする）が来たときに、onFrame が作り直す。それまでの入力は、古い画像の
+  // 原点・大きさ（groupRef）を添えて送るので、サーバーが古い座標として拒否する（stale_frame）。
   private applyGeometry(geometry: StreamGeometry): void {
     const { width, height } = geometry;
     const monitor = geometry.source === "group" ? GROUP_MONITOR : geometry.monitor;
     const canvas = this.canvas;
+    this.source = geometry.source;
+    if (geometry.source !== "group" || width <= 0 || height <= 0 || geometry.origin === undefined) {
+      this.groupRef = null; // モニター源、または最初のコマの前（画像が来るまでグループ源の入力は送らない）
+    }
     if (!canvas || width <= 0 || height <= 0) {
       return;
     }
     if (monitor === this.currentMonitor && canvas.width === width && canvas.height === height) {
       return;
     }
+    if (monitor === this.currentMonitor && geometry.source === "group") {
+      this.awaitingKeyframe = true; // 大きさの変更は、次のキーフレームで反映する（上のコメント）
+      return;
+    }
     this.currentMonitor = monitor;
     canvas.toggleAttribute("data-group", monitor === GROUP_MONITOR);
     this.resizeCanvas(canvas, width, height);
+    this.groupRef = geometry.source === "group" && geometry.origin !== undefined ? { ox: geometry.origin.x, oy: geometry.origin.y, w: width, h: height } : null;
     this.awaitingKeyframe = true;
   }
 
@@ -495,6 +561,9 @@ export class RemoScreenViewer extends LitElement {
         return;
       }
       this.resizeCanvas(canvas, frame.width, frame.height);
+    }
+    if (frame.group && frame.origin !== null) {
+      this.groupRef = { ox: frame.origin.x, oy: frame.origin.y, w: frame.width, h: frame.height };
     }
     this.awaitingKeyframe = false;
     this.enqueueDraw(canvas, frame);
@@ -549,7 +618,15 @@ export class RemoScreenViewer extends LitElement {
 
   private streamPoint(clientX: number, clientY: number): StreamPoint | null {
     const canvas = this.canvas;
+    if (this.source === "group" && this.groupRef === null) {
+      return null; // 対象の画像が来るまで、座標を送らない
+    }
     return canvas ? toStreamPoint(clientX, clientY, canvas.getBoundingClientRect(), canvas.width, canvas.height) : null;
+  }
+
+  // sendMouse はマウスの入力を送る。グループ源では、座標を読んだ画像の原点・大きさ（ox・oy・w・h）を添える。
+  private sendMouse(message: Record<string, unknown>): void {
+    this.sendInput(this.source === "group" && this.groupRef !== null ? { ...message, ...this.groupRef } : message);
   }
 
   // 入力が無効になったとき（リースの喪失）は、押下中の状態を送らずに捨てる（サーバーが解放する）。
@@ -571,7 +648,7 @@ export class RemoScreenViewer extends LitElement {
         this.sendInput({ type: "input.key", action: "up", code, key, modifiers: [] });
       }
       for (const button of this.pressedButtons) {
-        this.sendInput({ type: "input.mouse", action: "up", x: this.lastPoint.x, y: this.lastPoint.y, button });
+        this.sendMouse({ type: "input.mouse", action: "up", x: this.lastPoint.x, y: this.lastPoint.y, button });
       }
     }
     this.pressedKeys.clear();
@@ -581,6 +658,11 @@ export class RemoScreenViewer extends LitElement {
 
   private onMouseMove = (event: MouseEvent): void => {
     if (!this.inputEnabled) {
+      return;
+    }
+    // グループ源では、ボタンを押していないあいだのホバーの move は送らない: 画像の外（対象の外）の座標の move は、サーバーでは
+    // 停止の理由になる（ホバーでリース全体が止まらないように）。down / up は座標を持つので、クリックは従来どおり入る。ドラッグ（押下中）は送る。
+    if (this.source === "group" && this.pressedButtons.size === 0) {
       return;
     }
     this.pendingMove = { clientX: event.clientX, clientY: event.clientY };
@@ -593,7 +675,7 @@ export class RemoScreenViewer extends LitElement {
         const point = move && this.inputEnabled ? this.streamPoint(move.clientX, move.clientY) : null;
         if (point) {
           this.lastPoint = point;
-          this.sendInput({ type: "input.mouse", action: "move", x: point.x, y: point.y });
+          this.sendMouse({ type: "input.mouse", action: "move", x: point.x, y: point.y });
         }
       });
     }
@@ -618,7 +700,7 @@ export class RemoScreenViewer extends LitElement {
     this.pressedButtons.add(button);
     // canvas の外で離されても up を送れるよう、window で受ける。
     window.addEventListener("mouseup", this.onWindowMouseUp);
-    this.sendInput({ type: "input.mouse", action: "down", x: point.x, y: point.y, button });
+    this.sendMouse({ type: "input.mouse", action: "down", x: point.x, y: point.y, button });
   };
 
   private onWindowMouseUp = (event: MouseEvent): void => {
@@ -629,7 +711,7 @@ export class RemoScreenViewer extends LitElement {
     const point = this.streamPoint(event.clientX, event.clientY) ?? this.lastPoint;
     this.lastPoint = point;
     this.pendingMove = null; // down と同じ理由
-    this.sendInput({ type: "input.mouse", action: "up", x: point.x, y: point.y, button });
+    this.sendMouse({ type: "input.mouse", action: "up", x: point.x, y: point.y, button });
     if (this.pressedButtons.size === 0) {
       window.removeEventListener("mouseup", this.onWindowMouseUp);
     }
@@ -645,7 +727,7 @@ export class RemoScreenViewer extends LitElement {
     if (!point || (dx === 0 && dy === 0)) {
       return;
     }
-    this.sendInput({ type: "input.mouse", action: "wheel", x: point.x, y: point.y, dx, dy });
+    this.sendMouse({ type: "input.mouse", action: "wheel", x: point.x, y: point.y, dx, dy });
   };
 
   private onContextMenu = (event: MouseEvent): void => {

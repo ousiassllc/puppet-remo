@@ -173,7 +173,7 @@ func errorFor(err error) errorMessage {
 		}
 	}
 	m := errorMessage{Type: typeError, Code: code, Message: msg}
-	if code == domain.CodeInputBlocked {
+	if code == domain.CodeInputBlocked || code == domain.CodeInvalidCoordinates {
 		m.Reason = detailString(err, "reason")
 	}
 	return m
@@ -203,6 +203,14 @@ type clientMessage struct {
 	Source *string `json:"source"`
 
 	// input.mouse
+	//
+	// OX・OY・W・H は、グループ源で座標 (x, y) を読んだ画像の原点と大きさ（クライアントが最後に適用した config・フレームのもの。#157）。
+	// 4 つ揃っていて、サーバーの今の画像の原点・大きさと違えば、座標はもう古いので注入しない（stale_frame。停止にはしない）。省けば検査しない
+	// （モニター源・古いクライアント）。
+	OX     *int     `json:"ox"`
+	OY     *int     `json:"oy"`
+	W      *int     `json:"w"`
+	H      *int     `json:"h"`
 	Action string   `json:"action"`
 	X      *int     `json:"x"`
 	Y      *int     `json:"y"`
@@ -323,4 +331,22 @@ func (m clientMessage) keyOp() (domain.Op, error) {
 		mods = append(mods, mod)
 	}
 	return domain.KeyEvent{Action: a, Code: m.Code, Key: m.Key, Mods: mods}, nil
+}
+
+// frameRef は入力が読んだグループ源の画像の原点と大きさ（clientMessage の ox・oy・w・h）。無ければ nil。1〜3 個だけ付いているメッセージは
+// errInvalidMessage（4 つ揃えて送る契約）。
+func (m clientMessage) frameRef() (*groupGeom, error) {
+	n := 0
+	for _, p := range []*int{m.OX, m.OY, m.W, m.H} {
+		if p != nil {
+			n++
+		}
+	}
+	switch n {
+	case 0:
+		return nil, nil
+	case 4:
+		return &groupGeom{known: true, width: *m.W, height: *m.H, origin: domain.Point{X: *m.OX, Y: *m.OY}}, nil
+	}
+	return nil, errInvalidMessage
 }
