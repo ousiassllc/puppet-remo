@@ -233,11 +233,13 @@ func createForeign(hinst, owner uintptr, x, y, w, h int) bool {
 }
 
 func appendMenu(menu uintptr, flags uint32, id uintptr, text string) {
-	var p uintptr
-	if text != "" {
-		p = uintptr(unsafe.Pointer(utf16Ptr(text)))
+	if text == "" {
+		_, _, _ = pAppendMenuW.Call(menu, uintptr(flags), id, 0)
+		return
 	}
-	_, _, _ = pAppendMenuW.Call(menu, uintptr(flags), id, p)
+	p := utf16Ptr(text) // Call の引数式の中で uintptr にして、呼び出しの間 p を生かしておく
+	_, _, _ = pAppendMenuW.Call(menu, uintptr(flags), id, uintptr(unsafe.Pointer(p)))
+	runtime.KeepAlive(p)
 }
 
 // --- ウィンドウプロシージャ ---
