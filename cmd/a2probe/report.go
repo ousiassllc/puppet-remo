@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"slices"
 	"strings"
@@ -82,16 +84,20 @@ type CaptureFact struct {
 
 // Report は 1 回の実行の全記録。
 type Report struct {
-	Version  string            `json:"version"`
-	Env      map[string]string `json:"env"`
-	Checks   []Check           `json:"checks"`
-	Windows  []WindowFact      `json:"windows"`
-	Captures []CaptureFact     `json:"captures"`
-	Notes    []string          `json:"notes,omitempty"`
+	Version string `json:"version"`
+	// Gate は、この結果が成立性ゲート（S1〜S3）の最終合格ではないことを機械可読に示す（fixture だけの部分測定。製品のスコープ付き入力と
+	// 実アプリでの確認は別の手順）。checks の PASS をゲートの合格と読まないための印で、常に GateFinal=false。
+	GateFinal bool              `json:"gate_final"`
+	GateNote  string            `json:"gate_note"`
+	Env       map[string]string `json:"env"`
+	Checks    []Check           `json:"checks"`
+	Windows   []WindowFact      `json:"windows"`
+	Captures  []CaptureFact     `json:"captures"`
+	Notes     []string          `json:"notes,omitempty"`
 }
 
 func newReport() *Report {
-	return &Report{Version: probeVersion, Env: map[string]string{}}
+	return &Report{Version: probeVersion, GateFinal: false, GateNote: gateNote, Env: map[string]string{}}
 }
 
 // Add は検査を 1 件足す。
@@ -152,3 +158,15 @@ func (r *Report) Text() string {
 }
 
 func sortedKeys(m map[string]string) []string { return slices.Sorted(maps.Keys(m)) }
+
+// gateNote は result.json の gate_note。
+const gateNote = "fixture だけの部分測定。S1〜S3（製品のスコープ付き入力＋実アプリでの表示と操作の完了）の最終合格ではない。checks の PASS をゲートの合格として扱わない"
+
+// errText は err の文字列から、ファイルのパス（ユーザー名を含みうる）を除く。report.txt・result.json に利用者の環境のパスを書かないため。
+func errText(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Op + ": " + pe.Err.Error()
+	}
+	return err.Error()
+}

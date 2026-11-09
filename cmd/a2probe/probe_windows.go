@@ -143,7 +143,8 @@ func (p *prober) cleanup() {
 	p.mainF.quit()
 	if p.saveDir != "" {
 		if err := os.RemoveAll(p.saveDir); err != nil {
-			p.rep.Note("一時フォルダーの削除に失敗（手で削除する）: %v", err)
+			p.rep.Note("一時フォルダーの削除に失敗（手で削除する。パスは標準エラーに出した）: %s", errText(err))
+			fmt.Fprintln(os.Stderr, "削除できなかった一時フォルダー:", p.saveDir)
 		}
 	}
 }
@@ -504,12 +505,12 @@ func (p *prober) writePNG(name string, img *image.RGBA) string {
 	}
 	f, err := os.OpenFile(filepath.Join(p.out, file), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		p.rep.Note("PNG を書けない（%s）: %v", name, err)
+		p.rep.Note("PNG を書けない（%s）: %s", name, errText(err))
 		return ""
 	}
 	defer func() { _ = f.Close() }()
 	if err := png.Encode(f, opaque); err != nil {
-		p.rep.Note("PNG のエンコードに失敗（%s）: %v", name, err)
+		p.rep.Note("PNG のエンコードに失敗（%s）: %s", name, errText(err))
 		return ""
 	}
 	return file

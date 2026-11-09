@@ -173,11 +173,11 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | ビルド（開発機） | `GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o a2probe.exe ./cmd/a2probe`（約 3.5 MB。cgo なし）。`sha256sum a2probe.exe` を控え、受け取ったあとで照合する |
 | 実行（Windows。非昇格の PowerShell） | `.\a2probe.exe probe --out "$env:TEMP\a2probe-out-1"`（全体 120 秒で打ち切る。`--monitor N` でテスト窓を置くモニターを選ぶ。4K・混在 DPI・負の原点の確認は、モニターを変えてもう一度実行する） |
 | 出す窓 | T「A2 Target」（メニューバー「ファイル」「色」・標準の `EDIT` 子コントロール）、同一プロセスの無関係な窓（Decoy・Blank・Black の 3 枚）、別プロセスの最前面・非アクティブのマゼンタ一色の窓（interferer。メニューや T に重ねる）、別プロセスが T に所有された窓（作れなければ SKIP）。保存ダイアログは `GetSaveFileNameW`（T が所有する同一プロセス）。専用の一時フォルダーの `a2probe-*.a2p` だけを書く |
-| 触れるもの・触れないもの | 画面に上記の窓が出て、前面を奪う（約 1〜2 分）。**マウス・キーボードは動かさない**（グローバル入力・`SendInput`・カーソル移動なし。fixture へはウィンドウメッセージだけ）。実行中は触らない。**撮るのは READY の PID/HWND を OS の事実と照合した fixture の窓だけ**（`PrintWindow` をメモリ DC へ。画面の DC・`BitBlt`・モニター撮影は使わない）。他アプリの窓のタイトル・文書・件数は読まない・書かない |
+| 触れるもの・触れないもの | 画面に上記の窓が出て、前面を奪う（約 1〜2 分）。**マウス・キーボードは動かさない**（グローバル入力・`SendInput`・カーソル移動なし。fixture へはウィンドウメッセージだけ）。実行中は触らない。**撮るのは READY の PID/HWND を OS の事実と照合した fixture の窓だけ**（`PrintWindow` をメモリ DC へ。画面の DC・`BitBlt`・モニター撮影は使わない）。他アプリの窓のタイトル・文書・件数は**記録しない・撮らない・出力しない**（製品の `WindowManager`（`ListAll`・`At`・`Foreground`）を使うので、メモリ上では全ウィンドウを列挙し、タイトルとプロセス名も OS から読む。出力・撮影・照合に使うのは fixture の PID/HWND の窓だけで、それ以外の情報は捨てる） |
 | ネットワーク | 使わない（ソケットを開くコードなし。fixture との通信は標準入出力）。`x/sys/windows` 経由で `net` をリンクするが呼ばない |
 | 出力 | `report.txt`（PASS / FAIL / INFO / SKIP の表と S1〜S3 の部分結果）、`result.json`、fixture の窓の PNG（`t-baseline`・`menu-*`・`dialog`・合成画像 `compose-*`）。他アプリは写らない |
 | 終了コード | 0: FAIL なし / 1: 測定の結果 FAIL あり（成立しなかった事実。ゲートの根拠として持ち帰る）/ 2: 引数 / 3: 対話デスクトップなし（実行しない）/ 4: ツールの失敗 |
-| 後片づけ | 終了時に fixture の窓をすべて閉じ、一時フォルダー（`%TEMP%\a2probe-<日時>-<乱数>`）を消す（消せなければ report の記録に出る）。残る場合は、そのフォルダー・`a2probe.exe`・出力フォルダーだけを削除する。**OS が共通ダイアログの履歴（`ComDlg32` の `LastVisitedPidlMRU` / `OpenSavePidlMRU` の `a2p`・「最近使った項目」）に書くことがある。調べない・消さない**（消すなら別の OK を得てから） |
+| 後片づけ | 終了時に fixture の窓をすべて閉じ、一時フォルダー（`%TEMP%\a2probe-<日時>-<乱数>`）を消す（消せなければ report の記録に出る）。残る場合は、そのフォルダー・`a2probe.exe`・出力フォルダーだけを削除する。**保存ダイアログは `OFN_DONTADDTORECENT` で開くので「最近使った項目」にはリンクを足さないが、OS が共通ダイアログの履歴（`ComDlg32` の `LastVisitedPidlMRU`（`a2probe.exe` と最後に開いたフォルダー）・`OpenSavePidlMRU` の `a2p`）に書くことは止められない。調べない・消さない**（消すなら別の OK を得てから） |
 | 異常時 | fixture が残ったら、タスクマネージャーで `a2probe.exe` を終了する（fixture は標準入力が閉じる・150 秒で自分から終了する） |
 
 | # | 測るもの | 合格（提案値） | 不合格・SKIP の意味 |
@@ -195,6 +195,12 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | M10 | 実機の前面・フォーカス先・座標が `CheckFocus`・`CheckHit` を通る | 通る | 通らなければ、スコープ付きの入力はそのメンバーへ入らない（S1〜S3 は成り立たない） |
 
 **読み方（部分結果）:** プローブは fixture でのメッセージ駆動の結果で、**S1〜S3 の最終合格ではない**（代表アプリ・スコープ付きの実入力は別）。M3・M4 が全部合格なら PrintWindow で進める見込みが立つ。メニュー・ダイアログの M3 が一部不成立なら、そのメンバーに限って Graphics Capture のウィンドウ単位キャプチャを同じ項目（M3・M4）で測る。M4 で他アプリの画素が出た方式は採用しない。M1 に想定外の `related_unverifiable` が出る、または両方式とも不成立の場合は、完了扱いにせず止め、S1〜S3 のどれかを外す判断は悠太さん（りお経由）に相談する。
+
+**`-tags smoke` の Go テスト**: `internal/platform/windows/smoke_group_test.go` の `TestSmokeGrabGroupFailsClosed`（`go test -tags smoke -run TestSmokeGrabGroupFailsClosed -v ./internal/platform/windows/`）は、存在しない HWND・同一性の値が揃わない参照を `GrabGroup` に渡し、すべて `gone`・画像 `nil`（画面のコピーで補わない）になることを確かめる。他のウィンドウの画素は読まず、入力・撮影・書き込みもしない。実ウィンドウの撮影（メニュー・ダイアログが写ること）は上の `a2probe`（専用 fixture）が測る。代表アプリ（メモ帳など）の撮影を `-tags smoke` に置かないのは、無関係なウィンドウの画素を読まないため。
+
+**対象外（probe の S3 の範囲）**: probe の保存ダイアログは旧 API（`GetSaveFileNameW`）の同一プロセスのダイアログだけ。Win11 の新しいメモ帳（XAML のメニュー・`IFileSaveDialog`）は probe では測れず、実アプリの確認（§3.10.2）で見る。
+
+**`result.json` の読み方**: `gate_final` は常に `false`（fixture だけの部分測定。S1〜S3 の最終合格ではない）。`checks` の PASS をゲートの合格として扱わない。
 
 #### 3.10.2 実アプリ・ビューア・CUA の確認（プローブの合格後。未確認）
 

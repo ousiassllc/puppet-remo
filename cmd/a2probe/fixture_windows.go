@@ -382,7 +382,7 @@ func openSaveDialog(owner uintptr) {
 		MaxFile:     uint32(len(buf)),
 		InitialDir:  utf16Ptr(fx.saveDir),
 		Title:       utf16Ptr("A2 Probe Save"),
-		Flags:       0x00080000 | 0x00000008 | 0x00000002 | 0x00000800 | 0x00000004, // EXPLORER | NOCHANGEDIR | OVERWRITEPROMPT | PATHMUSTEXIST | HIDEREADONLY
+		Flags:       0x00080000 | 0x00000008 | 0x00000002 | 0x00000800 | 0x00000004 | 0x02000000, // EXPLORER | NOCHANGEDIR | OVERWRITEPROMPT | PATHMUSTEXIST | HIDEREADONLY | DONTADDTORECENT（「最近使った項目」にリンクを残さない。共通ダイアログの MRU は OS が書く）
 		DefExt:      utf16Ptr("a2p"),
 	}
 	ofn.StructSize = uint32(unsafe.Sizeof(*ofn))

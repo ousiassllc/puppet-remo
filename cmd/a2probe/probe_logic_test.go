@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
+	"io/fs"
 	"reflect"
 	"strings"
 	"testing"
@@ -168,5 +171,36 @@ func TestMagentaToleranceBoundary(t *testing.T) {
 	img.SetRGBA(2, 0, color.RGBA{R: 200, G: 40, B: 40, A: 255})
 	if got := analyzePixels(img, nil).Magenta; got != 1 {
 		t.Errorf("Magenta = %d, want 1（許容差ちょうどだけ数える）", got)
+	}
+}
+
+// result.json は、fixture だけの部分測定であってゲートの最終合格ではないことを機械可読に持つ（checks の PASS をゲートの合格と読ませない）。
+func TestResultJSONNeverClaimsTheFinalGate(t *testing.T) {
+	r := newReport()
+	r.Add("M1", "x", StatusPass, "ok")
+	js, err := r.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		GateFinal *bool  `json:"gate_final"`
+		GateNote  string `json:"gate_note"`
+	}
+	if err := json.Unmarshal(js, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.GateFinal == nil || *got.GateFinal || !strings.Contains(got.GateNote, "最終合格ではない") {
+		t.Errorf("gate_final/gate_note = %v / %q, want an explicit false and the note", got.GateFinal, got.GateNote)
+	}
+}
+
+// ファイルのエラーの文字列に、ユーザー名を含みうるパスを入れない。
+func TestErrTextDropsThePath(t *testing.T) {
+	err := &fs.PathError{Op: "open", Path: `C:\Users\someone\AppData\Local\Temp\a2probe-out\01.png`, Err: errors.New("access denied")}
+	if got := errText(err); got != "open: access denied" || strings.Contains(got, "someone") {
+		t.Errorf("errText = %q", got)
+	}
+	if got := errText(errors.New("plain")); got != "plain" {
+		t.Errorf("errText(plain) = %q", got)
 	}
 }

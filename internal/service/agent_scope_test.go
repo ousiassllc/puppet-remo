@@ -307,6 +307,10 @@ func TestAgentScopedCaptureFailuresStop(t *testing.T) {
 		if ae.model.Calls() != 1 {
 			t.Errorf("model calls = %d, want 1 (no second call after the failed capture)", ae.model.Calls())
 		}
+		// 中断のあとに撮影が失敗しても、実行・未実行の件数は監査に残る（中断した Op は agent.step の行を残さないので、この行だけが記録）。
+		if y := batchYields(t, ae, got.ID); len(y) != 1 || y[0]["executed"] != float64(1) || y[0]["not_executed"] != float64(1) || y[0]["reason"] != "group_changed" {
+			t.Errorf("batch_yielded = %v, want one row (executed 1, not_executed 1) even though the capture after it failed", y)
+		}
 		ae.requireNoMonitorCapture(t)
 	})
 }

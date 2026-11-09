@@ -137,13 +137,18 @@ func (r *run) loop() outcome {
 		if err != nil {
 			return r.failure(err)
 		}
+		// 中断の監査は撮影の前に書く: 中断した直後のメニューが撮れずに失敗しても、実行・一部実行・未実行の件数が監査に残る
+		// （中断された Op は agent.step の行を残さないので、部分的に注入した入力の記録はこの行だけ）。
+		if yielded {
+			r.auditYield(ctx, executed, len(out.Actions), partial)
+		}
 		shot, err := r.observeScreen(ctx)
 		if err != nil {
 			return r.failure(err)
 		}
 		r.hist.AddComputerOutput(out.CallID, shot, out.SafetyChecks)
 		if yielded {
-			r.noteYield(ctx, executed, len(out.Actions), partial)
+			r.hist.AddUserNote(yieldNote(executed, len(out.Actions), partial)) // computer_call_output の直後
 		}
 	}
 }
@@ -167,7 +172,6 @@ func (r *run) runActions(ctx context.Context, ops []domain.Op) (executed int, yi
 			if op, err = r.scope.convert(op); err != nil {
 				return executed, false, false, err
 			}
-			// 中断された操作の agent.step の行は、拒否の行に見えないよう、観測が detail.reason = group_changed を足す（auditResult も参照）。
 			step.ExtraDetail = map[string]any{"target_window_id": r.task.TargetWindowID}
 			actx = withGroupObserver(WithPhysicalCoords(actx), r.scope.observe)
 		}
@@ -182,10 +186,8 @@ func (r *run) runActions(ctx context.Context, ops []domain.Op) (executed int, yi
 	return executed, false, false, nil
 }
 
-// noteYield は中断（対象グループの変化）を、モデルへの user メッセージ（未実行・一部だけ実行を伝える）と監査 agent.batch_yielded に残す。
-// computer_call_output は同じ call_id に 1 件だけ（新しい画像つき。呼び出し側が追加済み）で、メッセージはその直後に置く。
-func (r *run) noteYield(ctx context.Context, executed, total int, partial bool) {
-	r.hist.AddUserNote(yieldNote(executed, total, partial))
+// auditYield は中断（対象グループの変化）を監査 agent.batch_yielded に残す（実行・一部実行・未実行の件数と理由。タイトル・入力文字は含めない）。
+func (r *run) auditYield(ctx context.Context, executed, total int, partial bool) {
 	d := r.scope.diff
 	notExecuted := total - executed
 	detail := map[string]any{

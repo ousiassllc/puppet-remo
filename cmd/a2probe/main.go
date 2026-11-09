@@ -17,7 +17,7 @@ import (
 )
 
 const usage = `usage:
-  a2probe probe [--out DIR] [--timeout 120s]     成立性の測定を実行する（既定の出力先: %TEMP%\a2probe-out-<日時>）
+  a2probe probe [--out DIR] [--timeout 120s] [--monitor N]   成立性の測定を実行する（既定の出力先: %TEMP%\a2probe-out-<日時>。N は fixture を置くモニターの Index。既定はプライマリ）
   a2probe fixture --role=main|interferer|foreign ...   probe が内部で起動する（直接は使わない）
   a2probe version`
 
