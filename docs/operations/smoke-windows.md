@@ -177,7 +177,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | ネットワーク | 使わない（ソケットを開くコードなし。fixture との通信は標準入出力）。`x/sys/windows` 経由で `net` をリンクするが呼ばない |
 | 出力 | `report.txt`（PASS / FAIL / INFO / SKIP の表と S1〜S3 の部分結果）、`result.json`、fixture の窓の PNG（`t-baseline`・`menu-*`・`dialog`・合成画像 `compose-*`）。他アプリは写らない |
 | 終了コード | 0: FAIL なし / 1: 測定の結果 FAIL あり（成立しなかった事実。ゲートの根拠として持ち帰る）/ 2: 引数 / 3: 対話デスクトップなし（実行しない）/ 4: ツールの失敗 |
-| 後片づけ | 終了時に fixture の窓をすべて閉じ、一時フォルダー（`%TEMP%\a2probe-<日時>-<乱数>`）を消す（消せなければ、標準エラーにそのパスが出る。report にはパスを書かない）。残る場合は、そのフォルダー・`a2probe.exe`・出力フォルダーだけを削除する。**保存ダイアログは `OFN_DONTADDTORECENT` で開く（「最近使った項目」にリンクを足さないはずだが、**実機では未観測**）。ただしOS が共通ダイアログの履歴（`ComDlg32` の `LastVisitedPidlMRU`（`a2probe.exe` と最後に開いたフォルダー）・`OpenSavePidlMRU` の `a2p`）に書くことは止められない。調べない・消さない**（消すなら別の OK を得てから） |
+| 後片づけ | 終了時に fixture の窓をすべて閉じ、一時フォルダー（`%TEMP%\a2probe-<日時>-<乱数>`）を消す（消せなければ、標準エラーにそのパスが出る。report にはパスを書かない）。残る場合は、そのフォルダー・`a2probe.exe`・出力フォルダーだけを削除する。**保存ダイアログは `OFN_DONTADDTORECENT` で開く（「最近使った項目」にリンクを足さないはずだが、実機では未観測）。ただし OS が共通ダイアログの履歴（`ComDlg32` の `LastVisitedPidlMRU`（`a2probe.exe` と最後に開いたフォルダー）・`OpenSavePidlMRU` の `a2p`）に書くことは止められない。調べない・消さない**（消すなら別の OK を得てから） |
 | 異常時 | fixture が残ったら、タスクマネージャーで `a2probe.exe` を終了する（fixture は標準入力が閉じる・150 秒で自分から終了する） |
 
 | # | 測るもの | 合格（提案値） | 不合格・SKIP の意味 |
