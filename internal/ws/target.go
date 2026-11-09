@@ -123,6 +123,16 @@ func (c *conn) applySource(msg clientMessage, cfg service.ViewerConfig) (service
 	return cfg, nil
 }
 
+// rejectClipboardRead は clipboard.read（拒否専用の型）への応答。スコープ付きリースの保持者（scopedHolder。配信の源がモニターでも保持者）には、
+// clipboard_out_of_scope の error を直接返す（Control・platform は呼ばない。noteBlocked も通さない: 停止のバナーの理由・blocked_by を書き換えない）。
+// 接続は維持する。保持者でないセッション（スコープ無し・他のビューアが保持）は、従来どおり未知の type（4400）で、読み取りの成功経路は無い。
+func (c *conn) rejectClipboardRead() error {
+	if _, ok := c.scopedHolder(); !ok {
+		return errInvalidMessage
+	}
+	return c.writeJSON(errorFor(service.ErrClipboardOutOfScope()))
+}
+
 // scopedHolder はこのビューアが保持しているスコープ付きのリース。
 func (c *conn) scopedHolder() (service.Holder, bool) {
 	h, ok := c.h.cfg.Leases.Holder()

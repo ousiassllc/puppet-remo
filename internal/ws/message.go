@@ -31,6 +31,9 @@ const (
 	typeClientPing   = "ping"
 	// typeClientTargetResume は停止（halted）中のスコープ付きリースの、保持者の明示的な再開（Control.ResumeTarget。#157）。
 	typeClientTargetResume = "target.resume"
+	// typeClientClipboardRead はクリップボードの読み取り要求。**拒否専用**（成功の応答は無い）: スコープ付きリースの保持者には
+	// clipboard_out_of_scope の error を返す（#157。接続は維持）。保持者でないセッションでは未知の type として扱う（4400）。
+	typeClientClipboardRead = "clipboard.read"
 )
 
 // 配信の源（ready・config の source。API 仕様 §5.3）。

@@ -26,6 +26,12 @@ type scopeStop struct {
 // blocked_by{window_id, process, pid, reason}。ウィンドウのタイトルは入れない。
 func (s scopeStop) err() error { return scopeBlocked(s.reason, s.by) }
 
+// ErrClipboardOutOfScope は、スコープ付きリースの保持者のクリップボード読み取り要求への拒否（input_blocked・detail.reason = clipboard_out_of_scope）を返す。
+// 受け手（ws の clipboard.read）が、Control も platform も呼ばずに拒否の理由だけを作るために使う（scopeGate と同じ規則・同じ理由コード）。
+func ErrClipboardOutOfScope() error {
+	return scopeBlocked(domain.ReasonClipboardOutOfScope, domain.BlockedBy{})
+}
+
 func scopeBlocked(reason domain.GroupReason, by domain.BlockedBy) *domain.Error {
 	e := domain.ErrInputBlocked.
 		WithMsg("input is outside the lease target scope: "+string(reason)).

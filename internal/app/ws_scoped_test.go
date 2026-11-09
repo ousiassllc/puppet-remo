@@ -503,15 +503,98 @@ func TestScopedClipboardReadIsRejectedByTheServer(t *testing.T) {
 	if n := len(p.clipboard.CallsTo("WriteText")); n != 1 {
 		t.Errorf("clipboard writes = %d, want 1", n)
 	}
-	// ws に読み取りのメッセージ型は無い（未知の type は 4400 で閉じる）。
+	// WebSocket の直接の読み取り要求（clipboard.read）: スコープ付きの保持者には理由付きの error を返し、接続は維持する。
+	// platform には一切触れない（ReadText 0 回。Control も通さないので監査の行も増えない）。成功の応答は無い。
 	v.send(map[string]any{"type": "clipboard.read"})
-	select {
-	case code := <-v.f.closed:
-		if code != 4400 {
-			t.Fatalf("closed with %d, want 4400", code)
+	m := v.f.errorMsg("input_blocked", "clipboard_out_of_scope")
+	if strings.Contains(mustJSON(t, m), "host-secret") {
+		t.Error("the clipboard content must not be sent")
+	}
+	v.requireAlive()
+	if n := len(p.clipboard.CallsTo("ReadText")); n != 0 {
+		t.Errorf("the platform clipboard was read %d times through the websocket, want 0", n)
+	}
+}
+
+// requireAlive は ping に pong が返る（接続が維持されている）こと。
+func (v *scopedViewer) requireAlive() {
+	v.t.Helper()
+	v.send(map[string]any{"type": "ping"})
+	v.f.expect("pong", "pong", func(map[string]any) bool { return true })
+}
+
+// clipboard.read の理由付き拒否は、スコープ付きリースの保持者がモニター表示に切り替えていても（配信の源がモニターでも）同じ。
+func TestScopedClipboardReadOverWebSocketIsRejectedInMonitorView(t *testing.T) {
+	e, p := newScopedEnv(t)
+	v := connectViewer(t, e, p)
+	v.selectTarget()
+	v.send(map[string]any{"type": "config", "source": "monitor"})
+	v.f.expect("config", "monitor config", func(m map[string]any) bool { return m["source"] == "monitor" })
+	p.clipboard.SetText("host-secret")
+	v.send(map[string]any{"type": "clipboard.read"})
+	v.f.errorMsg("input_blocked", "clipboard_out_of_scope")
+	v.requireAlive()
+	if n := len(p.clipboard.CallsTo("ReadText")); n != 0 {
+		t.Errorf("the platform clipboard was read %d times, want 0", n)
+	}
+}
+
+// 停止（halted）中でも理由は clipboard_out_of_scope（停止の理由・blocked_by のバナーは書き換えない）。接続は維持され、停止は解けない。
+func TestScopedClipboardReadOverWebSocketWhileHaltedKeepsTheBanner(t *testing.T) {
+	e, p := newScopedEnv(t)
+	v := connectViewer(t, e, p)
+	v.selectTarget()
+	p.windows.Add(domain.WindowInfo{
+		ID: "9001", Title: "other", Process: "other.exe", PID: 7000, ProcessStart: 7_000, Class: "OtherClass",
+		Rect: domain.Rect{X: 800, Y: 100, W: 300, H: 300}, Foreground: true,
+	})
+	v.key("KeyA")
+	v.f.errorMsg("input_blocked", "target_not_foreground")
+	v.f.targetWhere("halted", "target_not_foreground", func(m map[string]any) bool { return m["blocked_by"] != nil })
+
+	v.send(map[string]any{"type": "clipboard.read"})
+	v.f.errorMsg("input_blocked", "clipboard_out_of_scope")
+	v.requireAlive()
+	// 停止のバナーは変わらない: 次の入力の拒否でも target_halted のままで、clipboard_out_of_scope に書き換わっていない。
+	v.send(map[string]any{"type": "input.text", "text": "x"})
+	v.f.errorMsg("input_blocked", "target_halted")
+	if n := len(p.clipboard.CallsTo("ReadText")); n != 0 {
+		t.Errorf("the platform clipboard was read %d times, want 0", n)
+	}
+}
+
+// 理由付きの拒否は、スコープ付きリースの保持者だけ。保持者でないセッション（スコープ無し・他のビューアが保持）と、
+// 無関係な未知の type は今までどおり 4400 で閉じる（読み取りの成功経路は作らない）。
+func TestWebSocketClipboardReadOutsideTheScopedHolderIsStillAnUnknownType(t *testing.T) {
+	requireClosed4400 := func(t *testing.T, v *scopedViewer, what string) {
+		t.Helper()
+		select {
+		case code := <-v.f.closed:
+			if code != 4400 {
+				t.Fatalf("%s: closed with %d, want 4400", what, code)
+			}
+		case <-time.After(waitLimit):
+			t.Fatalf("%s: the connection was not closed", what)
 		}
-	case <-time.After(waitLimit):
-		t.Fatal("the connection was not closed for the unknown message type")
+	}
+	e, p := newScopedEnv(t)
+	p.clipboard.SetText("host-secret")
+
+	noLease := connectViewer(t, e, p) // リースを取っていない（スコープ無し）
+	noLease.send(map[string]any{"type": "clipboard.read"})
+	requireClosed4400(t, noLease, "no lease")
+
+	holder := connectViewer(t, e, p)
+	holder.selectTarget()
+	other := connectViewer(t, e, p) // 別のビューア（保持者ではない）
+	other.send(map[string]any{"type": "clipboard.read"})
+	requireClosed4400(t, other, "a viewer that does not hold the scoped lease")
+
+	holder.send(map[string]any{"type": "clipboard.fetch"}) // 名前の近い別の type は未知のまま
+	requireClosed4400(t, holder, "an unrelated unknown type")
+
+	if n := len(p.clipboard.CallsTo("ReadText")); n != 0 {
+		t.Errorf("the platform clipboard was read %d times, want 0", n)
 	}
 }
 

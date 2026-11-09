@@ -513,6 +513,8 @@ func (c *conn) handle(data []byte) error {
 		return c.input(op)
 	case typeClientTargetResume:
 		return c.resumeTarget()
+	case typeClientClipboardRead:
+		return c.rejectClipboardRead()
 	}
 	return errInvalidMessage
 }
