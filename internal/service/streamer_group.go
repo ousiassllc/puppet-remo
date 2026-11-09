@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/platform"
 )
 
 // このファイルは Streamer のグループ源（スコープ付きリースの対象ウィンドウ T と関連ウィンドウの合成画像。#157）。
@@ -38,44 +39,55 @@ type sourceFrame struct {
 	origin domain.Point
 }
 
-// watchFunc は源の撮影を始める。ctx の取り消しで流すチャネルを閉じる。
-type watchFunc func(ctx context.Context, fps int) (<-chan sourceFrame, <-chan error, error)
+// watched は源が流すチャネル。モニター源は Capturer.Watch のチャネルをそのまま mon に持ち（途中に転送の goroutine を挟まない。
+// 挟むと push が返っても run が受け取っていない窓ができ、間引きの挙動が変わる）、グループ源は grp を使う。使わない方は nil。
+// どちらも ctx の取り消しで閉じる。
+type watched struct {
+	mon  <-chan platform.Frame
+	grp  <-chan sourceFrame
+	errs <-chan error
+}
 
-func (s *streamer) watchFunc(src sourceKey) watchFunc {
-	if src.group() {
-		return func(ctx context.Context, fps int) (<-chan sourceFrame, <-chan error, error) {
-			return s.watchGroup(ctx, src, fps)
+// drain は取り消したあとの源のチャネルが閉じるまで読み捨てる（源は取り消し後にチャネルを閉じる）。
+func (w watched) drain() {
+	mon, grp := w.mon, w.grp
+	for mon != nil || grp != nil {
+		select {
+		case _, ok := <-mon:
+			if !ok {
+				mon = nil
+			}
+		case _, ok := <-grp:
+			if !ok {
+				grp = nil
+			}
 		}
-	}
-	return func(ctx context.Context, fps int) (<-chan sourceFrame, <-chan error, error) {
-		return s.watchMonitor(ctx, src.monitor, fps)
 	}
 }
 
-// watchMonitor は Capturer.Watch のコマを sourceFrame にして流す。
-func (s *streamer) watchMonitor(ctx context.Context, monitor, fps int) (<-chan sourceFrame, <-chan error, error) {
-	in, errs, err := s.cfg.Capturer.Watch(ctx, monitor, fps)
-	if err != nil {
-		return nil, nil, err
-	}
-	out := make(chan sourceFrame)
-	go func() {
-		defer close(out)
-		for fr := range in { // Capturer は取り消し後にチャネルを閉じる
-			select {
-			case out <- sourceFrame{img: fr.Image}:
-			case <-ctx.Done():
-			}
+// watchFunc は源の撮影を始める。ctx の取り消しで流すチャネルを閉じる。
+type watchFunc func(ctx context.Context, fps int) (watched, error)
+
+func (s *streamer) watchFunc(src sourceKey) watchFunc {
+	if src.group() {
+		return func(ctx context.Context, fps int) (watched, error) {
+			return s.watchGroup(ctx, src, fps)
 		}
-	}()
-	return out, errs, nil
+	}
+	return func(ctx context.Context, fps int) (watched, error) {
+		frames, errs, err := s.cfg.Capturer.Watch(ctx, src.monitor, fps)
+		if err != nil {
+			return watched{}, err
+		}
+		return watched{mon: frames, errs: errs}, nil
+	}
 }
 
 // watchGroup は fps の周期で GrabGroupFrame を呼び、撮れた合成画像を流す。失敗は流さず、閲覧者へ GroupStatus.Err で知らせて次の周期にやり直す。
 // 撮影の途中で fps が変わったら run が取り消して作り直す。
-func (s *streamer) watchGroup(ctx context.Context, src sourceKey, fps int) (<-chan sourceFrame, <-chan error, error) {
+func (s *streamer) watchGroup(ctx context.Context, src sourceKey, fps int) (watched, error) {
 	if s.cfg.Groups == nil {
-		return nil, nil, domain.ErrInvalidArgument.WithMsg("window groups cannot be streamed")
+		return watched{}, domain.ErrInvalidArgument.WithMsg("window groups cannot be streamed")
 	}
 	out := make(chan sourceFrame)
 	errs := make(chan error)
@@ -113,5 +125,5 @@ func (s *streamer) watchGroup(ctx context.Context, src sourceKey, fps int) (<-ch
 			}
 		}
 	}()
-	return out, errs, nil
+	return watched{grp: out, errs: errs}, nil
 }

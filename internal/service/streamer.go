@@ -379,7 +379,7 @@ func (s *streamer) startLocked(src sourceKey, fps int) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	watch := s.watchFunc(src)
 	watchCtx, watchCancel := context.WithCancel(ctx)
-	frames, errs, err := watch(watchCtx, fps)
+	w, err := watch(watchCtx, fps)
 	if err != nil {
 		watchCancel()
 		cancel()
@@ -391,7 +391,7 @@ func (s *streamer) startLocked(src sourceKey, fps int) error {
 		profiles: make(map[profileKey]*profile),
 	}
 	s.sources[src] = m
-	go m.run(frames, errs, watchCancel, fps)
+	go m.run(w, watchCancel, fps)
 	return nil
 }
 
@@ -481,11 +481,10 @@ type profile struct {
 	lastKey    time.Time // 最後にキーフレームを送った時刻
 }
 
-func (m *sourceStream) run(frames <-chan sourceFrame, errs <-chan error, watchCancel context.CancelFunc, fps int) {
+func (m *sourceStream) run(w watched, watchCancel context.CancelFunc, fps int) {
 	defer func() {
 		watchCancel()
-		for range frames { // 源は取り消し後にチャネルを閉じる。閉じるまで待ってから終わりにする
-		}
+		w.drain() // 源は取り消し後にチャネルを閉じる。閉じるまで待ってから終わりにする
 		m.finish()
 	}()
 	timer := time.NewTimer(time.Hour)
@@ -497,14 +496,19 @@ func (m *sourceStream) run(frames <-chan sourceFrame, errs <-chan error, watchCa
 		select {
 		case <-m.ctx.Done():
 			return
-		case fr, ok := <-frames:
+		case fr, ok := <-w.mon:
+			if !ok {
+				return
+			}
+			m.accept(sourceFrame{img: fr.Image})
+		case fr, ok := <-w.grp:
 			if !ok {
 				return
 			}
 			m.accept(fr)
-		case err, ok := <-errs:
+		case err, ok := <-w.errs:
 			if !ok {
-				errs = nil
+				w.errs = nil
 				continue
 			}
 			m.s.cfg.Logger.Warn("screen capture reported an error", "source", m.key.String(), "error", err)
@@ -512,16 +516,15 @@ func (m *sourceStream) run(frames <-chan sourceFrame, errs <-chan error, watchCa
 		case <-m.wake:
 			if want := m.s.captureFPS(m.key); want > 0 && want != fps {
 				watchCancel()
-				for range frames {
-				}
+				w.drain()
 				watchCtx, cancel := context.WithCancel(m.ctx)
-				nf, ne, err := m.watch(watchCtx, want)
+				nw, err := m.watch(watchCtx, want)
 				if err != nil {
 					cancel()
 					m.s.cfg.Logger.Error("restart screen capture failed", "source", m.key.String(), "error", err)
 					return
 				}
-				frames, errs, watchCancel, fps = nf, ne, cancel, want
+				w, watchCancel, fps = nw, cancel, want
 			}
 		case <-timerC:
 		}
