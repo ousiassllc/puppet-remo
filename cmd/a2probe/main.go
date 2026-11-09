@@ -42,4 +42,4 @@ func main() {
 }
 
 // probeVersion は出力（report.txt・result.json）に書くプローブの版。測定の項目や判定を変えたら上げる。
-const probeVersion = "1"
+const probeVersion = "2"

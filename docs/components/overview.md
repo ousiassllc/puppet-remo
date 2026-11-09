@@ -819,7 +819,7 @@ ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error) // 保
 
 6. **エージェントの観測（#158。`run_task` の `window_id`。§5.6）**: `Control.Do` は ctx に載せた 2 つの部品を読む。(a) `WithPhysicalCoords`: 座標は呼び出し側（エージェント）が基準 S の原点・縮小率で物理座標へ変換済みなので、縮小座標の変換をしない（モニター上にあるかの検査は残る）。(b) グループの観測（`withGroupObserver`）: `check` が `ResolveGroup` で G を求め直した直後（前面・座標の検証より先）に呼ばれ、基準との差を判定する — T または既存メンバーの矩形が違えば `target_moved`、同一性が違えば `target_replaced`（どちらも通常の停止。`halt`）、メンバーの増減だけなら以後を注入せず停止もしない `ErrGroupChanged`（`reason = group_changed`。操作がすでに一部を注入していれば `detail.partial = true`。エージェントが中断として扱う）。観測がある操作は、撮影の事前確認（上の 3）を省く（バッチの中で画像を撮らない。次の撮影はエージェントが `GrabGroupFrame` で行う）。観測は 1 回の操作の複数回の注入の間にも毎回呼ばれる。
 
-**検証状況**: A-1（上記。偽 platform = `FakeWindows`・`FakeCapturer`・`FakeApp`・`FakeClipboard` で検証）は実装済み。**Windows 実機の A-2（成功条件 S1〜S3 = メニューバーのメニュー・右クリックメニュー・同一プロセスの保存ダイアログ）は検証環境がなく「検証待ち」**で、完了・合格とは扱わない。Windows には `GroupCapturer` の実装が**ない**ので、実機のスコープ付きのリースは事前確認で `capture_unavailable` となり安全に停止する（fail closed）。デスクトップの切り抜き・モニター撮影・マスクで補う実装は置かない。
+**検証状況**: A-1（上記。偽 platform = `FakeWindows`・`FakeCapturer`・`FakeApp`・`FakeClipboard` で検証）は実装済み。**Windows 実機の A-2（成功条件 S1〜S3 = メニューバーのメニュー・右クリックメニュー・同一プロセスの保存ダイアログ）は検証環境がなく「検証待ち」**で、完了・合格とは扱わない。Windows の `GroupCapturer`（`GrabGroup`。PrintWindow）は実装済みだが**実機未確認**（`cmd/a2probe` は fixture だけの部分測定で、S1〜S3 の合格ではない）。撮れないときは `capture_unavailable` / `capture_member_unavailable` で安全に停止する（fail closed）。デスクトップの切り抜き・モニター撮影・マスクで補う実装は置かない。
 
 ### 5.5 Judge
 

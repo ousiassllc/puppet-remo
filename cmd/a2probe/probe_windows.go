@@ -99,7 +99,7 @@ func runProbe(args []string) int {
 		return p.run(*monitor)
 	}()
 	if runErr != nil {
-		p.rep.Add("RUN", "測定の実行", StatusFail, "%v", runErr)
+		p.rep.Add("RUN", "測定の実行", StatusFail, "%s", errText(runErr))
 	}
 	if ctx.Err() != nil {
 		p.rep.Add("RUN.timeout", "全体の制限時間", StatusFail, "制限時間（%v）に達した。以降の項目は測れていない: %v", *timeout, ctx.Err())
@@ -203,7 +203,7 @@ func (p *prober) run(monitorIdx int) error {
 		return err
 	}
 	if err := p.startForeign(tx+w+20, ty+h/2); err != nil {
-		p.rep.Add("M1.foreign", "別プロセスが T に所有された窓", StatusSkip, "fixture を起動できなかった: %v", err)
+		p.rep.Add("M1.foreign", "別プロセスが T に所有された窓", StatusSkip, "fixture を起動できなかった: %s", errText(err))
 	}
 
 	p.baseline()
