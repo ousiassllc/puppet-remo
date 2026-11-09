@@ -687,6 +687,10 @@ type Control interface {
     ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
     // #156・#157・#158（§5.4.2）。T と、その時点の対象グループ G を撮って合成した画像（GroupFrame）。撮れないときはモニター撮影に切り替えず、
     // ErrInputBlocked（capture_unavailable / capture_member_unavailable / target_*）を返す。ビューアの配信とエージェントの観測が使う。
+    // #156 の「GrabGroup / WatchGroup」のうち、継続撮影（WatchGroup）に当たるのは platform の API ではなく service の `streamer.watchGroup`
+    // （fps の周期でこの GrabGroupFrame を呼ぶ。コマごとに G を再判定するので、メニュー・ダイアログの開閉によるメンバーの増減が反映される。
+    // メンバーの一覧を渡して撮る platform の連続撮影は、G が変わるたびに作り直しになるため置かない）。画像の規則（メンバーの外接矩形・空のキャンバス・
+    // 他の画素なし・モニター撮影への切り替えなし）は 1 枚撮りと同じ。
     GrabGroupFrame(ctx context.Context, ref domain.WindowRef) (GroupFrame, error)
 }
 ```
