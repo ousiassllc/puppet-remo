@@ -115,16 +115,14 @@ func RunE2E(ctx context.Context, opts E2EOptions) error {
 	srv := &e2eServer{db: db, whois: tailnet.NewE2EWhoIs(e2eUnregisteredIdentity), input: platformtest.NewFakeInput()}
 	secrets := platformtest.NewFakeSecretStore()
 	clip := platformtest.NewFakeClipboard()
-	// 前面のウィンドウが無いと、入力は「ホストの画面を操作できません」で拒否される。
-	hostWindows := platformtest.NewFakeWindows(domain.WindowInfo{
-		ID: "1001", Title: "Notes - e2e-notes.txt", Process: "notes.exe", PID: 4242, Foreground: true,
-		Rect: domain.Rect{X: 0, Y: 0, W: 640, H: 480},
-	})
+	// 偽のデスクトップ（e2e_desktop.go）。前面のウィンドウ（偽アプリ T）が無いと、入力は「ホストの画面を操作できません」で拒否される。
+	srv.desktop = newE2EDesktop(srv.input, clip)
+	hostWindows := srv.desktop.windows
 	a, err := New(ctx, Config{
 		Repo:    db,
 		Windows: NewFakeWindows(),
 		Platform: Platform{
-			Capturer: platformtest.NewFakeCapturer(), Input: srv.input, Windows: hostWindows, Clipboard: clip,
+			Capturer: srv.desktop.capturer, Input: srv.desktop.app, Windows: hostWindows, Clipboard: clip,
 			UI: platformtest.NewFakeUIAutomation(hostWindows), Launcher: platformtest.NewFakeAppLauncher(),
 			FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(), Secrets: secrets,
 			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
@@ -187,6 +185,8 @@ type e2eServer struct {
 	db    *repository.DB
 	whois *tailnet.E2EWhoIs
 	input *platformtest.FakeInput
+	// desktop は偽のデスクトップ（偽アプリ・背景のウィンドウ。e2e_desktop.go）。
+	desktop *e2eDesktop
 
 	mu sync.Mutex // reset の直列化
 }
@@ -212,6 +212,7 @@ func (s *e2eServer) handler() http.Handler {
 	mux.HandleFunc("POST /killswitch/release", s.killSwitchRelease)
 	mux.HandleFunc("GET /inputs", s.inputs)
 	mux.HandleFunc("POST /reset", s.reset)
+	s.desktopHandlers(mux)
 	return loopbackOnly(mux)
 }
 
@@ -409,6 +410,7 @@ func (s *e2eServer) reset(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.input.Reset()
+	s.desktop.reset()
 	s.whois.Set(e2eUnregisteredIdentity)
 	if err := s.seed(ctx); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)

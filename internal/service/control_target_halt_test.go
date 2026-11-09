@@ -174,7 +174,7 @@ func TestScopedCaptureFailureHaltsWithoutInjectionOrMonitorCapture(t *testing.T)
 		}, domain.ReasonCaptureMemberUnavailable, platformtest.FakeAppMenuID},
 		{"GrabGroup 自体が失敗する", func(_ *testing.T, te *tgtEnv) { te.capturer.SetError("GrabGroup", errors.New("desktop gone")) },
 			domain.ReasonCaptureUnavailable, platformtest.FakeAppMainID},
-		{"Capturer が GroupCapturer を持たない（Windows の現状）", func(_ *testing.T, te *tgtEnv) { te.useControl(te.app, bareCapturer{te.capturer}) },
+		{"Capturer が GroupCapturer を持たない", func(_ *testing.T, te *tgtEnv) { te.useControl(te.app, bareCapturer{te.capturer}) },
 			domain.ReasonCaptureUnavailable, platformtest.FakeAppMainID},
 	}
 	for _, tt := range tests {

@@ -76,6 +76,8 @@ type TaskDetail struct {
 	FastSteps      int
 	OpenAISteps    int
 	Handoff        string // 引き継ぎ理由の説明（無ければ空）
+	Target         string // 対象ウィンドウ（プロセス名・pid・window_id。タイトルは載せない）。スコープなしは空
+	CapturePartial string // 所有関係を確かめられず画像から除外したウィンドウがあったことの説明。無ければ空
 	InputTokens    string
 	OutputTokens   string
 	ResultText     string
@@ -95,6 +97,7 @@ type RunningTask struct {
 	DetailURL     string
 	Client        string
 	PromptExcerpt string
+	Target        string // 対象ウィンドウ（プロセス名・pid。window_id つきのタスク。タイトルは載せない）。無ければ空
 	Status        TaskStatus
 }
 

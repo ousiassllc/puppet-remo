@@ -428,3 +428,22 @@ func TestSidebarHasTheTasksEntry(t *testing.T) {
 	contains(t, res, `href="/tasks"`, ">タスク<")
 	contains(t, newRig(t).get("/tasks"), `aria-current="page"`)
 }
+
+// window_id つきのタスク（#158）は、ダッシュボードとタスク詳細に対象（プロセス名・pid・window_id）が出て、ウィンドウのタイトルは出ない。
+// スコープなしのタスクには「対象」の欄が出ない。
+func TestScopedTaskShowsTargetWithoutTitle(t *testing.T) {
+	scoped := func(t *domain.Task) {
+		t.TargetWindowID, t.TargetProcess, t.TargetPID, t.CapturePartial = "1001", "notepad.exe", 4242, true
+	}
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedTask(f, idRunning, domain.TaskRunning, "保存する", 2, scoped)
+		seedTask(f, idFinished, domain.TaskCompleted, "unscoped", 30)
+	})
+	res := r.get("/")
+	status(t, res, http.StatusOK)
+	contains(t, res, "data-task-target", "notepad.exe（pid 4242）")
+	detail := r.get("/tasks/" + idRunning)
+	contains(t, detail, "対象ウィンドウ", "notepad.exe（pid 4242） ・ window_id 1001", "表示から除外", "capture_partial")
+	plain := r.get("/tasks/" + idFinished)
+	lacks(t, plain, "対象ウィンドウ", "表示から除外", "data-task-target")
+}

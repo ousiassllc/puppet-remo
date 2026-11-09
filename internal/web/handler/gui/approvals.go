@@ -68,6 +68,9 @@ func (h *Handler) approvalDialogView(req service.ApprovalRequest) view.ApprovalD
 	id := url.PathEscape(req.ID)
 	base := "/approvals/" + id
 	heading, summary, note := approvalTexts(req.Kind)
+	if req.Kind == service.ApprovalKindLease && req.Scope != nil {
+		summary = leaseScopeSummary
+	}
 	return view.ApprovalDialog{
 		ID:          req.ID,
 		Kind:        req.Kind,
@@ -84,13 +87,19 @@ func (h *Handler) approvalDialogView(req service.ApprovalRequest) view.ApprovalD
 }
 
 // approvalDetail は safety_check・judge_action の内容の説明（ApprovalRequest.Detail。サービスが秘密・入力した文字列の本文・パス・引数を
-// 除いて渡す）。lease は空。念のため、長さは 500 文字で切る（サービスの上限と同じ。画面を覆わせない）。
+// 除いて渡す）。lease は、スコープ付きのときだけ対象のプロセス名（ウィンドウのタイトルは出さない）。念のため、長さは 500 文字で切る（サービスの上限と同じ。画面を覆わせない）。
 func approvalDetail(req service.ApprovalRequest) string {
 	if req.Kind == service.ApprovalKindLease {
-		return ""
+		if req.Scope == nil {
+			return ""
+		}
+		return truncateRunes("対象のプロセス: "+req.Scope.Process, approvalDetailMaxRunes)
 	}
 	return truncateRunes(req.Detail, approvalDetailMaxRunes)
 }
+
+// leaseScopeSummary はスコープ付きリース（ビューアのウィンドウ選択。#157）の承認の要求の内容。対象のプロセス名は Detail に出す。
+const leaseScopeSummary = "操作権（リース）の取得。操作はウィンドウ 1 枚と関連するダイアログ・メニューに限定されます。"
 
 // approvalDetailMaxRunes は Detail の表示の上限（文字数）。
 const approvalDetailMaxRunes = 500

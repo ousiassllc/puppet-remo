@@ -36,6 +36,9 @@ templ ViewerLeasePanel(v view.ViewerLease) {
 			if v.Mine {
 				@atoms.Badge(atoms.BadgeOK, "あなた")
 			}
+			if v.ScopedProcess != "" {
+				<span class="text-sm text-slate-600" data-lease-scope>対象: { v.ScopedProcess }</span>
+			}
 			if v.CanAcquire {
 				@atoms.Button(atoms.ButtonProps{Label: "操作権を取得", Variant: atoms.ButtonPrimary, Attrs: leaseButtonAttrs("/viewer/lease/acquire")})
 			}

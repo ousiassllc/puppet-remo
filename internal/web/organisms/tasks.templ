@@ -45,6 +45,9 @@ templ runningTasks(v view.RunningTasks, oob bool) {
 									data-task-id
 								>{ t.ShortID }</a>
 								<span class="text-slate-500">依頼元: <span class="font-medium text-slate-800" data-task-client>{ t.Client }</span></span>
+								if t.Target != "" {
+									<span class="text-slate-500">対象: <span class="font-medium text-slate-800" data-task-target>{ t.Target }</span></span>
+								}
 							</div>
 							<p class="break-words text-sm text-slate-800" data-task-prompt>{ t.PromptExcerpt }</p>
 							@TaskStatus(t.Status)
@@ -167,6 +170,8 @@ templ TaskDetail(v view.TaskDetail) {
 				@taskField("上限", "ステップ " + strconv.Itoa(v.MaxSteps) + " ・ " + strconv.Itoa(v.MaxDurationSec) + " 秒", "limits")
 				@taskField("ステップ数", strconv.Itoa(v.StepCount) + "（高速パス " + strconv.Itoa(v.FastSteps) + " ・ OpenAI " + strconv.Itoa(v.OpenAISteps) + "）", "step-count")
 				@taskField("引き継ぎ理由", v.Handoff, "handoff-reason")
+				@taskField("対象ウィンドウ", v.Target, "target")
+				@taskField("表示から除外", v.CapturePartial, "capture-partial")
 				@taskField("入力トークン", v.InputTokens, "input-tokens")
 				@taskField("出力トークン", v.OutputTokens, "output-tokens")
 				@taskField("作成", v.Created, "created")

@@ -34,6 +34,8 @@ type run struct {
 	startedAt time.Time   // running になった時刻（実行時間の上限の起点。リースの承認待ち（running になる前）は数えず、running のあとの承認待ちは数える）
 	hist      *openai.History
 	out       outcome
+	// scope は window_id つきのタスクの対象と基準 S（#158）。スコープなしは nil。
+	scope *agentScope
 }
 
 // outcome はタスクの結末（終了状態の元）。
@@ -42,6 +44,9 @@ type outcome struct {
 	code   string // error_code（failed・denied）
 	result string // 最終回答（completed）
 	reason string // 中断の理由（cancelled）。監査にだけ残す
+	// blockReason は failed の原因が入力のブロック（ErrInputBlocked）のときの reason（target_moved・capture_unavailable など。
+	// 監査の agent.task_end にだけ残す。タイトル・入力文字は含まない）。
+	blockReason string
 }
 
 // errLimitReached は上限（ステップ数・実行時間）に達したことを表す内部のエラー。
@@ -90,7 +95,8 @@ func (r *run) loop() outcome {
 	r.armLimitTimer()
 
 	var summary []string
-	if fast := r.a.cfg.Fast; fast != nil && fast.Enabled(ctx) {
+	// 高速パスはスコープ付き（window_id つき）では使わない（Enabled も Run も呼ばない。UIA の読み取り・TypeSafe への送信も起きない。FR-G22）。
+	if fast := r.a.cfg.Fast; r.scope == nil && fast != nil && fast.Enabled(ctx) {
 		h, err := fast.Run(ctx, r)
 		if err != nil {
 			return r.failure(err)
@@ -99,7 +105,7 @@ func (r *run) loop() outcome {
 		summary = h.Steps
 	}
 
-	shot, err := r.capture(ctx)
+	shot, err := r.observeScreen(ctx)
 	if err != nil {
 		return r.failure(err)
 	}
@@ -127,26 +133,108 @@ func (r *run) loop() outcome {
 				return r.failure(err)
 			}
 		}
-		for _, op := range out.Actions {
-			if err := r.checkBeforeAction(); err != nil {
-				return r.failure(err)
-			}
-			actx := WithAgentStep(ctx, AgentStep{No: r.task.StepCount, Route: AgentRouteOpenAI})
-			if _, err := r.a.cfg.Control.Do(actx, r.actor, op); err != nil {
-				return r.failure(err) // 拒否・ブロックが 1 件でもあれば、残りは実行せず終了する（FR-G07）
-			}
+		executed, yielded, partial, err := r.runActions(ctx, out.Actions)
+		if err != nil {
+			return r.failure(err)
 		}
-		shot, err := r.capture(ctx)
+		// 中断の監査は撮影の前に書く: 中断した直後のメニューが撮れずに失敗しても、実行・一部実行・未実行の件数が監査に残る
+		// （中断された Op は agent.step の行を残さないので、部分的に注入した入力の記録はこの行だけ）。
+		if yielded {
+			r.auditYield(ctx, executed, len(out.Actions), partial)
+		}
+		shot, err := r.observeScreen(ctx)
 		if err != nil {
 			return r.failure(err)
 		}
 		r.hist.AddComputerOutput(out.CallID, shot, out.SafetyChecks)
+		if yielded {
+			r.hist.AddUserNote(yieldNote(executed, len(out.Actions), partial)) // computer_call_output の直後
+		}
 	}
+}
+
+// runActions は 1 回の応答の actions[]（Op に写した列）を順に実行する。スコープ付きでは、座標を基準 S の原点・縮小率で物理座標に変換し
+// （バッチの最後まで同じ）、入力の注入の直前ごとに対象グループを基準と比べる（observe）。メンバーの増減だけが検出されたら、残りを実行せずに
+// yielded を返す。executed は最後まで実行した Op の数。partial は、中断した Op がすでに一部を注入していた（キー・文字の複数回の注入の途中、
+// クリックの移動のあと）こと。その Op は executed に数えず、モデルへは「一部だけ実行済み」と伝える（未実行と伝えて重複入力を招かない）。
+// 拒否・ブロックが 1 件でもあれば、残りは実行せず err（FR-G07）。
+func (r *run) runActions(ctx context.Context, ops []domain.Op) (executed int, yielded, partial bool, err error) {
+	if r.scope != nil {
+		r.scope.diff = domain.GroupDiff{}
+	}
+	for _, op := range ops {
+		if err := r.checkBeforeAction(); err != nil {
+			return executed, false, false, err
+		}
+		step := AgentStep{No: r.task.StepCount, Route: AgentRouteOpenAI}
+		actx := ctx
+		if r.scope != nil {
+			if op, err = r.scope.convert(op); err != nil {
+				return executed, false, false, err
+			}
+			step.ExtraDetail = map[string]any{"target_window_id": r.task.TargetWindowID}
+			actx = withGroupObserver(WithPhysicalCoords(actx), r.scope.observe)
+		}
+		if _, err := r.a.cfg.Control.Do(WithAgentStep(actx, step), r.actor, op); err != nil {
+			if r.scope != nil && IsGroupChanged(err) {
+				return executed, true, IsGroupChangedPartial(err), nil
+			}
+			return executed, false, false, err
+		}
+		executed++
+	}
+	return executed, false, false, nil
+}
+
+// auditYield は中断（対象グループの変化）を監査 agent.batch_yielded に残す（実行・一部実行・未実行の件数と理由。タイトル・入力文字は含めない）。
+func (r *run) auditYield(ctx context.Context, executed, total int, partial bool) {
+	d := r.scope.diff
+	notExecuted := total - executed
+	detail := map[string]any{
+		"step": r.task.StepCount, "executed": executed, "not_executed": notExecuted, "reason": ReasonGroupChanged,
+		"added": len(d.Added), "removed": len(d.Removed),
+	}
+	if partial {
+		detail["not_executed"] = notExecuted - 1
+		detail["partially_executed"] = 1
+	}
+	e := agentAuditBase(WithAgentStep(ctx, AgentStep{No: r.task.StepCount}), r.actor, agentBatchYieldedAuditEvent, "")
+	e.Result = auditOK
+	e.DetailJSON = marshalDetail(detail)
+	r.a.record(ctx, e)
+}
+
+// yieldNote は中断をモデルへ伝える文（タイトル・入力文字は含めない）。件数は Op の数（モデルの actions[] を Op に写したもの。screenshot は含まず、
+// scroll は複数の Op になりうる）。モデルは英語の指示で動くので英語を先に、同じ内容の日本語を続ける。E = 0 のときは「実行済み 0 件」。
+// partial のときは、次の 1 件が一部だけ実行済みで、完了したとも未実行とも言えない（確かめるのは新しい画像）ことを伝える。
+func yieldNote(executed, total int, partial bool) string {
+	if partial {
+		return fmt.Sprintf("The target window group changed (a menu or dialog opened or closed) while one operation was running. "+
+			"Of the %d operations in that computer call, %d were fully executed, the next one was only PARTIALLY executed "+
+			"(part of its input may already have been sent), and the remaining %d were NOT executed. "+
+			"Do not assume the partial operation completed or that nothing happened: check the new screenshot and plan again.\n"+
+			"ターゲットのウィンドウグループが変わった（メニューまたはダイアログが開いた/閉じた）。このコールの操作 %d 件のうち、"+
+			"最後まで実行したのは %d 件、次の 1 件は一部だけ実行済み（入力の一部がすでに届いている可能性がある）、残り %d 件は実行していない。"+
+			"一部だけ実行した操作が完了した・何も起きていないと思い込まず、この新しい画像で確かめて計画し直すこと。",
+			total, executed, total-executed-1, total, executed, total-executed-1)
+	}
+	return fmt.Sprintf("The target window group changed (a menu or dialog opened or closed). "+
+		"Of the %d operations in that computer call, %d were executed and the remaining %d were NOT executed. "+
+		"Plan again from this new screenshot.\n"+
+		"ターゲットのウィンドウグループが変わった（メニューまたはダイアログが開いた/閉じた）。このコールの操作 %d 件のうち、"+
+		"実行済み %d 件、残り %d 件は実行していない。この新しい画像から計画し直すこと。",
+		total, executed, total-executed, total, executed, total-executed)
 }
 
 // acquireLease は種別 agent のリースを取得する（承認が要るクライアントではホストの結果を待つ。FR-L07・L08）。
 func (r *run) acquireLease() error {
-	if _, err := r.a.cfg.Leases.Acquire(r.ctx, r.actor); err != nil {
+	var err error
+	if r.scope != nil {
+		_, err = r.a.cfg.Leases.AcquireScoped(r.ctx, r.actor, r.scope.ref)
+	} else {
+		_, err = r.a.cfg.Leases.Acquire(r.ctx, r.actor)
+	}
+	if err != nil {
 		return err
 	}
 	return r.ctx.Err()
@@ -211,9 +299,19 @@ func (r *run) failure(err error) outcome {
 	case errors.Is(err, domain.ErrLeaseRequired), errors.Is(err, domain.ErrLeaseHeldByOther):
 		return outcome{status: domain.TaskCancelled, reason: "lease_lost"}
 	}
-	o := outcome{status: domain.TaskFailed, code: domain.TaskErrorCode(err)}
-	r.a.log.Warn("agent task failed", "task_id", r.id, "error_code", o.code)
+	o := outcome{status: domain.TaskFailed, code: domain.TaskErrorCode(err), blockReason: blockReasonOf(err)}
+	r.a.log.Warn("agent task failed", "task_id", r.id, "error_code", o.code, "block_reason", o.blockReason)
 	return o
+}
+
+// blockReasonOf は ErrInputBlocked の detail.reason（空なら空）。
+func blockReasonOf(err error) string {
+	var de *domain.Error
+	if errors.As(err, &de) && de.Code == domain.CodeInputBlocked {
+		reason, _ := de.Detail["reason"].(string)
+		return reason
+	}
+	return ""
 }
 
 func (r *run) cancelled() outcome {
@@ -467,11 +565,20 @@ func (r *run) releaseControl() {
 func (a *AgentService) taskStartEntry(r *run) repository.AuditEntry {
 	e := agentAuditBase(context.Background(), r.actor, agentTaskStartAuditEvent, "")
 	e.Result = auditOK
-	e.DetailJSON = marshalDetail(map[string]any{
+	detail := map[string]any{
 		"prompt_len": utf8.RuneCountInString(r.task.Prompt), "model": r.task.Model,
 		"max_steps": r.task.MaxSteps, "max_duration_sec": r.task.MaxDurationSec,
-	})
+	}
+	if r.task.Scoped() {
+		detail["target"] = targetDetail(r.task)
+	}
+	e.DetailJSON = marshalDetail(detail)
 	return e
+}
+
+// targetDetail は監査の detail に載せる対象（window_id・プロセス名・pid。ウィンドウのタイトルは載せない）。
+func targetDetail(t domain.Task) map[string]any {
+	return map[string]any{"window_id": t.TargetWindowID, "process": t.TargetProcess, "pid": t.TargetPID}
 }
 
 // taskEndEntry は agent.task_end（タスクごとに 1 行）。最終回答の本文は入れず、文字数だけを残す。
@@ -485,6 +592,13 @@ func (a *AgentService) taskEndEntry(r *run, finished time.Time) repository.Audit
 	}
 	if r.out.reason != "" {
 		detail["reason"] = r.out.reason
+	}
+	if r.out.blockReason != "" {
+		detail["block_reason"] = r.out.blockReason
+	}
+	if t.Scoped() {
+		detail["target"] = targetDetail(t)
+		detail["capture_partial"] = t.CapturePartial
 	}
 	if t.HandoffReason != "" {
 		detail["handoff_reason"] = string(t.HandoffReason)

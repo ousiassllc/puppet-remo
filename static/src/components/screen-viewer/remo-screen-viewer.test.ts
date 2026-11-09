@@ -456,6 +456,351 @@ describe("<remo-screen-viewer>", () => {
     });
   });
 
+  // 対象ウィンドウ（スコープ付きリース。#157）。偽のサーバーが target メッセージを流す。偽 platform・偽の WebSocket の試験で、
+  // Windows 実機の成立性ゲート（実機未確認）の代わりにならない。
+  describe("対象ウィンドウ（#157）", () => {
+    const active = { type: "target", state: "active", process: "notepad.exe", members: 1 };
+    const halted = (reason: string, extra: Record<string, unknown> = {}) => ({ type: "target", state: "halted", process: "notepad.exe", reason, members: 1, ...extra });
+
+    // グループ源の config（大きさと原点）を受けて、canvas をその大きさにする。
+    async function showGroup(h: Harness, width: number, height: number, origin: { x: number; y: number }): Promise<void> {
+      h.socket.receiveJson({ type: "config", monitor: 0, source: "group", quality: 60, fps: 10, width, height, origin });
+      await h.viewer.updateComplete;
+    }
+
+    function banner(viewer: RemoScreenViewer): HTMLElement | null {
+      return viewer.shadowRoot?.querySelector<HTMLElement>("[data-target-banner]") ?? null;
+    }
+
+    async function inputAttempts(h: Harness): Promise<void> {
+      const rect = h.canvas.getBoundingClientRect();
+      h.canvas.dispatchEvent(mouse("mousedown", rect.left + 10, rect.top + 10));
+      h.canvas.dispatchEvent(mouse("mousemove", rect.left + 20, rect.top + 20));
+      window.dispatchEvent(mouse("mouseup", rect.left + 10, rect.top + 10));
+      h.canvas.dispatchEvent(new WheelEvent("wheel", { clientX: rect.left + 5, clientY: rect.top + 5, deltaY: 100, bubbles: true, cancelable: true }));
+      h.sink.dispatchEvent(key("keydown", "Escape", "Escape"));
+      h.sink.dispatchEvent(key("keyup", "Escape", "Escape"));
+      h.sink.dispatchEvent(new CompositionEvent("compositionend", { data: "あ" }));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    }
+
+    it("active の間はバナーを出さず、入力を送る", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(active);
+      await h.viewer.updateComplete;
+      expect(banner(h.viewer)).to.equal(null);
+      h.sink.dispatchEvent(key("keydown", "KeyA", "a"));
+      expect(h.socket.sentMessages).to.have.length(1);
+    });
+
+    it("クリックと同じフレームの移動は、次のフレームでクリックのあとへ送らない（閉じたメニューの座標の移動が停止にならない）", async () => {
+      const h = await connect({ lease: heldByMe });
+      const rect = h.canvas.getBoundingClientRect();
+      h.canvas.dispatchEvent(mouse("mousemove", rect.left + 10, rect.top + 10));
+      h.canvas.dispatchEvent(mouse("mousedown", rect.left + 10, rect.top + 10));
+      window.dispatchEvent(mouse("mouseup", rect.left + 10, rect.top + 10));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      expect(h.socket.sentMessages.map((m) => (m as { action?: string }).action)).to.deep.equal(["down", "up"]);
+    });
+
+    it("スコープ付きの最中の停止につながる拒否はトーストにしない（バナーが示す）。スコープの無い拒否・停止にならない拒否はトーストにする", async () => {
+      const h = await connect({ lease: heldByMe });
+      const errors: { code: string; reason?: string }[] = [];
+      h.viewer.addEventListener("remo:error", (e) => errors.push((e as CustomEvent<{ code: string; reason?: string }>).detail));
+      const blocked = (reason: string) => ({ type: "error", code: "input_blocked", message: "blocked", reason });
+
+      h.socket.receiveJson(blocked("elevated_window")); // スコープなし（target なし）: バナーが出ないのでトースト
+      h.socket.receiveJson(active);
+      await h.viewer.updateComplete;
+      h.socket.receiveJson(blocked("related_cross_process")); // スコープ中の停止の理由: バナーに任せる
+      h.socket.receiveJson(blocked("clipboard_out_of_scope")); // 停止にならない拒否: トースト
+      h.socket.receiveJson(blocked("target_halted")); // 停止前の入力の拒否: まだバナーが無い（active）あいだはトースト
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      h.socket.receiveJson(blocked("target_halted")); // 停止のバナーが出ている: 重ねない
+      expect(errors).to.deep.equal([
+        { code: "input_blocked", message: "blocked", reason: "elevated_window" },
+        { code: "input_blocked", message: "blocked", reason: "clipboard_out_of_scope" },
+        { code: "input_blocked", message: "blocked", reason: "target_halted" },
+      ]);
+    });
+
+    it("halted の間は、Esc を含むキー・マウス・ホイール・文字を一切送らない", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("related_cross_process", { blocked_by: { process: "explorer.exe", pid: 5230, reason: "related_cross_process" } }));
+      await h.viewer.updateComplete;
+      await inputAttempts(h);
+      expect(h.socket.sent).to.deep.equal([]);
+    });
+
+    it("halted になった時点で押下中のキー・ボタンは up を送らずに捨てる（サーバーが解放する）", async () => {
+      const h = await connect({ lease: heldByMe });
+      const rect = h.canvas.getBoundingClientRect();
+      h.canvas.dispatchEvent(mouse("mousedown", rect.left + 10, rect.top + 10));
+      h.sink.dispatchEvent(key("keydown", "KeyA", "a"));
+      expect(h.socket.sent).to.have.length(2);
+      h.socket.receiveJson(halted("target_not_foreground"));
+      await h.viewer.updateComplete;
+      h.sink.dispatchEvent(key("keyup", "KeyA", "a"));
+      window.dispatchEvent(mouse("mouseup", rect.left + 10, rect.top + 10));
+      h.sink.dispatchEvent(new FocusEvent("blur"));
+      expect(h.socket.sent).to.have.length(2);
+    });
+
+    const haltCases: [string, string][] = [
+      ["related_unverifiable", "関連するウィンドウ（メニューなど）の所有関係を確認できない"],
+      ["related_cross_process", "別のアプリのダイアログが前面"],
+      ["unrelated_same_process", "同じアプリの別のウィンドウが前面"],
+      ["capture_unavailable", "対象のウィンドウを表示できない"],
+      ["capture_member_unavailable", "関連するメニュー・ダイアログを表示できない"],
+    ];
+    for (const [reason, text] of haltCases) {
+      it(`halted（${reason}）は停止のバナー（再開と別のウィンドウを選ぶ）を出す`, async () => {
+        const h = await connect({ lease: heldByMe });
+        h.socket.receiveJson(halted(reason));
+        await h.viewer.updateComplete;
+        const b = banner(h.viewer);
+        expect(b?.dataset.targetTone).to.equal("halted");
+        expect(b?.textContent).to.contain(text);
+        expect(b?.querySelector("[data-target-resume]")).to.not.equal(null);
+        expect(b?.querySelector("[data-target-reselect]")).to.not.equal(null);
+      });
+    }
+
+    it("表示できない理由（capture_*）では、画面全体への切り替えはせず「対象を表示できません」を出す。再開まで停止が続くことも示す", async () => {
+      const h = await connect({ lease: heldByMe });
+      await showGroup(h, 64, 48, { x: 100, y: 100 });
+      h.socket.receiveJson(halted("capture_unavailable"));
+      await h.viewer.updateComplete;
+      expect(overlayText(h.viewer)).to.contain("対象を表示できません");
+      expect(overlayText(h.viewer)).to.contain("切り替えません");
+      expect(overlayText(h.viewer)).to.contain("「再開」を押すまで");
+      // 配信の源は group のまま（monitor へ戻す要求を、ビューアは自分では送らない）。
+      expect(h.socket.sent).to.deep.equal([]);
+    });
+
+    it("モニター表示へ切り替えているあいだは、覆いを出さない（モニターの画像が流れている）", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("capture_unavailable")); // 源は monitor のまま
+      await h.viewer.updateComplete;
+      expect(overlayText(h.viewer) ?? "").to.not.contain("対象を表示できません");
+    });
+
+    for (const reason of ["target_closed", "target_replaced", "target_unsupported"]) {
+      it(`${reason} は再開できない（選び直しのみ。「再開」を出さない）`, async () => {
+        const h = await connect({ lease: heldByMe });
+        h.socket.receiveJson(halted(reason, { reselect: true }));
+        await h.viewer.updateComplete;
+        const b = banner(h.viewer);
+        expect(b?.dataset.targetTone).to.equal("halted");
+        expect(b?.textContent).to.contain("別のウィンドウを選んでください");
+        expect(b?.querySelector("[data-target-resume]")).to.equal(null);
+        expect(b?.querySelector("[data-target-reselect]")).to.not.equal(null);
+      });
+    }
+
+    it("capture_partial は通知で、停止ではない（バナーに再開は無く、入力は送り続ける）", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson({ ...active, notices: ["capture_partial"], excluded: [{ window_id: "1002", process: "fakenotepad.exe", reason: "related_unverifiable" }] });
+      await h.viewer.updateComplete;
+      const b = banner(h.viewer);
+      expect(b?.dataset.targetTone).to.equal("notice");
+      expect(b?.textContent).to.contain("除外しているウィンドウ");
+      expect(b?.querySelector("button")).to.equal(null);
+      h.sink.dispatchEvent(key("keydown", "KeyA", "a"));
+      expect(h.socket.sentMessages).to.have.length(1);
+    });
+
+    it("「再開」は target.resume を送って再検証を求めるだけで、自動では再開しない。通れば active でバナーが消えて入力が通る", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      // 原因が消えたかどうかにかかわらず、利用者が押すまで何も送らない。
+      expect(h.socket.sent).to.deep.equal([]);
+      banner(h.viewer)?.querySelector<HTMLButtonElement>("[data-target-resume]")?.click();
+      expect(h.socket.sentMessages).to.deep.equal([{ type: "target.resume" }]);
+      // 通らなければ halted のまま、理由が更新される。
+      h.socket.receiveJson(halted("unrelated_same_process"));
+      await h.viewer.updateComplete;
+      expect(banner(h.viewer)?.textContent).to.contain("同じアプリの別のウィンドウが前面");
+      h.sink.dispatchEvent(key("keydown", "Escape", "Escape"));
+      expect(h.socket.sent).to.have.length(1);
+      // 通れば active。
+      h.socket.receiveJson(active);
+      await h.viewer.updateComplete;
+      expect(banner(h.viewer)).to.equal(null);
+      h.sink.dispatchEvent(key("keydown", "KeyA", "a"));
+      expect(h.socket.sentMessages[1]).to.include({ type: "input.key", code: "KeyA" });
+    });
+
+    it("「別のウィンドウを選ぶ」は remo:reselect（bubbles・composed）を出す", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      let seen = 0;
+      document.addEventListener("remo:reselect", () => seen++, { once: true });
+      banner(h.viewer)?.querySelector<HTMLButtonElement>("[data-target-reselect]")?.click();
+      expect(seen).to.equal(1);
+      expect(h.socket.sent).to.deep.equal([]);
+    });
+
+    it("target が none（リースの解放）になるとバナーが消える。切断でも消える", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      h.socket.receiveJson({ type: "target", state: "none", members: 0 });
+      await h.viewer.updateComplete;
+      expect(banner(h.viewer)).to.equal(null);
+      h.socket.receiveJson(halted("related_cross_process"));
+      h.socket.serverClose(1006);
+      await h.viewer.updateComplete;
+      expect(banner(h.viewer)).to.equal(null);
+    });
+
+    it("グループ源の config で画像の大きさが変わっても、canvas は次のキーフレームまで作り直さない（ちらつかない）。座標はキーフレームで新しい大きさに追従する", async () => {
+      const h = await connect({ lease: heldByMe });
+      await showGroup(h, 64, 48, { x: 100, y: 100 });
+      expect(h.canvas.width).to.equal(64);
+      expect(h.canvas.hasAttribute("data-group")).to.equal(true); // 等倍表示の印（幅いっぱいに拡大しない）
+      const rect = h.canvas.getBoundingClientRect();
+      expect(rect.width).to.equal(64);
+      h.canvas.dispatchEvent(mouse("mousedown", rect.left + rect.width / 2, rect.top + rect.height / 2));
+      expect(h.socket.sentMessages.at(-1)).to.include({ action: "down", x: 32, y: 24 });
+      window.dispatchEvent(mouse("mouseup", rect.left + rect.width / 2, rect.top + rect.height / 2));
+
+      // ダイアログが開いて画像が広がる（原点も動く）。config だけでは canvas は 64 のまま（キーフレームを待つ）。
+      await showGroup(h, 128, 48, { x: 100, y: 80 });
+      expect(h.canvas.width).to.equal(64);
+      h.socket.receive(await frame({ keyframe: true, origin: { x: 100, y: 80 }, seq: 1, width: 128, height: 48, tiles: [["green", 0, 0, 128, 48]] }));
+      await until(() => h.canvas.width === 128, "the canvas to grow with the keyframe");
+      // 等倍表示なので、T の表示の大きさは変わらず、canvas だけが広がる。
+      const rect2 = h.canvas.getBoundingClientRect();
+      expect(rect2.width).to.equal(128);
+      h.canvas.dispatchEvent(mouse("mousedown", rect2.left + rect2.width / 2, rect2.top + rect2.height / 2));
+      const last = h.socket.sentMessages.at(-1);
+      expect(last).to.include({ action: "down", x: 64, y: 24 });
+      expect(last).to.deep.include(expectedPoint(h.canvas, rect2.left + rect2.width / 2, rect2.top + rect2.height / 2));
+    });
+
+    it("グループ源のマウス入力は、座標を読んだ画像の原点・大きさ（ox・oy・w・h）を添える。モニター源は添えない", async () => {
+      const h = await connect({ lease: heldByMe });
+      const rect = h.canvas.getBoundingClientRect();
+      // モニター源（ready）: 添えない。
+      h.canvas.dispatchEvent(mouse("mousedown", rect.left + 10, rect.top + 10));
+      window.dispatchEvent(mouse("mouseup", rect.left + 10, rect.top + 10));
+      for (const m of h.socket.sentMessages) {
+        expect(m).to.not.have.any.keys("ox", "oy", "w", "h");
+      }
+
+      await showGroup(h, 64, 48, { x: 100, y: 100 });
+      const r = h.canvas.getBoundingClientRect();
+      h.socket.sent.length = 0;
+      h.canvas.dispatchEvent(mouse("mousedown", r.left + 5, r.top + 5));
+      window.dispatchEvent(mouse("mouseup", r.left + 5, r.top + 5));
+      h.canvas.dispatchEvent(new WheelEvent("wheel", { clientX: r.left + 5, clientY: r.top + 5, deltaY: 100, bubbles: true, cancelable: true }));
+      expect(h.socket.sentMessages).to.have.length(3);
+      for (const m of h.socket.sentMessages) {
+        expect(m).to.include({ ox: 100, oy: 100, w: 64, h: 48 });
+      }
+
+      // 大きさ・原点の変更を config で知っても、新しいキーフレームを適用するまでは、今 canvas にある画像（古いほう）を申告する
+      // （サーバーは今の画像と違うので、その入力を古い座標として拒否する）。
+      await showGroup(h, 128, 48, { x: 100, y: 80 });
+      h.socket.sent.length = 0;
+      h.canvas.dispatchEvent(mouse("mousedown", r.left + 5, r.top + 5));
+      window.dispatchEvent(mouse("mouseup", r.left + 5, r.top + 5));
+      expect(h.socket.sentMessages[0]).to.include({ ox: 100, oy: 100, w: 64, h: 48 });
+      h.socket.receive(await frame({ keyframe: true, origin: { x: 100, y: 80 }, seq: 1, width: 128, height: 48, tiles: [["green", 0, 0, 128, 48]] }));
+      await until(() => h.canvas.width === 128, "the keyframe to be applied");
+      h.socket.sent.length = 0;
+      h.canvas.dispatchEvent(mouse("mousedown", r.left + 5, r.top + 5));
+      window.dispatchEvent(mouse("mouseup", r.left + 5, r.top + 5));
+      expect(h.socket.sentMessages[0]).to.include({ ox: 100, oy: 80, w: 128, h: 48 });
+    });
+
+    it("グループ源の最初の画像が来るまでは、座標を送らない", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson({ type: "config", monitor: 0, source: "group", quality: 60, fps: 10, width: 0, height: 0 });
+      await h.viewer.updateComplete;
+      const rect = h.canvas.getBoundingClientRect();
+      h.socket.sent.length = 0;
+      h.canvas.dispatchEvent(mouse("mousedown", rect.left + 5, rect.top + 5));
+      window.dispatchEvent(mouse("mouseup", rect.left + 5, rect.top + 5));
+      expect(h.socket.sent).to.deep.equal([]);
+    });
+
+    it("グループ源では、ボタンを押していないホバーの move は送らない。ドラッグ（押下中）の move は送る。モニター源は従来どおり", async () => {
+      const h = await connect({ lease: heldByMe });
+      const rect = h.canvas.getBoundingClientRect();
+      const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      const actions = () => h.socket.sentMessages.map((m) => (m as { action?: string }).action);
+
+      // モニター源: ホバーの move も送る。
+      h.canvas.dispatchEvent(mouse("mousemove", rect.left + 10, rect.top + 10));
+      await nextFrame();
+      expect(actions()).to.deep.equal(["move"]);
+
+      await showGroup(h, 64, 48, { x: 100, y: 100 });
+      h.socket.sent.length = 0;
+      const r = h.canvas.getBoundingClientRect();
+      h.canvas.dispatchEvent(mouse("mousemove", r.left + 10, r.top + 10)); // ホバー
+      await nextFrame();
+      expect(h.socket.sent).to.deep.equal([]);
+
+      h.canvas.dispatchEvent(mouse("mousedown", r.left + 10, r.top + 10));
+      h.canvas.dispatchEvent(mouse("mousemove", r.left + 20, r.top + 20)); // ドラッグ
+      await nextFrame();
+      window.dispatchEvent(mouse("mouseup", r.left + 20, r.top + 20));
+      expect(actions()).to.deep.equal(["down", "move", "up"]);
+      expect(h.socket.sentMessages[1]).to.include({ ox: 100, oy: 100, w: 64, h: 48 });
+    });
+
+    it("表示の切り替え: スコープ付きのリースがあるあいだ「モニター表示」「ウィンドウ表示」を出し、config の source を送る", async () => {
+      const h = await connect({ lease: heldByMe });
+      const bar = () => h.viewer.shadowRoot?.querySelector("[data-source-bar]") ?? null;
+      expect(bar()).to.equal(null); // スコープ付きのリースが無い間は出さない
+      h.socket.receiveJson(active);
+      await showGroup(h, 64, 48, { x: 100, y: 100 });
+      const toMonitor = bar()?.querySelector<HTMLButtonElement>("[data-source-monitor]");
+      expect(toMonitor?.textContent?.trim()).to.equal("モニター表示");
+      expect(bar()?.querySelector("[data-source-group]")).to.equal(null);
+      h.socket.sent.length = 0;
+      toMonitor?.click();
+      expect(h.socket.sentMessages).to.deep.equal([{ type: "config", source: "monitor" }]);
+
+      // サーバーが monitor の config を返すと、ボタンは「ウィンドウ表示（選択中の対象に戻る）」になり、押すと group を要求する。
+      h.socket.receiveJson({ type: "config", monitor: 0, source: "monitor", quality: 60, fps: 10, width: WIDTH, height: HEIGHT });
+      await h.viewer.updateComplete;
+      const toGroup = bar()?.querySelector<HTMLButtonElement>("[data-source-group]");
+      expect(toGroup?.textContent?.trim()).to.equal("ウィンドウ表示（選択中の対象に戻る）");
+      h.socket.sent.length = 0;
+      toGroup?.click();
+      expect(h.socket.sentMessages).to.deep.equal([{ type: "config", source: "group" }]);
+
+      // リースを失う（target none）とボタンは消える。
+      h.socket.receiveJson({ type: "target", state: "none" });
+      await h.viewer.updateComplete;
+      expect(bar()).to.equal(null);
+    });
+
+    it("グループ源のフレーム（フラグ bit1・原点つき）を描き、モニターのフレームは捨てる", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson({ type: "config", monitor: 0, source: "group", quality: 60, fps: 10, width: WIDTH, height: HEIGHT, origin: { x: -20, y: 5 } });
+      await h.viewer.updateComplete;
+      h.socket.receive(await frame({ keyframe: true, origin: { x: -20, y: 5 }, seq: 1, width: WIDTH, height: HEIGHT, tiles: [["green", 0, 0, WIDTH, HEIGHT]] }));
+      await untilPixel(h.canvas, 10, 10, "green");
+      // 切り替え前のモニターのフレームは描かない。
+      h.socket.receive(await fullKeyframe(2, "red", 0));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      expect(classifyPixel(h.canvas, 10, 10)).to.equal("green");
+
+      // モニターの config へ戻ると、等倍表示の印は外れる（幅いっぱいの表示）。
+      h.socket.receiveJson({ type: "config", monitor: 0, source: "monitor", quality: 60, fps: 10, width: WIDTH, height: HEIGHT });
+      await h.viewer.updateComplete;
+      expect(h.canvas.hasAttribute("data-group")).to.equal(false);
+    });
+  });
+
   describe("切断・再接続・失敗の表示", () => {
     let timers: FakeTimers;
 

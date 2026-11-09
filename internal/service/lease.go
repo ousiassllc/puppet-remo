@@ -239,7 +239,7 @@ func (m *leaseManager) acquire(ctx context.Context, who domain.Actor, scope *dom
 		return Lease{}, err
 	}
 	if st.waitCtx != nil {
-		return m.awaitApproval(ctx, st.waitCtx, who, st.lease.ID, st.needs)
+		return m.awaitApproval(ctx, st.waitCtx, who, st.lease, st.needs)
 	}
 	return toLease(st.lease), nil
 }
@@ -271,7 +271,7 @@ func (m *leaseManager) requestAcquire(ctx context.Context, who domain.Actor, sco
 	}
 	go func() {
 		defer cancel()
-		_, err := m.awaitApproval(bg, st.waitCtx, who, st.lease.ID, st.needs)
+		_, err := m.awaitApproval(bg, st.waitCtx, who, st.lease, st.needs)
 		m.notifyResult(who, err)
 	}()
 	return toLease(st.lease), true, nil
@@ -422,8 +422,9 @@ func (m *leaseManager) holdsLocked(who domain.Actor) bool {
 
 // awaitApproval は承認待ち（id）の結果を、ロックを持たずに待ち、結果でリースを held にするか idle に戻す。
 // waitCtx は取り下げ（settleLocked が cancelWait を呼ぶ）と ctx のキャンセルの両方で終わる。
-func (m *leaseManager) awaitApproval(ctx, waitCtx context.Context, who domain.Actor, id string, needs approvalNeed) (Lease, error) {
-	dec, reqErr := m.approval.Request(waitCtx, ApprovalRequest{Kind: ApprovalKindLease, Who: who})
+func (m *leaseManager) awaitApproval(ctx, waitCtx context.Context, who domain.Actor, pending domain.Lease, needs approvalNeed) (Lease, error) {
+	id := pending.ID
+	dec, reqErr := m.approval.Request(waitCtx, ApprovalRequest{Kind: ApprovalKindLease, Who: who, Scope: scopeForApproval(pending.Scope)})
 
 	m.mu.Lock()
 	if p, ok := m.machine.Pending(); !ok || p.ID != id {
@@ -465,6 +466,15 @@ func (m *leaseManager) awaitApproval(ctx, waitCtx context.Context, who domain.Ac
 		m.markApproved(ctx, who)
 	}
 	return toLease(l), nil
+}
+
+// scopeForApproval は承認ダイアログに渡す対象の写し（スコープなしは nil）。
+func scopeForApproval(s *domain.LeaseScope) *domain.LeaseScope {
+	if s == nil {
+		return nil
+	}
+	c := *s
+	return &c
 }
 
 // markApproved は first_time のクライアントの承認を approved_at に記録する。記録に失敗しても、承認済みのリースは取り消さない

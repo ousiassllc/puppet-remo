@@ -31,6 +31,14 @@ export function asPoint(arg: unknown): { x: number; y: number } {
   throw new Error(`not a point: ${JSON.stringify(arg)}`);
 }
 
+export interface FakeAppState {
+  saved: string[];
+  document: string;
+  menu: "" | "file" | "context";
+  dialog: boolean;
+  selected: boolean;
+}
+
 // ホスト側の操作と読み取り。どれもテスト専用サーバー（ビルドタグ e2e）の制御エンドポイントで、サービスの本物の経路（HostAdmin・
 // LeaseManager・キルスイッチ）を呼ぶ。DB の行を直接書かない。
 export const host = {
@@ -42,6 +50,16 @@ export const host = {
   triggerKillSwitch: () => request("POST", "/killswitch"),
   releaseKillSwitch: () => request("POST", "/killswitch/release"),
   inputs: () => request<InputCall[]>("GET", "/inputs"),
+  // 偽のデスクトップ（偽アプリ・別プロセスのウィンドウ。#157）。偽 platform で、Windows 実機の代わりにならない。
+  desktop: {
+    app: () => request<FakeAppState>("GET", "/desktop/app"),
+    foreignWindow: () => request("POST", "/desktop/foreign-window"),
+    removeForeignWindow: () => request("POST", "/desktop/foreign-window/remove"),
+    crossProcessDialog: (on: boolean) => request("POST", `/desktop/cross-process-dialog?on=${on ? 1 : 0}`),
+    ownerlessMenu: (on: boolean) => request("POST", `/desktop/ownerless-menu?on=${on ? 1 : 0}`),
+    unprintable: (window: "main" | "menu" | "dialog", on: boolean) => request("POST", `/desktop/unprintable?window=${window}&on=${on ? 1 : 0}`),
+    closeTarget: () => request("POST", "/desktop/close-target"),
+  },
 };
 
 export interface CspViolation {

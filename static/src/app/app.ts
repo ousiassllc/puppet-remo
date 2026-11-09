@@ -6,7 +6,10 @@
 //   4. 確認モーダルのキャンセル・トークン表示を閉じる（data-clear）
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をトーストにする
+//   7. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
+
+import { installPickerRefreshGuard } from "./picker-guard";
 
 const TOAST_ROOT = "toast-root";
 const TOAST_LIFETIME_MS = 8000;
@@ -31,6 +34,9 @@ function showErrorToast(message: string): void {
   toast.append(text);
   root.append(toast);
 }
+
+// 7. ウィンドウの一覧の自動更新の見送り（フォーカス・ポインターの操作中）。
+installPickerRefreshGuard();
 
 // 1. サーバーが HTML で返さないエラー（接続できない、想定外の 5xx）だけをクライアントで扱う。
 document.addEventListener("htmx:sendError", () => {
@@ -125,10 +131,19 @@ const wsErrorMessages: Readonly<Record<string, string>> = {
   internal: "内部エラーが発生しました。",
 };
 
+// 停止にならない拒否（スコープ付きのリースの、その操作だけの拒否。#157）の理由ごとの文言。code より優先する。
+const wsReasonMessages: Readonly<Record<string, string>> = {
+  clipboard_out_of_scope: "ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。",
+  key_out_of_scope: "このキーは、ウィンドウを選んだ操作中は送れません。",
+  target_halted: "対象の操作は停止中です。「再開」を押すか、別のウィンドウを選んでください。",
+};
+
 document.addEventListener("remo:error", (event) => {
-  const detail = (event as CustomEvent<{ code?: unknown; message?: unknown }>).detail;
+  const detail = (event as CustomEvent<{ code?: unknown; message?: unknown; reason?: unknown }>).detail;
   const code = detail?.code;
-  const mapped = typeof code === "string" && Object.hasOwn(wsErrorMessages, code) ? wsErrorMessages[code] : undefined;
+  const reason = detail?.reason;
+  const reasonMessage = typeof reason === "string" && Object.hasOwn(wsReasonMessages, reason) ? wsReasonMessages[reason] : undefined;
+  const mapped = reasonMessage ?? (typeof code === "string" && Object.hasOwn(wsErrorMessages, code) ? wsErrorMessages[code] : undefined);
   const message = mapped ?? detail?.message;
   showErrorToast(typeof message === "string" && message !== "" ? message : "操作を実行できませんでした。");
 });

@@ -359,7 +359,8 @@ func (h *Handler) Clients(c *gin.Context) {
 | イベント | `detail` | 用途 |
 |---------|---------|------|
 | `remo:lease-changed` | WebSocket の `lease` メッセージの内容 | HTMX がリースパネルを再取得する（`hx-trigger`） |
-| `remo:error` | `{ code, message }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がトーストを出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、トーストは `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
+| `remo:reselect` | なし | 停止バナーの「別のウィンドウを選ぶ」。ページ側（HTMX。`WindowReselectTrigger`）が `POST /viewer/target/release` でスコープ付きのリースを解放し、一覧を出す（#157） |
+| `remo:error` | `{ code, message, reason? }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がトーストを出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、トーストは `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
 
 **状態とライフサイクル**
 
@@ -398,6 +399,17 @@ stateDiagram-v2
 | ボタン・ホイール | `input.mouse` `down` / `up` / `wheel` | `contextmenu` を抑止する。**`wheel` の `dx` / `dy` の単位は「ノッチ」**（数値。小数可。MCP `scroll.amount` と同じ単位）。ブラウザの `WheelEvent` を `deltaMode` に応じて換算する: `DOM_DELTA_PIXEL` は `delta ÷ 100`、`DOM_DELTA_LINE` は `delta ÷ 3`、`DOM_DELTA_PAGE` は `delta × 10`。符号は API 仕様の `scroll` の方向の規約に従う（`dy > 0` = 下。`WheelEvent.deltaY` と同じ）。サーバーが `ノッチ × 120`（Win32 の `WHEEL_DELTA`）を丸めて OS へ渡し、丸めの余りは次回へ繰り越す。Win32 側の符号の向きもサーバーが吸収する |
 | キー | `input.key` `down` / `up`（`code`、`key`、`modifiers`） | キャンバスにフォーカスがあるときだけ捕捉し、`preventDefault` する。ブラウザが先取りするショートカットは送れない（専用メニュー。FR-W06）。フォーカスを失ったら押下中のキーすべてに `up` を送る |
 | IME 確定 | `input.text` | `compositionend` の文字列を Unicode で送る。`canvas` は IME を受けないため、Shadow DOM 内の見えない `<textarea>`（`tabindex="-1"`。`css` で不可視にする）が IME とキー入力を受ける。`canvas` の `mousedown` でこの要素にフォーカスを移し（「`canvas` にフォーカスがある」とは、この要素にフォーカスがあること）、`keydown` / `keyup` / `compositionend` / `blur` はこの要素で受ける。IME の処理中のキー（`isComposing`・`keyCode` 229）は `input.key` で送らない |
+
+#### 対象ウィンドウ（#157。FR-W10〜W14。**実機未確認** — 成立性ゲート待ち。docs/operations/smoke-windows.md §3.10）
+
+ウィンドウ 1 枚（T）と関連するダイアログ・メニューだけを表示・操作する。サーバーの規則（FR-L09〜L14）が正で、ブラウザはその状態を表示し、停止中は入力を送らないだけ（ブラウザの検査をセキュリティの根拠にしない）。偽 platform の試験で動かしたもので、**実機の成立性ゲート（S1〜S3）を確かめたことにはならない**。
+
+- **ウィンドウの一覧（Lit の外。HTMX）**: `organisms/window_picker.templ` の `WindowPicker`（`#window-picker`）が `GET /viewer/windows` を 3 秒ごと・更新ボタン・`remo:lease-changed` で再取得する（状態駆動・JSON は返さない）。選べない行（昇格・最小化・検証前の種類）は灰色で「選ぶ」ボタンを描画しない。「選ぶ」は `POST /viewer/target`（`window_id`・`pid`・`process_start`）。
+- **配信の源は、リースに従う**: ビューアの WebSocket が、保持者としてスコープ付きのリースを得たこと（承認待ちからの許可も同じ経路）を `lease` の変化で検知すると、サーバーが源をグループ（合成画像）へ切り替えて T を前面にする（`config`・`source: "group"`）。リースを失う・解放すると、モニター源に戻る（`target` は `none`）。**表示の切り替え**: スコープ付きのリースがあるあいだ、`<remo-screen-viewer>` に「モニター表示」「ウィンドウ表示（選択中の対象に戻る）」のボタンを出し（`[data-source-bar]`）、WebSocket の `config` の `source`（`monitor` / `group`）を送る。モニター表示でもスコープ付きのリースは保たれる（D1: 画面全体の閲覧の権限は残る。モニターが 1 台のホストでも切り替えられる）。「ウィンドウ表示」は、このビューアが今もそのスコープ付きのリースを保持しているときだけサーバーが受ける（そうでなければ `error`）。モニターの変更（ツールバーのモニター選択）でもモニター源に戻る。
+- **座標**: グループ源の `canvas` は合成画像の大きさで、**送る座標は合成画像内の座標**（変換式はモニター源と同じ。`origin` はサーバーが足して物理座標にする）。メニュー・ダイアログの開閉で画像の大きさが変わると、`config` で `canvas` を作り直し、座標の変換は新しい大きさに追従する。グループ源の `canvas` は等倍で表示する（`data-group`。幅を超えるときだけ縮める）。**入力は座標を読んだ画像に結びつける**: グループ源のマウス入力（`input.mouse`）に、今 `canvas` に出している画像の原点・大きさ（`ox`・`oy`・`w`・`h`）を添え、サーバーが今の画像と違えば古い座標として拒否する（`stale_frame`。停止にはしない）。グループ源の大きさ・原点の変更は、`config` を受けても `canvas` を作り直さず、次のキーフレームで作り直す（作り直しの内容消去によるちらつきを避ける）。最初の画像が来るまでは座標を送らない。**ホバーの `move` は送らない**（押下中のドラッグだけ送る。対象の外の座標の `move` は停止の理由になるため。`down` / `up` は座標を持つ）。クリックと同じフレームに持ち越した `move` は、`down` / `up` の前に捨てる（閉じたメニューの座標の移動が、対象の外の座標として届いて停止になるのを避ける）。
+- **`target` メッセージと状態バナー**: Shadow DOM 内の `[data-target-banner]`。`halted` は理由コードごとの文言（`related_unverifiable` / `related_cross_process` / `unrelated_same_process` / `target_not_foreground` / `target_obscured` / `capture_unavailable` / `capture_member_unavailable` / `target_closed` など）と「再開」「別のウィンドウを選ぶ」（`reselect: true` では「再開」なし）、`capture_partial` は停止ではなく通知（ボタンなし）。**停止の理由に当たる `input_blocked` のトーストは重ねない**（バナーが示す）。撮れないとき（`capture_*`）は、グループ源のあいだ、画像の上に「対象を表示できません。画面全体の表示には切り替えません。停止は、原因を取り除いて「再開」を押すまで続きます。」の覆いを出す（バナーは覆いの上で押せる。停止は再開まで続くので、画像が撮れる状態に戻っても覆いは再開まで出す）。
+- **`halted` の間の入力**: 「入力が有効」を `lease` が `held` かつ `mine` **かつ `target` が `halted` でない**ことにし、押下中のキー・ボタンの `up` も含めて何も送らない（サーバーが解放する）。Esc も送らない。「再開」だけが `target.resume` を送る。**自動では再開しない**（原因を取り除いたあとに利用者が押す）。
+- **スコープ中の操作 UI（Templ。サーバー側の規則の表示）**: 送信メニューの Alt+Tab・Win+D は `disabled`、クリップボードは書き込みだけ（取得ボタンを描画しない。HTTP の `POST /viewer/clipboard/fetch` の直接の要求と `Control` の読み取りはサーバーが `clipboard_out_of_scope` で拒否する。WebSocket の `clipboard.read` は拒否専用の型で、スコープ付きリースの保持者には `clipboard_out_of_scope` の `error` を返し〔接続は維持。platform は呼ばない〕、保持者でないセッションと他の未知の `type` は閉じコード 4400）。
 
 ### 6.3 Shadow DOM とスタイル
 
@@ -529,6 +541,7 @@ graph LR
 
 - **入口**: `internal/app/e2e.go`（`//go:build e2e`。`app.RunE2E`）と、それを呼ぶ `cmd/puppet-remo-e2e/main.go`（同じタグ）。`go build ./...`（タグなし）はどちらも無視するので、本番のバイナリ（`cmd/puppet-remo`）には入らない。`app.New` で本物の service・ルーター・WebSocket を組み立て、OS 依存部は `platformtest` の偽物（入力は OS に注入せず記録するだけの `FakeInput`）にする。SQLite は一時ディレクトリに作り、SIGINT・SIGTERM での終了時に消す
 - **偽の tailnet と Listener**: `internal/tailnet/e2e.go`（`//go:build e2e`）の `E2EWatcher`・`E2EWhoIs`（接続元のデバイスを切り替えられる）と `LoopbackListenFunc`。Listener は本物の `tailnet.NewListener` のままで、偽の Watcher が tailnet の IPv4（`100.64.0.1`）を報告し、Listener がそこへ Listen しようとするたびに、`app.Config.ListenFunc` がソケットだけを**同じポートの `127.0.0.1`** に差し替える（対象の絞り込み・再試行・状態の報告は本番と同じ）。偽の Watcher は `127.0.0.1` も報告する。ブラウザが送る Host（`127.0.0.1:<port>`）がリモートルーターの Host 検査（NFR-S02）を通るようにするため（Listener は loopback を Listen の対象にしない）。リモートルーターのポートは設定 `server.port` と同じ値（`-port`。Host 検査はこのポートだけを通す）
+- **偽のデスクトップ**（#157。`internal/app/e2e_desktop.go`）: 偽アプリ（`platformtest.FakeApp`。T・メニュー・保存ダイアログ）・背景の偽ウィンドウ（昇格など）・偽のキャプチャを使い、`/desktop/*` の制御エンドポイント（別プロセスの窓・別プロセスのダイアログ・撮れないメニュー・T を閉じる・偽アプリの状態の読み取り）でシナリオを作る。**偽 platform で、Windows 実機の成立性ゲート（S1〜S3。実機未確認）の代わりにならない**ので、成功経路の試験名には `[偽 platform の成功経路。実機の代わりにならない]` を付ける。
 - **制御エンドポイント**（ホスト側の操作と、偽の injector に届いた入力の読み取り）: **e2e ビルドだけ**にあり、リモートルーターとは別のソケット（`-control`）で、**loopback の IP リテラル（`127.0.0.1`・`::1`）にだけ bind する**（それ以外のアドレスは起動を拒否する。名前・`0.0.0.0` も不可）。loopback 以外の接続元は 403。認証は無い。ホスト側の操作は本物の経路を呼ぶ（DB の行を直接書かない）: `POST /requests/allow`（`HostAdmin.ApproveRequest`。承認モードは既定で自動許可）、`POST /lease/revoke`（`LeaseManager.Revoke`（ホスト））、`POST /killswitch`・`/killswitch/release`（トレイ・ホットキーと同じ経路）。ほかに `GET /ready`（リモートルーターの待ち受け開始で 200。Playwright の `webServer` が待つ）、`POST /identity?as=registered|unregistered`（偽の WhoIs）、`GET /requests`（保留中の接続要求）、`GET /lease`、`GET /inputs`（偽の injector が受けた入力。座標とボタン）、`POST /reset`（キルスイッチ解除・リース解放・クライアント削除・入力の記録の消去・未登録に戻す。各テストの先頭で呼ぶ）。loopback だけにバインドすること・非 loopback の接続元の拒否・loopback 以外の `-control` の拒否は、Go のテスト（`-tags e2e`）で検査する
 - **Playwright**: Chromium のみ。設定は `static/playwright.config.ts`。`webServer` が `go build -tags e2e` でテスト専用サーバーをビルドして起動し（`go run` は SIGTERM を子へ渡さず一時ディレクトリが残るため、ビルドしてから実行する）、`GET /ready` を待つ。状態は 1 つなので直列（`workers: 1`）。固定時間の待機は使わない（自動待機・web-first アサーション・`expect.poll`）。`static/dist`（`bun run build`）を配信する
 - **Chromium の導入**: `PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`（ジョブ専用の領域）へ `bunx playwright install --with-deps chromium` で入れる。`--with-deps` はブラウザに要るシステムのライブラリを入れる（ubuntu-latest は sudo を使える）。手元では `--with-deps` を付けない（`task frontend:browsers`）
@@ -539,6 +552,7 @@ graph LR
 
 | 要件 | 担当 |
 |------|------|
+| FR-W10〜W14（ウィンドウの一覧・グループ表示・停止と再開。#157。実機未確認） | `organisms/window_picker.templ`、`<remo-screen-viewer>` の `target` バナー（§6.2）、`handler/remote`（`GET /viewer/windows`・`POST /viewer/target`）、`internal/ws`（`target.go`） |
 | FR-W01〜W09（Web UI） | `pages/remote`、`organisms/remote`、`<remo-screen-viewer>`、`handler/remote` |
 | FR-H02〜H11（ホスト GUI） | `pages/gui`、`organisms/gui`、`handler/gui`（`GET /poll`）。M1 のダッシュボードは状態表示・キルスイッチ・接続要求・クライアント管理まで。GUI の強制剥奪ボタンは M2 で実装した（`organisms.LeasePanelBody` の `CanRevoke`。`POST /lease/revoke`）。実行中のエージェントタスクのパネルと中断ボタンは M4 で実装した（`organisms.RunningTasksPanel`・`organisms.TaskStatus`。`POST /tasks/{id}/cancel`。`GET /poll` の `rev_tasks`）。タスク画面（`/tasks`・`/tasks/{id}`。FR-H10）は `pages.Tasks` / `TaskDetail`・`organisms.TaskList` / `TaskDetail` |
 | FR-G25〜G30（ChatGPT のプラン経路の GUI。#49） | `organisms`（ChatGPT のカード `#chatgpt-card`・接続方式の選択・確認モーダル 2 種〔API キーへの切り替え、解除〕・初回の確認）、`handler/gui`（`/agent/chatgpt/*`・`/agent/connection*`）、`GET /poll`（`rev_chatgpt`）。リモートの UI には作らない |
@@ -615,3 +629,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.30 | 2026-11-02 | §5.4 に、エージェント設定画面の ChatGPT のプランのカード（状態駆動の表示・サインイン / 解除 / 使用量の管理 / 再開 / API キーへの切り替えの確認モーダル・初回の確認・`/poll` での反映）と、§10 のトレースを追記。設計のみ | #49 |
 | 1.31 | 2026-11-02 | §9 の「tailnet の IP だけで Listen する」に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |
 | 1.32 | 2026-11-03 | §5.4 の起動許可アプリ画面（`/apps`）に、起動の方式のパネル（ホワイトリスト〔既定〕/ ブラックリスト。切り替えの確認モーダル）と拒否リストのセクション（パス / 実行ファイル名・200 件・注意書き）、ルートの応答（`PUT /apps/mode`・`/apps/denied*`。ホスト GUI のルーターだけ）、§10 のトレースを追記 | #88 |
+| 1.33 | 2026-11-09 | §6.2 に「対象ウィンドウ」（#157。ウィンドウの一覧・源はリースに従う・合成画像内の座標・`target` バナー・`halted` の間の入力・スコープ中の操作 UI）と `remo:reselect`・`remo:error` の `reason`、§9 に偽のデスクトップの E2E、§10 に FR-W10〜W14 を追加。実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10） | #157 |

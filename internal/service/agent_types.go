@@ -117,6 +117,9 @@ type StartInput struct {
 	Prompt         string
 	MaxSteps       int
 	MaxDurationSec int
+	// WindowID は操作を 1 つのウィンドウ（と所有関係を検証できる同一プロセスのダイアログ・メニュー）に限る（#158。空ならスコープなし）。
+	// 開始時に選択検査（自ウィンドウ・昇格・不在・最小化・agent.deny_processes）を行い、通らなければタスクを開始しない。
+	WindowID string
 }
 
 // Agent は MCP の run_task / get_task / cancel_task の窓口（docs §5.6）。by は依頼したクライアント（mcp の Actor）。
