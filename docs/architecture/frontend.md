@@ -563,6 +563,27 @@ Ousiass 共通ガイド（brand-guide）に収載の無い 2 つの部品の寸�
 | ボタン | 右寄せ・間隔 8px（`--s-2`）・本文との間は 24px（モーダルの `mt-6` と同じ）。**拒否（サブ）が左・許可（主）が右**（モーダルのキャンセルが左・確定が右と同じ並び）。ボタンの形はモーダルと共通（`atoms.Button`） | `flex justify-end gap-2 pt-2`（`space-y-4` の 16px と合わせて 24px） |
 | 許可・拒否後・失効後 | 同じカード（本文 base 16px・`--ink`） | `ApprovalDone`・`ApprovalGone` も `rounded-xl border border-border bg-surface p-6 shadow-modal` |
 
+**操作中オーバーレイ**（FR-H07。リースが保持されている間、全モニターの縁に出す。Windows の Win32 ネイティブウィンドウ（`app/wails_overlay_windows.go`）で、HTML・WebView2 は使わない（#86: 全面の WebView2 ウィンドウは透明が効かず真っ白になった）。つまり Templ・CSS ではなく、下の表の値を `app/overlay_layout.go` の定数と `overlayColorsFor`（`app.css` のトークンの 16 進を写したもの）で持つ）。色は枠・札とも不透明。装飾（色の強調・影・角丸・アニメーション）は無い。
+
+| 項目 | 値 | 実装 |
+|------|----|------|
+| 枠の構成 | モニターの縁に沿う 2 重線。**外側が `--ink`、内側が `--bone`**（明るい壁紙でも暗い壁紙でも、どちらかの線が見える）。外側の線はモニターの縁からの輪で、角でも途切れない | `overlayOuterInk`（外側の範囲）・残りを内側の色で塗る |
+| 枠の太さ | 合計 4 DIP = 外側 2 DIP + 内側 2 DIP（DPI に比例。100% で 4px、150% で 6px。最低 1px） | `overlayBorderDIP = 4`・`overlayOuterDIP = 2` |
+| 札の位置・大きさ | 上端の中央。内側の余白は横 16 DIP・縦 4 DIP。幅の上限はモニター幅の 60%（超えた分は末尾を「…」） | `overlayLabelPadXDIP`・`overlayLabelPadYDIP`・`overlayLabelMaxWidthPercent` |
+| 札の地・文字 | 地は `--surface`、文字は `--ink`。色の強調なし | `overlayColors.LabelBG`・`LabelText` |
+| 札の文字の大きさ | sm 14 DIP（1 行目 SemiBold・2 行目 Regular）。フォントは Windows のシステムフォント（Segoe UI）。ネイティブウィンドウは同梱の Web フォントを使えない | `overlayFontDIP = 14`・`overlayFontFace` |
+| アニメーション | なし（表示・非表示・文言の差し替えは即時） | — |
+
+色（OS の「アプリのテーマ」に従う。ウィンドウを作るとき（リースを取って出すたび・モニター構成が変わったとき）に読み、保持者が変わるだけの文言の差し替えでは読み直さない。ウィンドウの下地色（§8.4）と同じ判定）:
+
+| トークン | ライト | ダーク | 使う場所 |
+|---------|--------|--------|---------|
+| `--ink` | `#050505` | `#ffffff` | 枠の外側の線・札の文字 |
+| `--bone` | `#f5f5f4` | `#050505` | 枠の内側の線 |
+| `--surface` | `#ffffff` | `#141414` | 札の地 |
+
+クリック透過・フォーカスを奪わない・最前面・キャプチャ除外（NFR-S06）と、枠・札を別々のウィンドウにして真ん中を覆わない構造（#86）は、この案件ガイドの対象外（見た目だけを定める）。実機での確認は実機スモーク（`docs/operations/smoke-windows.md` §4.12 の O1）。
+
 ## 9. テスト戦略
 
 レイヤーごとに手法を使い分ける。HTMX のインタラクションは E2E でカバーする。CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップが無いため、E2E は偽の `platform` 実装で行う（[コンポーネント設計](../components/overview.md) §10）。偽の platform と偽の tailnet で OS 非依存になるため、Playwright は Linux のランナーで実行する（Chromium の導入が容易）。Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけで、Windows の実機は CI に使わない。実機スモークは手動のまま。Lit のテストと Playwright の E2E は、M2 の受け入れ条件には含めず、あとから CI の改善として足した（オーナーの決定。#64）。別ジョブ `e2e` で走る（下の「CI の手順」）。

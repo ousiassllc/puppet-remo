@@ -13,8 +13,10 @@ import (
 // このファイルは配置の計算だけ（OS に依存しない）。ウィンドウの描画と出し入れは Windows 側が行う。
 
 const (
-	// overlayBorderDIP は枠の太さ（DIP。100% の DPI で 4 px）。
+	// overlayBorderDIP は枠の太さ（DIP。100% の DPI で 4 px）。外側の線（overlayOuterDIP）と内側の線の 2 重線で、内側の太さは差の分。
 	overlayBorderDIP = 4
+	// overlayOuterDIP は外側の線（--ink）の太さ（DIP）。内側の線（--bone）は overlayBorderDIP - overlayOuterDIP = 2 DIP。
+	overlayOuterDIP = 2
 	// overlayLabelPadXDIP・overlayLabelPadYDIP は札の中の余白（DIP）。
 	overlayLabelPadXDIP = 16
 	overlayLabelPadYDIP = 4
@@ -36,7 +38,11 @@ func overlayPx(m domain.Monitor, dip int) int {
 // 上下はモニターの幅いっぱい、左右は上下の間だけ。真ん中（モニターから枠を引いた内側）は含まない。
 // モニターが枠の 2 本分より小さいときは、モニター全体を 1 本目（上）にして残りを空にする（作らない）。
 func overlayBars(m domain.Monitor) [4]domain.Rect {
-	b := overlayPx(m, overlayBorderDIP)
+	return overlayStrips(m, overlayPx(m, overlayBorderDIP))
+}
+
+// overlayStrips はモニター m の縁に沿う太さ b（物理 px）の 4 本（上・下・左・右の順）。overlayBars の形と同じ。
+func overlayStrips(m domain.Monitor, b int) [4]domain.Rect {
 	x, y, w, h := m.Origin.X, m.Origin.Y, m.Size.W, m.Size.H
 	if w <= 2*b || h <= 2*b {
 		return [4]domain.Rect{{X: x, Y: y, W: max(w, 0), H: max(h, 0)}}
@@ -47,6 +53,43 @@ func overlayBars(m domain.Monitor) [4]domain.Rect {
 		{X: x, Y: y + b, W: b, H: h - 2*b},
 		{X: x + w - b, Y: y + b, W: b, H: h - 2*b},
 	}
+}
+
+// overlayOuterInk は、枠の 1 本（物理座標の矩形 bar。overlayBars の要素）のうち、外側の線（--ink）で塗る範囲を bar の左上を原点とする座標で返す。
+// bar の残りは内側の線（--bone）。外側の線はモニターの縁から overlayOuterDIP の太さの輪なので、角でも 4 本をまたいで途切れない。
+func overlayOuterInk(m domain.Monitor, bar domain.Rect) []domain.Rect {
+	var ink []domain.Rect
+	for _, s := range overlayStrips(m, min(overlayPx(m, overlayOuterDIP), overlayPx(m, overlayBorderDIP))) {
+		x0, y0 := max(s.X, bar.X), max(s.Y, bar.Y)
+		x1, y1 := min(s.X+s.W, bar.X+bar.W), min(s.Y+s.H, bar.Y+bar.H)
+		if x0 < x1 && y0 < y1 {
+			ink = append(ink, domain.Rect{X: x0 - bar.X, Y: y0 - bar.Y, W: x1 - x0, H: y1 - y0})
+		}
+	}
+	return ink
+}
+
+// overlayColors は操作中オーバーレイの色（COLORREF = 0x00BBGGRR）。値は app.css のトークンと同じ 16 進
+// （frontend.md §8.5「案件ガイド」）。ネイティブウィンドウは CSS を読めないので、ここに写す。
+type overlayColors struct {
+	Outer     uint32 // 枠の外側の線（--ink）
+	Inner     uint32 // 枠の内側の線（--bone）
+	LabelBG   uint32 // 札の地（--surface）
+	LabelText uint32 // 札の文字（--ink）
+}
+
+// colorRef は 0xRRGGBB を COLORREF（0x00BBGGRR）にする。
+func colorRef(rgb uint32) uint32 {
+	return (rgb&0xff)<<16 | rgb&0xff00 | rgb>>16&0xff
+}
+
+// overlayColorsFor は OS のアプリのテーマ（dark）に合わせた色。ライトは --ink #050505・--bone #f5f5f4・--surface #ffffff、
+// ダークは --ink #ffffff・--bone #050505・--surface #141414（app.css の :root と [data-theme="dark"]）。
+func overlayColorsFor(dark bool) overlayColors {
+	if dark {
+		return overlayColors{Outer: colorRef(0xffffff), Inner: colorRef(0x050505), LabelBG: colorRef(0x141414), LabelText: colorRef(0xffffff)}
+	}
+	return overlayColors{Outer: colorRef(0x050505), Inner: colorRef(0xf5f5f4), LabelBG: colorRef(0xffffff), LabelText: colorRef(0x050505)}
 }
 
 // overlayLabelMaxTextWidth は札の文字が使える幅の上限（物理 px。余白を除く）。
