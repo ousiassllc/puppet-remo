@@ -24,6 +24,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | `PUPPET_REMO_SMOKE_CLIPBOARD` | 未設定 | `1` のときだけクリップボードのテスト（`TestSmokeClipboard`）を走らせる。終了時にテキストを元に戻すが、テキスト以外の内容は失われる |
 | `PUPPET_REMO_SMOKE_LAUNCH_ELEVATED` | 未設定 | `requireAdministrator` のマニフェストを持つ実行ファイルのパス。設定すると `TestSmokeAppLauncher` が `elevation_required` を確かめる（§3.8 L4）。未設定なら飛ばす |
 | `PUPPET_REMO_SMOKE_LAUNCH_DENIED` | 未設定 | 起動を OS に拒否される実行ファイルのパス（ACL で実行を拒否したファイルなど）。設定すると `TestSmokeAppLauncher` が `access_denied` を確かめる（§3.8 L5）。未設定なら飛ばす |
+| `PUPPET_REMO_SMOKE_LAUNCH_MAPPED` | 未設定 | ネットワークのマップドドライブ上の実行ファイルのパス（例: `Z:\tools\app.exe`。事前に `net use` などで割り当てておく）。設定すると `TestSmokeAppLauncherLocation` が `access_denied` を確かめる（§3.8 L18）。`GetDriveType` がネットワークでなければ・未設定なら飛ばす |
+| `PUPPET_REMO_SMOKE_LAUNCH_UNC` | 未設定 | ネットワーク共有（UNC）上の実行ファイルのパス（例: `\\nas\share\app.exe`）。設定すると `TestSmokeAppLauncherLocation` が `access_denied` を確かめる（§3.8 L19）。管理者共有 `\\localhost\C$` は自動では使わない。未設定なら飛ばす |
 | `PUPPET_REMO_SMOKE_PICKER` | 未設定 | `1` のときだけファイル選択のテスト（`TestSmokeFilePicker`。§3.8 L9）を走らせる。ダイアログが開くため、手動で選択・キャンセルの操作が要る |
 | `PUPPET_REMO_SMOKE_FOLDER` | 未設定 | `1` のときだけフォルダーを開くテスト（`TestSmokeFolderOpener`。§4.14 F1）を走らせる。一時ディレクトリのエクスプローラーが 1 つ開く（手で閉じる） |
 
@@ -135,7 +137,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 | # | 確認項目 | 期待 |
 |---|---------|------|
-| L1 | `go test -tags smoke -run 'TestSmokeAppLauncher' -v ./internal/platform/windows/` | `PASS`。契約テストのうち L4・L5 の環境変数が未設定のサブテストだけ `SKIP`、ほかは `FAIL` にならない |
+| L1 | `go test -tags smoke -run 'TestSmokeAppLauncher' -v ./internal/platform/windows/`（`TestSmokeAppLauncherArgs`・`TestSmokeAppLauncherLocation` も前方一致で走る） | `PASS`。契約テストのうち L4・L5 の環境変数が未設定のサブテスト、L10〜L19 のうち前提を満たせないサブテスト（リンクの作成権限・`subst`・8.3・L18/L19 の環境変数）だけ `SKIP`、ほかは `FAIL` にならない |
 | L2 | `go test -tags smoke -run TestSmokeAppLauncherArgs -v ./internal/platform/windows/`（テストのバイナリを空白・日本語を含むパスへコピーし、空白・引用符・バックスラッシュ・日本語・`&`・`%`・`\|` などを含む引数を `Launch` して、子プロセスが受け取った引数を照合する） | `PASS`。登録どおりの引数がそのまま渡る（`CommandLineToArgvW` の規則で往復する）。シェルを経由しない（`cmd.exe` の特殊文字 `&`・`%` がシェルに解釈されない） |
 | L3 | 存在しない実行ファイルを `Launch` | `LaunchError{Reason: file_missing}`。メッセージにパス・引数が入らない |
 | L4 | `requireAdministrator` のマニフェストを持つ実行ファイルを `Launch`（標準権限のアプリから） | `LaunchError{Reason: elevation_required}`。UAC のダイアログが出ない |
@@ -144,6 +146,16 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | L7 | 起動後のプロセスと本アプリの関係 | `Launch` が返した `pid` が実在する。本アプリを終了・キルスイッチ発動しても、起動したプロセスは終了しない。ハンドルがリークしない（`Launch` を 200 回呼んでもハンドル数が増え続けない） |
 | L8 | 標準権限のまま起動する | 起動したプロセスのトークンが本アプリと同じ整合性レベル（昇格していない） |
 | L9 | `FilePicker.PickExecutable`（`go test -tags smoke -run TestSmokeFilePicker -v ./internal/platform/windows/`。`PUPPET_REMO_SMOKE_PICKER=1` のときだけ走る。手動操作が要る） | `.exe` のフィルターのダイアログが開き、選択でパスが返る。キャンセルで `ok=false`。3 秒後の `ctx` の取り消し（操作しない）でダイアログが閉じ `context.DeadlineExceeded` が返る |
+| L10 | `go test -tags smoke -run 'TestSmokeAppLauncherLocation/L10' -v ./internal/platform/windows/`（`TestSmokeAppLauncherLocation` は L10〜L19 をサブテストにしたもの。`-run 'TestSmokeAppLauncherLocation'` で全部走る。サブテストは前提を満たせないと理由つきで `SKIP`。リンク・`subst` は一時ディレクトリの中・未使用のドライブ文字にだけ作り、終了時にテスト自身が作ったものだけ消す）。通常のインストール先 `%SystemRoot%\System32\notepad.exe` を `Launch` | `PASS`。起動できる（場所の検査が通常のパスを誤って拒否しない）。残ったメモ帳のウィンドウは手で閉じる |
+| L11 | 一時ディレクトリに置いた、名前が 8.3 に収まらない長さ・空白つきの実行ファイル（テストのバイナリのコピー）を `Launch` / `Resolve`（対照。`-run 'TestSmokeAppLauncherLocation/L11'`） | `Launch` が成功し、`Resolve` が同じパスを返す。以降の拒否の確認が「置き場所のせいではない」ことの裏付け |
+| L12 | L11 のパスを全部大文字・全部小文字にして `Launch`（`-run 'TestSmokeAppLauncherLocation/L12'`） | 許可（`finalPathMatches` は大文字小文字を区別しない）。拒否されたら `finalPathMatches` を見直す |
+| L13 | L11 のパスの区切りを `/` にして（`C:/Users/.../app.exe`。全小文字との組み合わせも）`Launch`（`-run 'TestSmokeAppLauncherLocation/L13'`） | 許可（`/` は `\` に正規化して比べる）。拒否されたら `finalPathMatches`・`normalizeSeparators` を見直す |
+| L14 | L11 のパスを 8.3 短縮名（`GetShortPathName`）にして `Launch` / `Resolve`（`-run 'TestSmokeAppLauncherLocation/L14'`。ボリュームで 8.3 が無効なら `SKIP`） | `Launch` は `access_denied`（実体の綴りと違うので fail closed。**現行設計の想定**）。`Resolve` は長い名前の実体のパスを返す（拒否リストの照合は実体のパスで行う）。8.3 でも許可されると分かった（誤って通る）、または運用で 8.3 の登録が必要と分かった場合は `finalPathMatches` を見直す |
+| L15 | ジャンクション（`mklink /J`。権限不要）経由のパスを `Launch` / `Resolve`（`-run 'TestSmokeAppLauncherLocation/L15'`） | `Launch` は `access_denied`、メッセージにパスが入らない。`Resolve` は実体のパスを返す |
+| L16 | シンボリックリンク（ディレクトリ・ファイルの 2 通り）経由のパスを `Launch`（`-run 'TestSmokeAppLauncherLocation/L16'`。開発者モードか管理者でなければ作成できず `SKIP`） | どちらも `access_denied` |
+| L17 | `subst` ドライブ経由のパスを `Launch` / `Resolve`（`-run 'TestSmokeAppLauncherLocation/L17'`。未使用のドライブ文字へ `subst X: <一時ディレクトリ>` し、終了時に `subst X: /d` で解除する。ログに `GetDriveType` の値が出る） | `Launch` は `access_denied`（`GetDriveType` が固定でも、実体のパスと一致しない）。`Resolve` は実体のパスを返す。終了後に `subst`（引数なし）の一覧にそのドライブが残っていない |
+| L18 | ネットワークのマップドドライブ上の実行ファイルを `Launch`（`PUPPET_REMO_SMOKE_LAUNCH_MAPPED=Z:\tools\app.exe` を設定して `-run 'TestSmokeAppLauncherLocation/L18'`。共有は別マシン・NAS に用意し、`net use Z: \\nas\share` で割り当てておく。害のない実行ファイルを置く） | `access_denied`（`GetDriveType` がネットワーク）。プロセスは起動しない |
+| L19 | UNC パスの実行ファイルを `Launch`（`PUPPET_REMO_SMOKE_LAUNCH_UNC=\\nas\share\app.exe` を設定して `-run 'TestSmokeAppLauncherLocation/L19'`） | `access_denied`。プロセスは起動しない |
 
 ### 3.9 Capturer.Watch（DXGI Desktop Duplication・GDI フォールバック。M2。#57。FR-W01・W09、NFR-P02・P04）
 
@@ -290,6 +302,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | R4 | tailscaled を停止・再起動 | 待ち受けが止まり（理由がダッシュボードに出る）、再起動後 10 秒以内に復旧する |
 | R5 | 設定画面でポートを変更して保存 | 新しいポートで待ち受け直し、古いポートは閉じる |
 | R6 | リースのアイドル時間を設定画面で変更 | 保持中のリースにも新しい値が適用される |
+| R7 | 許可済みの端末（WhoIs で解決できる接続元）から MCP / Web に接続し、ダッシュボードの「接続要求」「クライアント」を見る（#15。LocalAPI の `WhoIs`、FR-A03） | 接続元の **ユーザー（ログイン名）とデバイス名が表示**される（WhoIs が成功している証拠）。tailnet 内の未登録の端末は WhoIs が成功して `device_not_registered` になる（R2）。WhoIs 自体の失敗（`whois_failed`）は再現が難しいので、この項目では確かめない。WhoIs の結果は接続元 IP 単位で最大 10 秒キャッシュされる（NFR-S05）ため、同じ端末でログインを替えた直後は 10 秒待って確かめる |
+| R8 | tailnet の IP が変わる操作（`tailscale down` → `tailscale up`、別の tailnet への切り替え）をして、ダッシュボードの待ち受けの表示と `netstat -ano \| findstr 8765` を見る（#15。IP 変化の監視 `WatchIPNBus`） | 切断中は待ち受けが止まり理由が出る。再接続後、**10 秒以内**に新しい tailnet の IPv4・IPv6 だけで LISTENING に戻る（R4 と同じ基準） |
 
 ### 4.5 キルスイッチ（FR-H06）
 
@@ -491,6 +505,22 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | D20 | `/apps` の見た目の確認（スクリーンショットを残す）: 「起動の方式」のパネル（ホワイトリスト方式・ブラックリスト方式の両方）、確認モーダル、「拒否リスト」の欄（項目の種別の表示・追加フォーム・編集・削除の確認・上限 200 の注意・ブラックリスト方式でだけ効く旨・`cmd.exe` / `powershell.exe` などのインタープリタの注意） | 文言が欠けず、レイアウトが崩れない（WebView2 の表示。§4.3 と同じ観点）。長い値の行がパネルの外へ溢れない。画像は Issue #88 に添付する |
 | D21 | 後始末 | 起動したペイント・メモ帳（`renamed-np.exe` など）をすべて閉じる（`tasklist` で残りが無い）。`rmdir C:\SmokeJunction`、`del C:\SmokeDeny\link.exe`、`rmdir /s /q C:\SmokeDeny`。`/apps` の拒否リストのテスト用の行を削除し、方式をホワイトリスト方式に戻す |
 
+### 4.17 M1 の実機確認（Issue #15）の項目と手順の対応
+
+Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認の項目）」のチェックリストの各項目と、この文書の手順の対応表。#15 の項目を実機で確かめるときは、この表の手順を使い、結果（OS 版・tailscale 版・不具合があれば別途報告）を #15 のコメントに残す。**どの項目も、実機では未確認**（CI は `GOOS=windows` の build と vet だけ。環境は §1 の準備を満たす使い捨ての Windows と、実 tailscaled が動く tailnet）。
+
+| #15 の項目 | 手順 | 補足 |
+|---|---|---|
+| GDI（`BitBlt`）のキャプチャ: マルチモニター・DPI・スクリーンショットの縮小座標 | §3.1 C1〜C7（C2・C4: DPI、C3: マルチモニター）、§3.2 I1（縮小 → 物理の座標の往復）、§4.10 S2（DPI 混在の縮小） | 継続キャプチャ `Watch` は §3.9（M2） |
+| `SendInput`: マウス・クリック・ドラッグ・ホイール、キー・修飾キー、`KEYEVENTF_UNICODE` による日本語の `type`、UIPI | §3.2 I3〜I7（マウス・キー）、I10（日本語・絵文字の `Text`）、I12（管理者権限のウィンドウ。UIPI） | 契約テスト `TestSmokeInput*`（§2） |
+| ウィンドウ列挙・`focus_window`（前面化）、クリップボードのテキスト読み書き | §3.3 WM1〜WM10（WM8: `Focus`）、§3.4 B1〜B5 | |
+| UI Automation（`get_ui_tree`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト | §3.5 U1〜U5（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
+| グローバルホットキー（既定 `Ctrl+Alt+Shift+K`）によるキルスイッチ（1 秒以内の効果） | §3.6 K1〜K4、§4.5 | |
+| `SetThreadExecutionState`（リース保持中のスリープ・画面オフ抑止。`powercfg /requests`） | §4.6 SL1〜SL7 | |
+| 実 tailscaled: LocalAPI の `WhoIs`、IP 変化の監視、tailscaled 再起動後の 10 秒以内の復旧、tailnet の IPv4・IPv6 のみへの Listen | §4.4 R1（Listen）、R4（再起動後 10 秒以内の復旧）、**R7（WhoIs）**、**R8（IP 変化の監視）** | R7・R8 は #15 の項目に手順がなかったため足した |
+| Wails のウィンドウ・トレイ・単一インスタンス・ウィンドウを閉じても常駐・ログオン時の自動起動 | §4.1 S1〜S7、§4.2 A1〜A5 | |
+| WebView2 上での CSP（`script-src 'self'`）、`GET /poll` による GUI の自動更新、トークン表示のクリップボード操作 | §4.3 WV1（CSP 違反が出ない）、WV3（`GET /poll`）、WV4（トークンのコピー） | |
+
 ## 5. 既知の制約（M1）
 
 - キャプチャ: 1 枚撮り（`Grab`）は GDI `BitBlt`、継続キャプチャ（`Watch`）は DXGI（Desktop Duplication）で、使えなければ GDI（M2。§3.9）。DXGI は既定のアダプターに接続されたモニターだけを複製する（別 GPU のモニターは GDI になる）。`Frame.Dirty` は常に全面。排他フルスクリーンのゲームや DRM 保護された動画は写らないことがある。
@@ -526,3 +556,5 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | — | 2026-11-02 | §R1 の確認に、ChatGPT のサインイン中だけ `127.0.0.1` の一時ポートで LISTENING になる例外を追記（#49 の実装後の確認項目） | #49（レビュー指摘） |
 | — | 2026-11-03 | §4.12 を、WebView2 の全面ウィンドウから、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウに合わせて更新（O1 に「中身が白くならない」の実機確認、O12 を追加）。§4.8 の A5・A5b・A5c を、`window` が起動したアプリのウィンドウだけになった（見つからなければ付かない）ことに合わせて更新。実機の確認は未確認 | #85・#86 |
 | — | 2026-11-03 | §4.16（ブラックリスト方式: 起動の方式の切り替えと確認モーダル、拒否リストの登録・編集・削除と監査、`path` での起動、名前・パス・大文字小文字・8.3 短縮名・シンボリックリンク・ジャンクションでの拒否、名前を変えたコピーは検出されない既知の制限、固定ディスク外・不在・形の不正、`app_id` との同時指定、許可リストのアプリも拒否が優先、ホワイトリスト方式へ戻す・再起動・キルスイッチ、`/apps` のスクリーンショット D1〜D21。未確認）を追加。§4.8 の A4・A6 を `mode` と `path` の受け付けに合わせ、§5 に残存リスクを追記、タイトルを更新 | #88 |
+| — | 2026-11-11 | §3.8 に起動場所の検査の実機確認 L10〜L19（通常の System32・大文字小文字・`/` 区切り・8.3 短縮名・ジャンクション・シンボリックリンク・`subst`・マップドドライブ・UNC。`TestSmokeAppLauncherLocation`。未確認）を追加し、§2 に `PUPPET_REMO_SMOKE_LAUNCH_MAPPED` / `PUPPET_REMO_SMOKE_LAUNCH_UNC` を追加 | #36 |
+| — | 2026-11-11 | §4.17（#15 の項目と手順の対応表）を追加し、§4.4 に R7（WhoIs の確認）・R8（IP 変化の監視）を足した。実機の確認は未確認 | #15 |
