@@ -30,6 +30,7 @@
     "@web/test-runner-playwright": "1.0.0",
     "concurrently": "10.0.6",
     "esbuild": "0.28.2",
+    "subset-font": "2.9.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2"
   },
