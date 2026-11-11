@@ -40,11 +40,15 @@ templ WindowPicker(v view.WindowPicker) {
 			}
 		</div>
 		if v.ScopedProcess != "" {
-			<p class="text-sm text-ink" data-window-scoped>対象のウィンドウ: <span class="font-semibold">{ v.ScopedProcess }</span>（ウィンドウ 1 枚と関連するダイアログ・メニューだけを表示・操作します）</p>
+			<p class="text-sm text-ink" data-window-scoped>対象のウィンドウ: <span>{ v.ScopedProcess }</span>（ウィンドウ 1 枚と関連するダイアログ・メニューだけを表示・操作します）</p>
 		} else if v.Message != "" {
-			<p class="text-sm text-mute" role="status" data-window-message>{ v.Message }</p>
+			@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-window-message": true}) {
+				{ v.Message }
+			}
 		} else if v.Error != "" {
-			<p class="text-sm text-danger" role="alert" data-window-error>{ v.Error }</p>
+			@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-window-error": true}) {
+				{ v.Error }
+			}
 		} else if len(v.Rows) == 0 {
 			<p class="text-sm text-mute" data-window-empty>選べるウィンドウがありません。</p>
 		} else {
@@ -60,7 +64,7 @@ templ WindowPicker(v view.WindowPicker) {
 templ windowRow(r view.WindowRow) {
 	<li class="flex items-center justify-between gap-3 py-2" data-window-id={ r.ID } data-selectable?={ r.Selectable } if !r.Selectable { aria-disabled="true" }>
 		<div class={ rowTextClass(r) }>
-			<p class="truncate text-sm font-medium" data-window-title>{ r.Title }</p>
+			<p class="truncate text-sm" data-window-title>{ r.Title }</p>
 			<p class="flex flex-wrap items-center gap-2 text-xs">
 				<span data-window-process>{ r.Process }</span>
 				if r.Foreground {
