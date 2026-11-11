@@ -18,6 +18,7 @@ type InputProps struct {
 	Required    bool
 	Readonly    bool
 	Invalid     bool
+	Mono        bool // true なら JetBrains Mono（トークンなど、文字の判読が要る識別子）
 	Attrs       Attrs
 }
 
@@ -28,12 +29,27 @@ func inputType(t string) string {
 	return t
 }
 
-func inputClass(invalid bool) string {
-	base := "block w-full min-w-0 rounded-md border bg-white px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 read-only:bg-slate-50 "
-	if invalid {
-		return base + "border-red-400 focus:ring-red-400"
+func inputClass(invalid, mono bool) string {
+	size := "h-10 px-3 "
+	if mono {
+		size += "font-mono "
 	}
-	return base + "border-slate-300 focus:ring-indigo-400"
+	return fieldClass(size, invalid)
+}
+
+// textareaClass は複数行の入力欄のクラス（高さは行数で決まるので、高さの指定は持たない）。
+func textareaClass(invalid bool) string {
+	return fieldClass("px-3 py-2 ", invalid)
+}
+
+// fieldClass は入力欄・選択欄・複数行の入力欄に共通のクラス。本文と同じ 16px・Regular。読み取り専用（readonly 属性）だけ --bone 地にする
+// （:read-only は select にも一致するので使わない）。無効（disabled）は opacity .5（O7）。
+func fieldClass(size string, invalid bool) string {
+	base := "block w-full min-w-0 rounded-md border bg-surface text-base [&[readonly]]:bg-bone disabled:cursor-not-allowed disabled:opacity-50 " + size
+	if invalid {
+		return base + "border-danger"
+	}
+	return base + "border-border"
 }
 
 // Input は 1 行の入力欄。
@@ -58,7 +74,7 @@ func Input(p InputProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{inputClass(p.Invalid)}
+		var templ_7745c5c3_Var2 = []any{inputClass(p.Invalid, p.Mono)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -70,7 +86,7 @@ func Input(p InputProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(p.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 34, Col: 11}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 50, Col: 11}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -83,7 +99,7 @@ func Input(p InputProps) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 35, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 51, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -96,7 +112,7 @@ func Input(p InputProps) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(inputType(p.Type))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 36, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 52, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -109,7 +125,7 @@ func Input(p InputProps) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(p.Value)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 37, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 53, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -122,7 +138,7 @@ func Input(p InputProps) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(p.Placeholder)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 38, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/input.templ`, Line: 54, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {

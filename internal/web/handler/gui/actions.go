@@ -21,7 +21,7 @@ import (
 // 成功は 200 で、メインの更新に副作用の反映（ヘッダー・件数バッジ・モーダルを閉じる・トースト）を OOB で添える（§5.2）。
 // 状態を変える操作はすべてホスト所有者の操作で、service が actor_type = host で監査に記録する。
 
-func infoToast(msg string) view.Toast { return view.Toast{Level: view.ToastInfo, Message: msg} }
+func infoToast(msg string) view.Toast { return view.Toast{Message: msg} }
 
 // checked はフォームのチェックボックス（チェック時だけ値が送られる）が入っているか。
 func checked(c *gin.Context, name string) bool {
@@ -128,7 +128,7 @@ func (h *Handler) ResetApproval(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	h.render(c, http.StatusOK, organisms.ClientCard(h.clientView(updated, c.Query("view") != "detail")), organisms.ToastOOB(infoToast("承認を取り消しました。次のリース取得から承認が必要です。")))
+	h.render(c, http.StatusOK, organisms.ClientCard(h.clientView(updated, c.Query("view") != "detail")), organisms.ToastOOB(infoToast("承認を取り消しました。")))
 }
 
 // DeleteClient は DELETE /clients/:id。応答は一覧のフラグメント。
@@ -257,7 +257,7 @@ func (h *Handler) ConfirmDeleteClient(c *gin.Context) {
 	h.confirm(c, view.ConfirmModal{
 		Title:      "クライアントを削除しますか？",
 		Message:    "「" + client.DisplayName + "」を許可リストから外します。発行済みのトークンは削除され、接続中のセッションは切断されます。",
-		ConfirmURL: "/clients/" + client.ID, Method: "delete", Target: "#client-list", Swap: "outerHTML", Label: "削除する",
+		ConfirmURL: "/clients/" + client.ID, Method: "delete", Target: "#client-list", Swap: "outerHTML", Label: "削除する", Destructive: true,
 	})
 }
 
@@ -277,7 +277,7 @@ func (h *Handler) ConfirmRevokeToken(c *gin.Context) {
 		h.confirm(c, view.ConfirmModal{
 			Title:      "トークンを失効しますか？",
 			Message:    "「" + t.Label + "」を失効します。このトークンで接続中の MCP セッションは切断され、元に戻せません。",
-			ConfirmURL: "/clients/" + id + "/tokens/" + tokenID, Method: "delete", Target: "#token-list", Swap: "outerHTML", Label: "失効する",
+			ConfirmURL: "/clients/" + id + "/tokens/" + tokenID, Method: "delete", Target: "#token-list", Swap: "outerHTML", Label: "失効する", Destructive: true,
 		})
 		return
 	}
@@ -297,27 +297,26 @@ func (h *Handler) ConfirmReleaseKillSwitch(c *gin.Context) {
 	})
 }
 
-// killSwitchResponse はキルスイッチのパネルに、ヘッダーのバッジ・モーダルを閉じる・トーストを添える。
-func (h *Handler) killSwitchResponse(c *gin.Context, toast view.Toast) {
+// killSwitchResponse はキルスイッチのパネルに、ヘッダーのバッジ・モーダルを閉じる・通知（トーストかアラート）を添える。
+func (h *Handler) killSwitchResponse(c *gin.Context, notice templ.Component) {
 	h.render(c, http.StatusOK,
 		organisms.KillSwitchPanel(h.killSwitchView()),
 		organisms.HeaderKillSwitchOOB(h.d.KillSwitch.Active()),
 		organisms.ModalClear(),
-		organisms.ToastOOB(toast),
+		notice,
 	)
 }
 
 // TriggerKillSwitch は POST /killswitch/trigger（FR-H06。1 秒以内）。
-// 後始末の一部に失敗しても発動状態にはなるため、その場合は 200 でパネルを返し、エラーのトーストを添える。
+// 後始末の一部に失敗しても発動状態にはなるため、その場合は 200 でパネルを返し、エラーのアラートを添える。
 func (h *Handler) TriggerKillSwitch(c *gin.Context) {
 	err := h.d.KillSwitch.Trigger(killSwitchSource)
 	switch {
 	case err == nil:
-		h.killSwitchResponse(c, infoToast("キルスイッチを発動しました。"))
+		h.killSwitchResponse(c, organisms.ToastOOB(infoToast("キルスイッチを発動しました。")))
 	case h.d.KillSwitch.Active():
 		h.log.Error("kill switch triggered with errors", "error", err)
-		h.killSwitchResponse(c, view.Toast{Level: view.ToastError, ErrorCode: string(domain.CodeInternal),
-			Message: "キルスイッチを発動しましたが、一部の後始末に失敗しました。"})
+		h.killSwitchResponse(c, organisms.AlertOOB(errorAlert(string(domain.CodeInternal), "キルスイッチを発動しましたが、一部の後始末に失敗しました。")))
 	default:
 		h.fail(c, err)
 	}
@@ -329,7 +328,7 @@ func (h *Handler) ReleaseKillSwitch(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	h.killSwitchResponse(c, infoToast("キルスイッチを解除しました。"))
+	h.killSwitchResponse(c, organisms.ToastOOB(infoToast("キルスイッチを解除しました。")))
 }
 
 // SaveSettings は PUT /settings。検証エラーは 422 で、入力値と項目別のメッセージ付きでフォームを再描画する。

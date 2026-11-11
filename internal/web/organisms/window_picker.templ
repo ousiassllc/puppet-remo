@@ -24,7 +24,7 @@ func selectWindowAttrs(r view.WindowRow) atoms.Attrs {
 templ WindowPicker(v view.WindowPicker) {
 	<section
 		id="window-picker"
-		class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+		class="rounded-lg border border-border bg-surface p-4"
 		aria-label="操作するウィンドウ"
 		hx-get="/viewer/windows"
 		hx-trigger="every 3s, remo:lease-changed from:#viewer-root"
@@ -32,7 +32,7 @@ templ WindowPicker(v view.WindowPicker) {
 		hx-swap="outerHTML"
 	>
 		<div class="mb-2 flex items-center justify-between gap-2">
-			<h2 class="text-sm font-semibold text-slate-700">操作するウィンドウ</h2>
+			<h2 class="text-base font-semibold text-ink">操作するウィンドウ</h2>
 			if v.CanSelect || v.Error != "" {
 				@atoms.Button(atoms.ButtonProps{Label: "一覧を更新", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 					"hx-get": "/viewer/windows", "hx-target": "#window-picker", "hx-swap": "outerHTML", "hx-disabled-elt": "this", "data-window-refresh": true,
@@ -40,15 +40,15 @@ templ WindowPicker(v view.WindowPicker) {
 			}
 		</div>
 		if v.ScopedProcess != "" {
-			<p class="text-sm text-slate-700" data-window-scoped>対象のウィンドウ: <span class="font-medium">{ v.ScopedProcess }</span>（ウィンドウ 1 枚と関連するダイアログ・メニューだけを表示・操作します）</p>
+			<p class="text-sm text-ink" data-window-scoped>対象のウィンドウ: <span class="font-semibold">{ v.ScopedProcess }</span>（ウィンドウ 1 枚と関連するダイアログ・メニューだけを表示・操作します）</p>
 		} else if v.Message != "" {
-			<p class="text-sm text-slate-600" role="status" data-window-message>{ v.Message }</p>
+			<p class="text-sm text-mute" role="status" data-window-message>{ v.Message }</p>
 		} else if v.Error != "" {
-			<p class="text-sm text-red-700" role="alert" data-window-error>{ v.Error }</p>
+			<p class="text-sm text-danger" role="alert" data-window-error>{ v.Error }</p>
 		} else if len(v.Rows) == 0 {
-			<p class="text-sm text-slate-600" data-window-empty>選べるウィンドウがありません。</p>
+			<p class="text-sm text-mute" data-window-empty>選べるウィンドウがありません。</p>
 		} else {
-			<ul class="divide-y divide-slate-100" data-window-list>
+			<ul class="divide-y divide-border" data-window-list>
 				for _, r := range v.Rows {
 					@windowRow(r)
 				}
@@ -82,9 +82,9 @@ templ windowRow(r view.WindowRow) {
 
 func rowTextClass(r view.WindowRow) string {
 	if r.Selectable {
-		return "min-w-0 text-slate-800"
+		return "min-w-0 text-ink"
 	}
-	return "min-w-0 text-slate-400"
+	return "min-w-0 text-mute"
 }
 
 // WindowReselectTrigger は、バナーの「別のウィンドウを選ぶ」（<remo-screen-viewer> の remo:reselect）でリースを解放する隠し要素。

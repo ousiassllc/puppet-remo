@@ -10,6 +10,7 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/viewer/lease", h.LeasePanel)
 	r.POST("/viewer/lease/acquire", h.AcquireLease)
 	r.POST("/viewer/lease/release", h.ReleaseLease)
+	r.GET("/viewer/lease/revoke/confirm", h.ConfirmRevokeLease)
 	r.POST("/viewer/lease/revoke", h.RevokeLease)
 	r.GET("/viewer/windows", h.WindowPicker)
 	r.POST("/viewer/target", h.SelectTarget)

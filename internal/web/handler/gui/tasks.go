@@ -30,9 +30,10 @@ const shortIDLen = 8
 
 const (
 	taskResultNote = "「完了」はモデル（OpenAI）の申告です。実際に目的を達成したかの確認は、依頼元（呼び出し側）の責任です（FR-G13）。"
-	// taskCancelledToast などは中断の応答のトースト。
+	// taskCancelledToast・taskCancelingToast は中断の応答のトースト（info）。
 	taskCancelledToast = "タスクを中断しました。"
-	taskEndedToast     = "このタスクはすでに終了しています。"
+	// taskEndedMessage は終了済みのタスクの文言。中断の応答のトースト（冪等）と、確認モーダルの 409 conflict のインラインアラートの両方に使う。
+	taskEndedMessage   = "このタスクはすでに終了しています。"
 	taskCancelingToast = "タスクの中断を要求しました。"
 )
 
@@ -128,6 +129,9 @@ func shortTaskID(id string) string {
 
 func taskDetailURL(id string) string { return "/tasks/" + url.PathEscape(id) }
 
+// taskStatusDOMID は状態の 1 行の id。確認モーダルの確定の応答が、この要素を差し替える。
+func taskStatusDOMID(id string) string { return "task-status-" + id }
+
 func taskSteps(t domain.Task) string {
 	return strconv.Itoa(t.StepCount) + " / " + strconv.Itoa(t.MaxSteps)
 }
@@ -135,9 +139,10 @@ func taskSteps(t domain.Task) string {
 // taskStatusView は状態の 1 行。中断のボタン（CancelURL）は、終了していないタスクにだけ付ける（状態駆動）。
 func (h *Handler) taskStatusView(t domain.Task) view.TaskStatus {
 	label, tone := taskStatusText(t.Status)
-	v := view.TaskStatus{Code: string(t.Status), Label: label, Tone: tone, Steps: taskSteps(t), Elapsed: h.taskElapsed(t)}
+	v := view.TaskStatus{DOMID: taskStatusDOMID(t.ID), Code: string(t.Status), Label: label, Tone: tone, Steps: taskSteps(t), Elapsed: h.taskElapsed(t)}
 	if !t.Status.Terminal() {
 		v.CancelURL = taskDetailURL(t.ID) + "/cancel"
+		v.ConfirmURL = v.CancelURL + "/confirm"
 	}
 	return v
 }
@@ -307,7 +312,7 @@ func (h *Handler) TaskDetail(c *gin.Context) {
 
 // CancelTask は POST /tasks/:id/cancel（中断のボタン。FR-H02・H10）。操作主体は host で、監査は TaskAdmin が記録する。
 // 応答はタスクの状態の 1 行（呼び出し元の同じ部品を差し替える）と完了のトースト。終了済みなら現在の状態をそのまま返す（冪等）。
-// 無いタスクは 404（エラーのトースト）。
+// 無いタスクは 404（エラーのアラート）。
 func (h *Handler) CancelTask(c *gin.Context) {
 	t, err := h.d.Tasks.CancelByHost(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -320,8 +325,27 @@ func (h *Handler) CancelTask(c *gin.Context) {
 		toast = taskCancelledToast
 	default:
 		if t.Status.Terminal() {
-			toast = taskEndedToast
+			toast = taskEndedMessage
 		}
 	}
-	h.render(c, http.StatusOK, organisms.TaskStatus(h.taskStatusView(t)), organisms.ToastOOB(infoToast(toast)))
+	h.render(c, http.StatusOK, organisms.TaskStatus(h.taskStatusView(t)), organisms.ModalClear(), organisms.ToastOOB(infoToast(toast)))
+}
+
+// ConfirmCancelTask は GET /tasks/:id/cancel/confirm（中断の確認モーダル）。中断できる（終了していない）タスクだけ描画する。
+// 無いタスクは 404、終了済みは 409（モーダルなし）。確定のボタンが POST /tasks/:id/cancel を送る。
+func (h *Handler) ConfirmCancelTask(c *gin.Context) {
+	d, err := h.d.Tasks.Detail(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+	if d.Status.Terminal() {
+		h.failMessage(c, http.StatusConflict, string(domain.CodeConflict), taskEndedMessage)
+		return
+	}
+	h.confirm(c, view.ConfirmModal{
+		Title:      "タスクを中断しますか？",
+		Message:    "実行中のエージェントタスクを止めます。途中までの操作は元に戻りません。",
+		ConfirmURL: taskDetailURL(d.ID) + "/cancel", Method: "post", Target: "#" + taskStatusDOMID(d.ID), Swap: "outerHTML", Label: "中断する", Destructive: true,
+	})
 }

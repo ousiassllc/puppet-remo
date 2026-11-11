@@ -132,7 +132,7 @@ google-chrome --headless=new --no-sandbox --no-first-run --disable-gpu --remote-
 | `agent-settings-empty.png` | 初期状態（`-agent empty`）。ページ全体: 「既定では無効」の説明、OpenAI API キー（「未登録」・空の伏せ字の入力欄・保存先の説明）、有効化トグルと OpenAI へのスクリーンショット送信への同意の文言、モデル・上限・保持枚数・プロセスリスト、続けて「高速パス（TypeSafe）」（別のキー・別のトグル・TypeSafe への送信内容と送らないものを明記した別の同意・確信度・上限・除外ラベル） |
 | `agent-key-masked-input.png` | API キー欄（NFR-S14）に架空の文字列を入力した状態。入力は黒丸（`type=password`）で伏せられ、「資格情報マネージャーにだけ保存し、登録後は表示しない」と明記 |
 | `agent-key-empty-error.png` | キーを空のまま「登録」したときの 422。項目のエラー「API キーを入力してください。」だけを出し、入力欄は空のまま |
-| `agent-enable-without-key-409.png` | キー未登録のまま、同意をつけて「有効にする」を保存したときの 409 `agent_disabled`（トースト。API 仕様 §7.3 のルートの記述どおり）。設定は変わらない |
+| `agent-enable-without-key-409.png` | キー未登録のまま、同意をつけて「有効にする」を保存したときの 409 `agent_disabled`（当時はトースト、現在はインラインアラート。API 仕様 §7.3 のルートの記述どおり。この画像は撮り直していない）。設定は変わらない |
 | `agent-settings-enabled.png` | `-agent registered`。両方のキーが「登録済み」（入力欄は空・ボタンは「置き換える」と「削除」）、エージェントは有効・同意済み（日時つき）、毎回承認するプロセスに `explorer.exe`。高速パスは無効 |
 | `agent-fastpath-card.png` | 高速パスのカード（`-agent registered`）。TypeSafe キーは「登録済み」、有効化トグルと別の同意（未チェック）、モデル `jev-1.13`・確信度 0.7・上限 15・除外ラベル |
 | `agent-key-delete-confirm.png` | OpenAI API キーの「削除」を押したときの確認モーダル（サーバーが描画）。「エージェントは無効になり、実行中のタスクは中断されます」。確認だけで、削除はしていない |

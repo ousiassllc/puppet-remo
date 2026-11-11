@@ -231,7 +231,7 @@ func TestSaveAgentWithoutKeyIsConflict(t *testing.T) {
 	res := r.do(http.MethodPut, "/agent", validAgentForm(), hx...)
 	status(t, res, http.StatusConflict)
 	contains(t, res, `data-error-code="agent_disabled"`, "API キー")
-	if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
+	if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
 		t.Errorf("HX-Retarget = %q", got)
 	}
 	lacks(t, res, "<html")
@@ -240,7 +240,7 @@ func TestSaveAgentWithoutKeyIsConflict(t *testing.T) {
 	}
 }
 
-func TestSaveAgentUnexpectedErrorIsGenericToast(t *testing.T) {
+func TestSaveAgentUnexpectedErrorIsGenericAlert(t *testing.T) {
 	r := newRig(t, registered(true, false), func(f *guitest.Fakes) {
 		f.AgentSettings.SaveErr = errors.New("sqlite: disk I/O error at C:/secret/path")
 	})
@@ -461,7 +461,7 @@ func TestSetKeyRejectsEmptyOverlongAndOddKeysWithoutEcho(t *testing.T) {
 	}
 }
 
-// 保存の失敗（実体のエラー文にキーが入っていても）は、トーストにもログにも出さない。
+// 保存の失敗（実体のエラー文にキーが入っていても）は、アラートにもログにも出さない。
 func TestSetKeyFailureNeverLeaksKey(t *testing.T) {
 	f := guitest.New()
 	f.AgentSettings.SetKeyErr = errors.New("credential manager failed for " + canaryKey)
@@ -518,6 +518,7 @@ func TestKeyDeleteConfirmThenDeleteDisablesAgent(t *testing.T) {
 	res = r.do(http.MethodDelete, "/agent/api-key", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="agent-sections"`, `id="modal-root" hx-swap-oob="true"`, "OpenAI API キーを削除しました", `hx-swap-oob="beforeend:#toast-root"`)
+	lacks(t, res, "エージェントは無効です。") // トーストは結果だけの 1 文（状態は #agent-sections が示す）
 	if got := res.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q", got)
 	}
@@ -547,6 +548,7 @@ func TestFastpathKeyDeleteClearsConsentAndKeepsAgent(t *testing.T) {
 	res = r.do(http.MethodDelete, "/agent/fastpath/api-key", nil, hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="agent-sections"`, "TypeSafe API キーを削除しました")
+	lacks(t, res, "高速パスは無効です。")
 	lacks(t, res, `data-consent-at="typesafe"`)
 	st := r.f.AgentSettings.State()
 	if st.TypeSafeKeyRegistered || st.Fastpath.Enabled || st.Fastpath.ConsentAt != nil || !st.Enabled || !st.OpenAIKeyRegistered {

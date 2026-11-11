@@ -9,9 +9,9 @@ import (
 const appsTitle = "起動許可アプリ"
 
 templ appsBody(v view.Apps) {
-	<div class="max-w-3xl space-y-4">
-		<h1 class="text-xl font-semibold text-slate-900">起動許可アプリ</h1>
-		<p class="text-sm text-slate-600">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリを決める画面です。既定のホワイトリスト方式では、ここに登録したものだけが起動できます。起動の方式の切り替えと、登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>
+	<div class="max-w-3xl space-y-6">
+		<h1 class="text-3xl font-semibold text-ink">起動許可アプリ</h1>
+		<p class="text-base text-ink">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリを決める画面です。既定のホワイトリスト方式では、ここに登録したものだけが起動できます。起動の方式の切り替えと、登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>
 		@organisms.LaunchModePanel(v.Mode)
 		@organisms.AppList(v.List)
 		@organisms.AppForm(v.NewForm, false)

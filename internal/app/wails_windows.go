@@ -93,6 +93,21 @@ func (h *WailsHost) serveGUI(w http.ResponseWriter, r *http.Request) {
 // Windows は承認ダイアログ・オーバーレイを開く Windows を返す（app.Config.Windows に渡す）。ウィンドウの生成は Run が Wails を動かしたあとに起きる。
 func (h *WailsHost) Windows() Windows { return wailsWindows{h} }
 
+// ウィンドウの下地色（CSS の読み込み前に見える色）。static/src/css/app.css のトークン --bone と同じ値で、
+// OS の外観に合わせる（ライト #f5f5f4 / ダーク #050505）。トークンを変えたらここも合わせる。
+var (
+	windowBackgroundLight = application.NewRGB(245, 245, 244)
+	windowBackgroundDark  = application.NewRGB(5, 5, 5)
+)
+
+// windowBackground は OS の外観（ライト / ダーク）に合う下地色を返す。
+func (h *WailsHost) windowBackground() application.RGBA {
+	if h.wails.Env.IsDarkMode() {
+		return windowBackgroundDark
+	}
+	return windowBackgroundLight
+}
+
 // 承認ダイアログのウィンドウの幅（固定）。高さは種類ごと（approvalWindowHeight）。
 const approvalWidth = 440
 
@@ -124,7 +139,7 @@ func (w wailsWindows) OpenApproval(id, kind string) Window {
 		AlwaysOnTop:      true,
 		InitialPosition:  application.WindowCentered,
 		URL:              "/approvals/" + url.PathEscape(id),
-		BackgroundColour: application.NewRGB(241, 245, 249),
+		BackgroundColour: w.h.windowBackground(),
 		// 承認ダイアログは AI の入力を受けず、画面にも写さない（NFR-S06）。
 		ContentProtectionEnabled: true,
 		MinimiseButtonState:      application.ButtonHidden,
@@ -162,12 +177,16 @@ func (h *WailsHost) Run(a *App) error {
 		Height: 780, MinWidth: 800, MinHeight: 560,
 		URL:              "/",
 		Hidden:           h.opts.Background,
-		BackgroundColour: application.NewRGB(248, 250, 252),
+		BackgroundColour: h.windowBackground(),
 		// ホスト GUI（トークンの平文などが映る）は、スクリーンショット・ライブ配信に写さない（WDA_EXCLUDEFROMCAPTURE。NFR-S06）。
 		ContentProtectionEnabled: true,
 	})
 
 	h.main.Store(win)
+	// トレイに常駐する間に OS の外観が変わっても、ウィンドウの下地をページの背景（--bone）に合わせ続ける。
+	h.wails.Event.OnApplicationEvent(events.Windows.SystemThemeChanged, func(*application.ApplicationEvent) {
+		win.SetBackgroundColour(h.windowBackground())
+	})
 
 	tray := newWailsTray(h.wails, h.opts.Icon)
 	shell := NewShell(a, h.Windows().Main(), tray, h.wails.Quit, h.log)

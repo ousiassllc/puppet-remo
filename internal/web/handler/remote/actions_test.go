@@ -87,7 +87,7 @@ func TestClipboardFetchShowsAReadOnlyTextarea(t *testing.T) {
 	r.f.Control.Clipboard = `</textarea><b>host</b>`
 	res := r.post("/viewer/clipboard/fetch", nil, h...)
 	status(t, res, http.StatusOK)
-	contains(t, res, "<textarea", "readonly", `id="clipboard-fetched"`, "&lt;/textarea&gt;&lt;b&gt;host&lt;/b&gt;")
+	contains(t, res, "<textarea", " readonly", `id="clipboard-fetched"`, "&lt;/textarea&gt;&lt;b&gt;host&lt;/b&gt;")
 	lacks(t, res, "<b>host</b>", "<html")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)

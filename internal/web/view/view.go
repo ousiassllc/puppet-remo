@@ -1,18 +1,8 @@
 package view
 
-// ToastLevel はトーストの種別。
-type ToastLevel string
-
-const (
-	ToastInfo  ToastLevel = "info"
-	ToastError ToastLevel = "error"
-)
-
-// Toast は通知 1 件。ErrorCode が空でなければ data-error-code に出す。
+// Toast は完了の短い通知 1 件（保存しました、など）。エラーは通知にせず、インラインアラート（atoms.Alert）で出す。
 type Toast struct {
-	Level     ToastLevel
-	Message   string
-	ErrorCode string
+	Message string
 }
 
 // Header はヘッダー・サイドバーの全画面共通の表示（キルスイッチの状態と、接続要求の件数）。
@@ -235,7 +225,7 @@ type TokenReveal struct {
 	ExpiresAt string
 }
 
-// ConfirmModal は破壊的な操作の確認モーダル（サーバーが描画し、確定のボタンだけが実際の操作を送る）。
+// ConfirmModal は確認モーダル（サーバーが描画し、確定のボタンだけが実際の操作を送る）。
 type ConfirmModal struct {
 	Title      string
 	Message    string
@@ -245,6 +235,9 @@ type ConfirmModal struct {
 	Target     string // 結果を差し込む先の CSS セレクタ
 	Swap       string
 	Label      string // 確定ボタンの文言
+	// Destructive は取り返しのつかない操作（削除・失効・剥奪・中断）か。true なら確定ボタンは危険（--danger）、false なら主（O7）。
+	// 既定は主（false）。破壊的な操作だけ true にする。
+	Destructive bool
 }
 
 // SettingsValues は設定フォームの入力値（検証エラー時は入力されたままの文字列）。

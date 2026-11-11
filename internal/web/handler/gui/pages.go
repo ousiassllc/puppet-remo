@@ -131,7 +131,7 @@ func (h *Handler) KillSwitchPanel(c *gin.Context) {
 	h.render(c, http.StatusOK, organisms.KillSwitchPanel(h.killSwitchView()))
 }
 
-// NotFound は未登録のパスへの 404（ページ）。HTMX のリクエストにはトーストのフラグメント。
+// NotFound は未登録のパスへの 404（ページ）。HTMX のリクエストにはエラーのアラートのフラグメント。
 func (h *Handler) NotFound(c *gin.Context) {
 	h.pageFail(c, errNoRoute)
 }

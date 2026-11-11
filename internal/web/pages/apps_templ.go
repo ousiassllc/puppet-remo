@@ -37,7 +37,7 @@ func appsBody(v view.Apps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-3xl space-y-4\"><h1 class=\"text-xl font-semibold text-slate-900\">起動許可アプリ</h1><p class=\"text-sm text-slate-600\">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリを決める画面です。既定のホワイトリスト方式では、ここに登録したものだけが起動できます。起動の方式の切り替えと、登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-3xl space-y-6\"><h1 class=\"text-3xl font-semibold text-ink\">起動許可アプリ</h1><p class=\"text-base text-ink\">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリを決める画面です。既定のホワイトリスト方式では、ここに登録したものだけが起動できます。起動の方式の切り替えと、登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

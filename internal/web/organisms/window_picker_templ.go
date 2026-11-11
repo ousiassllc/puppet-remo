@@ -50,7 +50,7 @@ func WindowPicker(v view.WindowPicker) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"window-picker\" class=\"rounded-lg border border-slate-200 bg-white p-3 shadow-sm\" aria-label=\"操作するウィンドウ\" hx-get=\"/viewer/windows\" hx-trigger=\"every 3s, remo:lease-changed from:#viewer-root\" hx-target=\"this\" hx-swap=\"outerHTML\"><div class=\"mb-2 flex items-center justify-between gap-2\"><h2 class=\"text-sm font-semibold text-slate-700\">操作するウィンドウ</h2>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section id=\"window-picker\" class=\"rounded-lg border border-border bg-surface p-4\" aria-label=\"操作するウィンドウ\" hx-get=\"/viewer/windows\" hx-trigger=\"every 3s, remo:lease-changed from:#viewer-root\" hx-target=\"this\" hx-swap=\"outerHTML\"><div class=\"mb-2 flex items-center justify-between gap-2\"><h2 class=\"text-base font-semibold text-ink\">操作するウィンドウ</h2>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -67,14 +67,14 @@ func WindowPicker(v view.WindowPicker) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if v.ScopedProcess != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p class=\"text-sm text-slate-700\" data-window-scoped>対象のウィンドウ: <span class=\"font-medium\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p class=\"text-sm text-ink\" data-window-scoped>対象のウィンドウ: <span class=\"font-semibold\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(v.ScopedProcess)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/window_picker.templ`, Line: 43, Col: 125}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/window_picker.templ`, Line: 43, Col: 121}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -85,14 +85,14 @@ func WindowPicker(v view.WindowPicker) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if v.Message != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"text-sm text-slate-600\" role=\"status\" data-window-message>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"text-sm text-mute\" role=\"status\" data-window-message>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.Message)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/window_picker.templ`, Line: 45, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/window_picker.templ`, Line: 45, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -103,14 +103,14 @@ func WindowPicker(v view.WindowPicker) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if v.Error != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p class=\"text-sm text-red-700\" role=\"alert\" data-window-error>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p class=\"text-sm text-danger\" role=\"alert\" data-window-error>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(v.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/window_picker.templ`, Line: 47, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/window_picker.templ`, Line: 47, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -121,12 +121,12 @@ func WindowPicker(v view.WindowPicker) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if len(v.Rows) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<p class=\"text-sm text-slate-600\" data-window-empty>選べるウィンドウがありません。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<p class=\"text-sm text-mute\" data-window-empty>選べるウィンドウがありません。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<ul class=\"divide-y divide-slate-100\" data-window-list>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<ul class=\"divide-y divide-border\" data-window-list>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -302,9 +302,9 @@ func windowRow(r view.WindowRow) templ.Component {
 
 func rowTextClass(r view.WindowRow) string {
 	if r.Selectable {
-		return "min-w-0 text-slate-800"
+		return "min-w-0 text-ink"
 	}
-	return "min-w-0 text-slate-400"
+	return "min-w-0 text-mute"
 }
 
 // WindowReselectTrigger は、バナーの「別のウィンドウを選ぶ」（<remo-screen-viewer> の remo:reselect）でリースを解放する隠し要素。
