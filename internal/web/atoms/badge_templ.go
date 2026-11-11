@@ -16,10 +16,15 @@ const (
 	BadgeOK      BadgeTone = "ok"
 	BadgeWarn    BadgeTone = "warn"
 	BadgeDanger  BadgeTone = "danger"
+	// BadgeSoft は --accent-soft 地に --mute-on-soft の文字（状態色を持たない短い注記。秘密の入力欄の「登録済み」）。
+	BadgeSoft BadgeTone = "soft"
 )
 
 // badgeClass はステータスピル。状態色の細枠 + 薄い地 + 文言（色だけで意味を伝えない）。
 func badgeClass(t BadgeTone) string {
+	if t == BadgeSoft {
+		return "inline-flex h-5.5 items-center whitespace-nowrap rounded-full bg-accent-soft px-2 text-xs leading-none text-mute-on-soft"
+	}
 	base := "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs "
 	switch t {
 	case BadgeOK:
@@ -100,7 +105,7 @@ func Badge(tone BadgeTone, text string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 48, Col: 8}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 53, Col: 8}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

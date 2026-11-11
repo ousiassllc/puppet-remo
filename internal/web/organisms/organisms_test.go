@@ -238,8 +238,7 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	webtest.AssertCSPCompliantHTML(t, out)
 
 	first := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1, NextURL: "/requests/history?page=2"}))
-	has(t, first, "data-pager-next")
-	hasNot(t, first, "data-pager-prev")
+	has(t, first, "data-pager-next", "disabled data-pager-prev")
 	single := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1}))
 	hasNot(t, single, "data-pager")
 	empty := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1}))
@@ -491,20 +490,54 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	hasNot(t, empty, "<tbody", "data-pager")
 }
 
-// API キーのパネル（NFR-S14）: 入力欄は伏せ字で value を持たない。登録の有無で状態・ボタンが変わる。エラーは項目別に出す。
+// API キーのパネル（NFR-S14）: 入力欄は伏せ字で value を持たない。未登録は最初から入力欄（バッジなし）、登録済みは入力欄の代わりに
+// 「登録済み」バッジと「変更」（入力欄・登録ボタンは hidden）。登録の失敗の再描画は、変更を押したあとの状態（入力欄が見える・空）を保つ。
 func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
 	p := view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", Target: "puppet-remo/openai", PutURL: "/agent/api-key", ConfirmURL: "/agent/api-key/delete/confirm"}
 	out := webtest.Render(t, organisms.APIKeyPanel(p))
-	has(t, out, `id="agent-key"`, `data-key-state="unregistered"`, "未登録", `type="password"`, `autocomplete="off"`, `name="api_key"`,
-		`hx-put="/agent/api-key"`, `hx-target-422="#agent-key"`, "puppet-remo/openai", "資格情報マネージャー", "表示しません", ">登録<")
-	hasNot(t, out, "value=", "data-key-delete", "削除", "data-field-error")
+	has(t, out, `id="agent-key"`, `data-key-state="unregistered"`, `type="password"`, `autocomplete="off"`, `name="api_key"`,
+		`hx-put="/agent/api-key"`, `hx-target-422="#agent-key"`, "puppet-remo/openai", "資格情報マネージャー", "表示しません", ">登録<",
+		`data-secret-toggle`, `aria-pressed="false"`, `aria-controls="agent-key-input"`)
+	hasNot(t, out, "value=", "data-key-delete", "削除", "data-field-error", "登録済み", "data-secret-saved", "data-secret-change")
+	if hiddenAttr.MatchString(out) {
+		t.Errorf("first-time panel must show the input and the submit button:\n%s", out)
+	}
 	webtest.AssertCSPCompliantHTML(t, out)
 
-	p.Registered, p.Error = true, "API キーを入力してください。"
+	// 登録済み: 入力欄を見せず、バッジ + 変更。入力欄と登録（置き換える）ボタンは hidden のまま描画する（「変更」で app.ts が出す）。
+	p.Registered = true
 	out = webtest.Render(t, organisms.APIKeyPanel(p))
-	has(t, out, `data-key-state="registered"`, "登録済み", `data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`,
-		`data-field-error="agent-key-input"`, "入力してください", `aria-invalid`, "置き換える")
+	has(t, out, `data-key-state="registered"`, `data-secret-saved`, "登録済み", "bg-accent-soft", "text-mute-on-soft", `data-secret-change`, ">変更<",
+		`data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`, "置き換える", "新しい OpenAI API キー")
+	hasNot(t, out, "value=", "data-field-error", "未登録")
+	savedTag := regexp.MustCompile(`<div[^>]*data-secret-saved[^>]*>`).FindString(out)
+	if strings.Contains(savedTag, "hidden") {
+		t.Errorf("the saved row must be visible: %s", savedTag)
+	}
+	editTags := regexp.MustCompile(`<[a-z]+[^>]*data-secret-edit[^>]*>`).FindAllString(out, -1)
+	if len(editTags) != 2 {
+		t.Fatalf("data-secret-edit elements = %d, want 2 (input group and submit button):\n%s", len(editTags), out)
+	}
+	for _, tag := range editTags {
+		if !hiddenAttr.MatchString(tag) {
+			t.Errorf("the edit side must be hidden while saved: %s", tag)
+		}
+	}
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	// 登録済みで登録の失敗（422）の再描画: 変更を押したあとの状態を保ち、入力欄は空（value なし）。
+	p.Error = "API キーを入力してください。"
+	out = webtest.Render(t, organisms.APIKeyPanel(p))
+	has(t, out, `data-key-state="registered"`, `data-key-delete="OpenAI"`, `data-field-error="agent-key-input"`, "入力してください", `aria-invalid`, "置き換える")
 	hasNot(t, out, "value=")
+	if !strings.Contains(regexp.MustCompile(`<div[^>]*data-secret-saved[^>]*>`).FindString(out), "hidden") {
+		t.Errorf("after a failed save the badge row must stay hidden:\n%s", out)
+	}
+	for _, tag := range regexp.MustCompile(`<[a-z]+[^>]*data-secret-edit[^>]*>`).FindAllString(out, -1) {
+		if hiddenAttr.MatchString(tag) {
+			t.Errorf("after a failed save the input must stay visible: %s", tag)
+		}
+	}
 	webtest.AssertCSPCompliantHTML(t, out)
 }
 
@@ -599,18 +632,18 @@ func TestRequestsBadgeFollowsTheNotificationBadgeSpec(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.RequestsBadge(0)), "data-pending-count")
 }
 
-// ページ送りのボタンは高さ 36・rounded-md（P1 ページネーション）。小ボタン（32）ではない。
-func TestPagerButtonsAre36pxHigh(t *testing.T) {
+// 前へ／次へだけのページ送りのボタンは Secondary・Small（高さ 32・rounded-md）。
+func TestPagerButtonsAreSmallSecondary(t *testing.T) {
 	history := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3",
 		Rows: []view.HistoryRow{{ID: "r1"}}}))
-	has(t, history, "h-9", "rounded-md", "data-pager-prev", "data-pager-next")
-	hasNot(t, history, "h-8")
+	has(t, history, "h-8", "rounded-md", "data-pager-prev", "data-pager-next")
+	hasNot(t, history, "h-9")
 	audit := webtest.Render(t, organisms.AuditList(view.AuditList{NextURL: "/audit?cursor=1", Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1"}}}))
-	has(t, audit, "h-9", "data-pager-next")
+	has(t, audit, "h-8", "data-pager-next")
 	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, NextURL: "/logs?page=2", Rows: []view.LogRow{{Time: "t", Level: "INFO"}}}))
-	has(t, log, "h-9", "data-pager-next")
+	has(t, log, "h-8", "data-pager-next")
 	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{NextURL: "/tasks?page=2", Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}}))
-	has(t, tasks, "h-9", "data-pager-next")
+	has(t, tasks, "h-8", "data-pager-next")
 }
 
 // 絞り込みの「条件をクリア」は本文のリンク（.link。下線 --mute）で、ほかのリンクと同じ見た目。
@@ -713,7 +746,7 @@ func TestFormAndNestedPanelSpacing(t *testing.T) {
 	has(t, webtest.Render(t, organisms.AuditFilters(view.AuditFilters{})), `class="space-y-4 `, `class="grid gap-4 `)
 	has(t, webtest.Render(t, organisms.TokenForm(view.TokenForm{}, false)), `class="grid gap-4 `)
 	req := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "x"}}}))
-	has(t, req, `class="mt-3 grid gap-4 sm:grid-cols-2"`, `<fieldset class="space-y-2 sm:col-span-2">`)
+	has(t, req, `class="mt-3 grid gap-4 sm:grid-cols-2"`, `<fieldset class="flex min-w-0 flex-col gap-4 border-t border-border pt-4 sm:col-span-2">`, `<legend class="pr-2 text-sm font-semibold leading-[1.4]">使える機能</legend>`)
 	// h3 の見出し行 → 1 行目の補足は 8（mt-2。起動許可アプリのカードと同じ）。
 	has(t, req, `<p class="mt-2 text-xs text-mute">`)
 	has(t, webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc"})), `<p class="mt-2 text-xs text-mute">`)

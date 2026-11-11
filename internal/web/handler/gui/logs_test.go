@@ -118,14 +118,16 @@ func TestLogsPagingKeepsTheFilterInLinks(t *testing.T) {
 		t.Errorf("page 1 rows = %d, want %d", n, size)
 	}
 	contains(t, p1, "failure-000", `href="/logs?level=error&amp;page=2"`, "data-pager-next", "1 ページ目")
-	lacks(t, p1, "data-pager-prev", "ancient")
+	// 端の側（1 ページ目の前へ）は disabled で、リンクではない。
+	contains(t, p1, "disabled data-pager-prev")
+	lacks(t, p1, "ancient")
 
 	p3 := r.get("/logs?level=error&page=3")
 	if n := strings.Count(p3.Body, "data-log-level="); n != 3 {
 		t.Errorf("page 3 rows = %d, want 3", n)
 	}
 	contains(t, p3, fmt.Sprintf("failure-%03d", total-1), `href="/logs?level=error&amp;page=2"`, "data-pager-prev", "3 ページ目")
-	lacks(t, p3, "data-pager-next")
+	contains(t, p3, "disabled data-pager-next")
 
 	// 不正なページ番号は 1。フィルターの戻りリンク（ページ 1）は page を付けない。
 	for _, q := range []string{"&page=0", "&page=-1", "&page=abc"} {

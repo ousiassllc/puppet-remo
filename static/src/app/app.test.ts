@@ -132,9 +132,12 @@ describe("ボタンの押下のリップル", () => {
 describe("モバイルナビのドロワー", () => {
   const markup = html`
     <div>
-      <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
       <div id="nav-scrim"></div>
-      <nav id="sidebar-nav"><a href="#a" id="nav-first">一覧</a></nav>
+      <nav id="sidebar-nav"><a href="#a" id="nav-first">一覧</a><a href="#b" id="nav-last">設定</a></nav>
+      <div id="background" data-nav-background>
+        <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
+        <main><button id="before">本文の操作</button></main>
+      </div>
     </div>
   `;
   const isOpen = (): boolean => document.body.hasAttribute("data-nav-open");
@@ -176,6 +179,148 @@ describe("モバイルナビのドロワー", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(isOpen()).to.equal(false);
     expect(document.activeElement).to.equal(toggle);
+  });
+
+  it("開いている間は背面（data-nav-background）を inert にし、閉じたら外す", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const background = root.querySelector<HTMLElement>("#background")!;
+    const toggle = root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+    expect(background.inert).to.equal(false);
+    toggle.click();
+    expect(background.inert).to.equal(true);
+    expect(root.querySelector<HTMLElement>("#sidebar-nav")!.inert).to.equal(false);
+    toggle.click();
+    expect(background.inert).to.equal(false);
+  });
+
+  it("Tab はドロワーの中を循環し、背面へ抜けない（末尾で Tab → 先頭、先頭で Shift+Tab → 末尾、外にあれば中へ戻す）", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    const first = root.querySelector<HTMLElement>("#nav-first")!;
+    const last = root.querySelector<HTMLElement>("#nav-last")!;
+    const press = (shiftKey: boolean): KeyboardEvent => {
+      const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, cancelable: true });
+      document.dispatchEvent(event);
+      return event;
+    };
+    last.focus();
+    expect(press(false).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(first);
+    expect(press(true).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(last);
+    // 中間のリンクでは、ブラウザの既定の移動に任せる。
+    first.focus();
+    expect(press(false).defaultPrevented).to.equal(false);
+    // フォーカスが（inert でない）ドロワーの外へ出ていたら、中へ戻す。
+    root.querySelector<HTMLElement>("#sidebar-nav")!.blur();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(press(false).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(first);
+  });
+
+  it("閉じると、開く前にフォーカスのあった要素へ戻す（ハンバーガー以外でも）。閉じているときの Tab は何もしない", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const before = root.querySelector<HTMLButtonElement>("#before")!;
+    const toggle = root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+    const tab = new KeyboardEvent("keydown", { key: "Tab", cancelable: true });
+    document.dispatchEvent(tab);
+    expect(tab.defaultPrevented).to.equal(false);
+    before.focus();
+    toggle.click();
+    expect(document.activeElement?.id).to.equal("nav-first");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.activeElement).to.equal(before);
+  });
+});
+
+describe("秘密の入力欄（API キー）", () => {
+  const savedMarkup = html`
+    <div data-secret>
+      <div data-secret-saved><span>登録済み</span><button type="button" data-secret-change>変更</button></div>
+      <form>
+        <div data-secret-edit hidden>
+          <input id="key-input" name="api_key" type="password" />
+          <button type="button" data-secret-toggle aria-label="入力を表示する" aria-pressed="false" aria-controls="key-input"></button>
+        </div>
+        <button type="submit" data-secret-edit hidden>置き換える</button>
+      </form>
+    </div>
+  `;
+
+  it("「変更」で、バッジの行を隠して空の入力欄と登録ボタンを出し、入力欄にフォーカスする", async () => {
+    const root = await fixture<HTMLElement>(savedMarkup);
+    const input = root.querySelector<HTMLInputElement>("#key-input")!;
+    root.querySelector<HTMLElement>("[data-secret-change]")!.click();
+    expect(root.querySelector<HTMLElement>("[data-secret-saved]")!.hidden).to.equal(true);
+    for (const edit of root.querySelectorAll<HTMLElement>("[data-secret-edit]")) {
+      expect(edit.hidden).to.equal(false);
+    }
+    expect(input.value).to.equal("");
+    expect(document.activeElement).to.equal(input);
+  });
+
+  it("表示切り替えは type=password ⇄ text と aria-pressed を合わせ、入力した値は変えない", async () => {
+    const root = await fixture<HTMLElement>(savedMarkup);
+    const input = root.querySelector<HTMLInputElement>("#key-input")!;
+    const toggle = root.querySelector<HTMLButtonElement>("[data-secret-toggle]")!;
+    input.value = "sk-typed";
+    toggle.click();
+    expect(input.type).to.equal("text");
+    expect(toggle.getAttribute("aria-pressed")).to.equal("true");
+    expect(input.value).to.equal("sk-typed");
+    toggle.click();
+    expect(input.type).to.equal("password");
+    expect(toggle.getAttribute("aria-pressed")).to.equal("false");
+  });
+});
+
+describe("前へ／次へだけのページ送り", () => {
+  // 差し替え後の一覧（#list）。端の側は disabled の button、そうでない側は a。
+  const pager = (prevDisabled: boolean, nextDisabled: boolean) => html`
+    <div id="list">
+      <nav data-pager>
+        ${prevDisabled ? html`<button type="button" disabled data-pager-prev>前へ</button>` : html`<a href="/p" data-pager-prev>前へ</a>`}
+        <span>2 ページ目</span>
+        ${nextDisabled ? html`<button type="button" disabled data-pager-next>次へ</button>` : html`<a href="/n" data-pager-next>次へ</a>`}
+      </nav>
+    </div>
+  `;
+  // 押したリンク（htmx:beforeRequest の detail.elt。リクエストを起こした要素）と、そのあとの差し替え。
+  const pressed = (side: "prev" | "next" | null): HTMLElement => {
+    const a = document.createElement("a");
+    if (side) {
+      a.setAttribute(`data-pager-${side}`, "");
+    }
+    return a;
+  };
+  const swapped = (list: HTMLElement, elt: Element): void => {
+    document.dispatchEvent(new CustomEvent("htmx:beforeRequest", { detail: { elt } }));
+    list.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: list } }));
+  };
+
+  it("押した側がまだ使えるなら、その側のボタンにフォーカスを戻す", async () => {
+    const list = await fixture<HTMLElement>(pager(false, false));
+    swapped(list, pressed("next"));
+    expect(document.activeElement).to.equal(list.querySelector("[data-pager-next]"));
+  });
+
+  it("次へが端になって disabled なら、反対側（前へ）へフォーカスを移す", async () => {
+    const list = await fixture<HTMLElement>(pager(false, true));
+    swapped(list, pressed("next"));
+    expect(document.activeElement).to.equal(list.querySelector("[data-pager-prev]"));
+  });
+
+  it("前へが端になって disabled なら、反対側（次へ）へフォーカスを移す", async () => {
+    const list = await fixture<HTMLElement>(pager(true, false));
+    swapped(list, pressed("prev"));
+    expect(document.activeElement).to.equal(list.querySelector("[data-pager-next]"));
+  });
+
+  it("ページ送りが起こしていない差し替えでは、フォーカスを動かさない", async () => {
+    const list = await fixture<HTMLElement>(pager(false, false));
+    swapped(list, pressed(null));
+    expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-next]"));
+    expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-prev]"));
   });
 });
 
