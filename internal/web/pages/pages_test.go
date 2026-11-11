@@ -6,6 +6,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 	"github.com/ousiassllc/puppet-remo/internal/web/webtest"
@@ -130,7 +131,8 @@ func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
 	}
 }
 
-// 待機・拒否・失効のページ（FR-W02）は、スタイル・スクリプトを読み込まない（未登録デバイスには /static も 403）。
+// 待機・拒否・失効・エラーのページ（FR-W02）は、/static を読まず、インラインの <style>（NoticeStyle）だけで見た目を付ける
+// （未登録デバイスには /static も 403）。<style> のハッシュが、応答に付ける CSP（middleware.NoticeCSPValue）の style-src に入っていること。
 func TestRemoteNoticePages(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -145,7 +147,7 @@ func TestRemoteNoticePages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			out := webtest.Render(t, tt.comp)
-			webtest.AssertCSPCompliantHTML(t, out)
+			webtest.AssertNoticeCSPCompliantHTML(t, out, middleware.NoticeCSPValue)
 			for _, want := range []string{`data-error-code="device_not_registered"`, `data-connection-state="` + tt.state + `"`, tt.text, `<html lang="ja">`} {
 				if !strings.Contains(out, want) {
 					t.Errorf("page lacks %q:\n%s", want, out)
@@ -159,6 +161,7 @@ func TestRemoteNoticePages(t *testing.T) {
 		})
 	}
 	out := webtest.Render(t, pages.RemoteError(view.RemoteError{Code: "invalid_host", Title: "<b>t</b>", Message: "m"}))
+	webtest.AssertNoticeCSPCompliantHTML(t, out, middleware.NoticeCSPValue)
 	if !strings.Contains(out, `data-error-code="invalid_host"`) || strings.Contains(out, "<b>t</b>") {
 		t.Errorf("error page = %s", out)
 	}

@@ -449,6 +449,7 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 
 - **配置**: GUI ルーター・リモートルーターの両方で、ミドルウェア連鎖の**最初**に置く（`hostcheck` などが返すエラーページ、キルスイッチの 503 ページにも付くようにする）。HTML 以外（JSON、静的ファイル）に付いても害は無いため、HTML かどうかの判定はしない
 - `img-src ... data: blob:` はビューアの `canvas`（`createImageBitmap`）と小さなアイコンのため。`connect-src 'self'` は同一オリジンの `fetch`（HTMX・ポーリング）・WebSocket（`ws:`）を許可する
+- **待機ページ（`layout.RemoteNotice`。`Pending`・`Denied`・`Expired`・`RemoteError` の 4 種）だけが例外**。未登録デバイスには `/static/*` が 403 でスタイルを配信できないため、このページだけが最小のスタイルを**インラインの `<style>` 1 つ**（`layout.NoticeStyle`。固定の CSS）で持つ。CSP は `'unsafe-inline'` ではなく、その文字列の **SHA-256 ハッシュ**を `style-src` に置く: 待機ページを書くとき（ミドルウェアの拒否・ハンドラのエラーページ）に、応答のヘッダーを `middleware.NoticeCSPValue`（上の値との違いは `style-src` が `'self'` の代わりに `'sha256-…'` になる 1 か所だけ）に置き換える（`middleware.SetNoticeCSP`）。nonce にしないのは、CSS が固定でリクエストごとの生成が要らないため。ホスト GUI・ビューアなど他のページと、`<style>`・`style=` を禁止する規約（下の表）は変えない。待機ページは `/static` を参照しない（未登録デバイスからの `/static` へのアクセスを増やさない）。HTML の `<style>` と CSP ヘッダーのハッシュの整合は `webtest.AssertNoticeCSPCompliantHTML` が検査する
 
 **規約（CSP の帰結）**
 
@@ -542,6 +543,8 @@ graph LR
 | 部品・オーバーレイ（O） | 確認・破壊的操作は中央モーダル（`--z-modal`・`rounded-xl`・`shadow-modal`。外側のスクラムのクリックで閉じる。確定のボタンは破壊的な操作（削除・失効・剥奪・中断）と、許可の範囲を広げる操作（起動の方式をブラックリストへ切り替える・拒否リストから外す）だけ危険で、キルスイッチの解除・更新の適用のような破壊的でない確認は主（`view.ConfirmModal.Destructive`。既定は主（false）で、破壊的な操作だけ true にする）。強制剥奪・タスクの中断も確認モーダルを経る。キルスイッチの発動は緊急停止なので 1 クリック）。トーストは画面下中央（`--z-toast`）・ピル・3 秒・同時に 1 つ。エラーはインラインアラート（`#alert-root`）。ボタンは主 / サブ / ゴースト / 危険（SemiBold・`rounded-md`・disabled は opacity .4。危険は塗りでなく、透明地・`--danger` の文字・`--danger` 45% の枠で、ホバーは `--danger` 10% の地）。タブは下線 2px `--accent`・非選択は `--mute`・選択は `--ink`（色の変化は `motion-hover`）。入力・選択・複数行・チェックボックス・スライダーは disabled が opacity .5（`fieldClass`・`app.css`。ボタンだけ .4）。サイドナビは幅 240・項目高さ 40・間隔 8・現在は `--accent-soft` + `--ink`、ヘッダーは高さ 56。モバイル（`md` 未満）はハンバーガー + 左ドロワー（§5.4）。ページ送りのボタンは高さ 36（`atoms.PagerButtonClass`。小ボタンの 32 ではない）。サイドバーの件数バッジは通知バッジ数（`--accent` 地 + `--bone` 字・11px Mono・最小 18px・99 超は `99+`。状態色にしない）。テキストリンクは `.link`（下線 `--mute`）。表は見出し行 SemiBold 12 `--mute` + 下線、行ホバー `--accent-soft`、padding `--table-pad-*`。スライダー（`atoms.Range`）は OS 標準にせず、トラック高さ 4・`--r-full`・未充填 `--accent-soft`・充填 `--accent`、つまみ 16 の円・`--surface` + 1px `--border`、フォーカスはつまみに `--ring` の 3px（`app.css` の `input[type="range"]`。Blink の充填は `--_v` を `app.ts` が `style.setProperty` で更新する）。スピナーは 20px・2px・1 回転 `--spinner-duration`（0.9s。`:root` の 1 か所に定義し、`.spinner` と Lit のビューアが参照する。`prefers-reduced-motion: reduce` でも止めない） |
 
 ライト／ダークの実描画の確認は `task gui:demo`（loopback。`prefers-color-scheme` または `<html data-theme>` で切り替える）で行う。
+
+**承認済みの逸脱（待機ページのフォント）**: 待機ページ（§7.1）は、フォントだけ共通ガイドの Sora + Noto Sans JP ではなく**システムフォント**（`font-family: system-ui, sans-serif`。Web フォントは使わない）にする。理由: 未登録デバイスは `/static/*` が 403 で、同梱のフォント（woff2）を配信できないため。それ以外はガイドどおりで、色は `app.css` のトークンと同じ 16 進（文字 `--ink` ライト `#050505`・ダーク `#ffffff`、背景 ライト `--bone` `#f5f5f4`・ダーク `--surface` `#141414`。`prefers-color-scheme` で切り替える）、余白は 4px 基準（`--s-*`）、見出し（`h1`）は xl 24px SemiBold、本文は base 16px Regular。値は `layout.NoticeStyle` に 1 か所だけ書く。
 
 ## 9. テスト戦略
 

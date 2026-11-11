@@ -1,6 +1,8 @@
 package webtest
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
@@ -44,5 +46,35 @@ func TestAssertCSPCompliantHTMLDetectsViolations(t *testing.T) {
 	AssertCSPCompliantHTML(r, ok)
 	if len(r.errs) != 0 {
 		t.Errorf("false positives: %s", strings.Join(r.errs, "; "))
+	}
+}
+
+func TestAssertNoticeCSPCompliantHTML(t *testing.T) {
+	const css = "a{color:red}"
+	sum := sha256.Sum256([]byte(css))
+	hash := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	page := "<html><head><style>" + css + "</style></head><body></body></html>"
+
+	tests := []struct {
+		name string
+		body string
+		csp  string
+		bad  bool
+	}{
+		{"ハッシュが一致する <style>", page, "default-src 'self'; style-src " + hash + "; img-src 'self'", false},
+		{"ハッシュが違う <style>", page, "style-src 'sha256-AAAA'", true},
+		{"style-src に 'self' だけ", page, "style-src 'self'", true},
+		{"unsafe-inline を許している", page, "style-src " + hash + " 'unsafe-inline'", true},
+		{"/static を参照する", `<link rel="stylesheet" href="/static/css/app.css">`, "style-src " + hash, true},
+		{"style 属性", `<p style="a:b">x</p>`, "style-src " + hash, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &recorder{TB: t}
+			AssertNoticeCSPCompliantHTML(r, tt.body, tt.csp)
+			if got := len(r.errs) > 0; got != tt.bad {
+				t.Errorf("violations = %v (want violation: %v)", r.errs, tt.bad)
+			}
+		})
 	}
 }
