@@ -565,6 +565,19 @@ Noto Sans JP の同梱フォントは、Fontsource の既定（日本語の約 1
 
 合計は 44.5%（半分以下。目安の 2.5 MB 以下）。JIS X 0208 の字を 1 つも含まない 6 つの断片（U+2xxxx の拡張漢字だけの断片など）は同梱しなくなった。豆腐（□）が出ないことの確認は、`internal/`・`static/src` のソースに書かれた非 ASCII の字のうち、生成した `unicode-range` の外にあるものを洗い出して行う（残るのは、コメント内の `≒`、デモ・テストのデータの `①〜④` と絵文字だけで、画面の文言にはない）。範囲外の字（`𠮷` など）は `font-family` の最後の `sans-serif`（OS のフォント）に落ちる。画面の文言に範囲外の字を足すときは、OS のフォントで表示されることを許容できる字かを確かめる。
 
+### 8.6 ライセンス表記（#133）
+
+配布物（インストーラー）とアプリ画面の両方で、同梱する第三者のソフトウェアのライセンスの全文が読める。OFL・MIT・BSD は、再配布するときに著作権表示とライセンス文を付けることを求める。
+
+| 項目 | 内容 |
+|------|------|
+| 本体 | [`licenses/THIRD_PARTY_NOTICES.txt`](../../licenses/THIRD_PARTY_NOTICES.txt)（Git に入れる生成物。`licenses/licenses.go` が `go:embed` する） |
+| 載せるもの | 配布物に実際に入るものだけ。フォント（Sora・Noto Sans JP・JetBrains Mono の OFL 全文と各著作権表示。各 `@fontsource-variable/*` の `LICENSE` をそのまま）、アイコン（Iconoir の MIT 全文。`static/scripts/third-party/iconoir-LICENSE`）、フロントエンドのライブラリ（htmx・拡張 2 つ・Lit 一式・Tailwind CSS。`node_modules` の `LICENSE`）、Go の標準ライブラリと、Windows の本番ビルド（`-tags production`）にリンクされる Go のモジュール（モジュールの `LICENSE`・`COPYING`）。同じ本文は 1 つにまとめて、対象を並べる |
+| 作り方 | `cd static && bun install --frozen-lockfile && bun scripts/third-party-notices.mjs`。`--check` を付けると、作り直した内容が Git の内容と同じかを確かめる（CI の frontend ジョブが走らせる。依存を足したのに表記を作り直し忘れると落ちる） |
+| アプリ画面 | ホスト GUI の `GET /licenses`（`handler/gui/licenses.go`。全文を `<pre>` に出す。`Card` だけで組む）。設定の画面の末尾の 1 文から開く。リモート Web UI（tailnet）には出さない（`internal/router` のテストが 404 を検査する） |
+| インストーラー | `build/windows/nsis/project.nsi` が `File "..\..\..\licenses\THIRD_PARTY_NOTICES.txt"` でインストール先（`$INSTDIR`）に置く。アンインストールは `RMDir /r $INSTDIR` で一緒に消える。`makensis` の出力（`File: "THIRD_PARTY_NOTICES.txt"`）で同梱を確かめた。Release の作成は CI（`nightly.yml`・`release.yml`）だけが行い、ここでは行わない（[配信](../operations/release.md)） |
+| 更新の手順 | フォント・アイコン・JS のライブラリ・Go のモジュールを足す／上げるときは、`scripts/third-party-notices.mjs` の対象（フォントは `fonts`、ライブラリは `nodeLibs`）を更新して表記を作り直し、同じコミットに入れる。Go のモジュールは `go list -deps` から自動で拾う。`licenses/licenses_test.go` が、`static/package.json` の依存（フォント・htmx・Lit・Tailwind）が表記にあることを検査する |
+
 ## 9. テスト戦略
 
 レイヤーごとに手法を使い分ける。HTMX のインタラクションは E2E でカバーする。CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップが無いため、E2E は偽の `platform` 実装で行う（[コンポーネント設計](../components/overview.md) §10）。偽の platform と偽の tailnet で OS 非依存になるため、Playwright は Linux のランナーで実行する（Chromium の導入が容易）。Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけで、Windows の実機は CI に使わない。実機スモークは手動のまま。Lit のテストと Playwright の E2E は、M2 の受け入れ条件には含めず、あとから CI の改善として足した（オーナーの決定。#64）。別ジョブ `e2e` で走る（下の「CI の手順」）。

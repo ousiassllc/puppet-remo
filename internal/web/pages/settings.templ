@@ -18,6 +18,9 @@ templ settingsBody(v view.Settings) {
 		@molecules.Card("") {
 			@organisms.SettingsForm(v.Form)
 		}
+		<p class="text-base text-ink" data-notice="licenses-link">
+			同梱するフォント・アイコン・ライブラリの<a href="/licenses" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">ライセンス表記</a>を読めます。
+		</p>
 	</div>
 }
 

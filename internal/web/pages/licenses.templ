@@ -1,0 +1,36 @@
+package pages
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+)
+
+const licensesTitle = "ライセンス表記"
+
+templ licensesBody(v view.Licenses) {
+	<div class="max-w-4xl space-y-6">
+		<h1 class="text-3xl font-semibold text-ink">ライセンス表記</h1>
+		<p class="text-base text-ink">
+			このアプリが同梱するフォント・アイコン・ライブラリのライセンスの全文です。同じ内容は、インストール先の <code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">THIRD_PARTY_NOTICES.txt</code> にもあります。
+		</p>
+		@molecules.Card("") {
+			<pre class="whitespace-pre-wrap break-words font-mono text-xs text-ink" data-licenses-text>{ v.Text }</pre>
+		}
+		<p class="text-base text-ink"><a href="/settings" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">設定に戻る</a></p>
+	</div>
+}
+
+// Licenses はライセンス表記のフルページ（#133）。
+templ Licenses(v view.Licenses) {
+	@layout.GUI(licensesTitle, v.Chrome) {
+		@licensesBody(v)
+	}
+}
+
+// LicensesBoosted は hx-boost の遷移への応答。
+templ LicensesBoosted(v view.Licenses) {
+	@layout.Boosted(licensesTitle, v.Chrome) {
+		@licensesBody(v)
+	}
+}

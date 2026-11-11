@@ -94,6 +94,9 @@ Section
     
     !insertmacro wails.files
 
+    # 第三者のライセンス表記（Noto Sans JP・Sora・JetBrains Mono の OFL、Iconoir の MIT など。#133）。アプリの「ライセンス表記」の画面と同じファイル。
+    File "..\..\..\licenses\THIRD_PARTY_NOTICES.txt"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     !insertmacro wails.associateFiles
