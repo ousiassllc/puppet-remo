@@ -322,6 +322,14 @@ describe("前へ／次へだけのページ送り", () => {
     expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-next]"));
     expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-prev]"));
   });
+
+  it("ページ送りのクリックと差し替えの間に別のリクエスト（ポーリング）が入っても、押した側を忘れない", async () => {
+    const list = await fixture<HTMLElement>(pager(false, true));
+    document.dispatchEvent(new CustomEvent("htmx:beforeRequest", { detail: { elt: pressed("next") } }));
+    document.dispatchEvent(new CustomEvent("htmx:beforeRequest", { detail: { elt: pressed(null) } }));
+    list.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: list } }));
+    expect(document.activeElement).to.equal(list.querySelector("[data-pager-prev]"));
+  });
 });
 
 describe("アラートを見える位置へ寄せる", () => {

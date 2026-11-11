@@ -423,7 +423,12 @@ let pagerPressed: "prev" | "next" | null = null;
 
 document.addEventListener("htmx:beforeRequest", (event) => {
   const trigger = (event as CustomEvent<{ elt?: Element }>).detail?.elt;
-  pagerPressed = trigger?.hasAttribute("data-pager-prev") ? "prev" : trigger?.hasAttribute("data-pager-next") ? "next" : null;
+  // #live-poll など、ページ送りでないリクエストが間に入っても、押した側を消さない（ページ送りのクリックから差し替えまでに重なりうる）。
+  if (trigger?.hasAttribute("data-pager-prev")) {
+    pagerPressed = "prev";
+  } else if (trigger?.hasAttribute("data-pager-next")) {
+    pagerPressed = "next";
+  }
 });
 
 document.addEventListener("htmx:afterSwap", (event) => {

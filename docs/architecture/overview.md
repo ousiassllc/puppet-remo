@@ -576,7 +576,7 @@ type Judge interface {
 | HTMX 拡張 | `response-targets`（両 UI）。ホスト GUI の更新は `GET /poll`（Wails の AssetServer が SSE をバッファするため） |
 | JSON API | `/api/v1` は読み取り専用。アクションは HTML を返す HTMX ルート |
 | 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない）。`wails3 dev` が開発サーバーの待受を要求するため、esbuild の `--serve` を待受として起動する |
-| CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
+| CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない（例外は未登録デバイスの待機ページだけ。固定の `<style>` 1 つの SHA-256 ハッシュを `style-src` に置き、`'unsafe-inline'` は許さない。frontend.md §7.1）。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
 | 静的ファイル | `Cache-Control: no-cache` + `ETag`（ビルド ID） |
 | テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform・偽の tailnet のテスト専用サーバー。ビルドタグ `e2e`。Lit と Playwright は、M2 の受け入れ条件ではなくあとから CI に足した。#64） |
 

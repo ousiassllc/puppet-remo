@@ -5,7 +5,7 @@
 // 'Sora Variable' などの Fontsource の名前は、ガイドの font-family（Sora・Noto Sans JP・JetBrains Mono）に付け替える。
 // latin-ext・cyrillic・greek・vietnamese など日本語の UI で使わない文字セットは、サイズを抑えるため同梱しない。
 // Noto Sans JP の日本語の断片（数字のファイル名。unicode-range 分割）は、JIS X 0208（かな・カナ・第1/第2水準漢字・記号）
-// の字だけに絞って作り直す（subset-font = HarfBuzz の wasm。bun だけで決定的に動く。docs/architecture/frontend.md §8.4）。
+// の字だけに絞って作り直す（subset-font = HarfBuzz の wasm。bun だけで決定的に動く。docs/architecture/frontend.md §8.5）。
 // 範囲外の字（𠮷 など）は OS のフォントで表示する。
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import subsetFont from "subset-font";
