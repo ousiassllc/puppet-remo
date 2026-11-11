@@ -46,7 +46,7 @@ func TestAgentPageDefaults(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, "<html", `aria-current="page"`, `href="/agent"`, "エージェント",
 		// 既定は無効・キー未登録（FR-G14）。
-		`data-notice="agent-default-off"`, "既定では無効", `data-key-state="unregistered"`, "未登録",
+		`data-notice="agent-default-off"`, "既定では無効", `data-key-state="unregistered"`,
 		`id="agent-form"`, `hx-put="/agent"`, `hx-put="/agent/api-key"`, `hx-put="/agent/fastpath"`, `hx-put="/agent/fastpath/api-key"`,
 		` novalidate`, `hx-target-422=`,
 		`name="enabled"`, `name="consent"`, `name="model"`, `value="gpt-6.1-sol"`,

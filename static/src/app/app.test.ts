@@ -179,6 +179,47 @@ describe("モバイルナビのドロワー", () => {
   });
 });
 
+describe("秘密の入力欄（API キー）", () => {
+  const savedMarkup = html`
+    <div data-secret>
+      <div data-secret-saved><span>登録済み</span><button type="button" data-secret-change>変更</button></div>
+      <form>
+        <div data-secret-edit hidden>
+          <input id="key-input" name="api_key" type="password" />
+          <button type="button" data-secret-toggle aria-label="入力を表示する" aria-pressed="false" aria-controls="key-input"></button>
+        </div>
+        <button type="submit" data-secret-edit hidden>置き換える</button>
+      </form>
+    </div>
+  `;
+
+  it("「変更」で、バッジの行を隠して空の入力欄と登録ボタンを出し、入力欄にフォーカスする", async () => {
+    const root = await fixture<HTMLElement>(savedMarkup);
+    const input = root.querySelector<HTMLInputElement>("#key-input")!;
+    root.querySelector<HTMLElement>("[data-secret-change]")!.click();
+    expect(root.querySelector<HTMLElement>("[data-secret-saved]")!.hidden).to.equal(true);
+    for (const edit of root.querySelectorAll<HTMLElement>("[data-secret-edit]")) {
+      expect(edit.hidden).to.equal(false);
+    }
+    expect(input.value).to.equal("");
+    expect(document.activeElement).to.equal(input);
+  });
+
+  it("表示切り替えは type=password ⇄ text と aria-pressed を合わせ、入力した値は変えない", async () => {
+    const root = await fixture<HTMLElement>(savedMarkup);
+    const input = root.querySelector<HTMLInputElement>("#key-input")!;
+    const toggle = root.querySelector<HTMLButtonElement>("[data-secret-toggle]")!;
+    input.value = "sk-typed";
+    toggle.click();
+    expect(input.type).to.equal("text");
+    expect(toggle.getAttribute("aria-pressed")).to.equal("true");
+    expect(input.value).to.equal("sk-typed");
+    toggle.click();
+    expect(input.type).to.equal("password");
+    expect(toggle.getAttribute("aria-pressed")).to.equal("false");
+  });
+});
+
 describe("アラートを見える位置へ寄せる", () => {
   const alertMarkup = html`
     <div id="alert-root"></div>

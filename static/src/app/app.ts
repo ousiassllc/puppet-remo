@@ -10,6 +10,7 @@
 //   8. アラートの差し込み（afterSwap・oobAfterSwap・新規作成）のあと、縦に長い画面でも見える位置へ寄せる（revealAlerts）
 //   9. クライアントで出すエラーのアラートは、同じ文言がすでに表示中（退出中でない）なら置き換えない（ちらつき・再読み上げの防止）
 //  10. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
+//  11. 秘密の入力欄（API キー）の「変更」（登録済みのバッジを空の入力欄に入れ替える）と、入力中の値の表示切り替え（data-secret-change・data-secret-toggle）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 import { installPickerRefreshGuard } from "./picker-guard";
@@ -134,6 +135,17 @@ document.addEventListener("click", (event) => {
     setNavOpen(false);
     return;
   }
+
+  // 11. 秘密の入力欄。
+  const secretToggle = target.closest<HTMLElement>("[data-secret-toggle]");
+  if (secretToggle) {
+    toggleSecretVisibility(secretToggle);
+    return;
+  }
+  if (target.closest("[data-secret-change]")) {
+    editSecret(target.closest("[data-secret]"));
+    return;
+  }
   const copyButton = target.closest<HTMLElement>("[data-copy-target]");
   if (copyButton) {
     const input = document.getElementById(copyButton.dataset.copyTarget ?? "");
@@ -217,6 +229,32 @@ async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<
       status.textContent = status.dataset.fallback ?? "";
     }
   }
+}
+
+// 11. 入力中の値の表示切り替え。type=password ⇄ text と aria-pressed を合わせる（ラベルは固定。アイコンは aria-pressed を見て CSS が切り替える）。
+function toggleSecretVisibility(button: HTMLElement): void {
+  const input = document.getElementById(button.getAttribute("aria-controls") ?? "");
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+  const shown = input.type === "password";
+  input.type = shown ? "text" : "password";
+  button.setAttribute("aria-pressed", String(shown));
+}
+
+// 11. 登録済みのバッジと「変更」を隠し、空の入力欄と登録ボタンを出して、入力欄にフォーカスを移す。
+// 見せ分けはサーバーが描画した hidden 属性で、ここでは入れ替えるだけ（値は持たない・戻さない。NFR-S14）。
+function editSecret(root: Element | null): void {
+  if (!root) {
+    return;
+  }
+  for (const saved of root.querySelectorAll<HTMLElement>("[data-secret-saved]")) {
+    saved.hidden = true;
+  }
+  for (const edit of root.querySelectorAll<HTMLElement>("[data-secret-edit]")) {
+    edit.hidden = false;
+  }
+  root.querySelector<HTMLElement>("input")?.focus();
 }
 
 // 7. 承認ダイアログ（専用の Wails ウィンドウ。/approvals/{id}）の許可・拒否の応答は HX-Trigger: closeWindow を返す。

@@ -29,6 +29,8 @@
   --scrim: rgb(5 5 5 / 0.4);
   --select-arrow: var(--select-arrow-light);
   --ring: color-mix(in srgb, var(--focus) 40%, transparent);
+  /* --accent-soft 地の上の補助文字（ガイドの式。--mute だけでは --accent-soft 上で AA に届かない）。テーマ別の --mute・--ink から導く。 */
+  --mute-on-soft: color-mix(in srgb, var(--mute) 85%, var(--ink));
   --shadow-modal-color: rgb(0 0 0 / 0.06);
 }
 
@@ -81,6 +83,7 @@
   --color-ink: var(--ink);
   --color-bone: var(--bone);
   --color-mute: var(--mute);
+  --color-mute-on-soft: var(--mute-on-soft);
   --color-surface: var(--surface);
   --color-border: var(--border);
   --color-accent: var(--accent);
