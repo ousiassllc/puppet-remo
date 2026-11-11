@@ -302,7 +302,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | R4 | tailscaled を停止・再起動 | 待ち受けが止まり（理由がダッシュボードに出る）、再起動後 10 秒以内に復旧する |
 | R5 | 設定画面でポートを変更して保存 | 新しいポートで待ち受け直し、古いポートは閉じる |
 | R6 | リースのアイドル時間を設定画面で変更 | 保持中のリースにも新しい値が適用される |
-| R7 | 許可済みの端末（WhoIs で解決できる接続元）から MCP / Web に接続し、ダッシュボードの「接続要求」「クライアント」を見る（#15。LocalAPI の `WhoIs`、FR-A03） | 接続元の **ユーザー（ログイン名）とデバイス名が表示**され、tailnet の外・未登録の IP（`curl` を別経路から）では WhoIs が失敗して 403 になる。WhoIs の結果は接続元 IP 単位で最大 10 秒キャッシュされる（NFR-S05）ため、同じ端末でログインを替えた直後は 10 秒待って確かめる |
+| R7 | 許可済みの端末（WhoIs で解決できる接続元）から MCP / Web に接続し、ダッシュボードの「接続要求」「クライアント」を見る（#15。LocalAPI の `WhoIs`、FR-A03） | 接続元の **ユーザー（ログイン名）とデバイス名が表示**される（WhoIs が成功している証拠）。tailnet 内の未登録の端末は WhoIs が成功して `device_not_registered` になる（R2）。WhoIs 自体の失敗（`whois_failed`）は再現が難しいので、この項目では確かめない。WhoIs の結果は接続元 IP 単位で最大 10 秒キャッシュされる（NFR-S05）ため、同じ端末でログインを替えた直後は 10 秒待って確かめる |
 | R8 | tailnet の IP が変わる操作（`tailscale down` → `tailscale up`、別の tailnet への切り替え）をして、ダッシュボードの待ち受けの表示と `netstat -ano \| findstr 8765` を見る（#15。IP 変化の監視 `WatchIPNBus`） | 切断中は待ち受けが止まり理由が出る。再接続後、**10 秒以内**に新しい tailnet の IPv4・IPv6 だけで LISTENING に戻る（R4 と同じ基準） |
 
 ### 4.5 キルスイッチ（FR-H06）
@@ -514,7 +514,7 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | GDI（`BitBlt`）のキャプチャ: マルチモニター・DPI・スクリーンショットの縮小座標 | §3.1 C1〜C7（C2・C4: DPI、C3: マルチモニター）、§3.2 I1（縮小 → 物理の座標の往復）、§4.10 S2（DPI 混在の縮小） | 継続キャプチャ `Watch` は §3.9（M2） |
 | `SendInput`: マウス・クリック・ドラッグ・ホイール、キー・修飾キー、`KEYEVENTF_UNICODE` による日本語の `type`、UIPI | §3.2 I3〜I7（マウス・キー）、I10（日本語・絵文字の `Text`）、I12（管理者権限のウィンドウ。UIPI） | 契約テスト `TestSmokeInput*`（§2） |
 | ウィンドウ列挙・`focus_window`（前面化）、クリップボードのテキスト読み書き | §3.3 WM1〜WM10（WM8: `Focus`）、§3.4 B1〜B5 | |
-| UI Automation（`get_ui_tree`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト | §3.5 U1〜U5（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト） | COM のスレッドは U1（契約テスト）が繰り返し通ること |
+| UI Automation（`get_ui_tree`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト | §3.5 U1〜U5（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
 | グローバルホットキー（既定 `Ctrl+Alt+Shift+K`）によるキルスイッチ（1 秒以内の効果） | §3.6 K1〜K4、§4.5 | |
 | `SetThreadExecutionState`（リース保持中のスリープ・画面オフ抑止。`powercfg /requests`） | §4.6 SL1〜SL7 | |
 | 実 tailscaled: LocalAPI の `WhoIs`、IP 変化の監視、tailscaled 再起動後の 10 秒以内の復旧、tailnet の IPv4・IPv6 のみへの Listen | §4.4 R1（Listen）、R4（再起動後 10 秒以内の復旧）、**R7（WhoIs）**、**R8（IP 変化の監視）** | R7・R8 は #15 の項目に手順がなかったため足した |

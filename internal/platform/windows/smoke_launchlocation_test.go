@@ -61,6 +61,11 @@ func newLaunchLocationScratch(t *testing.T) launchLocationScratch {
 	}
 	exe := filepath.Join(dir, "long application name.exe")
 	copyFile(t, self, exe)
+	// %TEMP% 自体がリンク・ジャンクション・subst・固定ディスク以外を経由していると、許可のはずの対照（L11〜L13）が拒否になり、
+	// 製品の誤判定に見えてしまう。実体のパスが登録パスと同じ（大文字小文字を除く）でなければ、前提不成立として skip する。
+	if resolved, err := pwin.NewLauncher().Resolve(context.Background(), exe); err != nil || !strings.EqualFold(resolved, exe) {
+		t.Skipf("%%TEMP%% が素直な固定ディスク上のパスではない（Resolve(%q) = %q, %v）。TEMP を固定ディスク直下のパスにして再実行する", exe, resolved, err)
+	}
 	return launchLocationScratch{dir: dir, exe: exe}
 }
 
@@ -95,14 +100,19 @@ func convertWinPath(t *testing.T, p string, f func(in, out *uint16, size uint32)
 	}
 }
 
-// requireLaunchAllowed は exe が Launch で起動できる（場所の検査を通る）ことを確かめ、起動したプロセスを終了する。
+// requireLaunchAllowed は exe が Launch で起動できる（場所の検査を通る）ことを確かめる。
+// args が空のとき（notepad.exe など、自分では終わらないもの）だけ、起動したプロセスを終了する。
+// harmlessArgs で起動したテストのバイナリのコピーは数 ms で自分から終わるので、pid の再利用で別のプロセスを終了させないよう、
+// こちらからは終了しない。
 func requireLaunchAllowed(t *testing.T, exe string, args []string) {
 	t.Helper()
 	pid, err := pwin.NewLauncher().Launch(context.Background(), platform.LaunchSpec{ExePath: exe, Args: args})
 	if err != nil {
 		t.Fatalf("Launch(%q): %v, want success", exe, err)
 	}
-	t.Cleanup(func() { terminateOwnProcess(t, pid) })
+	if len(args) == 0 {
+		t.Cleanup(func() { terminateOwnProcess(t, pid) })
+	}
 }
 
 // requireLaunchDenied は exe の Launch が access_denied（場所の検査での拒否）になり、プロセスが起動しないことを確かめる。
