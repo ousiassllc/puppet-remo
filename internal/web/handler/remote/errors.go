@@ -9,6 +9,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -113,6 +114,7 @@ func (h *Handler) renderErrorPage(c *gin.Context, f failure) {
 		h.render(c, f.status, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: f.code, Heading: "エラー", Message: f.message}))
 		return
 	}
+	middleware.SetNoticeCSP(c.Writer.Header())
 	h.render(c, f.status, pages.RemoteError(view.RemoteError{Code: f.code, Title: "ビューアを表示できません", Message: f.message}))
 }
 

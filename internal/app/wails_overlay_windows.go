@@ -18,7 +18,7 @@ import (
 )
 
 // 操作中オーバーレイ（#69・#86）の Windows 実装: Win32 のネイティブウィンドウで、モニターごとに
-// 「縁の細い枠 4 本」と「上端中央の札」を出す。WebView2 の全面ウィンドウは使わない（#86: 透明が効かず、全モニターが真っ白になった）。
+// 「縁の細い枠 4 本（外側 --ink・内側 --bone の 2 重線）」と「上端中央の札（--surface 地・sm 14px・色なし）」を出す。WebView2 の全面ウィンドウは使わない（#86: 透明が効かず、全モニターが真っ白になった）。
 // 真ん中のウィンドウは最初から作らないので、画面の中身は覆わない。実機が要るため CI では動かず、実機スモーク
 // （docs/operations/smoke-windows.md §4.12）で確認する。配置の計算は overlay_layout.go（偽物なしでテストしている）、
 // 出し入れの判断は overlayController（overlay.go）にある。
@@ -39,18 +39,15 @@ const overlayExStyle = w32.WS_EX_TOPMOST | w32.WS_EX_TOOLWINDOW | w32.WS_EX_TRAN
 const (
 	overlayClassName = "PuppetRemoOverlay"
 
-	overlayBarAlpha   = 255 // 枠は不透明（細いので中身は隠れない）
-	overlayLabelAlpha = 235
+	// 枠も札も不透明（色はトークンの値そのもの。枠は細いので中身は隠れない）。
+	overlayBarAlpha   = 255
+	overlayLabelAlpha = 255
 
-	// COLORREF は 0x00BBGGRR。枠は rose-500（#f43f5e）、札は rose-600（#e11d48）、文字は白。
-	overlayBarColor   = 0x5e3ff4
-	overlayLabelColor = 0x481de1
-	overlayTextColor  = 0xffffff
-
+	// 札の文字は sm 14px（DIP。1 行目 SemiBold・2 行目 Regular）。色は overlayColorsFor（トークンの 16 進）。
+	// ネイティブウィンドウは同梱の Web フォントを使えないので、システムフォントの Segoe UI。
 	overlayFontFace      = "Segoe UI"
-	overlayFontPtFirst   = 11 // 1 行目（太字）
-	overlayFontPtDetail  = 9  // 2 行目
-	overlayMaMouseNoActv = 3  // MA_NOACTIVATE
+	overlayFontDIP       = 14
+	overlayMaMouseNoActv = 3 // MA_NOACTIVATE
 
 	drawTextFormat = w32.DT_CENTER | w32.DT_SINGLELINE | w32.DT_NOPREFIX | w32.DT_END_ELLIPSIS
 )
@@ -68,7 +65,9 @@ var (
 // overlayWin は出している 1 枚のウィンドウ。overlayThread のスレッドだけが触る。
 type overlayWin struct {
 	hwnd uintptr
-	// 札だけ: 文言・フォント・行の高さ・余白（描画で使う。枠は何も持たない）
+	// 枠だけ: 外側の線（--ink）で塗る範囲（ウィンドウの左上が原点。残りは内側の線）
+	ink []domain.Rect
+	// 札だけ: 文言・フォント・行の高さ・余白（描画で使う）
 	label                     bool
 	first, detail             string
 	fontFirst, fontDetail     uintptr
@@ -93,10 +92,10 @@ type overlayThread struct {
 	jobs []overlayJob
 
 	// 以下はスレッドだけが触る。
-	screens  []overlayScreen
-	byHwnd   map[uintptr]*overlayWin
-	barBrush uintptr
-	lblBrush uintptr
+	screens                          []overlayScreen
+	byHwnd                           map[uintptr]*overlayWin
+	outerBrush, innerBrush, lblBrush uintptr
+	textColor                        uint32
 }
 
 type overlayJob struct {
@@ -136,7 +135,8 @@ func (w wailsWindows) ShowOverlay(monitors []domain.Monitor, label string) {
 		err = o.th.do(func() error { return o.th.relabel(first, detail) })
 	} else {
 		o.monitors = nil
-		err = o.th.do(func() error { return o.th.build(monitors, first, detail, w.h.warnOverlayBounds) })
+		colors := overlayColorsFor(w.h.wails.Env.IsDarkMode()) // OS のアプリのテーマ（ウィンドウの下地色と同じ判定）。作り直すたびに読み直す
+		err = o.th.do(func() error { return o.th.build(monitors, colors, first, detail, w.h.warnOverlayBounds) })
 		if err == nil {
 			o.monitors = slices.Clone(monitors)
 		}
@@ -200,8 +200,6 @@ func (t *overlayThread) run(ready chan<- error) {
 		ready <- err
 		return
 	}
-	t.barBrush = w32.CreateSolidBrush(overlayBarColor)
-	t.lblBrush = w32.CreateSolidBrush(overlayLabelColor)
 	ready <- nil
 
 	for {
@@ -286,8 +284,9 @@ func runOverlayJob(fn func() error) (err error) {
 
 // build は既存のウィンドウを閉じて、monitors の全モニターに枠と札を作り直す。1 枚でも作れなければ、作ったものを全部閉じて失敗にする。
 // ウィンドウは作る前に screens へ登録する（途中で失敗しても destroyAll がすべて閉じられる）。
-func (t *overlayThread) build(monitors []domain.Monitor, first, detail string, warnBounds func(monitor int, want, got domain.Rect)) error {
+func (t *overlayThread) build(monitors []domain.Monitor, colors overlayColors, first, detail string, warnBounds func(monitor int, want, got domain.Rect)) error {
 	t.destroyAll()
+	t.setColors(colors)
 	for _, m := range monitors {
 		t.screens = append(t.screens, overlayScreen{monitor: m})
 		s := &t.screens[len(t.screens)-1]
@@ -295,7 +294,7 @@ func (t *overlayThread) build(monitors []domain.Monitor, first, detail string, w
 			if r.Empty() {
 				continue
 			}
-			bar := &overlayWin{}
+			bar := &overlayWin{ink: overlayOuterInk(m, r)}
 			s.bars = append(s.bars, bar)
 			if err := t.show(bar, r, overlayBarAlpha, m.Index, warnBounds); err != nil {
 				t.destroyAll()
@@ -333,6 +332,19 @@ func (t *overlayThread) relabel(first, detail string) error {
 		w32.InvalidateRect(lbl.hwnd, nil, true)
 	}
 	return nil
+}
+
+// setColors は枠と札の色（ブラシと文字の色）を c にする。build のたびに呼ぶので、前のブラシは捨てる。
+func (t *overlayThread) setColors(c overlayColors) {
+	for _, b := range []*uintptr{&t.outerBrush, &t.innerBrush, &t.lblBrush} {
+		if *b != 0 {
+			w32.DeleteObject(*b)
+		}
+	}
+	t.outerBrush = w32.CreateSolidBrush(c.Outer)
+	t.innerBrush = w32.CreateSolidBrush(c.Inner)
+	t.lblBrush = w32.CreateSolidBrush(c.LabelBG)
+	t.textColor = c.LabelText
 }
 
 func (t *overlayThread) destroyAll() {
@@ -423,8 +435,8 @@ func (t *overlayThread) layoutLabel(m domain.Monitor, lbl *overlayWin) error {
 			*f = 0
 		}
 	}
-	lbl.fontFirst = createOverlayFont(overlayFontPtFirst, dpi, w32.FW_SEMIBOLD)
-	lbl.fontDetail = createOverlayFont(overlayFontPtDetail, dpi, w32.FW_NORMAL)
+	lbl.fontFirst = createOverlayFont(overlayFontDIP, dpi, w32.FW_SEMIBOLD)
+	lbl.fontDetail = createOverlayFont(overlayFontDIP, dpi, w32.FW_NORMAL)
 	if lbl.fontFirst == 0 || lbl.fontDetail == 0 {
 		return errors.New("overlay: CreateFontIndirect failed")
 	}
@@ -446,9 +458,9 @@ func (t *overlayThread) layoutLabel(m domain.Monitor, lbl *overlayWin) error {
 	return nil
 }
 
-func createOverlayFont(pt, dpi int, weight int32) uintptr {
+func createOverlayFont(dip, dpi int, weight int32) uintptr {
 	lf := w32.LOGFONT{
-		Height:  -int32(w32.MulDiv(pt, dpi, 72)),
+		Height:  -int32(w32.MulDiv(dip, dpi, 96)),
 		Weight:  weight,
 		CharSet: w32.DEFAULT_CHARSET,
 		Quality: w32.CLEARTYPE_QUALITY,
@@ -486,7 +498,7 @@ func overlayWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return w32.DefWindowProc(hwnd, uint32(msg), wParam, lParam)
 }
 
-// paint は hwnd のウィンドウを描く: 枠は 1 色で塗るだけ、札は塗って文字を重ねる。
+// paint は hwnd のウィンドウを描く: 枠は内側の線の色で塗って外側の線の範囲を重ねる、札は塗って文字を重ねる。
 func (t *overlayThread) paint(hwnd uintptr) {
 	var ps w32.PAINTSTRUCT
 	hdc := w32.BeginPaint(hwnd, &ps)
@@ -500,12 +512,17 @@ func (t *overlayThread) paint(hwnd uintptr) {
 	}
 	w, ok := t.byHwnd[hwnd]
 	if !ok || !w.label {
-		w32.FillRect(hdc, rc, t.barBrush)
+		w32.FillRect(hdc, rc, t.innerBrush)
+		if ok {
+			for _, r := range w.ink {
+				w32.FillRect(hdc, &w32.RECT{Left: int32(r.X), Top: int32(r.Y), Right: int32(r.X + r.W), Bottom: int32(r.Y + r.H)}, t.outerBrush)
+			}
+		}
 		return
 	}
 	w32.FillRect(hdc, rc, t.lblBrush)
 	_, _, _ = overlayProcSetBkMode.Call(hdc, w32.TRANSPARENT)
-	_, _, _ = overlayProcSetTextColor.Call(hdc, overlayTextColor)
+	_, _, _ = overlayProcSetTextColor.Call(hdc, uintptr(t.textColor))
 	left, right := int32(w.padX), rc.Right-int32(w.padX)
 	top := int32(w.padY)
 	drawOverlayLine(hdc, w.fontFirst, w.first, &w32.RECT{Left: left, Top: top, Right: right, Bottom: top + int32(w.heightFirst)})

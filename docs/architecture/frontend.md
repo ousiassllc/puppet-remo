@@ -457,6 +457,7 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 
 - **配置**: GUI ルーター・リモートルーターの両方で、ミドルウェア連鎖の**最初**に置く（`hostcheck` などが返すエラーページ、キルスイッチの 503 ページにも付くようにする）。HTML 以外（JSON、静的ファイル）に付いても害は無いため、HTML かどうかの判定はしない
 - `img-src ... data: blob:` はビューアの `canvas`（`createImageBitmap`）と小さなアイコンのため。`connect-src 'self'` は同一オリジンの `fetch`（HTMX・ポーリング）・WebSocket（`ws:`）を許可する
+- **待機ページ（`layout.RemoteNotice`。`Pending`・`Denied`・`Expired`・`RemoteError` の 4 種）だけが例外**。未登録デバイスには `/static/*` が 403 でスタイルを配信できないため、このページだけが最小のスタイルを**インラインの `<style>` 1 つ**（`layout.NoticeStyle`。固定の CSS）で持つ。CSP は `'unsafe-inline'` ではなく、その文字列の **SHA-256 ハッシュ**を `style-src` に置く: 待機ページを書くとき（ミドルウェアの拒否・ハンドラのエラーページ）に、応答のヘッダーを `middleware.NoticeCSPValue`（上の値との違いは `style-src` が `'self'` の代わりに `'sha256-…'` になる 1 か所だけ）に置き換える（`middleware.SetNoticeCSP`）。nonce にしないのは、CSS が固定でリクエストごとの生成が要らないため。ホスト GUI・ビューアなど他のページと、`<style>`・`style=` を禁止する規約（下の表）は変えない。待機ページは `/static` を参照しない（未登録デバイスからの `/static` へのアクセスを増やさない）。HTML の `<style>` と CSP ヘッダーのハッシュの整合は `webtest.AssertNoticeCSPCompliantHTML` が検査する
 
 **規約（CSP の帰結）**
 
@@ -559,6 +560,8 @@ graph LR
 - **題なしのインラインアラート（`atoms.Notice` / `NoticeAnimated`。ガイド「設定画面のパーツ」3）**: `Alert` と同じ形（角丸 `--r-md`・padding 12 × 16・アイコン 16 + 本文 sm 14・gap 12）で、題と閉じるボタンは持たない。地は `--surface`、枠は `--border` 1px で、状態色は**左の線（3px）だけ**に使う（`-line`・`-wash` の枠・地は使わない）。アイコンは状態色・本文は `--ink`。色の使い分け: `AlertWarning` = 常設の注意書き（データの扱い・取り消せないこと・起動の方式・更新を適用できない理由・監査の入力の記録の警告など）、`AlertInfo` = 同意のチェックを入れる枠（エージェント・高速パス）・ただの補足（タスクの最終回答の注記・開発用ビルドの更新案内・ウィンドウ一覧の案内）。`AlertDanger` は、エラー・読めない設定・キルスイッチの発動中の表示に限る。`AlertSuccess` は使っていない。
 - **見出し構造（#155）**: どのページ（ホスト GUI・リモート UI）も h1 が 1 つで、h1 → h3 のような飛びが無い。項目が並ぶ場所は、見せない h2（`sr-only`）を挟む（「アプリ一覧」「アプリの登録」「クライアント一覧」「接続要求の一覧」）。クライアント詳細の h1 は `ClientCard` の名前（一覧では h3、`CanOpenDetail` が false の詳細ページでは h1。見た目は同じ `text-xl`）。ビューアの h1 は `ViewerRoot` の `sr-only` の「ビューア」。設定の `<legend>` は見出しではなくフォームのグループ見出し（ガイドの h4 の段）で、このアウトラインに数えない。`internal/web/pages/headings_test.go` が全ページを描画して見出しのレベル列を検査する（`webtest.AssertHeadingOutline`。h1 が 1 つ・飛びなし）。
 
+**承認済みの逸脱（待機ページのフォント）**: 待機ページ（§7.1）は、フォントだけ共通ガイドの Sora + Noto Sans JP ではなく**システムフォント**（`font-family: system-ui, sans-serif`。Web フォントは使わない）にする。理由: 未登録デバイスは `/static/*` が 403 で、同梱のフォント（woff2）を配信できないため。それ以外はガイドどおりで、色は `app.css` のトークンと同じ 16 進（文字 `--ink` ライト `#050505`・ダーク `#ffffff`、背景 ライト `--bone` `#f5f5f4`・ダーク `--surface` `#141414`。`prefers-color-scheme` で切り替える）、余白は 4px 基準（`--s-*`）、見出し（`h1`）は xl 24px SemiBold、本文は base 16px Regular。値は `layout.NoticeStyle` に 1 か所だけ書く。
+
 ### 8.5 Noto Sans JP のサブセット化（#130）
 
 Noto Sans JP の同梱フォントは、Fontsource の既定（日本語の約 120 断片、約 5.4 MB）のままだと配布物と初回の読み込みが重いので、**かな・カナ・JIS X 0208 の漢字・記号・英数字**に絞る（いろは案。オーナー承認）。範囲外の字は `--font-sans` の最後の `sans-serif`（OS のフォント）で表示される（第2水準にない人名用の字 `𠮷`・`髙`・`﨑`、絵文字など）。
@@ -593,6 +596,44 @@ Noto Sans JP の同梱フォントは、Fontsource の既定（日本語の約 1
 | アプリ画面 | ホスト GUI の `GET /licenses`（`handler/gui/licenses.go`。全文を `<pre>` に出す。`Card` だけで組む）。設定の画面の末尾の 1 文から開く。リモート Web UI（tailnet）には出さない（`internal/router` のテストが 404 を検査する） |
 | インストーラー | `build/windows/nsis/project.nsi` が `File "..\..\..\licenses\THIRD_PARTY_NOTICES.txt"` でインストール先（`$INSTDIR`）に置く。アンインストールは `RMDir /r $INSTDIR` で一緒に消える。`makensis` の出力（`File: "THIRD_PARTY_NOTICES.txt"`）で同梱を確かめた。Release の作成は CI（`nightly.yml`・`release.yml`）だけが行い、ここでは行わない（[配信](../operations/release.md)） |
 | 更新の手順 | フォント・アイコン・JS のライブラリ・Go のモジュールを足す／上げるときは、`scripts/third-party-notices.mjs` の対象（フォントは `fonts`、ライブラリは `nodeLibs`）を更新して表記を作り直し、同じコミットに入れる。Go のモジュールは `go list -deps` から自動で拾う。`licenses/licenses_test.go` が、`static/package.json` の依存（フォント・htmx・Lit・Tailwind）が表記にあることを検査する |
+
+### 8.7 案件ガイド（承認ダイアログ・操作中オーバーレイ。#131）
+
+Ousiass 共通ガイド（brand-guide）に収載の無い 2 つの部品の寸法・配色を、**このプロジェクトの案件ガイド**としてここに定める（共通ガイドには書かない）。値はすべて §8.4 のトークン（`app.css`）だけを使い、ガイドに無い値・色を足さない。実装は下の「実装」の列の class・定数で、値が表と一致することを Go のテストが検査する（`TestApprovalDialogMatchesModalBody`・`TestOverlayColorsMatchAppCSS`・`TestOverlayOuterInkIsAContinuousRing`）。
+
+**承認ダイアログ**（FR-H05。Wails の専用ウィンドウに出す OS ウィンドウ上のカード。`organisms.ApprovalDialog`・`ApprovalDone`・`ApprovalGone`）。確認モーダル（`molecules.Modal`。§8.4「部品・オーバーレイ（O）」）の本体と同じ形・影・見出し・ボタンの並びにする。
+
+| 項目 | 値 | 実装 |
+|------|----|------|
+| ウィンドウ | 幅 440px 固定。高さは種類別（lease 340px・safety_check / judge_action 560px）。下地と外側の余白は `--bone`・16px（`--s-4`） | `app/wails_windows.go` の `approvalWidth`・`app/windows.go` の `approvalHeight*`、`layout.Dialog` の `bg-bone p-4` |
+| カード（本体） | 角丸 `--r-xl` 16px（モーダル本体と同じ。確認モーダルは `rounded-xl`、brand-guide の `.modal` も `--r-xl`）、枠 1px `--border`、地 `--surface`、影 `--shadow-modal`、内側の余白 24px（`--s-6`）、中身の縦の間隔 16px（`--s-4`） | `rounded-xl border border-border bg-surface p-6 shadow-modal`・`space-y-4` |
+| 題 | lg 18px・SemiBold・`--ink`（モーダルの題と同じ。見出しのタグは `h1`） | `text-lg font-semibold text-ink` |
+| 項目名・値 | sm 14px。項目名は `--mute`、値は `--ink` | `text-sm text-mute`・`text-sm text-ink` |
+| 詳細の枠（safety_check・judge_action） | 地 `--bone`・角丸 `--r-md` 8px・余白 16px・sm 14px・最大高さ 128px（あふれはスクロール） | `rounded-md bg-bone p-4 text-sm max-h-32` |
+| 残り時間 | sm 14px・`--ink`。数字だけ Mono | `text-sm text-ink`・`font-mono` |
+| ボタン | 右寄せ・間隔 8px（`--s-2`）・本文との間は 24px（モーダルの `mt-6` と同じ）。**拒否（サブ）が左・許可（主）が右**（モーダルのキャンセルが左・確定が右と同じ並び）。ボタンの形はモーダルと共通（`atoms.Button`） | `flex justify-end gap-2 pt-2`（`space-y-4` の 16px と合わせて 24px） |
+| 許可・拒否後・失効後 | 同じカード（本文 base 16px・`--ink`） | `ApprovalDone`・`ApprovalGone` も `rounded-xl border border-border bg-surface p-6 shadow-modal` |
+
+**操作中オーバーレイ**（FR-H07。リースが保持されている間、全モニターの縁に出す。Windows の Win32 ネイティブウィンドウ（`app/wails_overlay_windows.go`）で、HTML・WebView2 は使わない（#86: 全面の WebView2 ウィンドウは透明が効かず真っ白になった）。つまり Templ・CSS ではなく、下の表の値を `app/overlay_layout.go` の定数と `overlayColorsFor`（`app.css` のトークンの 16 進を写したもの）で持つ）。色は枠・札とも不透明。装飾（色の強調・影・角丸・アニメーション）は無い。
+
+| 項目 | 値 | 実装 |
+|------|----|------|
+| 枠の構成 | モニターの縁に沿う 2 重線。**外側が `--ink`、内側が `--bone`**（明るい壁紙でも暗い壁紙でも、どちらかの線が見える）。外側の線はモニターの縁からの輪で、角でも途切れない | `overlayOuterInk`（外側の範囲）・残りを内側の色で塗る |
+| 枠の太さ | 合計 4 DIP = 外側 2 DIP + 内側 2 DIP（DPI に比例。100% で 4px、150% で 6px。最低 1px） | `overlayBorderDIP = 4`・`overlayOuterDIP = 2` |
+| 札の位置・大きさ | 上端の中央。内側の余白は横 16 DIP・縦 4 DIP。幅の上限はモニター幅の 60%（超えた分は末尾を「…」） | `overlayLabelPadXDIP`・`overlayLabelPadYDIP`・`overlayLabelMaxWidthPercent` |
+| 札の地・文字 | 地は `--surface`、文字は `--ink`。色の強調なし | `overlayColors.LabelBG`・`LabelText` |
+| 札の文字の大きさ | sm 14 DIP（1 行目 SemiBold・2 行目 Regular）。フォントは Windows のシステムフォント（Segoe UI）。ネイティブウィンドウは同梱の Web フォントを使えない | `overlayFontDIP = 14`・`overlayFontFace` |
+| アニメーション | なし（表示・非表示・文言の差し替えは即時） | — |
+
+色（OS の「アプリのテーマ」に従う。ウィンドウを作るとき（リースを取って出すたび・モニター構成が変わったとき）に読み、保持者が変わるだけの文言の差し替えでは読み直さない。ウィンドウの下地色（§8.4）と同じ判定）:
+
+| トークン | ライト | ダーク | 使う場所 |
+|---------|--------|--------|---------|
+| `--ink` | `#050505` | `#ffffff` | 枠の外側の線・札の文字 |
+| `--bone` | `#f5f5f4` | `#050505` | 枠の内側の線 |
+| `--surface` | `#ffffff` | `#141414` | 札の地 |
+
+クリック透過・フォーカスを奪わない・最前面・キャプチャ除外（NFR-S06）と、枠・札を別々のウィンドウにして真ん中を覆わない構造（#86）は、この案件ガイドの対象外（見た目だけを定める）。実機での確認は実機スモーク（`docs/operations/smoke-windows.md` §4.12 の O1）。
 
 ## 9. テスト戦略
 

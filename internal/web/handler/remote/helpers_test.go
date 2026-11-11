@@ -117,7 +117,16 @@ func (r *rig) do(method, target string, form url.Values, headers ...string) resp
 	_ = res.Body.Close()
 	out := resp{Response: res, Body: string(b)}
 	if strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
-		if got := res.Header.Get("Content-Security-Policy"); got != middleware.CSPValue {
+		got := res.Header.Get("Content-Security-Policy")
+		if strings.Contains(out.Body, "<style>") {
+			// エラーのページ（layout.RemoteNotice）だけがインライン <style> を持ち、<style> のハッシュを許す CSP になる。
+			if got != middleware.NoticeCSPValue {
+				r.t.Errorf("Content-Security-Policy = %q, want %q", got, middleware.NoticeCSPValue)
+			}
+			webtest.AssertNoticeCSPCompliantHTML(r.t, out.Body, got)
+			return out
+		}
+		if got != middleware.CSPValue {
 			r.t.Errorf("Content-Security-Policy = %q, want %q", got, middleware.CSPValue)
 		}
 		webtest.AssertCSPCompliantHTML(r.t, out.Body)

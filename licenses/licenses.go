@@ -2,7 +2,7 @@
 //
 // 表記は static/scripts/third-party-notices.mjs が作る生成物で、アプリの「ライセンス表記」の画面（GUI の /licenses）と、
 // Windows のインストーラ（build/windows/nsis/project.nsi。インストール先に置く）が同じファイルを使う。
-// 更新の手順は docs/architecture/frontend.md §8.5。
+// 更新の手順は docs/architecture/frontend.md §8.6。
 package licenses
 
 import _ "embed"

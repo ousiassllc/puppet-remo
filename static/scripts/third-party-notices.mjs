@@ -1,4 +1,4 @@
-// 配布物に同梱する第三者のライセンス表記（licenses/THIRD_PARTY_NOTICES.txt）を作る（Issue #133。docs/architecture/frontend.md §8.5）。
+// 配布物に同梱する第三者のライセンス表記（licenses/THIRD_PARTY_NOTICES.txt）を作る（Issue #133。docs/architecture/frontend.md §8.6）。
 // このファイルは Git に入れる生成物で、アプリの「ライセンス表記」の画面（/licenses。go:embed）と、インストーラ（build/windows/nsis）が使う。
 //
 //   bun scripts/third-party-notices.mjs           licenses/THIRD_PARTY_NOTICES.txt を作り直す

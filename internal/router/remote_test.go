@@ -310,9 +310,11 @@ func TestRemoteChainRunsBeforeRouting(t *testing.T) {
 func TestRemoteResponsesCarryCSP(t *testing.T) {
 	k := newRemote(t)
 	k.auth.registered = false
-	for _, rec := range []*httptest.ResponseRecorder{k.do(http.MethodGet, "/mcp"), k.do(http.MethodGet, "/nope")} {
-		if got := rec.Header().Get("Content-Security-Policy"); got != middleware.CSPValue {
-			t.Errorf("CSP = %q, want the shared policy (status %d)", got, rec.Code)
+	// problem+json（API・MCP）は共有の CSP。HTML のページ（未登録デバイスの待機ページ）は、インライン <style> のハッシュを足した CSP。
+	for path, want := range map[string]string{"/mcp": middleware.CSPValue, "/nope": middleware.NoticeCSPValue} {
+		rec := k.do(http.MethodGet, path)
+		if got := rec.Header().Get("Content-Security-Policy"); got != want {
+			t.Errorf("GET %s: CSP = %q, want %q (status %d)", path, got, want, rec.Code)
 		}
 	}
 }
