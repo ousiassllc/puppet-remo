@@ -8,7 +8,9 @@ package molecules
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// Card は見出し付きの枠。
+// Card は見出し付きの枠（ガイド「設定画面のパーツ」1）。題は lg 18・SemiBold・行間 1.4（見出しタグ h2 の既定サイズに頼らず
+// クラスで決める）、padding は縦 --s-4・横 --s-6、題の下に --border 1px の線、本文は padding --s-6、影なし。
+// 題の見出しは h2。ページの h1 の直下に置くセクションに使う。title が空なら題の見出しと線は出さない。
 func Card(title string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -35,14 +37,14 @@ func Card(title string) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if title != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<h2 class=\"border-b border-border px-6 py-3 text-2xl font-semibold text-ink\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<h2 class=\"border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/card.templ`, Line: 7, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `molecules/card.templ`, Line: 9, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {

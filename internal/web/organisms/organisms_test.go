@@ -694,8 +694,8 @@ func TestCardPaddingsFollowScale(t *testing.T) {
 	update := webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "v1.2.3", Verified: true}}))
 	has(t, update, `class="space-y-2 rounded-md bg-bone p-4" data-update="latest"`)
 	// カード内のまとまり同士は 24（--gap-card-section。space-y-6）。
-	has(t, update, `class="space-y-6 p-6"`)
-	hasNot(t, update, `class="space-y-4 p-6"`)
+	has(t, update, `class="p-6"><div class="space-y-6">`)
+	hasNot(t, update, `class="space-y-4 p-6"`, `<div class="space-y-4">`)
 	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
 	has(t, lease, "rounded-lg border border-border bg-surface p-4")
 	hasNot(t, lease, "bg-surface p-3")

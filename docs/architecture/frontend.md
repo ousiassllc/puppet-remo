@@ -543,6 +543,10 @@ graph LR
 
 ライト／ダークの実描画の確認は `task gui:demo`（loopback。`prefers-color-scheme` または `<html data-theme>` で切り替える）で行う。
 
+#### 見出し付きカード・見出しの段・アラート・見出し構造（#148・#150・#154・#155）
+
+- **見出し付きカード（`molecules.Card`。ガイド「設定画面のパーツ」1）**: 地 `--surface`・枠 `--border` 1px・角丸 `--r-lg`・影なし。題は `<h2>` で、見た目はタグの既定サイズに頼らずクラスで決める（`text-lg font-semibold leading-[1.4]` = lg 18・SemiBold・行間 1.4）。題の padding は縦 `--s-4`（`py-4`）・横 `--s-6`（`px-6`）で、題の下に `--border` 1px の線（`border-b`）。本文は padding `--s-6`（`p-6`）。題が空なら題と線は出さない（設定ページ）。ダッシュボード・更新パネル・キルスイッチなど、題付きの枠はすべてこの部品で出し、枠の直書きはしない。htmx が題ごとパネルを差し替える `#update-panel`・`#killswitch-panel` は、Card を包む `<div id>` に持たせる（差し替えの対象は題を含む）。
+
 ## 9. テスト戦略
 
 レイヤーごとに手法を使い分ける。HTMX のインタラクションは E2E でカバーする。CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップが無いため、E2E は偽の `platform` 実装で行う（[コンポーネント設計](../components/overview.md) §10）。偽の platform と偽の tailnet で OS 非依存になるため、Playwright は Linux のランナーで実行する（Chromium の導入が容易）。Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけで、Windows の実機は CI に使わない。実機スモークは手動のまま。Lit のテストと Playwright の E2E は、M2 の受け入れ条件には含めず、あとから CI の改善として足した（オーナーの決定。#64）。別ジョブ `e2e` で走る（下の「CI の手順」）。
