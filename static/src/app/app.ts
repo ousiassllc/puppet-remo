@@ -11,6 +11,7 @@
 //   9. クライアントで出すエラーのアラートは、同じ文言がすでに表示中（退出中でない）なら置き換えない（ちらつき・再読み上げの防止）
 //  10. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
 //  11. 秘密の入力欄（API キー）の「変更」（登録済みのバッジを空の入力欄に入れ替える）と、入力中の値の表示切り替え（data-secret-change・data-secret-toggle）
+//  12. 前へ／次へだけのページ送りの差し替えのあと、フォーカスを使えるボタンへ移す（押した側が端で disabled になったら反対側。data-pager）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 import { installPickerRefreshGuard } from "./picker-guard";
@@ -377,4 +378,30 @@ document.addEventListener("htmx:afterSwap", (event) => {
   if (target?.id === ALERT_ROOT) {
     revealAlerts(target);
   }
+});
+
+// 12. 前へ／次へだけのページ送り（data-pager。molecules.Pager）。ページ送りのリンクは一覧の領域ごと差し替わるので、押したリンクは消え、
+// フォーカスが失われる。差し替えのあと、押した側のボタンが使えればそこへ、端になって disabled なら反対側のボタンへフォーカスを移す
+// （キーボードの操作が途切れないように）。押した側は、リクエストを起こした要素（htmx:beforeRequest の detail.elt。afterSwap の
+// detail.elt は差し替えの対象なので使えない）の data-pager-prev / data-pager-next で覚えておく。
+let pagerPressed: "prev" | "next" | null = null;
+
+document.addEventListener("htmx:beforeRequest", (event) => {
+  const trigger = (event as CustomEvent<{ elt?: Element }>).detail?.elt;
+  pagerPressed = trigger?.hasAttribute("data-pager-prev") ? "prev" : trigger?.hasAttribute("data-pager-next") ? "next" : null;
+});
+
+document.addEventListener("htmx:afterSwap", (event) => {
+  const pressed = pagerPressed;
+  if (!pressed || !(event.target instanceof Element) || !event.target.isConnected) {
+    return;
+  }
+  const pager = event.target.closest("[data-pager]") ?? event.target.querySelector("[data-pager]");
+  if (!pager) {
+    return;
+  }
+  pagerPressed = null;
+  const opposite = pressed === "prev" ? "next" : "prev";
+  const target = pager.querySelector<HTMLElement>(`[data-pager-${pressed}]:not([disabled])`) ?? pager.querySelector<HTMLElement>(`[data-pager-${opposite}]:not([disabled])`);
+  target?.focus({ preventScroll: true });
 });

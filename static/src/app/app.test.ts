@@ -220,6 +220,56 @@ describe("秘密の入力欄（API キー）", () => {
   });
 });
 
+describe("前へ／次へだけのページ送り", () => {
+  // 差し替え後の一覧（#list）。端の側は disabled の button、そうでない側は a。
+  const pager = (prevDisabled: boolean, nextDisabled: boolean) => html`
+    <div id="list">
+      <nav data-pager>
+        ${prevDisabled ? html`<button type="button" disabled data-pager-prev>前へ</button>` : html`<a href="/p" data-pager-prev>前へ</a>`}
+        <span>2 ページ目</span>
+        ${nextDisabled ? html`<button type="button" disabled data-pager-next>次へ</button>` : html`<a href="/n" data-pager-next>次へ</a>`}
+      </nav>
+    </div>
+  `;
+  // 押したリンク（htmx:beforeRequest の detail.elt。リクエストを起こした要素）と、そのあとの差し替え。
+  const pressed = (side: "prev" | "next" | null): HTMLElement => {
+    const a = document.createElement("a");
+    if (side) {
+      a.setAttribute(`data-pager-${side}`, "");
+    }
+    return a;
+  };
+  const swapped = (list: HTMLElement, elt: Element): void => {
+    document.dispatchEvent(new CustomEvent("htmx:beforeRequest", { detail: { elt } }));
+    list.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: list } }));
+  };
+
+  it("押した側がまだ使えるなら、その側のボタンにフォーカスを戻す", async () => {
+    const list = await fixture<HTMLElement>(pager(false, false));
+    swapped(list, pressed("next"));
+    expect(document.activeElement).to.equal(list.querySelector("[data-pager-next]"));
+  });
+
+  it("次へが端になって disabled なら、反対側（前へ）へフォーカスを移す", async () => {
+    const list = await fixture<HTMLElement>(pager(false, true));
+    swapped(list, pressed("next"));
+    expect(document.activeElement).to.equal(list.querySelector("[data-pager-prev]"));
+  });
+
+  it("前へが端になって disabled なら、反対側（次へ）へフォーカスを移す", async () => {
+    const list = await fixture<HTMLElement>(pager(true, false));
+    swapped(list, pressed("prev"));
+    expect(document.activeElement).to.equal(list.querySelector("[data-pager-next]"));
+  });
+
+  it("ページ送りが起こしていない差し替えでは、フォーカスを動かさない", async () => {
+    const list = await fixture<HTMLElement>(pager(false, false));
+    swapped(list, pressed(null));
+    expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-next]"));
+    expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-prev]"));
+  });
+});
+
 describe("アラートを見える位置へ寄せる", () => {
   const alertMarkup = html`
     <div id="alert-root"></div>

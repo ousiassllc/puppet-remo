@@ -1,8 +1,6 @@
 package organisms
 
 import (
-	"strconv"
-
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -49,41 +47,6 @@ templ RequestsTabs(active view.RequestsTab) {
 	</nav>
 }
 
-// RequestHistoryPager は履歴のページ送り（前へ・次へ）。リンクは #request-history だけを差し替える（HX-Request のフラグメント）。
-templ requestHistoryPager(v view.RequestHistory) {
-	<nav class="flex items-center justify-between text-sm" aria-label="ページ送り" data-pager>
-		if v.PrevURL != "" {
-			<a
-				href={ templ.SafeURL(v.PrevURL) }
-				class={ atoms.PagerButtonClass() }
-				data-ripple
-				hx-get={ v.PrevURL }
-				hx-target="#request-history"
-				hx-swap="outerHTML"
-				hx-push-url="true"
-				data-pager-prev
-			>前へ（新しい要求）</a>
-		} else {
-			<span></span>
-		}
-		<span class="text-mute" data-page={ strconv.Itoa(v.Page) }>{ strconv.Itoa(v.Page) } ページ目</span>
-		if v.NextURL != "" {
-			<a
-				href={ templ.SafeURL(v.NextURL) }
-				class={ atoms.PagerButtonClass() }
-				data-ripple
-				hx-get={ v.NextURL }
-				hx-target="#request-history"
-				hx-swap="outerHTML"
-				hx-push-url="true"
-				data-pager-next
-			>次へ（古い要求）</a>
-		} else {
-			<span></span>
-		}
-	</nav>
-}
-
 // ConnectionRequestHistory は接続要求の履歴（届いた日時の新しい順。FR-H03）。許可・拒否・失効・未処理のすべてを出す。
 // 読み取り専用で、操作は持たない（未処理の許可・拒否は「未処理」タブ）。ポーリングの対象ではない。
 templ ConnectionRequestHistory(v view.RequestHistory) {
@@ -123,7 +86,7 @@ templ ConnectionRequestHistory(v view.RequestHistory) {
 			</div>
 		}
 		if v.PrevURL != "" || v.NextURL != "" {
-			@requestHistoryPager(v)
+			@molecules.Pager(molecules.PagerProps{Page: v.Page, PrevURL: v.PrevURL, NextURL: v.NextURL, PrevLabel: "前へ（新しい要求）", NextLabel: "次へ（古い要求）", Target: "#request-history"})
 		}
 	</div>
 }

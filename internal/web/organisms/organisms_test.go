@@ -238,8 +238,7 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	webtest.AssertCSPCompliantHTML(t, out)
 
 	first := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1, NextURL: "/requests/history?page=2"}))
-	has(t, first, "data-pager-next")
-	hasNot(t, first, "data-pager-prev")
+	has(t, first, "data-pager-next", "disabled data-pager-prev")
 	single := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1}))
 	hasNot(t, single, "data-pager")
 	empty := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1}))
@@ -633,18 +632,18 @@ func TestRequestsBadgeFollowsTheNotificationBadgeSpec(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.RequestsBadge(0)), "data-pending-count")
 }
 
-// ページ送りのボタンは高さ 36・rounded-md（P1 ページネーション）。小ボタン（32）ではない。
-func TestPagerButtonsAre36pxHigh(t *testing.T) {
+// 前へ／次へだけのページ送りのボタンは Secondary・Small（高さ 32・rounded-md）。
+func TestPagerButtonsAreSmallSecondary(t *testing.T) {
 	history := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3",
 		Rows: []view.HistoryRow{{ID: "r1"}}}))
-	has(t, history, "h-9", "rounded-md", "data-pager-prev", "data-pager-next")
-	hasNot(t, history, "h-8")
+	has(t, history, "h-8", "rounded-md", "data-pager-prev", "data-pager-next")
+	hasNot(t, history, "h-9")
 	audit := webtest.Render(t, organisms.AuditList(view.AuditList{NextURL: "/audit?cursor=1", Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1"}}}))
-	has(t, audit, "h-9", "data-pager-next")
+	has(t, audit, "h-8", "data-pager-next")
 	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, NextURL: "/logs?page=2", Rows: []view.LogRow{{Time: "t", Level: "INFO"}}}))
-	has(t, log, "h-9", "data-pager-next")
+	has(t, log, "h-8", "data-pager-next")
 	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{NextURL: "/tasks?page=2", Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}}))
-	has(t, tasks, "h-9", "data-pager-next")
+	has(t, tasks, "h-8", "data-pager-next")
 }
 
 // 絞り込みの「条件をクリア」は本文のリンク（.link。下線 --mute）で、ほかのリンクと同じ見た目。

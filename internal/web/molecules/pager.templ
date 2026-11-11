@@ -1,0 +1,46 @@
+package molecules
+
+import (
+	"strconv"
+
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+)
+
+// PagerProps は前へ／次へだけのページ送りの引数。PrevURL・NextURL が空なら、その側は端（押せない）。
+// Target は差し替える領域のセレクター（hx-target。outerHTML で差し替え、URL を更新する）。
+type PagerProps struct {
+	Page      int
+	PrevURL   string
+	NextURL   string
+	PrevLabel string
+	NextLabel string
+	Target    string
+}
+
+// Pager は件数が分からない一覧向けの、前へ／次へだけのページ送り（ガイドの「前へ／次へだけのページ送り」）。
+// 中央に「N ページ目」（sm14・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
+// ボタンは Secondary・Small。押した側が端になったときの、反対側へのフォーカスの移動は app.ts（data-pager-prev / -next）。
+templ Pager(p PagerProps) {
+	<nav class="flex items-center justify-between gap-3" aria-label="ページ送り" data-pager>
+		@pagerButton(p.PrevURL, p.PrevLabel, p.Target, "data-pager-prev")
+		<span class="text-sm text-mute" data-page={ strconv.Itoa(p.Page) }>{ strconv.Itoa(p.Page) } ページ目</span>
+		@pagerButton(p.NextURL, p.NextLabel, p.Target, "data-pager-next")
+	</nav>
+}
+
+templ pagerButton(url, label, target, side string) {
+	if url != "" {
+		<a
+			href={ templ.SafeURL(url) }
+			class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+			data-ripple
+			hx-get={ url }
+			hx-target={ target }
+			hx-swap="outerHTML"
+			hx-push-url="true"
+			{ atoms.Attrs{side: true}... }
+		>{ label }</a>
+	} else {
+		<button type="button" class={ atoms.ButtonClass(atoms.ButtonSecondary, true) } disabled { atoms.Attrs{side: true}... }>{ label }</button>
+	}
+}

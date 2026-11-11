@@ -135,7 +135,7 @@ templ AuditList(v view.AuditList) {
 			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
 				<a
 					href={ templ.SafeURL(v.NextURL) }
-					class={ atoms.PagerButtonClass() }
+					class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
 					data-ripple
 					hx-get={ v.NextURL }
 					hx-target="#audit-list"
