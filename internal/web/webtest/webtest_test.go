@@ -46,3 +46,31 @@ func TestAssertCSPCompliantHTMLDetectsViolations(t *testing.T) {
 		t.Errorf("false positives: %s", strings.Join(r.errs, "; "))
 	}
 }
+
+func TestAssertHeadingOutline(t *testing.T) {
+	ok := map[string]string{
+		"h1 h2 h3 h2":       `<h1>a</h1><h2>b</h2><h3>c</h3><h2>d</h2>`,
+		"legend is ignored": `<h1>a</h1><fieldset><legend>b</legend></fieldset><h2>c</h2>`,
+	}
+	for name, body := range ok {
+		r := &recorder{TB: t}
+		AssertHeadingOutline(r, body)
+		if len(r.errs) != 0 {
+			t.Errorf("%s: unexpected errors %v", name, r.errs)
+		}
+	}
+	bad := map[string]string{
+		"h1 to h3":     `<h1>a</h1><h3>b</h3>`,
+		"h3 before h2": `<h1>a</h1><h3>b</h3><h2>c</h2>`,
+		"no h1":        `<h2>a</h2>`,
+		"two h1":       `<h1>a</h1><h1>b</h1>`,
+		"starts at h2": `<h2>a</h2><h1>b</h1>`,
+	}
+	for name, body := range bad {
+		r := &recorder{TB: t}
+		AssertHeadingOutline(r, body)
+		if len(r.errs) == 0 {
+			t.Errorf("%s: not detected in %s", name, body)
+		}
+	}
+}

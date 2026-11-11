@@ -32,6 +32,7 @@ templ ConnectionRequestListOOB(v view.RequestList) {
 templ connectionRequestList(v view.RequestList, oob bool) {
 	<div id="request-list" class="space-y-4" { oobAttrs(oob)... }>
 		<input type="hidden" name="rev_requests" value={ v.Rev } data-poll-rev/>
+		<h2 class="sr-only">接続要求の一覧</h2>
 		if len(v.Rows) == 0 {
 			@molecules.EmptyState("requests") {
 				未処理の接続要求はありません。未登録のデバイスが接続しようとすると、ここに表示されます。

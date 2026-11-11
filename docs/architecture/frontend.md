@@ -549,6 +549,7 @@ graph LR
 - **見出しの段（ガイド「アプリ内の見出しの段」）**: モーダルの題 lg 18・カードの題 lg 18・h3 base 16・h4 sm 14、いずれも SemiBold。見出しタグと表示サイズは独立で、見た目はクラスで決める。`internal/web/molecules/typography_test.go` が、題ごとにサイズ・太さの段を検査する（タグの種類では判定しない）。
 - **インラインアラートの題**: sm 14・SemiBold（`atoms.Alert` の題は `<strong class="block text-sm font-semibold">`）。`#alert-root` はどの見出しの下にも出るので、`Alert` の題は見出し要素にしない（h1 → h3 の飛びを作らない。読み上げは `role="alert"`）。`molecules.TokenReveal`・`organisms.ViewerLeasePanel`（タスク実行中の注意書き）の題は、親の見出し（Card の h2・「操作権」の h2）の直下なので h3 のまま、見た目は同じ sm 14・SemiBold。
 - **題なしのインラインアラート（`atoms.Notice` / `NoticeAnimated`。ガイド「設定画面のパーツ」3）**: `Alert` と同じ形（角丸 `--r-md`・padding 12 × 16・アイコン 16 + 本文 sm 14・gap 12）で、題と閉じるボタンは持たない。地は `--surface`、枠は `--border` 1px で、状態色は**左の線（3px）だけ**に使う（`-line`・`-wash` の枠・地は使わない）。アイコンは状態色・本文は `--ink`。色の使い分け: `AlertWarning` = 常設の注意書き（データの扱い・取り消せないこと・起動の方式・更新を適用できない理由・監査の入力の記録の警告など）、`AlertInfo` = 同意のチェックを入れる枠（エージェント・高速パス）・ただの補足（タスクの最終回答の注記・開発用ビルドの更新案内・ウィンドウ一覧の案内）。`AlertDanger` は、エラー・読めない設定・キルスイッチの発動中の表示に限る。`AlertSuccess` は使っていない。
+- **見出し構造（#155）**: どのページ（ホスト GUI・リモート UI）も h1 が 1 つで、h1 → h3 のような飛びが無い。項目が並ぶ場所は、見せない h2（`sr-only`）を挟む（「アプリ一覧」「アプリの登録」「クライアント一覧」「接続要求の一覧」）。クライアント詳細の h1 は `ClientCard` の名前（一覧では h3、`CanOpenDetail` が false の詳細ページでは h1。見た目は同じ `text-xl`）。ビューアの h1 は `ViewerRoot` の `sr-only` の「ビューア」。設定の `<legend>` は見出しではなくフォームのグループ見出し（ガイドの h4 の段）で、このアウトラインに数えない。`internal/web/pages/headings_test.go` が全ページを描画して見出しのレベル列を検査する（`webtest.AssertHeadingOutline`。h1 が 1 つ・飛びなし）。
 
 ## 9. テスト戦略
 
