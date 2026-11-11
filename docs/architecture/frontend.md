@@ -546,6 +546,23 @@ graph LR
 
 **承認済みの逸脱（待機ページのフォント）**: 待機ページ（§7.1）は、フォントだけ共通ガイドの Sora + Noto Sans JP ではなく**システムフォント**（`font-family: system-ui, sans-serif`。Web フォントは使わない）にする。理由: 未登録デバイスは `/static/*` が 403 で、同梱のフォント（woff2）を配信できないため。それ以外はガイドどおりで、色は `app.css` のトークンと同じ 16 進（文字 `--ink` ライト `#050505`・ダーク `#ffffff`、背景 ライト `--bone` `#f5f5f4`・ダーク `--surface` `#141414`。`prefers-color-scheme` で切り替える）、余白は 4px 基準（`--s-*`）、見出し（`h1`）は xl 24px SemiBold、本文は base 16px Regular。値は `layout.NoticeStyle` に 1 か所だけ書く。
 
+### 8.5 案件ガイド（承認ダイアログ・操作中オーバーレイ。#131）
+
+Ousiass 共通ガイド（brand-guide）に収載の無い 2 つの部品の寸法・配色を、**このプロジェクトの案件ガイド**としてここに定める（共通ガイドには書かない）。値はすべて §8.4 のトークン（`app.css`）だけを使い、ガイドに無い値・色を足さない。実装は下の「実装」の列の class・定数で、値が表と一致することを Go のテストが検査する（`TestApprovalDialogMatchesModalBody`・`TestOverlayColorsMatchAppCSS`・`TestOverlayOuterInkIsAContinuousRing`）。
+
+**承認ダイアログ**（FR-H05。Wails の専用ウィンドウに出す OS ウィンドウ上のカード。`organisms.ApprovalDialog`・`ApprovalDone`・`ApprovalGone`）。確認モーダル（`molecules.Modal`。§8.4「部品・オーバーレイ（O）」）の本体と同じ形・影・見出し・ボタンの並びにする。
+
+| 項目 | 値 | 実装 |
+|------|----|------|
+| ウィンドウ | 幅 440px 固定。高さは種類別（lease 340px・safety_check / judge_action 560px）。下地と外側の余白は `--bone`・16px（`--s-4`） | `app/wails_windows.go` の `approvalWidth`・`app/windows.go` の `approvalHeight*`、`layout.Dialog` の `bg-bone p-4` |
+| カード（本体） | 角丸 `--r-xl` 16px（モーダル本体と同じ。確認モーダルは `rounded-xl`、brand-guide の `.modal` も `--r-xl`）、枠 1px `--border`、地 `--surface`、影 `--shadow-modal`、内側の余白 24px（`--s-6`）、中身の縦の間隔 16px（`--s-4`） | `rounded-xl border border-border bg-surface p-6 shadow-modal`・`space-y-4` |
+| 題 | lg 18px・SemiBold・`--ink`（モーダルの題と同じ。見出しのタグは `h1`） | `text-lg font-semibold text-ink` |
+| 項目名・値 | sm 14px。項目名は `--mute`、値は `--ink` | `text-sm text-mute`・`text-sm text-ink` |
+| 詳細の枠（safety_check・judge_action） | 地 `--bone`・角丸 `--r-md` 8px・余白 16px・sm 14px・最大高さ 128px（あふれはスクロール） | `rounded-md bg-bone p-4 text-sm max-h-32` |
+| 残り時間 | sm 14px・`--ink`。数字だけ Mono | `text-sm text-ink`・`font-mono` |
+| ボタン | 右寄せ・間隔 8px（`--s-2`）・本文との間は 24px（モーダルの `mt-6` と同じ）。**拒否（サブ）が左・許可（主）が右**（モーダルのキャンセルが左・確定が右と同じ並び）。ボタンの形はモーダルと共通（`atoms.Button`） | `flex justify-end gap-2 pt-2`（`space-y-4` の 16px と合わせて 24px） |
+| 許可・拒否後・失効後 | 同じカード（本文 base 16px・`--ink`） | `ApprovalDone`・`ApprovalGone` も `rounded-xl border border-border bg-surface p-6 shadow-modal` |
+
 ## 9. テスト戦略
 
 レイヤーごとに手法を使い分ける。HTMX のインタラクションは E2E でカバーする。CI は GitHub のランナー（`ubuntu-latest`）で動き対話デスクトップが無いため、E2E は偽の `platform` 実装で行う（[コンポーネント設計](../components/overview.md) §10）。偽の platform と偽の tailnet で OS 非依存になるため、Playwright は Linux のランナーで実行する（Chromium の導入が容易）。Windows 向けのコードは `GOOS=windows` の `go build` / `go vet` のクロスコンパイルで検査するだけで、Windows の実機は CI に使わない。実機スモークは手動のまま。Lit のテストと Playwright の E2E は、M2 の受け入れ条件には含めず、あとから CI の改善として足した（オーナーの決定。#64）。別ジョブ `e2e` で走る（下の「CI の手順」）。

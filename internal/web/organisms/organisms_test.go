@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 	"github.com/ousiassllc/puppet-remo/internal/web/webtest"
@@ -736,4 +737,21 @@ func TestListWrappersUseSectionGap(t *testing.T) {
 		has(t, c.out, `<div id="`+c.id+`" class="space-y-4"`)
 		hasNot(t, c.out, `id="`+c.id+`" class="space-y-3"`)
 	}
+}
+
+// #131 案件ガイド（frontend.md §8.5）: 承認ダイアログ（専用ウィンドウのカード。3 つの状態すべて）は、確認モーダルの本体と同じ形
+// （角丸 --r-xl・--border の枠・--surface 地・p-6・shadow-modal）で、題は lg 18px SemiBold。ボタンは右寄せで、拒否（副）が左・許可（主）が右
+// （モーダルのキャンセルが左・確定が右）。
+func TestApprovalDialogMatchesModalBody(t *testing.T) {
+	const body = "rounded-xl border border-border bg-surface p-6 shadow-modal"
+	modal := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "t", Message: "m", Label: "実行", ConfirmURL: "/x"}))
+	has(t, modal, body, `<h2 id="modal-title" class="text-lg font-semibold text-ink">`, `class="mt-6 flex justify-end gap-2"`)
+
+	dlg := webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Heading: "h", AllowURL: "/a/allow", DenyURL: "/a/deny", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30}}))
+	has(t, dlg, body, `<h1 class="text-lg font-semibold text-ink">`, `id="approval-actions" class="flex justify-end gap-2`)
+	if deny, allow := strings.Index(dlg, `hx-post="/a/deny"`), strings.Index(dlg, `hx-post="/a/allow"`); deny < 0 || allow < deny {
+		t.Errorf("want the deny button before the allow button (deny at %d, allow at %d)", deny, allow)
+	}
+	has(t, webtest.Render(t, organisms.ApprovalDone(view.ApprovalDone{Allowed: true})), body)
+	has(t, webtest.Render(t, organisms.ApprovalGone(view.ApprovalGone{Message: "m"})), body)
 }
