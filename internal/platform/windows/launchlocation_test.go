@@ -28,6 +28,11 @@ func TestFinalPathMatches(t *testing.T) {
 		{"case differs", `c:\tools\A.EXE`, `\\?\C:\Tools\a.exe`, true},
 		{"forward slashes", `C:/Tools/a.exe`, `\\?\C:\Tools\a.exe`, true},
 		{"doubled separators", `C:\\Tools\\a.exe`, `\\?\C:\Tools\a.exe`, true},
+		{"lower-case drive letter, forward slashes and case together", `c:/tools/A.EXE`, `\\?\C:\Tools\a.exe`, true},
+		{"final with a lower-case drive letter", `C:\Tools\a.exe`, `\\?\c:\Tools\a.exe`, true},
+		{"Japanese path", `C:\ツール\あぷり.exe`, `\\?\C:\ツール\あぷり.exe`, true},
+		{"non-ASCII case folding", `C:\ÜNI\a.exe`, `\\?\C:\üni\a.exe`, true},
+		{"path with spaces", `C:\Program Files\App Dir\a.exe`, `\\?\C:\Program Files\App Dir\a.exe`, true},
 
 		{"symlinked directory resolves elsewhere", `C:\Link\a.exe`, `\\?\C:\Real\a.exe`, false},
 		{"symlinked file resolves elsewhere", `C:\Tools\a.exe`, `\\?\C:\Tools\b.exe`, false},
@@ -35,6 +40,13 @@ func TestFinalPathMatches(t *testing.T) {
 		{"mapped drive resolves to UNC", `Z:\a.exe`, `\\?\UNC\server\share\a.exe`, false},
 		{"volume GUID path", `C:\a.exe`, `\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\a.exe`, false},
 		{"8.3 short name does not match (fail closed)", `C:\PROGRA~1\a.exe`, `\\?\C:\Program Files\a.exe`, false},
+		{"8.3 short file name does not match (fail closed)", `C:\Tools\LONGAP~1.EXE`, `\\?\C:\Tools\long application name.exe`, false},
+		{"UNC registration resolved to the same UNC", `\\server\share\a.exe`, `\\?\UNC\server\share\a.exe`, false},
+		{"UNC registration against a drive-letter path", `\\server\share\a.exe`, `\\?\C:\share\a.exe`, false},
+		{`\\?\-prefixed registration does not match (fail closed)`, `\\?\C:\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{"dot segments in the registration do not match (fail closed)", `C:\Tools\..\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{"other drive letter", `D:\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{"final is a GLOBALROOT device path", `C:\Tools\a.exe`, `\\?\GLOBALROOT\Device\HarddiskVolume3\Tools\a.exe`, false},
 		{"final without the device prefix", `C:\Tools\a.exe`, `C:\Tools\a.exe`, false},
 		{"final is a device path", `C:\Tools\a.exe`, `\\.\C:\Tools\a.exe`, false},
 		{"final is too short", `C:\Tools\a.exe`, `\\?\C:`, false},
@@ -61,12 +73,32 @@ func TestDriveLetterPath(t *testing.T) {
 		{`C:\a.exe`, ``, false},
 		{`\\.\C:\a.exe`, ``, false},
 		{`\\?\C:`, ``, false},
+		{`\\?\C:\`, `C:\`, true},
+		{`\\?\C:a.exe`, ``, false},
+		{`\\?\1:\a.exe`, ``, false},
+		{`\\?\GLOBALROOT\Device\HarddiskVolume3\a.exe`, ``, false},
 		{``, ``, false},
 	}
 	for _, tt := range tests {
 		got, ok := driveLetterPath(tt.final)
 		if got != tt.want || ok != tt.ok {
 			t.Errorf("driveLetterPath(%q) = %q, %v, want %q, %v", tt.final, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestNormalizeSeparators(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{`C:\Tools\a.exe`, `C:\Tools\a.exe`},
+		{`C:/Tools/a.exe`, `C:\Tools\a.exe`},
+		{`C:\\Tools//a.exe`, `C:\Tools\a.exe`},
+		{`C:\Tools\`, `C:\Tools\`},
+		{`C:/Tools/ツール/a.exe`, `C:\Tools\ツール\a.exe`},
+		{``, ``},
+	}
+	for _, tt := range tests {
+		if got := normalizeSeparators(tt.in); got != tt.want {
+			t.Errorf("normalizeSeparators(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }
