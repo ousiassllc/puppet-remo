@@ -80,7 +80,7 @@ templ SettingsForm(f view.SettingsForm) {
 					@atoms.Checkbox("set-audit-text", "audit.record_text", f.Values.AuditRecordText)
 					入力（type）とクリップボードの本文を記録する
 				</label>
-				@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"data-notice": "audit-record-text"}) {
+				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-notice": "audit-record-text"}) {
 					有効にすると、パスワードなどの入力した内容も平文で保存されることがあります。通常は無効のままにしてください。
 				}
 			</div>

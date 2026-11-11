@@ -179,20 +179,22 @@ func Alert(p AlertProps) templ.Component {
 	})
 }
 
+// noticeClass は題なしインラインアラートの形（ガイド「設定画面のパーツ」3）。Alert と同形（角丸 --r-md・padding 12×16）で、
+// 地は --surface・枠は --border 1px。状態色は左の線（3px）だけに使う。
 func noticeClass(t AlertTone, animated bool) string {
-	base := "flex items-start gap-2 rounded-md border px-3 py-2 text-sm text-ink "
+	base := "flex items-start gap-3 rounded-md border border-border border-l-3 bg-surface px-4 py-3 text-sm text-ink "
 	if animated {
 		base = "motion-rise-in " + base
 	}
 	switch t {
 	case AlertSuccess:
-		return base + "border-success-line bg-success-wash"
+		return base + "border-l-success"
 	case AlertWarning:
-		return base + "border-warning-line bg-warning-wash"
+		return base + "border-l-warning"
 	case AlertDanger:
-		return base + "border-danger-line bg-danger-wash"
+		return base + "border-l-danger"
 	default:
-		return base + "border-info-line bg-info-wash"
+		return base + "border-l-info"
 	}
 }
 
@@ -211,8 +213,10 @@ func noticeIconClass(t AlertTone) string {
 	}
 }
 
-// Notice は画面に常設する注意書き・同意の枠（インライン版のアラート）。見出しと閉じるボタンは持たず、
-// アイコン + 文言（children）+ 状態色の枠で伝える（色だけにしない）。文字は本文色（ink）で、状態色は枠・地・アイコンに使う。
+// Notice は画面に常設する注意書き・同意の枠（題なしのインラインアラート）。題と閉じるボタンは持たず、
+// アイコン（状態色）+ 文言（children。本文色 ink）+ 左の線（状態色）で伝える（色だけにしない）。
+// 色の使い分けはガイドの 2 値: AlertWarning = データの扱い・取り消せないことなど、ずっと出しておく注意書き。
+// AlertInfo = 同意のチェックを入れる枠・ただの補足。AlertDanger はエラーの表示（フォームのエラー・読めない設定）に限る。
 // ページを開いたときから在るものなので、出現は静かに（アニメーションなし）。操作の結果として現れるものは NoticeAnimated。
 // 操作の結果として返すエラーは Alert を使う。attrs には role・data-* を渡す。
 func Notice(tone AlertTone, attrs Attrs) templ.Component {
