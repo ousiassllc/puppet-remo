@@ -285,7 +285,7 @@ describe("前へ／次へだけのページ送り", () => {
       </nav>
     </div>
   `;
-  // 押したリンク（htmx:beforeRequest の detail.elt。リクエストを起こした要素）と、そのあとの差し替え。
+  // 押したリンク（差し替えを起こしたリクエストの要素。htmx:afterSwap の detail.requestConfig.elt）と、その差し替え。
   const pressed = (side: "prev" | "next" | null): HTMLElement => {
     const a = document.createElement("a");
     if (side) {
@@ -294,8 +294,7 @@ describe("前へ／次へだけのページ送り", () => {
     return a;
   };
   const swapped = (list: HTMLElement, elt: Element): void => {
-    document.dispatchEvent(new CustomEvent("htmx:beforeRequest", { detail: { elt } }));
-    list.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: list } }));
+    list.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: list, requestConfig: { elt } } }));
   };
 
   it("押した側がまだ使えるなら、その側のボタンにフォーカスを戻す", async () => {
@@ -323,11 +322,11 @@ describe("前へ／次へだけのページ送り", () => {
     expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-prev]"));
   });
 
-  it("ページ送りのクリックと差し替えの間に別のリクエスト（ポーリング）が入っても、押した側を忘れない", async () => {
+  it("別のリクエスト（ポーリング）の差し替えが先に起きても、そのあとのページ送りの差し替えでフォーカスを移す（押した側を状態に持たない）", async () => {
     const list = await fixture<HTMLElement>(pager(false, true));
-    document.dispatchEvent(new CustomEvent("htmx:beforeRequest", { detail: { elt: pressed("next") } }));
-    document.dispatchEvent(new CustomEvent("htmx:beforeRequest", { detail: { elt: pressed(null) } }));
-    list.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: list } }));
+    swapped(list, pressed(null));
+    expect(document.activeElement).to.not.equal(list.querySelector("[data-pager-prev]"));
+    swapped(list, pressed("next"));
     expect(document.activeElement).to.equal(list.querySelector("[data-pager-prev]"));
   });
 });

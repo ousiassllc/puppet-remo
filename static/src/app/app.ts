@@ -417,22 +417,12 @@ document.addEventListener("htmx:afterSwap", (event) => {
 
 // 12. 前へ／次へだけのページ送り（data-pager。molecules.Pager）。ページ送りのリンクは一覧の領域ごと差し替わるので、押したリンクは消え、
 // フォーカスが失われる。差し替えのあと、押した側のボタンが使えればそこへ、端になって disabled なら反対側のボタンへフォーカスを移す
-// （キーボードの操作が途切れないように）。押した側は、リクエストを起こした要素（htmx:beforeRequest の detail.elt。afterSwap の
-// detail.elt は差し替えの対象なので使えない）の data-pager-prev / data-pager-next で覚えておく。
-let pagerPressed: "prev" | "next" | null = null;
-
-document.addEventListener("htmx:beforeRequest", (event) => {
-  const trigger = (event as CustomEvent<{ elt?: Element }>).detail?.elt;
-  // #live-poll など、ページ送りでないリクエストが間に入っても、押した側を消さない（ページ送りのクリックから差し替えまでに重なりうる）。
-  if (trigger?.hasAttribute("data-pager-prev")) {
-    pagerPressed = "prev";
-  } else if (trigger?.hasAttribute("data-pager-next")) {
-    pagerPressed = "next";
-  }
-});
-
+// （キーボードの操作が途切れないように）。押した側は、その差し替えを起こしたリクエストの要素（afterSwap の detail.requestConfig.elt。
+// detail.elt ではなく、差し替えの対象になる）の data-pager-prev / data-pager-next で決める。状態を持たないので、#live-poll など
+// 別のリクエストが間に入っても、押していない差し替えにフォーカスを奪われることもない。
 document.addEventListener("htmx:afterSwap", (event) => {
-  const pressed = pagerPressed;
+  const trigger = (event as CustomEvent<{ requestConfig?: { elt?: Element } }>).detail?.requestConfig?.elt;
+  const pressed = trigger?.hasAttribute("data-pager-prev") ? "prev" : trigger?.hasAttribute("data-pager-next") ? "next" : null;
   if (!pressed || !(event.target instanceof Element) || !event.target.isConnected) {
     return;
   }
@@ -440,7 +430,6 @@ document.addEventListener("htmx:afterSwap", (event) => {
   if (!pager) {
     return;
   }
-  pagerPressed = null;
   const opposite = pressed === "prev" ? "next" : "prev";
   const target = pager.querySelector<HTMLElement>(`[data-pager-${pressed}]:not([disabled])`) ?? pager.querySelector<HTMLElement>(`[data-pager-${opposite}]:not([disabled])`);
   target?.focus({ preventScroll: true });
