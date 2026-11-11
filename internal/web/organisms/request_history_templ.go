@@ -15,7 +15,7 @@ import (
 )
 
 func requestsTabClass(active bool) string {
-	base := "motion-hover -mb-px inline-flex items-center border-b-2 px-3 py-2 text-sm "
+	base := "motion-hover -mb-px inline-flex h-10 items-center border-b-2 px-3 text-sm "
 	if active {
 		return base + "border-accent text-ink"
 	}
@@ -53,7 +53,7 @@ func RequestsTabs(active view.RequestsTab) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<nav class=\"flex gap-2 border-b border-border\" aria-label=\"接続要求\" data-requests-tabs>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<nav class=\"flex gap-1 border-b border-border\" aria-label=\"接続要求\" data-requests-tabs>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

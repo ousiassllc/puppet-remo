@@ -380,7 +380,7 @@ document.addEventListener("htmx:load", (event) => {
 });
 
 // 3. サーバーが OOB（beforeend:#toast-root）で追加したトースト。同時に表示するのは 1 つで、新しいものが前を置き換える。
-// 表示は 3 秒で、フェードアウトして消える。
+// 表示は 3 秒で、フェードアウトして消える。3 秒は入場のアニメーションが終わってから数える（ガイド「ペイン型の例外」のトーストのタイマー）。
 function settleToasts(root: Element): void {
   const toasts = [...root.querySelectorAll<HTMLElement>("[data-toast]")];
   const latest = toasts.pop();
@@ -391,11 +391,13 @@ function settleToasts(root: Element): void {
     return;
   }
   latest.setAttribute("data-toast-timer", "");
-  window.setTimeout(() => {
-    if (latest.isConnected) {
-      leave(latest, () => latest.remove());
-    }
-  }, TOAST_LIFETIME_MS);
+  void Promise.allSettled(latest.getAnimations().map((a) => a.finished)).then(() => {
+    window.setTimeout(() => {
+      if (latest.isConnected) {
+        leave(latest, () => latest.remove());
+      }
+    }, TOAST_LIFETIME_MS);
+  });
 }
 
 document.addEventListener("htmx:oobAfterSwap", (event) => {

@@ -30,6 +30,7 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		"--gap-h1", "--gap-h2", "--gap-h3", "--gap-heading-body", "--gap-para",
 		"--pad-card", "--pad-card-sm", "--gap-card-section", "--gap-inline",
 		"--gap-section", "--gap-section-sm",
+		"--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
 		"--toast-h", "--icon-sm", "--icon-md", "--icon-lg", "--icon-xl",
 		"--table-pad-y", "--table-pad-x", "--table-pad-y-compact", "--table-pad-x-compact",
 		"--table-head-size", "--table-body-size", "--table-row-hover", "--table-divider",
@@ -54,15 +55,21 @@ func TestTailwindThemeReferencesTheNamedTokens(t *testing.T) {
 	}
 }
 
-// S3: モーダルの影はガイドの 1 値（0 1px 2px rgba(0,0,0,.06)）で、ライト・ダークで変えない。
-// 色は :root の --shadow-modal-color 1 か所だけで、ダークの再定義（[data-theme="dark"]・prefers-color-scheme）は置かない。
-func TestModalShadowColorIsASingleValue(t *testing.T) {
+// S3: モーダルの影は 0 1px 2px で、色だけテーマで変える（ガイド「モーダルの影」: ライト 6%・ダーク 40%）。
+// 色は --shadow-modal-color で、:root（ライト）と、ダークの 2 ブロック（[data-theme="dark"]・prefers-color-scheme）に同じ値を置く。
+func TestModalShadowColorFollowsTheTheme(t *testing.T) {
 	css := readAppCSS(t)
-	if got := strings.Count(css, "--shadow-modal-color:"); got != 1 {
-		t.Errorf("--shadow-modal-color defined %d times, want 1 (no per-theme override)", got)
+	if got := strings.Count(css, "--shadow-modal-color:"); got != 3 {
+		t.Errorf("--shadow-modal-color defined %d times, want 3 (:root and the two dark blocks)", got)
 	}
-	if !regexp.MustCompile(`(?s):root \{[^}]*--shadow-modal-color: rgb\(0 0 0 / 0\.06\);`).MatchString(css) {
-		t.Error("--shadow-modal-color must be rgb(0 0 0 / 0.06) in :root")
+	for name, re := range map[string]string{
+		":root (light) 6%":                        `(?s):root \{[^}]*--shadow-modal-color: rgb\(0 0 0 / 0\.06\);`,
+		`[data-theme="dark"] 40%`:                 `(?s)\[data-theme="dark"\] \{[^}]*--shadow-modal-color: rgb\(0 0 0 / 0\.4\);`,
+		"prefers-color-scheme: dark (system) 40%": `(?s)@media \(prefers-color-scheme: dark\) \{[^}]*--shadow-modal-color: rgb\(0 0 0 / 0\.4\);`,
+	} {
+		if !regexp.MustCompile(re).MatchString(css) {
+			t.Errorf("--shadow-modal-color must be set in %s", name)
+		}
 	}
 	if !strings.Contains(css, "--shadow-modal: 0 1px 2px var(--shadow-modal-color);") {
 		t.Error("--shadow-modal must reference --shadow-modal-color")
@@ -94,11 +101,22 @@ func TestDangerButtonBorderMixesInSRGB(t *testing.T) {
 	}
 }
 
-// C3: チェックボックスのフォーカスは、入力欄・スライダーと同じ --ring の 3px（--focus の outline のままにしない）。
-func TestCheckboxFocusUsesRing(t *testing.T) {
+// C3: 離散コントロール（ボタン・チェックボックス・スライダーのつまみ）のフォーカスは 3px の --focus の実線（offset 2px）。
+// --ring（--focus の 40%）の halo は背景に溶けて 3:1 に届かないので、単独の目印に使わない（ガイド「フォーカスリング」）。
+func TestDiscreteControlFocusRingIsASolidFocusOutline(t *testing.T) {
 	css := readAppCSS(t)
-	if !regexp.MustCompile(`input\[type="checkbox"\]:focus-visible \{\s*outline: 2px solid transparent;\s*outline-offset: 0;\s*box-shadow: 0 0 0 3px var\(--ring\);`).MatchString(css) {
-		t.Error("app.css must give the checkbox :focus-visible a --ring 3px box-shadow with a transparent outline")
+	for name, pattern := range map[string]string{
+		"checkbox":     `input\[type="checkbox"\]:focus-visible \{\s*outline: 3px solid var\(--focus\);\s*outline-offset: 2px;`,
+		"range thumb":  `input\[type="range"\]:focus-visible::-webkit-slider-thumb \{\s*outline: 3px solid var\(--focus\);\s*outline-offset: 2px;`,
+		"range (moz)":  `input\[type="range"\]:focus-visible::-moz-range-thumb \{\s*outline: 3px solid var\(--focus\);\s*outline-offset: 2px;`,
+		"button, link": `button:focus-visible,\s*\[data-ripple\]:focus-visible \{\s*outline-width: 3px;`,
+	} {
+		if !regexp.MustCompile(pattern).MatchString(css) {
+			t.Errorf("app.css must give the %s :focus-visible a 3px solid --focus outline", name)
+		}
+	}
+	if strings.Contains(css, "box-shadow: 0 0 0 3px var(--ring)") {
+		t.Error("app.css must not use the --ring halo as the only focus indicator")
 	}
 }
 
@@ -202,11 +220,15 @@ func TestPlaceholderUsesMuteToken(t *testing.T) {
 	}
 }
 
-// C3・C4: 不正な入力欄（aria-invalid="true"）のフォーカスの輪は --danger の 40%。
-func TestInvalidFieldFocusRingIsDanger(t *testing.T) {
+// C3・C4: 入力系のフォーカスは 2px の --focus の実線（offset -1px。枠も --focus）。不正な入力欄（aria-invalid="true"）は枠が --danger のまま、
+// リングだけ枠の外側（offset 1px）に出す（ガイド「フォーカスリング」）。--ring の halo だけを目印にしない。
+func TestInputFocusRingIsASolidFocusOutline(t *testing.T) {
 	css := readAppCSS(t)
-	if !regexp.MustCompile(`\[aria-invalid="true"\]:focus-visible\s*\{\s*box-shadow: 0 0 0 2px color-mix\(in srgb, var\(--danger\) 40%, transparent\);`).MatchString(css) {
-		t.Error("app.css must give [aria-invalid=\"true\"]:focus-visible a --danger 40% ring")
+	if !regexp.MustCompile(`textarea:focus-visible \{\s*outline: 2px solid var\(--focus\);\s*outline-offset: -1px;\s*border-color: var\(--focus\);`).MatchString(css) {
+		t.Error("app.css must give inputs a 2px solid --focus outline at offset -1px with a --focus border")
+	}
+	if !regexp.MustCompile(`\[aria-invalid="true"\]:focus-visible\s*\{\s*border-color: var\(--danger\);\s*outline-offset: 1px;`).MatchString(css) {
+		t.Error("app.css must keep the --danger border and move the ring outside (offset 1px) for [aria-invalid=\"true\"]:focus-visible")
 	}
 }
 

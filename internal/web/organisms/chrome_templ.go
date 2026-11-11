@@ -329,7 +329,7 @@ var navItems = []navItem{
 }
 
 func navLinkClass(active bool) string {
-	base := "motion-hover flex h-10 items-center gap-2 rounded-md px-3 text-base "
+	base := "motion-hover flex h-10 items-center gap-2 rounded-sm px-3 text-base "
 	if active {
 		return base + "bg-accent-soft text-ink"
 	}
@@ -375,7 +375,7 @@ func Sidebar(c view.Chrome, oob bool) templ.Component {
 			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<nav id=\"sidebar-nav\" class=\"nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-[78%] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:w-60 md:overflow-visible\" aria-label=\"メイン\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<nav id=\"sidebar-nav\" class=\"nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-[78%] max-w-[320px] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:w-60 md:overflow-visible\" aria-label=\"メイン\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

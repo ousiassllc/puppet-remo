@@ -76,6 +76,30 @@ describe("トースト", () => {
     expect(left[0].hasAttribute("data-toast-timer")).to.equal(true);
   });
 
+  it("表示の 3 秒は、入場のアニメーションが終わってから数える", async () => {
+    const root = await fixture<HTMLDivElement>(html`<div id="toast-root"><div data-toast>新しい</div></div>`);
+    const toast = root.querySelector<HTMLElement>("[data-toast]");
+    const entrance = toast?.animate({ opacity: [0, 1] }, { duration: 100000 });
+    entrance?.pause();
+    const delays: number[] = [];
+    const original = window.setTimeout;
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+      delays.push(delay ?? 0);
+      return original(handler, 1_000_000, ...args);
+    }) as typeof window.setTimeout;
+    try {
+      root.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: root } }));
+      // 入場（一時停止中）は終わらない。1 フレーム待っても、タイマーが始まらないことを見る（tsconfig の lib が Promise.withResolvers を持たない）。
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(delays, "入場の最中はタイマーを始めない").to.deep.equal([]);
+      entrance?.finish();
+      await until(() => delays.length > 0, "the timer starts after the entrance ends");
+      expect(delays).to.deep.equal([3000]);
+    } finally {
+      window.setTimeout = original;
+    }
+  });
+
   it("#toast-root 以外への OOB には触らない", async () => {
     const other = await fixture<HTMLDivElement>(html`<div id="elsewhere"><div data-toast>a</div><div data-toast>b</div></div>`);
     other.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: other } }));

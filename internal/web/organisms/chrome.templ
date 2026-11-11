@@ -91,7 +91,7 @@ var navItems = []navItem{
 }
 
 func navLinkClass(active bool) string {
-	base := "motion-hover flex h-10 items-center gap-2 rounded-md px-3 text-base "
+	base := "motion-hover flex h-10 items-center gap-2 rounded-sm px-3 text-base "
 	if active {
 		return base + "bg-accent-soft text-ink"
 	}
@@ -117,7 +117,7 @@ func oobAttrs(oob bool) atoms.Attrs {
 // md（768px）未満では左のドロワー（固定・幅 約 78%。ハンバーガー（navToggle）で開き、スクラム・リンク・Esc で閉じる。P0）、md 以上は常時見える左のカラム。
 // 開閉の状態は body の data-nav-open（app.ts）で、見た目は app.css の .nav-drawer。
 templ Sidebar(c view.Chrome, oob bool) {
-	<nav id="sidebar-nav" class="nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-[78%] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:w-60 md:overflow-visible" aria-label="メイン" { oobAttrs(oob)... }>
+	<nav id="sidebar-nav" class="nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-[78%] max-w-[320px] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:w-60 md:overflow-visible" aria-label="メイン" { oobAttrs(oob)... }>
 		<p class="px-3 pb-2 pt-1 text-xs text-mute">メニュー</p>
 		for _, it := range navItems {
 			<a

@@ -1,7 +1,7 @@
 /* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
  * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
  * <style> と style= は使わない（CSP。§7.1）。
- * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide 73d8cf6）のトークンで、この 1 か所に定義する（§8.4）。
+ * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide a66e8514）のトークンで、この 1 か所に定義する（§8.4）。
  * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
  * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
@@ -50,6 +50,7 @@
   --info: #9aabbc;
   --scrim: rgb(5 5 5 / 0.6);
   --select-arrow: var(--select-arrow-dark);
+  --shadow-modal-color: rgb(0 0 0 / 0.4);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -69,6 +70,7 @@
     --info: #9aabbc;
     --scrim: rgb(5 5 5 / 0.6);
     --select-arrow: var(--select-arrow-dark);
+    --shadow-modal-color: rgb(0 0 0 / 0.4);
   }
 }
 
@@ -190,8 +192,8 @@
   --shadow-*: initial;
 }
 
-/* モーダルの影（S3）はガイドの 1 値（0 1px 2px rgba(0,0,0,.06)）で、ライト・ダークで変えない。色は :root の --shadow-modal-color 1 か所。
- * 値を埋め込まず変数のまま参照させるため inline にする。 */
+/* モーダルの影（S3）はガイドの 1 値で、色だけテーマで変える（Light 0 1px 2px rgb(0 0 0 / 6%)・Dark 0 1px 2px rgb(0 0 0 / 40%)）。
+ * 色は --shadow-modal-color（:root と、ダークの 2 ブロック）。値を埋め込まず変数のまま参照させるため inline にする。 */
 @theme inline {
   --shadow-modal: 0 1px 2px var(--shadow-modal-color);
 }
@@ -202,7 +204,7 @@
  * ウェイトは本文・リンク・ナビ・フォームが Regular（400）、SemiBold（600）は見出しとボタンだけ。 */
 @theme {
   --font-sans: Sora, "Noto Sans JP", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "Noto Sans JP", ui-monospace, monospace;
 
   --text-*: initial;
   --text-xs: 0.75rem;
@@ -258,28 +260,69 @@
     color: var(--ink);
   }
 
-  /* フォーカスリング（C3）: 2px solid --focus + オフセット 2px。 */
+  /* フォーカスリング（C3）: 既定は 2px solid --focus + オフセット 2px（テキストリンクなど）。ボタン・アイコンボタン・チェック・スイッチ・
+   * スライダーの離散コントロールは 3px（button・a の [data-ripple] と、下のチェックボックス・スライダー）。リングは outline で描く（box-shadow は forced-colors で消える）。 */
   :focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
+  button:focus-visible,
+  [data-ripple]:focus-visible {
+    outline-width: 3px;
+  }
 
-  /* フォームのフォーカスは枠線を --focus にし、--ring（--focus の 40%）の 2px を足す。
-   * outline は透明で残す（Windows のハイコントラストの表示では枠として見える）。 */
+  /* 入力系（input・textarea・select）は 2px: 枠を --focus にして、枠の内側へ 2px の実線で囲う（outline-offset -1px）。 */
   input:not([type="checkbox"], [type="radio"], [type="range"]):focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    outline: 2px solid transparent;
-    outline-offset: 0;
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
     border-color: var(--focus);
-    box-shadow: 0 0 0 2px var(--ring);
   }
 
-  /* 不正な入力欄（aria-invalid。atoms.Input / Textarea が付ける）は、枠が --danger なので、フォーカスの輪も --danger の 40% にする（C3・C4）。 */
+  /* 不正な入力欄（aria-invalid。atoms.Input / Textarea が付ける）は、枠が --danger のまま、リングだけ枠の外側（offset 1px）に出す（C3・C4）。 */
   input:not([type="checkbox"], [type="radio"], [type="range"])[aria-invalid="true"]:focus-visible,
   select[aria-invalid="true"]:focus-visible,
   textarea[aria-invalid="true"]:focus-visible {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
+    border-color: var(--danger);
+    outline-offset: 1px;
+  }
+
+  /* スクロールバー（ガイド「スクロールバー」）: 矢印なし・細め・透明トラック・角丸 full の thumb。ネイティブスクロールのまま、見た目だけ変える。
+   * Chromium 121 以降は scrollbar-width / scrollbar-color が auto 以外だと ::-webkit-scrollbar を無視するので、擬似要素が使える環境
+   * （WebView2・Chromium）では標準指定を auto に戻す。Firefox は thin と色だけ。forced-colors（ハイコントラスト）では OS 標準に任せる。 */
+  @media (forced-colors: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--sb-thumb) transparent;
+    }
+    @supports selector(::-webkit-scrollbar) {
+      * {
+        scrollbar-width: auto;
+        scrollbar-color: auto;
+      }
+      *::-webkit-scrollbar {
+        width: var(--sb-size);
+        height: var(--sb-size);
+      }
+      *::-webkit-scrollbar-track,
+      *::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+      *::-webkit-scrollbar-button {
+        display: none;
+      }
+      *::-webkit-scrollbar-thumb {
+        background: var(--sb-thumb);
+        border-radius: var(--radius-full);
+      }
+      *::-webkit-scrollbar-thumb:hover {
+        background: var(--sb-thumb-hover);
+      }
+      *::-webkit-scrollbar-thumb:active {
+        background: var(--sb-thumb-active);
+      }
+    }
   }
 
   /* プレースホルダーは --mute（C6）。Tailwind の既定（文字色の 50% 混色）にしない。 */
@@ -329,11 +372,10 @@
   input[type="checkbox"]:checked::before {
     display: block;
   }
-  /* フォーカスは入力欄・スライダーと同じ --ring の 3px（outline は透明で残し、ハイコントラストでは枠として見える）。 */
+  /* フォーカスは離散コントロールの 3px・--focus の実線リング（outline-offset 2px。ガイド「フォーカスリング」）。 */
   input[type="checkbox"]:focus-visible {
-    outline: 2px solid transparent;
-    outline-offset: 0;
-    box-shadow: 0 0 0 3px var(--ring);
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
   }
   input[type="checkbox"]:disabled {
     opacity: 0.5;
@@ -391,15 +433,17 @@
     border-radius: var(--radius-full);
     background: var(--surface);
   }
+  /* フォーカスは離散コントロールと同じ 3px の --focus の実線リング（outline-offset 2px。つまみに描く。ガイド「フォーカスリング」）。 */
   input[type="range"]:focus-visible {
-    outline: 2px solid transparent;
-    outline-offset: 0;
+    outline: none;
   }
   input[type="range"]:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 3px var(--ring);
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
   }
   input[type="range"]:focus-visible::-moz-range-thumb {
-    box-shadow: 0 0 0 3px var(--ring);
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
   }
   input[type="range"]:disabled {
     opacity: 0.5;
@@ -414,7 +458,14 @@
   --z-sticky: 200;
   --z-drawer: 300;
   --z-modal: 400;
+  --z-popup: 401; /* モーダル内のメニュー・ポップオーバーなど、modal より手前・toast より後ろの面（ガイド「重なり順」） */
   --z-toast: 500;
+
+  /* スクロールバー（ガイド「スクロールバー」）: 縦幅・横高さ 8px、thumb は --mute、hover は --ink 側へ 35%、drag は 65%。 */
+  --sb-size: 8px;
+  --sb-thumb: var(--mute);
+  --sb-thumb-hover: color-mix(in srgb, var(--ink) 35%, var(--mute));
+  --sb-thumb-active: color-mix(in srgb, var(--ink) 65%, var(--mute));
 
   --table-pad-y: 10px;
   --table-pad-x: 12px;
@@ -555,16 +606,20 @@
     }
   }
 
-  /* モバイルナビのドロワー（P0・O1）: md（768px）未満は左から出る（280ms。スクラムはフェード）。閉じている間は visibility で隠し、
-   * フォーカスが入らないようにする。開閉は body の data-nav-open（app.ts）。reduced-motion では移動せず、フェードだけ（100ms）。
+  /* モバイルナビのドロワー（P0・O1・ガイド「オーバーレイ」）: md（768px）未満の左のドロワー。出入りは fade + 8px の移動（--motion-slow・--motion-shift。
+   * スクラムはフェード）。幅は 78vw・上限 320px（chrome.templ）。閉じている間は visibility で隠し、フォーカスが入らないようにする。
+   * 開閉は body の data-nav-open（app.ts）。reduced-motion では --motion-shift が 0・--motion-slow が 100ms になり、フェードだけになる。
    * md 以上は常時見える左のカラムで、ここの指定は効かない。 */
   @media (max-width: 47.9975rem) {
     .nav-drawer {
-      transform: translateX(-100%);
+      opacity: 0;
+      transform: translateX(calc(var(--motion-shift) * -1));
       visibility: hidden;
-      transition: transform var(--motion-slow) var(--ease-out), visibility 0s linear var(--motion-slow);
+      transition: opacity var(--motion-slow) var(--ease-out), transform var(--motion-slow) var(--ease-out),
+        visibility 0s linear var(--motion-slow);
     }
     body[data-nav-open] .nav-drawer {
+      opacity: 1;
       transform: none;
       visibility: visible;
       transition-delay: 0s;
@@ -580,18 +635,9 @@
       transition-delay: 0s;
     }
   }
-  @media (max-width: 47.9975rem) and (prefers-reduced-motion: reduce) {
-    .nav-drawer {
-      transform: none;
-      opacity: 0;
-      transition: opacity var(--motion-slow) var(--ease-out), visibility 0s linear var(--motion-slow);
-    }
-    body[data-nav-open] .nav-drawer {
-      opacity: 1;
-    }
-  }
 
-  /* スピナー（O7）: 20px・2px（track --accent-soft・先端 --accent）。回転は reduced-motion でも止めない（M3: 処理中表示は維持）。 */
+  /* スピナー（O7・ガイド「スピナー」）: 20px・2px（track --accent-soft・先端 --accent）・0.9s。reduced-motion では回転を止める
+   * （先端の円弧・role="status"・ラベルで処理中は伝わる）。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
   .spinner {
     width: 20px;
     height: 20px;
@@ -599,6 +645,17 @@
     border-top-color: var(--accent);
     border-radius: var(--radius-full);
     animation: motion-spin var(--spinner-duration) linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
+  }
+  @media (forced-colors: active) {
+    .spinner {
+      border-color: transparent;
+      border-top-color: CanvasText;
+    }
   }
 
   /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */

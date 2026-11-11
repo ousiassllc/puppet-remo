@@ -7,7 +7,7 @@ import (
 )
 
 func requestsTabClass(active bool) string {
-	base := "motion-hover -mb-px inline-flex items-center border-b-2 px-3 py-2 text-sm "
+	base := "motion-hover -mb-px inline-flex h-10 items-center border-b-2 px-3 text-sm "
 	if active {
 		return base + "border-accent text-ink"
 	}
@@ -25,7 +25,7 @@ func badgeTone(t view.BadgeTone) atoms.BadgeTone { return atoms.BadgeTone(t) }
 
 // RequestsTabs は接続要求画面の「未処理」「履歴」のタブ。ページ遷移は hx-boost で #main だけを差し替える（サイドバーと同じ。§5.4）。
 templ RequestsTabs(active view.RequestsTab) {
-	<nav class="flex gap-2 border-b border-border" aria-label="接続要求" data-requests-tabs>
+	<nav class="flex gap-1 border-b border-border" aria-label="接続要求" data-requests-tabs>
 		<a
 			href="/requests"
 			class={ requestsTabClass(active == view.RequestsTabPending) }
