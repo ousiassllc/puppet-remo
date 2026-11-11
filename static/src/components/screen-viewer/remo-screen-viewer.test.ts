@@ -90,8 +90,19 @@ describe("<remo-screen-viewer>", () => {
   const originalWarn = console.warn;
   const originalError = console.error;
 
+  // モーションのトークンは app.css の :root が定義する（テストでは app.css を読み込まないので、同じ値を当てる）。
+  const motionTokens: Record<string, string> = {
+    "--motion-fade-in": "320ms",
+    "--motion-fade-out": "240ms",
+    "--ease-out": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+    "--ease-in": "cubic-bezier(0.4, 0, 1, 1)",
+  };
+
   beforeEach(() => {
     restoreSocket = installFakeWebSocket();
+    for (const [name, value] of Object.entries(motionTokens)) {
+      document.documentElement.style.setProperty(name, value);
+    }
     // 意図したログの出力でテストの出力を汚さない。
     console.warn = () => {};
     console.error = () => {};
@@ -99,6 +110,9 @@ describe("<remo-screen-viewer>", () => {
 
   afterEach(() => {
     restoreSocket();
+    for (const name of Object.keys(motionTokens)) {
+      document.documentElement.style.removeProperty(name);
+    }
     console.warn = originalWarn;
     console.error = originalError;
   });
@@ -156,7 +170,9 @@ describe("<remo-screen-viewer>", () => {
       expect(classifyPixel(canvas, 50, 40)).to.equal("blue");
       await until(() => viewer.status === "open", "status is open");
       await viewer.updateComplete;
-      expect(overlayText(viewer)).to.equal(null);
+      // 退出はフェードアウトのあとに取り除く（M5）。
+      expect(viewer.shadowRoot?.querySelector(".overlay")?.hasAttribute("data-leaving")).to.equal(true);
+      await until(() => overlayText(viewer) === null, "overlay is faded out");
     });
 
     it("差分フレームは既存の内容の上に重ねて描く", async () => {
@@ -425,6 +441,25 @@ describe("<remo-screen-viewer>", () => {
       // 押下中のものが無ければ、フォーカスを失っても何も送らない。
       sink.dispatchEvent(new FocusEvent("blur"));
       expect(socket.sent).to.have.length(6);
+    });
+  });
+
+  // C3: 見えない入力要素にフォーカスがある間（= キー入力がホストへ送られる間）は、ホストの外側に 2px solid・offset 2 のリングを出す。
+  describe("フォーカスリング", () => {
+    it("入力要素にフォーカスがある間だけ、ホストに 2px solid・offset 2 の outline が付く", async () => {
+      const { viewer, sink } = await connect({ lease: heldByMe });
+      viewer.style.setProperty("--focus", "rgb(1, 2, 3)"); // app.css の :root が定義するトークン（テストでは app.css を読まない）
+      expect(getComputedStyle(viewer).outlineStyle).to.equal("none");
+
+      sink.focus();
+      const style = getComputedStyle(viewer);
+      expect(style.outlineStyle).to.equal("solid");
+      expect(style.outlineWidth).to.equal("2px");
+      expect(style.outlineColor).to.equal("rgb(1, 2, 3)");
+      expect(style.outlineOffset).to.equal("2px");
+
+      sink.blur();
+      expect(getComputedStyle(viewer).outlineStyle).to.equal("none");
     });
   });
 
@@ -846,7 +881,7 @@ describe("<remo-screen-viewer>", () => {
       second.receive(await fullKeyframe(1, "green"));
       await until(() => viewer.status === "open", "status is open again");
       await viewer.updateComplete;
-      expect(overlayText(viewer)).to.equal(null);
+      await until(() => overlayText(viewer) === null, "overlay is faded out");
 
       // 操作権を取り直せば、新しい接続で入力を送れる。
       second.receiveJson({ type: "lease", ...heldByMe });
@@ -926,6 +961,43 @@ describe("<remo-screen-viewer>", () => {
       const viewer = await fixture<RemoScreenViewer>(html`<remo-screen-viewer ws-url=${WS_URL}></remo-screen-viewer>`);
       expect(viewer.status).to.equal("failed");
       expect(overlayText(viewer)).to.equal("接続できませんでした。ページを再読み込みしてください。");
+    });
+
+    // M1: スピナーの回転は :root の --spinner-duration（ガイドの 0.9s）を参照する（Shadow DOM にも継承される）。
+    it("スピナーの回転は --spinner-duration を参照する", async () => {
+      const { viewer } = await connect({ lease: heldByMe });
+      viewer.style.setProperty("--spinner-duration", "0.9s");
+      const spinner = viewer.shadowRoot?.querySelector(".overlay .spinner");
+      expect(spinner).to.not.equal(null);
+      expect(getComputedStyle(spinner as Element).animationDuration).to.equal("0.9s");
+    });
+
+    // C4: 状態はアイコン + 文言（+ 状態色）で伝える。接続中・再接続中はスピナー、失敗は danger、キルスイッチは warning。
+    it("接続中・再接続中はスピナー、失敗は danger のアイコン、キルスイッチは warning のアイコンを添える", async () => {
+      const { viewer, socket } = await connect({ lease: heldByMe });
+      const overlay = () => viewer.shadowRoot?.querySelector(".overlay");
+      expect(overlay()?.querySelector(".spinner")).to.not.equal(null);
+      expect(overlay()?.querySelector("svg")).to.equal(null);
+
+      socket.serverClose(4401);
+      await viewer.updateComplete;
+      expect(overlay()?.querySelector("svg.tone-danger")).to.not.equal(null);
+      expect(overlay()?.querySelector(".spinner")).to.equal(null);
+    });
+
+    it("キルスイッチは warning のアイコンを添える", async () => {
+      const { viewer, socket } = await connect({ lease: heldByMe });
+      socket.serverClose(4503);
+      await viewer.updateComplete;
+      expect(viewer.shadowRoot?.querySelector(".overlay svg.tone-warning")).to.not.equal(null);
+    });
+
+    // M5: 出現はフェードイン（トークンは :root のカスタムプロパティ。Shadow DOM の css が参照する）。
+    it("オーバーレイの出現はフェードインのアニメーションを持つ", async () => {
+      const viewer = await fixture<RemoScreenViewer>(html`<remo-screen-viewer ws-url=${WS_URL}></remo-screen-viewer>`);
+      const overlay = viewer.shadowRoot?.querySelector(".overlay");
+      const names = overlay?.getAnimations().map((a) => (a as CSSAnimation).animationName) ?? [];
+      expect(names).to.include("overlay-fade-in");
     });
   });
 });

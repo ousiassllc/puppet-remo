@@ -9,9 +9,9 @@ import (
 const updateTitle = "更新"
 
 templ updateBody(v view.Update) {
-	<div class="max-w-2xl space-y-4">
-		<h1 class="text-xl font-semibold text-slate-900">更新</h1>
-		<p class="text-sm text-slate-600">GitHub の Release から新しい版を確認し、署名（Ed25519）を検証できたものだけを適用します。適用すると、アプリは一度終了します。</p>
+	<div class="max-w-2xl space-y-6">
+		<h1 class="text-3xl font-semibold text-ink">更新</h1>
+		<p class="text-base text-ink">GitHub の Release から新しい版を確認し、署名（Ed25519）を検証できたものだけを適用します。適用すると、アプリは一度終了します。</p>
 		@organisms.UpdatePanel(v.Panel)
 	</div>
 }

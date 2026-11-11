@@ -22,12 +22,13 @@ templ Remote(title string) {
 			<script type="module" src="/static/js/screen-viewer.js"></script>
 		</head>
 		<body
-			class="min-h-screen bg-slate-100 text-slate-900 antialiased"
+			class="min-h-screen bg-bone text-ink antialiased"
 			hx-ext="response-targets"
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
-			<header class="border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">puppet-remo</header>
-			<div class="mx-auto max-w-7xl space-y-4 p-4">
+			<header class="flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink">puppet-remo</header>
+			<div class="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
+				@organisms.AlertRoot("")
 				{ children... }
 			</div>
 			@organisms.ToastRoot()

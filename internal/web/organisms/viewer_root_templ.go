@@ -15,6 +15,7 @@ import (
 
 // ViewerRoot はビューアの本体（<main id="viewer-root">。frontend.md §5.1・§6.2）。ページルートの HX-Request の応答もこれ。
 // hx-headers の X-Viewer-Id は子孫へ継承され、ツールバー・リース・クリップボード・ショートカットのリクエストに付く。
+// 確認モーダルの置き場（#modal-root）もここに置く（強制剥奪の確定のリクエストにも X-Viewer-Id を付けるため）。
 // <remo-screen-viewer> は HTMX が差し替えない領域に置き（Lit の描画を壊さない）、readonly は描画時の操作権の有無から決める。
 func ViewerRoot(v view.Viewer) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -44,7 +45,7 @@ func ViewerRoot(v view.Viewer) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(templ.JSONString(map[string]string{"X-Viewer-Id": v.ViewerID}))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 12, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 13, Col: 117}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -74,14 +75,14 @@ func ViewerRoot(v view.Viewer) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<remo-screen-viewer class=\"block overflow-hidden rounded-lg border border-slate-300 bg-black\" ws-url=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<remo-screen-viewer class=\"block overflow-hidden rounded-lg border border-border bg-bone\" ws-url=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.WSURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 20, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 21, Col: 19}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -104,7 +105,7 @@ func ViewerRoot(v view.Viewer) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Monitor))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 22, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 23, Col: 36}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -117,7 +118,7 @@ func ViewerRoot(v view.Viewer) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Quality))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 23, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 24, Col: 36}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -130,13 +131,21 @@ func ViewerRoot(v view.Viewer) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.FPS))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 24, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_root.templ`, Line: 25, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"></remo-screen-viewer></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"></remo-screen-viewer>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = ModalRoot().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

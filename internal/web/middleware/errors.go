@@ -12,6 +12,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
@@ -91,18 +92,29 @@ func writeProblem(w http.ResponseWriter, status int, code domain.Code, title, de
 // アクションルートにもページを返す。
 func writeHTML(w http.ResponseWriter, r *http.Request, status int, rj reject, title, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	var comp templ.Component
+	var comps []templ.Component
 	switch {
 	case rj.code == domain.CodeDeviceNotRegistered:
-		comp = notRegisteredPage(rj.connState)
+		comps = []templ.Component{notRegisteredPage(rj.connState)}
 	case stateChanging(r):
-		comp = atoms.Alert(string(rj.code), msg)
+		// htmx は 4xx / 5xx を既定では差し込まないので、ハンドラの失敗（handler/remote の failMessage）と同じく
+		// HX-Retarget で #alert-root へ回す。確認モーダル（強制剥奪）の確定の拒否でもアラートが暗幕の背面に隠れないよう、モーダルを閉じる OOB を添える（stateChanging は GET を含まないので、
+		// GET の失敗で開いているモーダルを閉じることはない）。
+		w.Header().Set("HX-Retarget", "#alert-root")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		comps = []templ.Component{
+			atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: string(rj.code), Heading: "エラー", Message: msg, Dismissible: true}),
+			organisms.ModalClear(),
+		}
 	default:
-		comp = pages.RemoteError(view.RemoteError{Code: string(rj.code), Title: title, Message: msg})
+		comps = []templ.Component{pages.RemoteError(view.RemoteError{Code: string(rj.code), Title: title, Message: msg})}
 	}
-	if err := comp.Render(r.Context(), w); err != nil {
-		slog.Debug("write error response failed", "error", err)
+	w.WriteHeader(status)
+	for _, comp := range comps {
+		if err := comp.Render(r.Context(), w); err != nil {
+			slog.Debug("write error response failed", "error", err)
+			return
+		}
 	}
 }
 

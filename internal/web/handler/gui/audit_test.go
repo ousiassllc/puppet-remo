@@ -229,6 +229,10 @@ func TestAuditDetailShowsFieldsArgsAndThumbnail(t *testing.T) {
 		"data-audit-args", "button", "left", "100",
 		`<img`, `src="/audit/6/thumbnail"`, `width="320"`, `height="180"`, "data-audit-thumb", `href="/audit"`)
 	lacks(t, res, `data-audit-field="error-code"`) // 無い項目は出さない
+	// 日時・ID・所要時間は Mono、文章の項目は Regular のまま（ガイド T5）。
+	contains(t, res, `class="break-all text-ink font-mono" data-audit-field="time"`, `class="break-all text-ink font-mono" data-audit-field="session"`,
+		`class="break-all text-ink font-mono" data-audit-field="lease"`, `class="break-all text-ink font-mono" data-audit-field="duration"`,
+		`class="break-all text-ink" data-audit-field="client"`)
 
 	// HX-Boosted は #main の中身。
 	b := r.get("/audit/6", "HX-Request", "true", "HX-Boosted", "true")

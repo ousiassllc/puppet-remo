@@ -187,7 +187,7 @@ func TestOpenLogFolderOpensTheFolderAndShowsAToast(t *testing.T) {
 	res := r.post("/logs/open-folder", nil, hx...)
 	status(t, res, http.StatusOK)
 	must(t, r.f.Logs.OpenFolderCalls == 1, "OpenFolder calls = %d, want 1", r.f.Logs.OpenFolderCalls)
-	contains(t, res, `hx-swap-oob="beforeend:#toast-root"`, `data-toast-level="info"`, "ログフォルダーを開きました。")
+	contains(t, res, `hx-swap-oob="beforeend:#toast-root"`, "ログフォルダーを開きました。")
 	lacks(t, res, "<html", "puppet-remo.log", logFolderPath)
 }
 
@@ -227,10 +227,10 @@ func TestOpenLogFolderFailureIsAFixedToastWithoutDetails(t *testing.T) {
 			r := newRig(t, func(f *guitest.Fakes) { f.Logs.OpenFolderErr = tt.err })
 			res := r.post("/logs/open-folder", nil, hx...)
 			status(t, res, tt.wantStatus)
-			contains(t, res, `data-error-code="`+tt.wantCode+`"`, tt.wantMsg, `data-toast-level="error"`)
+			contains(t, res, `data-error-code="`+tt.wantCode+`"`, tt.wantMsg, `data-alert-tone="danger"`)
 			lacks(t, res, logFolderPath, "ShellExecute", `C:\`)
-			if got := res.Header.Get("HX-Retarget"); got != "#toast-root" {
-				t.Errorf("HX-Retarget = %q, want #toast-root", got)
+			if got := res.Header.Get("HX-Retarget"); got != "#alert-root" {
+				t.Errorf("HX-Retarget = %q, want #alert-root", got)
 			}
 			if strings.Contains(fmt.Sprint(res.Header), logFolderPath) {
 				t.Errorf("headers leak the path: %v", res.Header)

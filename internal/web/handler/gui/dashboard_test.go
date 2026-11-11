@@ -34,7 +34,7 @@ func TestDashboardShowsServerState(t *testing.T) {
 	lacks(t, res, "sse-connect", "sse-swap", "sse:", "sse.min.js", "/events")
 	// 保持者（MCP）がいるので強制剥奪のボタンが出る（FR-H02）。実行中のタスクが無ければ、実行中タスクのパネルの中身は出ない
 	// （差し込み先 #running-tasks と版の隠し入力だけ。サイドバーの「タスク」は常にある）。
-	contains(t, res, `hx-post="/lease/revoke"`, "強制剥奪", `href="/tasks"`, `id="running-tasks"`, `name="rev_tasks"`)
+	contains(t, res, `hx-get="/lease/revoke/confirm"`, "強制剥奪", `href="/tasks"`, `id="running-tasks"`, `name="rev_tasks"`)
 	lacks(t, res, "data-running-task", "実行中のエージェントタスク", "/cancel")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" && got != "" {
 		t.Errorf("Cache-Control = %q", got)
@@ -48,7 +48,7 @@ func TestDashboardEmptyAndDegradedStates(t *testing.T) {
 		want   []string
 		not    []string
 	}{
-		{"no sessions and idle lease", func(*guitest.Fakes) {}, []string{"接続中のセッションはありません", "空き", "確認中", "停止中"}, []string{"保持中", "data-session"}},
+		{"no sessions and idle lease", func(*guitest.Fakes) {}, []string{`data-empty="sessions"`, "接続中のセッションはありません", "空き", "確認中", "停止中"}, []string{"保持中", "data-session"}},
 		{"tailscaled needs login", func(f *guitest.Fakes) {
 			f.Status.V = service.ServerStatus{Tailscaled: service.TailscaledNeedsLogin, Port: 8765, Reason: "tailscaled にログインしていません。"}
 		}, []string{"要ログイン", "tailscaled にログインしていません。", "未取得"}, nil},
@@ -82,26 +82,24 @@ func TestDashboardKillSwitchIsStateDriven(t *testing.T) {
 	})
 }
 
-// 狭い幅（約 360px）でサイドバーの固定幅がページを横に広げない（#51）。見た目は Go のテストで測れないので、
-// 固定幅が md 以上だけに掛かっていること（md 未満は w-full で本文の上に積む）を、クラスで押さえる。
-func TestSidebarIsFixedWidthOnlyFromMdUp(t *testing.T) {
+// 狭い幅（約 360px）でサイドバーがページを横に広げない（#51）。md 未満のナビは本文の外に出る左のドロワー（fixed。ハンバーガーで開き、
+// スクラムで閉じる。P0）で、md 以上だけ常時見える左のカラム（static）になる。見た目は Go のテストで測れないので、クラスで押さえる。
+func TestSidebarIsADrawerBelowMd(t *testing.T) {
 	res := newRig(t).get("/")
 	start := strings.Index(res.Body, `<nav id="sidebar-nav"`)
 	if start < 0 {
 		t.Fatal("no sidebar nav")
 	}
 	nav := res.Body[start : start+strings.Index(res.Body[start:], ">")]
-	for _, want := range []string{"w-full", "md:w-56", "md:block"} {
+	for _, want := range []string{"nav-drawer", "fixed", "inset-y-0", "left-0", "z-(--z-drawer)", "w-[78%]", "md:w-60", "md:static"} {
 		if !strings.Contains(nav, want) {
 			t.Errorf("sidebar nav lacks %q: %s", want, nav)
 		}
 	}
-	for _, tok := range strings.Fields(strings.SplitN(strings.SplitN(nav, `class="`, 2)[1], `"`, 2)[0]) {
-		if tok == "w-56" {
-			t.Errorf("sidebar nav has the bare fixed width w-56 (it must be md:w-56): %s", nav)
-		}
+	contains(t, res, `id="nav-scrim"`, "md:hidden", `data-nav-toggle`, `aria-controls="sidebar-nav"`, `aria-expanded="false"`, "flex-col md:flex-row", "p-4 md:p-6")
+	if strings.Index(res.Body, `id="nav-scrim"`) > start {
+		t.Error("the scrim must come before the nav (both are fixed at the same z-index)")
 	}
-	contains(t, res, "flex-col md:flex-row", "p-4 md:p-6")
 }
 
 func TestDashboardHTMXRequestsReturnFragments(t *testing.T) {
@@ -140,6 +138,7 @@ func TestTriggerAndReleaseKillSwitch(t *testing.T) {
 	res = r.get("/killswitch/release/confirm", hx...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `role="dialog"`, `hx-post="/killswitch/release"`, `hx-target="#killswitch-panel"`, "解除する", `data-clear="#modal-root"`)
+	lacks(t, res, "text-danger", "border-danger") // 受付の再開は破壊的でないので、確定は危険色にしない（O7）
 
 	res = r.post("/killswitch/release", nil, hx...)
 	status(t, res, http.StatusOK)
@@ -149,11 +148,11 @@ func TestTriggerAndReleaseKillSwitch(t *testing.T) {
 }
 
 func TestKillSwitchErrors(t *testing.T) {
-	t.Run("cleanup failure still shows active state with an error toast", func(t *testing.T) {
+	t.Run("cleanup failure still shows active state with an error alert", func(t *testing.T) {
 		r := newRig(t, func(f *guitest.Fakes) { f.KillSwitch.TriggerErr = errCleanup })
 		res := r.post("/killswitch/trigger", nil, hx...)
 		status(t, res, http.StatusOK)
-		contains(t, res, `data-killswitch="active"`, `data-toast-level="error"`, "一部の後始末に失敗しました。")
+		contains(t, res, `data-killswitch="active"`, `id="alert-root" hx-swap-oob="innerHTML"`, `data-error-code="internal"`, "一部の後始末に失敗しました。")
 		lacks(t, res, "cleanup boom")
 	})
 	t.Run("trigger that could not take effect is a 500 error fragment", func(t *testing.T) {
@@ -161,7 +160,7 @@ func TestKillSwitchErrors(t *testing.T) {
 		res := r.post("/killswitch/trigger", nil, hx...)
 		status(t, res, http.StatusInternalServerError)
 		contains(t, res, `data-error-code="internal"`)
-		if res.Header.Get("HX-Retarget") != "#toast-root" || res.Header.Get("HX-Reswap") != "beforeend" {
+		if res.Header.Get("HX-Retarget") != "#alert-root" || res.Header.Get("HX-Reswap") != "innerHTML" {
 			t.Errorf("retarget headers = %q / %q", res.Header.Get("HX-Retarget"), res.Header.Get("HX-Reswap"))
 		}
 		lacks(t, res, "kill switch could not be persisted")
@@ -197,7 +196,7 @@ func TestUnknownRoutes(t *testing.T) {
 		res := r.do(route[0], route[1], nil, hx...)
 		status(t, res, http.StatusNotFound)
 	}
-	// HTMX の部分更新の 404 はフラグメント（トースト）。
+	// HTMX の部分更新の 404 はフラグメント（インラインアラート）。
 	res := r.get("/nope", hx...)
 	status(t, res, http.StatusNotFound)
 	lacks(t, res, "<html")
@@ -219,10 +218,10 @@ func TestDashboardRevokeButtonIsStateDriven(t *testing.T) {
 		not    []string
 	}{
 		{"idle", func(*guitest.Fakes) {}, []string{"空き"}, []string{"/lease/revoke", "強制剥奪"}},
-		{"held by mcp", holder(domain.ActorMCP), []string{`hx-post="/lease/revoke"`, "強制剥奪", "MCP"}, []string{"タスクが中断されます"}},
-		{"held by web", holder(domain.ActorWeb), []string{`hx-post="/lease/revoke"`, "強制剥奪", "Web", "laptop"}, []string{"タスクが中断されます"}},
+		{"held by mcp", holder(domain.ActorMCP), []string{`hx-get="/lease/revoke/confirm"`, "強制剥奪", "MCP"}, []string{"タスクが中断されます"}},
+		{"held by web", holder(domain.ActorWeb), []string{`hx-get="/lease/revoke/confirm"`, "強制剥奪", "Web", "laptop"}, []string{"タスクが中断されます"}},
 		// agent の剥奪はそのタスクの中断を伴う（FR-L06・L08）ので、ボタンに加えてその旨を添える。
-		{"held by agent", holder(domain.ActorAgent), []string{`hx-post="/lease/revoke"`, "強制剥奪", "エージェント", "保持中", "タスクが中断されます"}, nil},
+		{"held by agent", holder(domain.ActorAgent), []string{`hx-get="/lease/revoke/confirm"`, "強制剥奪", "エージェント", "保持中", "タスクが中断されます"}, nil},
 		// 保持者になれない種別（host・system）は、仮に保持者として返っても剥奪のボタンを出さない（種別から決める）。
 		{"held by host", holder(domain.ActorHost), []string{"保持中", "ホスト"}, []string{"/lease/revoke", "強制剥奪", "タスクが中断されます"}},
 		{"held by system", holder(domain.ActorSystem), []string{"保持中"}, []string{"/lease/revoke", "強制剥奪"}},
@@ -249,7 +248,7 @@ func TestRevokeLease(t *testing.T) {
 		must(t, r.f.Leases.RevokeCalls == 1, "Revoke calls = %d, want 1", r.f.Leases.RevokeCalls)
 		must(t, r.f.Leases.LastBy == service.HostActor && r.f.Leases.LastBy.Kind == domain.ActorHost, "Revoke by = %+v, want the host actor", r.f.Leases.LastBy)
 		// 保持者は空きになり、ボタンは消える。完了のトーストが OOB で添えられる。
-		contains(t, res, "空き", "操作権を剥奪しました。", `hx-swap-oob="beforeend:#toast-root"`)
+		contains(t, res, "空き", "操作権を剥奪しました。", `hx-swap-oob="beforeend:#toast-root"`, `id="modal-root" hx-swap-oob="true"`)
 		lacks(t, res, "/lease/revoke", "強制剥奪", "保持中", "<html", "laptop")
 	})
 	t.Run("idle is an idempotent 200 without a toast", func(t *testing.T) {
@@ -257,7 +256,7 @@ func TestRevokeLease(t *testing.T) {
 		res := r.post("/lease/revoke", nil, hx...)
 		status(t, res, http.StatusOK)
 		must(t, r.f.Leases.RevokeCalls == 1, "Revoke calls = %d, want 1", r.f.Leases.RevokeCalls)
-		contains(t, res, "空き")
+		contains(t, res, "空き", `id="modal-root" hx-swap-oob="true"`)
 		lacks(t, res, "/lease/revoke", "操作権を剥奪しました。", "toast-root")
 	})
 	t.Run("a service error is a fragment error and keeps the holder", func(t *testing.T) {
@@ -268,6 +267,40 @@ func TestRevokeLease(t *testing.T) {
 		lacks(t, res, "cleanup boom")
 		if _, ok := r.f.Leases.Holder(); !ok {
 			t.Error("the holder was removed although Revoke failed")
+		}
+	})
+}
+
+// 強制剥奪は確認モーダルを経る（O2。クライアント・トークンの削除などと同じ）: 確認の GET がモーダルを描画し、確定のボタンだけが POST を送る。
+func TestConfirmRevokeLease(t *testing.T) {
+	holder := func(kind domain.ActorKind) func(*guitest.Fakes) {
+		return func(f *guitest.Fakes) {
+			f.Leases.Held = true
+			f.Leases.H = service.Holder{LeaseID: "l1", Actor: domain.Actor{Kind: kind, ClientID: "c1", Label: "laptop"}, Since: f.Clock.T, IdleRemaining: time.Minute}
+		}
+	}
+	t.Run("a holder that can be revoked gets a confirm modal that posts the revoke", func(t *testing.T) {
+		r := newRig(t, holder(domain.ActorWeb))
+		res := r.get("/lease/revoke/confirm", hx...)
+		status(t, res, http.StatusOK)
+		contains(t, res, `role="dialog"`, "操作権を強制剥奪しますか？", "laptop", `hx-post="/lease/revoke"`, `hx-target="#lease"`, `hx-swap="innerHTML"`, "剥奪する")
+		lacks(t, res, "タスクが中断されます", "<html")
+		must(t, r.f.Leases.RevokeCalls == 0, "Revoke calls = %d, want 0 (only the confirm button revokes)", r.f.Leases.RevokeCalls)
+	})
+	t.Run("an agent holder adds the task interruption notice", func(t *testing.T) {
+		res := newRig(t, holder(domain.ActorAgent)).get("/lease/revoke/confirm", hx...)
+		status(t, res, http.StatusOK)
+		contains(t, res, "タスクが中断されます")
+	})
+	t.Run("without a revocable holder it is a 409 alert and no modal", func(t *testing.T) {
+		for name, mutate := range map[string]func(*guitest.Fakes){"idle": func(*guitest.Fakes) {}, "host": holder(domain.ActorHost)} {
+			res := newRig(t, mutate).get("/lease/revoke/confirm", hx...)
+			status(t, res, http.StatusConflict)
+			contains(t, res, `data-error-code="conflict"`)
+			lacks(t, res, `role="dialog"`)
+			if res.Header.Get("HX-Retarget") != "#alert-root" {
+				t.Errorf("%s: HX-Retarget = %q", name, res.Header.Get("HX-Retarget"))
+			}
 		}
 	})
 }

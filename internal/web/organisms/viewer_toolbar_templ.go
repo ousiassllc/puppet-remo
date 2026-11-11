@@ -50,7 +50,7 @@ func ViewerToolbar(v view.ViewerToolbar) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form id=\"viewer-toolbar\" class=\"flex flex-wrap items-start gap-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm\" novalidate hx-post=\"/viewer/settings\" hx-trigger=\"change\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-indicator=\"#viewer-toolbar-spinner\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form id=\"viewer-toolbar\" class=\"flex flex-wrap items-start gap-4 rounded-lg border border-border bg-surface p-4\" novalidate hx-post=\"/viewer/settings\" hx-trigger=\"change\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-indicator=\"#viewer-toolbar-spinner\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -100,18 +100,18 @@ func ViewerToolbar(v view.ViewerToolbar) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = atoms.Input(atoms.InputProps{ID: "viewer-quality", Name: "quality", Type: "range", Value: v.Quality, Invalid: v.Errors.Quality != "", Attrs: sliderAttrs("viewer-quality-out", "1", "100")}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.Range(atoms.RangeProps{ID: "viewer-quality", Name: "quality", Value: v.Quality, Invalid: v.Errors.Quality != "", Attrs: sliderAttrs("viewer-quality-out", "1", "100")}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<output id=\"viewer-quality-out\" for=\"viewer-quality\" class=\"w-8 text-sm tabular-nums text-slate-700\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<output id=\"viewer-quality-out\" for=\"viewer-quality\" class=\"w-8 text-sm font-mono text-mute\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(v.Quality)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_toolbar.templ`, Line: 43, Col: 116}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_toolbar.templ`, Line: 43, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -143,18 +143,18 @@ func ViewerToolbar(v view.ViewerToolbar) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = atoms.Input(atoms.InputProps{ID: "viewer-fps", Name: "fps", Type: "range", Value: v.FPS, Invalid: v.Errors.FPS != "", Attrs: sliderAttrs("viewer-fps-out", "1", "30")}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.Range(atoms.RangeProps{ID: "viewer-fps", Name: "fps", Value: v.FPS, Invalid: v.Errors.FPS != "", Attrs: sliderAttrs("viewer-fps-out", "1", "30")}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<output id=\"viewer-fps-out\" for=\"viewer-fps\" class=\"w-8 text-sm tabular-nums text-slate-700\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<output id=\"viewer-fps-out\" for=\"viewer-fps\" class=\"w-8 text-sm font-mono text-mute\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.FPS)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_toolbar.templ`, Line: 49, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_toolbar.templ`, Line: 49, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {

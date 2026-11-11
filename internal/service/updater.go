@@ -578,7 +578,7 @@ func (u *updater) notify(c updateCandidate) {
 	u.mu.Unlock()
 	if u.cfg.Bus != nil {
 		u.cfg.Bus.Publish(Event{Topic: TopicToast, Data: Toast{
-			Level: "info", Message: "新しい版 " + c.Version.String() + " があります。「更新」の画面から適用できます。",
+			Level: "info", Message: "新しい版 " + c.Version.String() + " があります。",
 		}})
 	}
 }

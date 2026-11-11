@@ -63,14 +63,14 @@ func (h *Handler) Poll(c *gin.Context) {
 }
 
 // drainToasts は Bus の toast イベント（New で購読済み。バッファは Bus が持ち、満杯なら古いものから捨てる）を取り出し、
-// #toast-root へ追加する OOB にする。
+// 完了の通知は #toast-root へ追加し、エラーは #alert-root のアラートにする OOB にする。
 func (h *Handler) drainToasts() []templ.Component {
 	var out []templ.Component
 	for {
 		select {
 		case e := <-h.toasts:
-			if t, ok := toastView(e.Data); ok {
-				out = append(out, organisms.ToastOOB(t))
+			if c := toastComponent(e.Data, true); c != nil {
+				out = append(out, c)
 			}
 		default:
 			return out

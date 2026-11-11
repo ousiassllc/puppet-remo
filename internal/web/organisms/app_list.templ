@@ -4,48 +4,55 @@ import (
 	"strconv"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
 // AppCard は起動許可アプリ 1 件（表示名・実行ファイル・引数・作業ディレクトリ・編集・削除）。PUT /apps/{id} の応答もこのフラグメント。
 // パス・引数・作業ディレクトリは、ホスト所有者だけが見る GUI に出す（リモートには出さない。FR-H12）。
 templ AppCard(a view.AppRow) {
-	<article id={ appCardID(a) } class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-app={ a.ID }>
-		<h3 class="text-sm font-semibold text-slate-800">{ a.Label }</h3>
+	<article id={ appCardID(a) } class="rounded-lg border border-border bg-surface p-4" data-app={ a.ID }>
+		<h3 class="text-xl font-semibold text-ink">{ a.Label }</h3>
 		if a.Unlaunchable {
-			<p class="mt-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert" data-app-unlaunchable>この設定のままでは起動できません（MCP のクライアントにも表示されません）。削除するか、編集して保存し直してください。</p>
+			<div class="mt-2">
+				@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-unlaunchable": true}) {
+					この設定のままでは起動できません（MCP のクライアントにも表示されません）。削除するか、編集して保存し直してください。
+				}
+			</div>
 		}
-		<dl class="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
-			<dt class="text-slate-500">実行ファイル</dt>
-			<dd class="min-w-0 break-all"><code class="rounded bg-slate-100 px-1 py-0.5 text-xs" data-app-exe>{ a.ExePath }</code></dd>
-			<dt class="text-slate-500">引数</dt>
-			<dd class="min-w-0">
+		<dl class="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr] sm:gap-y-2">
+			<dt class="text-mute">実行ファイル</dt>
+			<dd class="mb-1 min-w-0 break-all sm:mb-0"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs" data-app-exe>{ a.ExePath }</code></dd>
+			<dt class="text-mute">引数</dt>
+			<dd class="mb-1 min-w-0 sm:mb-0">
 				if a.Corrupt {
-					<span class="text-sm text-red-700" data-app-corrupt>保存された引数を読めません。</span>
+					@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-corrupt": true}) {
+						保存された引数を読めません。
+					}
 				} else if len(a.Args) == 0 {
-					<span class="text-slate-500">なし</span>
+					<span class="text-mute">なし</span>
 				} else {
-					<ul class="space-y-0.5" data-app-args>
+					<ul class="space-y-2" data-app-args>
 						for _, arg := range a.Args {
-							<li class="break-all"><code class="rounded bg-slate-100 px-1 py-0.5 text-xs">{ arg }</code></li>
+							<li class="break-all"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ arg }</code></li>
 						}
 					</ul>
 				}
 			</dd>
-			<dt class="text-slate-500">作業ディレクトリ</dt>
+			<dt class="text-mute">作業ディレクトリ</dt>
 			<dd class="min-w-0 break-all">
 				if a.WorkingDir == "" {
-					<span class="text-slate-500">実行ファイルのあるディレクトリ</span>
+					<span class="text-mute">実行ファイルのあるディレクトリ</span>
 				} else {
-					<code class="rounded bg-slate-100 px-1 py-0.5 text-xs" data-app-dir>{ a.WorkingDir }</code>
+					<code class="rounded-sm bg-accent-soft px-2 py-1 text-xs" data-app-dir>{ a.WorkingDir }</code>
 				}
 			</dd>
 		</dl>
 		<div class="mt-3 flex gap-2">
-			@atoms.Button(atoms.ButtonProps{Label: "編集", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+			@atoms.Button(atoms.ButtonProps{Label: "編集", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 				"hx-get": a.EditURL, "hx-target": "#" + appCardID(a), "hx-swap": "outerHTML",
 			}})
-			@atoms.Button(atoms.ButtonProps{Label: "削除", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+			@atoms.Button(atoms.ButtonProps{Label: "削除", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 				"hx-get": a.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
 			}})
 		</div>
@@ -56,11 +63,11 @@ templ AppCard(a view.AppRow) {
 // 許可リストはホスト所有者だけが変えるため /poll の対象ではない。一覧の更新は操作の応答のフラグメントで行う。
 templ AppList(v view.AppList) {
 	<div id="app-list" class="space-y-4">
-		<p class="text-xs text-slate-500" data-app-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
+		<p class="text-xs text-mute" data-app-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
 		if len(v.Rows) == 0 {
-			<p class="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500" data-empty="apps">
+			@molecules.EmptyState("apps") {
 				起動を許可したアプリはまだありません。下のフォームから追加すると、MCP のクライアントが <code>launch_app</code> で起動できます。
-			</p>
+			}
 		}
 		for _, row := range v.Rows {
 			if row.Form != nil {

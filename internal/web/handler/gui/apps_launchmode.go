@@ -86,7 +86,7 @@ func (h *Handler) ConfirmLaunchMode(c *gin.Context) {
 		Message: "ブラックリスト方式にすると、拒否リストに載せたアプリ以外は、リモートの AI がパスを指定して何でも起動できるようになります" +
 			"（cmd.exe・powershell.exe などのコマンドインタープリタも、拒否リストに載せない限り起動できます）。" +
 			"引数と作業ディレクトリは渡せません。拒否リストはパス・実行ファイル名で照合します。この画面でいつでもホワイトリスト方式に戻せます。",
-		ConfirmURL: launchModeURL, Method: "put", Vals: `{"mode":"denylist"}`, Target: "#launch-mode", Swap: "outerHTML", Label: "ブラックリスト方式にする",
+		ConfirmURL: launchModeURL, Method: "put", Vals: `{"mode":"denylist"}`, Target: "#launch-mode", Swap: "outerHTML", Label: "ブラックリスト方式にする", Destructive: true,
 	}))
 }
 
@@ -205,7 +205,7 @@ func (h *Handler) ConfirmDeleteDenied(c *gin.Context) {
 		h.render(c, http.StatusOK, molecules.Modal(view.ConfirmModal{
 			Title:      "拒否リストから外しますか？",
 			Message:    "「" + d.Value + "」を拒否リストから外します。ブラックリスト方式のときは、以後このアプリを launch_app で起動できるようになります。",
-			ConfirmURL: deniedItemURL(d.ID), Method: "delete", Target: "#denied-section", Swap: "outerHTML", Label: "外す",
+			ConfirmURL: deniedItemURL(d.ID), Method: "delete", Target: "#denied-section", Swap: "outerHTML", Label: "外す", Destructive: true,
 		}))
 	}
 }

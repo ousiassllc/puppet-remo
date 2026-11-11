@@ -2,7 +2,7 @@
 //
 // ページルート（GET /viewer）は HX-Request でフルページとフラグメントを出し分け、アクションルート（リース・設定・クリップボード・
 // ショートカット）は常にフラグメントを返す。応答は常に HTML で、JSON は返さない。エラーは同じ code とステータスの
-// フラグメント（data-error-code 付きのトースト。検証エラー 422 は入力値つきのフォーム）で返す。
+// フラグメント（data-error-code 付きのインラインアラート。検証エラー 422 は入力値つきのフォーム）で返す。
 //
 // handler/gui を import せず、service と domain だけを使う（repository・platform・tailnet は使わない。scripts/check-imports.sh）。
 // Host / Origin・CSRF ヘッダー・キルスイッチ・WhoIs・許可リストの検査は、ミドルウェア連鎖（web/middleware）が済ませている。

@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
@@ -17,6 +18,29 @@ func (h *Handler) leasePanel(c *gin.Context, who domain.Actor) {
 
 func (h *Handler) renderLeasePanel(c *gin.Context, status int, v view.ViewerLease) {
 	h.render(c, status, organisms.ViewerLeasePanel(v), organisms.ViewerOpsOOB(opsView(v)))
+}
+
+// ConfirmRevokeLease は GET /viewer/lease/revoke/confirm（強制剥奪の確認モーダル。ホスト GUI と同じく中央のモーダルで確認する）。
+// 剥奪できるとき（他者の保持中。リースパネルが「強制剥奪」を出す状態）だけ描画し、そうでなければ 409 conflict。
+// 確定のボタンは POST /viewer/lease/revoke を送る（モーダルは #viewer-root の中にあるので X-Viewer-Id が付く）。
+func (h *Handler) ConfirmRevokeLease(c *gin.Context) {
+	_, who, ok := h.viewerContext(c)
+	if !ok {
+		return
+	}
+	v := h.leaseView(c.Request.Context(), who)
+	if !v.CanRevoke {
+		h.failMessage(c, http.StatusConflict, string(domain.CodeConflict), "剥奪できる操作権の保持者がいません。")
+		return
+	}
+	message := "「" + v.HolderLabel + "」の操作権を強制的に外します。"
+	if v.Task != nil {
+		message += "実行中の AI エージェントのタスクは中断されます。"
+	}
+	h.render(c, http.StatusOK, molecules.Modal(view.ConfirmModal{
+		Title: "操作権を強制剥奪しますか？", Message: message,
+		ConfirmURL: "/viewer/lease/revoke", Method: "post", Target: "#lease-panel", Swap: "outerHTML", Label: "剥奪する", Destructive: true,
+	}))
 }
 
 // LeasePanel は GET /viewer/lease（リースパネルのフラグメント。remo:lease-changed で再取得される）。
@@ -62,7 +86,7 @@ func (h *Handler) ReleaseLease(c *gin.Context) {
 
 // RevokeLease は POST /viewer/lease/revoke（他者の操作権を強制剥奪。FR-L06）。保持者は idle になり、このビューアが
 // 取得するには改めて acquire する。自分が保持しているときは、剥奪ではなく解放を使うべきなので 409 conflict。
-// 保持者がいなければ何もせず現在のパネルを返す（冪等）。
+// 保持者がいなければ何もせず現在のパネルを返す（冪等）。確認モーダル（ConfirmRevokeLease）の確定のボタンが送るので、応答にモーダルを閉じる OOB を添える。
 func (h *Handler) RevokeLease(c *gin.Context) {
 	_, who, ok := h.viewerContext(c)
 	if !ok {
@@ -76,5 +100,6 @@ func (h *Handler) RevokeLease(c *gin.Context) {
 		h.fail(c, err)
 		return
 	}
-	h.leasePanel(c, who)
+	v := h.leaseView(c.Request.Context(), who)
+	h.render(c, http.StatusOK, organisms.ViewerLeasePanel(v), organisms.ViewerOpsOOB(opsView(v)), organisms.ModalClear())
 }

@@ -29,12 +29,21 @@ func TestApprovalDialogPage(t *testing.T) {
 	contains(t, res, "<html", `data-approval="ap-1"`, "claude-desktop", "MCP</span>", "操作権（リース）の取得",
 		`data-approval-remaining="42"`, `hx-get="/approvals/ap-1"`, `hx-trigger="every 1s"`,
 		`hx-post="/approvals/ap-1/allow"`, `hx-post="/approvals/ap-1/deny"`, `hx-disabled-elt="#approval-actions button"`,
-		`id="toast-root"`, "/static/js/app.js")
+		`id="toast-root"`, `id="alert-root"`, "/static/js/app.js")
 	// 専用ウィンドウ: サイドバー・ヘッダー・ポーリング・モーダルは無い。
 	lacks(t, res, `id="live-poll"`, `id="modal-root"`, "ダッシュボード", "キルスイッチ", "接続要求")
 	if got := res.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
 	}
+}
+
+// 見出し（h1）は狭い面のモーダルの見出しと同じ text-lg。本文（text-base）と同じサイズにしない（デザインガイド T3。#120）。
+func TestApprovalDialogHeadingIsTextLg(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) { seedApproval(f, "ap-1", approvalWho) })
+	res := r.get("/approvals/ap-1")
+	status(t, res, http.StatusOK)
+	contains(t, res, `<h1 class="text-lg font-semibold text-ink">`)
+	lacks(t, res, `<h1 class="text-base`)
 }
 
 // クライアント名は HTML エスケープされる。秘密・パス・引数・セッション ID は出さない。
@@ -97,7 +106,7 @@ func TestAllowAndDenyResolveTheApproval(t *testing.T) {
 	}
 }
 
-// 失効（60 秒）・解決済み・存在しない id・Resolve が失効を返す競合は、410 approval_timeout（トースト）。closeWindow は出さない。
+// 失効（60 秒）・解決済み・存在しない id・Resolve が失効を返す競合は、410 approval_timeout（インラインアラート）。closeWindow は出さない。
 func TestApprovalGoneIs410(t *testing.T) {
 	t.Run("unknown id", func(t *testing.T) {
 		r := newRig(t)
@@ -106,7 +115,7 @@ func TestApprovalGoneIs410(t *testing.T) {
 			status(t, res, http.StatusGone)
 			contains(t, res, `data-error-code="approval_timeout"`, `role="alert"`)
 			lacks(t, res, "<html")
-			if res.Header.Get("HX-Retarget") != "#toast-root" || res.Header.Get("HX-Trigger") != "" {
+			if res.Header.Get("HX-Retarget") != "#alert-root" || res.Header.Get("HX-Trigger") != "" {
 				t.Errorf("headers = %v", res.Header)
 			}
 		}

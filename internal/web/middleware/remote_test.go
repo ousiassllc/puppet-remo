@@ -253,7 +253,7 @@ func TestRejectionFormats(t *testing.T) {
 		{"Web ページの機能無効", "GET", "/viewer", nil, func(k *kit) { k.auth.allowErr = service.ErrClientDisabled }, 403, "client_disabled", "page", nil},
 		{"Web ページの未登録は待機ページ", "GET", "/viewer", nil, func(k *kit) { k.auth.allowErr = service.ErrDeviceNotRegistered }, 403, "device_not_registered", "page", nil},
 		{"Web アクションのヘッダー欠落はフラグメント", "POST", "/viewer/lease", nil, nil, 403, "missing_header", "fragment", nil},
-		{"Web アクションのキルスイッチはフラグメント", "POST", "/viewer/lease", headers(map[string]string{CSRFHeader: "1"}), func(k *kit) { k.kill.active = true }, 503, "kill_switch_active", "fragment", nil},
+		{"Web アクションのキルスイッチはフラグメント", "POST", "/viewer/lease", headers(map[string]string{CSRFHeader: "1"}), func(k *kit) { k.kill.active = true }, 503, "kill_switch_active", "fragment", map[string]string{"HX-Retarget": "#alert-root", "HX-Reswap": "innerHTML"}},
 		{"Web アクションの未登録は待機ページ", "POST", "/viewer/lease", headers(map[string]string{CSRFHeader: "1"}), func(k *kit) { k.auth.allowErr = service.ErrDeviceNotRegistered }, 403, "device_not_registered", "page", nil},
 	}
 	for _, tt := range tests {
@@ -281,6 +281,9 @@ func TestRejectionFormats(t *testing.T) {
 				}
 				if isPage := strings.Contains(body, "<html"); isPage != (tt.wantKind == "page") {
 					t.Fatalf("page = %v, want %q: %q", isPage, tt.wantKind, body)
+				}
+				if closesModal := strings.Contains(body, `id="modal-root" hx-swap-oob="true"`); closesModal != (tt.wantKind == "fragment") {
+					t.Fatalf("closes the confirm modal = %v, want it only for %q: %q", closesModal, "fragment", body)
 				}
 				for _, bad := range []string{"<script", "style=", " onclick=", "problem"} {
 					if strings.Contains(body, bad) {

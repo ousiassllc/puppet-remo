@@ -17,8 +17,8 @@ func TestAuditListResultBadgesLocalTimeAndThumbnailFlag(t *testing.T) {
 	}, NextURL: "/audit?cursor=1"}))
 	has(t, out, `id="audit-list"`, "2026-10-30 20:59:00", `data-audit-row="/audit/3"`, `data-result="ok"`, `data-result="denied"`, `data-result="error"`,
 		"12 ms", "data-pager-next", `hx-get="/audit?cursor=1"`)
-	// 結果バッジの色（ok は緑・denied は黄・error は赤。atoms.Badge と同じ配色）。
-	for result, tone := range map[string]string{"ok": "emerald", "denied": "amber", "error": "red"} {
+	// 結果バッジの状態色（ok は success・denied は warning・error は danger。atoms.Badge と同じトークン）。
+	for result, tone := range map[string]string{"ok": "success", "denied": "warning", "error": "danger"} {
 		i := strings.Index(out, `data-result="`+result+`"`)
 		j := strings.Index(out[i:], "</tr>")
 		if !strings.Contains(out[i:i+j], tone) {
@@ -44,6 +44,8 @@ func TestAuditFiltersFieldErrorsAndSelection(t *testing.T) {
 		Errors: view.AuditFilterErrors{From: "日時が不正です", Paging: "limit が不正です"},
 	}))
 	has(t, out, `data-field-error="audit-from"`, "日時が不正です", `data-field-error="audit-paging"`, `type="hidden" name="limit" value="20"`, `value="tool" selected`, `hx-target-422="#audit-list"`, "novalidate")
+	// ページ送りのエラーも、入力のエラーと同じ 14px（T3）でフェードインする。
+	has(t, out, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="audit-paging"`)
 	hasNot(t, out, `data-field-error="audit-to"`)
 	webtest.AssertCSPCompliantHTML(t, out)
 }
