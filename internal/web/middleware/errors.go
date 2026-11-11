@@ -95,6 +95,7 @@ func writeHTML(w http.ResponseWriter, r *http.Request, status int, rj reject, ti
 	var comps []templ.Component
 	switch {
 	case rj.code == domain.CodeDeviceNotRegistered:
+		SetNoticeCSP(w.Header())
 		comps = []templ.Component{notRegisteredPage(rj.connState)}
 	case stateChanging(r):
 		// htmx は 4xx / 5xx を既定では差し込まないので、ハンドラの失敗（handler/remote の failMessage）と同じく
@@ -107,6 +108,7 @@ func writeHTML(w http.ResponseWriter, r *http.Request, status int, rj reject, ti
 			organisms.ModalClear(),
 		}
 	default:
+		SetNoticeCSP(w.Header())
 		comps = []templ.Component{pages.RemoteError(view.RemoteError{Code: string(rj.code), Title: title, Message: msg})}
 	}
 	w.WriteHeader(status)

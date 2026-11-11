@@ -37,7 +37,8 @@ templ Remote(title string) {
 }
 
 // RemoteNotice は、ビューアを開けない状態（未登録デバイスの待機・拒否・失効、ミドルウェアの拒否）の簡素なページの外枠。
-// 未登録のデバイスは /static/* も 403 になるため、スタイル・スクリプトを読み込まない（意味のある HTML だけで読める作りにする）。
+// 未登録のデバイスは /static/* も 403 になるため、スクリプト・外部スタイル・Web フォントを読み込まない（/static を参照しない）。
+// 見た目は NoticeStyle のインライン <style> だけで付ける。CSP には NoticeStyleHash を足した応答ヘッダー（middleware.NoticeCSPValue）が要る。
 templ RemoteNotice(title string) {
 	<!DOCTYPE html>
 	<html lang="ja">
@@ -45,6 +46,7 @@ templ RemoteNotice(title string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title }</title>
+			@templ.Raw("<style>" + NoticeStyle + "</style>")
 		</head>
 		<body>
 			{ children... }

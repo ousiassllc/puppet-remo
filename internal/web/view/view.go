@@ -710,3 +710,9 @@ type ApprovalGone struct {
 	Code    string
 	Message string
 }
+
+// Licenses はライセンス表記のページ。Text は同梱する第三者のライセンスの全文（THIRD_PARTY_NOTICES.txt）。
+type Licenses struct {
+	Chrome Chrome
+	Text   string
+}

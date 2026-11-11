@@ -550,7 +550,7 @@ func TaskList(v view.TaskList) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var27 = []any{atoms.PagerButtonClass()}
+			var templ_7745c5c3_Var27 = []any{atoms.ButtonClass(atoms.ButtonSecondary, true)}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var27...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -958,7 +958,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-task-result-note": true}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var45), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-task-result-note": true}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var45), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

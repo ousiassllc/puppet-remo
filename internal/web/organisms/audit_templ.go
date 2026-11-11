@@ -467,7 +467,7 @@ func AuditList(v view.AuditList) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var20 = []any{atoms.PagerButtonClass()}
+			var templ_7745c5c3_Var20 = []any{atoms.ButtonClass(atoms.ButtonSecondary, true)}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var20...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

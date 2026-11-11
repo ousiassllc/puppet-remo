@@ -1,8 +1,6 @@
 package organisms
 
 import (
-	"strconv"
-
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -21,20 +19,6 @@ func logFilterAttrs(active bool) atoms.Attrs {
 		return atoms.Attrs{"aria-current": "true"}
 	}
 	return nil
-}
-
-// logPagerLink はログのページ送りのリンク（#app-log だけを差し替え、URL を更新する）。
-templ logPagerLink(url, label string, attrs atoms.Attrs) {
-	<a
-		href={ templ.SafeURL(url) }
-		class={ atoms.PagerButtonClass() }
-		data-ripple
-		hx-get={ url }
-		hx-target="#app-log"
-		hx-swap="outerHTML"
-		hx-push-url="true"
-		{ attrs... }
-	>{ label }</a>
 }
 
 // AppLog はアプリのログ（FR-H13）。レベルの絞り込み・新しい順の表・ページ送り。読み取り専用で、ポーリングの対象ではない。
@@ -94,19 +78,7 @@ templ AppLog(v view.AppLog) {
 			</div>
 		}
 		if v.PrevURL != "" || v.NextURL != "" {
-			<nav class="flex items-center justify-between text-sm" aria-label="ページ送り" data-pager>
-				if v.PrevURL != "" {
-					@logPagerLink(v.PrevURL, "前へ（新しいログ）", atoms.Attrs{"data-pager-prev": ""})
-				} else {
-					<span></span>
-				}
-				<span class="text-mute" data-page={ strconv.Itoa(v.Page) }>{ strconv.Itoa(v.Page) } ページ目</span>
-				if v.NextURL != "" {
-					@logPagerLink(v.NextURL, "次へ（古いログ）", atoms.Attrs{"data-pager-next": ""})
-				} else {
-					<span></span>
-				}
-			</nav>
+			@molecules.Pager(molecules.PagerProps{Page: v.Page, PrevURL: v.PrevURL, NextURL: v.NextURL, PrevLabel: "前へ（新しいログ）", NextLabel: "次へ（古いログ）", Target: "#app-log"})
 		}
 	</div>
 }

@@ -144,7 +144,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<h3 class=\"text-base font-semibold\">AI エージェントのタスク実行中</h3><dl class=\"space-y-2 text-sm\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">状態</dt><dd data-task-status>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<h3 class=\"text-sm font-semibold\">AI エージェントのタスク実行中</h3><dl class=\"space-y-2 text-sm\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">状態</dt><dd data-task-status>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

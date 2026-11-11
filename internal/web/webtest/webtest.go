@@ -3,6 +3,9 @@ package webtest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,6 +28,44 @@ func Render(t testing.TB, comp templ.Component) string {
 // javascript: の URL。
 func AssertCSPCompliantHTML(t testing.TB, body string) {
 	t.Helper()
+	assertCSPCompliant(t, body, "")
+}
+
+// AssertNoticeCSPCompliantHTML は待機ページ（layout.RemoteNotice）用の AssertCSPCompliantHTML。<style> を 1 つだけ許し、
+// その中身の SHA-256 が、応答の CSP ヘッダー csp の style-src にハッシュソースとして入っていることを検査する。
+// 加えて、csp の style-src に 'unsafe-inline' が無く、HTML が /static を参照しないこと（未登録デバイスには /static が 403）。
+func AssertNoticeCSPCompliantHTML(t testing.TB, body, csp string) {
+	t.Helper()
+	if csp == "" {
+		t.Fatal("no Content-Security-Policy header")
+	}
+	assertCSPCompliant(t, body, csp)
+	if strings.Contains(body, "/static") {
+		t.Errorf("notice page refers to /static: %s", body)
+	}
+}
+
+// styleSrc は csp の style-src ディレクティブのソースの一覧。
+func styleSrc(csp string) []string {
+	for _, d := range strings.Split(csp, ";") {
+		if f := strings.Fields(d); len(f) > 0 && f[0] == "style-src" {
+			return f[1:]
+		}
+	}
+	return nil
+}
+
+// assertCSPCompliant は csp が空なら <style> を一切許さない。空でなければ、csp の style-src のハッシュに一致する <style> を許す。
+func assertCSPCompliant(t testing.TB, body, csp string) {
+	t.Helper()
+	sources := styleSrc(csp)
+	if csp != "" {
+		for _, src := range sources {
+			if src == "'unsafe-inline'" {
+				t.Errorf("style-src allows 'unsafe-inline': %s", csp)
+			}
+		}
+	}
 	z := html.NewTokenizer(strings.NewReader(body))
 	for {
 		tt := z.Next()
@@ -37,7 +78,16 @@ func AssertCSPCompliantHTML(t testing.TB, body string) {
 		tok := z.Token()
 		switch tok.Data {
 		case "style":
-			t.Errorf("inline <style> element: %s", tok)
+			if csp == "" {
+				t.Errorf("inline <style> element: %s", tok)
+				break
+			}
+			z.Next() // <style> の中身（テキスト）。
+			sum := sha256.Sum256(z.Text())
+			hash := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+			if !slices.Contains(sources, hash) {
+				t.Errorf("inline <style> is not allowed by the CSP style-src (want %s in %v)", hash, sources)
+			}
 		case "script":
 			if attr(tok, "src") == "" {
 				t.Errorf("inline <script>: %s", tok)

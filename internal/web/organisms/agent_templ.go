@@ -16,6 +16,9 @@ import (
 
 // APIKeyPanel は API キーの登録パネル（FR-H11、NFR-S14）。登録の有無（真偽値）だけを描画し、キーの値は入力欄にも出さない
 // （SecretInput は value 属性を持たない。失敗の再描画でも入力は空に戻る）。登録は PUT、削除は確認モーダルを経る。
+// 登録済みのときは入力欄の代わりに「登録済み」バッジと「変更」ボタンを見せ、入力欄・登録ボタンは hidden にしておく
+// （data-secret-saved / data-secret-edit。「変更」で入れ替えるのは app.ts）。登録の失敗（422）の再描画は、変更を押したあとの状態として
+// 入力欄（空）を見せる。未登録のときは最初から入力欄で、バッジは出さない。
 func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -44,7 +47,7 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(p.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 12, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 15, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -57,7 +60,7 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(p.Provider)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 12, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 15, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -70,80 +73,107 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(keyState(p.Registered))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 12, Col: 103}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 15, Col: 103}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"text-sm text-ink\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var5 string
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Provider)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 14, Col: 46}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " API キー</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" data-secret>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if p.Registered {
-			templ_7745c5c3_Err = atoms.Badge(atoms.BadgeOK, "登録済み").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"flex flex-wrap items-center gap-3\" data-secret-saved")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		} else {
-			templ_7745c5c3_Err = atoms.Badge(atoms.BadgeWarn, "未登録").Render(ctx, templ_7745c5c3_Buffer)
+			if keyEditing(p) {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " hidden")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "><span class=\"text-sm font-semibold text-ink\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var5 string
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Provider)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 18, Col: 61}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " API キー</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = atoms.Badge(atoms.BadgeSoft, "登録済み").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "変更", Variant: atoms.ButtonSecondary, Small: true, Attrs: atoms.Attrs{
+				"aria-label": "変更: " + p.Provider + " API キー", "aria-controls": p.ID + "-input", "data-secret-change": true,
+			}}).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><form class=\"space-y-4\" novalidate autocomplete=\"off\" hx-put=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<form class=\"space-y-4\" novalidate autocomplete=\"off\" hx-put=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(p.PutURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 25, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 29, Col: 20}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-target=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-target=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs("#" + p.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 26, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 30, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" hx-swap=\"outerHTML\" hx-target-422=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" hx-swap=\"outerHTML\" hx-target-422=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs("#" + p.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 28, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 32, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" hx-disabled-elt=\"find button[type=submit]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" hx-disabled-elt=\"find button[type=submit]\"><div")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templ.RenderAttributes(ctx, templ_7745c5c3_Buffer, keyEditAttrs(p))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -165,28 +195,28 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = molecules.FormField(p.ID+"-input", keyInputLabel(p.Registered), "", p.Error).Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = molecules.FormField(p.ID+"-input", keyInputLabel(p.Provider, p.Registered), "", p.Error).Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"text-sm text-ink\" data-notice=\"key-storage\">キーは Windows の資格情報マネージャー（")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div><p class=\"text-sm text-ink\" data-notice=\"key-storage\">キーは Windows の資格情報マネージャー（")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(p.Target)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 35, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 41, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。</p><div class=\"flex flex-wrap items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。</p><div class=\"flex flex-wrap items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: keyButtonLabel(p.Registered), Variant: atoms.ButtonPrimary, Type: "submit"}).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: keyButtonLabel(p.Registered), Variant: atoms.ButtonPrimary, Type: "submit", Attrs: keyEditAttrs(p)}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -198,7 +228,7 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></form></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div></form></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -213,11 +243,25 @@ func keyState(registered bool) string {
 	return "unregistered"
 }
 
-func keyInputLabel(registered bool) string {
-	if registered {
-		return "新しい API キー（入力すると置き換えます）"
+// keyEditing は入力欄を見せるか。未登録は最初から。登録済みは、登録の失敗の再描画（変更を押したあとの状態を保つ）のときだけ。
+func keyEditing(p view.APIKeyPanel) bool {
+	return !p.Registered || p.Error != ""
+}
+
+// keyEditAttrs は入力欄の側（data-secret-edit）の属性。入力欄を見せない間は hidden にする。
+func keyEditAttrs(p view.APIKeyPanel) atoms.Attrs {
+	a := atoms.Attrs{"data-secret-edit": true}
+	if !keyEditing(p) {
+		a["hidden"] = true
 	}
-	return "API キー"
+	return a
+}
+
+func keyInputLabel(provider string, registered bool) string {
+	if registered {
+		return "新しい " + provider + " API キー"
+	}
+	return provider + " API キー"
 }
 
 func keyButtonLabel(registered bool) string {
@@ -250,7 +294,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<form id=\"agent-form\" class=\"space-y-4\" novalidate hx-put=\"/agent\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-disabled-elt=\"find button[type=submit]\" hx-indicator=\"#agent-spinner\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<form id=\"agent-form\" class=\"space-y-4\" novalidate hx-put=\"/agent\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-disabled-elt=\"find button[type=submit]\" hx-indicator=\"#agent-spinner\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -270,7 +314,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(f.Errors.General)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 86, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 106, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -283,7 +327,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<label class=\"flex items-center gap-2 text-sm text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<label class=\"flex items-center gap-2 text-sm text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -291,7 +335,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "エージェントを有効にする</label><p class=\"text-sm text-ink\">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "エージェントを有効にする</label><p class=\"text-sm text-ink\">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -307,7 +351,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<label class=\"flex items-start gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<label class=\"flex items-start gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -315,30 +359,30 @@ func AgentForm(f view.AgentForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span></label><p class=\"mt-4\">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span></label><p class=\"mt-4\">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if f.ConsentAt != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<p class=\"text-xs text-mute\" data-consent-at=\"openai\">同意済み: ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<p class=\"text-xs text-mute\" data-consent-at=\"openai\">同意済み: ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(f.ConsentAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 101, Col: 85}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 121, Col: 85}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -350,7 +394,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "openai"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "openai"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -486,7 +530,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div class=\"flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -498,7 +542,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -529,7 +573,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			templ_7745c5c3_Var22 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<form id=\"fastpath-form\" class=\"space-y-4\" novalidate hx-put=\"/agent/fastpath\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-disabled-elt=\"find button[type=submit]\" hx-indicator=\"#fastpath-spinner\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<form id=\"fastpath-form\" class=\"space-y-4\" novalidate hx-put=\"/agent/fastpath\" hx-target=\"this\" hx-swap=\"outerHTML\" hx-target-422=\"this\" hx-disabled-elt=\"find button[type=submit]\" hx-indicator=\"#fastpath-spinner\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -549,7 +593,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(f.Errors.General)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 148, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 168, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -562,7 +606,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<label class=\"flex items-center gap-2 text-sm text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<label class=\"flex items-center gap-2 text-sm text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -570,7 +614,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "高速パスを有効にする</label><p class=\"text-sm text-ink\">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "高速パスを有効にする</label><p class=\"text-sm text-ink\">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -586,7 +630,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<label class=\"flex items-start gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<label class=\"flex items-start gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -594,30 +638,30 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span></label><p class=\"mt-4\">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span></label><p class=\"mt-4\">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if f.ConsentAt != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<p class=\"text-xs text-mute\" data-consent-at=\"typesafe\">同意済み: ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<p class=\"text-xs text-mute\" data-consent-at=\"typesafe\">同意済み: ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(f.ConsentAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 163, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 183, Col: 87}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -629,7 +673,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "typesafe"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "typesafe"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -721,7 +765,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div class=\"flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<div class=\"flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -733,7 +777,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -764,7 +808,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			templ_7745c5c3_Var31 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<div id=\"agent-sections\" class=\"space-y-6\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<div id=\"agent-sections\" class=\"space-y-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -780,7 +824,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div class=\"space-y-6\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<div class=\"space-y-6\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -788,7 +832,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<div class=\"border-t border-border pt-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<div class=\"border-t border-border pt-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -796,7 +840,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -818,7 +862,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<div class=\"space-y-6\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<div class=\"space-y-6\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -826,7 +870,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<div class=\"border-t border-border pt-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<div class=\"border-t border-border pt-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -834,7 +878,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -844,7 +888,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

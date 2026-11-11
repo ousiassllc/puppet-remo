@@ -8,16 +8,20 @@ import (
 
 // APIKeyPanel は API キーの登録パネル（FR-H11、NFR-S14）。登録の有無（真偽値）だけを描画し、キーの値は入力欄にも出さない
 // （SecretInput は value 属性を持たない。失敗の再描画でも入力は空に戻る）。登録は PUT、削除は確認モーダルを経る。
+// 登録済みのときは入力欄の代わりに「登録済み」バッジと「変更」ボタンを見せ、入力欄・登録ボタンは hidden にしておく
+// （data-secret-saved / data-secret-edit。「変更」で入れ替えるのは app.ts）。登録の失敗（422）の再描画は、変更を押したあとの状態として
+// 入力欄（空）を見せる。未登録のときは最初から入力欄で、バッジは出さない。
 templ APIKeyPanel(p view.APIKeyPanel) {
-	<div id={ p.ID } class="space-y-4" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) }>
-		<div class="flex flex-wrap items-center gap-2">
-			<span class="text-sm text-ink">{ p.Provider } API キー</span>
-			if p.Registered {
-				@atoms.Badge(atoms.BadgeOK, "登録済み")
-			} else {
-				@atoms.Badge(atoms.BadgeWarn, "未登録")
-			}
-		</div>
+	<div id={ p.ID } class="space-y-4" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) } data-secret>
+		if p.Registered {
+			<div class="flex flex-wrap items-center gap-3" data-secret-saved hidden?={ keyEditing(p) }>
+				<span class="text-sm font-semibold text-ink">{ p.Provider } API キー</span>
+				@atoms.Badge(atoms.BadgeSoft, "登録済み")
+				@atoms.Button(atoms.ButtonProps{Label: "変更", Variant: atoms.ButtonSecondary, Small: true, Attrs: atoms.Attrs{
+					"aria-label": "変更: " + p.Provider + " API キー", "aria-controls": p.ID + "-input", "data-secret-change": true,
+				}})
+			</div>
+		}
 		<form
 			class="space-y-4"
 			novalidate
@@ -28,14 +32,16 @@ templ APIKeyPanel(p view.APIKeyPanel) {
 			hx-target-422={ "#" + p.ID }
 			hx-disabled-elt="find button[type=submit]"
 		>
-			@molecules.FormField(p.ID+"-input", keyInputLabel(p.Registered), "", p.Error) {
-				@atoms.SecretInput(p.ID+"-input", "api_key", p.Error != "")
-			}
+			<div { keyEditAttrs(p)... }>
+				@molecules.FormField(p.ID+"-input", keyInputLabel(p.Provider, p.Registered), "", p.Error) {
+					@atoms.SecretInput(p.ID+"-input", "api_key", p.Error != "")
+				}
+			</div>
 			<p class="text-sm text-ink" data-notice="key-storage">
 				キーは Windows の資格情報マネージャー（{ p.Target }）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。
 			</p>
 			<div class="flex flex-wrap items-center gap-2">
-				@atoms.Button(atoms.ButtonProps{Label: keyButtonLabel(p.Registered), Variant: atoms.ButtonPrimary, Type: "submit"})
+				@atoms.Button(atoms.ButtonProps{Label: keyButtonLabel(p.Registered), Variant: atoms.ButtonPrimary, Type: "submit", Attrs: keyEditAttrs(p)})
 				if p.Registered {
 					@atoms.Button(atoms.ButtonProps{Label: "削除", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
 						"hx-get": p.ConfirmURL, "hx-target": "#modal-root", "hx-swap": "innerHTML", "data-key-delete": p.Provider,
@@ -53,11 +59,25 @@ func keyState(registered bool) string {
 	return "unregistered"
 }
 
-func keyInputLabel(registered bool) string {
-	if registered {
-		return "新しい API キー（入力すると置き換えます）"
+// keyEditing は入力欄を見せるか。未登録は最初から。登録済みは、登録の失敗の再描画（変更を押したあとの状態を保つ）のときだけ。
+func keyEditing(p view.APIKeyPanel) bool {
+	return !p.Registered || p.Error != ""
+}
+
+// keyEditAttrs は入力欄の側（data-secret-edit）の属性。入力欄を見せない間は hidden にする。
+func keyEditAttrs(p view.APIKeyPanel) atoms.Attrs {
+	a := atoms.Attrs{"data-secret-edit": true}
+	if !keyEditing(p) {
+		a["hidden"] = true
 	}
-	return "API キー"
+	return a
+}
+
+func keyInputLabel(provider string, registered bool) string {
+	if registered {
+		return "新しい " + provider + " API キー"
+	}
+	return provider + " API キー"
 }
 
 func keyButtonLabel(registered bool) string {
@@ -91,7 +111,7 @@ templ AgentForm(f view.AgentForm) {
 			エージェントを有効にする
 		</label>
 		<p class="text-sm text-ink">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p>
-		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "openai"}) {
+		@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "openai"}) {
 			<label class="flex items-start gap-2">
 				@atoms.Checkbox("agent-consent", "consent", f.Values.Consent)
 				<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span>
@@ -153,7 +173,7 @@ templ FastpathForm(f view.FastpathForm) {
 			高速パスを有効にする
 		</label>
 		<p class="text-sm text-ink">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p>
-		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "typesafe"}) {
+		@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "typesafe"}) {
 			<label class="flex items-start gap-2">
 				@atoms.Checkbox("fastpath-consent", "consent", f.Values.Consent)
 				<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span>

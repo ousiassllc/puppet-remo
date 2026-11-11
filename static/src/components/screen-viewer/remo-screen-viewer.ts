@@ -263,7 +263,8 @@ export class RemoScreenViewer extends LitElement {
     .tone-warning {
       color: var(--warning);
     }
-    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。回転は reduced-motion でも止めない。 */
+    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。
+       reduced-motion では回転を止める。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
     .spinner {
       width: 20px;
       height: 20px;
@@ -273,6 +274,17 @@ export class RemoScreenViewer extends LitElement {
       border-top-color: var(--accent);
       border-radius: var(--r-full);
       animation: overlay-spin var(--spinner-duration) linear infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner {
+        animation: none;
+      }
+    }
+    @media (forced-colors: active) {
+      .spinner {
+        border-color: transparent;
+        border-top-color: CanvasText;
+      }
     }
     @keyframes overlay-spin {
       to {

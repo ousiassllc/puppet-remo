@@ -1,6 +1,8 @@
 package webtest
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
@@ -44,5 +46,63 @@ func TestAssertCSPCompliantHTMLDetectsViolations(t *testing.T) {
 	AssertCSPCompliantHTML(r, ok)
 	if len(r.errs) != 0 {
 		t.Errorf("false positives: %s", strings.Join(r.errs, "; "))
+	}
+}
+
+func TestAssertHeadingOutline(t *testing.T) {
+	ok := map[string]string{
+		"h1 h2 h3 h2":       `<h1>a</h1><h2>b</h2><h3>c</h3><h2>d</h2>`,
+		"legend is ignored": `<h1>a</h1><fieldset><legend>b</legend></fieldset><h2>c</h2>`,
+	}
+	for name, body := range ok {
+		r := &recorder{TB: t}
+		AssertHeadingOutline(r, body)
+		if len(r.errs) != 0 {
+			t.Errorf("%s: unexpected errors %v", name, r.errs)
+		}
+	}
+	bad := map[string]string{
+		"h1 to h3":     `<h1>a</h1><h3>b</h3>`,
+		"h3 before h2": `<h1>a</h1><h3>b</h3><h2>c</h2>`,
+		"no h1":        `<h2>a</h2>`,
+		"two h1":       `<h1>a</h1><h1>b</h1>`,
+		"starts at h2": `<h2>a</h2><h1>b</h1>`,
+	}
+	for name, body := range bad {
+		r := &recorder{TB: t}
+		AssertHeadingOutline(r, body)
+		if len(r.errs) == 0 {
+			t.Errorf("%s: not detected in %s", name, body)
+		}
+	}
+}
+
+func TestAssertNoticeCSPCompliantHTML(t *testing.T) {
+	const css = "a{color:red}"
+	sum := sha256.Sum256([]byte(css))
+	hash := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	page := "<html><head><style>" + css + "</style></head><body></body></html>"
+
+	tests := []struct {
+		name string
+		body string
+		csp  string
+		bad  bool
+	}{
+		{"ハッシュが一致する <style>", page, "default-src 'self'; style-src " + hash + "; img-src 'self'", false},
+		{"ハッシュが違う <style>", page, "style-src 'sha256-AAAA'", true},
+		{"style-src に 'self' だけ", page, "style-src 'self'", true},
+		{"unsafe-inline を許している", page, "style-src " + hash + " 'unsafe-inline'", true},
+		{"/static を参照する", `<link rel="stylesheet" href="/static/css/app.css">`, "style-src " + hash, true},
+		{"style 属性", `<p style="a:b">x</p>`, "style-src " + hash, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &recorder{TB: t}
+			AssertNoticeCSPCompliantHTML(r, tt.body, tt.csp)
+			if got := len(r.errs) > 0; got != tt.bad {
+				t.Errorf("violations = %v (want violation: %v)", r.errs, tt.bad)
+			}
+		})
 	}
 }

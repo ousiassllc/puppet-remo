@@ -30,7 +30,7 @@ templ ApprovalRemaining(v view.ApprovalRemaining) {
 // 結果の説明（Note）も出す（Detail は templ が HTML エスケープする。lease は Detail・Note が空で何も足さない）。
 // 二重送信は hx-disabled-elt で両方のボタンを無効にして防ぐ。
 templ ApprovalDialog(v view.ApprovalDialog) {
-	<section id="approval-dialog" class="space-y-4 rounded-lg border border-warning-line bg-surface p-6" data-approval={ v.ID } data-approval-type={ v.Kind }>
+	<section id="approval-dialog" class="space-y-4 rounded-xl border border-border bg-surface p-6 shadow-modal" data-approval={ v.ID } data-approval-type={ v.Kind }>
 		<h1 class="text-lg font-semibold text-ink">{ v.Heading }</h1>
 		<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
 			<dt class="text-mute">クライアント</dt>
@@ -50,9 +50,9 @@ templ ApprovalDialog(v view.ApprovalDialog) {
 			}
 		}
 		@ApprovalRemaining(v.Remaining)
-		<div id="approval-actions" class="flex gap-2">
-			@atoms.Button(atoms.ButtonProps{Label: "許可", Variant: atoms.ButtonPrimary, Attrs: approvalButtonAttrs(v.AllowURL)})
+		<div id="approval-actions" class="flex justify-end gap-2 pt-2">
 			@atoms.Button(atoms.ButtonProps{Label: "拒否", Variant: atoms.ButtonSecondary, Attrs: approvalButtonAttrs(v.DenyURL)})
+			@atoms.Button(atoms.ButtonProps{Label: "許可", Variant: atoms.ButtonPrimary, Attrs: approvalButtonAttrs(v.AllowURL)})
 		</div>
 	</section>
 }
@@ -65,7 +65,7 @@ func approvalButtonAttrs(url string) atoms.Attrs {
 
 // ApprovalDone は許可・拒否を受け付けたあとの表示。応答の HX-Trigger: closeWindow でウィンドウが閉じる。
 templ ApprovalDone(v view.ApprovalDone) {
-	<section id="approval-dialog" class="rounded-lg border border-border bg-surface p-6" data-approval-done>
+	<section id="approval-dialog" class="rounded-xl border border-border bg-surface p-6 shadow-modal" data-approval-done>
 		if v.Allowed {
 			<p class="text-base text-ink">許可しました。</p>
 		} else {
@@ -76,7 +76,7 @@ templ ApprovalDone(v view.ApprovalDone) {
 
 // ApprovalGone は承認要求がすでに終わっている（失効・解決済み）ときの表示。
 templ ApprovalGone(v view.ApprovalGone) {
-	<section id="approval-dialog" class="rounded-lg border border-border bg-surface p-6" data-approval-gone data-error-code={ v.Code }>
+	<section id="approval-dialog" class="rounded-xl border border-border bg-surface p-6 shadow-modal" data-approval-gone data-error-code={ v.Code }>
 		<p class="text-base text-ink">{ v.Message }</p>
 	</section>
 }

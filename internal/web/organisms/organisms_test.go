@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 	"github.com/ousiassllc/puppet-remo/internal/web/webtest"
@@ -87,7 +88,7 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint")
 	v.RevokeHint = "タスクが中断されます"
 	// 警告は Notice（アイコン + 本文色 + 状態色の枠）で出す（C4）。
-	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning-line", "<svg", "タスクが中断されます")
+	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-l-warning", "<svg", "タスクが中断されます")
 	// 剥奪できない保持者には、ヒントがあってもボタンごと出さない。
 	v.CanRevoke = false
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint", "強制剥奪")
@@ -238,8 +239,7 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	webtest.AssertCSPCompliantHTML(t, out)
 
 	first := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1, NextURL: "/requests/history?page=2"}))
-	has(t, first, "data-pager-next")
-	hasNot(t, first, "data-pager-prev")
+	has(t, first, "data-pager-next", "disabled data-pager-prev")
 	single := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Rows: rows, Page: 1}))
 	hasNot(t, single, "data-pager")
 	empty := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1}))
@@ -491,20 +491,54 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	hasNot(t, empty, "<tbody", "data-pager")
 }
 
-// API キーのパネル（NFR-S14）: 入力欄は伏せ字で value を持たない。登録の有無で状態・ボタンが変わる。エラーは項目別に出す。
+// API キーのパネル（NFR-S14）: 入力欄は伏せ字で value を持たない。未登録は最初から入力欄（バッジなし）、登録済みは入力欄の代わりに
+// 「登録済み」バッジと「変更」（入力欄・登録ボタンは hidden）。登録の失敗の再描画は、変更を押したあとの状態（入力欄が見える・空）を保つ。
 func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
 	p := view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", Target: "puppet-remo/openai", PutURL: "/agent/api-key", ConfirmURL: "/agent/api-key/delete/confirm"}
 	out := webtest.Render(t, organisms.APIKeyPanel(p))
-	has(t, out, `id="agent-key"`, `data-key-state="unregistered"`, "未登録", `type="password"`, `autocomplete="off"`, `name="api_key"`,
-		`hx-put="/agent/api-key"`, `hx-target-422="#agent-key"`, "puppet-remo/openai", "資格情報マネージャー", "表示しません", ">登録<")
-	hasNot(t, out, "value=", "data-key-delete", "削除", "data-field-error")
+	has(t, out, `id="agent-key"`, `data-key-state="unregistered"`, `type="password"`, `autocomplete="off"`, `name="api_key"`,
+		`hx-put="/agent/api-key"`, `hx-target-422="#agent-key"`, "puppet-remo/openai", "資格情報マネージャー", "表示しません", ">登録<",
+		`data-secret-toggle`, `aria-pressed="false"`, `aria-controls="agent-key-input"`)
+	hasNot(t, out, "value=", "data-key-delete", "削除", "data-field-error", "登録済み", "data-secret-saved", "data-secret-change")
+	if hiddenAttr.MatchString(out) {
+		t.Errorf("first-time panel must show the input and the submit button:\n%s", out)
+	}
 	webtest.AssertCSPCompliantHTML(t, out)
 
-	p.Registered, p.Error = true, "API キーを入力してください。"
+	// 登録済み: 入力欄を見せず、バッジ + 変更。入力欄と登録（置き換える）ボタンは hidden のまま描画する（「変更」で app.ts が出す）。
+	p.Registered = true
 	out = webtest.Render(t, organisms.APIKeyPanel(p))
-	has(t, out, `data-key-state="registered"`, "登録済み", `data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`,
-		`data-field-error="agent-key-input"`, "入力してください", `aria-invalid`, "置き換える")
+	has(t, out, `data-key-state="registered"`, `data-secret-saved`, "登録済み", "bg-accent-soft", "text-mute-on-soft", `data-secret-change`, ">変更<",
+		`data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`, "置き換える", "新しい OpenAI API キー")
+	hasNot(t, out, "value=", "data-field-error", "未登録")
+	savedTag := regexp.MustCompile(`<div[^>]*data-secret-saved[^>]*>`).FindString(out)
+	if strings.Contains(savedTag, "hidden") {
+		t.Errorf("the saved row must be visible: %s", savedTag)
+	}
+	editTags := regexp.MustCompile(`<[a-z]+[^>]*data-secret-edit[^>]*>`).FindAllString(out, -1)
+	if len(editTags) != 2 {
+		t.Fatalf("data-secret-edit elements = %d, want 2 (input group and submit button):\n%s", len(editTags), out)
+	}
+	for _, tag := range editTags {
+		if !hiddenAttr.MatchString(tag) {
+			t.Errorf("the edit side must be hidden while saved: %s", tag)
+		}
+	}
+	webtest.AssertCSPCompliantHTML(t, out)
+
+	// 登録済みで登録の失敗（422）の再描画: 変更を押したあとの状態を保ち、入力欄は空（value なし）。
+	p.Error = "API キーを入力してください。"
+	out = webtest.Render(t, organisms.APIKeyPanel(p))
+	has(t, out, `data-key-state="registered"`, `data-key-delete="OpenAI"`, `data-field-error="agent-key-input"`, "入力してください", `aria-invalid`, "置き換える")
 	hasNot(t, out, "value=")
+	if !strings.Contains(regexp.MustCompile(`<div[^>]*data-secret-saved[^>]*>`).FindString(out), "hidden") {
+		t.Errorf("after a failed save the badge row must stay hidden:\n%s", out)
+	}
+	for _, tag := range regexp.MustCompile(`<[a-z]+[^>]*data-secret-edit[^>]*>`).FindAllString(out, -1) {
+		if hiddenAttr.MatchString(tag) {
+			t.Errorf("after a failed save the input must stay visible: %s", tag)
+		}
+	}
 	webtest.AssertCSPCompliantHTML(t, out)
 }
 
@@ -599,18 +633,18 @@ func TestRequestsBadgeFollowsTheNotificationBadgeSpec(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.RequestsBadge(0)), "data-pending-count")
 }
 
-// ページ送りのボタンは高さ 36・rounded-md（P1 ページネーション）。小ボタン（32）ではない。
-func TestPagerButtonsAre36pxHigh(t *testing.T) {
+// 前へ／次へだけのページ送りのボタンは Secondary・Small（高さ 32・rounded-md）。
+func TestPagerButtonsAreSmallSecondary(t *testing.T) {
 	history := webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 2, PrevURL: "/requests/history?page=1", NextURL: "/requests/history?page=3",
 		Rows: []view.HistoryRow{{ID: "r1"}}}))
-	has(t, history, "h-9", "rounded-md", "data-pager-prev", "data-pager-next")
-	hasNot(t, history, "h-8")
+	has(t, history, "h-8", "rounded-md", "data-pager-prev", "data-pager-next")
+	hasNot(t, history, "h-9")
 	audit := webtest.Render(t, organisms.AuditList(view.AuditList{NextURL: "/audit?cursor=1", Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1"}}}))
-	has(t, audit, "h-9", "data-pager-next")
+	has(t, audit, "h-8", "data-pager-next")
 	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, NextURL: "/logs?page=2", Rows: []view.LogRow{{Time: "t", Level: "INFO"}}}))
-	has(t, log, "h-9", "data-pager-next")
+	has(t, log, "h-8", "data-pager-next")
 	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{NextURL: "/tasks?page=2", Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}}))
-	has(t, tasks, "h-9", "data-pager-next")
+	has(t, tasks, "h-8", "data-pager-next")
 }
 
 // 絞り込みの「条件をクリア」は本文のリンク（.link。下線 --mute）で、ほかのリンクと同じ見た目。
@@ -648,7 +682,8 @@ func TestEmptyListsUseTheEmptyState(t *testing.T) {
 	has(t, out, `data-empty="audit-list"`, "border-dashed", "<svg")
 }
 
-// C4: 状態メッセージは独自の段落でなく Notice（状態色の枠 + アイコン + 本文色）で出す。文字を状態色にしない。
+// C4: 状態メッセージは独自の段落でなく Notice（左の状態色の線 + アイコン + 本文色）で出す。文字を状態色にしない。
+// 題なしのインラインアラートの色は、常設の注意書き = warning・同意の枠・ただの補足 = info（ガイド）。
 func TestStatusMessagesUseNotice(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -666,11 +701,20 @@ func TestStatusMessagesUseNotice(t *testing.T) {
 		{"update applying", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Applying: true})), []string{`data-update="applying"`}, "info", true},
 		{"killswitch active", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true})), []string{`data-killswitch="active"`}, "danger", true},
 		{"lease pending", webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{Pending: true, PendingMine: true})), []string{"data-lease-pending-message", `role="status"`}, "warning", false},
+		{"agent consent frame", webtest.Render(t, organisms.AgentForm(view.AgentForm{})), []string{`data-consent="openai"`}, "info", false},
+		{"fastpath consent frame", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{})), []string{`data-consent="typesafe"`}, "info", false},
+		{"task result note", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", ResultText: "r", ResultNote: "n", Status: view.TaskStatus{Code: "completed"}})), []string{"data-task-result-note"}, "info", false},
+		{"audit plaintext note", webtest.Render(t, organisms.SettingsForm(view.SettingsForm{})), []string{`data-notice="audit-plaintext"`}, "warning", false},
+		{"audit record-text note", webtest.Render(t, organisms.SettingsForm(view.SettingsForm{})), []string{`data-notice="audit-record-text"`}, "warning", false},
 		{"token error", webtest.Render(t, organisms.TokenFieldError("入力してください", "validation")), []string{`data-error-code="validation"`, `role="alert"`}, "danger", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"-line", "bg-"+tt.tone+"-wash", "text-ink", "<svg")...)
+			// 色は、その注意書き自身の枠に付いている（同じ出力にある別の注意書きの色で通らない）。
+			if open := regexp.MustCompile(`<div class="[^"]*" ` + regexp.QuoteMeta(tt.attrs[0])).FindString(tt.out); !strings.Contains(open, "border-l-"+tt.tone) {
+				t.Errorf("%s: its own frame is not border-l-%s: %q", tt.attrs[0], tt.tone, open)
+			}
+			has(t, tt.out, append(tt.attrs, "border-l-"+tt.tone, "bg-surface", "text-ink", "<svg")...)
 			// 操作の結果として現れるもの（422 の再描画・アクションの応答・状態の切り替わり）はフェードイン、常設のものは静か（M5）。
 			if tt.rises {
 				has(t, tt.out, "motion-rise-in")
@@ -694,8 +738,8 @@ func TestCardPaddingsFollowScale(t *testing.T) {
 	update := webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "v1.2.3", Verified: true}}))
 	has(t, update, `class="space-y-2 rounded-md bg-bone p-4" data-update="latest"`)
 	// カード内のまとまり同士は 24（--gap-card-section。space-y-6）。
-	has(t, update, `class="space-y-6 p-6"`)
-	hasNot(t, update, `class="space-y-4 p-6"`)
+	has(t, update, `class="p-6"><div class="space-y-6">`)
+	hasNot(t, update, `class="space-y-4 p-6"`, `<div class="space-y-4">`)
 	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
 	has(t, lease, "rounded-lg border border-border bg-surface p-4")
 	hasNot(t, lease, "bg-surface p-3")
@@ -713,7 +757,7 @@ func TestFormAndNestedPanelSpacing(t *testing.T) {
 	has(t, webtest.Render(t, organisms.AuditFilters(view.AuditFilters{})), `class="space-y-4 `, `class="grid gap-4 `)
 	has(t, webtest.Render(t, organisms.TokenForm(view.TokenForm{}, false)), `class="grid gap-4 `)
 	req := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "x"}}}))
-	has(t, req, `class="mt-3 grid gap-4 sm:grid-cols-2"`, `<fieldset class="space-y-2 sm:col-span-2">`)
+	has(t, req, `class="mt-3 grid gap-4 sm:grid-cols-2"`, `<fieldset class="flex min-w-0 flex-col gap-4 border-t border-border pt-4 sm:col-span-2">`, `<legend class="pr-2 text-sm font-semibold leading-[1.4]">使える機能</legend>`)
 	// h3 の見出し行 → 1 行目の補足は 8（mt-2。起動許可アプリのカードと同じ）。
 	has(t, req, `<p class="mt-2 text-xs text-mute">`)
 	has(t, webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc"})), `<p class="mt-2 text-xs text-mute">`)
@@ -736,4 +780,21 @@ func TestListWrappersUseSectionGap(t *testing.T) {
 		has(t, c.out, `<div id="`+c.id+`" class="space-y-4"`)
 		hasNot(t, c.out, `id="`+c.id+`" class="space-y-3"`)
 	}
+}
+
+// #131 案件ガイド（frontend.md §8.7）: 承認ダイアログ（専用ウィンドウのカード。3 つの状態すべて）は、確認モーダルの本体と同じ形
+// （角丸 --r-xl・--border の枠・--surface 地・p-6・shadow-modal）で、題は lg 18px SemiBold。ボタンは右寄せで、拒否（副）が左・許可（主）が右
+// （モーダルのキャンセルが左・確定が右）。
+func TestApprovalDialogMatchesModalBody(t *testing.T) {
+	const body = "rounded-xl border border-border bg-surface p-6 shadow-modal"
+	modal := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "t", Message: "m", Label: "実行", ConfirmURL: "/x"}))
+	has(t, modal, body, `<h2 id="modal-title" class="text-lg font-semibold text-ink">`, `class="mt-6 flex justify-end gap-2"`)
+
+	dlg := webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Heading: "h", AllowURL: "/a/allow", DenyURL: "/a/deny", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30}}))
+	has(t, dlg, body, `<h1 class="text-lg font-semibold text-ink">`, `id="approval-actions" class="flex justify-end gap-2`)
+	if deny, allow := strings.Index(dlg, `hx-post="/a/deny"`), strings.Index(dlg, `hx-post="/a/allow"`); deny < 0 || allow < deny {
+		t.Errorf("want the deny button before the allow button (deny at %d, allow at %d)", deny, allow)
+	}
+	has(t, webtest.Render(t, organisms.ApprovalDone(view.ApprovalDone{Allowed: true})), body)
+	has(t, webtest.Render(t, organisms.ApprovalGone(view.ApprovalGone{Message: "m"})), body)
 }

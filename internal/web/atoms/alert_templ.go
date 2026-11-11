@@ -68,8 +68,10 @@ func alertAttrs(p AlertProps) Attrs {
 	return a
 }
 
-// Alert はインラインアラート。状態は色だけでなく見出しと本文でも伝える。ミドルウェアが拒否した状態変更のリクエスト
+// Alert はインラインアラート。状態は色だけでなく題と本文でも伝える。ミドルウェアが拒否した状態変更のリクエスト
 // （アクションルート）に返すエラーのフラグメントと、アクションの失敗の表示先（#alert-root）に使う。
+// 題はガイドの「インラインアラートの題」（sm 14・SemiBold）。#alert-root はどの見出しの下にも出るので、題は見出しにせず強調テキストにする
+// （h3 にすると h1 → h3 の飛びになる。role="alert" が読み上げを担う）。
 func Alert(p AlertProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -125,27 +127,27 @@ func Alert(p AlertProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-w-0 flex-1\"><h3 class=\"text-base font-semibold\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"min-w-0 flex-1\"><strong class=\"block text-sm font-semibold\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(p.Heading)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 69, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 71, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</h3><p class=\"mt-2 text-ink\" data-alert-message>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</strong><p class=\"mt-2 text-ink\" data-alert-message>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 70, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 72, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -177,20 +179,22 @@ func Alert(p AlertProps) templ.Component {
 	})
 }
 
+// noticeClass は題なしインラインアラートの形（ガイド「設定画面のパーツ」3）。Alert と同形（角丸 --r-md・padding 12×16）で、
+// 地は --surface・枠は --border 1px。状態色は左の線（3px）だけに使う。
 func noticeClass(t AlertTone, animated bool) string {
-	base := "flex items-start gap-2 rounded-md border px-3 py-2 text-sm text-ink "
+	base := "flex items-start gap-3 rounded-md border border-border border-l-3 bg-surface px-4 py-3 text-sm text-ink "
 	if animated {
 		base = "motion-rise-in " + base
 	}
 	switch t {
 	case AlertSuccess:
-		return base + "border-success-line bg-success-wash"
+		return base + "border-l-success"
 	case AlertWarning:
-		return base + "border-warning-line bg-warning-wash"
+		return base + "border-l-warning"
 	case AlertDanger:
-		return base + "border-danger-line bg-danger-wash"
+		return base + "border-l-danger"
 	default:
-		return base + "border-info-line bg-info-wash"
+		return base + "border-l-info"
 	}
 }
 
@@ -209,8 +213,10 @@ func noticeIconClass(t AlertTone) string {
 	}
 }
 
-// Notice は画面に常設する注意書き・同意の枠（インライン版のアラート）。見出しと閉じるボタンは持たず、
-// アイコン + 文言（children）+ 状態色の枠で伝える（色だけにしない）。文字は本文色（ink）で、状態色は枠・地・アイコンに使う。
+// Notice は画面に常設する注意書き・同意の枠（題なしのインラインアラート）。題と閉じるボタンは持たず、
+// アイコン（状態色）+ 文言（children。本文色 ink）+ 左の線（状態色）で伝える（色だけにしない）。
+// 色の使い分けはガイドの 2 値: AlertWarning = データの扱い・取り消せないことなど、ずっと出しておく注意書き。
+// AlertInfo = 同意のチェックを入れる枠・ただの補足。AlertDanger はエラーの表示（フォームのエラー・読めない設定）に限る。
 // ページを開いたときから在るものなので、出現は静かに（アニメーションなし）。操作の結果として現れるものは NoticeAnimated。
 // 操作の結果として返すエラーは Alert を使う。attrs には role・data-* を渡す。
 func Notice(tone AlertTone, attrs Attrs) templ.Component {

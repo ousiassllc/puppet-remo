@@ -10,6 +10,8 @@
 //   8. アラートの差し込み（afterSwap・oobAfterSwap・新規作成）のあと、縦に長い画面でも見える位置へ寄せる（revealAlerts）
 //   9. クライアントで出すエラーのアラートは、同じ文言がすでに表示中（退出中でない）なら置き換えない（ちらつき・再読み上げの防止）
 //  10. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
+//  11. 秘密の入力欄（API キー）の「変更」（登録済みのバッジを空の入力欄に入れ替える）と、入力中の値の表示切り替え（data-secret-change・data-secret-toggle）
+//  12. 前へ／次へだけのページ送りの差し替えのあと、フォーカスを使えるボタンへ移す（押した側が端で disabled になったら反対側。data-pager）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 import { installPickerRefreshGuard } from "./picker-guard";
@@ -91,24 +93,59 @@ document.addEventListener("htmx:responseError", (event) => {
 
 // 7. モバイルナビのドロワー（P0）。開閉の状態は body の data-nav-open で持ち、見た目は app.css の .nav-drawer・.nav-scrim が決める
 // （md 以上では CSS が無視する）。ナビは OOB で差し替わるので、状態はナビの外（body）に置く。開いたら先頭のリンクにフォーカスを移し、
-// Esc で閉じてハンバーガーに戻す。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
+// Esc で閉じる。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
+// 開いている間は背面（data-nav-background。ヘッダー・本文の列）を inert にして、Tab・クリック・読み上げの対象から外し、Tab はドロワーの中を循環させる。
+// 閉じたら inert を外し、フォーカスを開く前にあった要素（無ければハンバーガー）へ戻す。ハンバーガーは md 以上では出ないので、開く操作は md 未満でしか起きない。
 const NAV_OPEN_ATTR = "data-nav-open";
+const NAV_BACKGROUND = "[data-nav-background]";
 const desktopWidth = window.matchMedia("(min-width: 768px)");
+let navOpener: HTMLElement | null = null;
 
 function setNavOpen(open: boolean): void {
+  const wasOpen = document.body.hasAttribute(NAV_OPEN_ATTR);
   document.body.toggleAttribute(NAV_OPEN_ATTR, open);
   const toggle = document.querySelector<HTMLElement>("[data-nav-toggle]");
   toggle?.setAttribute("aria-expanded", String(open));
   toggle?.setAttribute("aria-label", open ? "メニューを閉じる" : "メニューを開く");
+  for (const background of document.querySelectorAll<HTMLElement>(NAV_BACKGROUND)) {
+    background.inert = open;
+  }
   if (open) {
+    if (!wasOpen) {
+      const active = document.activeElement;
+      navOpener = active instanceof HTMLElement && active !== document.body ? active : toggle;
+    }
     document.querySelector<HTMLElement>("#sidebar-nav a")?.focus();
+  } else if (wasOpen) {
+    (navOpener?.isConnected ? navOpener : toggle)?.focus();
+    navOpener = null;
+  }
+}
+
+// Tab をドロワーのリンクの中で循環させる（先頭で Shift+Tab → 末尾、末尾で Tab → 先頭。フォーカスがドロワーの外にあるときも中へ戻す）。
+function trapNavFocus(event: KeyboardEvent): void {
+  const links = [...document.querySelectorAll<HTMLElement>("#sidebar-nav a[href]")];
+  const first = links[0];
+  const last = links[links.length - 1];
+  if (!first || !last) {
+    return;
+  }
+  const active = document.activeElement;
+  const edge = event.shiftKey ? first : last;
+  if (active === edge || !document.getElementById("sidebar-nav")?.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
   }
 }
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && document.body.hasAttribute(NAV_OPEN_ATTR)) {
+  if (!document.body.hasAttribute(NAV_OPEN_ATTR)) {
+    return;
+  }
+  if (event.key === "Escape") {
     setNavOpen(false);
-    document.querySelector<HTMLElement>("[data-nav-toggle]")?.focus();
+  } else if (event.key === "Tab") {
+    trapNavFocus(event);
   }
 });
 
@@ -132,6 +169,17 @@ document.addEventListener("click", (event) => {
   }
   if (target.id === "nav-scrim" || target.closest("#sidebar-nav a")) {
     setNavOpen(false);
+    return;
+  }
+
+  // 11. 秘密の入力欄。
+  const secretToggle = target.closest<HTMLElement>("[data-secret-toggle]");
+  if (secretToggle) {
+    toggleSecretVisibility(secretToggle);
+    return;
+  }
+  if (target.closest("[data-secret-change]")) {
+    editSecret(target.closest("[data-secret]"));
     return;
   }
   const copyButton = target.closest<HTMLElement>("[data-copy-target]");
@@ -217,6 +265,32 @@ async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<
       status.textContent = status.dataset.fallback ?? "";
     }
   }
+}
+
+// 11. 入力中の値の表示切り替え。type=password ⇄ text と aria-pressed を合わせる（ラベルは固定。アイコンは aria-pressed を見て CSS が切り替える）。
+function toggleSecretVisibility(button: HTMLElement): void {
+  const input = document.getElementById(button.getAttribute("aria-controls") ?? "");
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+  const shown = input.type === "password";
+  input.type = shown ? "text" : "password";
+  button.setAttribute("aria-pressed", String(shown));
+}
+
+// 11. 登録済みのバッジと「変更」を隠し、空の入力欄と登録ボタンを出して、入力欄にフォーカスを移す。
+// 見せ分けはサーバーが描画した hidden 属性で、ここでは入れ替えるだけ（値は持たない・戻さない。NFR-S14）。
+function editSecret(root: Element | null): void {
+  if (!root) {
+    return;
+  }
+  for (const saved of root.querySelectorAll<HTMLElement>("[data-secret-saved]")) {
+    saved.hidden = true;
+  }
+  for (const edit of root.querySelectorAll<HTMLElement>("[data-secret-edit]")) {
+    edit.hidden = false;
+  }
+  root.querySelector<HTMLElement>("input")?.focus();
 }
 
 // 7. 承認ダイアログ（専用の Wails ウィンドウ。/approvals/{id}）の許可・拒否の応答は HX-Trigger: closeWindow を返す。
@@ -306,7 +380,7 @@ document.addEventListener("htmx:load", (event) => {
 });
 
 // 3. サーバーが OOB（beforeend:#toast-root）で追加したトースト。同時に表示するのは 1 つで、新しいものが前を置き換える。
-// 表示は 3 秒で、フェードアウトして消える。
+// 表示は 3 秒で、フェードアウトして消える。3 秒は入場のアニメーションが終わってから数える（ガイド「ペイン型の例外」のトーストのタイマー）。
 function settleToasts(root: Element): void {
   const toasts = [...root.querySelectorAll<HTMLElement>("[data-toast]")];
   const latest = toasts.pop();
@@ -317,11 +391,13 @@ function settleToasts(root: Element): void {
     return;
   }
   latest.setAttribute("data-toast-timer", "");
-  window.setTimeout(() => {
-    if (latest.isConnected) {
-      leave(latest, () => latest.remove());
-    }
-  }, TOAST_LIFETIME_MS);
+  void Promise.allSettled(latest.getAnimations().map((a) => a.finished)).then(() => {
+    window.setTimeout(() => {
+      if (latest.isConnected) {
+        leave(latest, () => latest.remove());
+      }
+    }, TOAST_LIFETIME_MS);
+  });
 }
 
 document.addEventListener("htmx:oobAfterSwap", (event) => {
@@ -339,4 +415,24 @@ document.addEventListener("htmx:afterSwap", (event) => {
   if (target?.id === ALERT_ROOT) {
     revealAlerts(target);
   }
+});
+
+// 12. 前へ／次へだけのページ送り（data-pager。molecules.Pager）。ページ送りのリンクは一覧の領域ごと差し替わるので、押したリンクは消え、
+// フォーカスが失われる。差し替えのあと、押した側のボタンが使えればそこへ、端になって disabled なら反対側のボタンへフォーカスを移す
+// （キーボードの操作が途切れないように）。押した側は、その差し替えを起こしたリクエストの要素（afterSwap の detail.requestConfig.elt。
+// detail.elt ではなく、差し替えの対象になる）の data-pager-prev / data-pager-next で決める。状態を持たないので、#live-poll など
+// 別のリクエストが間に入っても、押していない差し替えにフォーカスを奪われることもない。
+document.addEventListener("htmx:afterSwap", (event) => {
+  const trigger = (event as CustomEvent<{ requestConfig?: { elt?: Element } }>).detail?.requestConfig?.elt;
+  const pressed = trigger?.hasAttribute("data-pager-prev") ? "prev" : trigger?.hasAttribute("data-pager-next") ? "next" : null;
+  if (!pressed || !(event.target instanceof Element) || !event.target.isConnected) {
+    return;
+  }
+  const pager = event.target.closest("[data-pager]") ?? event.target.querySelector("[data-pager]");
+  if (!pager) {
+    return;
+  }
+  const opposite = pressed === "prev" ? "next" : "prev";
+  const target = pager.querySelector<HTMLElement>(`[data-pager-${pressed}]:not([disabled])`) ?? pager.querySelector<HTMLElement>(`[data-pager-${opposite}]:not([disabled])`);
+  target?.focus({ preventScroll: true });
 });

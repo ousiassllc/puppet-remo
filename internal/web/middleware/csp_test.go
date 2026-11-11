@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
 )
 
 func TestCSPValueMatchesSpec(t *testing.T) {
@@ -17,6 +19,22 @@ func TestCSPValueMatchesSpec(t *testing.T) {
 		if strings.Contains(CSPValue, bad) {
 			t.Errorf("CSPValue must not contain %q", bad)
 		}
+	}
+}
+
+// 待機ページの CSP は、style-src だけが違う。'unsafe-inline' は許さず、インライン <style> のハッシュだけを通す。
+func TestNoticeCSPValueDiffersOnlyInStyleSrc(t *testing.T) {
+	want := strings.Replace(CSPValue, "style-src 'self'", "style-src "+layout.NoticeStyleHash(), 1)
+	if NoticeCSPValue != want || NoticeCSPValue == CSPValue {
+		t.Errorf("NoticeCSPValue = %q, want %q", NoticeCSPValue, want)
+	}
+	for _, bad := range []string{"unsafe-inline", "unsafe-eval", "*"} {
+		if strings.Contains(NoticeCSPValue, bad) {
+			t.Errorf("NoticeCSPValue must not contain %q", bad)
+		}
+	}
+	if !strings.Contains(NoticeCSPValue, "style-src 'sha256-") {
+		t.Errorf("NoticeCSPValue lacks the style hash: %q", NoticeCSPValue)
 	}
 }
 
@@ -47,6 +65,7 @@ func TestCSPSetsHeaderOnEveryResponse(t *testing.T) {
 }
 
 // csp を最外に置くと、連鎖の拒否（hostcheck のエラーページ・キルスイッチの 503）にもヘッダーが付く（frontend.md §7.1）。
+// HTML のエラーページは待機ページと同じ外枠（インライン <style>）なので、style-src にそのハッシュを足した CSP に置き換わる。
 func TestCSPCoversRemoteChainRejections(t *testing.T) {
 	k := newKit()
 	k.handler = CSP()(k.handler)
@@ -56,8 +75,8 @@ func TestCSPCoversRemoteChainRejections(t *testing.T) {
 	if w.Code != http.StatusBadRequest || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("host check: status %d, content-type %q", w.Code, w.Header().Get("Content-Type"))
 	}
-	if got := w.Header().Get("Content-Security-Policy"); got != CSPValue {
-		t.Errorf("host check rejection: CSP = %q", got)
+	if got := w.Header().Get("Content-Security-Policy"); got != NoticeCSPValue {
+		t.Errorf("host check rejection: CSP = %q, want the notice page CSP", got)
 	}
 
 	// killswitch: 503 のページ。
@@ -66,8 +85,8 @@ func TestCSPCoversRemoteChainRejections(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("kill switch: status %d", w.Code)
 	}
-	if got := w.Header().Get("Content-Security-Policy"); got != CSPValue {
-		t.Errorf("kill switch rejection: CSP = %q", got)
+	if got := w.Header().Get("Content-Security-Policy"); got != NoticeCSPValue {
+		t.Errorf("kill switch rejection: CSP = %q, want the notice page CSP", got)
 	}
 
 	// problem+json にも付く（害はない）。

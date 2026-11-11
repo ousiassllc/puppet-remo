@@ -12,7 +12,7 @@ import (
 // （htmx は文書内にこの属性があるあいだ、そのページのスナップショットを保存しない）。
 templ TokenReveal(v view.TokenReveal) {
 	@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-token-reveal": true, "hx-history": "false"}) {
-		<h3 class="text-base font-semibold">「{ v.Label }」のトークンを発行しました</h3>
+		<h3 class="text-sm font-semibold">「{ v.Label }」のトークンを発行しました</h3>
 		<p>このトークンは今だけ表示されます。閉じると二度と確認できないので、いま安全な場所に控えてください。（有効期限: { v.ExpiresAt }）</p>
 		<div class="flex gap-2 pt-2">
 			@atoms.Input(atoms.InputProps{ID: "issued-token", Name: "issued_token", Value: v.Plaintext, Readonly: true, Mono: true, Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false", "data-token-plaintext": true}})

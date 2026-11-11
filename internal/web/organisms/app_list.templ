@@ -63,6 +63,7 @@ templ AppCard(a view.AppRow) {
 // 許可リストはホスト所有者だけが変えるため /poll の対象ではない。一覧の更新は操作の応答のフラグメントで行う。
 templ AppList(v view.AppList) {
 	<div id="app-list" class="space-y-4">
+		<h2 class="sr-only">アプリ一覧</h2>
 		<p class="text-xs text-mute" data-app-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
 		if len(v.Rows) == 0 {
 			@molecules.EmptyState("apps") {
