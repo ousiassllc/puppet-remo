@@ -6,13 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 	"github.com/ousiassllc/puppet-remo/internal/web/webtest"
 )
 
 // T3: 見出しの「段」（ガイド「アプリ内の見出しの段」・設定画面のパーツ）。見た目はタグではなくクラスで決める:
-// モーダルの題・カードの題 = lg 18 SemiBold。本文と同じ text-base や、タグの既定サイズ（text-2xl）にしない。
+// モーダルの題・カードの題 = lg 18 SemiBold、項目の見出し（h3）= base 16 SemiBold（クライアント名などは xl 24。#155 でタグだけを整えた既存の見た目）、
+// インラインアラートの題 = sm 14 SemiBold。本文と同じ text-base の SemiBold を題にしない（アラートの題を 16 にしない）。
 func TestHeadingsFollowTheGuideLadder(t *testing.T) {
 	type rung struct{ size, weight string }
 	ladder := func(class string) rung {
@@ -29,14 +31,18 @@ func TestHeadingsFollowTheGuideLadder(t *testing.T) {
 	}
 	card := webtest.Render(t, molecules.Card("見出し"))
 	modal := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "確認", Message: "本当に？", Label: "実行", Method: "post"}))
+	alert := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "失敗", Message: "m"}))
+	reveal := webtest.Render(t, molecules.TokenReveal(view.TokenReveal{Label: "ci", Plaintext: "tok", ExpiresAt: "2026-12-01"}))
 	for name, tc := range map[string]struct {
 		out   string
 		tags  []string
 		title string
 		want  rung
 	}{
-		"card title":  {card, []string{"h2"}, "見出し", rung{"lg", "semibold"}},
-		"modal title": {modal, []string{"h2"}, "確認", rung{"lg", "semibold"}},
+		"card title":   {card, []string{"h2"}, "見出し", rung{"lg", "semibold"}},
+		"modal title":  {modal, []string{"h2"}, "確認", rung{"lg", "semibold"}},
+		"alert title":  {alert, []string{"strong"}, "失敗", rung{"sm", "semibold"}},
+		"token reveal": {reveal, []string{"h3"}, "「ci」のトークンを発行しました", rung{"sm", "semibold"}},
 	} {
 		var found *webtest.Element
 		for _, e := range webtest.Elements(t, tc.out, tc.tags...) {
