@@ -167,13 +167,22 @@ async function waitForImage(canvas: Locator, w: number, h: number): Promise<void
 }
 
 // 合成画像の座標 (x, y) へ、canvas の表示の縮尺に直してクリックする（ストリームの座標と同じ変換の逆）。
+// マウスの座標は整数（小数は切り捨て）で届き、input.ts は Math.round で画素に直す。canvas の上端・左端は見出しの高さなどで
+// 小数になるので、「画素の中心（p + 0.5）」へ寄せる方式は丸めの境目で隣の画素へ倒れる。そこで、画素 p に丸められる範囲
+// [p - 0.5, p + 0.5) の最初の整数の座標を選ぶ（縮尺 1 以上なら必ず 1 つある）。クリックでのスクロールで上端が動かないよう、先に表示させる。
 async function clickImage(canvas: Locator, x: number, y: number, button: "left" | "right" = "left"): Promise<void> {
+  await canvas.scrollIntoViewIfNeeded();
   const box = await canvas.boundingBox();
   const size = await canvasSize(canvas);
   if (!box) {
     throw new Error("canvas has no bounding box");
   }
-  await canvas.click({ button, position: { x: ((x + 0.5) * box.width) / size.w, y: ((y + 0.5) * box.height) / size.h } });
+  const sx = box.width / size.w;
+  const sy = box.height / size.h;
+  // +0.1: 整数の座標の直上に置き、浮動小数点の誤差で 1 つ手前へ切り捨てられないようにする。
+  const px = Math.ceil(box.x + (x - 0.5) * sx) - box.x + 0.1;
+  const py = Math.ceil(box.y + (y - 0.5) * sy) - box.y + 0.1;
+  await canvas.click({ button, position: { x: px, y: py } });
 }
 
 // 一覧の「選ぶ」。承認が要らないクライアントなので、リースがその場で held になる。
