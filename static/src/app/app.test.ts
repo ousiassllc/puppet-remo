@@ -132,9 +132,12 @@ describe("ボタンの押下のリップル", () => {
 describe("モバイルナビのドロワー", () => {
   const markup = html`
     <div>
-      <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
       <div id="nav-scrim"></div>
-      <nav id="sidebar-nav"><a href="#a" id="nav-first">一覧</a></nav>
+      <nav id="sidebar-nav"><a href="#a" id="nav-first">一覧</a><a href="#b" id="nav-last">設定</a></nav>
+      <div id="background" data-nav-background>
+        <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
+        <main><button id="before">本文の操作</button></main>
+      </div>
     </div>
   `;
   const isOpen = (): boolean => document.body.hasAttribute("data-nav-open");
@@ -176,6 +179,57 @@ describe("モバイルナビのドロワー", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(isOpen()).to.equal(false);
     expect(document.activeElement).to.equal(toggle);
+  });
+
+  it("開いている間は背面（data-nav-background）を inert にし、閉じたら外す", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const background = root.querySelector<HTMLElement>("#background")!;
+    const toggle = root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+    expect(background.inert).to.equal(false);
+    toggle.click();
+    expect(background.inert).to.equal(true);
+    expect(root.querySelector<HTMLElement>("#sidebar-nav")!.inert).to.equal(false);
+    toggle.click();
+    expect(background.inert).to.equal(false);
+  });
+
+  it("Tab はドロワーの中を循環し、背面へ抜けない（末尾で Tab → 先頭、先頭で Shift+Tab → 末尾、外にあれば中へ戻す）", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    const first = root.querySelector<HTMLElement>("#nav-first")!;
+    const last = root.querySelector<HTMLElement>("#nav-last")!;
+    const press = (shiftKey: boolean): KeyboardEvent => {
+      const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, cancelable: true });
+      document.dispatchEvent(event);
+      return event;
+    };
+    last.focus();
+    expect(press(false).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(first);
+    expect(press(true).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(last);
+    // 中間のリンクでは、ブラウザの既定の移動に任せる。
+    first.focus();
+    expect(press(false).defaultPrevented).to.equal(false);
+    // フォーカスが（inert でない）ドロワーの外へ出ていたら、中へ戻す。
+    root.querySelector<HTMLElement>("#sidebar-nav")!.blur();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(press(false).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(first);
+  });
+
+  it("閉じると、開く前にフォーカスのあった要素へ戻す（ハンバーガー以外でも）。閉じているときの Tab は何もしない", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const before = root.querySelector<HTMLButtonElement>("#before")!;
+    const toggle = root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+    const tab = new KeyboardEvent("keydown", { key: "Tab", cancelable: true });
+    document.dispatchEvent(tab);
+    expect(tab.defaultPrevented).to.equal(false);
+    before.focus();
+    toggle.click();
+    expect(document.activeElement?.id).to.equal("nav-first");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.activeElement).to.equal(before);
   });
 });
 

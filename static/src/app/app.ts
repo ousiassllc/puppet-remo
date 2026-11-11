@@ -93,24 +93,59 @@ document.addEventListener("htmx:responseError", (event) => {
 
 // 7. モバイルナビのドロワー（P0）。開閉の状態は body の data-nav-open で持ち、見た目は app.css の .nav-drawer・.nav-scrim が決める
 // （md 以上では CSS が無視する）。ナビは OOB で差し替わるので、状態はナビの外（body）に置く。開いたら先頭のリンクにフォーカスを移し、
-// Esc で閉じてハンバーガーに戻す。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
+// Esc で閉じる。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
+// 開いている間は背面（data-nav-background。ヘッダー・本文の列）を inert にして、Tab・クリック・読み上げの対象から外し、Tab はドロワーの中を循環させる。
+// 閉じたら inert を外し、フォーカスを開く前にあった要素（無ければハンバーガー）へ戻す。ハンバーガーは md 以上では出ないので、開く操作は md 未満でしか起きない。
 const NAV_OPEN_ATTR = "data-nav-open";
+const NAV_BACKGROUND = "[data-nav-background]";
 const desktopWidth = window.matchMedia("(min-width: 768px)");
+let navOpener: HTMLElement | null = null;
 
 function setNavOpen(open: boolean): void {
+  const wasOpen = document.body.hasAttribute(NAV_OPEN_ATTR);
   document.body.toggleAttribute(NAV_OPEN_ATTR, open);
   const toggle = document.querySelector<HTMLElement>("[data-nav-toggle]");
   toggle?.setAttribute("aria-expanded", String(open));
   toggle?.setAttribute("aria-label", open ? "メニューを閉じる" : "メニューを開く");
+  for (const background of document.querySelectorAll<HTMLElement>(NAV_BACKGROUND)) {
+    background.inert = open;
+  }
   if (open) {
+    if (!wasOpen) {
+      const active = document.activeElement;
+      navOpener = active instanceof HTMLElement && active !== document.body ? active : toggle;
+    }
     document.querySelector<HTMLElement>("#sidebar-nav a")?.focus();
+  } else if (wasOpen) {
+    (navOpener?.isConnected ? navOpener : toggle)?.focus();
+    navOpener = null;
+  }
+}
+
+// Tab をドロワーのリンクの中で循環させる（先頭で Shift+Tab → 末尾、末尾で Tab → 先頭。フォーカスがドロワーの外にあるときも中へ戻す）。
+function trapNavFocus(event: KeyboardEvent): void {
+  const links = [...document.querySelectorAll<HTMLElement>("#sidebar-nav a[href]")];
+  const first = links[0];
+  const last = links[links.length - 1];
+  if (!first || !last) {
+    return;
+  }
+  const active = document.activeElement;
+  const edge = event.shiftKey ? first : last;
+  if (active === edge || !document.getElementById("sidebar-nav")?.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
   }
 }
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && document.body.hasAttribute(NAV_OPEN_ATTR)) {
+  if (!document.body.hasAttribute(NAV_OPEN_ATTR)) {
+    return;
+  }
+  if (event.key === "Escape") {
     setNavOpen(false);
-    document.querySelector<HTMLElement>("[data-nav-toggle]")?.focus();
+  } else if (event.key === "Tab") {
+    trapNavFocus(event);
   }
 });
 
