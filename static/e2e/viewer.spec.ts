@@ -71,6 +71,15 @@ test("未登録デバイスの待機 → 許可 → ビューア → 操作権 �
     await waitForViewerLease(page, "held", true);
   });
 
+  await test.step("ページのスクロールバーは 8px で出ていて、ビューアの画面（remo-screen-viewer）には当たらない", async () => {
+    const bar = await page.evaluate(() => ({
+      width: window.innerWidth - document.documentElement.clientWidth,
+      page: getComputedStyle(document.documentElement, "::-webkit-scrollbar").width,
+      viewer: getComputedStyle(document.querySelector("remo-screen-viewer") ?? document.body, "::-webkit-scrollbar").width,
+    }));
+    expect(bar).toEqual({ width: 8, page: "8px", viewer: "auto" });
+  });
+
   await test.step("キャンバスのクリックが偽の injector に届く（座標とボタン）", async () => {
     const box = await canvas.boundingBox();
     if (!box) {

@@ -45,7 +45,7 @@ func buttonClass(v ButtonVariant, size string) string {
 	case ButtonSecondary:
 		return base + "border border-border bg-transparent text-ink hover:bg-accent-soft"
 	default:
-		return base + "bg-accent text-bone hover:bg-[color-mix(in_srgb,var(--accent)_85%,var(--bone))]"
+		return base + "bg-accent text-bone hover:bg-accent/90"
 	}
 }
 

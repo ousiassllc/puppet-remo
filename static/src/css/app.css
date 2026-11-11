@@ -290,36 +290,38 @@
 
   /* スクロールバー（ガイド「スクロールバー」）: 矢印なし・細め・透明トラック・角丸 full の thumb。ネイティブスクロールのまま、見た目だけ変える。
    * Chromium 121 以降は scrollbar-width / scrollbar-color が auto 以外だと ::-webkit-scrollbar を無視するので、擬似要素が使える環境
-   * （WebView2・Chromium）では標準指定を auto に戻す。Firefox は thin と色だけ。forced-colors（ハイコントラスト）では OS 標準に任せる。 */
+   * （WebView2・Chromium）では標準指定を auto に戻す。Firefox は thin と色だけ。forced-colors（ハイコントラスト）では OS 標準に任せる。
+   * リモートビューアの画面（<remo-screen-viewer>。canvas を Shadow DOM に持つホスト）は除く: 画面は入力の座標（canvas の表示の縮尺）が要るので、
+   * バーの幅で配置が変わる要素にしない（ホストは overflow-hidden でスクロールしない）。 */
   @media (forced-colors: none) {
-    * {
+    :not(remo-screen-viewer) {
       scrollbar-width: thin;
       scrollbar-color: var(--sb-thumb) transparent;
     }
     @supports selector(::-webkit-scrollbar) {
-      * {
+      :not(remo-screen-viewer) {
         scrollbar-width: auto;
         scrollbar-color: auto;
       }
-      *::-webkit-scrollbar {
+      :not(remo-screen-viewer)::-webkit-scrollbar {
         width: var(--sb-size);
         height: var(--sb-size);
       }
-      *::-webkit-scrollbar-track,
-      *::-webkit-scrollbar-corner {
+      :not(remo-screen-viewer)::-webkit-scrollbar-track,
+      :not(remo-screen-viewer)::-webkit-scrollbar-corner {
         background: transparent;
       }
-      *::-webkit-scrollbar-button {
+      :not(remo-screen-viewer)::-webkit-scrollbar-button {
         display: none;
       }
-      *::-webkit-scrollbar-thumb {
+      :not(remo-screen-viewer)::-webkit-scrollbar-thumb {
         background: var(--sb-thumb);
         border-radius: var(--radius-full);
       }
-      *::-webkit-scrollbar-thumb:hover {
+      :not(remo-screen-viewer)::-webkit-scrollbar-thumb:hover {
         background: var(--sb-thumb-hover);
       }
-      *::-webkit-scrollbar-thumb:active {
+      :not(remo-screen-viewer)::-webkit-scrollbar-thumb:active {
         background: var(--sb-thumb-active);
       }
     }
