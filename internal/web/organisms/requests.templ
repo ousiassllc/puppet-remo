@@ -59,21 +59,22 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 					@molecules.FormField("mode-"+r.ID, "承認モード", "リースを取得するときの承認の方式です。", "") {
 						@atoms.Select("mode-"+r.ID, "approval_mode", approvalOptions(r.Modes))
 					}
-					<fieldset class="space-y-2 sm:col-span-2">
-						<legend class="text-sm text-ink">使える機能</legend>
-						<label class="mr-4 inline-flex items-center gap-2 text-sm">
-							@atoms.Checkbox("web-"+r.ID, "web_enabled", true)
-							Web
-						</label>
-						<label class="mr-4 inline-flex items-center gap-2 text-sm">
-							@atoms.Checkbox("mcp-"+r.ID, "mcp_enabled", true)
-							MCP
-						</label>
-						<label class="inline-flex items-center gap-2 text-sm">
-							@atoms.Checkbox("agent-"+r.ID, "agent_enabled", false)
-							エージェント
-						</label>
-					</fieldset>
+					@molecules.FieldGroup("使える機能", "sm:col-span-2", nil) {
+						<div class="flex flex-wrap gap-4">
+							<label class="inline-flex items-center gap-2 text-sm">
+								@atoms.Checkbox("web-"+r.ID, "web_enabled", true)
+								Web
+							</label>
+							<label class="inline-flex items-center gap-2 text-sm">
+								@atoms.Checkbox("mcp-"+r.ID, "mcp_enabled", true)
+								MCP
+							</label>
+							<label class="inline-flex items-center gap-2 text-sm">
+								@atoms.Checkbox("agent-"+r.ID, "agent_enabled", false)
+								エージェント
+							</label>
+						</div>
+					}
 					<div class="flex gap-2 sm:col-span-2">
 						@atoms.Button(atoms.ButtonProps{Label: "許可", Variant: atoms.ButtonPrimary, Type: "submit"})
 						@atoms.Button(atoms.ButtonProps{Label: "拒否", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{

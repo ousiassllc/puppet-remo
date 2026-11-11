@@ -747,7 +747,7 @@ func TestFormAndNestedPanelSpacing(t *testing.T) {
 	has(t, webtest.Render(t, organisms.AuditFilters(view.AuditFilters{})), `class="space-y-4 `, `class="grid gap-4 `)
 	has(t, webtest.Render(t, organisms.TokenForm(view.TokenForm{}, false)), `class="grid gap-4 `)
 	req := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "x"}}}))
-	has(t, req, `class="mt-3 grid gap-4 sm:grid-cols-2"`, `<fieldset class="space-y-2 sm:col-span-2">`)
+	has(t, req, `class="mt-3 grid gap-4 sm:grid-cols-2"`, `<fieldset class="flex min-w-0 flex-col gap-4 border-t border-border pt-4 sm:col-span-2">`, `<legend class="pr-2 text-sm font-semibold leading-[1.4]">使える機能</legend>`)
 	// h3 の見出し行 → 1 行目の補足は 8（mt-2。起動許可アプリのカードと同じ）。
 	has(t, req, `<p class="mt-2 text-xs text-mute">`)
 	has(t, webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc"})), `<p class="mt-2 text-xs text-mute">`)

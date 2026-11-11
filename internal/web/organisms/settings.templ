@@ -66,8 +66,7 @@ templ SettingsForm(f view.SettingsForm) {
 				ログオン時に自動で起動する
 			</label>
 		}
-		<fieldset class="space-y-4 border-t border-border pt-4" data-settings-group="audit">
-			<legend class="pr-2 text-sm font-semibold text-ink">監査ログ</legend>
+		@molecules.FieldGroup("監査ログ", "", atoms.Attrs{"data-settings-group": "audit"}) {
 			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "note", "data-notice": "audit-plaintext"}) {
 				サムネイル（スクリーンショットの縮小画像）と、有効にした場合の入力・クリップボードの本文は、暗号化されず<strong>平文</strong>でこのPCのディスクに保存されます。ディスクの紛失・盗難に備えて BitLocker でドライブ全体を暗号化してください。画面の内容を残したくないときは、サムネイルの保存を無効にできます。
 			}
@@ -90,16 +89,15 @@ templ SettingsForm(f view.SettingsForm) {
 			@molecules.FormField("set-audit-cap", "サムネイルの容量の上限（バイト）", "1〜9007199254740992。超えると古いサムネイルから削除します（ログの行は残ります）。既定は 1073741824（1 GiB）。", f.Errors.AuditThumbsMaxBytes) {
 				@atoms.Input(atoms.InputProps{ID: "set-audit-cap", Name: "audit.thumbs_max_bytes", Type: "number", Value: f.Values.AuditThumbsMaxBytes, Required: true, Invalid: f.Errors.AuditThumbsMaxBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
 			}
-		</fieldset>
-		<fieldset class="space-y-4 border-t border-border pt-4" data-settings-group="update">
-			<legend class="pr-2 text-sm font-semibold text-ink">更新</legend>
+		}
+		@molecules.FieldGroup("更新", "", atoms.Attrs{"data-settings-group": "update"}) {
 			@molecules.FormField("set-update-channel", "更新のチャネル", "追いかける版です。署名を検証できた更新だけを適用します。ナイトリーから正式版へは、新しい正式版が出たときに切り替わります。", f.Errors.UpdateChannel) {
 				@atoms.Select("set-update-channel", "update.channel", updateChannelOptions(f.Values.UpdateChannel))
 			}
 			@molecules.FormField("set-update-mode", "更新の適用方法", "新しい版は 6 時間ごとに確認します。自動で適用するのは、操作権の保持・接続・実行中のタスクがないときだけです。", f.Errors.UpdateApplyMode) {
 				@atoms.Select("set-update-mode", "update.apply_mode", updateApplyModeOptions(f.Values.UpdateApplyMode))
 			}
-		</fieldset>
+		}
 		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Spinner("settings-spinner")
