@@ -111,7 +111,7 @@ func ViewerToolbar(v view.ViewerToolbar) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(v.Quality)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_toolbar.templ`, Line: 43, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_toolbar.templ`, Line: 43, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -154,7 +154,7 @@ func ViewerToolbar(v view.ViewerToolbar) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.FPS)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_toolbar.templ`, Line: 49, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_toolbar.templ`, Line: 49, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {

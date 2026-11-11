@@ -49,7 +49,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(leaseState(v))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 27, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 27, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -94,7 +94,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.ScopedProcess)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 40, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 40, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -151,7 +151,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Status)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 57, Col: 104}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 57, Col: 104}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -164,7 +164,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Steps)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 58, Col: 126}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 58, Col: 126}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -177,7 +177,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Elapsed)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 59, Col: 124}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 59, Col: 124}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -190,7 +190,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.MaxTime)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 59, Col: 152}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 59, Col: 152}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -208,7 +208,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.StartedAt)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 61, Col: 127}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 61, Col: 127}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -226,7 +226,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Requester)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/viewer_lease_panel.templ`, Line: 63, Col: 113}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 63, Col: 113}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {

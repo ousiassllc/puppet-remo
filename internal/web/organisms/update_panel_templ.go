@@ -62,7 +62,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.CurrentVersion)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 19, Col: 153}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 19, Col: 153}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -75,7 +75,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(v.ChannelLabel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 21, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 21, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -88,7 +88,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(v.ApplyModeLabel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 23, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 23, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -107,7 +107,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.LastChecked)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 29, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 29, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -158,7 +158,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(v.Error)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 40, Col: 15}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 40, Col: 15}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -209,7 +209,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(v.Latest.Version)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 54, Col: 166}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 54, Col: 166}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -238,7 +238,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 					var templ_7745c5c3_Var12 string
 					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(v.Latest.PublishedAt)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 61, Col: 62}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 61, Col: 62}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {
@@ -261,7 +261,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 					var templ_7745c5c3_Var13 string
 					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(v.Latest.Reject)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 65, Col: 73}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 65, Col: 73}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 					if templ_7745c5c3_Err != nil {
@@ -280,7 +280,7 @@ func UpdatePanel(v view.UpdatePanel) templ.Component {
 					var templ_7745c5c3_Var14 string
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(v.Latest.Notes)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/update_panel.templ`, Line: 68, Col: 168}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/update_panel.templ`, Line: 68, Col: 168}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 					if templ_7745c5c3_Err != nil {

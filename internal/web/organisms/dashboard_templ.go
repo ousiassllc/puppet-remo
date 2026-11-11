@@ -66,7 +66,7 @@ func ServerStatusBody(v view.ServerStatus) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(ip)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 25, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 25, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -89,7 +89,7 @@ func ServerStatusBody(v view.ServerStatus) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(v.DNSName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 30, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 30, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -107,7 +107,7 @@ func ServerStatusBody(v view.ServerStatus) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Port))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 33, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 33, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -129,7 +129,7 @@ func ServerStatusBody(v view.ServerStatus) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(a)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 38, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 38, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -164,7 +164,7 @@ func ServerStatusBody(v view.ServerStatus) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.Reason)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 45, Col: 14}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 45, Col: 14}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -299,7 +299,7 @@ func SessionListBody(v view.Sessions) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(s.ClientLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 70, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 70, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -320,7 +320,7 @@ func SessionListBody(v view.Sessions) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(s.Since)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 73, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 73, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -430,7 +430,7 @@ func LeaseDisplay(v view.Lease) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(v.Since)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 94, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 94, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -454,7 +454,7 @@ func LeaseDisplay(v view.Lease) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(v.Since)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 99, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 99, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -467,7 +467,7 @@ func LeaseDisplay(v view.Lease) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(v.IdleRemaining)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 99, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 99, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -541,7 +541,7 @@ func LeasePanelBody(v view.Lease) templ.Component {
 					var templ_7745c5c3_Var22 string
 					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(v.RevokeHint)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 116, Col: 20}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 116, Col: 20}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 					if templ_7745c5c3_Err != nil {
@@ -836,7 +836,7 @@ func killSwitchPanel(v view.KillSwitch, oob bool) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(v.Rev)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 169, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 169, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
@@ -897,7 +897,7 @@ func killSwitchPanel(v view.KillSwitch, oob bool) templ.Component {
 					var templ_7745c5c3_Var34 string
 					templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(v.Since)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 177, Col: 44}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 177, Col: 44}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 					if templ_7745c5c3_Err != nil {
@@ -910,7 +910,7 @@ func killSwitchPanel(v view.KillSwitch, oob bool) templ.Component {
 					var templ_7745c5c3_Var35 string
 					templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(v.Source)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `organisms/dashboard.templ`, Line: 177, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/dashboard.templ`, Line: 177, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 					if templ_7745c5c3_Err != nil {
