@@ -281,7 +281,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = atoms.Notice(atoms.AlertDanger, atoms.Attrs{"data-notice": "audit-record-text"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-notice": "audit-record-text"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var10), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

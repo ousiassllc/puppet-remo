@@ -2,90 +2,93 @@ package organisms
 
 import (
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
 // UpdatePanel は更新のパネル（FR-H09）。現在の版・チャネル・適用方法・最後の確認・新版（署名検証の結果）と、「今すぐ確認」「更新する」。
 // リリースノートなど GitHub の Release 由来の文字列は templ が HTML エスケープする。
 // 「更新する」は、署名の検証に成功した新版があるときだけ出す（確認モーダルを経て POST /update/apply）。
+// 枠と題は molecules.Card。htmx は題ごとパネルを差し替える（outerHTML）ので、Card を #update-panel の中に置く。
 templ UpdatePanel(v view.UpdatePanel) {
-	<section id="update-panel" class="rounded-lg border border-border bg-surface">
-		<h2 class="border-b border-border px-6 py-3 text-2xl font-semibold text-ink">アプリの更新</h2>
-		<div class="space-y-6 p-6">
-			<dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2">
-				<dt class="text-mute">現在の版</dt>
-				<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-field="current-version">{ v.CurrentVersion }</code></dd>
-				<dt class="text-mute">チャネル</dt>
-				<dd class="mb-1 sm:mb-0" data-field="channel">{ v.ChannelLabel }</dd>
-				<dt class="text-mute">適用方法</dt>
-				<dd class="mb-1 sm:mb-0" data-field="apply-mode">{ v.ApplyModeLabel }</dd>
-				<dt class="text-mute">最後の確認</dt>
-				<dd class="font-mono" data-field="last-checked">
-					if v.LastChecked == "" {
-						<span class="text-mute">未確認</span>
-					} else {
-						{ v.LastChecked }
-					}
-				</dd>
-			</dl>
-			if !v.Updatable {
-				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "not-updatable"}) {
-					この版（開発用のビルド）は、更新の確認も適用もしません。
-				}
-			}
-			if v.Error != "" {
-				@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}) {
-					{ v.Error }
-				}
-			}
-			if v.KeyNotConfigured {
-				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "key-unset"}) {
-					署名鍵が未設定のため、新しい版があっても適用できません（確認だけ行います）。
-				}
-			}
-			if v.Updatable && v.Latest == nil && v.Error == "" && v.LastChecked != "" {
-				<p class="text-base text-ink" data-update="up-to-date">新しい版はありません。</p>
-			}
-			if v.Latest != nil {
-				<div class="space-y-2 rounded-md bg-bone p-4" data-update="latest">
-					<div class="flex flex-wrap items-center gap-2">
-						<span class="text-sm text-ink">新しい版: <code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-field="latest-version">{ v.Latest.Version }</code></span>
-						if v.Latest.Verified {
-							@atoms.Badge(atoms.BadgeOK, "署名を確認済み")
+	<div id="update-panel">
+		@molecules.Card("アプリの更新") {
+			<div class="space-y-6">
+				<dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2">
+					<dt class="text-mute">現在の版</dt>
+					<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-field="current-version">{ v.CurrentVersion }</code></dd>
+					<dt class="text-mute">チャネル</dt>
+					<dd class="mb-1 sm:mb-0" data-field="channel">{ v.ChannelLabel }</dd>
+					<dt class="text-mute">適用方法</dt>
+					<dd class="mb-1 sm:mb-0" data-field="apply-mode">{ v.ApplyModeLabel }</dd>
+					<dt class="text-mute">最後の確認</dt>
+					<dd class="font-mono" data-field="last-checked">
+						if v.LastChecked == "" {
+							<span class="text-mute">未確認</span>
 						} else {
-							@atoms.Badge(atoms.BadgeWarn, "適用できません")
+							{ v.LastChecked }
 						}
-						if v.Latest.PublishedAt != "" {
-							<span class="text-xs text-mute">{ v.Latest.PublishedAt } 公開</span>
+					</dd>
+				</dl>
+				if !v.Updatable {
+					@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "not-updatable"}) {
+						この版（開発用のビルド）は、更新の確認も適用もしません。
+					}
+				}
+				if v.Error != "" {
+					@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "error"}) {
+						{ v.Error }
+					}
+				}
+				if v.KeyNotConfigured {
+					@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-update": "key-unset"}) {
+						署名鍵が未設定のため、新しい版があっても適用できません（確認だけ行います）。
+					}
+				}
+				if v.Updatable && v.Latest == nil && v.Error == "" && v.LastChecked != "" {
+					<p class="text-base text-ink" data-update="up-to-date">新しい版はありません。</p>
+				}
+				if v.Latest != nil {
+					<div class="space-y-2 rounded-md bg-bone p-4" data-update="latest">
+						<div class="flex flex-wrap items-center gap-2">
+							<span class="text-sm text-ink">新しい版: <code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-field="latest-version">{ v.Latest.Version }</code></span>
+							if v.Latest.Verified {
+								@atoms.Badge(atoms.BadgeOK, "署名を確認済み")
+							} else {
+								@atoms.Badge(atoms.BadgeWarn, "適用できません")
+							}
+							if v.Latest.PublishedAt != "" {
+								<span class="text-xs text-mute">{ v.Latest.PublishedAt } 公開</span>
+							}
+						</div>
+						if !v.Latest.Verified && v.Latest.Reject != "" {
+							<p class="text-sm text-ink" data-update="reject">{ v.Latest.Reject }</p>
+						}
+						if v.Latest.Notes != "" {
+							<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-4 font-sans text-sm text-ink" data-field="release-notes">{ v.Latest.Notes }</pre>
 						}
 					</div>
-					if !v.Latest.Verified && v.Latest.Reject != "" {
-						<p class="text-sm text-ink" data-update="reject">{ v.Latest.Reject }</p>
-					}
-					if v.Latest.Notes != "" {
-						<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-4 font-sans text-sm text-ink" data-field="release-notes">{ v.Latest.Notes }</pre>
-					}
-				</div>
-			}
-			if v.Applying {
-				@atoms.NoticeAnimated(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "applying"}) {
-					インストーラを起動しました。アプリを終了して更新します。
 				}
-			}
-			if v.Updatable {
-				<div class="flex flex-wrap items-center gap-2">
-					@atoms.Button(atoms.ButtonProps{Label: "今すぐ確認", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
-						"hx-post": "/update/check", "hx-target": "#update-panel", "hx-swap": "outerHTML",
-						"hx-disabled-elt": "this", "hx-indicator": "#update-spinner",
-					}})
-					if v.CanApply && !v.Applying {
-						@atoms.Button(atoms.ButtonProps{Label: "更新する", Variant: atoms.ButtonPrimary, Attrs: atoms.Attrs{
-							"hx-get": v.ConfirmRoute, "hx-target": "#modal-root", "hx-swap": "innerHTML",
-						}})
+				if v.Applying {
+					@atoms.NoticeAnimated(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "applying"}) {
+						インストーラを起動しました。アプリを終了して更新します。
 					}
-					@atoms.Spinner("update-spinner")
-				</div>
-			}
-		</div>
-	</section>
+				}
+				if v.Updatable {
+					<div class="flex flex-wrap items-center gap-2">
+						@atoms.Button(atoms.ButtonProps{Label: "今すぐ確認", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+							"hx-post": "/update/check", "hx-target": "#update-panel", "hx-swap": "outerHTML",
+							"hx-disabled-elt": "this", "hx-indicator": "#update-spinner",
+						}})
+						if v.CanApply && !v.Applying {
+							@atoms.Button(atoms.ButtonProps{Label: "更新する", Variant: atoms.ButtonPrimary, Attrs: atoms.Attrs{
+								"hx-get": v.ConfirmRoute, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+							}})
+						}
+						@atoms.Spinner("update-spinner")
+					</div>
+				}
+			</div>
+		}
+	</div>
 }

@@ -197,7 +197,7 @@ templ TaskDetail(v view.TaskDetail) {
 			} else {
 				<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-result>{ v.ResultText }</pre>
 				if v.ResultNote != "" {
-					@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-task-result-note": true}) {
+					@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-task-result-note": true}) {
 						{ v.ResultNote }
 					}
 				}

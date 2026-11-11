@@ -87,7 +87,7 @@ func TestLeasePanelRevokeHint(t *testing.T) {
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint")
 	v.RevokeHint = "タスクが中断されます"
 	// 警告は Notice（アイコン + 本文色 + 状態色の枠）で出す（C4）。
-	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-warning-line", "<svg", "タスクが中断されます")
+	has(t, webtest.Render(t, organisms.LeasePanel(v)), `data-revoke-hint`, "border-l-warning", "<svg", "タスクが中断されます")
 	// 剥奪できない保持者には、ヒントがあってもボタンごと出さない。
 	v.CanRevoke = false
 	hasNot(t, webtest.Render(t, organisms.LeasePanel(v)), "data-revoke-hint", "強制剥奪")
@@ -681,7 +681,8 @@ func TestEmptyListsUseTheEmptyState(t *testing.T) {
 	has(t, out, `data-empty="audit-list"`, "border-dashed", "<svg")
 }
 
-// C4: 状態メッセージは独自の段落でなく Notice（状態色の枠 + アイコン + 本文色）で出す。文字を状態色にしない。
+// C4: 状態メッセージは独自の段落でなく Notice（左の状態色の線 + アイコン + 本文色）で出す。文字を状態色にしない。
+// 題なしのインラインアラートの色は、常設の注意書き = warning・同意の枠・ただの補足 = info（ガイド）。
 func TestStatusMessagesUseNotice(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -699,11 +700,20 @@ func TestStatusMessagesUseNotice(t *testing.T) {
 		{"update applying", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Applying: true})), []string{`data-update="applying"`}, "info", true},
 		{"killswitch active", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true})), []string{`data-killswitch="active"`}, "danger", true},
 		{"lease pending", webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{Pending: true, PendingMine: true})), []string{"data-lease-pending-message", `role="status"`}, "warning", false},
+		{"agent consent frame", webtest.Render(t, organisms.AgentForm(view.AgentForm{})), []string{`data-consent="openai"`}, "info", false},
+		{"fastpath consent frame", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{})), []string{`data-consent="typesafe"`}, "info", false},
+		{"task result note", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", ResultText: "r", ResultNote: "n", Status: view.TaskStatus{Code: "completed"}})), []string{"data-task-result-note"}, "info", false},
+		{"audit plaintext note", webtest.Render(t, organisms.SettingsForm(view.SettingsForm{})), []string{`data-notice="audit-plaintext"`}, "warning", false},
+		{"audit record-text note", webtest.Render(t, organisms.SettingsForm(view.SettingsForm{})), []string{`data-notice="audit-record-text"`}, "warning", false},
 		{"token error", webtest.Render(t, organisms.TokenFieldError("入力してください", "validation")), []string{`data-error-code="validation"`, `role="alert"`}, "danger", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			has(t, tt.out, append(tt.attrs, "border-"+tt.tone+"-line", "bg-"+tt.tone+"-wash", "text-ink", "<svg")...)
+			// 色は、その注意書き自身の枠に付いている（同じ出力にある別の注意書きの色で通らない）。
+			if open := regexp.MustCompile(`<div class="[^"]*" ` + regexp.QuoteMeta(tt.attrs[0])).FindString(tt.out); !strings.Contains(open, "border-l-"+tt.tone) {
+				t.Errorf("%s: its own frame is not border-l-%s: %q", tt.attrs[0], tt.tone, open)
+			}
+			has(t, tt.out, append(tt.attrs, "border-l-"+tt.tone, "bg-surface", "text-ink", "<svg")...)
 			// 操作の結果として現れるもの（422 の再描画・アクションの応答・状態の切り替わり）はフェードイン、常設のものは静か（M5）。
 			if tt.rises {
 				has(t, tt.out, "motion-rise-in")
@@ -727,8 +737,8 @@ func TestCardPaddingsFollowScale(t *testing.T) {
 	update := webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "v1.2.3", Verified: true}}))
 	has(t, update, `class="space-y-2 rounded-md bg-bone p-4" data-update="latest"`)
 	// カード内のまとまり同士は 24（--gap-card-section。space-y-6）。
-	has(t, update, `class="space-y-6 p-6"`)
-	hasNot(t, update, `class="space-y-4 p-6"`)
+	has(t, update, `class="p-6"><div class="space-y-6">`)
+	hasNot(t, update, `class="space-y-4 p-6"`, `<div class="space-y-4">`)
 	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
 	has(t, lease, "rounded-lg border border-border bg-surface p-4")
 	hasNot(t, lease, "bg-surface p-3")

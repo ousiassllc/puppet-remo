@@ -88,7 +88,8 @@ func TestAlertTonesIconsAndDismiss(t *testing.T) {
 	hasNot(t, tmpl, `role="alert"`)
 }
 
-// 常設の注意書き: 4 種の状態色の枠・アイコン・本文（本文色 ink）。見出しと閉じるボタンは持たず、role などは attrs で渡す。
+// 題なしのインラインアラート: 状態色は左の線（3px）だけ。ほかの 3 辺は --border 1px・地は --surface。アイコンは状態色・本文は ink。
+// 見出しと閉じるボタンは持たず、role などは attrs で渡す。
 func TestNoticeTonesIconsAndBody(t *testing.T) {
 	for tone, color := range map[atoms.AlertTone]string{atoms.AlertInfo: "info", atoms.AlertSuccess: "success", atoms.AlertWarning: "warning", atoms.AlertDanger: "danger"} {
 		body := templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
@@ -100,8 +101,8 @@ func TestNoticeTonesIconsAndBody(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := sb.String()
-		has(t, out, `role="note"`, `data-notice="n"`, "border-"+color+"-line", "bg-"+color+"-wash", "text-"+color, "<svg", "text-sm text-ink", `class="min-w-0 flex-1 space-y-2"`, ">本文</div>")
-		hasNot(t, out, "<h3", "<button", "text-xs")
+		has(t, out, `role="note"`, `data-notice="n"`, "border border-border", "border-l-3", "border-l-"+color, "bg-surface", "rounded-md", "px-4 py-3", "text-"+color, "<svg", "text-sm text-ink", `class="min-w-0 flex-1 space-y-2"`, ">本文</div>")
+		hasNot(t, out, "<h3", "<button", "text-xs", "bg-"+color+"-wash", "border-"+color+"-line")
 		webtest.AssertCSPCompliantHTML(t, out)
 	}
 }
@@ -121,7 +122,7 @@ func TestNoticeAnimatedRisesInOnlyWhenAsked(t *testing.T) {
 	}
 	attrs := atoms.Attrs{"role": "alert", "data-notice": "n"}
 	animated := render(atoms.NoticeAnimated(atoms.AlertDanger, attrs))
-	has(t, animated, `class="motion-rise-in flex items-start gap-2`, `role="alert"`, `data-notice="n"`, "border-danger-line", "<svg", ">本文</div>")
+	has(t, animated, `class="motion-rise-in flex items-start gap-3`, `role="alert"`, `data-notice="n"`, "border-l-danger", "<svg", ">本文</div>")
 	hasNot(t, render(atoms.Notice(atoms.AlertDanger, attrs)), "motion-")
 }
 

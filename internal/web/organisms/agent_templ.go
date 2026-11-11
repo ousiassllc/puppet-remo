@@ -394,7 +394,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "openai"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "openai"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -673,7 +673,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "typesafe"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "typesafe"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

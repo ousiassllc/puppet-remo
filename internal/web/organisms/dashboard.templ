@@ -163,37 +163,35 @@ templ KillSwitchPanelOOB(v view.KillSwitch) {
 }
 
 // killSwitchPanel の隠し入力（data-poll-rev）は、描画した状態の版。ポーリングが送り返し、変わっていなければサーバーは差し替えない。
+// 枠と題は molecules.Card。htmx は題ごとパネルを差し替える（outerHTML）ので、Card を #killswitch-panel の中に置く。
 templ killSwitchPanel(v view.KillSwitch, oob bool) {
-	<section
-		id="killswitch-panel"
-		class="rounded-lg border border-border bg-surface"
-		{ oobAttrs(oob)... }
-	>
+	<div id="killswitch-panel" { oobAttrs(oob)... }>
 		<input type="hidden" name="rev_killswitch" value={ v.Rev } data-poll-rev/>
-		<h2 class="border-b border-border px-6 py-3 text-2xl font-semibold text-ink">キルスイッチ</h2>
-		<div class="space-y-6 p-6">
-			if v.Active {
-				@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "status", "data-killswitch": "active"}) {
-					発動中です。すべての操作権を剥奪し、リモートからの要求を断っています。
+		@molecules.Card("キルスイッチ") {
+			<div class="space-y-6">
+				if v.Active {
+					@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "status", "data-killswitch": "active"}) {
+						発動中です。すべての操作権を剥奪し、リモートからの要求を断っています。
+					}
+					if v.Since != "" {
+						<p class="text-xs text-mute">{ v.Since } に発動（{ v.Source }）</p>
+					}
+				} else {
+					<p class="text-base text-ink" data-killswitch="inactive">
+						緊急時に、すべての操作権を剥奪し、リモートからの要求を断ちます。
+					</p>
 				}
-				if v.Since != "" {
-					<p class="text-xs text-mute">{ v.Since } に発動（{ v.Source }）</p>
+				if v.CanTrigger {
+					@atoms.Button(atoms.ButtonProps{Label: "キルスイッチを発動", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+						"hx-post": "/killswitch/trigger", "hx-target": "#killswitch-panel", "hx-swap": "outerHTML", "hx-disabled-elt": "this",
+					}})
 				}
-			} else {
-				<p class="text-base text-ink" data-killswitch="inactive">
-					緊急時に、すべての操作権を剥奪し、リモートからの要求を断ちます。
-				</p>
-			}
-			if v.CanTrigger {
-				@atoms.Button(atoms.ButtonProps{Label: "キルスイッチを発動", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-					"hx-post": "/killswitch/trigger", "hx-target": "#killswitch-panel", "hx-swap": "outerHTML", "hx-disabled-elt": "this",
-				}})
-			}
-			if v.CanRelease {
-				@atoms.Button(atoms.ButtonProps{Label: "キルスイッチを解除", Variant: atoms.ButtonPrimary, Attrs: atoms.Attrs{
-					"hx-get": v.ConfirmRoute, "hx-target": "#modal-root", "hx-swap": "innerHTML",
-				}})
-			}
-		</div>
-	</section>
+				if v.CanRelease {
+					@atoms.Button(atoms.ButtonProps{Label: "キルスイッチを解除", Variant: atoms.ButtonPrimary, Attrs: atoms.Attrs{
+						"hx-get": v.ConfirmRoute, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+					}})
+				}
+			</div>
+		}
+	</div>
 }
