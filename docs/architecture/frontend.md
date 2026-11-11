@@ -101,7 +101,7 @@ internal/web/
 └── layout/                   # gui, remote（<head>・ヘッダー・`hx-headers`・スクリプトの読み込み）
 
 static/
-├── package.json              # esbuild, tailwindcss, lit, htmx.org, htmx-ext-*, @fontsource-variable/{jetbrains-mono,noto-sans-jp,sora}, @open-wc/testing, @web/test-runner, @playwright/test
+├── package.json              # esbuild, tailwindcss, lit, htmx.org, htmx-ext-*, @fontsource-variable/{jetbrains-mono,noto-sans-jp,sora}, subset-font, @open-wc/testing, @web/test-runner, @playwright/test
 ├── playwright.config.ts      # E2E の設定（Chromium のみ。テスト専用サーバーをビルドして起動する webServer。§9）
 ├── esbuild.config.mjs
 ├── src/
@@ -485,7 +485,7 @@ graph LR
 
 - esbuild: エントリーポイントは各 Web Component（`screen-viewer`）と `src/app/` の 2 ファイル。出力形式は下記。本番は minify、開発は sourcemap
 - Tailwind CLI: `src/css/app.css` → `dist/css/app.css`（minify）。Templ のファイルをコンテンツとして走査する。デザインガイドのトークンはここで定義する（§8.4）
-- フォント: `scripts/copy-fonts.mjs` が `@fontsource-variable/*` の woff2 を `dist/fonts/` にコピーし、`src/css/fonts.generated.css`（`app.css` が `@import` する）を生成する（Tailwind より前に実行する）
+- フォント: `scripts/copy-fonts.mjs` が `@fontsource-variable/*` の woff2 を `dist/fonts/` に置き（Noto Sans JP の日本語の断片は JIS X 0208 の字だけにサブセット化して書き出す。§8.5）、`src/css/fonts.generated.css`（`app.css` が `@import` する）を生成する（Tailwind より前に実行する）
 - HTMX: `htmx.min.js`、`response-targets`、`sse` を `dist/js/` にコピーする（HTMX の拡張は別パッケージ）。**版の固定の手順**: 実装の着手時に `bun add htmx.org@2 htmx-ext-response-targets@2 htmx-ext-sse@2` で最新の 2.x を入れ、`bun.lock` をコミットして固定する。以降の更新は意図的に行い、E2E の CSP 違反の検査（§7.1）を通す
 - esbuild の出力形式: `htmx-config.ts` は IIFE（classic スクリプト。htmx の直後に同期で読み込む）、`app.ts` と Web Component は ES モジュール。Templ の `<script>` タグは外部ファイルの参照のみ（§7.1）で、モジュールには `type="module"` を付ける
 - 成果物は両ルーターが同じ `dist/` から配信する。`Cache-Control: no-cache` + `ETag`（ビルド ID。§2）
@@ -542,6 +542,41 @@ graph LR
 | 部品・オーバーレイ（O） | 確認・破壊的操作は中央モーダル（`--z-modal`・`rounded-xl`・`shadow-modal`。外側のスクラムのクリックで閉じる。確定のボタンは破壊的な操作（削除・失効・剥奪・中断）と、許可の範囲を広げる操作（起動の方式をブラックリストへ切り替える・拒否リストから外す）だけ危険で、キルスイッチの解除・更新の適用のような破壊的でない確認は主（`view.ConfirmModal.Destructive`。既定は主（false）で、破壊的な操作だけ true にする）。強制剥奪・タスクの中断も確認モーダルを経る。キルスイッチの発動は緊急停止なので 1 クリック）。トーストは画面下中央（`--z-toast`）・ピル・3 秒・同時に 1 つ。エラーはインラインアラート（`#alert-root`）。ボタンは主 / サブ / ゴースト / 危険（SemiBold・`rounded-md`・disabled は opacity .4。危険は塗りでなく、透明地・`--danger` の文字・`--danger` 45% の枠で、ホバーは `--danger` 10% の地）。タブは下線 2px `--accent`・非選択は `--mute`・選択は `--ink`（色の変化は `motion-hover`）。入力・選択・複数行・チェックボックス・スライダーは disabled が opacity .5（`fieldClass`・`app.css`。ボタンだけ .4）。サイドナビは幅 240・項目高さ 40・間隔 8・現在は `--accent-soft` + `--ink`、ヘッダーは高さ 56。モバイル（`md` 未満）はハンバーガー + 左ドロワー（§5.4）。ページ送りのボタンは高さ 36（`atoms.PagerButtonClass`。小ボタンの 32 ではない）。サイドバーの件数バッジは通知バッジ数（`--accent` 地 + `--bone` 字・11px Mono・最小 18px・99 超は `99+`。状態色にしない）。テキストリンクは `.link`（下線 `--mute`）。表は見出し行 SemiBold 12 `--mute` + 下線、行ホバー `--accent-soft`、padding `--table-pad-*`。スライダー（`atoms.Range`）は OS 標準にせず、トラック高さ 4・`--r-full`・未充填 `--accent-soft`・充填 `--accent`、つまみ 16 の円・`--surface` + 1px `--border`、フォーカスはつまみに `--ring` の 3px（`app.css` の `input[type="range"]`。Blink の充填は `--_v` を `app.ts` が `style.setProperty` で更新する）。スピナーは 20px・2px・1 回転 `--spinner-duration`（0.9s。`:root` の 1 か所に定義し、`.spinner` と Lit のビューアが参照する。`prefers-reduced-motion: reduce` でも止めない） |
 
 ライト／ダークの実描画の確認は `task gui:demo`（loopback。`prefers-color-scheme` または `<html data-theme>` で切り替える）で行う。
+
+### 8.5 Noto Sans JP のサブセット化（#130）
+
+Noto Sans JP の同梱フォントは、Fontsource の既定（日本語の約 120 断片、約 5.4 MB）のままだと配布物と初回の読み込みが重いので、**かな・カナ・JIS X 0208 の漢字・記号・英数字**に絞る（いろは案。オーナー承認）。範囲外の字は `--font-sans` の最後の `sans-serif`（OS のフォント）で表示される（第2水準にない人名用の字 `𠮷`・`髙`・`﨑`、絵文字など）。
+
+| 項目 | 内容 |
+|------|------|
+| 字種 | JIS X 0208 の 6,879 字（1〜8 区の記号・英数・かな・カナ・ギリシャ・キリル・罫線、16〜84 区の第1/第2水準漢字）に、半角カナ（U+FF61〜FF9F）と、WHATWG の EUC-JP の表が Windows 系の字（`～ ∥ － ￠ ￡ ￢`）にしている `〜 ‖ − ¢ £ ¬` の本来の字（U+301C・2016・2212・A2・A3・AC）、ダッシュ `—`（U+2014）を足したもの。ASCII・Latin-1 は元の `latin` の断片をそのまま同梱する |
+| 字種の出どころ | リポジトリにデータは置かない。`scripts/copy-fonts.mjs` が、ランタイムの `TextDecoder("euc-jp")`（WHATWG Encoding Standard の JIS X 0208 の表。標準の仕様の表で、JIS X 0208 は改訂されない）で 94×94 の区点を復号して求め、6,879 字であることを検査する（違えばビルドを止める）。bun は `scripts/ci/install-bun.sh` で版を固定している |
+| ツール | [`subset-font`](https://github.com/papandreou/subset-font)（MIT。HarfBuzz の wasm。`static/package.json` の devDependencies に完全一致の版で入れ、`bun.lock` で固定）。bun だけで動き、python・fonttools は要らない。同じ入力から同じバイト列を作る（連続 2 回のビルドで `dist/fonts` の全ファイルの md5 が一致することを確認した） |
+| 分割 | Fontsource の `unicode-range` による分割（断片ごとの `@font-face`）は維持する。各断片の範囲と JIS X 0208 の積を取り、その字だけを残した woff2（可変の `wght` 100〜900 は維持）で書き出し、`unicode-range` も積に書き換える。積が空の断片は捨てる |
+| 手順 | `cd static && bun install --frozen-lockfile && bun run build`（`build:fonts` が `dist/fonts` と `fonts.generated.css` を作る）。Noto Sans JP の版を上げたら `@fontsource-variable/noto-sans-jp` の版を `bun add -d -E` で更新し、`bun.lock` をコミットして、§8.6 の表記を作り直す |
+| Reserved Font Name | Noto Sans JP の OFL の著作権表示は `(c) 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'`。サブセットは改変版にあたるが、family 名は `Noto Sans JP`（`name` テーブルも Fontsource の元のまま）で、予約名 `Source` は名前に使っていない。ライセンスの全文と著作権表示は §8.6 の表記に載せる |
+
+前後の計測（`cd static && bun run build` 後の `dist/fonts`。前は develop `0d2fea3`）:
+
+| | ファイル数 | 合計 | Noto Sans JP の日本語の断片 | latin（Noto・Sora・JetBrains Mono） |
+|---|---:|---:|---|---:|
+| 前 | 123 | 5,520,596 B（5.27 MiB） | 120 個・5,421,916 B | 98,680 B |
+| 後 | 117 | 2,456,200 B（2.34 MiB） | 114 個・2,357,520 B | 98,680 B |
+
+合計は 44.5%（半分以下。目安の 2.5 MB 以下）。JIS X 0208 の字を 1 つも含まない 6 つの断片（U+2xxxx の拡張漢字だけの断片など）は同梱しなくなった。豆腐（□）が出ないことの確認は、`internal/`・`static/src` のソースに書かれた非 ASCII の字のうち、生成した `unicode-range` の外にあるものを洗い出して行う（残るのは、コメント内の `≒`、デモ・テストのデータの `①〜④` と絵文字だけで、画面の文言にはない）。範囲外の字（`𠮷` など）は `font-family` の最後の `sans-serif`（OS のフォント）に落ちる。画面の文言に範囲外の字を足すときは、OS のフォントで表示されることを許容できる字かを確かめる。
+
+### 8.6 ライセンス表記（#133）
+
+配布物（インストーラー）とアプリ画面の両方で、同梱する第三者のソフトウェアのライセンスの全文が読める。OFL・MIT・BSD は、再配布するときに著作権表示とライセンス文を付けることを求める。
+
+| 項目 | 内容 |
+|------|------|
+| 本体 | [`licenses/THIRD_PARTY_NOTICES.txt`](../../licenses/THIRD_PARTY_NOTICES.txt)（Git に入れる生成物。`licenses/licenses.go` が `go:embed` する） |
+| 載せるもの | 配布物に実際に入るものだけ。フォント（Sora・Noto Sans JP・JetBrains Mono の OFL 全文と各著作権表示。各 `@fontsource-variable/*` の `LICENSE` をそのまま）、アイコン（Iconoir の MIT 全文。`static/scripts/third-party/iconoir-LICENSE`）、フロントエンドのライブラリ（htmx・拡張 2 つ・Lit 一式・Tailwind CSS。`node_modules` の `LICENSE`）、Go の標準ライブラリと、Windows の本番ビルド（`-tags production`）にリンクされる Go のモジュール（モジュールの `LICENSE`・`COPYING`）。同じ本文は 1 つにまとめて、対象を並べる |
+| 作り方 | `cd static && bun install --frozen-lockfile && bun scripts/third-party-notices.mjs`。`--check` を付けると、作り直した内容が Git の内容と同じかを確かめる（CI の frontend ジョブが走らせる。依存を足したのに表記を作り直し忘れると落ちる） |
+| アプリ画面 | ホスト GUI の `GET /licenses`（`handler/gui/licenses.go`。全文を `<pre>` に出す。`Card` だけで組む）。設定の画面の末尾の 1 文から開く。リモート Web UI（tailnet）には出さない（`internal/router` のテストが 404 を検査する） |
+| インストーラー | `build/windows/nsis/project.nsi` が `File "..\..\..\licenses\THIRD_PARTY_NOTICES.txt"` でインストール先（`$INSTDIR`）に置く。アンインストールは `RMDir /r $INSTDIR` で一緒に消える。`makensis` の出力（`File: "THIRD_PARTY_NOTICES.txt"`）で同梱を確かめた。Release の作成は CI（`nightly.yml`・`release.yml`）だけが行い、ここでは行わない（[配信](../operations/release.md)） |
+| 更新の手順 | フォント・アイコン・JS のライブラリ・Go のモジュールを足す／上げるときは、`scripts/third-party-notices.mjs` の対象（フォントは `fonts`、ライブラリは `nodeLibs`）を更新して表記を作り直し、同じコミットに入れる。Go のモジュールは `go list -deps` から自動で拾う。`licenses/licenses_test.go` が、`static/package.json` の依存（フォント・htmx・Lit・Tailwind）が表記にあることを検査する |
 
 ## 9. テスト戦略
 
