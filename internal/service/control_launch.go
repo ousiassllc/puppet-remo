@@ -67,7 +67,10 @@ type launchTrace struct {
 	label   string            // 許可リストを引けたときの表示名
 	leaseID string            // 保持者のリース ID
 	mode    domain.LaunchMode // 検査した方式（読めたとき）
-	scoped  bool              // 保持者のリースがウィンドウに束縛されている（監査のサムネイル＝モニター全体の撮影を撮らない）
+	// denylist の path 指定の起動だけ（#173）。AppLauncher.Resolve が返した実体のパス（解決できたとき）と、解決できなかったこと。
+	resolvedPath  string
+	resolveFailed bool
+	scoped        bool // 保持者のリースがウィンドウに束縛されている（監査のサムネイル＝モニター全体の撮影を撮らない）
 }
 
 // launch は検査と起動を行い、結果と監査用の値を返す。
@@ -139,7 +142,7 @@ func (c *control) resolveLaunchTarget(ctx context.Context, req LaunchRequest, tr
 		if tr.mode != domain.LaunchModeDenylist {
 			return platform.LaunchSpec{}, "", domain.ErrInvalidArgument.WithMsg("path is not accepted: pass app_id of an app from list_launchable_apps")
 		}
-		return c.resolveLaunchPath(ctx, req.Path)
+		return c.resolveLaunchPath(ctx, req.Path, tr)
 	}
 	app, err := c.apps.Get(ctx, req.AppID)
 	switch {
@@ -162,11 +165,17 @@ func (c *control) resolveLaunchTarget(ctx context.Context, req LaunchRequest, tr
 }
 
 // resolveLaunchPath は denylist 方式の path 指定の起動の検査（resolveLaunchTarget）。
-func (c *control) resolveLaunchPath(ctx context.Context, path string) (platform.LaunchSpec, string, error) {
+// 解決の結果（実体のパス、または解決できなかったこと）は、許可・拒否どちらでも tr に残す（監査の detail。#173）。
+func (c *control) resolveLaunchPath(ctx context.Context, path string, tr *launchTrace) (platform.LaunchSpec, string, error) {
 	if !domain.ValidateLaunchPath(path) {
 		return platform.LaunchSpec{}, "", domain.ErrInvalidArgument.WithMsg("path must be an absolute path of a local .exe (drive letter, no UNC, no \"..\")")
 	}
 	resolved, err := c.checkNotDenied(ctx, path)
+	if resolved != "" {
+		tr.resolvedPath = resolved
+	} else if err != nil {
+		tr.resolveFailed = true // checkNotDenied は Resolve が成功したときだけ resolved を返す
+	}
 	if err != nil {
 		return platform.LaunchSpec{}, "", err
 	}
@@ -178,7 +187,8 @@ var errResolvedNotExe = errors.New("service: the resolved executable is not a .e
 
 // checkNotDenied は exePath を実体のパスに解決し（固定ディスク上の実在でなければ launch_failed）、拒否リストに当たらないことを確かめる。
 // 当たれば ErrAppDenied。実体が .exe でない（.exe 名のリンクの先が .bat・.cmd など。CreateProcess はそれを cmd.exe 経由で実行しうる）ときは
-// launch_failed（access_denied）。戻り値は解決した実体のパス。
+// launch_failed（access_denied）。戻り値は解決した実体のパスで、Resolve が成功したときは、拒否・非 .exe などのエラーでも返す
+// （呼び出し側が監査に残す）。Resolve が失敗したときだけ空。
 func (c *control) checkNotDenied(ctx context.Context, exePath string) (string, error) {
 	resolved, err := c.launcher.Resolve(ctx, exePath)
 	if err != nil {
@@ -186,17 +196,17 @@ func (c *control) checkNotDenied(ctx context.Context, exePath string) (string, e
 	}
 	denied, err := c.apps.ListDenied(ctx)
 	if err != nil {
-		return "", err
+		return resolved, err
 	}
 	denied, err = c.withReresolvedPaths(ctx, denied)
 	if err != nil {
-		return "", err
+		return resolved, err
 	}
 	if domain.MatchDenied(denied, exePath, resolved) {
-		return "", domain.ErrAppDenied
+		return resolved, domain.ErrAppDenied
 	}
 	if !domain.ValidateLaunchPath(resolved) {
-		return "", launchFailure(&platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errResolvedNotExe})
+		return resolved, launchFailure(&platform.LaunchError{Reason: domain.LaunchAccessDenied, Err: errResolvedNotExe})
 	}
 	return resolved, nil
 }
@@ -271,6 +281,8 @@ const maxAuditLaunchPathRunes = 1024
 
 // launchTargetDetail は起動の指定の監査の detail（試行と結果の行で共通）。app_id は指定があったときだけ、path は指定があったときだけ
 // （形が正しいものだけ、呼び出し側が渡した綴りのまま・長さを切る。引数・作業ディレクトリは受け取らないので無い）、label は許可リストを引けたときだけ入る。
+// denylist の path 指定の起動は、AppLauncher.Resolve の結果も残す（#173）: 解決できたら resolved_path（実体のパス。リンク・8.3 短縮名を解決済み）、
+// 解決できなかったら resolve_failed = true（resolved_path は無い。理由は結果の行の reason）。拒否した起動にも付く。allowlist の記録は変えない。
 func launchTargetDetail(req LaunchRequest, tr launchTrace) map[string]any {
 	detail := map[string]any{}
 	if domain.ValidateLaunchPath(req.Path) { // 形が不正な値は、未検証の入力なので記録しない（NFR-S13）
@@ -284,6 +296,12 @@ func launchTargetDetail(req LaunchRequest, tr launchTrace) map[string]any {
 	}
 	if tr.mode == domain.LaunchModeDenylist {
 		detail["launch_mode"] = string(tr.mode) // allowlist は今まで通り記録しない
+	}
+	if tr.resolvedPath != "" {
+		detail["resolved_path"] = domain.TruncateRunes(tr.resolvedPath, maxAuditLaunchPathRunes)
+	}
+	if tr.resolveFailed {
+		detail["resolve_failed"] = true
 	}
 	return detail
 }

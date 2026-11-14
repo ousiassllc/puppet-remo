@@ -37,6 +37,9 @@ func classify(err error) failure {
 		return failure{http.StatusConflict, string(domain.CodeConflict), "すでに処理済みか、現在の状態と合わないため実行できませんでした。"}
 	case domain.CodeKillSwitchActive:
 		return failure{http.StatusServiceUnavailable, string(domain.CodeKillSwitchActive), "キルスイッチが発動中です。"}
+	case domain.CodeAuditUnavailable:
+		// 監査に書けない操作は成立させない（fail-closed。起動の方式の切り替え。#174）。
+		return failure{http.StatusServiceUnavailable, string(domain.CodeAuditUnavailable), "監査ログに書き込めないため、起動の方式は切り替えませんでした。時間をおいてやり直してください。"}
 	}
 	return failure{http.StatusInternalServerError, string(domain.CodeInternal), "内部エラーが発生しました。"}
 }
