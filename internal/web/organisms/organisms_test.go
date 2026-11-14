@@ -115,14 +115,18 @@ func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
-// タスク・監査ログの詳細: h2 で始まるセクション同士は、48（--gap-section-sm。space-y-12）で区切る（S5）。
-func TestDetailPagesSeparateSectionsByGapSectionSm(t *testing.T) {
+// タスク・監査ログの詳細: 題付きのセクション（molecules.Card。#166）同士は、24（--gap-card-section。space-y-6）で区切る。
+// 題は Card の h2（lg 18）で、直書きの text-2xl の h2 ではない。
+func TestDetailPagesSeparateCardsByGapCardSection(t *testing.T) {
 	task := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1"}))
-	has(t, task, `class="space-y-12" data-task-detail="t1"`)
+	has(t, task, `class="space-y-6" data-task-detail="t1"`)
 	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click"}))
-	has(t, audit, `class="space-y-12" data-audit-detail="click"`)
-	hasNot(t, task, `class="space-y-4" data-task-detail`)
-	hasNot(t, audit, `class="space-y-4" data-audit-detail`)
+	has(t, audit, `class="space-y-6" data-audit-detail="click"`)
+	hasNot(t, task, `class="space-y-4" data-task-detail`, `class="space-y-12"`)
+	hasNot(t, audit, `class="space-y-4" data-audit-detail`, `class="space-y-12"`)
+	const cardTitle = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">`
+	has(t, task, cardTitle+"指示</h2>", cardTitle+"最終回答</h2>", cardTitle+"ステップ</h2>")
+	has(t, audit, cardTitle+"引数</h2>", cardTitle+"サムネイル</h2>")
 }
 
 // ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
@@ -740,9 +744,10 @@ func TestCardPaddingsFollowScale(t *testing.T) {
 	// カード内のまとまり同士は 24（--gap-card-section。space-y-6）。
 	has(t, update, `class="p-6"><div class="space-y-6">`)
 	hasNot(t, update, `class="space-y-4 p-6"`, `<div class="space-y-4">`)
+	// 操作権のパネルも molecules.Card（題 lg 18・本文 --s-6。#166）。
 	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
-	has(t, lease, "rounded-lg border border-border bg-surface p-4")
-	hasNot(t, lease, "bg-surface p-3")
+	has(t, lease, `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">操作権</h2><div class="p-6">`)
+	hasNot(t, lease, "bg-surface p-3", "bg-surface p-4", "text-2xl")
 }
 
 // T5: ポート番号は桁を揃える値なので font-mono（隣の IP・MagicDNS 名の <code> と同じ書体）。

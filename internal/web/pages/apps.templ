@@ -14,7 +14,6 @@ templ appsBody(v view.Apps) {
 		<p class="text-base text-ink">リモートの MCP クライアントが <code>launch_app</code> で起動できるアプリを決める画面です。既定のホワイトリスト方式では、ここに登録したものだけが起動できます。起動の方式の切り替えと、登録・編集・削除はこの画面（ホスト）でだけ行えます。</p>
 		@organisms.LaunchModePanel(v.Mode)
 		@organisms.AppList(v.List)
-		<h2 class="sr-only">アプリの登録</h2>
 		@organisms.AppForm(v.NewForm, false)
 		@organisms.DeniedSection(v.Denied)
 	</div>
