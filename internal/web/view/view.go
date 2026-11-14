@@ -519,10 +519,12 @@ type AuditRow struct {
 	HasThumb   bool
 }
 
-// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・「次へ」）。NextURL が空なら次のページは無い。
+// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・ページ送り）。PrevURL・NextURL が空なら、その向きのページは無い。
 type AuditList struct {
 	Filters AuditFilters
 	Rows    []AuditRow
+	Page    int
+	PrevURL string
 	NextURL string
 }
 

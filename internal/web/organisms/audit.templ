@@ -131,19 +131,8 @@ templ AuditList(v view.AuditList) {
 				</table>
 			</div>
 		}
-		if v.NextURL != "" {
-			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
-				<a
-					href={ templ.SafeURL(v.NextURL) }
-					class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
-					data-ripple
-					hx-get={ v.NextURL }
-					hx-target="#audit-list"
-					hx-swap="outerHTML"
-					hx-push-url="true"
-					data-pager-next
-				>次へ（古いログ）</a>
-			</nav>
+		if v.PrevURL != "" || v.NextURL != "" {
+			@molecules.Pager(molecules.PagerProps{Page: v.Page, PrevURL: v.PrevURL, NextURL: v.NextURL, PrevLabel: "前へ（新しいログ）", NextLabel: "次へ（古いログ）", Target: "#audit-list"})
 		}
 	</div>
 }
