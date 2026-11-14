@@ -209,13 +209,15 @@ templ TaskDetail(v view.TaskDetail) {
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-border">
-							for _, s := range v.Steps {
+							for i, s := range v.Steps {
 								<tr class="hover:bg-accent-soft" data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route } data-step-kind={ stepKind(s) }>
 									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right font-mono text-ink">
 										if s.KindLabel == "" {
 											{ strconv.Itoa(s.No) }
 										} else {
-											<span class="text-mute" title={ "ステップ " + strconv.Itoa(s.No) + " に付く行" }>-</span>
+											@atoms.Tooltip("step-row-tip-"+strconv.Itoa(i), "ステップ "+strconv.Itoa(s.No)+" に付く行") {
+												<span class="text-mute">-</span>
+											}
 										}
 									</td>
 									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y)">

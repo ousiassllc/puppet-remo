@@ -803,3 +803,43 @@ func TestApprovalDialogMatchesModalBody(t *testing.T) {
 	has(t, webtest.Render(t, organisms.ApprovalDone(view.ApprovalDone{Allowed: true})), body)
 	has(t, webtest.Render(t, organisms.ApprovalGone(view.ApprovalGone{Message: "m"})), body)
 }
+
+// #169: アクション以外の行（Judge の判定など）のステップ番号の「-」は、title 属性ではなくツールチップ（atoms.Tooltip）で「ステップ N に付く行」を出す。
+// 行ごとに id が違い、aria-describedby が自分の本文を指す。
+func TestTaskDetailAuxRowUsesATooltipNotTitle(t *testing.T) {
+	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{
+		{No: 1, Summary: "クリック"},
+		{No: 1, KindLabel: "判定", Summary: "Judge"},
+		{No: 2, KindLabel: "判定", Summary: "Judge"},
+	}}))
+	has(t, out,
+		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
+		`aria-describedby="step-row-tip-2"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
+	hasNot(t, out, "title=", `id="step-row-tip-0"`)
+}
+
+// #166: 項目名の見出し（クライアント名・アプリ名・接続要求のデバイス名）は h3 の base 16 SemiBold（ガイドの見出しの段の h3）で、
+// カードの題（h2・lg 18・下罫線）とは別。32px・24px の直書きにしない。詳細ページのクライアントカードは名前を出さない（名前はページの h1）。
+func TestItemNameHeadingsAreH3Base16(t *testing.T) {
+	const want = "text-base font-semibold text-ink"
+	for name, tc := range map[string]struct{ out, title string }{
+		"client":  {webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc-main", CanOpenDetail: true})), "pc-main"},
+		"app":     {webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a1", Label: "メモ帳"})), "メモ帳"},
+		"request": {webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "laptop"}}})), "laptop"},
+	} {
+		found := false
+		for _, e := range webtest.Elements(t, tc.out, "h1", "h2", "h3") {
+			if e.Text == tc.title {
+				found = true
+				if e.Tag != "h3" || e.Class != want {
+					t.Errorf("%s: %s %q, want h3 %q", name, e.Tag, e.Class, want)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: no heading %q in:\n%s", name, tc.title, tc.out)
+		}
+	}
+	detail := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc-main"}))
+	hasNot(t, detail, "<h1", "<h3", "pc-main</h")
+}
