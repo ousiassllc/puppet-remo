@@ -75,6 +75,17 @@ func TestSetLaunchModeRejectsUnknownValues(t *testing.T) {
 	}
 }
 
+// 監査に書けなくて切り替えが戻された（audit_unavailable）ときは、503 のアラートを返し、方式は変わらない（#174）。
+func TestSetLaunchModeAuditFailureIs503AndKeepsTheMode(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) { f.Apps.WriteErr = domain.ErrAuditUnavailable })
+	res := r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	contains(t, res, `data-error-code="audit_unavailable"`)
+	if got, _ := r.f.Apps.LaunchMode(context.Background()); got != domain.LaunchModeAllowlist {
+		t.Errorf("mode = %q, want allowlist (unchanged)", got)
+	}
+}
+
 func TestDeniedCreateUpdateDelete(t *testing.T) {
 	r := newRig(t)
 	res := r.post("/apps/denied", url.Values{"value": {"  cmd.exe "}}, hx...)
@@ -136,7 +147,7 @@ func TestDeniedFullIs409AndUnknownIs404(t *testing.T) {
 	})
 	res := r.post("/apps/denied", url.Values{"value": {"one-more.exe"}}, hx...)
 	status(t, res, http.StatusConflict)
-	contains(t, res, "200 件まで")
+	contains(t, res, `data-error-code="conflict"`)
 	for _, target := range []string{"/apps/denied/nope/edit", "/apps/denied/nope/delete/confirm"} {
 		status(t, r.get(target, hx...), http.StatusNotFound)
 	}

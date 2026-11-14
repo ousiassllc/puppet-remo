@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -390,6 +391,22 @@ func callTool(t *testing.T, cs *mcpsdk.ClientSession, name string, args ...map[s
 		t.Fatalf("call %s: %v", name, err)
 	}
 	return res
+}
+
+// errorCode は isError の結果の structuredContent から、エラーコード（domain.Code）を返す。
+func errorCode(t *testing.T, res *mcpsdk.CallToolResult) domain.Code {
+	t.Helper()
+	raw, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Code domain.Code `json:"code"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	return body.Code
 }
 
 // holder は今のリース保持者。

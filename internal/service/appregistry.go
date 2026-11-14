@@ -1,9 +1,11 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -45,6 +47,9 @@ type AppRegistry interface {
 	Delete(ctx context.Context, id string) error
 	// SetLaunchMode は起動の方式（設定 launch.mode）を切り替える（ホスト GUI だけ。MCP・Web UI には経路が無い）。
 	// 不正な値は AppFieldErrors{"mode": …}。変わるときだけ settings.launch_mode.update を監査する（from・to）。
+	// fail-closed（#174）: 設定を書いたあと、監査の行を同期で書き（SyncAuditRecorder.RecordSync）、書けなければ設定を元の方式へ戻して
+	// domain.ErrAuditUnavailable（code = audit_unavailable）を返す。成功を返すのは、設定の変更と監査の行がそろったときだけ。
+	// 他の settings.*（許可リスト・拒否リスト）の監査は今までどおり非同期（best-effort）。
 	SetLaunchMode(ctx context.Context, mode domain.LaunchMode) error
 	// CreateDenied は拒否リストに 1 件登録する。value は実行ファイルのパス（登録時に実体のパスへ解決して保存する。
 	// ファイルが無い・解決できないときは入力の綴りのまま）か、実行ファイル名（cmd.exe など）。domain.ClassifyDenied が分ける。
@@ -92,19 +97,25 @@ type AppRegistryConfig struct {
 	// Launcher は存在確認（Inspect）と拒否リストのパスの解決（Resolve）にだけ使う。起動（Launch）は Control だけが呼ぶ。
 	Launcher platform.AppLauncher
 	Picker   platform.FilePicker
-	Audit    AuditRecorder // nil なら記録しない
-	Clock    domain.Clock
-	IDs      domain.IDGen
+	// Audit は監査の記録先。nil なら記録しない（テスト用）。SetLaunchMode だけが RecordSync（同期。書けなければ切り替えを戻す）を使い、
+	// ほかの書き込みは Record（非同期）。
+	Audit  SyncAuditRecorder
+	Clock  domain.Clock
+	IDs    domain.IDGen
+	Logger *slog.Logger // nil なら slog.Default()。方式の切り替えを監査に書けなかったときの出力先
 }
 
-type appRegistry struct{ cfg AppRegistryConfig }
+type appRegistry struct {
+	cfg AppRegistryConfig
+	log *slog.Logger
+}
 
 // NewAppRegistry は AppRegistry を返す。
 func NewAppRegistry(cfg AppRegistryConfig) (AppRegistry, error) {
 	if cfg.Apps == nil || cfg.Denied == nil || cfg.Settings == nil || cfg.Launcher == nil || cfg.Picker == nil || cfg.Clock == nil || cfg.IDs == nil {
 		return nil, errors.New("service: app registry requires Apps, Denied, Settings, Launcher, Picker, Clock and IDs")
 	}
-	return &appRegistry{cfg: cfg}, nil
+	return &appRegistry{cfg: cfg, log: cmp.Or(cfg.Logger, slog.Default())}, nil
 }
 
 func (r *appRegistry) List(ctx context.Context) ([]domain.LaunchableApp, error) {
@@ -258,16 +269,20 @@ func (r *appRegistry) audit(ctx context.Context, event string, detail map[string
 	if r.cfg.Audit == nil {
 		return
 	}
+	r.cfg.Audit.Record(ctx, r.auditEntry(event, detail))
+}
+
+func (r *appRegistry) auditEntry(event string, detail map[string]any) repository.AuditEntry {
 	raw, err := json.Marshal(detail)
 	if err != nil {
 		raw = nil
 	}
-	r.cfg.Audit.Record(ctx, repository.AuditEntry{
+	return repository.AuditEntry{
 		TS:         r.cfg.Clock.Now(),
 		Kind:       "settings",
 		Event:      event,
 		ActorType:  domain.ActorHost,
 		Result:     auditOK,
 		DetailJSON: raw,
-	})
+	}
 }
