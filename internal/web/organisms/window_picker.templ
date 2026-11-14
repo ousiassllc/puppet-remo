@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
 )
 
@@ -21,44 +22,46 @@ func selectWindowAttrs(r view.WindowRow) atoms.Attrs {
 // 選ぶと自動で対象に入るので出さない）、昇格・最小化・検証前の種類は灰色で選べない。更新ボタン、自動更新（3 秒）、リースの変化で再取得する。
 // リースを保持中・他者が保持・承認待ちのあいだは一覧を出さず、状態を示す。「別のウィンドウを選ぶ」はリースの解放（バナーの
 // ボタンが remo:reselect を出し、下の隠し要素が解放を送る）。
+// 枠と題は molecules.Card。htmx は題ごと差し替える（outerHTML）ので、Card を #window-picker の中に置く。更新ボタンは本文の先頭。
 templ WindowPicker(v view.WindowPicker) {
-	<section
+	<div
 		id="window-picker"
-		class="rounded-lg border border-border bg-surface p-4"
-		aria-label="操作するウィンドウ"
 		hx-get="/viewer/windows"
 		hx-trigger="every 3s, remo:lease-changed from:#viewer-root"
 		hx-target="this"
 		hx-swap="outerHTML"
 	>
-		<div class="mb-2 flex items-center justify-between gap-2">
-			<h2 class="text-base font-semibold text-ink">操作するウィンドウ</h2>
-			if v.CanSelect || v.Error != "" {
-				@atoms.Button(atoms.ButtonProps{Label: "一覧を更新", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
-					"hx-get": "/viewer/windows", "hx-target": "#window-picker", "hx-swap": "outerHTML", "hx-disabled-elt": "this", "data-window-refresh": true,
-				}})
-			}
-		</div>
-		if v.ScopedProcess != "" {
-			<p class="text-sm text-ink" data-window-scoped>対象のウィンドウ: <span>{ v.ScopedProcess }</span>（ウィンドウ 1 枚と関連するダイアログ・メニューだけを表示・操作します）</p>
-		} else if v.Message != "" {
-			@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-window-message": true}) {
-				{ v.Message }
-			}
-		} else if v.Error != "" {
-			@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-window-error": true}) {
-				{ v.Error }
-			}
-		} else if len(v.Rows) == 0 {
-			<p class="text-sm text-mute" data-window-empty>選べるウィンドウがありません。</p>
-		} else {
-			<ul class="divide-y divide-border" data-window-list>
-				for _, r := range v.Rows {
-					@windowRow(r)
+		@molecules.Card("操作するウィンドウ") {
+			<div class="space-y-4">
+				if v.CanSelect || v.Error != "" {
+					<div class="flex justify-end">
+						@atoms.Button(atoms.ButtonProps{Label: "一覧を更新", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+							"hx-get": "/viewer/windows", "hx-target": "#window-picker", "hx-swap": "outerHTML", "hx-disabled-elt": "this", "data-window-refresh": true,
+						}})
+					</div>
 				}
-			</ul>
+				if v.ScopedProcess != "" {
+					<p class="text-sm text-ink" data-window-scoped>対象のウィンドウ: <span>{ v.ScopedProcess }</span>（ウィンドウ 1 枚と関連するダイアログ・メニューだけを表示・操作します）</p>
+				} else if v.Message != "" {
+					@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-window-message": true}) {
+						{ v.Message }
+					}
+				} else if v.Error != "" {
+					@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-window-error": true}) {
+						{ v.Error }
+					}
+				} else if len(v.Rows) == 0 {
+					<p class="text-sm text-mute" data-window-empty>選べるウィンドウがありません。</p>
+				} else {
+					<ul class="divide-y divide-border" data-window-list>
+						for _, r := range v.Rows {
+							@windowRow(r)
+						}
+					</ul>
+				}
+			</div>
 		}
-	</section>
+	</div>
 }
 
 templ windowRow(r view.WindowRow) {

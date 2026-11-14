@@ -618,6 +618,12 @@
     visibility: visible;
     animation: motion-fade-in var(--motion-fade-in) var(--ease-out) both;
   }
+  /* forced-colors（ハイコントラスト）では背景色が OS の色に置き換わり、枠の無い本文は表の文字に重なって読めない。枠を足して区切る。 */
+  @media (forced-colors: active) {
+    .tip {
+      border: 1px solid CanvasText;
+    }
+  }
 
   /* ホバーは色・背景だけ・180ms 以内（M1）。 */
   .motion-hover {

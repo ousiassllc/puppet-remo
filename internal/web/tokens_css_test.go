@@ -305,6 +305,10 @@ func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
 			t.Errorf("tooltip on %s must become visible with the fade-in:\n%s", name, r)
 		}
 	}
+	// forced-colors では背景が OS の色になって表の文字に重なるので、枠で区切る。
+	if !regexp.MustCompile(`(?s)@media \(forced-colors: active\) \{\s*\.tip \{[^}]*border: 1px solid CanvasText;`).MatchString(css) {
+		t.Error(".tip needs a CanvasText border under @media (forced-colors: active)")
+	}
 	if !strings.Contains(hover, "400ms") || strings.Contains(focus, "400ms") {
 		t.Errorf("the 400ms show delay applies to hover only (focus is immediate):\nhover: %s\nfocus: %s", hover, focus)
 	}
