@@ -141,7 +141,8 @@
   --gap-grid: var(--s-4);
   --gap-grid-lg: var(--s-6);
   --gap-grid-dense: var(--s-3);
-  --gap-label: var(--s-2);
+  /* ガイドの 6px。--s-* のスケール（4 の倍数）には 6 が無いので、ここだけスケール外の値を直に持つ。templ は mb-(--gap-label) で参照する。 */
+  --gap-label: 6px;
   --gap-help: var(--s-1);
   --gap-field: var(--s-4);
   --gap-h1: var(--s-6);

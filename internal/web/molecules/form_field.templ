@@ -20,7 +20,7 @@ templ FieldError(id, errMsg string) {
 // Error があるときだけ描画する（role=alert。クライアント側の検証 JS は持たない）。
 templ FormField(id, label, hint, errMsg string) {
 	<div>
-		<label for={ id } class="mb-2 block text-sm text-ink">{ label }</label>
+		<label for={ id } class="mb-(--gap-label) block text-sm text-ink">{ label }</label>
 		{ children... }
 		if hint != "" {
 			<p class={ hintClass(hint) }>{ hint }</p>
