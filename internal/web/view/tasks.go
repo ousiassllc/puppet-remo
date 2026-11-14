@@ -35,9 +35,11 @@ type TaskRow struct {
 	Elapsed       string
 }
 
-// TaskList はタスクの一覧の 1 ページ（表・「次へ」）。NextURL が空なら次のページは無い。
+// TaskList はタスクの一覧の 1 ページ（表・ページ送り）。PrevURL・NextURL が空なら、その向きのページは無い。
 type TaskList struct {
 	Rows    []TaskRow
+	Page    int
+	PrevURL string
 	NextURL string
 }
 

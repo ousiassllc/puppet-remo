@@ -31,7 +31,7 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		"--gap-h1", "--gap-h2", "--gap-h3", "--gap-heading-body", "--gap-para",
 		"--pad-card", "--pad-card-sm", "--gap-card-section", "--gap-inline",
 		"--gap-section", "--gap-section-sm",
-		"--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
+		"--tip-pad-y", "--tip-pad-x", "--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
 		"--toast-h", "--icon-sm", "--icon-md", "--icon-lg", "--icon-xl",
 		"--table-pad-y", "--table-pad-x", "--table-pad-y-compact", "--table-pad-x-compact",
 		"--table-head-size", "--table-body-size", "--table-row-hover", "--table-divider",
@@ -278,5 +278,34 @@ func TestModalMotionUsesTheSlowBand(t *testing.T) {
 		if !regexp.MustCompile(pattern).MatchString(css) {
 			t.Errorf("app.css must define %s with the --motion-slow band", name)
 		}
+	}
+}
+
+// #169: ツールチップ（atoms.Tooltip）はホバーでもキーボードのフォーカスでも出る（ガイド「ツールチップ」）。padding は --tip-pad-*、角丸は --r-sm、
+// 表示の遅延はホバーだけ 400ms（フォーカスは即時）。隠れている間は visibility: hidden で、非対話（pointer-events: none）。
+func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
+	css := readAppCSS(t)
+	rule := func(selector string) string {
+		t.Helper()
+		m := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(selector) + ` \{([^}]*)\}`).FindStringSubmatch(css)
+		if m == nil {
+			t.Fatalf("app.css has no rule for %s", selector)
+		}
+		return m[1]
+	}
+	base := rule(".tip")
+	for _, want := range []string{"visibility: hidden;", "pointer-events: none;", "padding: var(--tip-pad-y) var(--tip-pad-x);", "border-radius: var(--radius-sm);", "background: var(--ink);", "color: var(--bone);", "font-size: var(--text-xs);", "z-index: var(--z-dropdown);"} {
+		if !strings.Contains(base, want) {
+			t.Errorf(".tip lacks %q:\n%s", want, base)
+		}
+	}
+	hover, focus := rule(".tip-host:hover > .tip"), rule(".tip-host:focus-visible > .tip")
+	for name, r := range map[string]string{"hover": hover, "focus-visible": focus} {
+		if !strings.Contains(r, "visibility: visible;") || !strings.Contains(r, "motion-fade-in var(--motion-fade-in)") {
+			t.Errorf("tooltip on %s must become visible with the fade-in:\n%s", name, r)
+		}
+	}
+	if !strings.Contains(hover, "400ms") || strings.Contains(focus, "400ms") {
+		t.Errorf("the 400ms show delay applies to hover only (focus is immediate):\nhover: %s\nfocus: %s", hover, focus)
 	}
 }

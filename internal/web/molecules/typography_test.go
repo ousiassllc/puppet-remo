@@ -13,8 +13,8 @@ import (
 )
 
 // T3: 見出しの「段」（ガイド「アプリ内の見出しの段」・設定画面のパーツ）。見た目はタグではなくクラスで決める:
-// モーダルの題・カードの題 = lg 18 SemiBold、項目の見出し（h3）= base 16 SemiBold（クライアント名などは xl 24。#155 でタグだけを整えた既存の見た目）、
-// インラインアラートの題 = sm 14 SemiBold。本文と同じ text-base の SemiBold を題にしない（アラートの題を 16 にしない）。
+// モーダルの題・カードの題 = lg 18 SemiBold、項目の見出し（h3）= base 16 SemiBold（クライアント名・アプリ名もこの段。#166。
+// organisms_test の TestItemNameHeadingsAreH3Base16）、インラインアラートの題 = sm 14 SemiBold。本文と同じ text-base の SemiBold を題にしない（アラートの題を 16 にしない）。
 func TestHeadingsFollowTheGuideLadder(t *testing.T) {
 	type rung struct{ size, weight string }
 	ladder := func(class string) rung {

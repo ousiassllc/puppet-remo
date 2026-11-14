@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -78,36 +79,58 @@ func TestTasksListEmpty(t *testing.T) {
 	lacks(t, res, "<table", "data-pager-next")
 }
 
-// 50 件ずつ: 51 件あれば「次へ」が出て、cursor で残りが出る（フラグメントは一覧だけ）。
+// 50 件ずつ: 101 件あれば 3 ページになり、先頭は前へが押せず、端（3 ページ目）は次へが押せない。前へは 1 つ前のページに戻り、
+// 同じ行が出る（cursor は次へしか進めないので、back の道のりで戻る）。フラグメントは一覧だけ。
 func TestTasksListPaging(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) {
-		for i := range 51 {
-			seedTask(f, fmt.Sprintf("01JD00000000000000000T%04d", i), domain.TaskCompleted, fmt.Sprintf("task-prompt-%02d", i), i)
+		for i := range 101 {
+			seedTask(f, fmt.Sprintf("01JD00000000000000000T%04d", i), domain.TaskCompleted, fmt.Sprintf("task-prompt-%03d", i), i)
 		}
 	})
+	hrefOf := func(res resp, side string) string {
+		t.Helper()
+		m := regexp.MustCompile(`<a href="([^"]*)"[^>]* data-pager-` + side + `>`).FindStringSubmatch(res.Body)
+		if m == nil {
+			t.Fatalf("no enabled %s link:\n%s", side, res.Body)
+		}
+		return html2url(m[1])
+	}
+	rows := func(res resp) int { return strings.Count(res.Body, "data-task-row=") }
+
 	first := r.get("/tasks")
 	status(t, first, http.StatusOK)
-	if n := strings.Count(first.Body, "data-task-row="); n != 50 {
+	if n := rows(first); n != 50 {
 		t.Fatalf("first page rows = %d, want 50", n)
 	}
-	contains(t, first, "data-pager-next", `hx-target="#task-list"`, `hx-push-url="true"`, "task-prompt-00")
-	lacks(t, first, "task-prompt-50")
-	m := strings.Index(first.Body, `href="/tasks?cursor=`)
-	if m < 0 {
-		t.Fatalf("no next link:\n%s", first.Body)
-	}
-	next := first.Body[m+len(`href="`):]
-	next = html2url(next[:strings.Index(next, `"`)])
+	contains(t, first, "1 ページ目", "disabled data-pager-prev", "data-pager-next", `hx-target="#task-list"`, `hx-push-url="true"`, "task-prompt-000")
+	lacks(t, first, "task-prompt-050")
 
-	second := r.get(next, hx...)
+	second := r.get(hrefOf(first, "next"), hx...)
 	status(t, second, http.StatusOK)
-	contains(t, second, `id="task-list"`, "task-prompt-50")
-	lacks(t, second, "<html", "task-prompt-00", "data-pager-next")
-	if n := strings.Count(second.Body, "data-task-row="); n != 1 {
-		t.Errorf("second page rows = %d, want 1", n)
+	contains(t, second, `id="task-list"`, "2 ページ目", "task-prompt-050")
+	lacks(t, second, "<html", "task-prompt-000", "disabled data-pager")
+	if n := rows(second); n != 50 {
+		t.Errorf("second page rows = %d, want 50", n)
 	}
 	if r.f.Tasks.LastQuery.Cursor == "" {
 		t.Error("the cursor was not passed to the service")
+	}
+
+	third := r.get(hrefOf(second, "next"), hx...)
+	contains(t, third, "3 ページ目", "task-prompt-100", "disabled data-pager-next")
+	lacks(t, third, "disabled data-pager-prev", "task-prompt-050")
+	if n := rows(third); n != 1 {
+		t.Errorf("third page rows = %d, want 1", n)
+	}
+
+	// 3 ページ目の「前へ」は 2 ページ目と同じ行、その「前へ」は先頭（cursor なし）。
+	back := r.get(hrefOf(third, "prev"), hx...)
+	contains(t, back, "2 ページ目", "task-prompt-050", "task-prompt-099")
+	if back.Body != second.Body {
+		t.Errorf("prev of page 3 is not page 2:\n%s\n---\n%s", back.Body, second.Body)
+	}
+	if got := hrefOf(back, "prev"); got != "/tasks" {
+		t.Errorf("prev of page 2 = %q, want /tasks", got)
 	}
 }
 
@@ -133,6 +156,11 @@ func TestTasksListHTMXForms(t *testing.T) {
 func TestTasksListErrors(t *testing.T) {
 	t.Run("invalid cursor is 422", func(t *testing.T) {
 		res := newRig(t).get("/tasks?cursor=garbage")
+		status(t, res, http.StatusUnprocessableEntity)
+		contains(t, res, `data-error-code="invalid_argument"`)
+	})
+	t.Run("back without a cursor is 422", func(t *testing.T) {
+		res := newRig(t).get("/tasks?back=01JD00000000000000000T0001")
 		status(t, res, http.StatusUnprocessableEntity)
 		contains(t, res, `data-error-code="invalid_argument"`)
 	})
@@ -177,8 +205,8 @@ func TestTaskDetailPage(t *testing.T) {
 		`data-step-no="1" data-route="fast"`, `data-step-no="2" data-route="openai"`, "高速パス", "OpenAI",
 		`href="/audit/901"`, `href="/audit/902"`, `src="/audit/902/thumbnail"`, "x:",
 		// 指示・最終回答は自然文（T1: <pre> でも等幅にしない）。
-		`border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-prompt`,
-		`border border-border bg-surface p-4 font-sans text-sm text-ink" data-task-result>`,
+		`rounded-md bg-bone p-4 font-sans text-sm text-ink" data-task-prompt`,
+		`rounded-md bg-bone p-4 font-sans text-sm text-ink" data-task-result>`,
 		// 操作のリンクは本文サイズ（T3）。
 		`class="mt-1 block text-sm link"`)
 	lacks(t, res, `src="/audit/901/thumbnail"`, `hx-post=`, "中断")

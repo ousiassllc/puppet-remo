@@ -131,26 +131,15 @@ templ AuditList(v view.AuditList) {
 				</table>
 			</div>
 		}
-		if v.NextURL != "" {
-			<nav class="flex items-center justify-end text-sm" aria-label="ページ送り" data-pager>
-				<a
-					href={ templ.SafeURL(v.NextURL) }
-					class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
-					data-ripple
-					hx-get={ v.NextURL }
-					hx-target="#audit-list"
-					hx-swap="outerHTML"
-					hx-push-url="true"
-					data-pager-next
-				>次へ（古いログ）</a>
-			</nav>
+		if v.PrevURL != "" || v.NextURL != "" {
+			@molecules.Pager(molecules.PagerProps{Page: v.Page, PrevURL: v.PrevURL, NextURL: v.NextURL, PrevLabel: "前へ（新しいログ）", NextLabel: "次へ（古いログ）", Target: "#audit-list"})
 		}
 	</div>
 }
 
 // AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。
 templ AuditDetail(v view.AuditDetail) {
-	<div class="space-y-12" data-audit-detail={ v.Event }>
+	<div class="space-y-6" data-audit-detail={ v.Event }>
 		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2">
 			@auditField("日時", v.Time, "time", true)
 			@auditField("種別", v.Kind, "kind", false)
@@ -169,14 +158,13 @@ templ AuditDetail(v view.AuditDetail) {
 			@auditField("エラーコード", v.ErrorCode, "error-code", false)
 			@auditField("所要時間", v.Duration, "duration", true)
 		</dl>
-		<section class="space-y-6" aria-label="引数">
-			<h2 class="text-2xl font-semibold text-ink">引数</h2>
+		@molecules.Card("引数") {
 			if len(v.Args) == 0 {
 				@molecules.EmptyState("audit-args") {
 					記録された引数はありません。
 				}
 			} else {
-				<div class="overflow-x-auto rounded-lg border border-border bg-surface">
+				<div class="overflow-x-auto">
 					<table class="min-w-full divide-y divide-border text-sm" data-audit-args>
 						<thead class="text-left text-xs font-semibold text-mute">
 							<tr>
@@ -195,9 +183,8 @@ templ AuditDetail(v view.AuditDetail) {
 					</table>
 				</div>
 			}
-		</section>
-		<section class="space-y-6" aria-label="サムネイル">
-			<h2 class="text-2xl font-semibold text-ink">サムネイル</h2>
+		}
+		@molecules.Card("サムネイル") {
 			if v.ThumbURL != "" {
 				<img
 					src={ v.ThumbURL }
@@ -212,7 +199,7 @@ templ AuditDetail(v view.AuditDetail) {
 					{ v.ThumbNote }
 				}
 			}
-		</section>
+		}
 		<a
 			href={ templ.SafeURL(v.BackURL) }
 			class="text-sm link"

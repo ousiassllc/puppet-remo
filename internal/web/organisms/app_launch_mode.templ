@@ -11,29 +11,33 @@ import (
 // LaunchModePanel は起動の方式（ホワイトリスト / ブラックリスト）の表示と切り替え（FR-H12。launch.mode）。
 // 方式を変えられるのはホスト所有者だけで、この GUI の画面にしかない（MCP・Web UI には経路が無い。NFR-S20）。
 // ブラックリスト方式へは確認モーダルを経る（切り替えると、拒否リスト以外のアプリを AI が起動できるようになるため）。
+// 枠と題は molecules.Card。htmx は題ごとパネルを差し替える（outerHTML）ので、Card を #launch-mode の中に置く。
 templ LaunchModePanel(v view.LaunchModePanel) {
-	<section id="launch-mode" class="space-y-4 rounded-lg border border-border bg-surface p-4" data-launch-mode={ launchModeName(v) } { launchModeAttrs(v)... }>
-		<h2 class="mb-6 text-2xl font-semibold text-ink">起動の方式</h2>
-		if v.Denylist {
-			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "alert", "data-mode-note": "denylist"}) {
-				<strong>ブラックリスト方式</strong>: 下の「拒否リスト」に載せたアプリ以外は、リモートの AI が <code>launch_app</code> にパスを渡して何でも起動できます。登録済みのアプリも <code>app_id</code> で引き続き起動できます（拒否リストに当たるものは起動できません）。
-			}
-			<div>
-				@atoms.Button(atoms.ButtonProps{Label: "ホワイトリスト方式に戻す", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
-					"hx-put": v.ActionURL, "hx-vals": `{"mode":"allowlist"}`, "hx-target": "#launch-mode", "hx-swap": "outerHTML", "hx-disabled-elt": "this",
-				}})
-			</div>
-		} else {
-			<p class="text-sm text-ink" data-mode-note="allowlist">
-				<strong>ホワイトリスト方式（既定）</strong>: 下の一覧に登録したアプリだけが起動でき、ほかはすべて拒否します。
-			</p>
-			<div>
-				@atoms.Button(atoms.ButtonProps{Label: "ブラックリスト方式に切り替える…", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-					"hx-get": v.ConfirmURL, "hx-target": "#modal-root", "hx-swap": "innerHTML",
-				}})
+	<div id="launch-mode" data-launch-mode={ launchModeName(v) } { launchModeAttrs(v)... }>
+		@molecules.Card("起動の方式") {
+			<div class="space-y-4">
+				if v.Denylist {
+					@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "alert", "data-mode-note": "denylist"}) {
+						<strong>ブラックリスト方式</strong>: 下の「拒否リスト」に載せたアプリ以外は、リモートの AI が <code>launch_app</code> にパスを渡して何でも起動できます。登録済みのアプリも <code>app_id</code> で引き続き起動できます（拒否リストに当たるものは起動できません）。
+					}
+					<div>
+						@atoms.Button(atoms.ButtonProps{Label: "ホワイトリスト方式に戻す", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+							"hx-put": v.ActionURL, "hx-vals": `{"mode":"allowlist"}`, "hx-target": "#launch-mode", "hx-swap": "outerHTML", "hx-disabled-elt": "this",
+						}})
+					</div>
+				} else {
+					<p class="text-sm text-ink" data-mode-note="allowlist">
+						<strong>ホワイトリスト方式（既定）</strong>: 下の一覧に登録したアプリだけが起動でき、ほかはすべて拒否します。
+					</p>
+					<div>
+						@atoms.Button(atoms.ButtonProps{Label: "ブラックリスト方式に切り替える…", Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+							"hx-get": v.ConfirmURL, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+						}})
+					</div>
+				}
 			</div>
 		}
-	</section>
+	</div>
 }
 
 // launchModeAttrs は、応答に添えて差し替える（OOB）ときの属性。
@@ -74,65 +78,71 @@ func deniedFormAttrs(put bool, url string) atoms.Attrs {
 
 // DeniedSection は拒否リストの一覧と追加フォーム（FR-H12）。拒否リストはブラックリスト方式のときだけ効く。
 // 入力は実行ファイルのパス（実体のパスで照合。リンク・8.3 短縮名を解決する）か、フォルダーを付けない実行ファイル名（どこにあっても当たる）。
+// 一覧と追加フォームはそれぞれ molecules.Card（題は「拒否リスト」「拒否リストに追加」）。
 templ DeniedSection(v view.DeniedSection) {
-	<section id="denied-section" class="space-y-4" data-denied-active={ strconv.FormatBool(v.Active) } { deniedSectionAttrs(v)... }>
-		<div>
-			<h2 class="mb-6 text-2xl font-semibold text-ink">拒否リスト</h2>
-			<p class="mt-2 text-sm text-ink">
-				ブラックリスト方式のときだけ効きます（ホワイトリスト方式では使われません）。リストに当たるアプリは、パス指定でも登録済みの <code>app_id</code> でも起動できません。
-				パスで登録すると実体のパス（シンボリックリンク・ジャンクション・8.3 の短い名前を解決したもの）で照合し、実行ファイル名（例: <code>cmd.exe</code>）で登録するとどのフォルダーにあっても名前で照合します。
-				大文字小文字は区別しません。ファイルをコピーして別の名前にしたものは名前では見分けられません。
-			</p>
-			if !v.Active {
-				<p class="text-xs text-mute" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>
-			}
-			<p class="mt-2 text-xs text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
-		</div>
-		if len(v.Rows) == 0 {
-			@molecules.EmptyState("denied") {
-				拒否するアプリはまだ登録されていません。
-			}
-		}
-		<ul class="space-y-2">
-			for _, row := range v.Rows {
-				if row.Editing {
-					<li class="rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
-						@deniedEditForm(row, v.ListURL)
-					</li>
-				} else {
-					<li class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
-						<span class="rounded-sm bg-accent-soft px-2 py-1 text-xs text-ink" data-denied-kind>
-							if row.IsPath {
-								パス
-							} else {
-								実行ファイル名
-							}
-						</span>
-						<code class="min-w-0 flex-1 break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-denied-value>{ row.Value }</code>
-						@atoms.Button(atoms.ButtonProps{Label: "編集", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
-							"hx-get": row.EditURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",
-						}})
-						@atoms.Button(atoms.ButtonProps{Label: "削除", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-							"hx-get": row.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
-						}})
-					</li>
+	<div id="denied-section" class="space-y-4" data-denied-active={ strconv.FormatBool(v.Active) } { deniedSectionAttrs(v)... }>
+		@molecules.Card("拒否リスト") {
+			<div class="space-y-4">
+				<div>
+					<p class="text-sm text-ink">
+						ブラックリスト方式のときだけ効きます（ホワイトリスト方式では使われません）。リストに当たるアプリは、パス指定でも登録済みの <code>app_id</code> でも起動できません。
+						パスで登録すると実体のパス（シンボリックリンク・ジャンクション・8.3 の短い名前を解決したもの）で照合し、実行ファイル名（例: <code>cmd.exe</code>）で登録するとどのフォルダーにあっても名前で照合します。
+						大文字小文字は区別しません。ファイルをコピーして別の名前にしたものは名前では見分けられません。
+					</p>
+					if !v.Active {
+						<p class="text-xs text-mute" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>
+					}
+					<p class="mt-2 text-xs text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
+				</div>
+				if len(v.Rows) == 0 {
+					@molecules.EmptyState("denied") {
+						拒否するアプリはまだ登録されていません。
+					}
 				}
-			}
-		</ul>
+				<ul class="space-y-2">
+					for _, row := range v.Rows {
+						if row.Editing {
+							<li class="rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
+								@deniedEditForm(row, v.ListURL)
+							</li>
+						} else {
+							<li class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
+								<span class="rounded-sm bg-accent-soft px-2 py-1 text-xs text-ink" data-denied-kind>
+									if row.IsPath {
+										パス
+									} else {
+										実行ファイル名
+									}
+								</span>
+								<code class="min-w-0 flex-1 break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-denied-value>{ row.Value }</code>
+								@atoms.Button(atoms.ButtonProps{Label: "編集", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+									"hx-get": row.EditURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",
+								}})
+								@atoms.Button(atoms.ButtonProps{Label: "削除", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+									"hx-get": row.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+								}})
+							</li>
+						}
+					}
+				</ul>
+			</div>
+		}
 		<form
 			id="denied-form-new"
 			novalidate
-			class="space-y-4 rounded-lg border border-border bg-surface p-4"
 			data-denied-form="new"
 			{ deniedFormAttrs(false, v.AddURL)... }
 		>
-			<h3 class="text-xl font-semibold text-ink">拒否リストに追加</h3>
-			@deniedValueField("denied-form-new", v.AddValue, v.AddError)
-			<div class="flex items-center gap-3">
-				@atoms.Button(atoms.ButtonProps{Label: "追加", Variant: atoms.ButtonPrimary, Type: "submit"})
-			</div>
+			@molecules.Card("拒否リストに追加") {
+				<div class="space-y-4">
+					@deniedValueField("denied-form-new", v.AddValue, v.AddError)
+					<div class="flex items-center gap-3">
+						@atoms.Button(atoms.ButtonProps{Label: "追加", Variant: atoms.ButtonPrimary, Type: "submit"})
+					</div>
+				</div>
+			}
 		</form>
-	</section>
+	</div>
 }
 
 templ deniedEditForm(row view.DeniedRow, cancelURL string) {

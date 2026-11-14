@@ -115,14 +115,18 @@ func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
-// タスク・監査ログの詳細: h2 で始まるセクション同士は、48（--gap-section-sm。space-y-12）で区切る（S5）。
-func TestDetailPagesSeparateSectionsByGapSectionSm(t *testing.T) {
+// タスク・監査ログの詳細: 題付きのセクション（molecules.Card。#166）同士は、24（--gap-card-section。space-y-6）で区切る。
+// 題は Card の h2（lg 18）で、直書きの text-2xl の h2 ではない。
+func TestDetailPagesSeparateCardsByGapCardSection(t *testing.T) {
 	task := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1"}))
-	has(t, task, `class="space-y-12" data-task-detail="t1"`)
+	has(t, task, `class="space-y-6" data-task-detail="t1"`)
 	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click"}))
-	has(t, audit, `class="space-y-12" data-audit-detail="click"`)
-	hasNot(t, task, `class="space-y-4" data-task-detail`)
-	hasNot(t, audit, `class="space-y-4" data-audit-detail`)
+	has(t, audit, `class="space-y-6" data-audit-detail="click"`)
+	hasNot(t, task, `class="space-y-4" data-task-detail`, `class="space-y-12"`)
+	hasNot(t, audit, `class="space-y-4" data-audit-detail`, `class="space-y-12"`)
+	const cardTitle = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">`
+	has(t, task, cardTitle+"指示</h2>", cardTitle+"最終回答</h2>", cardTitle+"ステップ</h2>")
+	has(t, audit, cardTitle+"引数</h2>", cardTitle+"サムネイル</h2>")
 }
 
 // ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
@@ -740,9 +744,10 @@ func TestCardPaddingsFollowScale(t *testing.T) {
 	// カード内のまとまり同士は 24（--gap-card-section。space-y-6）。
 	has(t, update, `class="p-6"><div class="space-y-6">`)
 	hasNot(t, update, `class="space-y-4 p-6"`, `<div class="space-y-4">`)
+	// 操作権のパネルも molecules.Card（題 lg 18・本文 --s-6。#166）。
 	lease := webtest.Render(t, organisms.ViewerLeasePanel(view.ViewerLease{}))
-	has(t, lease, "rounded-lg border border-border bg-surface p-4")
-	hasNot(t, lease, "bg-surface p-3")
+	has(t, lease, `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">操作権</h2><div class="p-6">`)
+	hasNot(t, lease, "bg-surface p-3", "bg-surface p-4", "text-2xl")
 }
 
 // T5: ポート番号は桁を揃える値なので font-mono（隣の IP・MagicDNS 名の <code> と同じ書体）。
@@ -797,4 +802,44 @@ func TestApprovalDialogMatchesModalBody(t *testing.T) {
 	}
 	has(t, webtest.Render(t, organisms.ApprovalDone(view.ApprovalDone{Allowed: true})), body)
 	has(t, webtest.Render(t, organisms.ApprovalGone(view.ApprovalGone{Message: "m"})), body)
+}
+
+// #169: アクション以外の行（Judge の判定など）のステップ番号の「-」は、title 属性ではなくツールチップ（atoms.Tooltip）で「ステップ N に付く行」を出す。
+// 行ごとに id が違い、aria-describedby が自分の本文を指す。
+func TestTaskDetailAuxRowUsesATooltipNotTitle(t *testing.T) {
+	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{
+		{No: 1, Summary: "クリック"},
+		{No: 1, KindLabel: "判定", Summary: "Judge"},
+		{No: 2, KindLabel: "判定", Summary: "Judge"},
+	}}))
+	has(t, out,
+		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
+		`aria-describedby="step-row-tip-2"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
+	hasNot(t, out, "title=", `id="step-row-tip-0"`)
+}
+
+// #166: 項目名の見出し（クライアント名・アプリ名・接続要求のデバイス名）は h3 の base 16 SemiBold（ガイドの見出しの段の h3）で、
+// カードの題（h2・lg 18・下罫線）とは別。32px・24px の直書きにしない。詳細ページのクライアントカードは名前を出さない（名前はページの h1）。
+func TestItemNameHeadingsAreH3Base16(t *testing.T) {
+	const want = "text-base font-semibold text-ink"
+	for name, tc := range map[string]struct{ out, title string }{
+		"client":  {webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc-main", CanOpenDetail: true})), "pc-main"},
+		"app":     {webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a1", Label: "メモ帳"})), "メモ帳"},
+		"request": {webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "laptop"}}})), "laptop"},
+	} {
+		found := false
+		for _, e := range webtest.Elements(t, tc.out, "h1", "h2", "h3") {
+			if e.Text == tc.title {
+				found = true
+				if e.Tag != "h3" || e.Class != want {
+					t.Errorf("%s: %s %q, want h3 %q", name, e.Tag, e.Class, want)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: no heading %q in:\n%s", name, tc.title, tc.out)
+		}
+	}
+	detail := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc-main"}))
+	hasNot(t, detail, "<h1", "<h3", "pc-main</h")
 }

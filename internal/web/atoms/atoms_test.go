@@ -244,3 +244,11 @@ func TestInputMonoIsOptIn(t *testing.T) {
 	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")
 	hasNot(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"})), "font-mono")
 }
+
+// #169: ツールチップは、フォーカスできる出す側（tabindex="0"）から、aria-describedby で role="tooltip" の本文につなぐ（ホバーのほかキーボードでも出る）。
+// 標準の title 属性は使わない。本文は隠れていても DOM に残る（読み上げ用）。
+func TestTooltipLinksTheTriggerToTheTooltip(t *testing.T) {
+	out := webtest.Render(t, atoms.Tooltip("tip-1", "ステップ 3 に付く行"))
+	has(t, out, `class="tip-host" tabindex="0" aria-describedby="tip-1"`, `<span role="tooltip" id="tip-1" class="tip">ステップ 3 に付く行</span>`)
+	hasNot(t, out, "title=", "<button", "<a ")
+}
