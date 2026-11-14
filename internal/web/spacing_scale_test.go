@@ -95,6 +95,29 @@ func TestNoHardcodedLargeHeadingsInTemplates(t *testing.T) {
 	}
 }
 
+// #166: 見える h2 は molecules（Card の題・Modal の題）だけが出す。organisms・pages に直書きの `<h2`（枠付きの題）を置かない
+// （題付きの枠は molecules.Card）。見せない h2（`sr-only`。項目が並ぶ場所の階層用）は対象外。
+func TestVisibleH2OnlyInMolecules(t *testing.T) {
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") || strings.HasPrefix(path, "molecules"+string(filepath.Separator)) {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if strings.Contains(line, "<h2") && !strings.Contains(line, `class="sr-only"`) {
+				t.Errorf("%s:%d: a visible h2 title must come from molecules.Card: %s", path, i+1, strings.TrimSpace(line))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // S1: 素の CSS と Lit の `css` の角丸も、リテラルの `4px` / `9999px` ではなくトークン（`--radius-*`）で書く。
 func TestStylesUseRadiusTokens(t *testing.T) {
 	literal := regexp.MustCompile(`border-radius:\s*[0-9]`)
