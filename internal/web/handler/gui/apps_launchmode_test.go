@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
 )
 
@@ -84,6 +85,23 @@ func TestSetLaunchModeAuditFailureIs503AndKeepsTheMode(t *testing.T) {
 	if got, _ := r.f.Apps.LaunchMode(context.Background()); got != domain.LaunchModeAllowlist {
 		t.Errorf("mode = %q, want allowlist (unchanged)", got)
 	}
+}
+
+// 監査に書けず、元に戻す書き込みも失敗したときは、「切り替えていない」とは言わず、保存された実際の方式のパネルを OOB で添える（#174）。
+func TestSetLaunchModeRollbackFailureShowsTheActualMode(t *testing.T) {
+	failure := domain.ErrAuditUnavailable.WithDetail(service.DetailLaunchModeRestored, false)
+	r := newRig(t, func(f *guitest.Fakes) { f.Apps.ModeSwitchedThenErr = failure })
+	res := r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	contains(t, res, `data-error-code="audit_unavailable"`, "元に戻すこともできませんでした",
+		// 方式のパネルは、実際の方式（denylist のまま）で OOB に差し替える。
+		`id="launch-mode"`, `data-launch-mode="denylist"`, `hx-swap-oob="true"`, `data-denied-active="true"`)
+	lacks(t, res, "切り替えませんでした")
+	// ロールバックできた失敗は、方式のパネルを差し替えない（方式は変わっていない）。
+	r = newRig(t, func(f *guitest.Fakes) { f.Apps.WriteErr = domain.ErrAuditUnavailable })
+	res = r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	lacks(t, res, `id="launch-mode"`, "元に戻すこともできませんでした")
 }
 
 func TestDeniedCreateUpdateDelete(t *testing.T) {
