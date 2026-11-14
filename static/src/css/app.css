@@ -141,7 +141,8 @@
   --gap-grid: var(--s-4);
   --gap-grid-lg: var(--s-6);
   --gap-grid-dense: var(--s-3);
-  --gap-label: var(--s-2);
+  /* ガイドの 6px。--s-* のスケール（4 の倍数）には 6 が無いので、ここだけスケール外の値を直に持つ。templ は mb-(--gap-label) で参照する。 */
+  --gap-label: 6px;
   --gap-help: var(--s-1);
   --gap-field: var(--s-4);
   --gap-h1: var(--s-6);
@@ -155,6 +156,10 @@
   --gap-inline: var(--s-2);
   --gap-section: 72px;
   --gap-section-sm: var(--s-12);
+
+  /* ツールチップの padding 6×10（ガイドの「フィードバック」。スケール外なのでトークンで持つ）。 */
+  --tip-pad-y: 6px;
+  --tip-pad-x: 10px;
 
   --toast-h: 40px;
   --toast-duration: 3s;
@@ -577,6 +582,47 @@
   }
   .motion-modal-rise-in {
     animation: motion-rise-in var(--motion-slow) var(--ease-out) both;
+  }
+
+  /* ツールチップ（atoms.Tooltip。ガイドの「ツールチップ」「フィードバック」）: 12px・padding --tip-pad-y/x・--r-sm・地 --ink・字 --bone（テーマ反転）・
+   * z-index --z-dropdown。出す側（.tip-host）のホバーとキーボードフォーカスで、本文（.tip。role="tooltip"）を fade-in（--motion-fade-in）で出す。
+   * 表示遅延はホバー 400ms・フォーカスは即時（ガイド）。隠れている間は visibility: hidden（aria-describedby の参照先としては読まれる）。非対話なので
+   * pointer-events なし。ガイドの見本は出す側の中央に出すが、表の overflow-x の枠で左端の列だと切れるので、出す側の左端にそろえる。 */
+  .tip-host {
+    position: relative;
+    display: inline-block;
+  }
+  .tip {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + var(--s-2));
+    z-index: var(--z-dropdown);
+    width: max-content;
+    max-width: 20rem;
+    padding: var(--tip-pad-y) var(--tip-pad-x);
+    border-radius: var(--radius-sm);
+    background: var(--ink);
+    color: var(--bone);
+    font-size: var(--text-xs);
+    font-weight: 400;
+    line-height: 1.6;
+    text-align: left;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .tip-host:hover > .tip {
+    visibility: visible;
+    animation: motion-fade-in var(--motion-fade-in) var(--ease-out) 400ms both;
+  }
+  .tip-host:focus-visible > .tip {
+    visibility: visible;
+    animation: motion-fade-in var(--motion-fade-in) var(--ease-out) both;
+  }
+  /* forced-colors（ハイコントラスト）では背景色が OS の色に置き換わり、枠の無い本文は表の文字に重なって読めない。枠を足して区切る。 */
+  @media (forced-colors: active) {
+    .tip {
+      border: 1px solid CanvasText;
+    }
   }
 
   /* ホバーは色・背景だけ・180ms 以内（M1）。 */

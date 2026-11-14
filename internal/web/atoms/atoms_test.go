@@ -216,6 +216,11 @@ func TestEmptyState(t *testing.T) {
 func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	out := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "削除しますか？", Message: "元に戻せません。", Label: "削除する", ConfirmURL: "/x", Method: "delete", Target: "#t", Swap: "outerHTML"}))
 	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "shadow-modal", "motion-modal-in", "motion-modal-rise-in")
+	// 右上の × はキャンセルと同じ data-clear（app.ts が #modal-root を空にして、開いた要素へフォーカスを戻す）。見出しと同じ行・パネルの中にある。
+	has(t, out, `aria-label="閉じる" data-clear="#modal-root"`)
+	if strings.Count(out, `data-clear="#modal-root"`) != 2 {
+		t.Errorf("modal must have two data-clear buttons (cancel and ×): %s", out)
+	}
 	// M5: モーダルの出現は --motion-slow（280ms）の専用クラス。出現 320ms の motion-fade-in・motion-rise-in は使わない。
 	hasNot(t, out, "motion-fade-in", "motion-rise-in")
 	hasNot(t, out, "shadow-xl", "z-40")
@@ -238,4 +243,12 @@ func TestModalConfirmButtonFollowsDestructive(t *testing.T) {
 func TestInputMonoIsOptIn(t *testing.T) {
 	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")
 	hasNot(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"})), "font-mono")
+}
+
+// #169: ツールチップは、フォーカスできる出す側（tabindex="0"）から、aria-describedby で role="tooltip" の本文につなぐ（ホバーのほかキーボードでも出る）。
+// 標準の title 属性は使わない。本文は隠れていても DOM に残る（読み上げ用）。
+func TestTooltipLinksTheTriggerToTheTooltip(t *testing.T) {
+	out := webtest.Render(t, atoms.Tooltip("tip-1", "ステップ 3 に付く行"))
+	has(t, out, `class="tip-host" tabindex="0" aria-describedby="tip-1"`, `<span role="tooltip" id="tip-1" class="tip">ステップ 3 に付く行</span>`)
+	hasNot(t, out, "title=", "<button", "<a ")
 }

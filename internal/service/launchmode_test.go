@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -42,6 +43,7 @@ func setMode(t *testing.T, e *ctlEnv, m domain.LaunchMode) {
 		t.Fatal(err)
 	}
 	e.audit.entries = nil
+	e.audit.sync = nil // 方式の切り替えの監査は同期で書く（#174）
 }
 
 func launchCount(e *ctlEnv) int { return len(e.launcher.CallsTo("Launch")) }
@@ -72,13 +74,17 @@ func TestSetLaunchModeAuditsOnlyRealChanges(t *testing.T) {
 	if err := e.apps.SetLaunchMode(ctx, domain.LaunchModeAllowlist); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(e.audit.Entries()); n != 0 {
+	if n := len(e.audit.SyncEntries()) + len(e.audit.Entries()); n != 0 {
 		t.Errorf("setting the current mode recorded %d audit entries, want 0", n)
 	}
 	if err := e.apps.SetLaunchMode(ctx, domain.LaunchModeDenylist); err != nil {
 		t.Fatal(err)
 	}
-	entries := e.audit.Entries()
+	// 切り替えの監査は、設定の変更と同じ流れで同期に書く（非同期の Record には流さない。#174）。
+	if n := len(e.audit.Entries()); n != 0 {
+		t.Errorf("the mode switch went through the async recorder (%d entries)", n)
+	}
+	entries := e.audit.SyncEntries()
 	if len(entries) != 1 {
 		t.Fatalf("audit entries = %d, want 1", len(entries))
 	}
@@ -97,8 +103,133 @@ func TestSetLaunchModeAuditsOnlyRealChanges(t *testing.T) {
 	if err := e.apps.SetLaunchMode(ctx, "blacklist"); !errors.As(err, &fe) || fe[domain.AppFieldLaunchMode] == "" {
 		t.Errorf("SetLaunchMode(invalid) = %v, want a field error", err)
 	}
-	if n := len(e.audit.Entries()); n != 1 {
+	if n := len(e.audit.SyncEntries()); n != 1 {
 		t.Errorf("an invalid mode was audited (%d entries)", n)
+	}
+}
+
+// 方式の切り替えは fail-closed: 監査の行を書けなければ、設定を元の方式に戻して audit_unavailable を返す（#174）。
+func TestSetLaunchModeIsRolledBackWhenTheAuditCannotBeWritten(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		start domain.LaunchMode // 切り替え前の方式
+		to    domain.LaunchMode
+	}{
+		{"allowlist to denylist", domain.LaunchModeAllowlist, domain.LaunchModeDenylist},
+		{"denylist to allowlist", domain.LaunchModeDenylist, domain.LaunchModeAllowlist},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newModeEnv(t)
+			ctx := context.Background()
+			setMode(t, e, tc.start)
+			e.audit.SetSyncErr(errors.New("disk full"))
+
+			err := e.apps.SetLaunchMode(ctx, tc.to)
+			if !errors.Is(err, domain.ErrAuditUnavailable) {
+				t.Fatalf("SetLaunchMode = %v, want audit_unavailable", err)
+			}
+			if m, _ := e.apps.LaunchMode(ctx); m != tc.start {
+				t.Errorf("mode = %q after the failed switch, want %q (rolled back)", m, tc.start)
+			}
+			if n := len(e.audit.SyncEntries()) + len(e.audit.Entries()); n != 0 {
+				t.Errorf("%d audit entries after the failed switch", n)
+			}
+			// 監査が書けるようになれば、同じ切り替えは成功して監査が 1 行残る。
+			e.audit.SetSyncErr(nil)
+			if err := e.apps.SetLaunchMode(ctx, tc.to); err != nil {
+				t.Fatal(err)
+			}
+			if m, _ := e.apps.LaunchMode(ctx); m != tc.to || len(e.audit.SyncEntries()) != 1 {
+				t.Errorf("mode = %q, audit entries = %d after the retry", m, len(e.audit.SyncEntries()))
+			}
+		})
+	}
+}
+
+// 監査に書けず、戻す書き込みも失敗したときも、成功は返さない。戻せなかったことが分かる audit_unavailable になる。
+func TestSetLaunchModeReportsWhenTheRollbackFailsToo(t *testing.T) {
+	e := newModeEnv(t)
+	ctx := context.Background()
+	e.audit.SetSyncErr(errors.New("disk full"))
+	e.settings.setErrAfter(1, errors.New("settings locked")) // 1 回目の書き込み（切り替え）は通り、戻す書き込みが失敗する
+
+	err := e.apps.SetLaunchMode(ctx, domain.LaunchModeDenylist)
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodeAuditUnavailable {
+		t.Fatalf("SetLaunchMode = %v, want audit_unavailable", err)
+	}
+	if restored, ok := de.Detail[DetailLaunchModeRestored].(bool); !ok || restored {
+		t.Errorf("detail = %v, want %s=false (the rollback failed)", de.Detail, DetailLaunchModeRestored)
+	}
+	if m, _ := e.apps.LaunchMode(ctx); m != domain.LaunchModeDenylist {
+		t.Errorf("mode = %q; the failed rollback leaves the switched value in place", m)
+	}
+}
+
+// 並行する切り替えのうち、監査に失敗した呼び出しのロールバックが、別の呼び出しの成功した切り替えを取り消さない（modeMu）。
+// A は監査の書き込みの最中で止まり、そこへ B（同じ方式への切り替え）を割り込ませてから A を失敗させる。排他があれば B は A の
+// ロールバックのあとに allowlist を読んで切り替え、最終的に denylist と監査の行 1 件がそろう。
+func TestSetLaunchModeSerializesConcurrentSwitches(t *testing.T) {
+	e := newModeEnv(t)
+	inSync, release := make(chan struct{}), make(chan struct{})
+	audit := &gatedModeAudit{ctlAudit: e.audit, inSync: inSync, release: release}
+	reg, err := NewAppRegistry(AppRegistryConfig{
+		Apps: e.appStore, Denied: e.denyStore, Settings: e.settings, Launcher: e.launcher, Picker: e.picker, Audit: audit, Clock: e.clock, IDs: &ctlIDs{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	aErr, bErr := make(chan error, 1), make(chan error, 1)
+	go func() { aErr <- reg.SetLaunchMode(ctx, domain.LaunchModeDenylist) }()
+	<-inSync // A は設定を書き終え、監査の書き込みの中にいる
+	bStarted := make(chan struct{})
+	go func() { close(bStarted); bErr <- reg.SetLaunchMode(ctx, domain.LaunchModeDenylist) }()
+	<-bStarted
+	close(release) // A の監査を失敗させる（A はロールバックする）。以後の RecordSync は成功する
+
+	if err := <-aErr; !errors.Is(err, domain.ErrAuditUnavailable) {
+		t.Fatalf("A = %v, want audit_unavailable", err)
+	}
+	if err := <-bErr; err != nil {
+		t.Fatalf("B = %v, want success", err)
+	}
+	if m, _ := reg.LaunchMode(ctx); m != domain.LaunchModeDenylist {
+		t.Errorf("mode = %q; A's rollback undid B's successful switch", m)
+	}
+	if n := len(e.audit.SyncEntries()); n != 1 {
+		t.Errorf("audit entries = %d, want 1 (B's)", n)
+	}
+}
+
+// gatedModeAudit は最初の RecordSync で inSync を閉じ、release が閉じられるまで待って、失敗を返す。2 回目以降は ctlAudit に任せる。
+type gatedModeAudit struct {
+	*ctlAudit
+	inSync, release chan struct{}
+	once            sync.Once
+}
+
+func (a *gatedModeAudit) RecordSync(ctx context.Context, e repository.AuditEntry) error {
+	first := false
+	a.once.Do(func() { first = true })
+	if !first {
+		return a.ctlAudit.RecordSync(ctx, e)
+	}
+	close(a.inSync)
+	<-a.release
+	return errors.New("disk full")
+}
+
+// 設定の書き込み自体が失敗したときは、監査を書かずにそのエラーを返す（切り替えは起きていない）。
+func TestSetLaunchModeSettingFailureWritesNoAudit(t *testing.T) {
+	e := newModeEnv(t)
+	boom := errors.New("settings locked")
+	e.settings.setErr = boom
+	if err := e.apps.SetLaunchMode(context.Background(), domain.LaunchModeDenylist); !errors.Is(err, boom) {
+		t.Fatalf("SetLaunchMode = %v, want the settings error", err)
+	}
+	if n := len(e.audit.SyncEntries()) + len(e.audit.Entries()); n != 0 {
+		t.Errorf("%d audit entries for a switch that did not happen", n)
 	}
 }
 
@@ -288,6 +419,103 @@ func TestLaunchDenylistModeStartsUnlistedPathWithoutArgs(t *testing.T) {
 			t.Errorf("%s detail = %v, want path and launch_mode, no app_id", en.Event, d)
 		}
 	}
+}
+
+// denylist の path 指定の起動は、許可・拒否のどちらも、監査の detail に入力の path と、解決した実体のパス（resolved_path）を残す（#173）。
+// 解決できなかったときは resolved_path を付けず resolve_failed = true。allowlist・app_id の起動の記録は変えない。
+func TestLaunchDenylistAuditRecordsTheResolvedPath(t *testing.T) {
+	t.Run("allowed through a link", func(t *testing.T) {
+		e := newModeEnv(t)
+		setMode(t, e, domain.LaunchModeDenylist)
+		if _, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{Path: pathLink}); err != nil {
+			t.Fatal(err)
+		}
+		rows := []repository.AuditEntry{e.audit.SyncEntries()[0], lastLaunchEntry(t, e)}
+		for _, en := range rows {
+			d := auditDetail(t, en)
+			if d["path"] != pathLink || d["resolved_path"] != pathSys32Cmd || d["resolve_failed"] != nil {
+				t.Errorf("%s detail = %v, want path = the input and resolved_path = the real file", en.Event, d)
+			}
+		}
+	})
+	t.Run("denied", func(t *testing.T) {
+		e := newModeEnv(t)
+		setMode(t, e, domain.LaunchModeDenylist)
+		if _, err := e.apps.CreateDenied(context.Background(), pathSys32Cmd); err != nil {
+			t.Fatal(err)
+		}
+		e.audit.entries = nil
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{Path: pathShort})
+		if !errors.Is(err, domain.ErrAppDenied) {
+			t.Fatalf("Launch = %v, want app_denied", err)
+		}
+		d := auditDetail(t, lastLaunchEntry(t, e))
+		if d["path"] != pathShort || d["resolved_path"] != pathSys32Cmd || d["resolve_failed"] != nil {
+			t.Errorf("detail = %v, want the input path and the resolved real path", d)
+		}
+	})
+	t.Run("link to a non-exe target", func(t *testing.T) {
+		e := newModeEnv(t)
+		e.launcher.AddExecutable(`C:\Tools\run.bat`)
+		e.launcher.AddLink(`C:\Link\innocent.exe`, `C:\Tools\run.bat`)
+		setMode(t, e, domain.LaunchModeDenylist)
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{Path: `C:\Link\innocent.exe`})
+		if domain.CodeOf(err) != domain.CodeLaunchFailed {
+			t.Fatalf("Launch = %v, want launch_failed", err)
+		}
+		if d := auditDetail(t, lastLaunchEntry(t, e)); d["resolved_path"] != `C:\Tools\run.bat` || d["resolve_failed"] != nil {
+			t.Errorf("detail = %v, want the resolved path even though the launch was refused", d)
+		}
+	})
+	t.Run("resolution failed", func(t *testing.T) {
+		e := newModeEnv(t)
+		e.launcher.AddExecutable(`E:\usb\tool.exe`)
+		e.launcher.MarkNonFixed(`E:\usb\tool.exe`)
+		setMode(t, e, domain.LaunchModeDenylist)
+		for _, p := range []string{`C:\Tools\missing.exe`, `E:\usb\tool.exe`} {
+			_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{Path: p})
+			if domain.CodeOf(err) != domain.CodeLaunchFailed {
+				t.Fatalf("Launch(%q) = %v, want launch_failed", p, err)
+			}
+			d := auditDetail(t, lastLaunchEntry(t, e))
+			if d["path"] != p || d["resolve_failed"] != true || d["resolved_path"] != nil || d["reason"] == nil {
+				t.Errorf("detail for %q = %v, want resolve_failed = true, no resolved_path, and the launch_failed reason", p, d)
+			}
+		}
+		if len(e.audit.SyncEntries()) != 0 {
+			t.Error("a launch that failed to resolve wrote an attempt row")
+		}
+	})
+	t.Run("a malformed path is not resolved or recorded", func(t *testing.T) {
+		e := newModeEnv(t)
+		setMode(t, e, domain.LaunchModeDenylist)
+		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{Path: `..\x.exe`})
+		if !errors.Is(err, domain.ErrInvalidArgument) {
+			t.Fatalf("Launch = %v, want invalid_argument", err)
+		}
+		if d := auditDetail(t, lastLaunchEntry(t, e)); d["resolved_path"] != nil || d["resolve_failed"] != nil || d["path"] != nil {
+			t.Errorf("detail = %v, want no path fields for an unvalidated input", d)
+		}
+	})
+	t.Run("app_id launches and the allowlist record neither", func(t *testing.T) {
+		e := newModeEnv(t)
+		app := registerNotepad(t, e)
+		if _, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID}); err != nil {
+			t.Fatal(err)
+		}
+		d := auditDetail(t, lastLaunchEntry(t, e))
+		if d["resolved_path"] != nil || d["resolve_failed"] != nil {
+			t.Errorf("allowlist detail = %v", d)
+		}
+		setMode(t, e, domain.LaunchModeDenylist)
+		if _, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID}); err != nil {
+			t.Fatal(err)
+		}
+		d = auditDetail(t, lastLaunchEntry(t, e))
+		if d["app_id"] != app.ID || d["resolved_path"] != nil || d["resolve_failed"] != nil {
+			t.Errorf("denylist app_id detail = %v, want no resolution fields (only path launches record them)", d)
+		}
+	})
 }
 
 // 拒否リストに当たるものは、どの綴り・経路でも起動しない（すり抜け対策）。

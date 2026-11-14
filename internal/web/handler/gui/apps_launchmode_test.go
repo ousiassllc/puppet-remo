@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
 )
 
@@ -75,6 +76,34 @@ func TestSetLaunchModeRejectsUnknownValues(t *testing.T) {
 	}
 }
 
+// 監査に書けなくて切り替えが戻された（audit_unavailable）ときは、503 のアラートを返し、方式は変わらない（#174）。
+func TestSetLaunchModeAuditFailureIs503AndKeepsTheMode(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) { f.Apps.WriteErr = domain.ErrAuditUnavailable })
+	res := r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	contains(t, res, `data-error-code="audit_unavailable"`)
+	if got, _ := r.f.Apps.LaunchMode(context.Background()); got != domain.LaunchModeAllowlist {
+		t.Errorf("mode = %q, want allowlist (unchanged)", got)
+	}
+}
+
+// 監査に書けず、元に戻す書き込みも失敗したときは、「切り替えていない」とは言わず、保存された実際の方式のパネルを OOB で添える（#174）。
+func TestSetLaunchModeRollbackFailureShowsTheActualMode(t *testing.T) {
+	failure := domain.ErrAuditUnavailable.WithDetail(service.DetailLaunchModeRestored, false)
+	r := newRig(t, func(f *guitest.Fakes) { f.Apps.ModeSwitchedThenErr = failure })
+	res := r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	contains(t, res, `data-error-code="audit_unavailable"`, "元に戻すこともできませんでした",
+		// 方式のパネルは、実際の方式（denylist のまま）で OOB に差し替える。
+		`id="launch-mode"`, `data-launch-mode="denylist"`, `hx-swap-oob="true"`, `data-denied-active="true"`)
+	lacks(t, res, "切り替えませんでした")
+	// ロールバックできた失敗は、方式のパネルを差し替えない（方式は変わっていない）。
+	r = newRig(t, func(f *guitest.Fakes) { f.Apps.WriteErr = domain.ErrAuditUnavailable })
+	res = r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	lacks(t, res, `id="launch-mode"`, "元に戻すこともできませんでした")
+}
+
 func TestDeniedCreateUpdateDelete(t *testing.T) {
 	r := newRig(t)
 	res := r.post("/apps/denied", url.Values{"value": {"  cmd.exe "}}, hx...)
@@ -136,7 +165,7 @@ func TestDeniedFullIs409AndUnknownIs404(t *testing.T) {
 	})
 	res := r.post("/apps/denied", url.Values{"value": {"one-more.exe"}}, hx...)
 	status(t, res, http.StatusConflict)
-	contains(t, res, "200 件まで")
+	contains(t, res, `data-error-code="conflict"`)
 	for _, target := range []string{"/apps/denied/nope/edit", "/apps/denied/nope/delete/confirm"} {
 		status(t, r.get(target, hx...), http.StatusNotFound)
 	}

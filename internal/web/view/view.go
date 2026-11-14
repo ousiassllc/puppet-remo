@@ -369,6 +369,8 @@ type LaunchModePanel struct {
 	// ConfirmURL はブラックリスト方式へ切り替える確認モーダルの URL。ActionURL は切り替えの PUT 先（ホワイトリストへ戻すときに使う）。
 	ConfirmURL string
 	ActionURL  string
+	// OOB は応答に添えて差し替える（切り替えの失敗の応答。方式を DB から読み直して見せる）とき true。
+	OOB bool
 }
 
 // DeniedRow は拒否リストの 1 件。Editing なら行の代わりに編集フォームを出す（EditValue・EditError はその入力）。
@@ -519,10 +521,12 @@ type AuditRow struct {
 	HasThumb   bool
 }
 
-// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・「次へ」）。NextURL が空なら次のページは無い。
+// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・ページ送り）。PrevURL・NextURL が空なら、その向きのページは無い。
 type AuditList struct {
 	Filters AuditFilters
 	Rows    []AuditRow
+	Page    int
+	PrevURL string
 	NextURL string
 }
 

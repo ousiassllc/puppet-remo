@@ -38,7 +38,7 @@ func confirmVariant(m view.ConfirmModal) atoms.ButtonVariant {
 }
 
 // Modal は確認ダイアログ（O2）。サーバーが描画し、確定のボタンだけが実際の操作を送る（§5.4）。
-// 確認用の GET が #modal-root に差し込み、キャンセルは app.ts が data-clear の対象（#modal-root）を空にする。
+// 確認用の GET が #modal-root に差し込み、キャンセルと右上の × は app.ts が data-clear の対象（#modal-root）を空にする（どちらも閉じたら、開いた要素へフォーカスを戻す）。
 // 確定の応答は OOB で #modal-root を空にする（organisms.ModalClear）。
 func Modal(m view.ConfirmModal) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -61,33 +61,41 @@ func Modal(m view.ConfirmModal) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"modal\" class=\"motion-modal-in fixed inset-0 z-(--z-modal) flex items-center justify-center bg-scrim p-4 md:p-6\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"modal-title\"><div class=\"motion-modal-rise-in w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-modal\"><h2 id=\"modal-title\" class=\"text-lg font-semibold text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"modal\" class=\"motion-modal-in fixed inset-0 z-(--z-modal) flex items-center justify-center bg-scrim p-4 md:p-6\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"modal-title\"><div class=\"motion-modal-rise-in w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-modal\"><div class=\"flex items-start justify-between gap-4\"><h2 id=\"modal-title\" class=\"text-lg font-semibold text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(m.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 38, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 39, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><p class=\"mt-2 text-base text-ink\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><button type=\"button\" class=\"motion-hover -mr-2 -mt-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-mute hover:bg-accent-soft hover:text-ink\" aria-label=\"閉じる\" data-clear=\"#modal-root\" data-ripple>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = atoms.Icon(atoms.IconXmark, atoms.IconMD).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</button></div><p class=\"mt-2 text-base text-ink\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(m.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 39, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/modal.templ`, Line: 44, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p><div class=\"mt-6 flex justify-end gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</p><div class=\"mt-6 flex justify-end gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -99,7 +107,7 @@ func Modal(m view.ConfirmModal) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

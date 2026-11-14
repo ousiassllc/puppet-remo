@@ -46,6 +46,7 @@ type auditFilter struct {
 	Values view.AuditFilters
 	Errors view.AuditFilterErrors
 	Limit  int // 検証済みの limit（0 は既定）
+	Trail  pageTrail
 }
 
 func (f auditFilter) invalid() bool { return f.Errors.Any() }
@@ -99,8 +100,13 @@ func parseAuditFilter(c *gin.Context) auditFilter {
 			f.Values.Limit = strconv.Itoa(f.Limit)
 		}
 	}
-	if raw := q("cursor"); raw != "" {
-		n, err := strconv.ParseInt(raw, 10, 64)
+	trail, ok := parsePageTrail(c)
+	if !ok {
+		f.Errors.Paging = msgAuditPaging
+	}
+	f.Trail = trail
+	if trail.Cursor != "" {
+		n, err := strconv.ParseInt(trail.Cursor, 10, 64)
 		if err != nil || n < 0 {
 			f.Errors.Paging = msgAuditPaging
 		}
@@ -147,7 +153,8 @@ func (h *Handler) Audit(c *gin.Context) {
 			return
 		}
 		list.Rows = h.auditRows(page.Entries)
-		list.NextURL = auditNextURL(f, page.Next)
+		list.Page = f.Trail.Page()
+		list.PrevURL, list.NextURL = auditPageURLs(f, page.Next)
 	}
 	switch {
 	case boostedRequest(c):
@@ -159,22 +166,19 @@ func (h *Handler) Audit(c *gin.Context) {
 	}
 }
 
-// auditNextURL は「次へ」の URL。今の絞り込み（空でないものだけ）と、次のページの cursor を付ける。次のページが無ければ空。
-func auditNextURL(f auditFilter, next int64) string {
-	if next <= 0 {
-		return ""
-	}
-	q := url.Values{}
+// auditPageURLs は「前へ」「次へ」の URL。今の絞り込み（空でないものだけ）と、移る先のページの cursor・back を付ける。
+// 前のページが無い（1 ページ目）・次のページが無い（next <= 0）側は空。cursor は次へしか進めないので、前へは back の道のりで戻る（pageTrail）。
+func auditPageURLs(f auditFilter, next int64) (prev, nextURL string) {
+	filters := url.Values{}
 	for k, v := range map[string]string{
 		"from": f.Values.From, "to": f.Values.To, "q": f.Values.Q, "client_id": f.Query.ClientID,
 		"kind": f.Query.Kind, "result": f.Query.Result, "limit": f.Values.Limit,
 	} {
 		if v != "" {
-			q.Set(k, v)
+			filters.Set(k, v)
 		}
 	}
-	q.Set("cursor", strconv.FormatInt(next, 10))
-	return "/audit?" + q.Encode()
+	return pageURLs("/audit", filters, f.Trail, strconv.FormatInt(max(next, 0), 10), next > 0)
 }
 
 func resultTone(result string) view.BadgeTone {

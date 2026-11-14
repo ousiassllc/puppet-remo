@@ -19,11 +19,11 @@ type PagerProps struct {
 
 // Pager は件数が分からない一覧向けの、前へ／次へだけのページ送り（ガイドの「前へ／次へだけのページ送り」）。
 // 中央に「N ページ目」（sm14・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
-// ボタンは Secondary・Small。押した側が端になったときの、反対側へのフォーカスの移動は app.ts（data-pager-prev / -next）。
+// ボタンは Secondary・Small。狭い幅（モバイル）では、「N ページ目」を折り返さず、ボタンを次の行へ折り返す。押した側が端になったときの、反対側へのフォーカスの移動は app.ts（data-pager-prev / -next）。
 templ Pager(p PagerProps) {
-	<nav class="flex items-center justify-between gap-3" aria-label="ページ送り" data-pager>
+	<nav class="flex flex-wrap items-center justify-between gap-3" aria-label="ページ送り" data-pager>
 		@pagerButton(p.PrevURL, p.PrevLabel, p.Target, "data-pager-prev")
-		<span class="text-sm text-mute" data-page={ strconv.Itoa(p.Page) }>{ strconv.Itoa(p.Page) } ページ目</span>
+		<span class="whitespace-nowrap text-sm text-mute" data-page={ strconv.Itoa(p.Page) }>{ strconv.Itoa(p.Page) } ページ目</span>
 		@pagerButton(p.NextURL, p.NextLabel, p.Target, "data-pager-next")
 	</nav>
 }

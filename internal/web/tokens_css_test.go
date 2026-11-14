@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,7 +31,7 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		"--gap-h1", "--gap-h2", "--gap-h3", "--gap-heading-body", "--gap-para",
 		"--pad-card", "--pad-card-sm", "--gap-card-section", "--gap-inline",
 		"--gap-section", "--gap-section-sm",
-		"--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
+		"--tip-pad-y", "--tip-pad-x", "--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
 		"--toast-h", "--icon-sm", "--icon-md", "--icon-lg", "--icon-xl",
 		"--table-pad-y", "--table-pad-x", "--table-pad-y-compact", "--table-pad-x-compact",
 		"--table-head-size", "--table-body-size", "--table-row-hover", "--table-divider",
@@ -38,6 +39,40 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		if !regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `:`).MatchString(css) {
 			t.Errorf("app.css does not define %s", name)
 		}
+	}
+}
+
+// S2: ラベルと入力欄のすき間 --gap-label はガイドの 6px（#171）。--s-* のスケールには 6 が無いので px で直に持つ。
+// 入力欄の上に積むラベル（<label ... block>）は、このトークン（mb-(--gap-label)）で入力欄との間をあける。mb-2（8px）などに戻ると 2px ずれるので、templ を走査して検出する。
+func TestLabelGapIsSixPixelsAndLabelsUseIt(t *testing.T) {
+	if css := readAppCSS(t); !regexp.MustCompile(`(?m)^\s*--gap-label:\s*6px;`).MatchString(css) {
+		t.Error("app.css must define --gap-label as 6px (the guide's label-to-field gap)")
+	}
+	stacked := regexp.MustCompile(`<label [^>]*\bblock\b[^>]*>`)
+	found := 0
+	err := filepath.WalkDir(filepath.Join("..", "web"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			for _, m := range stacked.FindAllString(line, -1) {
+				found++
+				if !strings.Contains(m, "mb-(--gap-label)") {
+					t.Errorf("%s:%d: a stacked label (block) must use mb-(--gap-label) for the gap to its field: %s", path, i+1, m)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("no stacked <label> found; the test is looking in the wrong place")
 	}
 }
 
@@ -243,5 +278,38 @@ func TestModalMotionUsesTheSlowBand(t *testing.T) {
 		if !regexp.MustCompile(pattern).MatchString(css) {
 			t.Errorf("app.css must define %s with the --motion-slow band", name)
 		}
+	}
+}
+
+// #169: ツールチップ（atoms.Tooltip）はホバーでもキーボードのフォーカスでも出る（ガイド「ツールチップ」）。padding は --tip-pad-*、角丸は --r-sm、
+// 表示の遅延はホバーだけ 400ms（フォーカスは即時）。隠れている間は visibility: hidden で、非対話（pointer-events: none）。
+func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
+	css := readAppCSS(t)
+	rule := func(selector string) string {
+		t.Helper()
+		m := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(selector) + ` \{([^}]*)\}`).FindStringSubmatch(css)
+		if m == nil {
+			t.Fatalf("app.css has no rule for %s", selector)
+		}
+		return m[1]
+	}
+	base := rule(".tip")
+	for _, want := range []string{"visibility: hidden;", "pointer-events: none;", "padding: var(--tip-pad-y) var(--tip-pad-x);", "border-radius: var(--radius-sm);", "background: var(--ink);", "color: var(--bone);", "font-size: var(--text-xs);", "z-index: var(--z-dropdown);"} {
+		if !strings.Contains(base, want) {
+			t.Errorf(".tip lacks %q:\n%s", want, base)
+		}
+	}
+	hover, focus := rule(".tip-host:hover > .tip"), rule(".tip-host:focus-visible > .tip")
+	for name, r := range map[string]string{"hover": hover, "focus-visible": focus} {
+		if !strings.Contains(r, "visibility: visible;") || !strings.Contains(r, "motion-fade-in var(--motion-fade-in)") {
+			t.Errorf("tooltip on %s must become visible with the fade-in:\n%s", name, r)
+		}
+	}
+	// forced-colors では背景が OS の色になって表の文字に重なるので、枠で区切る。
+	if !regexp.MustCompile(`(?s)@media \(forced-colors: active\) \{\s*\.tip \{[^}]*border: 1px solid CanvasText;`).MatchString(css) {
+		t.Error(".tip needs a CanvasText border under @media (forced-colors: active)")
+	}
+	if !strings.Contains(hover, "400ms") || strings.Contains(focus, "400ms") {
+		t.Errorf("the 400ms show delay applies to hover only (focus is immediate):\nhover: %s\nfocus: %s", hover, focus)
 	}
 }

@@ -27,7 +27,7 @@ type PagerProps struct {
 
 // Pager は件数が分からない一覧向けの、前へ／次へだけのページ送り（ガイドの「前へ／次へだけのページ送り」）。
 // 中央に「N ページ目」（sm14・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
-// ボタンは Secondary・Small。押した側が端になったときの、反対側へのフォーカスの移動は app.ts（data-pager-prev / -next）。
+// ボタンは Secondary・Small。狭い幅（モバイル）では、「N ページ目」を折り返さず、ボタンを次の行へ折り返す。押した側が端になったときの、反対側へのフォーカスの移動は app.ts（data-pager-prev / -next）。
 func Pager(p PagerProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -49,7 +49,7 @@ func Pager(p PagerProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<nav class=\"flex items-center justify-between gap-3\" aria-label=\"ページ送り\" data-pager>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<nav class=\"flex flex-wrap items-center justify-between gap-3\" aria-label=\"ページ送り\" data-pager>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -57,14 +57,14 @@ func Pager(p PagerProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"text-sm text-mute\" data-page=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"whitespace-nowrap text-sm text-mute\" data-page=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(p.Page))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 26, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 26, Col: 84}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -77,7 +77,7 @@ func Pager(p PagerProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(p.Page))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 26, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 26, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {

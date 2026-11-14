@@ -24,14 +24,13 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 
 // ClientCard はクライアント 1 件（有効・無効の切り替え）。PATCH の応答もこのフラグメントを返す（API 仕様 §7.2）。
 // 切り替えは現在の状態の逆だけを描画する。削除と詳細への導線は、一覧のカードだけに出す。
-// 名前の見出しは、一覧では h3（sr-only の h2「クライアント一覧」の下）、詳細ページではそのページの h1。見た目はどちらも同じ（text-xl）。
+// 名前の見出し（項目名）は、一覧のカードだけが h3（sr-only の h2「クライアント一覧」の下。base 16 SemiBold）。詳細ページの名前はページの h1
+// （pages/clients.templ の text-3xl）なので、このカードは名前を出さない。
 templ ClientCard(c view.Client) {
 	<article id={ cardID(c) } class="rounded-lg border border-border bg-surface p-4" data-client={ c.ID }>
 		<div class="flex flex-wrap items-baseline justify-between gap-2">
 			if c.CanOpenDetail {
-				<h3 class="text-xl font-semibold text-ink">{ c.DisplayName }</h3>
-			} else {
-				<h1 class="text-xl font-semibold text-ink">{ c.DisplayName }</h1>
+				<h3 class="text-base font-semibold text-ink">{ c.DisplayName }</h3>
 			}
 			<span class="text-xs text-mute" data-approval-mode>承認モード: { c.Approved }</span>
 		</div>

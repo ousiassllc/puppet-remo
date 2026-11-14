@@ -45,6 +45,22 @@ func TestFinalPathMatches(t *testing.T) {
 		{"UNC registration against a drive-letter path", `\\server\share\a.exe`, `\\?\C:\share\a.exe`, false},
 		{`\\?\-prefixed registration does not match (fail closed)`, `\\?\C:\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
 		{"dot segments in the registration do not match (fail closed)", `C:\Tools\..\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{`.\-segment in the registration (fail closed)`, `C:\Tools\.\a.exe`, `\\?\C:\Tools\.\a.exe`, false},
+		{`..\-segment in the registration, same spelling as final (fail closed)`, `C:\a\..\b\x.exe`, `\\?\C:\a\..\b\x.exe`, false},
+		{`..\-segment in the registration that resolves to final (fail closed)`, `C:\a\..\b\x.exe`, `\\?\C:\b\x.exe`, false},
+		{"..-segment with forward slashes (fail closed)", `C:/a/../b/x.exe`, `\\?\C:\b\x.exe`, false},
+		{"..-segment with forward slashes, same spelling (fail closed)", `C:/a/../b/x.exe`, `\\?\C:\a\..\b\x.exe`, false},
+		{"trailing .. segment (fail closed)", `C:\Tools\..`, `\\?\C:\Tools\..`, false},
+		{"trailing . segment (fail closed)", `C:\Tools\.`, `\\?\C:\Tools\.`, false},
+		{`.\-segment in final only (fail closed)`, `C:\Tools\a.exe`, `\\?\C:\Tools\.\a.exe`, false},
+		{`..\-segment in final only (fail closed)`, `C:\Tools\a.exe`, `\\?\C:\Tools\x\..\a.exe`, false},
+		{`\\.\-prefixed registration (fail closed)`, `\\.\C:\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{`\\.\-prefixed registration, same spelling as final (fail closed)`, `\\.\C:\Tools\a.exe`, `\\.\C:\Tools\a.exe`, false},
+		{"//?/-prefixed registration (fail closed)", `//?/C:/Tools/a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{"//./-prefixed registration (fail closed)", `//./C:/Tools/a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{`\\?\-prefixed registration against a drive-letter final (fail closed)`, `\\?\C:\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
+		{`doubled \\?\ in final (fail closed)`, `C:\Tools\a.exe`, `\\?\\\?\C:\Tools\a.exe`, false},
+		{"names that only look like dot segments are allowed", `C:\Tools\.hidden\a..b\...\a.exe`, `\\?\C:\Tools\.hidden\a..b\...\a.exe`, true},
 		{"other drive letter", `D:\Tools\a.exe`, `\\?\C:\Tools\a.exe`, false},
 		{"final is a GLOBALROOT device path", `C:\Tools\a.exe`, `\\?\GLOBALROOT\Device\HarddiskVolume3\Tools\a.exe`, false},
 		{"final without the device prefix", `C:\Tools\a.exe`, `C:\Tools\a.exe`, false},
@@ -56,6 +72,37 @@ func TestFinalPathMatches(t *testing.T) {
 	for _, tt := range tests {
 		if got := finalPathMatches(tt.requested, tt.final); got != tt.want {
 			t.Errorf("%s: finalPathMatches(%q, %q) = %v, want %v", tt.name, tt.requested, tt.final, got, tt.want)
+		}
+	}
+}
+
+func TestHasDevicePrefix(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{`\\?\C:\a.exe`, true}, {`\\.\C:\a.exe`, true}, {`//?/C:/a.exe`, true}, {`//./C:/a.exe`, true}, {`\/?\C:\a.exe`, true},
+		{`\\server\share\a.exe`, false}, {`C:\a.exe`, false}, {`\?\C:\a.exe`, false}, {`\\?`, false}, {`\\?x`, false}, {``, false},
+	}
+	for _, tt := range tests {
+		if got := hasDevicePrefix(tt.in); got != tt.want {
+			t.Errorf("hasDevicePrefix(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestHasDotSegment(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{`C:\a\..\b`, true}, {`C:\a\.\b`, true}, {`C:/a/../b`, true}, {`C:/a/./b`, true}, {`C:\a\..`, true}, {`C:\a\.`, true},
+		{`..\a`, true}, {`.`, true}, {`C:\a/..\b`, true},
+		{`C:\a\b.exe`, false}, {`C:\.a\b`, false}, {`C:\a.\b`, false}, {`C:\...\b`, false}, {`C:\a..b\c`, false}, {`C:\a\`, false}, {``, false},
+	}
+	for _, tt := range tests {
+		if got := hasDotSegment(tt.in); got != tt.want {
+			t.Errorf("hasDotSegment(%q) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }

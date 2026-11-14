@@ -2,11 +2,11 @@
 // 状態とロジックはサーバーが持つ。ここにあるのは、サーバーに頼れない次のものだけ:
 //   1. ネットワーク障害・想定外の 5xx の汎用エラー（インラインアラート。サーバーの応答が無いので、ページに置いた雛形から作る）
 //   2. トークンのコピー
-//   3. トースト（サーバーが OOB で追加する完了の短い通知）の自動消去（3 秒）と、新しいものが前を置き換える動作
-//   4. 確認モーダルのキャンセル・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
+//   3. トースト（サーバーが OOB で追加する完了の短い通知）の自動消去（3 秒）と、新しいものが前を置き換える動作。ドロワーが開いている間は、読み上げをドロワーの中の #nav-live へ写す（7）
+//   4. 確認モーダルのキャンセル・×・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。モーダルを閉じたら、開いた要素へフォーカスを戻す。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をインラインアラートにする
-//   7. モバイルナビ（md 未満の左のドロワー）の開閉（ハンバーガー・スクラム・リンク・Esc）
+//   7. モバイルナビ（md 未満の左のドロワー）の開閉（ハンバーガー・スクラム・リンク・Esc）と、開いている間だけ role="dialog"・aria-modal・aria-labelledby を付けること
 //   8. アラートの差し込み（afterSwap・oobAfterSwap・新規作成）のあと、縦に長い画面でも見える位置へ寄せる（revealAlerts）
 //   9. クライアントで出すエラーのアラートは、同じ文言がすでに表示中（退出中でない）なら置き換えない（ちらつき・再読み上げの防止）
 //  10. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
@@ -20,6 +20,20 @@ const TOAST_ROOT = "toast-root";
 const TOAST_LIFETIME_MS = 3000;
 const ALERT_ROOT = "alert-root";
 const ALERT_TEMPLATE = "alert-template";
+const MODAL_ROOT = "modal-root";
+
+// 確認モーダルを開いた要素（確認の GET を起こした要素）。モーダルを閉じるとき、フォーカスがモーダルの中（か、どこにも無い）なら、ここへ戻す。
+let modalOpener: Element | null = null;
+
+function restoreModalFocus(): void {
+  const opener = modalOpener;
+  modalOpener = null;
+  const active = document.activeElement;
+  const inModal = !active || active === document.body || document.getElementById(MODAL_ROOT)?.contains(active);
+  if (opener instanceof HTMLElement && opener.isConnected && inModal) {
+    opener.focus();
+  }
+}
 
 // 退出のモーション（app.css の `.motion-*-in[data-leaving]`）。data-leaving を付けると CSS のフェードアウトが始まり、終わったら after を呼ぶ。
 // アニメーションが無い（reduced-motion で 0 など）ときは、すぐ after を呼ぶ。
@@ -31,6 +45,9 @@ function leave(el: Element, after: () => void): void {
 
 // root の子をフェードアウトさせ、終わったものから取り除く。フェード中に差し込まれた新しい子（data-leaving の付いていないもの）は残す。
 function clearWithFade(root: Element): void {
+  if (root.id === MODAL_ROOT) {
+    restoreModalFocus();
+  }
   for (const child of [...root.children]) {
     leave(child, () => {
       child.remove();
@@ -96,14 +113,36 @@ document.addEventListener("htmx:responseError", (event) => {
 // Esc で閉じる。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
 // 開いている間は背面（data-nav-background。ヘッダー・本文の列）を inert にして、Tab・クリック・読み上げの対象から外し、Tab はドロワーの中を循環させる。
 // 閉じたら inert を外し、フォーカスを開く前にあった要素（無ければハンバーガー）へ戻す。ハンバーガーは md 以上では出ないので、開く操作は md 未満でしか起きない。
+// ナビは md 以上では常設のナビゲーション（landmark）なので、role="dialog"・aria-modal・aria-labelledby（見出しは #sidebar-nav-title の「メニュー」）は、
+// 開いている間だけここで付ける（閉じている間・md 以上でダイアログとして露出させない）。ダイアログの外は読み上げの対象から外れうる（aria-modal）ので、
+// トーストの読み上げ（#toast-root。ドロワーの外）は、開いている間はドロワーの中の #nav-live（role="status"）へ写し、#toast-root は aria-hidden にして二重に読ませない
+// （トーストは操作できる部品を持たないので、Tab の循環には関わらない。見た目は z-toast でドロワーの上のまま）。
 const NAV_OPEN_ATTR = "data-nav-open";
 const NAV_BACKGROUND = "[data-nav-background]";
+const NAV_LIVE = "nav-live";
 const desktopWidth = window.matchMedia("(min-width: 768px)");
 let navOpener: HTMLElement | null = null;
+
+function syncNavDialog(open: boolean): void {
+  const nav = document.getElementById("sidebar-nav");
+  if (open) {
+    nav?.setAttribute("role", "dialog");
+    nav?.setAttribute("aria-modal", "true");
+    nav?.setAttribute("aria-labelledby", "sidebar-nav-title");
+    document.getElementById(TOAST_ROOT)?.setAttribute("aria-hidden", "true");
+  } else {
+    nav?.removeAttribute("role");
+    nav?.removeAttribute("aria-modal");
+    nav?.removeAttribute("aria-labelledby");
+    document.getElementById(TOAST_ROOT)?.removeAttribute("aria-hidden");
+    document.getElementById(NAV_LIVE)?.replaceChildren();
+  }
+}
 
 function setNavOpen(open: boolean): void {
   const wasOpen = document.body.hasAttribute(NAV_OPEN_ATTR);
   document.body.toggleAttribute(NAV_OPEN_ATTR, open);
+  syncNavDialog(open);
   const toggle = document.querySelector<HTMLElement>("[data-nav-toggle]");
   toggle?.setAttribute("aria-expanded", String(open));
   toggle?.setAttribute("aria-label", open ? "メニューを閉じる" : "メニューを開く");
@@ -391,6 +430,10 @@ function settleToasts(root: Element): void {
     return;
   }
   latest.setAttribute("data-toast-timer", "");
+  // ドロワーが開いている間は、aria-modal のダイアログの外（#toast-root）が読み上げられないことがあるので、中の #nav-live にも同じ文言を出す（トーストごとに 1 回）。
+  if (document.body.hasAttribute(NAV_OPEN_ATTR)) {
+    document.getElementById(NAV_LIVE)?.replaceChildren(latest.textContent ?? "");
+  }
   void Promise.allSettled(latest.getAnimations().map((a) => a.finished)).then(() => {
     window.setTimeout(() => {
       if (latest.isConnected) {
@@ -410,10 +453,13 @@ document.addEventListener("htmx:oobAfterSwap", (event) => {
 });
 
 // アクションの失敗（HX-Retarget: #alert-root の応答）の差し込み。アラートが見える位置へ寄せる（OOB は上の oobAfterSwap）。
+// 確認モーダル（#modal-root への確認の GET の応答）の差し込みでは、開いた要素（リクエストの要素）を覚える（閉じるときにフォーカスを戻す）。
 document.addEventListener("htmx:afterSwap", (event) => {
-  const target = (event as CustomEvent<{ target?: Element }>).detail?.target;
-  if (target?.id === ALERT_ROOT) {
-    revealAlerts(target);
+  const detail = (event as CustomEvent<{ target?: Element; requestConfig?: { elt?: Element } }>).detail;
+  if (detail?.target?.id === ALERT_ROOT) {
+    revealAlerts(detail.target);
+  } else if (detail?.target?.id === MODAL_ROOT && detail.target.querySelector("#modal")) {
+    modalOpener = detail.requestConfig?.elt ?? null;
   }
 });
 

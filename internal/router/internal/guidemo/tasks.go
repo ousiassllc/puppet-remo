@@ -95,18 +95,21 @@ func seedTasks(f *guitest.Fakes, now time.Time) {
 	steps := []struct {
 		route, summary, result string
 		thumb                  bool
+		kind                   service.TaskStepKind // アクション以外の行（Judge の判定など）は、所属するステップの番号を持つ
+		no                     int
 	}{
-		{"fast", "要素「スタート」をクリック", "ok", false},
-		{"fast", "要素「電卓」をクリック", "ok", true},
-		{"openai", "クリック (412, 310)", "ok", true},
-		{"openai", "キー入力（本文は記録しない）", "ok", false},
+		{"fast", "要素「スタート」をクリック", "ok", false, "", 1},
+		{"fast", "要素「電卓」をクリック", "ok", true, "", 2},
+		{"openai", "クリック (412, 310)", "ok", true, "", 3},
+		{"openai", "Judge: 操作を許可", "ok", false, service.TaskStepJudge, 3},
+		{"openai", "キー入力（本文は記録しない）", "ok", false, "", 4},
 	}
 	var ts []service.TaskStep
 	for i, s := range steps {
 		id := int64(9100 + i)
 		at := now.Add(-25*time.Minute + time.Duration(8+i*9)*time.Second)
 		ts = append(ts, service.TaskStep{
-			No: i + 1, Route: s.route, Event: "agent.step", Result: s.result, Summary: s.summary, AuditID: id, Thumb: s.thumb, At: at,
+			No: s.no, Kind: s.kind, Route: s.route, Event: "agent.step", Result: s.result, Summary: s.summary, AuditID: id, Thumb: s.thumb, At: at,
 			Args: []service.AuditArg{{Key: "route", Value: s.route}},
 		})
 		e := service.AuditEntry{ID: id, TS: at, Kind: "agent", Event: "agent.step", ActorType: domain.ActorAgent, ClientID: "client-001", ClientLabel: "demo-desktop", Result: s.result}
@@ -128,4 +131,10 @@ func seedTasks(f *guitest.Fakes, now time.Time) {
 		func(t *domain.Task) { t.ClientID, t.OpenAISteps, t.ErrorCode = "client-003", 2, "safety_check_denied" })
 	mk("01JDEMOTASK00000000000DEN6", "demo-laptop", "ファイルを削除してください。", domain.TaskDenied, 5*time.Hour, 60*time.Second,
 		func(t *domain.Task) { t.ClientID, t.ErrorCode = "client-002", "approval_denied" })
+
+	// 1 ページ 50 件を超えるように、古い完了済みのタスクを足す（ページ送りの確認用。詳細のステップは持たない）。
+	for i := range 55 {
+		mk(fmt.Sprintf("01JDEMOTASK0000000000OLD%03d", i), "demo-desktop", fmt.Sprintf("メモ帳を開いて %d 行目のメモを書いてください。", i+1), domain.TaskCompleted,
+			time.Duration(6*60+i*7)*time.Minute, 30*time.Second, func(t *domain.Task) { t.FastSteps, t.OpenAISteps = 2, 1 })
+	}
 }

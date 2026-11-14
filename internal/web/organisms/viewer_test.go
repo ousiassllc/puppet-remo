@@ -1,6 +1,7 @@
 package organisms_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
@@ -95,4 +96,24 @@ func TestViewerRootPlacesTheViewerOutsideHTMXTargets(t *testing.T) {
 	v.Lease = view.ViewerLease{Held: true, Mine: true, CanRelease: true}
 	out = webtest.Render(t, organisms.ViewerRoot(v))
 	hasNot(t, out, " readonly")
+}
+
+// #166: 「操作するウィンドウ」も molecules.Card の題（h2・lg 18）。htmx が差し替える #window-picker は Card を包む div で、
+// 更新ボタンは本文（Card の p-6）の中にある。直書きの枠・題（rounded-lg border ... p-4・text-base の h2）を残さない。
+func TestWindowPickerIsACard(t *testing.T) {
+	out := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{CanSelect: true}))
+	const title = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">操作するウィンドウ</h2><div class="p-6">`
+	for _, want := range []string{`<div id="window-picker" hx-get="/viewer/windows"`, title, "data-window-refresh"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("window picker lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "data-window-refresh") < strings.Index(out, title) {
+		t.Errorf("the refresh button must be in the card body, after the title:\n%s", out)
+	}
+	for _, bad := range []string{"bg-surface p-4", "text-base font-semibold"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("window picker still has %q:\n%s", bad, out)
+		}
+	}
 }

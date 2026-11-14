@@ -196,24 +196,23 @@ func (h *Handler) taskRows(tasks []domain.Task) []view.TaskRow {
 	return rows
 }
 
-// taskNextURL は「次へ」の URL。次のページが無ければ空。cursor は不透明な文字列なのでクエリとしてエスケープする。
-func taskNextURL(next string) string {
-	if next == "" {
-		return ""
-	}
-	return "/tasks?" + url.Values{"cursor": {next}}.Encode()
-}
-
 // Tasks は GET /tasks?cursor=（新しい順に 50 件。FR-H10）。HX-Request のフラグメントは一覧（#task-list）、HX-Boosted はページの本文、
 // それ以外（履歴の復元を含む）はフルページ。cursor が不正なら 422（サービスが検査する）。読み出しの失敗は 500。
 func (h *Handler) Tasks(c *gin.Context) {
 	ctx := c.Request.Context()
-	page, err := h.d.Tasks.List(ctx, service.TaskListQuery{Cursor: strings.TrimSpace(c.Query("cursor"))})
+	trail, ok := parsePageTrail(c)
+	if !ok {
+		h.pageFail(c, fmt.Errorf("%w: back は cursor と一緒に、%d 件までで指定してください", domain.ErrInvalidArgument, maxPageTrail))
+		return
+	}
+	page, err := h.d.Tasks.List(ctx, service.TaskListQuery{Cursor: trail.Cursor})
 	if err != nil {
 		h.pageFail(c, err)
 		return
 	}
-	list := view.TaskList{Rows: h.taskRows(page.Tasks), NextURL: taskNextURL(page.Next)}
+	// cursor は不透明な文字列なので、URL には pageURLs がクエリとしてエスケープして載せる。
+	prev, next := pageURLs("/tasks", nil, trail, page.Next, page.Next != "")
+	list := view.TaskList{Rows: h.taskRows(page.Tasks), Page: trail.Page(), PrevURL: prev, NextURL: next}
 	switch {
 	case boostedRequest(c):
 		h.render(c, http.StatusOK, pages.TasksBoosted(view.TaskListPage{Chrome: h.chrome(ctx, view.NavTasks), List: list}))
