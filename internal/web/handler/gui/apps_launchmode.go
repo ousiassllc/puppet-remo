@@ -30,6 +30,20 @@ const (
 // msgDeniedListFull は拒否リストが上限に達したときの 409 conflict のメッセージ。
 const msgDeniedListFull = "登録できる拒否リストは 200 件までです。不要なものを削除してから追加してください。"
 
+// msgLaunchModeRollbackFailed は、方式の切り替えを監査に書けず、設定を元に戻すこともできなかったときのアラート（503 audit_unavailable）。
+// 方式が切り替わったままの可能性があるので、応答に実際の方式のパネルを添える。
+const msgLaunchModeRollbackFailed = "監査ログに書き込めず、方式を元に戻すこともできませんでした。現在の方式を確認してください。"
+
+// launchModeRollbackFailed は err が、方式の切り替えの監査の失敗で、かつ設定を元に戻せなかった（方式が切り替わったままかもしれない）ものかを返す。
+func launchModeRollbackFailed(err error) bool {
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodeAuditUnavailable {
+		return false
+	}
+	restored, ok := de.Detail[service.DetailLaunchModeRestored].(bool)
+	return ok && !restored
+}
+
 func deniedItemURL(id string) string   { return deniedURL + "/" + url.PathEscape(id) }
 func deniedEditURL(id string) string   { return deniedItemURL(id) + "/edit" }
 func deniedDeleteURL(id string) string { return deniedItemURL(id) + "/delete/confirm" }
@@ -100,6 +114,10 @@ func (h *Handler) SetLaunchMode(c *gin.Context) {
 			h.failMessage(c, http.StatusUnprocessableEntity, string(domain.CodeInvalidArgument), fe[domain.AppFieldLaunchMode])
 			return
 		}
+		if launchModeRollbackFailed(err) {
+			h.failLaunchModeRollback(c, err)
+			return
+		}
 		h.fail(c, err)
 		return
 	}
@@ -119,6 +137,25 @@ func (h *Handler) SetLaunchMode(c *gin.Context) {
 		organisms.ModalClear(),
 		organisms.ToastOOB(infoToast(msg)),
 	)
+}
+
+// failLaunchModeRollback は、切り替えを監査に書けず元に戻すこともできなかったときの 503 の応答。方式が切り替わったままかもしれないので、
+// アラートに、現在の方式（保存された値を読み直したもの）のパネルと拒否リストのセクションを OOB で添える。読み直せなければパネルは添えない。
+func (h *Handler) failLaunchModeRollback(c *gin.Context, cause error) {
+	ctx := c.Request.Context()
+	f := classify(cause)
+	var extra []templ.Component
+	if mode, err := h.d.Apps.LaunchMode(ctx); err == nil {
+		panel := h.launchModePanel(mode)
+		panel.OOB = true
+		extra = append(extra, organisms.LaunchModePanel(panel))
+		if denied, err := h.deniedSection(ctx, deniedState{}); err == nil {
+			denied.OOB = true
+			extra = append(extra, organisms.DeniedSection(denied))
+		}
+	}
+	h.log.Error("launch mode switch failed and could not be rolled back", "error", cause)
+	h.failMessage(c, f.status, f.code, f.message, extra...)
 }
 
 // Denied は GET /apps/denied。HTMX の部分更新は拒否リストのセクション（編集のキャンセルが使う）。

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
@@ -108,6 +109,9 @@ type AppRegistryConfig struct {
 type appRegistry struct {
 	cfg AppRegistryConfig
 	log *slog.Logger
+	// modeMu は SetLaunchMode の「読む → 書く → 監査 → 失敗なら戻す」を 1 つの臨界区間にする。排他しないと、監査に失敗した呼び出しの
+	// ロールバックが、並行して成功した別の切り替えを取り消し、設定と監査の行が食い違う。
+	modeMu sync.Mutex
 }
 
 // NewAppRegistry は AppRegistry を返す。

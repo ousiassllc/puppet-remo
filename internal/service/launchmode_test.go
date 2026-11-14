@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -163,6 +164,60 @@ func TestSetLaunchModeReportsWhenTheRollbackFailsToo(t *testing.T) {
 	if m, _ := e.apps.LaunchMode(ctx); m != domain.LaunchModeDenylist {
 		t.Errorf("mode = %q; the failed rollback leaves the switched value in place", m)
 	}
+}
+
+// 並行する切り替えのうち、監査に失敗した呼び出しのロールバックが、別の呼び出しの成功した切り替えを取り消さない（modeMu）。
+// A は監査の書き込みの最中で止まり、そこへ B（同じ方式への切り替え）を割り込ませてから A を失敗させる。排他があれば B は A の
+// ロールバックのあとに allowlist を読んで切り替え、最終的に denylist と監査の行 1 件がそろう。
+func TestSetLaunchModeSerializesConcurrentSwitches(t *testing.T) {
+	e := newModeEnv(t)
+	inSync, release := make(chan struct{}), make(chan struct{})
+	audit := &gatedModeAudit{ctlAudit: e.audit, inSync: inSync, release: release}
+	reg, err := NewAppRegistry(AppRegistryConfig{
+		Apps: e.appStore, Denied: e.denyStore, Settings: e.settings, Launcher: e.launcher, Picker: e.picker, Audit: audit, Clock: e.clock, IDs: &ctlIDs{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	aErr, bErr := make(chan error, 1), make(chan error, 1)
+	go func() { aErr <- reg.SetLaunchMode(ctx, domain.LaunchModeDenylist) }()
+	<-inSync // A は設定を書き終え、監査の書き込みの中にいる
+	bStarted := make(chan struct{})
+	go func() { close(bStarted); bErr <- reg.SetLaunchMode(ctx, domain.LaunchModeDenylist) }()
+	<-bStarted
+	close(release) // A の監査を失敗させる（A はロールバックする）。以後の RecordSync は成功する
+
+	if err := <-aErr; !errors.Is(err, domain.ErrAuditUnavailable) {
+		t.Fatalf("A = %v, want audit_unavailable", err)
+	}
+	if err := <-bErr; err != nil {
+		t.Fatalf("B = %v, want success", err)
+	}
+	if m, _ := reg.LaunchMode(ctx); m != domain.LaunchModeDenylist {
+		t.Errorf("mode = %q; A's rollback undid B's successful switch", m)
+	}
+	if n := len(e.audit.SyncEntries()); n != 1 {
+		t.Errorf("audit entries = %d, want 1 (B's)", n)
+	}
+}
+
+// gatedModeAudit は最初の RecordSync で inSync を閉じ、release が閉じられるまで待って、失敗を返す。2 回目以降は ctlAudit に任せる。
+type gatedModeAudit struct {
+	*ctlAudit
+	inSync, release chan struct{}
+	once            sync.Once
+}
+
+func (a *gatedModeAudit) RecordSync(ctx context.Context, e repository.AuditEntry) error {
+	first := false
+	a.once.Do(func() { first = true })
+	if !first {
+		return a.ctlAudit.RecordSync(ctx, e)
+	}
+	close(a.inSync)
+	<-a.release
+	return errors.New("disk full")
 }
 
 // 設定の書き込み自体が失敗したときは、監査を書かずにそのエラーを返す（切り替えは起きていない）。

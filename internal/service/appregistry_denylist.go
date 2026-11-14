@@ -33,13 +33,15 @@ func (r *appRegistry) LaunchMode(ctx context.Context) (domain.LaunchMode, error)
 	return m, nil
 }
 
-// SetLaunchMode は方式を切り替える。設定を書いたあとに監査の行を同期で書き、書けなければ設定を元の方式へ戻して失敗を返す
+// SetLaunchMode は方式を切り替える（modeMu で、読み取りから監査・ロールバックまでを 1 つの臨界区間にする）。設定を書いたあとに監査の行を同期で書き、書けなければ設定を元の方式へ戻して失敗を返す
 // （fail-closed。#174）。設定と監査の表は別のストアなので 1 つのトランザクションにはできない。監査を先に書く順にすると、
 // 設定の書き込みが失敗したときに「切り替えた」行だけが残るため、設定 → 監査 → 失敗時に戻す、の順にしている。
 func (r *appRegistry) SetLaunchMode(ctx context.Context, mode domain.LaunchMode) error {
 	if !mode.Valid() {
 		return AppFieldErrors{domain.AppFieldLaunchMode: msgLaunchModeInvalid}
 	}
+	r.modeMu.Lock()
+	defer r.modeMu.Unlock()
 	before, err := r.LaunchMode(ctx)
 	if err != nil {
 		return err

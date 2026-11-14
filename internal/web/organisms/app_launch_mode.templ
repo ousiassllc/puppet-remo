@@ -12,7 +12,7 @@ import (
 // 方式を変えられるのはホスト所有者だけで、この GUI の画面にしかない（MCP・Web UI には経路が無い。NFR-S20）。
 // ブラックリスト方式へは確認モーダルを経る（切り替えると、拒否リスト以外のアプリを AI が起動できるようになるため）。
 templ LaunchModePanel(v view.LaunchModePanel) {
-	<section id="launch-mode" class="space-y-4 rounded-lg border border-border bg-surface p-4" data-launch-mode={ launchModeName(v) }>
+	<section id="launch-mode" class="space-y-4 rounded-lg border border-border bg-surface p-4" data-launch-mode={ launchModeName(v) } { launchModeAttrs(v)... }>
 		<h2 class="mb-6 text-2xl font-semibold text-ink">起動の方式</h2>
 		if v.Denylist {
 			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "alert", "data-mode-note": "denylist"}) {
@@ -34,6 +34,14 @@ templ LaunchModePanel(v view.LaunchModePanel) {
 			</div>
 		}
 	</section>
+}
+
+// launchModeAttrs は、応答に添えて差し替える（OOB）ときの属性。
+func launchModeAttrs(v view.LaunchModePanel) atoms.Attrs {
+	if v.OOB {
+		return atoms.Attrs{"hx-swap-oob": "true"}
+	}
+	return nil
 }
 
 func launchModeName(v view.LaunchModePanel) string {

@@ -734,7 +734,7 @@ type AppRegistry interface {
     Create(ctx context.Context, in domain.AppInput) (domain.LaunchableApp, error)
     Update(ctx context.Context, id string, in domain.AppInput) (domain.LaunchableApp, error) // id・CreatedAt は変えない。無ければ ErrNotFound
     Delete(ctx context.Context, id string) error                                        // 無ければ ErrNotFound
-    // 起動の方式の切り替え（#88。ホスト GUI の `/apps` だけ。MCP・Web UI には経路が無い）。定義外の値は AppFieldErrors{"mode": …}。方式が実際に変わるときだけ settings.launch_mode.update を監査する（from・to）。設定の書き込みのあとに監査の行を SyncAuditRecorder.RecordSync で同期に書き、書けなければ設定を元の方式へ戻して domain.ErrAuditUnavailable を返す（fail-closed。#174。戻す書き込みも失敗したときは Detail に launch_mode_restored = false）。他の settings.* の監査は非同期のまま。
+    // 起動の方式の切り替え（#88。ホスト GUI の `/apps` だけ。MCP・Web UI には経路が無い）。定義外の値は AppFieldErrors{"mode": …}。方式が実際に変わるときだけ settings.launch_mode.update を監査する（from・to）。設定の書き込みのあとに監査の行を SyncAuditRecorder.RecordSync で同期に書き、書けなければ設定を元の方式へ戻して domain.ErrAuditUnavailable を返す（fail-closed。#174。戻す書き込みも失敗したときは Detail に launch_mode_restored = false。読み取りからロールバックまでは appRegistry の mutex で直列化する。GUI はこのときだけ、実際の方式のパネルを OOB で添えた 503 を返す）。他の settings.* の監査は非同期のまま。
     SetLaunchMode(ctx context.Context, mode domain.LaunchMode) error
     // 拒否リストの登録・更新・削除。value は domain.ClassifyDenied がパスか実行ファイル名かに分ける。パスは登録時に AppLauncher.Resolve で実体のパスへ解決して保存する（ファイルが無い・固定ディスクに無い・解決できないときは入力の綴りの区切りをそろえて保存）。
     // 不備・重複は AppFieldErrors{"value": …}（GUI が 422 で再描画）、200 件到達は domain.CodeConflict、無い id は ErrNotFound。監査は settings.launch_denylist.create / update / delete（actor host）。
