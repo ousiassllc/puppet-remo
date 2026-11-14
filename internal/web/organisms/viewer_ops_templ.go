@@ -172,7 +172,7 @@ func ClipboardPanel(scoped bool) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"space-y-6\"><form class=\"space-y-4\" novalidate hx-post=\"/viewer/clipboard/send\" hx-target=\"#clipboard-status\" hx-swap=\"innerHTML\" hx-disabled-elt=\"find button[type=submit]\"><div class=\"space-y-2\"><label for=\"clipboard-text\" class=\"block text-sm text-ink\">ホストへ送るテキスト</label>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"space-y-6\"><form class=\"space-y-4\" novalidate hx-post=\"/viewer/clipboard/send\" hx-target=\"#clipboard-status\" hx-swap=\"innerHTML\" hx-disabled-elt=\"find button[type=submit]\"><div><label for=\"clipboard-text\" class=\"mb-(--gap-label) block text-sm text-ink\">ホストへ送るテキスト</label>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -296,7 +296,7 @@ func ClipboardFetched(text string) templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<label for=\"clipboard-fetched\" class=\"mb-2 block text-sm text-ink\">ホストのクリップボード（選択してコピーしてください）</label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<label for=\"clipboard-fetched\" class=\"mb-(--gap-label) block text-sm text-ink\">ホストのクリップボード（選択してコピーしてください）</label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

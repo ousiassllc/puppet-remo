@@ -216,6 +216,11 @@ func TestEmptyState(t *testing.T) {
 func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	out := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "削除しますか？", Message: "元に戻せません。", Label: "削除する", ConfirmURL: "/x", Method: "delete", Target: "#t", Swap: "outerHTML"}))
 	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "shadow-modal", "motion-modal-in", "motion-modal-rise-in")
+	// 右上の × はキャンセルと同じ data-clear（app.ts が #modal-root を空にして、開いた要素へフォーカスを戻す）。見出しと同じ行・パネルの中にある。
+	has(t, out, `aria-label="閉じる" data-clear="#modal-root"`)
+	if strings.Count(out, `data-clear="#modal-root"`) != 2 {
+		t.Errorf("modal must have two data-clear buttons (cancel and ×): %s", out)
+	}
 	// M5: モーダルの出現は --motion-slow（280ms）の専用クラス。出現 320ms の motion-fade-in・motion-rise-in は使わない。
 	hasNot(t, out, "motion-fade-in", "motion-rise-in")
 	hasNot(t, out, "shadow-xl", "z-40")

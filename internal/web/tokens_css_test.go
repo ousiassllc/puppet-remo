@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,6 +39,40 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		if !regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `:`).MatchString(css) {
 			t.Errorf("app.css does not define %s", name)
 		}
+	}
+}
+
+// S2: ラベルと入力欄のすき間 --gap-label はガイドの 6px（#171）。--s-* のスケールには 6 が無いので px で直に持つ。
+// 入力欄の上に積むラベル（<label ... block>）は、このトークン（mb-(--gap-label)）で入力欄との間をあける。mb-2（8px）などに戻ると 2px ずれるので、templ を走査して検出する。
+func TestLabelGapIsSixPixelsAndLabelsUseIt(t *testing.T) {
+	if css := readAppCSS(t); !regexp.MustCompile(`(?m)^\s*--gap-label:\s*6px;`).MatchString(css) {
+		t.Error("app.css must define --gap-label as 6px (the guide's label-to-field gap)")
+	}
+	stacked := regexp.MustCompile(`<label [^>]*\bblock\b[^>]*>`)
+	found := 0
+	err := filepath.WalkDir(filepath.Join("..", "web"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			for _, m := range stacked.FindAllString(line, -1) {
+				found++
+				if !strings.Contains(m, "mb-(--gap-label)") {
+					t.Errorf("%s:%d: a stacked label (block) must use mb-(--gap-label) for the gap to its field: %s", path, i+1, m)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("no stacked <label> found; the test is looking in the wrong place")
 	}
 }
 

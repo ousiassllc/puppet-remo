@@ -13,7 +13,7 @@ import (
 // ブラックリスト方式へは確認モーダルを経る（切り替えると、拒否リスト以外のアプリを AI が起動できるようになるため）。
 // 枠と題は molecules.Card。htmx は題ごとパネルを差し替える（outerHTML）ので、Card を #launch-mode の中に置く。
 templ LaunchModePanel(v view.LaunchModePanel) {
-	<div id="launch-mode" data-launch-mode={ launchModeName(v) }>
+	<div id="launch-mode" data-launch-mode={ launchModeName(v) } { launchModeAttrs(v)... }>
 		@molecules.Card("起動の方式") {
 			<div class="space-y-4">
 				if v.Denylist {
@@ -38,6 +38,14 @@ templ LaunchModePanel(v view.LaunchModePanel) {
 			</div>
 		}
 	</div>
+}
+
+// launchModeAttrs は、応答に添えて差し替える（OOB）ときの属性。
+func launchModeAttrs(v view.LaunchModePanel) atoms.Attrs {
+	if v.OOB {
+		return atoms.Attrs{"hx-swap-oob": "true"}
+	}
+	return nil
 }
 
 func launchModeName(v view.LaunchModePanel) string {

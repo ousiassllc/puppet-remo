@@ -547,13 +547,13 @@ func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
 }
 
 // S2: API キーのパネルとクリップボードの送信フォームは、項目 → 項目を 16px（`--gap-field` = space-y-4）で並べる。
-// クリップボードはラベル → テキスト欄だけを 8px（space-y-2）にまとめ、その外側（テキスト欄のブロック → 送信ボタン）を 16px にする。
+// クリップボードはラベル → テキスト欄だけを 6px（--gap-label = mb-(--gap-label)）で組にし、その外側（テキスト欄のブロック → 送信ボタン）を 16px にする。
 func TestSubmitFormsUseFieldGap(t *testing.T) {
 	key := webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", PutURL: "/agent/api-key"}))
 	has(t, key, `<div id="agent-key" class="space-y-4"`)
 	hasNot(t, key, "space-y-3", "space-y-2")
 	clip := webtest.Render(t, organisms.ClipboardPanel(false))
-	has(t, clip, `class="space-y-4" novalidate hx-post="/viewer/clipboard/send"`, `<div class="space-y-2"><label for="clipboard-text"`)
+	has(t, clip, `class="space-y-4" novalidate hx-post="/viewer/clipboard/send"`, `<div><label for="clipboard-text" class="mb-(--gap-label) block text-sm text-ink"`)
 }
 
 // エージェントと高速パスのフォームは、別々の同意（別々のチェックボックスと文言）を持つ。既定の値は入力のとおりに描画する。
@@ -756,9 +756,9 @@ func TestServerStatusPortIsMono(t *testing.T) {
 	has(t, out, `<dd data-field="port" class="mb-1 min-w-0 font-mono sm:mb-0">8765</dd>`)
 }
 
-// S2: ラベル→入力は 8（mb-2）、項目→項目は 16（gap-4）、入れ子のパネルの padding は 16（p-4）。
+// S2: ラベル→入力は 6（--gap-label = mb-(--gap-label)）、項目→項目は 16（gap-4）、入れ子のパネルの padding は 16（p-4）。
 func TestFormAndNestedPanelSpacing(t *testing.T) {
-	has(t, webtest.Render(t, organisms.ClipboardFetched("x")), `class="mb-2 block text-sm text-ink"`)
+	has(t, webtest.Render(t, organisms.ClipboardFetched("x")), `class="mb-(--gap-label) block text-sm text-ink"`)
 	has(t, webtest.Render(t, organisms.AuditFilters(view.AuditFilters{})), `class="space-y-4 `, `class="grid gap-4 `)
 	has(t, webtest.Render(t, organisms.TokenForm(view.TokenForm{}, false)), `class="grid gap-4 `)
 	req := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "x"}}}))
