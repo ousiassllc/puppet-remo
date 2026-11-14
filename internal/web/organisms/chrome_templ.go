@@ -353,7 +353,8 @@ func oobAttrs(oob bool) atoms.Attrs {
 // Sidebar はホスト GUI のナビゲーション。ページ遷移は hx-boost で #main だけを差し替える（§5.4）。
 // ブートされた遷移の応答は oob = true で添えて、現在のページの強調を更新する。
 // md（768px）未満では左のドロワー（固定・幅 約 78%。ハンバーガー（navToggle）で開き、スクラム・リンク・Esc で閉じる。P0）、md 以上は常時見える左のカラム。
-// 開閉の状態は body の data-nav-open（app.ts）で、見た目は app.css の .nav-drawer。
+// 開閉の状態は body の data-nav-open（app.ts）で、見た目は app.css の .nav-drawer。md 以上では常設のナビゲーションなので、role="dialog"・aria-modal・
+// aria-labelledby（見出しは #sidebar-nav-title）は静的に付けず、ドロワーが開いている間だけ app.ts が付ける。#nav-live は、開いている間のトーストの読み上げの写し先（app.ts）。
 func Sidebar(c view.Chrome, oob bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -383,7 +384,7 @@ func Sidebar(c view.Chrome, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "><p class=\"px-3 pb-2 pt-1 text-xs text-mute\">メニュー</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "><p id=\"sidebar-nav-title\" class=\"px-3 pb-2 pt-1 text-xs text-mute\">メニュー</p><div id=\"nav-live\" class=\"sr-only\" role=\"status\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -400,7 +401,7 @@ func Sidebar(c view.Chrome, oob bool) templ.Component {
 			var templ_7745c5c3_Var12 templ.SafeURL
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(it.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 124, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 126, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -434,7 +435,7 @@ func Sidebar(c view.Chrome, oob bool) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(it.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 132, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 134, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {

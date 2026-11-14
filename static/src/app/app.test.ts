@@ -64,6 +64,82 @@ describe("確認モーダルを閉じる", () => {
   });
 });
 
+describe("確認モーダルを閉じたときのフォーカス", () => {
+  // 確認の GET の応答が #modal-root に差し込まれた（htmx:afterSwap。requestConfig.elt が確認を開いた要素）。
+  async function openModal(): Promise<{ opener: HTMLButtonElement; holder: HTMLElement; cancel: HTMLButtonElement; close: HTMLButtonElement; confirm: HTMLButtonElement }> {
+    const page = await fixture<HTMLElement>(html`
+      <div>
+        <button id="opener">削除</button>
+        <div id="modal-root">
+          <div id="modal">
+            <div id="panel">
+              <button id="close" data-clear="#modal-root" aria-label="閉じる">×</button>
+              <button id="cancel" data-clear="#modal-root">キャンセル</button>
+              <button id="confirm">確定</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+    const opener = page.querySelector<HTMLButtonElement>("#opener")!;
+    const holder = page.querySelector<HTMLElement>("#modal-root")!;
+    holder.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: holder, requestConfig: { elt: opener } } }));
+    return {
+      opener,
+      holder,
+      cancel: page.querySelector<HTMLButtonElement>("#cancel")!,
+      close: page.querySelector<HTMLButtonElement>("#close")!,
+      confirm: page.querySelector<HTMLButtonElement>("#confirm")!,
+    };
+  }
+
+  for (const pick of ["close", "cancel"] as const) {
+    it(`${pick === "close" ? "×" : "キャンセル"}を押すと閉じて、フォーカスを開いた要素へ戻す`, async () => {
+      const m = await openModal();
+      m[pick].focus();
+      m[pick].click();
+      expect(m.holder.querySelector("#modal")?.hasAttribute("data-leaving")).to.equal(true);
+      expect(document.activeElement).to.equal(m.opener);
+      await until(() => m.holder.children.length === 0, "the modal is removed");
+    });
+  }
+
+  it("外側（スクラム）のクリックで閉じたときも、フォーカスをモーダルの中に置いたままなら開いた要素へ戻す", async () => {
+    const m = await openModal();
+    m.confirm.focus();
+    m.holder.querySelector<HTMLElement>("#modal")!.click();
+    expect(document.activeElement).to.equal(m.opener);
+  });
+
+  it("確定の応答の OOB で閉じるときも、開いた要素が残っていれば戻す", async () => {
+    const m = await openModal();
+    m.confirm.focus();
+    const fragment = document.createDocumentFragment();
+    fragment.append(Object.assign(document.createElement("div"), { id: "modal-root" }));
+    const detail = { target: m.holder, fragment, shouldSwap: true };
+    m.holder.dispatchEvent(new CustomEvent("htmx:oobBeforeSwap", { bubbles: true, detail }));
+    expect(document.activeElement).to.equal(m.opener);
+  });
+
+  it("フォーカスがモーダルの外の別の要素にあるなら、奪わない", async () => {
+    const m = await openModal();
+    const other = document.createElement("button");
+    m.holder.before(other);
+    other.focus();
+    m.cancel.click();
+    expect(document.activeElement).to.equal(other);
+    other.remove();
+  });
+
+  it("開いた要素が取り除かれていたら、そこへは戻さない", async () => {
+    const m = await openModal();
+    m.cancel.focus();
+    m.opener.remove();
+    m.cancel.click();
+    expect(document.activeElement).to.not.equal(m.opener);
+  });
+});
+
 describe("トースト", () => {
   it("OOB で追加された新しいトーストは、前のトーストを置き換える（同時に 1 つ）", async () => {
     const root = await fixture<HTMLDivElement>(
@@ -157,11 +233,16 @@ describe("モバイルナビのドロワー", () => {
   const markup = html`
     <div>
       <div id="nav-scrim"></div>
-      <nav id="sidebar-nav"><a href="#a" id="nav-first">一覧</a><a href="#b" id="nav-last">設定</a></nav>
+      <nav id="sidebar-nav" aria-label="メイン">
+        <p id="sidebar-nav-title">メニュー</p>
+        <div id="nav-live" role="status"></div>
+        <a href="#a" id="nav-first">一覧</a><a href="#b" id="nav-last">設定</a>
+      </nav>
       <div id="background" data-nav-background>
         <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
         <main><button id="before">本文の操作</button></main>
       </div>
+      <div id="toast-root" role="status"></div>
     </div>
   `;
   const isOpen = (): boolean => document.body.hasAttribute("data-nav-open");
@@ -242,6 +323,20 @@ describe("モバイルナビのドロワー", () => {
     expect(document.activeElement).to.equal(first);
   });
 
+  it("開いている間だけ role=dialog・aria-modal・見出しへの aria-labelledby を付け、閉じたら外す（常設のナビ・閉じたナビをダイアログとして見せない）", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const nav = root.querySelector<HTMLElement>("#sidebar-nav")!;
+    const toggle = root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+    const dialogAttrs = (): (string | null)[] => ["role", "aria-modal", "aria-labelledby"].map((name) => nav.getAttribute(name));
+    expect(dialogAttrs()).to.deep.equal([null, null, null]);
+    toggle.click();
+    expect(dialogAttrs()).to.deep.equal(["dialog", "true", "sidebar-nav-title"]);
+    // aria-labelledby の指す先が、見出しの文言「メニュー」になっている。
+    expect(root.querySelector("#sidebar-nav-title")?.textContent).to.equal("メニュー");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(dialogAttrs()).to.deep.equal([null, null, null]);
+  });
+
   it("閉じると、開く前にフォーカスのあった要素へ戻す（ハンバーガー以外でも）。閉じているときの Tab は何もしない", async () => {
     const root = await fixture<HTMLElement>(markup);
     const before = root.querySelector<HTMLButtonElement>("#before")!;
@@ -254,6 +349,77 @@ describe("モバイルナビのドロワー", () => {
     expect(document.activeElement?.id).to.equal("nav-first");
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.activeElement).to.equal(before);
+  });
+});
+
+describe("ドロワーが開いている間のトースト", () => {
+  const markup = html`
+    <div>
+      <nav id="sidebar-nav" aria-label="メイン">
+        <p id="sidebar-nav-title">メニュー</p>
+        <div id="nav-live" role="status"></div>
+        <a href="#a" id="nav-first">一覧</a><a href="#b" id="nav-last">設定</a>
+      </nav>
+      <div id="background" data-nav-background>
+        <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
+      </div>
+      <div id="toast-root" role="status"></div>
+    </div>
+  `;
+  const isOpen = (): boolean => document.body.hasAttribute("data-nav-open");
+  const showToast = (root: HTMLElement, message: string): HTMLElement => {
+    const toastRoot = root.querySelector<HTMLElement>("#toast-root")!;
+    const toast = Object.assign(document.createElement("div"), { textContent: message });
+    toast.setAttribute("data-toast", "");
+    toastRoot.append(toast);
+    toastRoot.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: toastRoot } }));
+    return toast;
+  };
+
+  afterEach(() => {
+    document.body.removeAttribute("data-nav-open");
+  });
+
+  it("トーストの内容は、ドロワーの中の #nav-live で読み上げられ、トーストの置き場は二重に読ませない。閉じたら元に戻る", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const live = root.querySelector<HTMLElement>("#nav-live")!;
+    const toastRoot = root.querySelector<HTMLElement>("#toast-root")!;
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    expect(toastRoot.getAttribute("aria-hidden")).to.equal("true");
+    showToast(root, "キルスイッチを発動しました。");
+    expect(live.textContent).to.equal("キルスイッチを発動しました。");
+    showToast(root, "設定を保存しました。");
+    expect(live.textContent, "新しいトーストが前の読み上げを置き換える").to.equal("設定を保存しました。");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(toastRoot.hasAttribute("aria-hidden")).to.equal(false);
+    expect(live.textContent).to.equal("");
+  });
+
+  it("ドロワーが閉じているときのトーストは、#toast-root の読み上げだけに任せる", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    showToast(root, "保存しました。");
+    expect(root.querySelector("#nav-live")?.textContent).to.equal("");
+    expect(root.querySelector("#toast-root")?.hasAttribute("aria-hidden")).to.equal(false);
+  });
+
+  it("トーストが出ても、背面は inert のまま・トーストは Tab の対象にならず、フォーカスはドロワーの中にとどまる", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    expect(isOpen()).to.equal(true);
+    const toast = showToast(root, "保存しました。");
+    const toastRoot = root.querySelector<HTMLElement>("#toast-root")!;
+    // トーストは背面（inert）の外にあり（読み上げが届く）、操作できる部品を持たない（Tab・クリックの対象にならない）。
+    expect(toastRoot.closest("[inert]")).to.equal(null);
+    expect(toast.querySelector("a[href], button, input, select, textarea, [tabindex]")).to.equal(null);
+    expect(root.querySelector<HTMLElement>("#background")!.inert).to.equal(true);
+    // Tab はドロワーの中を循環する（トーストが差し込まれても外へ抜けない）。
+    const last = root.querySelector<HTMLElement>("#nav-last")!;
+    last.focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", cancelable: true });
+    document.dispatchEvent(tab);
+    expect(tab.defaultPrevented).to.equal(true);
+    expect(document.activeElement?.id).to.equal("nav-first");
+    expect(toastRoot.contains(document.activeElement)).to.equal(false);
   });
 });
 
