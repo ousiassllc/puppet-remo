@@ -39,6 +39,18 @@ func (t pageTrail) Page() int {
 	return len(t.Back) + 2
 }
 
+// CanNext は、今のページから「次へ」で進めるか。次の URL の back が maxPageTrail を超える（parsePageTrail が 422 にする）ところまでは進めない。
+func (t pageTrail) CanNext() bool {
+	return len(t.Back)+btoi(t.Cursor != "") <= maxPageTrail
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // Next は、今のページの次（cursor = next）のページの道のり。
 func (t pageTrail) Next(next string) pageTrail {
 	back := slices.Clone(t.Back)
@@ -72,6 +84,7 @@ func (t pageTrail) apply(q url.Values) {
 }
 
 // pageURLs は base に filters（絞り込み）と道のりを付けた「前へ」「次へ」の URL。hasNext が false なら次は空、1 ページ目なら前は空。
+// 道のりが上限（maxPageTrail）に達したら次も空（押せる「次へ」が 422 にならないように、端として扱う）。
 func pageURLs(base string, filters url.Values, t pageTrail, next string, hasNext bool) (prev, nextURL string) {
 	build := func(t pageTrail) string {
 		q := url.Values{}
@@ -87,7 +100,7 @@ func pageURLs(base string, filters url.Values, t pageTrail, next string, hasNext
 	if p, ok := t.Prev(); ok {
 		prev = build(p)
 	}
-	if hasNext {
+	if hasNext && t.CanNext() {
 		nextURL = build(t.Next(next))
 	}
 	return prev, nextURL

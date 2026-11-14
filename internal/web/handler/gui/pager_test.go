@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"net/url"
 	"reflect"
 	"slices"
 	"testing"
@@ -48,5 +49,40 @@ func TestPageURLsKeepFiltersAndEscapeCursors(t *testing.T) {
 	}
 	if prev, next = pageURLs("/x", nil, pageTrail{}, "", false); prev != "" || next != "" {
 		t.Errorf("a single page has no links: %q %q", prev, next)
+	}
+}
+
+// back の上限（maxPageTrail）の境界: 受け付ける最後のページ（back が上限の件数）から、受け付けない URL（back が上限 + 1）への「次へ」は作らない。
+// 押せる「次へ」が 422 にならない。前へはいつでも戻れる。
+func TestPageURLsStopAtTheTrailLimit(t *testing.T) {
+	trail := func(back int) pageTrail {
+		t := pageTrail{Cursor: "c"}
+		for range back {
+			t.Back = append(t.Back, "b")
+		}
+		return t
+	}
+	for _, tc := range []struct {
+		back     int
+		wantNext bool
+	}{{maxPageTrail - 1, true}, {maxPageTrail, false}} {
+		tr := trail(tc.back)
+		_, next := pageURLs("/x", nil, tr, "n", true)
+		if (next != "") != tc.wantNext {
+			t.Errorf("back=%d: next = %q, want a link: %v", tc.back, next, tc.wantNext)
+		}
+		if tc.wantNext {
+			// 作った「次へ」の URL は、そのまま受け付けられる（back が上限ちょうど）。
+			u, err := url.Parse(next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(u.Query()["back"]); got != maxPageTrail {
+				t.Errorf("next URL has %d back entries, want %d", got, maxPageTrail)
+			}
+		}
+		if prev, _ := pageURLs("/x", nil, tr, "n", true); prev == "" {
+			t.Errorf("back=%d: prev must always be available", tc.back)
+		}
 	}
 }
