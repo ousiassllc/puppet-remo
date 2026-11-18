@@ -36,7 +36,7 @@ Unicode true
 ## 表示名（INFO_PRODUCTNAME）は Nefos Remote だが、インストール先のフォルダー名・アンインストール情報のレジストリのキーは
 ## 旧名（puppet-remo）のまま変えない（#188）。変えると、今の版の上に更新したときに二重にインストールされ、
 ## 「アプリと機能」に古い項目が残る。INFO_PRODUCTNAME から導かせず、ここで固定する。
-!define UNINST_KEY_NAME "ousiassllcpuppet-remo" # 既定は ${INFO_COMPANYNAME}${INFO_PRODUCTNAME}。旧名のときの値と同じにする
+!define UNINST_KEY_NAME "ousiassllcpuppet-remo" # 旧名のときの既定値（会社名 + 旧名）と同じにする
 !define INSTALL_DIRNAME "puppet-remo"           # インストール先のフォルダー名
 !define LEGACY_SHORTCUT_NAME "puppet-remo"      # 旧名のスタートメニューのショートカット（更新時と削除時に消す）
 !include "wails_tools.nsh"
