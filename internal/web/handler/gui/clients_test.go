@@ -61,7 +61,7 @@ func TestClientsFragmentVariants(t *testing.T) {
 	contains(t, frag, `id="client-list"`, "alice-desktop")
 	lacks(t, frag, "<html")
 	boosted := r.get("/clients", "HX-Request", "true", "HX-Boosted", "true")
-	contains(t, boosted, "<title>クライアント管理 - puppet-remo</title>", `id="client-list"`)
+	contains(t, boosted, "<title>クライアント管理 - Nefos Remote</title>", `id="client-list"`)
 	lacks(t, boosted, "<html")
 }
 

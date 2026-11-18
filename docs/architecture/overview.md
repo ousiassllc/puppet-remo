@@ -53,7 +53,7 @@ graph TD
         OAI["OpenAI API<br/>(Responses / computer ツール または 関数ツール)"]
         TSAFE["TypeSafe API<br/>(Jev・高速パス有効時のみ)"]
     end
-    subgraph Host["ホスト (Windows) — 単一プロセス puppet-remo"]
+    subgraph Host["ホスト (Windows) — 単一プロセス Nefos Remote"]
         TS["tailscaled"]
         subgraph Net["tailnet 公開面 (tailnet IP のみ Listen。サインイン中だけ開く 127.0.0.1 のコールバック受信口を除く)"]
             RR["リモートルーター (Gin)<br/>/mcp /ws /viewer /api/v1"]
@@ -628,6 +628,7 @@ puppet-remo/
 | フロントエンド | Tailwind CSS ビルド、esbuild（Lit コンポーネント）、`htmx.min.js` のコピー → `static/dist/` |
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
+| 表示名 | 製品名は Nefos Remote（旧名 puppet-remo）。変えるのは、ウィンドウのタイトル・トレイ・ホスト GUI と Web ビューアの画面・インストーラーの表示名（ショートカット・「アプリと機能」の名前）・README・文書の製品名だけ。リポジトリ名・Go のモジュールパス・ファイル名・インストーラーのファイル名・インストール先のフォルダー・アンインストール情報のレジストリのキー・データの場所・資格情報の名前・MCP のサーバー名とツール名・mutex などの内部の識別子は旧名のまま変えない。NSIS は `build/windows/nsis/project.nsi` で `UNINST_KEY_NAME`・`INSTALL_DIRNAME` を固定し、更新のときに旧名のスタートメニューのショートカットを消す |
 | 配布・更新 | GitHub Releases（リポジトリは公開が前提）。インストーラ・`.sha256`・署名ファイル `.minisig`（minisign 形式。Ed25519）を公開し、アプリが埋め込みの公開鍵で署名検証して適用する。署名の trusted comment に版とファイル名を入れ、Release との不一致（付け替え）を拒否する。署名の秘密鍵は GitHub Actions の Secret（`MINISIGN_SECRET_KEY`）にだけ置き、Secret が無いときは署名を省いて公開する（アプリは署名のないリリースを適用しない）。チャネルは正式版（既定）とナイトリー。確認は起動の 1 分後と 6 時間ごと。詳細は [リリース運用](../operations/release.md) |
 | CI | GitHub Actions。すべてのジョブを GitHub のランナー（`ubuntu-latest`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は別ジョブ `e2e` で行う（M2 の受け入れ条件ではなく、あとから足した CI の改善。#64。偽の platform と偽の tailnet により OS に依存しない。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
@@ -722,3 +723,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.28 | 2026-11-02 | 構成図の tailnet 公開面に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |
 | 1.29 | 2026-11-03 | 操作中オーバーレイを、WebView2 の全面ウィンドウから、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（真ん中は覆わない）に改めた | #86 |
 | 1.30 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: 構成図の許可リスト・拒否リスト・起動の方式（`AppRegistry`・`AppReader`）、「アプリ起動」の流れ図（起動の方式の確認・`path` の分岐・`app_denied`・実体のパスの解決）と本文、`AppRegistry` が方式と拒否リストの書き込みを持ち `Control` は読み取り専用の `AppReader`（`LaunchMode`・`ListDenied` を含む）だけを受け取ること | #88 |
+| 1.31 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。「ビルドと配布」に表示名の方針（変えるもの・変えないもの）を追記 | #188 |

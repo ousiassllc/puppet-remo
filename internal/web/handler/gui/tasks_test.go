@@ -56,7 +56,7 @@ func TestTasksListPage(t *testing.T) {
 	})
 	res := r.get("/tasks")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>タスク - puppet-remo</title>", `aria-current="page"`, `id="task-list"`,
+	contains(t, res, "<html", "<title>タスク - Nefos Remote</title>", `aria-current="page"`, `id="task-list"`,
 		// 新しい順（実行中 → 完了 → 失敗）、状態バッジ、ステップ数 / 上限、依頼元（削除済みはその旨）、詳細へのリンク
 		"00RUN001", "00FIN002", `href="/tasks/`+idRunning+`"`, `data-status="running"`, `data-status="completed"`, `data-status="failed"`,
 		"実行中", "完了", "失敗", "3 / 50", "claude-desktop", "（削除済み）",
@@ -140,7 +140,7 @@ func TestTasksListHTMXForms(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idRunning, domain.TaskRunning, "p", 1) })
 	t.Run("boosted", func(t *testing.T) {
 		res := r.get("/tasks", "HX-Request", "true", "HX-Boosted", "true")
-		contains(t, res, "<title>タスク - puppet-remo</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, `id="task-list"`)
+		contains(t, res, "<title>タスク - Nefos Remote</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, `id="task-list"`)
 		lacks(t, res, "<html", "<body")
 	})
 	t.Run("fragment", func(t *testing.T) {
@@ -188,7 +188,7 @@ func TestTaskDetailPage(t *testing.T) {
 	})
 	res := r.get("/tasks/" + idFinished)
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>タスクの詳細 - puppet-remo</title>", `data-task-detail="`+idFinished+`"`,
+	contains(t, res, "<html", "<title>タスクの詳細 - Nefos Remote</title>", `data-task-detail="`+idFinished+`"`,
 		"メモ帳を開いて「こんにちは」と書く", "claude-desktop", "gpt-6.1-sol", "ステップ 50 ・ 600 秒",
 		// 日時・ID・数値は Mono、文章の項目は Regular のまま（ガイド T5）
 		`class="break-all text-ink font-mono" data-task-field="id"`, `class="break-all text-ink font-mono" data-task-field="input-tokens"`,
@@ -294,7 +294,7 @@ func TestTaskDetailNotFoundAndHTMX(t *testing.T) {
 	lacks(t, res, "<html")
 	res = r.get("/tasks/"+idRunning, "HX-Request", "true", "HX-Boosted", "true")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<title>タスクの詳細 - puppet-remo</title>", `id="sidebar-nav"`)
+	contains(t, res, "<title>タスクの詳細 - Nefos Remote</title>", `id="sidebar-nav"`)
 	lacks(t, res, "<html")
 }
 

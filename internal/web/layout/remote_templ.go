@@ -49,7 +49,7 @@ func Remote(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - puppet-remo</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"><script src=\"/static/js/htmx.min.js\"></script><script src=\"/static/js/htmx-config.js\"></script><script src=\"/static/js/response-targets.min.js\"></script><script type=\"module\" src=\"/static/js/app.js\"></script><script type=\"module\" src=\"/static/js/screen-viewer.js\"></script></head><body class=\"min-h-screen bg-bone text-ink antialiased\" hx-ext=\"response-targets\" hx-headers=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - Nefos Remote</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"><script src=\"/static/js/htmx.min.js\"></script><script src=\"/static/js/htmx-config.js\"></script><script src=\"/static/js/response-targets.min.js\"></script><script type=\"module\" src=\"/static/js/app.js\"></script><script type=\"module\" src=\"/static/js/screen-viewer.js\"></script></head><body class=\"min-h-screen bg-bone text-ink antialiased\" hx-ext=\"response-targets\" hx-headers=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -62,7 +62,7 @@ func Remote(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink\">puppet-remo</header><div class=\"mx-auto max-w-7xl space-y-4 p-4 md:p-6\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><header class=\"flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink\">Nefos Remote</header><div class=\"mx-auto max-w-7xl space-y-4 p-4 md:p-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

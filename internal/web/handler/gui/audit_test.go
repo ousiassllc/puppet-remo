@@ -36,7 +36,7 @@ func TestAuditPageListsNewestFirstWithBadgesAndLocalTime(t *testing.T) {
 	r := newRig(t, seedAudit)
 	res := r.get("/audit")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>監査ログ - puppet-remo</title>", "日時", "クライアント", "種別", "イベント", "結果", "所要時間",
+	contains(t, res, "<html", "<title>監査ログ - Nefos Remote</title>", "日時", "クライアント", "種別", "イベント", "結果", "所要時間",
 		"2026-10-30 11:59:00", // 時計 12:00 UTC の 1 分前。Location は UTC
 		"tool.left_click", "lease.acquire", "auth.bearer_failed", "settings.update", "12 ms",
 		`data-result="ok"`, `data-result="denied"`, `data-result="error"`,
@@ -204,7 +204,7 @@ func TestAuditRenderingBranches(t *testing.T) {
 	// HX-Boosted: #main の中身（フルページの枠は出さない）。
 	boosted := r.get("/audit", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, `id="audit-list"`, "<title>監査ログ - puppet-remo</title>")
+	contains(t, boosted, `id="audit-list"`, "<title>監査ログ - Nefos Remote</title>")
 	lacks(t, boosted, "<html")
 	// 履歴の復元はフルページ。
 	restore := r.get("/audit", "HX-Request", "true", "HX-History-Restore-Request", "true")
@@ -232,7 +232,7 @@ func TestAuditDetailShowsFieldsArgsAndThumbnail(t *testing.T) {
 	})
 	res := r.get("/audit/6")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>監査ログの詳細 - puppet-remo</title>", `data-audit-detail="tool.left_click"`,
+	contains(t, res, "<html", "<title>監査ログの詳細 - Nefos Remote</title>", `data-audit-detail="tool.left_click"`,
 		`data-audit-field="time"`, "2026-10-30 11:59:00", `data-audit-field="client"`, "alice-laptop", `data-audit-field="session"`, "sess-1",
 		`data-audit-field="lease"`, "lease-9", `data-audit-field="tool"`, "left_click", `data-audit-field="duration"`, "12 ms", `data-audit-field="actor"`, "mcp",
 		"data-audit-args", "button", "left", "100",

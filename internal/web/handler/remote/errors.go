@@ -60,7 +60,7 @@ func inputBlockedMessage(err error) string {
 		case domain.ReasonElevatedWindow:
 			return "ホストの前面のウィンドウは管理者権限で動いているため、入力できません。"
 		case domain.ReasonOwnWindow:
-			return "ホストの前面のウィンドウは puppet-remo 自身のため、入力できません。"
+			return "ホストの前面のウィンドウは Nefos Remote 自身のため、入力できません。"
 		case string(domain.ReasonTargetMinimized):
 			return "選んだウィンドウは最小化されています。"
 		case string(domain.ReasonTargetUnsupported):

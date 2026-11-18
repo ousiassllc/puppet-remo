@@ -229,13 +229,13 @@ func TestTrayKillSwitchFailureIsLoggedNotFatal(t *testing.T) {
 func TestTrayStateReflectsKillSwitchAndPendingRequests(t *testing.T) {
 	k := newShellKit()
 	st := k.shell.State(t.Context())
-	if !st.KillSwitchEnabled || st.RequestsVisible || st.Tooltip != "puppet-remo" {
+	if !st.KillSwitchEnabled || st.RequestsVisible || st.Tooltip != "Nefos Remote" {
 		t.Errorf("idle state = %+v", st)
 	}
 
 	k.app.set(func(a *fakeShellApp) { a.pending = 3 })
 	st = k.shell.State(t.Context())
-	if !st.RequestsVisible || st.RequestsLabel != "接続要求 3 件を確認" || st.Tooltip != "puppet-remo（接続要求 3 件）" {
+	if !st.RequestsVisible || st.RequestsLabel != "接続要求 3 件を確認" || st.Tooltip != "Nefos Remote（接続要求 3 件）" {
 		t.Errorf("state with requests = %+v", st)
 	}
 
@@ -244,7 +244,7 @@ func TestTrayStateReflectsKillSwitchAndPendingRequests(t *testing.T) {
 	if st.KillSwitchEnabled {
 		t.Error("the kill switch item must be disabled while active (release is on the dashboard)")
 	}
-	if st.Tooltip != "puppet-remo（キルスイッチ発動中）（接続要求 3 件）" {
+	if st.Tooltip != "Nefos Remote（キルスイッチ発動中）（接続要求 3 件）" {
 		t.Errorf("tooltip = %q", st.Tooltip)
 	}
 
