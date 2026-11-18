@@ -18,6 +18,7 @@ templ GUI(title string, c view.Chrome) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } - puppet-remo</title>
+			@favicon()
 			<link rel="stylesheet" href="/static/css/app.css"/>
 			<script src="/static/js/htmx.min.js"></script>
 			<script src="/static/js/htmx-config.js"></script>
@@ -63,6 +64,7 @@ templ Dialog(title string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } - puppet-remo</title>
+			@favicon()
 			<link rel="stylesheet" href="/static/css/app.css"/>
 			<script src="/static/js/htmx.min.js"></script>
 			<script src="/static/js/htmx-config.js"></script>

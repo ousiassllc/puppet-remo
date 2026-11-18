@@ -254,7 +254,7 @@ func TestAuditDetailWithoutThumbnailOrArgs(t *testing.T) {
 	res := r.get("/audit/5")
 	status(t, res, http.StatusOK)
 	contains(t, res, `data-empty="audit-args"`, `data-empty="audit-thumb"`, "サムネイルはありません", `data-audit-field="error-code"`, "lease_held")
-	lacks(t, res, "<img", "data-audit-thumb")
+	lacks(t, res, `src="/audit/5/thumbnail"`, "data-audit-thumb") // ヘッダーのロゴも <img> なので、サムネイルの <img> は src で見分ける
 }
 
 func TestAuditDetailNotFound(t *testing.T) {

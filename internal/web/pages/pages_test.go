@@ -34,7 +34,8 @@ func TestLayoutLoadsOnlyLocalExternalScriptsInOrder(t *testing.T) {
 	}
 	for _, want := range []string{`<link rel="stylesheet" href="/static/css/app.css"`, `hx-ext="response-targets"`, `X-Puppet-Remo`,
 		`id="live-poll"`, `hx-get="/poll"`, `hx-trigger="every 3s"`, `hx-swap="none"`,
-		`id="toast-root"`, `id="alert-root"`, `id="modal-root"`, `id="main"`, `<html lang="ja">`} {
+		`id="toast-root"`, `id="alert-root"`, `id="modal-root"`, `id="main"`, `<html lang="ja">`,
+		`<link rel="icon" href="/static/brand/favicon.ico"`, `src="/static/brand/lockup-light.svg"`, `src="/static/brand/lockup-dark.svg"`, `alt="Nefos Remote"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("layout lacks %q", want)
 		}

@@ -62,10 +62,11 @@ func run(args []string) error {
 	// 単一インスタンス: すでに動いていれば、ここで（既存のウィンドウを前面に出して）終了する。
 	// DB・ホットキーなどの資源は、1 つ目のインスタンスだけが持つ。
 	host := app.NewWailsHost(app.WailsOptions{
-		Background:     background,
-		Icon:           app.TrayIcon,
-		WebviewDataDir: filepath.Join(dataDir, "webview"),
-		Logger:         log,
+		Background:       background,
+		IconLightTaskbar: app.TrayIconLightTaskbar,
+		IconDarkTaskbar:  app.TrayIconDarkTaskbar,
+		WebviewDataDir:   filepath.Join(dataDir, "webview"),
+		Logger:           log,
 	})
 
 	a, err := compose(context.Background(), dataDir, log, logCloser, host)

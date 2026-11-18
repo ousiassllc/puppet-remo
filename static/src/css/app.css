@@ -553,6 +553,28 @@
 }
 
 @layer components {
+  /* ヘッダーのロゴ（atoms.Lockup）。ライト用とダーク用の 2 枚のうち、テーマに合うほうだけ出す。
+   * テーマの決め方はトークンと同じ: <html data-theme> の明示が先で、無ければ prefers-color-scheme。 */
+  .brand-lockup-dark {
+    display: none;
+  }
+  [data-theme="dark"] .brand-lockup-light {
+    display: none;
+  }
+  [data-theme="dark"] .brand-lockup-dark {
+    display: block;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .brand-lockup-light {
+      display: none;
+    }
+    :root:not([data-theme="light"]) .brand-lockup-dark {
+      display: block;
+    }
+  }
+}
+
+@layer components {
   /* 出現（M5）: フェードイン 320ms・ease-out。rise は 4〜8px の移動を添える（スクラムは fade だけ）。 */
   .motion-fade-in {
     animation: motion-fade-in var(--motion-fade-in) var(--ease-out) both;

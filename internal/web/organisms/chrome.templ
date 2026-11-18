@@ -19,10 +19,11 @@ templ HeaderKillSwitch(active bool) {
 
 // Header は全画面共通のヘッダー。
 templ Header(h view.Header) {
-	<header class="flex h-14 items-center justify-between border-b border-border bg-surface px-4 md:px-6">
+	<header class="flex h-14 items-center justify-between border-b border-border bg-bone px-4 md:px-6">
 		<div class="flex items-center gap-2">
 			@navToggle()
-			<span class="text-base text-ink">puppet-remo ホスト</span>
+			@atoms.Lockup()
+			<span class="text-sm text-mute">ホスト</span>
 		</div>
 		<div id="header-killswitch">
 			@HeaderKillSwitch(h.KillSwitchActive)
