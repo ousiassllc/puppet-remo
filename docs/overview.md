@@ -1,5 +1,7 @@
 # プロジェクト概要
 
+製品名は Nefos Remote（旧名 puppet-remo。リポジトリ名・ファイル名・コマンド名は puppet-remo のまま）。
+
 ## 目的
 
 自分の Windows PC（ホスト）に常駐する Wails アプリを通じて、tailnet 内の別端末から**デスクトップ全体を操作（computer-use）**できるようにする。ホストには **AI エージェントを内蔵**し、操作する側は「こういうことをして」と指示を送るだけで、ホストが OpenAI と直接通信し（**ChatGPT のプラン〔Sign in with ChatGPT。既定〕または OpenAI API キー**）、画面を見ながら実行する。操作の入口は 3 つ。
