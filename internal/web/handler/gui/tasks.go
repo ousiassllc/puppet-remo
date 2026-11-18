@@ -73,7 +73,7 @@ var taskHandoffTexts = map[domain.HandoffReason]string{
 
 // taskErrorTexts は失敗の理由（agent_tasks.error_code。docs/architecture/er.md）の説明。未知のコードはコードだけを出す。
 var taskErrorTexts = map[string]string{
-	"input_blocked":       "入力がブロックされた（管理者権限のウィンドウ・puppet-remo 自身のウィンドウなど）",
+	"input_blocked":       "入力がブロックされた（管理者権限のウィンドウ・Nefos Remote 自身のウィンドウなど）",
 	"judge_denied":        "ルール（Judge）が操作を拒否した",
 	"approval_denied":     "ホストが承認を拒否した（または時間切れ）",
 	"safety_check_denied": "OpenAI の安全チェックをホストが拒否した（または時間切れ）",

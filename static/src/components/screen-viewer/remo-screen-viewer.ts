@@ -52,7 +52,7 @@ const haltReasons: Record<string, string> = {
   target_not_foreground: "対象と関係のないウィンドウが前面にあるため、入力を停止しました。",
   target_obscured: "対象に重なった別のウィンドウの上の操作だったため、入力を停止しました。",
   outside_target_group: "対象のウィンドウの外の操作だったため、入力を停止しました。",
-  own_window: "puppet-remo 自身のウィンドウが対象になったため、入力を停止しました。",
+  own_window: "Nefos Remote 自身のウィンドウが対象になったため、入力を停止しました。",
   elevated_window: "管理者権限のウィンドウが対象になったため、入力を停止しました。",
   target_minimized: "対象のウィンドウが最小化されているため、入力を停止しました。",
   target_closed: "対象のウィンドウが閉じられました。",

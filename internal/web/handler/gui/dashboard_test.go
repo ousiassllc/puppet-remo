@@ -114,7 +114,7 @@ func TestDashboardHTMXRequestsReturnFragments(t *testing.T) {
 	t.Run("boosted navigation returns main content with sidebar OOB and no document", func(t *testing.T) {
 		res := r.get("/", "HX-Request", "true", "HX-Boosted", "true")
 		status(t, res, http.StatusOK)
-		contains(t, res, "<title>ダッシュボード - puppet-remo</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, "サーバー状態")
+		contains(t, res, "<title>ダッシュボード - Nefos Remote</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, "サーバー状態")
 		lacks(t, res, "<html", "<body", "<!doctype")
 	})
 	t.Run("history restore gets the full page", func(t *testing.T) {

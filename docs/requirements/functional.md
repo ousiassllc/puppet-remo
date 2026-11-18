@@ -144,7 +144,7 @@ stateDiagram-v2
 | ID | ツール | 引数 | 戻り値 | リース | 優先度 |
 |----|-------|------|--------|-------|--------|
 | FR-M01 | `get_screen_info` | なし | モニター一覧（index、名称、プライマリか、物理サイズ、原点、DPI スケール、スクリーンショット縮小率） | 不要 | M1 |
-| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター、`own_windows`＝puppet-remo 自身のウィンドウの範囲。FR-M20） | 不要 | M1 |
+| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター、`own_windows`＝Nefos Remote 自身のウィンドウの範囲。FR-M20） | 不要 | M1 |
 | FR-M03 | `cursor_position` | なし | カーソル座標（縮小座標系）とモニター | 不要 | M1 |
 | FR-M04 | `mouse_move` | `x`, `y`, `monitor?` | OK | 必要 | M1 |
 | FR-M05 | `left_click` / `right_click` / `middle_click` / `double_click` / `triple_click` | `x?`, `y?`（省略時は現在位置）, `modifiers?`（`ctrl` / `shift` / `alt` / `win` の配列）, `monitor?` | OK | 必要 | M1 |
@@ -180,7 +180,7 @@ FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 �
 | `kill_switch_active` | キルスイッチで受付停止中 |
 | `invalid_coordinates` / `invalid_argument` | 引数が不正（`launch_app` では、`app_id` と `path` の同時指定・どちらも無し・ホワイトリスト方式での `path`・ブラックリスト方式の `path` が絶対パスのローカルの `.exe` の形でない） |
 | `window_not_found` | `focus_window` / `get_ui_tree` の対象が存在しない |
-| `input_blocked` | 管理者権限ウィンドウなど OS 制約で入力できない（UIPI）、または puppet-remo 自身のウィンドウが対象（NFR-S06。`detail.reason` は `own_window`・`elevated_window`・`secure_attention_sequence`）。`own_window` には `detail.own_windows` を付ける（FR-M20） |
+| `input_blocked` | 管理者権限ウィンドウなど OS 制約で入力できない（UIPI）、または Nefos Remote 自身のウィンドウが対象（NFR-S06。`detail.reason` は `own_window`・`elevated_window`・`secure_attention_sequence`）。`own_window` には `detail.own_windows` を付ける（FR-M20） |
 | `desktop_unavailable` | ロック画面・UAC セキュアデスクトップ等でキャプチャ・入力できない |
 | `agent_disabled` | エージェントが無効、API キー未登録、またはクライアントに利用許可が無い状態で `run_task` を呼んだ |
 | `task_not_found` | `get_task` / `cancel_task` の対象が存在しない、または他のクライアントのタスク |
@@ -199,7 +199,7 @@ FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 �
 - **登録時に固定する値**: 登録したアプリの引数と作業ディレクトリ（未指定なら実行ファイルのあるディレクトリ）は登録時に固定し、`launch_app` から変更・追加できない。MCP の応答・ツール結果・エラーメッセージのどこにも、パス・引数は出さない（出すのは `id`・表示名と、方式 `mode`。拒否リストの中身は出さない）。`path` で起動するときは、引数なし・作業ディレクトリは実行ファイルのあるディレクトリで、呼び出し側が指定する手段はない
 - **OS の起動は `CreateProcess`**: 登録された（またはブラックリスト方式で `path` に指定した）絶対パスの `.exe` を、シェル（`cmd.exe`・`ShellExecute`・`start`）を経由せずに起動する。標準権限のまま動き、昇格はしない（NFR-S08）。管理者昇格を要求するアプリ（マニフェストが `requireAdministrator`）は `launch_failed` になる
 - **毎回新しいプロセス**: 同じアプリがすでに起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない）。既存のウィンドウを探す・前面にする動作はしない（必要なら `list_windows` / `focus_window`）。呼び出し回数の上限は設けない（NFR-S20 の残存リスク）
-- **起動後のウィンドウの観測**: プロセスの作成に成功したあと、そのプロセス（`pid`）のトップレベルウィンドウが前面に出るのを、200 ミリ秒間隔で最大 16 回（待ちの合計はおよそ 3 秒。`list_windows` 相当の取得の時間は含まない）観測してから返す。前面のウィンドウの `pid` が起動した `pid` に一致したら、その時点で返す。起動の直前に、ウィンドウの一覧（`list_windows` 相当。puppet-remo 自身のウィンドウを除く）の ID を控え、観測のたびの一覧と比べて、起動の前に無かった新しいウィンドウがあるかも見る（#55）。待ちは `Control` の `Sleep`（テストが差し替える）で行い、観測が終わるか `ctx` が取り消されるまでの最後の観測を使う（取り消されても起動は成功のまま返す）
+- **起動後のウィンドウの観測**: プロセスの作成に成功したあと、そのプロセス（`pid`）のトップレベルウィンドウが前面に出るのを、200 ミリ秒間隔で最大 16 回（待ちの合計はおよそ 3 秒。`list_windows` 相当の取得の時間は含まない）観測してから返す。前面のウィンドウの `pid` が起動した `pid` に一致したら、その時点で返す。起動の直前に、ウィンドウの一覧（`list_windows` 相当。Nefos Remote 自身のウィンドウを除く）の ID を控え、観測のたびの一覧と比べて、起動の前に無かった新しいウィンドウがあるかも見る（#55）。待ちは `Control` の `Sleep`（テストが差し替える）で行い、観測が終わるか `ctx` が取り消されるまでの最後の観測を使う（取り消されても起動は成功のまま返す）
 - **結果の `window` と `reused_existing_window`**: 最後の観測で、(1) `window` は起動したアプリのウィンドウ（`id`・`title`・`pid`・`process_name`。`list_windows` と同じ値）。起動した `pid` のトップレベルウィンドウを優先し、無ければ、起動の前に無かった新しいウィンドウのうちプロセス名が起動した実行ファイル名（許可リストの実行ファイル名。`path` の起動は解決した実体のファイル名）と同じもの（起動したプロセスがすぐ別のプロセスへ引き渡す Windows 11 のメモ帳など。`window.pid` が起動した `pid` と違う）。前面でなければ前面に出してから返す。どちらも見つからないときは付けない（前面にある別のアプリのウィンドウで代用しない。返したウィンドウへ入力すると別のアプリに入るため。#85）。(2) `reused_existing_window` は、前面のウィンドウを確かめられ、起動した `pid` のトップレベルウィンドウが見つからず（最小化・背面のものを含めて 1 つも無い）、かつ起動の前に無かった新しいウィンドウも開いていないとき `true`。`true` のときは `window` を付けない。それ以外は `false`（`window` が無いときも `false`。このときは起動したアプリのウィンドウが分からないので、`list_windows`・スクリーンショットで確かめる）。起動したプロセスがすぐ終了して別の `pid` の新しいウィンドウを開くアプリ（Windows 11 のメモ帳など）は、新しいウィンドウがあるので `false` になる（#55。それまでは `pid` が違うだけで `true` だった）。`true` は「既存のウィンドウが前に出ただけ」の可能性が高いことを示す印で、確定ではない（起動の前の一覧を読めなかったときは新しいウィンドウの有無を使えず、前面のウィンドウの `pid` だけで判断する。ウィンドウの ID は作り直されない限り変わらないので、新しいウィンドウを開かずに既存のウィンドウのタイトルだけが変わった場合は `true` のまま）。どちらでも、入力の前に対象のウィンドウを確かめる
 - **入力の前に確かめる**: MCP の `instructions` と `launch_app` のツールの説明に、起動しても既存のウィンドウが前に出るだけのアプリがあり、そのウィンドウにはユーザーの未保存の作業があるかもしれないので、入力の前にスクリーンショットか `list_windows` で対象を確かめるよう記す（記載の言語は既存の説明に合わせて英語）
 - **起動のプロセスの扱い**: `pid` は起動したプロセスのもの。プロセスの作成に成功した時点で起動は成功とし、ウィンドウが出なくても失敗にはしない（`launch_failed` にはならない）。シングルインスタンスのアプリなどでは、そのプロセスがすぐ終了して既存のプロセスが引き継ぐことがある
@@ -431,11 +431,11 @@ stateDiagram-v2
 
 **自ウィンドウの手がかり（FR-M20。#47）**
 
-puppet-remo 自身のウィンドウ（ホスト GUI・承認ダイアログ。クリック透過のオーバーレイを除く）は、NFR-S06 によりキャプチャから外れてスクリーンショットに写らず、入力は `input_blocked`（`reason: own_window`）で拒否される。オーバーレイ（FR-H07）もキャプチャから外れるが、入力を下のウィンドウへ通すので拒否の対象にならず、避ける場所としても伝えない（`own_windows`・`blocked` に含めない）。AI から見るとスクリーンショットでは別のアプリが見えている場所で入力が止まるため、避ける場所を事前と事後の両方で伝える。写らないこと自体は変えない。
+Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。クリック透過のオーバーレイを除く）は、NFR-S06 によりキャプチャから外れてスクリーンショットに写らず、入力は `input_blocked`（`reason: own_window`）で拒否される。オーバーレイ（FR-H07）もキャプチャから外れるが、入力を下のウィンドウへ通すので拒否の対象にならず、避ける場所としても伝えない（`own_windows`・`blocked` に含めない）。AI から見るとスクリーンショットでは別のアプリが見えている場所で入力が止まるため、避ける場所を事前と事後の両方で伝える。写らないこと自体は変えない。
 
-- **事後（エラー）**: `own_window` の `input_blocked` の `structuredContent.detail.own_windows` に、いま見えている puppet-remo のウィンドウの範囲を `[{ "monitor": <index>, "rect": {x, y, width, height} }]` で付ける。`rect` は**そのモニターの縮小スクリーンショットの座標**（FR-M16。左上が原点、1 単位が縮小画像の 1 px。物理座標ではない）で、`list_windows` の `rect` と同じ丸め・名前。複数のモニターにまたがるウィンドウはモニターごとに 1 件へ切り詰め、最小化されたウィンドウとどのモニターとも重ならないウィンドウ（縮小座標に対応づけられないもの）は含めない。含められるものが無い・ウィンドウの一覧を読めないときは、`own_windows` は空配列か無い（拒否そのものは変えない）。ウィンドウのタイトル・プロセス・ID・内容は載せない。`get_ui_tree`・`focus_window` の `own_window` にも同じ `own_windows` を付ける
+- **事後（エラー）**: `own_window` の `input_blocked` の `structuredContent.detail.own_windows` に、いま見えている Nefos Remote のウィンドウの範囲を `[{ "monitor": <index>, "rect": {x, y, width, height} }]` で付ける。`rect` は**そのモニターの縮小スクリーンショットの座標**（FR-M16。左上が原点、1 単位が縮小画像の 1 px。物理座標ではない）で、`list_windows` の `rect` と同じ丸め・名前。複数のモニターにまたがるウィンドウはモニターごとに 1 件へ切り詰め、最小化されたウィンドウとどのモニターとも重ならないウィンドウ（縮小座標に対応づけられないもの）は含めない。含められるものが無い・ウィンドウの一覧を読めないときは、`own_windows` は空配列か無い（拒否そのものは変えない）。ウィンドウのタイトル・プロセス・ID・内容は載せない。`get_ui_tree`・`focus_window` の `own_window` にも同じ `own_windows` を付ける
 - **事前（スクリーンショットの結果）**: `screenshot` のメタ情報に `own_windows`（そのモニター上の範囲。同じ形で、無ければ空配列）を付ける。画像には何も描かない
-- **事前（一覧）**: `list_windows` に puppet-remo 自身のウィンドウを `blocked: true`・`blocked_reason: "own_window"` 付きで出す（昇格ウィンドウは `blocked: true`・`blocked_reason: "elevated_window"`、入力できるものは `blocked: false`）。`blocked` は InputGuard の規則（`domain.InputBlockReason`）と同じ判定
+- **事前（一覧）**: `list_windows` に Nefos Remote 自身のウィンドウを `blocked: true`・`blocked_reason: "own_window"` 付きで出す（昇格ウィンドウは `blocked: true`・`blocked_reason: "elevated_window"`、入力できるものは `blocked: false`）。`blocked` は InputGuard の規則（`domain.InputBlockReason`）と同じ判定
 - **事前（説明）**: MCP の `instructions` と、`screenshot`・`list_windows`・座標を取る入力ツール・`key`・`type` のツールの説明に、「puppet-remo のウィンドウはスクリーンショットに写らず、入力は `input_blocked`（`own_window`）になる。範囲は `own_windows` と `blocked` で分かる」旨を書く
 - **採らなかった案**: スクリーンショットの該当範囲への塗りつぶし・枠の描画は、(1) キャプチャの経路（`Capturer.Grab` → 縮小 → 符号化）に、ウィンドウの一覧との同時性（撮影の直後にウィンドウが動く）を前提にした描画を足すことになり、ずれた印が誤った安全の手がかりになる、(2) 印が画像上の他のアプリの内容を隠し、AI が背後を読めなくなる、(3) 同じ情報は `own_windows`（機械可読）で足りる、ため行わない。NFR-S06 のキャプチャ除外（`WDA_EXCLUDEFROMCAPTURE`）は変更しない
 
@@ -490,3 +490,4 @@ puppet-remo 自身のウィンドウ（ホスト GUI・承認ダイアログ。�
 | 1.44 | 2026-11-09 | ビューアのウィンドウ選択・グループ表示・手動操作（FR-W10〜W14。モニター表示・ウィンドウ表示の切り替えは config の `source`）を追加。実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10） | #157 |
 | 1.45 | 2026-11-09 | FR-L09〜L14 の補足: スコープ付きのリースの操作は、監査のサムネイル（画面を変える操作の後のモニター全体の撮影。他アプリの画素を含む）を撮らない（監査の行は残る）。Windows の `GrabGroup`（PrintWindow）を実装したが**実機未確認**（成立性ゲート待ち。専用プローブ `cmd/a2probe`・`docs/operations/smoke-windows.md` §3.10） | #156（A-2。ゲート待ち） |
 | 1.46 | 2026-11-14 | FR-AU06・FR-H12: `launch_app` の `path` 起動の監査に解決後の実体のパスを追記（#173）。起動の方式の切り替えを、監査を書けなければ戻して失敗にする fail-closed に（#174） | #173・#174 |
+| 1.47 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。本文の製品名だけを差し替え、`agent_name_hint` の値・MCP の説明文・識別子は変えない | #188 |

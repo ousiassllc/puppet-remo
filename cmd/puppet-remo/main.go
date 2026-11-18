@@ -34,7 +34,7 @@ const logLevelEnv = "PUPPET_REMO_LOG_LEVEL"
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "puppet-remo:", err)
-		showError("puppet-remo を起動できません", err.Error())
+		showError("Nefos Remote を起動できません", err.Error())
 		os.Exit(1)
 	}
 }

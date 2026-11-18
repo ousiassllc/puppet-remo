@@ -11,7 +11,7 @@
     !define INFO_COMPANYNAME "ousiassllc"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "puppet-remo"
+    !define INFO_PRODUCTNAME "Nefos Remote"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "0.1.0"

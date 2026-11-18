@@ -36,7 +36,7 @@ func TestLogsPageShowsSuccessAndErrorEntriesNewestFirst(t *testing.T) {
 	r := newRig(t, seedLogs)
 	res := r.get("/logs")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>ログ - puppet-remo</title>", "日時", "レベル", "内容",
+	contains(t, res, "<html", "<title>ログ - Nefos Remote</title>", "日時", "レベル", "内容",
 		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`,
 		"mcp tool failed", "capture failed", "bearer authentication failed", "alice-laptop", "lease acquired", "tailnet listener is listening",
 		"2026-10-30 11:59:00", // 時計は 2026-10-30 12:00（UTC）の 1 分前
@@ -146,7 +146,7 @@ func TestLogsFragmentVariants(t *testing.T) {
 
 	boosted := r.get("/logs", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, "<title>ログ - puppet-remo</title>", `id="app-log"`, `id="sidebar-nav"`)
+	contains(t, boosted, "<title>ログ - Nefos Remote</title>", `id="app-log"`, `id="sidebar-nav"`)
 	lacks(t, boosted, "<html")
 
 	restore := r.get("/logs", "HX-Request", "true", "HX-History-Restore-Request", "true")

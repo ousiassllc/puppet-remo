@@ -34,7 +34,7 @@ func TestRequestsHistoryPageShowsAllResults(t *testing.T) {
 	})
 	res := r.get("/requests/history")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>接続要求の履歴 - puppet-remo</title>",
+	contains(t, res, "<html", "<title>接続要求の履歴 - Nefos Remote</title>",
 		"届いた日時", "デバイス名", "tailnet IP", "ユーザー", "結果", "処理した日時",
 		`data-history-request="req-ok" data-result="approved"`, "allowed-pc", "carol@example.com", "100.64.0.20",
 		`data-history-request="req-ng" data-result="denied"`, "denied-pc",
@@ -133,7 +133,7 @@ func TestRequestsHistoryFragmentVariants(t *testing.T) {
 
 	boosted := r.get("/requests/history", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, "<title>接続要求の履歴 - puppet-remo</title>", `id="request-history"`, `id="sidebar-nav"`)
+	contains(t, boosted, "<title>接続要求の履歴 - Nefos Remote</title>", `id="request-history"`, `id="sidebar-nav"`)
 	lacks(t, boosted, "<html")
 
 	// 履歴の復元（戻る）はフルページ。

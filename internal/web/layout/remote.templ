@@ -13,7 +13,7 @@ templ Remote(title string) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>{ title } - puppet-remo</title>
+			<title>{ title } - Nefos Remote</title>
 			<link rel="stylesheet" href="/static/css/app.css"/>
 			<script src="/static/js/htmx.min.js"></script>
 			<script src="/static/js/htmx-config.js"></script>
@@ -26,7 +26,7 @@ templ Remote(title string) {
 			hx-ext="response-targets"
 			hx-headers={ templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}) }
 		>
-			<header class="flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink">puppet-remo</header>
+			<header class="flex h-14 items-center border-b border-border bg-surface px-4 text-base text-ink">Nefos Remote</header>
 			<div class="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
 				@organisms.AlertRoot("")
 				{ children... }
