@@ -152,7 +152,7 @@ func TestKeysSendInputBlockedReasons(t *testing.T) {
 		want   string
 	}{
 		{domain.ReasonElevatedWindow, "管理者権限"},
-		{domain.ReasonOwnWindow, "puppet-remo 自身"},
+		{domain.ReasonOwnWindow, "Nefos Remote 自身"},
 		{"unknown", "入力できません"},
 	}
 	for _, tt := range tests {

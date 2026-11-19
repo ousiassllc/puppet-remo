@@ -1,4 +1,6 @@
-# puppet-remo
+# Nefos Remote
+
+旧名 puppet-remo。リポジトリ名・ファイル名・コマンド名は puppet-remo のまま。
 
 自分の Windows PC（ホスト）に常駐する [Wails](https://wails.io/) アプリです。tailnet（Tailscale）内の別端末から、MCP（Model Context Protocol）経由でこの PC のデスクトップ全体を操作（computer-use）できるようにします。個人利用（ホスト所有者＝操作者）が前提で、対象 OS は Windows のみです。
 
@@ -13,7 +15,9 @@
 
 1. 事前に、ホスト PC で Tailscale にログインし、`tailscaled` を動かしておきます。
 2. インストーラ（`puppet-remo-amd64-installer.exe`）を実行します。WebView2 ランタイムが無い環境では、インストーラが導入します。
-3. スタートメニューの「puppet-remo」から起動します。ウィンドウを閉じてもトレイに常駐します。終了はトレイメニューの「終了」です。
+3. スタートメニューの「Nefos Remote」から起動します。ウィンドウを閉じてもトレイに常駐します。終了はトレイメニューの「終了」です。
+
+旧名（puppet-remo）の版がすでに入っている PC は、同じ手順で、前の版と同じ方式（ユーザー単位または全ユーザー）のまま新しいインストーラーを実行します。インストール先のフォルダーは旧名のままで、設定・許可リスト・トークン・監査ログは `%LOCALAPPDATA%\puppet-remo\` にあり、インストーラーは消しません。スタートメニューの旧名のショートカット「puppet-remo」は、同じ方式のものをインストーラーが「Nefos Remote」へ置き換えます（別の場所へ移したショートカットや、方式が違うインストールのものは消えません。旧名の版の上に重ねる更新は、Windows 実機では未確認です。手順は [スモーク手順](docs/operations/smoke-windows.md) §4.7 の P3）。
 
 ### SmartScreen の警告について
 

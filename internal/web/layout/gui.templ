@@ -17,7 +17,7 @@ templ GUI(title string, c view.Chrome) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>{ title } - puppet-remo</title>
+			<title>{ title } - Nefos Remote</title>
 			@favicon()
 			<link rel="stylesheet" href="/static/css/app.css"/>
 			<script src="/static/js/htmx.min.js"></script>
@@ -50,7 +50,7 @@ templ GUI(title string, c view.Chrome) {
 
 // Boosted はサイドバーの hx-boost による遷移の応答。#main の中身（title を含む）に、サイドバーの強調を OOB で添える。
 templ Boosted(title string, c view.Chrome) {
-	<title>{ title } - puppet-remo</title>
+	<title>{ title } - Nefos Remote</title>
 	@organisms.Sidebar(c, true)
 	{ children... }
 }
@@ -63,7 +63,7 @@ templ Dialog(title string) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>{ title } - puppet-remo</title>
+			<title>{ title } - Nefos Remote</title>
 			@favicon()
 			<link rel="stylesheet" href="/static/css/app.css"/>
 			<script src="/static/js/htmx.min.js"></script>

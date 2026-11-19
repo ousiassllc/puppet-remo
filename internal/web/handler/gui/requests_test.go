@@ -42,7 +42,7 @@ func TestRequestsFragmentVariants(t *testing.T) {
 	contains(t, frag, `id="request-list"`, "bob-laptop")
 	lacks(t, frag, "<html", "<body")
 	boosted := r.get("/requests", "HX-Request", "true", "HX-Boosted", "true")
-	contains(t, boosted, "<title>接続要求 - puppet-remo</title>", `id="request-list"`)
+	contains(t, boosted, "<title>接続要求 - Nefos Remote</title>", `id="request-list"`)
 	lacks(t, boosted, "<html")
 }
 

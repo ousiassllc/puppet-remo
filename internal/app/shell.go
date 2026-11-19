@@ -122,7 +122,7 @@ func (s *Shell) Quitting() bool { return s.quitting.Load() }
 
 // State は今のトレイの表示を返す。
 func (s *Shell) State(ctx context.Context) TrayState {
-	st := TrayState{Tooltip: "puppet-remo", KillSwitchLabel: "キルスイッチを発動", KillSwitchEnabled: true}
+	st := TrayState{Tooltip: "Nefos Remote", KillSwitchLabel: "キルスイッチを発動", KillSwitchEnabled: true}
 	if s.app.KillSwitch().Active() {
 		st.Tooltip += "（キルスイッチ発動中）"
 		st.KillSwitchLabel = "キルスイッチ発動中（解除はダッシュボード）"

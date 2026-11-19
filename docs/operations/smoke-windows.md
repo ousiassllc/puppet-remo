@@ -74,7 +74,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | I12 | 管理者として起動したメモ帳へ入力する（アプリは標準権限） | `list_windows` で `Elevated` が真。入力は UIPI で届かない。`service.InputGuard` が `input_blocked` で先に拒否する（platform 単体では SendInput が成功を返すことがある） |
 | I13 | `Ctrl+Alt+Del` | platform は送れない（SAS）。`service.InputGuard` が拒否する（NFR-S06）。platform の `Key` に渡しても OS が受け付けないことだけ確認する |
 | I14 | ロック画面・UAC のセキュアデスクトップ・RDP の切断中 | `SendInput` の失敗が `desktop_unavailable`（`input_blocked` ではない） |
-| I15 | ホスト GUI を開いたまま、MCP クライアントから `list_windows`・`screenshot`、GUI の上の点へ `mouse_move`（#47、FR-M20） | `list_windows` に puppet-remo のウィンドウが `blocked: true`・`blocked_reason: "own_window"` で出る。`screenshot` の画像には GUI が写らず（NFR-S06）、`own_windows` にその範囲（縮小座標の `rect`、`monitor`）が出る。GUI の範囲内への `mouse_move` は `input_blocked`（`own_window`）で、`detail.own_windows` の `rect` が `screenshot` の `own_windows` と一致する。2 台目のモニターと、縮小されるモニターでも同じ |
+| I15 | ホスト GUI を開いたまま、MCP クライアントから `list_windows`・`screenshot`、GUI の上の点へ `mouse_move`（#47、FR-M20） | `list_windows` に Nefos Remote のウィンドウが `blocked: true`・`blocked_reason: "own_window"` で出る。`screenshot` の画像には GUI が写らず（NFR-S06）、`own_windows` にその範囲（縮小座標の `rect`、`monitor`）が出る。GUI の範囲内への `mouse_move` は `input_blocked`（`own_window`）で、`detail.own_windows` の `rect` が `screenshot` の `own_windows` と一致する。2 台目のモニターと、縮小されるモニターでも同じ |
 
 ### 3.3 WindowManager（FR-M11・FR-M12）
 
@@ -178,7 +178,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 
 #### 3.10.1 専用プローブ `a2probe`（最初に実行する。fixture だけを測る）
 
-`cmd/a2probe` は、専用のテスト窓（fixture）だけを出して測る使い捨てのプローブ。製品（`cmd/puppet-remo`）には含めない。puppet-remo・tailnet・承認・リースは使わない。製品の `ListAll`・`At`・`Foreground`・`domain.ResolveGroup`・`Capturer.GrabGroup`・`ComposeGroup` をそのまま呼ぶので、実機で初めて動かすこれらのバグも見つかる。
+`cmd/a2probe` は、専用のテスト窓（fixture）だけを出して測る使い捨てのプローブ。製品（`cmd/puppet-remo`）には含めない。Nefos Remote・tailnet・承認・リースは使わない。製品の `ListAll`・`At`・`Foreground`・`domain.ResolveGroup`・`Capturer.GrabGroup`・`ComposeGroup` をそのまま呼ぶので、実機で初めて動かすこれらのバグも見つかる。
 
 | 項目 | 内容 |
 |---|---|
@@ -247,7 +247,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | E3 | 実行中にホスト側で別アプリを前面に出す | 次のアクションで停止し `failed`（`target_not_foreground` など）。何も入っていない。再開はない（新しいタスクで取り直す） |
 | E4 | 実行中に T を動かす・リサイズする | 次のアクション（key・type を含む。バッチの 2 手目以降も）が入らず `target_moved`。閉じる → `target_closed` |
 | E5 | **中断**: 1 回の応答の途中でメニューが開く（またはダイアログが出る・閉じる） | 残りのアクションは実行されず、`failed` にならず、新しい画像で次のターンが続く。**モデルが中断後に計画し直す**ことと、未実行のアクションを実行済みと思い込まないことを記録する（監査 `agent.batch_yielded`。`computer_call_output` の直後の user メッセージを実 API が受理することも確認する） |
-| E6 | 管理者のメモ帳・puppet-remo 自身・`KeePass.exe`（`agent.deny_processes`）を `window_id` に指定 | タスクが開始されない（行もリースもできない） |
+| E6 | 管理者のメモ帳・Nefos Remote 自身・`KeePass.exe`（`agent.deny_processes`）を `window_id` に指定 | タスクが開始されない（行もリースもできない） |
 | E7 | 高速パスを有効にしたまま `window_id` つきの `run_task` | 高速パスは走らず（タスク詳細で `fast_steps = 0`・`handoff_reason` なし。TypeSafe へ何も送られない）、E1〜E3 が成立する。`window_id` なしでは従来どおり使われる |
 | E8 | 監査・タスク画面 | 対象（プロセス名・pid・window_id）が出て、ウィンドウのタイトル・入力した文字が出ない |
 | E9 | 実機のスクリーンショット（タスク詳細・監査）を、個人情報を伏せて Issue に貼る | — |
@@ -334,7 +334,9 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | # | 確認項目 | 期待 |
 |---|---------|------|
 | P1 | `task windows:build`（Linux からのクロスビルドでも可） | `bin/puppet-remo.exe`（GUI サブシステム）ができる。エクスプローラーのプロパティにバージョン情報があり、マニフェストが Per-Monitor DPI Aware V2 |
-| P2 | `task package`（`makensis` が必要） | `bin/puppet-remo-amd64-installer.exe` ができる。インストール → スタートメニューにショートカット → 起動できる。WebView2 ランタイムが無い環境で導入される。署名はしない（初回に SmartScreen の警告が出る。NFR-O07） |
+| P2 | `task package`（`makensis` が必要） | `bin/puppet-remo-amd64-installer.exe` ができる（ファイル名は旧名のまま）。インストール → スタートメニューに「Nefos Remote」のショートカット → 起動できる。ウィンドウのタイトル・トレイのツールチップが「Nefos Remote」。「アプリと機能」の名前が「Nefos Remote」。WebView2 ランタイムが無い環境で導入される。署名はしない（初回に SmartScreen の警告が出る。NFR-O07） |
+| P3 | **旧名の版からの更新（#188。未確認）**: 旧名（`puppet-remo`。v0.1.3 やナイトリー）の版を入れ、設定・許可リスト・クライアントのトークン・監査ログを作ってから、新しいインストーラーを同じスコープ（既定はユーザー単位。HKCU とユーザーのスタートメニュー。`INSTALL_SCOPE=machine` の全ユーザー版も、旧版と新版を同じスコープにして確かめる）で `/S` なしと `/S` の両方で重ねて実行する | 同じフォルダー（`%LOCALAPPDATA%\Programs\puppet-remo` または `%ProgramFiles%\ousiassllc\puppet-remo`）に上書きされ、二重にインストールされない。「アプリと機能」の項目が 1 つで、名前が「Nefos Remote」になる（レジストリのキー `ousiassllcpuppet-remo` は同じ）。スタートメニューに「Nefos Remote」だけがあり、旧名「puppet-remo」のショートカットは残らない（全ユーザー版では、新しいインストーラーの `Delete "$SMPROGRAMS\puppet-remo.lnk"` が同じ shell context〔all-users〕で旧ショートカットを消せること）。`%LOCALAPPDATA%\puppet-remo\` の設定・許可リスト・トークン・監査ログがそのまま使える。ログオン時の自動起動（Run キーの `puppet-remo`）が有効のままなら、再起動後も起動する。アプリの更新機能（サイドバーの「更新」→ 適用）からの更新でも同じになる。手で重ねるときは、アプリがトレイに常駐したままだと exe がロックされて上書きに失敗しないか（失敗するなら、トレイの「終了」のあとに実行する手順を README に書く）も見る |
+| P4 | 新しい名前のインストールのあと、アンインストールする | 「アプリと機能」の項目・スタートメニューのショートカット（新旧どちらの名前も）・インストール先が消え、`%LOCALAPPDATA%\puppet-remo\` のデータは残る |
 
 ### 4.8 起動許可アプリ（`launch_app`・ホスト GUI。M1.5。FR-M18・M19・H12）
 
@@ -559,3 +561,4 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-03 | §4.16（ブラックリスト方式: 起動の方式の切り替えと確認モーダル、拒否リストの登録・編集・削除と監査、`path` での起動、名前・パス・大文字小文字・8.3 短縮名・シンボリックリンク・ジャンクションでの拒否、名前を変えたコピーは検出されない既知の制限、固定ディスク外・不在・形の不正、`app_id` との同時指定、許可リストのアプリも拒否が優先、ホワイトリスト方式へ戻す・再起動・キルスイッチ、`/apps` のスクリーンショット D1〜D21。未確認）を追加。§4.8 の A4・A6 を `mode` と `path` の受け付けに合わせ、§5 に残存リスクを追記、タイトルを更新 | #88 |
 | — | 2026-11-11 | §3.8 に起動場所の検査の実機確認 L10〜L19（通常の System32・大文字小文字・`/` 区切り・8.3 短縮名・ジャンクション・シンボリックリンク・`subst`・マップドドライブ・UNC。`TestSmokeAppLauncherLocation`。未確認）を追加し、§2 に `PUPPET_REMO_SMOKE_LAUNCH_MAPPED` / `PUPPET_REMO_SMOKE_LAUNCH_UNC` を追加 | #36 |
 | — | 2026-11-11 | §4.17（#15 の項目と手順の対応表）を追加し、§4.4 に R7（WhoIs の確認）・R8（IP 変化の監視）を足した。実機の確認は未確認 | #15 |
+| — | 2026-11-18 | §4.7 の P2 を表示名（Nefos Remote）に合わせ、旧名の版からの更新 P3 とアンインストール P4 を追加（未確認）。製品名の prose を Nefos Remote に改めた | #188 |

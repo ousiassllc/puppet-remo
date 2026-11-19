@@ -111,7 +111,7 @@ let out = [
   "第三者のライセンス表記（THIRD PARTY NOTICES）",
   rule,
   "",
-  "puppet-remo は、次のソフトウェアを同梱しています。それぞれのライセンスの全文を、著作権表示とあわせて以下に載せます。",
+  "Nefos Remote は、次のソフトウェアを同梱しています。それぞれのライセンスの全文を、著作権表示とあわせて以下に載せます。",
   "このファイルは static/scripts/third-party-notices.mjs が作ります（手で編集しません）。",
   "",
 ].join("\n");

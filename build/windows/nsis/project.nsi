@@ -33,6 +33,12 @@ Unicode true
 ####
 ## Include the wails tools
 ####
+## 表示名（INFO_PRODUCTNAME）は Nefos Remote だが、インストール先のフォルダー名・アンインストール情報のレジストリのキーは
+## 旧名（puppet-remo）のまま変えない（#188）。変えると、今の版の上に更新したときに二重にインストールされ、
+## 「アプリと機能」に古い項目が残る。INFO_PRODUCTNAME から導かせず、ここで固定する。
+!define UNINST_KEY_NAME "ousiassllcpuppet-remo" # 旧名のときの既定値（会社名 + 旧名）と同じにする
+!define INSTALL_DIRNAME "puppet-remo"           # インストール先のフォルダー名
+!define LEGACY_SHORTCUT_NAME "puppet-remo"      # 旧名のスタートメニューのショートカット（更新時と削除時に消す）
 !include "wails_tools.nsh"
 
 # The version information for this two must consist of 4 parts
@@ -75,9 +81,9 @@ ManifestDPIAware true
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the installer's file.
 !if "${WAILS_INSTALL_SCOPE}" == "user"
-    InstallDir "$LOCALAPPDATA\Programs\${INFO_PRODUCTNAME}"
+    InstallDir "$LOCALAPPDATA\Programs\${INSTALL_DIRNAME}"
 !else
-    InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}"
+    InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INSTALL_DIRNAME}"
 !endif
 ShowInstDetails show # This will always show the installation details.
 
@@ -97,6 +103,8 @@ Section
     # 第三者のライセンス表記（Noto Sans JP・Sora・JetBrains Mono の OFL、Iconoir の MIT など。#133）。アプリの「ライセンス表記」の画面と同じファイル。
     File "..\..\..\licenses\THIRD_PARTY_NOTICES.txt"
 
+    # 旧名のショートカットが残ると、スタートメニューに 2 つ並ぶ。新しい名前のものを作る前に消す（なければ何もしない）。
+    Delete "$SMPROGRAMS\${LEGACY_SHORTCUT_NAME}.lnk"
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     !insertmacro wails.associateFiles
@@ -114,6 +122,7 @@ Section "uninstall"
     RMDir /r $INSTDIR
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
+    Delete "$SMPROGRAMS\${LEGACY_SHORTCUT_NAME}.lnk"
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols

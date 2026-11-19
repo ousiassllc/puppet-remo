@@ -58,7 +58,7 @@ func NewWailsHost(opts WailsOptions) *WailsHost {
 		h.log = slog.Default()
 	}
 	h.wails = application.New(application.Options{
-		Name:        "puppet-remo",
+		Name:        "Nefos Remote",
 		Description: "tailnet 経由でこの PC を操作させる常駐アプリ",
 		Logger:      h.log,
 		LogLevel:    slog.LevelWarn,
@@ -132,7 +132,7 @@ func (w wailsWindows) Main() MainWindow {
 func (w wailsWindows) OpenApproval(id, kind string) Window {
 	win := w.h.wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "approval-" + id,
-		Title:            "puppet-remo 承認",
+		Title:            "Nefos Remote 承認",
 		Width:            approvalWidth,
 		Height:           approvalWindowHeight(kind),
 		DisableResize:    true,
@@ -172,7 +172,7 @@ func (h *WailsHost) Run(a *App) error {
 
 	win := h.wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "main",
-		Title:  "puppet-remo",
+		Title:  "Nefos Remote",
 		Width:  1120,
 		Height: 780, MinWidth: 800, MinHeight: 560,
 		URL:              "/",
@@ -271,7 +271,7 @@ func newWailsTray(app *application.App, lightTaskbar, darkTaskbar []byte) *wails
 	t.menu.AddSeparator()
 	t.quit = t.menu.Add("終了")
 	t.tray.SetMenu(t.menu)
-	t.tray.SetTooltip("puppet-remo")
+	t.tray.SetTooltip("Nefos Remote")
 	return t
 }
 

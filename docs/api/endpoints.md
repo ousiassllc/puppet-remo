@@ -4,7 +4,7 @@
 
 ## 1. 概要
 
-puppet-remo は 2 つのルーターで HTTP を提供する。
+Nefos Remote は 2 つのルーターで HTTP を提供する。
 
 | ルーター | 到達性 | 提供するもの |
 |---------|--------|-------------|
@@ -87,7 +87,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
 | `app_not_found` | 404 | `launch_app` | `app_id` が許可リストに無い（読めない行・起動の再検査を満たさない行を含む。FR-M19。M1.5）。どちらの起動の方式でも同じ |
 | `app_denied` | 403 | `launch_app` | 起動の方式がブラックリストで、起動しようとしたアプリがホスト所有者の拒否リストに当たる（`app_id` で起動する許可リストのアプリも、拒否リストに当たれば拒否する。#88）。MCP は同じ `code` のツールエラー。メッセージは `the host owner does not allow this app to be launched` で固定し、**パス・拒否リストの中身は含めない**。監査は `denied` |
-| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に puppet-remo のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
+| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に Nefos Remote のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
 | `audit_unavailable` | 503 | `launch_app` | 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動できる） |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリ（ブラックリスト方式の `path` 指定を含む）だが OS がプロセスを作成できなかった、または `path` が固定ディスク上の実在する実行ファイルでなかった（FR-M19。M1.5。#88）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。`path` が UNC・ネットワークドライブ・リムーバブルドライブ上なら `access_denied`、存在しなければ `file_missing`。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
@@ -170,7 +170,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 出力: MCP の画像コンテンツ（`image/png` または `image/jpeg`、base64。縮小済み）と、テキストコンテンツの JSON `{ "monitor": 0, "physical": {…}, "scaled": {…}, "scale": 0.6125, "own_windows": [ {"monitor": 0, "rect": {"x": 784, "y": 0, "width": 393, "height": 442}} ] }`。
 
-`own_windows` は、撮影した時点でそのモニター上にある puppet-remo 自身のウィンドウの範囲（無ければ空配列）。これらのウィンドウは画像に**写らず**（キャプチャ除外。NFR-S06）、入力は `input_blocked`（`own_window`）になるため、`rect`（この画像の座標。縮小座標）の範囲を避ける。画像には印を描かない（FR-M20）。範囲を取れなかったときも画像は返し、`own_windows` は空になる。
+`own_windows` は、撮影した時点でそのモニター上にある Nefos Remote 自身のウィンドウの範囲（無ければ空配列）。これらのウィンドウは画像に**写らず**（キャプチャ除外。NFR-S06）、入力は `input_blocked`（`own_window`）になるため、`rect`（この画像の座標。縮小座標）の範囲を避ける。画像には印を描かない（FR-M20）。範囲を取れなかったときも画像は返し、`own_windows` は空になる。
 
 **`cursor_position`**
 
@@ -211,7 +211,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 `id` は HWND の 10 進文字列。`rect` は、そのウィンドウが最も重なるモニターの縮小座標で、モニターの範囲に切り詰める。`elevated` が true のウィンドウには入力できない（`input_blocked`）。
 
-`blocked` は、そのウィンドウへの入力を puppet-remo が拒否するか。true のとき `blocked_reason`（`own_window` / `elevated_window`。false のときは省略）を付ける。puppet-remo 自身のウィンドウ（`own_window`）も一覧に出し、`blocked: true` の印を付ける。これらはスクリーンショットに写らない（NFR-S06）ので、`rect` の範囲への入力を避ける（FR-M20）。自ウィンドウと昇格の両方に当たるときは `own_window`。
+`blocked` は、そのウィンドウへの入力を Nefos Remote が拒否するか。true のとき `blocked_reason`（`own_window` / `elevated_window`。false のときは省略）を付ける。Nefos Remote 自身のウィンドウ（`own_window`）も一覧に出し、`blocked: true` の印を付ける。これらはスクリーンショットに写らない（NFR-S06）ので、`rect` の範囲への入力を避ける（FR-M20）。自ウィンドウと昇格の両方に当たるときは `own_window`。
 
 **`focus_window`**: `id`\*。存在しなければ `window_not_found`。
 
@@ -347,7 +347,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `target_minimized` | T が最小化されている | する |
 | `target_moved` | `run_task`（`window_id` つき。#158）で、基準 S（モデルが見た最後の撮影）と比べて T または既存メンバーの矩形が違う（移動・リサイズ。どの k でも）。注入しない | する（タスクは `failed`） |
 | `denied_process` | `run_task` の `window_id` のプロセスが `agent.deny_processes` に当たる。タスクを開始しない | しない（開始前の拒否） |
-| `own_window` / `elevated_window` | T・前面・座標の最上位が puppet-remo のウィンドウ / 昇格ウィンドウ（既存の理由） | する |
+| `own_window` / `elevated_window` | T・前面・座標の最上位が Nefos Remote のウィンドウ / 昇格ウィンドウ（既存の理由） | する |
 | `target_not_foreground` | キー・文字の宛先（前面）が G の外の、所有関係のない別プロセスのウィンドウ・前面なし | する |
 | `unrelated_same_process` | PID が T と同じだけで所有関係のないウィンドウが前面（G に入れない） | する |
 | `related_cross_process` | T と所有関係はあるが別プロセスのウィンドウが前面・座標の最上位、または**引き上げ前の葉**（フォーカス先・座標の子ウィンドウ）が別プロセス | する |
@@ -363,7 +363,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 束縛（`LeaseManager.AcquireScoped`）が断る対象は、`window_not_found`（`detail.reason` = `target_closed` / `target_replaced`）と、`input_blocked`（`target_unsupported` / `own_window` / `elevated_window` / `target_minimized`）。再開（`Control.ResumeTarget`）が通らなかったときは、通らなかった条件の `reason` の `input_blocked` で、リースは `halted` のまま。
 
-**`own_window` の `detail.own_windows`**（FR-M20）: AI が避けられるよう、puppet-remo 自身のウィンドウ（スクリーンショットに写らない）の範囲を付ける。`get_ui_tree`・`focus_window` の `own_window` にも付く。
+**`own_window` の `detail.own_windows`**（FR-M20）: AI が避けられるよう、Nefos Remote 自身のウィンドウ（スクリーンショットに写らない）の範囲を付ける。`get_ui_tree`・`focus_window` の `own_window` にも付く。
 
 ```json
 {
@@ -802,3 +802,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.53 | 2026-11-09 | ビューアのウィンドウ選択（#157）: §4.2 に `GET /viewer/windows`・`POST /viewer/target`・`POST /viewer/target/release`、§5.3 に `ready` / `config` の `source`・`origin`、サーバー → クライアントの `target`、クライアント → サーバーの `target.resume`、`error` の `reason`、`config` の `source`（モニター表示・ウィンドウ表示の切り替え）、`input.mouse` の `ox`・`oy`・`w`・`h`（`stale_frame`）、§5.4 にグループ源のフレーム（フラグ bit1・モニター index `0xFFFF`・原点 `i32` ×2）。実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10） | #157 |
 | 1.54 | 2026-11-09 | §5.3 に WebSocket の `clipboard.read`（拒否専用。スコープ付きのリースの保持者に `input_blocked` / `clipboard_out_of_scope` を返し、接続は維持。保持者でないセッションと他の未知の `type` は 4400 のまま）を追加（#157）。 |
 | 1.55 | 2026-11-14 | `launch_app` の監査の `detail` に `resolved_path` / `resolve_failed`（ブラックリスト方式の `path` 指定の起動。#173）。`PUT /apps/mode` を fail-closed に: 監査の行を書けなければ切り替えを戻して 503 `audit_unavailable`（#174） | #173・#174 |
+| 1.56 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。本文の製品名だけを差し替え、ヘッダー `X-Puppet-Remo`・MCP のサーバー名・サブプロトコル名・エラー型の URN・資格情報のターゲット名は変えない | #188 |

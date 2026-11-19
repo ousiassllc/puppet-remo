@@ -5,11 +5,11 @@ version: '3'
 
 info:
   companyName: "ousiassllc"
-  productName: "puppet-remo"
+  productName: "Nefos Remote"
   productIdentifier: "io.github.ousiassllc.puppet-remo"
   description: "tailnet 経由でこの PC を操作させる常駐アプリ"
   copyright: "(c) 2026, ousiassllc"
-  comments: "puppet-remo"
+  comments: "Nefos Remote"
   version: "0.1.0"
 
 # `wails3 dev -config ./build/config.yml` の設定（docs/architecture/frontend.md §8.3）。
