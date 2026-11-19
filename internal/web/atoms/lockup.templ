@@ -1,0 +1,12 @@
+package atoms
+
+// Lockup はヘッダーの製品ロゴ（「Nefos Remote」のロックアップ。素材は static/src/brand の lockup-light.svg・lockup-dark.svg を加工せずに配信する）。
+//
+// ロックアップは 2000×560 で、自前の下地（ライトは --bone、ダークは --bone のダーク値）を持つ。高さ 55px（ヘッダー h-14 の 56px から下の枠線 1px を引いた中身の高さ）で幅 196px。
+// ロゴの下地とヘッダーの地を同じ --bone にそろえるため、ロゴを置くヘッダーは bg-bone にする。
+// ライト用・ダーク用の 2 枚を出し、見えるほうを app.css（.brand-lockup-*）がテーマ（data-theme・prefers-color-scheme）で切り替える。
+// 隠れているほうは display: none なので、読み上げには 1 つだけ出る。
+templ Lockup() {
+	<img class="brand-lockup brand-lockup-light h-[55px] w-auto" src="/static/brand/lockup-light.svg" width="196" height="55" alt="Nefos Remote"/>
+	<img class="brand-lockup brand-lockup-dark h-[55px] w-auto" src="/static/brand/lockup-dark.svg" width="196" height="55" alt="Nefos Remote"/>
+}
