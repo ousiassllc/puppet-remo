@@ -81,7 +81,7 @@ templ ClipboardFetched(text string) {
 
 func keyAttrs(k view.KeyMenuItem) atoms.Attrs {
 	if k.Disabled {
-		return atoms.Attrs{"disabled": true, "aria-disabled": "true", "data-key-disabled": true, "title": "ウィンドウを選んだ操作中は使えません"}
+		return atoms.Attrs{"disabled": true, "aria-disabled": "true", "data-key-disabled": true}
 	}
 	vals, err := json.Marshal(map[string]string{"keys": k.Keys})
 	if err != nil { // map[string]string は常に変換できる
@@ -98,8 +98,15 @@ templ KeyMenu(items []view.KeyMenuItem) {
 		@molecules.Card("ショートカットを送信") {
 			<p class="mb-2 text-xs text-mute">ブラウザが先に処理するキー操作を、ホストへ送ります。</p>
 			<div class="flex flex-wrap gap-2">
-				for _, k := range items {
-					@atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)})
+				for i, k := range items {
+					if k.Disabled {
+						// 無効のボタンは hover・focus を受けないので、ツールチップの出す側（tabindex="0" の span）で包む。標準の title 属性は使わない（#169）。
+						@atoms.Tooltip("key-tip-"+strconv.Itoa(i), "ウィンドウを選んだ操作中は使えません") {
+							@atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)})
+						}
+					} else {
+						@atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)})
+					}
 				}
 			</div>
 			<div id="keys-status" role="status" aria-live="polite" class="mt-2 text-sm text-ink"></div>

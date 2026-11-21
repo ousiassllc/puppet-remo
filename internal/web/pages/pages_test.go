@@ -6,6 +6,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -192,5 +193,24 @@ func TestRemoteNoticePages(t *testing.T) {
 	webtest.AssertNoticeCSPCompliantHTML(t, out, middleware.NoticeCSPValue)
 	if !strings.Contains(out, `data-error-code="invalid_host"`) || strings.Contains(out, "<b>t</b>") {
 		t.Errorf("error page = %s", out)
+	}
+}
+
+// T6（#214）: 待機ページの見出しの見た目（margin・サイズ・ウェイト）は役割クラス .pg-t に置き、h1 の要素セレクタには置かない（タグを差し替えても見た目が変わらない）。
+// 4 種のページとも h1 に class="pg-t" を付ける。
+func TestRemoteNoticeHeadingUsesARoleClass(t *testing.T) {
+	if !strings.Contains(layout.NoticeStyle, "\n.pg-t {") || strings.Contains(layout.NoticeStyle, "\nh1 ") {
+		t.Errorf("NoticeStyle must style the heading with .pg-t, not an h1 selector:\n%s", layout.NoticeStyle)
+	}
+	for name, comp := range map[string]templ.Component{
+		"待機":     pages.Pending(),
+		"拒否":     pages.Denied(),
+		"失効":     pages.Expired(),
+		"エラーページ": pages.RemoteError(view.RemoteError{Code: "invalid_host", Title: "t", Message: "m"}),
+	} {
+		out := webtest.Render(t, comp)
+		if !strings.Contains(out, `<h1 class="pg-t">`) || strings.Contains(out, "<h1>") {
+			t.Errorf("%s: h1 lacks class=\"pg-t\":\n%s", name, out)
+		}
 	}
 }

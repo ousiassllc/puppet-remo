@@ -142,8 +142,8 @@ templ taskStepArgs(args []view.AuditArg) {
 		<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>
 			for _, a := range args {
 				<div class="flex gap-1">
-					<dt class="text-mute group-hover:text-mute-on-soft">{ a.Key }:</dt>
-					<dd class="break-all">{ a.Value }</dd>
+					<dt class="font-mono text-mute group-hover:text-mute-on-soft">{ a.Key }:</dt>
+					<dd class="break-all font-mono">{ a.Value }</dd>
 				</div>
 			}
 		</dl>

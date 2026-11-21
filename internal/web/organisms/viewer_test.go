@@ -65,6 +65,16 @@ func TestViewerOpsRendersOnlyWithTheLease(t *testing.T) {
 	has(t, oob, `id="viewer-ops"`, `hx-swap-oob="true"`)
 }
 
+// #169: 無効のキー（スコープ付きリースで送れない Alt+Tab など）の理由は、title 属性ではなくツールチップ（atoms.Tooltip）で出す。
+// 無効のボタンは hover・focus を受けないので、tabindex="0" の出す側が包み、キーごとに id が違う。有効のキーは包まない。
+func TestKeyMenuDisabledKeyUsesATooltipNotTitle(t *testing.T) {
+	out := webtest.Render(t, organisms.KeyMenu([]view.KeyMenuItem{{Label: "Alt+Tab", Keys: "alt+tab", Disabled: true}, {Label: "Esc", Keys: "escape"}}))
+	has(t, out, `<span class="tip-host" tabindex="0" aria-describedby="key-tip-0">`, `data-key-disabled`,
+		`<span role="tooltip" id="key-tip-0" class="tip">ウィンドウを選んだ操作中は使えません</span>`)
+	hasNot(t, out, "title=", `id="key-tip-1"`)
+	webtest.AssertCSPCompliantHTML(t, out)
+}
+
 func TestViewerToolbarRendersFieldsAndErrors(t *testing.T) {
 	v := view.ViewerToolbar{
 		Monitors: []view.Option{{Value: "0", Label: "モニター 1", Selected: false}, {Value: "1", Label: "モニター 2", Selected: true}},

@@ -175,8 +175,8 @@ templ AuditDetail(v view.AuditDetail) {
 						<tbody class="divide-y divide-border">
 							for _, a := range v.Args {
 								<tr class="hover:bg-accent-soft">
-									<th scope="row" class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-left text-ink">{ a.Key }</th>
-									<td class="break-all px-(--table-pad-x) py-(--table-pad-y) text-ink">{ a.Value }</td>
+									<th scope="row" class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-left font-mono text-ink">{ a.Key }</th>
+									<td class="break-all px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ a.Value }</td>
 								</tr>
 							}
 						</tbody>
