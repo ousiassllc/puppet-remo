@@ -142,14 +142,22 @@ templ TokenList(v view.TokenList, oob bool) {
 				</thead>
 				<tbody class="divide-y divide-border">
 					for _, t := range v.Items {
-						<tr class="hover:bg-accent-soft" data-token={ t.ID }>
+						<tr class="group hover:bg-accent-soft" data-token={ t.ID }>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.Label }</td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><code>{ t.Prefix }…</code></td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">@atoms.Badge(tone(t.StatusTone), t.Status)
 </td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.CreatedAt }</td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.ExpiresAt }</td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.LastUsedAt }</td>
+							if t.ExpiresAt == "" {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>
+							} else {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.ExpiresAt }</td>
+							}
+							if t.LastUsedAt == "" {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>
+							} else {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.LastUsedAt }</td>
+							}
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-right">
 								if t.CanRevoke {
 									@atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{

@@ -330,8 +330,8 @@ func (h *Handler) tokenListView(clientID string, ts []service.TokenRecord) view.
 		}
 		v.Items = append(v.Items, view.Token{
 			ID: t.ID, Label: t.Label, Prefix: t.Prefix, Status: status, StatusTone: tone,
-			CreatedAt: h.formatTime(t.CreatedAt), ExpiresAt: h.formatTimePtr(t.ExpiresAt, "無期限"),
-			LastUsedAt:    h.formatTimePtr(t.LastUsedAt, "未使用"),
+			CreatedAt: h.formatTime(t.CreatedAt), ExpiresAt: h.formatTimePtr(t.ExpiresAt, ""),
+			LastUsedAt:    h.formatTimePtr(t.LastUsedAt, ""),
 			CanRevoke:     active,
 			RevokeConfirm: "/clients/" + url.PathEscape(clientID) + "/tokens/" + url.PathEscape(t.ID) + "/revoke/confirm",
 		})

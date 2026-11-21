@@ -32,8 +32,9 @@ func TestUpdatePageNoUpdate(t *testing.T) {
 
 func TestUpdatePageNeverChecked(t *testing.T) {
 	res := newRig(t).get("/update")
-	contains(t, res, "未確認")
-	lacks(t, res, `data-update="up-to-date"`)
+	// #221: 「未確認」は Mono の外（text-mute の Regular）。日時があるときだけ font-mono。
+	contains(t, res, `<dd class="text-mute" data-field="last-checked">未確認</dd>`)
+	lacks(t, res, `class="font-mono" data-field="last-checked"`, `data-update="up-to-date"`)
 }
 
 func TestUpdatePageBoostedAndFragment(t *testing.T) {

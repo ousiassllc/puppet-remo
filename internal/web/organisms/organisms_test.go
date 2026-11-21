@@ -753,6 +753,10 @@ func TestTableDateTimeCellsUseMono(t *testing.T) {
 	has(t, tasks, mono+"2026-11-01 08:00<")
 	tokens := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "a", CreatedAt: "2026-10-01", ExpiresAt: "2027-10-01", LastUsedAt: "2026-11-01"}}}, false))
 	has(t, tokens, mono+"2026-10-01<", mono+"2027-10-01<", mono+"2026-11-01<")
+	// #221: 値が無いときの文言（無期限・未使用）は Mono の外（Regular の text-mute）。
+	none := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "a", CreatedAt: "2026-10-01"}}}, false))
+	has(t, none, `text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>`, `text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>`)
+	hasNot(t, none, mono+"無期限", mono+"未使用")
 }
 
 // 空状態は molecules.EmptyState（破線・アイコン + 文言）を使う。
