@@ -385,3 +385,65 @@ func TestBreakpointTokensMatchTheTailwindThemeAndAppTS(t *testing.T) {
 		t.Error("app.ts must use md (--bp-md = 768px) for the desktop width")
 	}
 }
+
+// T1・T3（#209）: 文中・値のインライン code は 1 つの書き方で、app.css の `code` ルールが決める（Mono・--accent-soft 地・--r-sm・左右 4px・
+// 大きさは親に従う・文字色 --ink）。テンプレートの <code> には、チップの見た目のクラス（text-xs・px-*・py-*・bg-*・rounded-*・text-*・font-*）を付けない。
+// 付けると画面ごとに大きさ・余白が分かれ、本文の中で 12px に縮む。折り返し・レイアウトのクラス（break-all・min-w-0 など）は付けてよい。
+func TestInlineCodeHasOneStyleFromAppCSS(t *testing.T) {
+	css := readAppCSS(t)
+	rule := regexp.MustCompile(`(?s)\n\s*code\s*\{([^}]*)\}`).FindStringSubmatch(css)
+	if rule == nil {
+		t.Fatal("app.css must define a global `code` rule")
+	}
+	for _, want := range []string{
+		"border-radius: var(--radius-sm);", "background-color: var(--accent-soft);", "padding-inline: var(--s-1);",
+		"color: var(--ink);", "font-family: var(--font-mono);", "font-size: inherit;",
+	} {
+		if !strings.Contains(rule[1], want) {
+			t.Errorf("app.css `code` rule lacks %q:\n%s", want, rule[1])
+		}
+	}
+
+	codeOpen := regexp.MustCompile(`<code\b[^>]*>`)
+	classAttr := regexp.MustCompile(`class="([^"]*)"`)
+	styled := regexp.MustCompile(`^(text-(xs|sm|base|lg|xl|2xl|3xl|2xs|ink|mute)|px-|py-|p-|bg-|rounded|font-|border)`)
+	found := 0
+	err := filepath.WalkDir(filepath.Join("..", "web"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			for _, tag := range codeOpen.FindAllString(line, -1) {
+				found++
+				m := classAttr.FindStringSubmatch(tag)
+				if m == nil {
+					continue
+				}
+				for _, c := range strings.Fields(m[1]) {
+					if styled.MatchString(c) {
+						t.Errorf("%s:%d: <code> must not carry the chip style %q (app.css `code` rule owns it): %s", path, i+1, c, tag)
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("no <code> found; the test is looking in the wrong place")
+	}
+}
+
+// T1: --font-mono は JetBrains Mono を先頭に、和文のフォールバックとして Noto Sans JP を挟む（承認済みの逸脱。docs §8.4 の T の行に理由）。
+func TestFontMonoKeepsTheApprovedJapaneseFallback(t *testing.T) {
+	want := `--font-mono: "JetBrains Mono", "Noto Sans JP", ui-monospace, monospace;`
+	if !strings.Contains(readAppCSS(t), want) {
+		t.Errorf("app.css must define %s", want)
+	}
+}

@@ -222,6 +222,7 @@
  * ウェイトは本文・リンク・ナビ・フォームが Regular（400）、SemiBold（600）は見出しとボタンだけ。 */
 @theme {
   --font-sans: Sora, "Noto Sans JP", sans-serif;
+  /* Mono の和文のフォールバック（承認済みの逸脱。docs §8.4 の T の行）: JetBrains Mono に全角の字がないので、日本語を含む値（パス・ログの値）だけ Noto Sans JP で穴埋めする。 */
   --font-mono: "JetBrains Mono", "Noto Sans JP", ui-monospace, monospace;
 
   --text-*: initial;
@@ -257,6 +258,19 @@
   /* 表の見出しセルは、ブラウザの既定（太字）にせず、thead のクラスで決める（SemiBold は見出し行だけ。T2）。 */
   th {
     font-weight: inherit;
+  }
+
+  /* 文中・値のインライン code（T1・T3。#209）は、すべてこの 1 つの書き方（テンプレートの <code> にクラスは付けない）:
+   * Mono・--accent-soft 地・--r-sm・左右 4px。大きさは親に従う（本文 base なら 16px、詳細表示の sm なら 14px、住所・注記の xs ならその 12px）ので、
+   * 本文の中で 12px に縮むことがない。文字色は --ink（補助テキスト --mute の段落の中でも、地の上で AA 4.5:1 を保つ。C6）。折り返しても両端に余白が付く。 */
+  code {
+    border-radius: var(--radius-sm);
+    background-color: var(--accent-soft);
+    padding-inline: var(--s-1);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: inherit;
+    box-decoration-break: clone;
   }
 
   /* 強調（<strong>）はウェイトでなく下線で表す（SemiBold は見出しとボタンだけ。T2）。 */
