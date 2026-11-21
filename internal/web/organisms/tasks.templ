@@ -47,8 +47,8 @@ templ runningTasks(v view.RunningTasks, oob bool) {
 									data-task-id
 								>{ t.ShortID }</a>
 								<span class="text-mute">依頼元: <span class="text-ink" data-task-client>{ t.Client }</span></span>
-								if t.Target != "" {
-									<span class="text-mute">対象: <span class="text-ink" data-task-target>{ t.Target }</span></span>
+								if t.Target.Scoped() {
+									<span class="text-mute">対象: <span class="text-ink" data-task-target>@taskTarget(t.Target, false)</span></span>
 								}
 							</div>
 							<p class="break-words text-sm text-ink" data-task-prompt>{ t.PromptExcerpt }</p>
@@ -145,6 +145,19 @@ templ taskRow(label, name string, mono bool) {
 	</div>
 }
 
+// taskTarget はタスクの対象の値。プロセス名・pid・window_id（機械的な識別子）だけを Mono にし、「（ ）」「pid」「・」は Regular（#220。ガイド T5）。
+// ダッシュボードはプロセス名・pid、詳細は window_id も付ける（withWindowID）。
+templ taskTarget(t view.TaskTarget, withWindowID bool) {
+	if t.Process != "" {
+		<span class="font-mono">{ t.Process }</span>（pid <span class="font-mono">{ strconv.Itoa(t.PID) }</span>）
+	} else {
+		pid <span class="font-mono">{ strconv.Itoa(t.PID) }</span>
+	}
+	if withWindowID {
+		<span> ・ window_id <span class="font-mono">{ t.WindowID }</span></span>
+	}
+}
+
 templ taskStepArgs(args []view.AuditArg) {
 	if len(args) > 0 {
 		<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>
@@ -174,8 +187,20 @@ templ TaskDetail(v view.TaskDetail) {
 				@taskRow("ステップ数", "step-count", false) {
 					<span class="font-mono">{ strconv.Itoa(v.StepCount) }</span>（高速パス <span class="font-mono">{ strconv.Itoa(v.FastSteps) }</span> ・ OpenAI <span class="font-mono">{ strconv.Itoa(v.OpenAISteps) }</span>）
 				}
-				@taskField("引き継ぎ理由", v.Handoff, "handoff-reason", false)
-				@taskField("対象ウィンドウ", v.Target, "target", false)
+				if v.HandoffReason != "" {
+					@taskRow("引き継ぎ理由", "handoff-reason", false) {
+						if v.HandoffText != "" {
+							{ v.HandoffText }（<span class="font-mono">{ v.HandoffReason }</span>）
+						} else {
+							<span class="font-mono">{ v.HandoffReason }</span>
+						}
+					}
+				}
+				if v.Target.Scoped() {
+					@taskRow("対象ウィンドウ", "target", false) {
+						@taskTarget(v.Target, true)
+					}
+				}
 				@taskField("表示から除外", v.CapturePartial, "capture-partial", false)
 				@taskField("入力トークン", v.InputTokens, "input-tokens", true)
 				@taskField("出力トークン", v.OutputTokens, "output-tokens", true)
