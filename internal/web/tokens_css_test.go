@@ -199,6 +199,15 @@ func TestScrimIsNeverPureBlack(t *testing.T) {
 	}
 }
 
+// O10・#203: forced-colors（ハイコントラスト）では背景色が Canvas に置き換わり、ON の地（--accent）とチェック（--bone）が同じ色になって ON が見えなくなる。
+// システムカラーは強制色でも残るので、ON の枠・地を Highlight、チェックを HighlightText にする。
+func TestCheckedCheckboxSurvivesForcedColors(t *testing.T) {
+	css := readAppCSS(t)
+	if !regexp.MustCompile(`(?s)@media \(forced-colors: active\) \{\s*input\[type="checkbox"\]:checked \{[^}]*border-color: Highlight;[^}]*background-color: Highlight;[^}]*\}\s*input\[type="checkbox"\]:checked::before \{[^}]*background-color: HighlightText;`).MatchString(css) {
+		t.Error("the checked checkbox needs Highlight / HighlightText under @media (forced-colors: active)")
+	}
+}
+
 // I1・I2: チェックボックスのチェックと select の矢印は、自作の形（clip-path・グラデーション）ではなく Iconoir（check・nav-arrow-down。線 1.5・丸い端）の SVG を data URI で出す。
 // select の矢印は疑似要素を持てず色を変数にできないので、線の色は --mute の値（ライト #6b6b6e・ダーク #8b8b8e）で持つ。
 func TestCSSIconsAreIconoir(t *testing.T) {
