@@ -140,3 +140,29 @@ func TestStylesUseRadiusTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// S2: ボタン列・インラインは 8（--gap-inline = gap-2）、フォームの項目 → 項目は 16（--gap-field = space-y-4）。12（gap-3・space-y-3）は、
+// ガイドが決めた間隔のどれにも当たらないので、templ に残さない（#208）。対象外は、ボタン列でも項目間でもない Notice/Alert のアイコンと本文の間と、
+// 空の状態（縦に積むアイコン・文・操作の組）。
+func TestTemplsDoNotUseTwelvePixelGapsForButtonRowsAndFields(t *testing.T) {
+	twelve := regexp.MustCompile(`\b(?:gap(?:-[xy])?|space-[xy])-3\b`)
+	allowed := map[string]bool{"atoms/alert.templ": true, "molecules/empty_state.templ": true}
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") || allowed[filepath.ToSlash(path)] {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if m := twelve.FindString(line); m != "" {
+				t.Errorf("%s:%d: 12px spacing %q (use gap-2 for button rows / space-y-4 for fields)", path, i+1, m)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

@@ -78,9 +78,9 @@ func deniedFormAttrs(put bool, url string) atoms.Attrs {
 
 // DeniedSection は拒否リストの一覧と追加フォーム（FR-H12）。拒否リストはブラックリスト方式のときだけ効く。
 // 入力は実行ファイルのパス（実体のパスで照合。リンク・8.3 短縮名を解決する）か、フォルダーを付けない実行ファイル名（どこにあっても当たる）。
-// 一覧と追加フォームはそれぞれ molecules.Card（題は「拒否リスト」「拒否リストに追加」）。
+// 一覧と追加フォームはそれぞれ molecules.Card（題は「拒否リスト」「拒否リストに追加」）。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 templ DeniedSection(v view.DeniedSection) {
-	<div id="denied-section" class="space-y-4" data-denied-active={ strconv.FormatBool(v.Active) } { deniedSectionAttrs(v)... }>
+	<div id="denied-section" class="space-y-6" data-denied-active={ strconv.FormatBool(v.Active) } { deniedSectionAttrs(v)... }>
 		@molecules.Card("拒否リスト") {
 			<div class="space-y-4">
 				<div>
@@ -92,7 +92,7 @@ templ DeniedSection(v view.DeniedSection) {
 					if !v.Active {
 						<p class="text-xs text-mute" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>
 					}
-					<p class="mt-2 text-xs text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
+					<p class="mt-2 text-xs text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 <span class="font-mono">{ strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) }</span> 件</p>
 				</div>
 				if len(v.Rows) == 0 {
 					@molecules.EmptyState("denied") {
@@ -107,14 +107,14 @@ templ DeniedSection(v view.DeniedSection) {
 							</li>
 						} else {
 							<li class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
-								<span class="rounded-sm bg-accent-soft px-2 py-1 text-xs text-ink" data-denied-kind>
+								<span data-denied-kind>
 									if row.IsPath {
-										パス
+										@atoms.Badge(atoms.BadgeLabel, "パス")
 									} else {
-										実行ファイル名
+										@atoms.Badge(atoms.BadgeLabel, "実行ファイル名")
 									}
 								</span>
-								<code class="min-w-0 flex-1 break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-denied-value>{ row.Value }</code>
+								<code class="min-w-0 flex-1 break-all" data-denied-value>{ row.Value }</code>
 								@atoms.Button(atoms.ButtonProps{Label: "編集", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 									"hx-get": row.EditURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",
 								}})
@@ -136,7 +136,7 @@ templ DeniedSection(v view.DeniedSection) {
 			@molecules.Card("拒否リストに追加") {
 				<div class="space-y-4">
 					@deniedValueField("denied-form-new", v.AddValue, v.AddError)
-					<div class="flex items-center gap-3">
+					<div class="flex items-center gap-2">
 						@atoms.Button(atoms.ButtonProps{Label: "追加", Variant: atoms.ButtonPrimary, Type: "submit"})
 					</div>
 				</div>
@@ -149,12 +149,12 @@ templ deniedEditForm(row view.DeniedRow, cancelURL string) {
 	<form
 		id={ "denied-form-" + row.ID }
 		novalidate
-		class="space-y-3"
+		class="space-y-4"
 		data-denied-form="edit"
 		{ deniedFormAttrs(true, row.ActionURL)... }
 	>
 		@deniedValueField("denied-form-"+row.ID, row.EditValue, row.EditError)
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 				"hx-get": cancelURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",

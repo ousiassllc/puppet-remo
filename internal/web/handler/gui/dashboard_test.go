@@ -114,8 +114,10 @@ func TestDashboardHTMXRequestsReturnFragments(t *testing.T) {
 	t.Run("boosted navigation returns main content with sidebar OOB and no document", func(t *testing.T) {
 		res := r.get("/", "HX-Request", "true", "HX-Boosted", "true")
 		status(t, res, http.StatusOK)
-		contains(t, res, "<title>ダッシュボード - Nefos Remote</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, "サーバー状態")
+		contains(t, res, "<title>ダッシュボード - Nefos Remote</title>", `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `aria-current="page"`, "サーバー状態")
 		lacks(t, res, "<html", "<body", "<!doctype")
+		// ドロワーの枠（退出のフェードを持つ #sidebar-nav と、その見出し・#nav-live）は差し替えない。差し替えると退出が切れる（M5・#202）。
+		lacks(t, res, `id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`, "<nav")
 	})
 	t.Run("history restore gets the full page", func(t *testing.T) {
 		res := r.get("/", "HX-Request", "true", "HX-History-Restore-Request", "true")

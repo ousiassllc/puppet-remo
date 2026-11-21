@@ -176,6 +176,28 @@ describe("トースト", () => {
     }
   });
 
+  // O3: 表示時間は :root の --toast-duration（app.css の 3s）から読む。CSS が無ければ既定の 3 秒（上のテスト）。
+  for (const [value, expected] of [["1.5s", 1500], ["800ms", 800]] as const) {
+    it(`表示時間は --toast-duration（${value}）に従う`, async () => {
+      const root = await fixture<HTMLDivElement>(html`<div id="toast-root"><div data-toast>新しい</div></div>`);
+      const delays: number[] = [];
+      const original = window.setTimeout;
+      window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+        delays.push(delay ?? 0);
+        return original(handler, 1_000_000, ...args);
+      }) as typeof window.setTimeout;
+      document.documentElement.style.setProperty("--toast-duration", value);
+      try {
+        root.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: root } }));
+        await until(() => delays.length > 0, "the timer starts");
+        expect(delays).to.deep.equal([expected]);
+      } finally {
+        document.documentElement.style.removeProperty("--toast-duration");
+        window.setTimeout = original;
+      }
+    });
+  }
+
   it("#toast-root 以外への OOB には触らない", async () => {
     const other = await fixture<HTMLDivElement>(html`<div id="elsewhere"><div data-toast>a</div><div data-toast>b</div></div>`);
     other.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: other } }));
@@ -217,6 +239,16 @@ describe("ボタンの押下のリップル", () => {
     expect(ripple?.style.getPropertyValue("--ripple-size")).to.not.equal("");
     ripple?.dispatchEvent(new Event("animationend"));
     expect(button.querySelector(".ripple")).to.equal(null);
+  });
+
+  it("Shadow DOM の中の data-ripple のボタンにも出す", async () => {
+    const host = await fixture<HTMLElement>(html`<div></div>`);
+    const root = host.attachShadow({ mode: "open" });
+    const button = document.createElement("button");
+    button.setAttribute("data-ripple", "");
+    root.append(button);
+    button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true, button: 0, clientX: 5, clientY: 6 }));
+    expect(button.querySelector(".ripple")).to.not.equal(null);
   });
 
   it("無効のボタン・data-ripple の無い要素には出さない", async () => {
@@ -349,6 +381,72 @@ describe("モバイルナビのドロワー", () => {
     expect(document.activeElement?.id).to.equal("nav-first");
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.activeElement).to.equal(before);
+  });
+});
+
+describe("モバイルナビのドロワーとサイドバーのリンク群の OOB 差し替え（#202）", () => {
+  // layout.Boosted は #sidebar-nav-links だけを OOB で差し替える。枠（#sidebar-nav）は同じ要素のまま残るので、リンクのクリックで始まった退出の transition が切れない。
+  const markup = html`
+    <div>
+      <div id="nav-scrim"></div>
+      <nav id="sidebar-nav" aria-label="メイン">
+        <p id="sidebar-nav-title">メニュー</p>
+        <div id="nav-live" role="status"></div>
+        <div id="sidebar-nav-links">
+          <a href="#a" id="nav-first" aria-current="page">一覧</a><a href="#b" id="nav-last">設定</a>
+        </div>
+      </nav>
+      <div id="background" data-nav-background>
+        <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
+      </div>
+      <div id="toast-root" role="status"></div>
+    </div>
+  `;
+  const swapLinks = (root: HTMLElement): void => {
+    root.querySelector("#sidebar-nav-links")!.outerHTML =
+      '<div id="sidebar-nav-links"><a href="#a" id="nav-first">一覧</a><a href="#b" id="nav-last" aria-current="page">設定</a></div>';
+  };
+
+  afterEach(() => {
+    document.body.removeAttribute("data-nav-open");
+  });
+
+  it("リンクのクリックで閉じたあと、リンク群が差し替わっても枠は同じ要素のままで、閉じた状態を保つ", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const nav = root.querySelector<HTMLElement>("#sidebar-nav")!;
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    expect(nav.getAttribute("role")).to.equal("dialog");
+    root.querySelector<HTMLElement>("#nav-first")!.click();
+    swapLinks(root);
+    expect(root.querySelector("#sidebar-nav")!.isSameNode(nav)).to.equal(true);
+    expect(document.body.hasAttribute("data-nav-open")).to.equal(false);
+    expect(nav.hasAttribute("role")).to.equal(false);
+    expect(root.querySelector("#nav-last")?.getAttribute("aria-current")).to.equal("page");
+    expect(root.querySelector("#nav-first")?.hasAttribute("aria-current")).to.equal(false);
+  });
+
+  it("差し替えたあとのリンクも、開く・Tab の循環・クリックで閉じるが効く", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    swapLinks(root);
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    expect(document.activeElement?.id).to.equal("nav-first");
+    root.querySelector<HTMLElement>("#nav-last")!.focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", cancelable: true });
+    document.dispatchEvent(tab);
+    expect(tab.defaultPrevented).to.equal(true);
+    expect(document.activeElement?.id).to.equal("nav-first");
+    root.querySelector<HTMLElement>("#nav-last")!.click();
+    expect(document.body.hasAttribute("data-nav-open")).to.equal(false);
+  });
+
+  it("開いている間にリンク群が差し替わっても、#nav-live（トーストの読み上げの写し先）は同じ要素のまま内容を保つ", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const live = root.querySelector<HTMLElement>("#nav-live")!;
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    live.textContent = "保存しました。";
+    swapLinks(root);
+    expect(root.querySelector("#nav-live")).to.equal(live);
+    expect(live.textContent).to.equal("保存しました。");
   });
 });
 

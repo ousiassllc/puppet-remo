@@ -134,6 +134,13 @@
   --s-12: 48px;
   --s-16: 64px;
 
+  /* ブレークポイント（S5）: 640 / 768 / 1024 / 1280。Tailwind の sm・md・lg・xl（@theme の --breakpoint-*）と同じ値で、同じ値を二重に書く（@media は var() を取れない）。
+   * 一致は tokens_css_test.go が検査する。JS の matchMedia（app.ts の desktopWidth）と max-width の 47.9975rem（md 未満）も md（768）から出す。 */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+
   --gap-menu: var(--s-2);
   --menu-item-h: 40px;
   --menu-pad-x: var(--s-3);
@@ -186,6 +193,12 @@
 @theme {
   --spacing: var(--s-1);
 
+  --breakpoint-*: initial;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
   --radius-*: initial;
   --radius-none: var(--r-none);
   --radius-sm: var(--r-sm);
@@ -209,6 +222,7 @@
  * ウェイトは本文・リンク・ナビ・フォームが Regular（400）、SemiBold（600）は見出しとボタンだけ。 */
 @theme {
   --font-sans: Sora, "Noto Sans JP", sans-serif;
+  /* Mono の和文のフォールバック（承認済みの逸脱。docs §8.4 の T の行）: JetBrains Mono に全角の字がないので、日本語を含む値（パス・ログの値）だけ Noto Sans JP で穴埋めする。 */
   --font-mono: "JetBrains Mono", "Noto Sans JP", ui-monospace, monospace;
 
   --text-*: initial;
@@ -244,6 +258,19 @@
   /* 表の見出しセルは、ブラウザの既定（太字）にせず、thead のクラスで決める（SemiBold は見出し行だけ。T2）。 */
   th {
     font-weight: inherit;
+  }
+
+  /* 文中・値のインライン code（T1・T3。#209）は、すべてこの 1 つの書き方（テンプレートの <code> にクラスは付けない）:
+   * Mono・--accent-soft 地・--r-sm・左右 4px。大きさは親に従う（本文 base なら 16px、詳細表示の sm なら 14px、住所・注記の xs ならその 12px）ので、
+   * 本文の中で 12px に縮むことがない。文字色は --ink（補助テキスト --mute の段落の中でも、地の上で AA 4.5:1 を保つ。C6）。折り返しても両端に余白が付く。 */
+  code {
+    border-radius: var(--radius-sm);
+    background-color: var(--accent-soft);
+    padding-inline: var(--s-1);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: inherit;
+    box-decoration-break: clone;
   }
 
   /* 強調（<strong>）はウェイトでなく下線で表す（SemiBold は見出しとボタンだけ。T2）。 */
@@ -379,6 +406,18 @@
   input[type="checkbox"]:checked::before {
     display: block;
   }
+  /* forced-colors（ハイコントラスト）では背景色が Canvas に置き換わり、ON の地（--accent）もチェック（--bone）も同じ色になって、ON が OFF と見分けがつかない
+   * （Chromium の forcedColors: 'active' で ON の地・チェックとも Canvas 色になることを実描画で確認した。#203）。システムカラーは強制色でも残るので、
+   * ON の地を Highlight、チェックを HighlightText にする。 */
+  @media (forced-colors: active) {
+    input[type="checkbox"]:checked {
+      border-color: Highlight;
+      background-color: Highlight;
+    }
+    input[type="checkbox"]:checked::before {
+      background-color: HighlightText;
+    }
+  }
   /* フォーカスは離散コントロールの 3px・--focus の実線リング（outline-offset 2px。ガイド「フォーカスリング」）。 */
   input[type="checkbox"]:focus-visible {
     outline: 3px solid var(--focus);
@@ -389,17 +428,17 @@
     cursor: not-allowed;
   }
 
-  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の Iconoir nav-arrow-down（--icon-sm）を重ねる（右 padding 36 は select.templ）。 */
+  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の Iconoir nav-arrow-down（--icon-sm）を重ねる（右 padding --s-8 は select.templ。矢印は右 --s-2）。 */
   select {
     appearance: none;
     background-image: var(--select-arrow);
-    background-position: right 12px center;
+    background-position: right var(--s-2) center;
     background-size: var(--icon-sm) var(--icon-sm);
     background-repeat: no-repeat;
   }
 
   /* スライダー（O11・P1）: OS 標準の見た目にしない。トラックは高さ 4・--r-full で、未充填 --accent-soft・充填 --accent。
-   * つまみは 16 の円（--surface 地 + 1px --border）。フォーカスはつまみに --ring の 3px（outline は透明で残し、ハイコントラストでは枠として見える）。
+   * つまみは 16 の円（--surface 地 + 1px --border）。フォーカスはつまみに --focus の 3px の実線（下の :focus-visible。--ring の halo は背景に溶けて 3:1 に届かないので使わない）。
    * Blink（WebView2・Chromium）には充填部の疑似要素が無いので、--_v（値の割合。app.ts が style.setProperty で更新する）でグラデーションの境目を作る。
    * Firefox は ::-moz-range-progress が充填する。 */
   input[type="range"] {
@@ -676,38 +715,39 @@
     }
   }
 
-  /* モバイルナビのドロワー（P0・O1・ガイド「オーバーレイ」）: md（768px）未満の左のドロワー。出入りは fade + 8px の移動（--motion-slow・--motion-shift。
-   * スクラムはフェード）。幅は 78vw・上限 320px（chrome.templ）。閉じている間は visibility で隠し、フォーカスが入らないようにする。
-   * 開閉は body の data-nav-open（app.ts）。reduced-motion では --motion-shift が 0・--motion-slow が 100ms になり、フェードだけになる。
+  /* モバイルナビのドロワー（P0・O1・M5・ガイド「オーバーレイ」）: md（768px）未満の左のドロワー。出入りは fade + 8px の移動（--motion-shift。スクラムはフェード）。
+   * 出現（body[data-nav-open] 側）は --motion-slow・--ease-out、退出（既定の側）は --motion-fade-out（240ms）・--ease-in。transition は行き先の状態の宣言が使われるので、
+   * 開く側と閉じる側に別の値を置く。幅は 78vw・上限 320px（chrome.templ）。閉じている間は visibility で隠し（退出が終わってから hidden）、フォーカスが入らないようにする。
+   * 開閉は body の data-nav-open（app.ts）。reduced-motion では --motion-shift が 0・--motion-slow と --motion-fade-out が 100ms になり、フェードだけになる。
    * md 以上は常時見える左のカラムで、ここの指定は効かない。 */
   @media (max-width: 47.9975rem) {
     .nav-drawer {
       opacity: 0;
       transform: translateX(calc(var(--motion-shift) * -1));
       visibility: hidden;
-      transition: opacity var(--motion-slow) var(--ease-out), transform var(--motion-slow) var(--ease-out),
-        visibility 0s linear var(--motion-slow);
+      transition: opacity var(--motion-fade-out) var(--ease-in), transform var(--motion-fade-out) var(--ease-in),
+        visibility 0s linear var(--motion-fade-out);
     }
     body[data-nav-open] .nav-drawer {
       opacity: 1;
       transform: none;
       visibility: visible;
-      transition-delay: 0s;
+      transition: opacity var(--motion-slow) var(--ease-out), transform var(--motion-slow) var(--ease-out), visibility 0s linear 0s;
     }
     .nav-scrim {
       opacity: 0;
       visibility: hidden;
-      transition: opacity var(--motion-slow) var(--ease-out), visibility 0s linear var(--motion-slow);
+      transition: opacity var(--motion-fade-out) var(--ease-in), visibility 0s linear var(--motion-fade-out);
     }
     body[data-nav-open] .nav-scrim {
       opacity: 1;
       visibility: visible;
-      transition-delay: 0s;
+      transition: opacity var(--motion-slow) var(--ease-out), visibility 0s linear 0s;
     }
   }
 
-  /* スピナー（O7・ガイド「スピナー」）: 20px・2px（track --accent-soft・先端 --accent）・0.9s。reduced-motion では回転を止める
-   * （先端の円弧・role="status"・ラベルで処理中は伝わる）。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
+  /* スピナー（O7・ガイド「スピナー」）: 20px・2px（track --accent-soft・先端 --accent）・0.9s。処理中表示なので reduced-motion でも回転を維持する
+   * （M3。ガイドは「スピナーなど処理中表示は reduced-motion でも維持」）。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
   .spinner {
     width: 20px;
     height: 20px;
@@ -716,11 +756,6 @@
     border-radius: var(--radius-full);
     animation: motion-spin var(--spinner-duration) linear infinite;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
-  }
   @media (forced-colors: active) {
     .spinner {
       border-color: transparent;
@@ -728,13 +763,15 @@
     }
   }
 
-  /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。 */
+  /* htmx のインジケーター（includeIndicatorStyles を無効にしているため、ここで定義する。§7.1）。出入りは M5 のトークン: 出現（.htmx-request の側）は
+   * --motion-fade-in・--ease-out、退出（既定の側）は --motion-fade-out・--ease-in（--motion-base はホバーの色・背景だけ）。 */
   .htmx-indicator {
     opacity: 0;
-    transition: opacity var(--motion-base) var(--ease-out);
+    transition: opacity var(--motion-fade-out) var(--ease-in);
   }
   .htmx-request .htmx-indicator,
   .htmx-request.htmx-indicator {
     opacity: 1;
+    transition: opacity var(--motion-fade-in) var(--ease-out);
   }
 }

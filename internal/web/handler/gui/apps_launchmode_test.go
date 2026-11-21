@@ -17,7 +17,7 @@ func TestAppsPageShowsAllowlistModeByDefault(t *testing.T) {
 	contains(t, res, `id="launch-mode"`, `data-launch-mode="allowlist"`, `data-mode-note="allowlist"`, "ホワイトリスト方式（既定）",
 		"ブラックリスト方式に切り替える", `hx-get="/apps/mode/confirm?mode=denylist"`,
 		// 拒否リストは、ホワイトリストでは使われない旨を添えて常に見える。
-		`id="denied-section"`, `data-denied-active="false"`, "data-denied-inactive", `data-empty="denied"`, "登録 0 / 200 件",
+		`id="denied-section"`, `data-denied-active="false"`, "data-denied-inactive", `data-empty="denied"`, `登録 <span class="font-mono">0 / 200</span> 件`,
 		`id="denied-form-new"`, `hx-post="/apps/denied"`, `name="value"`)
 	lacks(t, res, `data-mode-note="denylist"`, "ホワイトリスト方式に戻す")
 }
@@ -33,7 +33,7 @@ func TestAppsPageShowsDenylistModeAndEntries(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, `data-launch-mode="denylist"`, `data-mode-note="denylist"`, "ホワイトリスト方式に戻す", `hx-put="/apps/mode"`,
 		`data-denied-active="true"`, `data-denied="d1"`, "cmd.exe", "実行ファイル名", `data-denied="d2"`, `C:\Windows\System32\powershell.exe`, "パス",
-		`data-denied-count="2"`, "登録 2 / 200 件", `hx-get="/apps/denied/d1/edit"`, `hx-get="/apps/denied/d2/delete/confirm"`)
+		`data-denied-count="2"`, `登録 <span class="font-mono">2 / 200</span> 件`, `hx-get="/apps/denied/d1/edit"`, `hx-get="/apps/denied/d2/delete/confirm"`)
 	lacks(t, res, "data-denied-inactive", "ブラックリスト方式に切り替える")
 }
 

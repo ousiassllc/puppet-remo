@@ -14,8 +14,8 @@ import (
 templ APIKeyPanel(p view.APIKeyPanel) {
 	<div id={ p.ID } class="space-y-4" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) } data-secret>
 		if p.Registered {
-			<div class="flex flex-wrap items-center gap-3" data-secret-saved hidden?={ keyEditing(p) }>
-				<span class="text-sm font-semibold text-ink">{ p.Provider } API キー</span>
+			<div class="flex flex-wrap items-center gap-2" data-secret-saved hidden?={ keyEditing(p) }>
+				<span class="text-sm text-ink">{ p.Provider } API キー</span>
 				@atoms.Badge(atoms.BadgeSoft, "登録済み")
 				@atoms.Button(atoms.ButtonProps{Label: "変更", Variant: atoms.ButtonSecondary, Small: true, Attrs: atoms.Attrs{
 					"aria-label": "変更: " + p.Provider + " API キー", "aria-controls": p.ID + "-input", "data-secret-change": true,
@@ -38,7 +38,7 @@ templ APIKeyPanel(p view.APIKeyPanel) {
 				}
 			</div>
 			<p class="text-sm text-ink" data-notice="key-storage">
-				キーは Windows の資格情報マネージャー（{ p.Target }）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。
+				キーは Windows の資格情報マネージャー（<code>{ p.Target }</code>）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。
 			</p>
 			<div class="flex flex-wrap items-center gap-2">
 				@atoms.Button(atoms.ButtonProps{Label: keyButtonLabel(p.Registered), Variant: atoms.ButtonPrimary, Type: "submit", Attrs: keyEditAttrs(p)})
@@ -118,7 +118,7 @@ templ AgentForm(f view.AgentForm) {
 			</label>
 			<p class="mt-4">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
 			if f.ConsentAt != "" {
-				<p class="text-xs text-mute" data-consent-at="openai">同意済み: { f.ConsentAt }</p>
+				<p class="text-xs text-mute" data-consent-at="openai">同意済み: <span class="font-mono">{ f.ConsentAt }</span></p>
 			}
 			if f.Errors.Consent != "" {
 				@molecules.FieldError("agent-consent", f.Errors.Consent)
@@ -180,7 +180,7 @@ templ FastpathForm(f view.FastpathForm) {
 			</label>
 			<p class="mt-4">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>
 			if f.ConsentAt != "" {
-				<p class="text-xs text-mute" data-consent-at="typesafe">同意済み: { f.ConsentAt }</p>
+				<p class="text-xs text-mute" data-consent-at="typesafe">同意済み: <span class="font-mono">{ f.ConsentAt }</span></p>
 			}
 			if f.Errors.Consent != "" {
 				@molecules.FieldError("fastpath-consent", f.Errors.Consent)
@@ -206,7 +206,7 @@ templ FastpathForm(f view.FastpathForm) {
 }
 
 // AgentSections はエージェント設定の本体（#agent-sections）。OpenAI のキーと設定、高速パスのキーと設定の 4 つ。
-// API キーの削除は、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。
+// API キーの削除は、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 templ AgentSections(v view.AgentSettings) {
 	<div id="agent-sections" class="space-y-6">
 		@molecules.Card("OpenAI エージェント") {

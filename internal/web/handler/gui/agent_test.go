@@ -57,7 +57,7 @@ func TestAgentPageDefaults(t *testing.T) {
 		`data-consent="openai"`, "スクリーンショット", "OpenAI に送信される",
 		`data-consent="typesafe"`, "TypeSafe", "ウィンドウのタイトル", "直近 5 件", "スクリーンショット、要素の値",
 		// キーは資格情報マネージャーだけに保存し、再表示しない（NFR-S14）。ターゲット名は資格情報マネージャー上の実名（go-keyring の service:user）。
-		`data-notice="key-storage"`, "（puppet-remo/openai:puppet-remo）", "（puppet-remo/typesafe:puppet-remo）", "資格情報マネージャー", "表示しません")
+		`data-notice="key-storage"`, "（<code>puppet-remo/openai:puppet-remo</code>）", "（<code>puppet-remo/typesafe:puppet-remo</code>）", "資格情報マネージャー", "表示しません")
 	// 既定では何も有効・同意済みではない。
 	lacks(t, res, "checked", "同意済み", `data-key-delete=`, "data-field-error", `role="alert"`)
 	if got := res.Header.Get("Cache-Control"); got != "no-store" && got != "" {

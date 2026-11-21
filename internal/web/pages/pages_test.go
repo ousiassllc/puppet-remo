@@ -6,6 +6,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/ousiassllc/puppet-remo/internal/web/layout"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
 	"github.com/ousiassllc/puppet-remo/internal/web/pages"
 	"github.com/ousiassllc/puppet-remo/internal/web/view"
@@ -103,6 +104,35 @@ func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 	}
 }
 
+// 起動許可アプリ: h1・説明文・題付きの Card（起動の方式・アプリの追加・拒否リスト）は、どれも 24（--gap-grid-lg。外枠 space-y-6）で並ぶ。
+// 以前は Card の積みだけを 48 の内側の枠にしていた（#204）が、題付き Card は部品なので節の間隔にしない。
+func TestAppsPageStacksCardsAtGapGridLg(t *testing.T) {
+	out := webtest.Render(t, pages.Apps(view.Apps{Chrome: view.Chrome{Active: view.NavApps}, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}}))
+	if !strings.Contains(out, `<div class="max-w-3xl space-y-6">`) || !strings.Contains(out, `</p><div id="launch-mode"`) {
+		t.Errorf("the cards must follow the intro directly inside the space-y-6 frame:\n%s", out)
+	}
+	if strings.Contains(out, "space-y-12") {
+		t.Errorf("titled cards must not be separated by 48:\n%s", out)
+	}
+}
+
+// ダッシュボード: 題付き Card（実行中のタスク）とカードのグリッドの間、グリッド内の横・縦、h1 の下は、どれも 24（--gap-grid-lg。gap-6・外枠 space-y-6）。
+// 実行中のタスクが無いとき、空の枠（hidden）は間隔に入らない。
+func TestDashboardSeparatesCardsByGapGridLg(t *testing.T) {
+	out := webtest.Render(t, pages.Dashboard(view.Dashboard{Chrome: view.Chrome{Active: view.NavDashboard}}))
+	for _, want := range []string{
+		`<div class="space-y-6"><h1 class="text-3xl font-semibold text-ink">ダッシュボード</h1><div class="flex flex-col gap-6" data-dashboard-sections><div id="running-tasks" hidden>`,
+		`<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "gap-12") || strings.Contains(out, "gap-4 lg:") {
+		t.Errorf("dashboard cards must not use 48 or 16:\n%s", out)
+	}
+}
+
 // リモートのビューアのページ（FR-W01）: 外部ファイルだけを読み、screen-viewer.js は app.js の後（モジュール）。
 func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
 	out := webtest.Render(t, pages.Viewer(view.Viewer{ViewerID: "V", WSURL: "ws://h/ws/screen?viewer_id=V"}))
@@ -122,7 +152,7 @@ func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
 		prev = i
 	}
 	// ガター（S5）はモバイル 16px・デスクトップ 24px（ホスト GUI と同じ）。
-	for _, want := range []string{`hx-ext="response-targets"`, `X-Puppet-Remo`, `id="toast-root"`, `id="alert-root"`, `id="viewer-root"`, `<remo-screen-viewer`, `<html lang="ja">`, "space-y-4 p-4 md:p-6"} {
+	for _, want := range []string{`hx-ext="response-targets"`, `X-Puppet-Remo`, `id="toast-root"`, `id="alert-root"`, `id="viewer-root"`, `<remo-screen-viewer`, `<html lang="ja">`, "space-y-4 p-4 md:p-6", `px-4 text-base text-ink md:px-6">`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("remote layout lacks %q", want)
 		}
@@ -167,5 +197,24 @@ func TestRemoteNoticePages(t *testing.T) {
 	webtest.AssertNoticeCSPCompliantHTML(t, out, middleware.NoticeCSPValue)
 	if !strings.Contains(out, `data-error-code="invalid_host"`) || strings.Contains(out, "<b>t</b>") {
 		t.Errorf("error page = %s", out)
+	}
+}
+
+// T6（#214）: 待機ページの見出しの見た目（margin・サイズ・ウェイト）は役割クラス .pg-t に置き、h1 の要素セレクタには置かない（タグを差し替えても見た目が変わらない）。
+// 4 種のページとも h1 に class="pg-t" を付ける。
+func TestRemoteNoticeHeadingUsesARoleClass(t *testing.T) {
+	if !strings.Contains(layout.NoticeStyle, "\n.pg-t {") || strings.Contains(layout.NoticeStyle, "\nh1 ") {
+		t.Errorf("NoticeStyle must style the heading with .pg-t, not an h1 selector:\n%s", layout.NoticeStyle)
+	}
+	for name, comp := range map[string]templ.Component{
+		"待機":     pages.Pending(),
+		"拒否":     pages.Denied(),
+		"失効":     pages.Expired(),
+		"エラーページ": pages.RemoteError(view.RemoteError{Code: "invalid_host", Title: "t", Message: "m"}),
+	} {
+		out := webtest.Render(t, comp)
+		if !strings.Contains(out, `<h1 class="pg-t">`) || strings.Contains(out, "<h1>") {
+			t.Errorf("%s: h1 lacks class=\"pg-t\":\n%s", name, out)
+		}
 	}
 }

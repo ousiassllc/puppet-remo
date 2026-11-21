@@ -53,7 +53,7 @@ func TestAtomsUseOnlyDesignTokens(t *testing.T) {
 	}
 }
 
-// 状態はアイコン + 文言 + 状態色で伝える（色だけにしない）。中立のバッジ（種別・件数）にはアイコンを付けない。
+// 状態はアイコン + 文言 + 状態色で伝える（色だけにしない）。中立のバッジ（状態の中立 BadgeNeutral・状態でない BadgeLabel）にはアイコンを付けない。
 func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 	for tone, color := range map[atoms.BadgeTone]string{atoms.BadgeOK: "success", atoms.BadgeWarn: "warning", atoms.BadgeDanger: "danger"} {
 		out := webtest.Render(t, atoms.Badge(tone, "状態"))
@@ -62,9 +62,20 @@ func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 			t.Errorf("the text must follow the icon: %s", out)
 		}
 	}
-	neutral := webtest.Render(t, atoms.Badge(atoms.BadgeNeutral, "MCP"))
-	hasNot(t, neutral, "<svg")
-	has(t, neutral, "MCP")
+	for tone, c := range map[atoms.BadgeTone]string{atoms.BadgeNeutral: "text-mute-on-soft", atoms.BadgeLabel: "text-ink"} {
+		out := webtest.Render(t, atoms.Badge(tone, "MCP"))
+		hasNot(t, out, "<svg")
+		has(t, out, "MCP", c, "border-border", "bg-accent-soft")
+	}
+}
+
+// 中立のバッジは 2 つに分ける（C4）: 状態の中立（空き・無効・最小化。ガイドの中立の「下書き」）は --mute 系の文字（--bone・行ホバーの --accent-soft 上で
+// AA に届くよう --mute-on-soft）、状態でない表示（種別・経路・件数。ガイドに規定が無い）は --ink。互いの色を持たない。
+func TestNeutralBadgeSeparatesStateFromLabel(t *testing.T) {
+	state := webtest.Render(t, atoms.Badge(atoms.BadgeNeutral, "空き"))
+	hasNot(t, state, "text-ink")
+	label := webtest.Render(t, atoms.Badge(atoms.BadgeLabel, "MCP"))
+	hasNot(t, label, "text-mute")
 }
 
 // インラインアラート: 4 種（お知らせ・成功・注意・エラー）の状態色・アイコン・見出し・本文。閉じるボタンは Dismissible のときだけ。
@@ -127,10 +138,11 @@ func TestNoticeAnimatedRisesInOnlyWhenAsked(t *testing.T) {
 }
 
 // トースト: 完了の短い通知。ピル・インク地・role や閉じるボタンは持たない（3 秒で自動消去）。エラーの表示には使わない。
+// 高さは --toast-h（40）で、長い文でも折り返さず 1 行（truncate）。min-h・py での可変にしない（O3）。
 func TestToastIsAShortInkPill(t *testing.T) {
 	out := webtest.Render(t, atoms.Toast(view.Toast{Message: "保存しました。"}))
-	has(t, out, "data-toast", "rounded-full", "bg-ink", "text-bone", "min-h-10", "保存しました。")
-	hasNot(t, out, "data-toast-dismiss", "data-toast-level", "data-error-code", "<button")
+	has(t, out, "data-toast", "rounded-full", "bg-ink", "text-bone", "h-(--toast-h)", `<span class="min-w-0 truncate">保存しました。</span>`)
+	hasNot(t, out, "data-toast-dismiss", "data-toast-level", "data-error-code", "<button", "min-h-10", "py-2")
 }
 
 // ボタン: 4 種（主・サブ・ゴースト・危険）。SemiBold・disabled は opacity .4・高さ 40（小は 32）。押下のリップルの対象。
@@ -176,8 +188,9 @@ func TestReadonlyBackgroundNeedsTheReadonlyAttribute(t *testing.T) {
 		has(t, out, "[&amp;[readonly]]:bg-bone", "bg-surface")
 		hasNot(t, out, "read-only:")
 	}
-	// 選択欄は標準の矢印を消す（app.css の select）ので、矢印の分の右 padding 36 を持つ。
-	has(t, sel, "pr-9")
+	// 選択欄は標準の矢印を消す（app.css の select）ので、矢印の分の右 padding を --s-8（32）で持つ（36 の pr-9 は --s-* に無い）。
+	has(t, sel, "pr-(--s-8)")
+	hasNot(t, sel, "pr-9")
 }
 
 // スライダー（P1）: 1 行入力欄の枠（高さ・border・背景・padding）を持たず、幅いっぱいに置く。
@@ -243,6 +256,8 @@ func TestModalConfirmButtonFollowsDestructive(t *testing.T) {
 func TestInputMonoIsOptIn(t *testing.T) {
 	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")
 	hasNot(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"})), "font-mono")
+	// 桁を揃える数値の入力欄（ポート・上限・秒数など。Type が number）は、Mono を渡さなくても font-mono。
+	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Type: "number"})), "font-mono", `type="number"`)
 }
 
 // #169: ツールチップは、フォーカスできる出す側（tabindex="0"）から、aria-describedby で role="tooltip" の本文につなぐ（ホバーのほかキーボードでも出る）。

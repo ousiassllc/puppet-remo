@@ -130,6 +130,9 @@ func TestClientDetailPage(t *testing.T) {
 	contains(t, res, "<html", "alice-desktop", `hx-post="/clients/c1/tokens"`, `name="label"`, `name="expires_in_days"`,
 		`<option value="90" selected>`, "無期限", `href="/clients"`,
 		"prm_AbCd…", "claude-desktop", "ci-bot", "old-laptop", "expired-one", "有効", "失効済み", "期限切れ", "2026-11-29 12:00")
+	// #221: 値が無いときの文言（無期限・未使用）は Mono の外（text-mute の Regular）。日時は従来どおり font-mono。
+	contains(t, res, `text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>`, `text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>`, `font-mono text-ink">2026-11-29 12:00</td>`)
+	lacks(t, res, `font-mono text-ink">無期限`, `font-mono text-ink">未使用`)
 	// 一覧のカードではないので、削除と詳細への導線は出さない。
 	lacks(t, res, "/delete/confirm", `href="/clients/c1"`)
 
@@ -245,7 +248,7 @@ func TestClientCardApprovalMode(t *testing.T) {
 		}
 	}
 	// first_time で承認済みなら、承認済み（日時）と取り消しのボタンを出す。
-	contains(t, list, `<option value="first_time" selected>初回のみ承認</option>`, "承認済み（2026-10-30 11:00", `hx-post="/clients/c2/approval/reset"`, "承認を取り消す")
+	contains(t, list, `<option value="first_time" selected>初回のみ承認</option>`, `承認済み（<span class="font-mono">2026-10-30 11:00`, `hx-post="/clients/c2/approval/reset"`, "承認を取り消す")
 
 	res := r.do(http.MethodPatch, "/clients/c1", url.Values{"approval_mode": {"first_time"}}, hx...)
 	status(t, res, http.StatusOK)

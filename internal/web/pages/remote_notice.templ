@@ -12,7 +12,7 @@ import (
 templ Pending() {
 	@layout.RemoteNotice("接続要求を送信しました") {
 		<main data-error-code="device_not_registered" data-connection-state="pending">
-			<h1>接続要求を送信しました</h1>
+			<h1 class="pg-t">接続要求を送信しました</h1>
 			<p>接続要求を送信しました。ホストの許可を待っています。</p>
 			<p>許可されたあと、このページを再読み込みするとビューアが開きます。</p>
 		</main>
@@ -23,7 +23,7 @@ templ Pending() {
 templ Denied() {
 	@layout.RemoteNotice("接続要求は拒否されました") {
 		<main data-error-code="device_not_registered" data-connection-state="denied">
-			<h1>接続要求は拒否されました</h1>
+			<h1 class="pg-t">接続要求は拒否されました</h1>
 			<p>ホストがこのデバイスの接続要求を拒否しました。心当たりがある場合は、ホストの所有者に連絡してください。</p>
 			<p>拒否から 24 時間は、このデバイスから新しい接続要求は送信されません。</p>
 		</main>
@@ -34,7 +34,7 @@ templ Denied() {
 templ Expired() {
 	@layout.RemoteNotice("接続要求の有効期限が切れました") {
 		<main data-error-code="device_not_registered" data-connection-state="expired">
-			<h1>接続要求の有効期限が切れました</h1>
+			<h1 class="pg-t">接続要求の有効期限が切れました</h1>
 			<p>ホストの許可がないまま、接続要求の有効期限（24 時間）が切れました。</p>
 			<p>しばらくしてからこのページを再読み込みすると、改めて接続要求を送信します。</p>
 		</main>
@@ -45,7 +45,7 @@ templ Expired() {
 templ RemoteError(v view.RemoteError) {
 	@layout.RemoteNotice(v.Title) {
 		<main data-error-code={ v.Code }>
-			<h1>{ v.Title }</h1>
+			<h1 class="pg-t">{ v.Title }</h1>
 			<p>{ v.Message }</p>
 		</main>
 	}

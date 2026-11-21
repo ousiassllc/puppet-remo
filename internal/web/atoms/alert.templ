@@ -63,12 +63,13 @@ func alertAttrs(p AlertProps) Attrs {
 // Alert はインラインアラート。状態は色だけでなく題と本文でも伝える。ミドルウェアが拒否した状態変更のリクエスト
 // （アクションルート）に返すエラーのフラグメントと、アクションの失敗の表示先（#alert-root）に使う。
 // 題はガイドの「インラインアラートの題」（sm 14・SemiBold）。#alert-root はどの見出しの下にも出るので、題は見出しにせず強調テキストにする
-// （h3 にすると h1 → h3 の飛びになる。role="alert" が読み上げを担う）。
+// （h3 にすると h1 → h3 の飛びになる。role="alert" が読み上げを担う）。<strong> には app.css の base が本文中の強調の下線を引くので、
+// 題は見出し役でリンクに見えないよう no-underline で外す。
 templ Alert(p AlertProps) {
 	<div class={ alertClass(p.Tone) } { alertAttrs(p)... }>
 		@Icon(alertIcon(p.Tone), IconMD)
 		<div class="min-w-0 flex-1">
-			<strong class="block text-sm font-semibold">{ p.Heading }</strong>
+			<strong class="block text-sm font-semibold no-underline">{ p.Heading }</strong>
 			<p class="mt-2 text-ink" data-alert-message>{ p.Message }</p>
 		</div>
 		if p.Dismissible {

@@ -108,25 +108,94 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 	}
 }
 
-// タスク詳細のステップの引数: キーだけが補助（text-mute）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
+// タスク詳細のステップの引数: キーだけが補助（text-mute。行のホバーでは group-hover:text-mute-on-soft に切り替える）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
+// キー・値とも機械的な識別子・数値なので Mono（T5。#214）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
+	has(t, out, `<tr class="group hover:bg-accent-soft"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="font-mono text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all font-mono">送信ボタン</dd>`)
 	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
-// タスク・監査ログの詳細: 題付きのセクション（molecules.Card。#166）同士は、24（--gap-card-section。space-y-6）で区切る。
+// T5（#214）: 監査詳細の「引数」表・アプリのログの属性（キー・値）も、タスクのステップの引数と同じく Mono。
+func TestKeyValueAttributesUseMono(t *testing.T) {
+	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "tool.click", Args: []view.AuditArg{{Key: "x", Value: "640"}}}))
+	has(t, audit, `text-left font-mono text-ink">x</th>`, `font-mono text-ink">640</td>`)
+	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: []view.LogRow{{Time: "t", Level: "INFO", Attrs: []view.LogAttr{{Key: "tool", Value: "screenshot"}}}}}))
+	has(t, log, `<dt class="inline font-mono text-mute group-hover:text-mute-on-soft">tool</dt><dd class="ml-1 inline font-mono">screenshot</dd>`)
+}
+
+// 題付きのセクション（molecules.Card。#166）同士は、部品どうしの 24（--gap-grid-lg。space-y-6）で区切る（ガイド「部品どうし 16–24」・S5。#204 の 48 は
+// 部品をセクション扱いにした誤り）。48（--gap-section-sm）はページの見出しで区切る節どうしだけ。タスク・監査ログの詳細・エージェント設定・拒否リストが対象。
 // 題は Card の h2（lg 18）で、直書きの text-2xl の h2 ではない。
-func TestDetailPagesSeparateCardsByGapCardSection(t *testing.T) {
+func TestTitledCardsAreSeparatedByGapGridLg(t *testing.T) {
 	task := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1"}))
 	has(t, task, `class="space-y-6" data-task-detail="t1"`)
 	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click"}))
 	has(t, audit, `class="space-y-6" data-audit-detail="click"`)
-	hasNot(t, task, `class="space-y-4" data-task-detail`, `class="space-y-12"`)
-	hasNot(t, audit, `class="space-y-4" data-audit-detail`, `class="space-y-12"`)
+	agent := webtest.Render(t, organisms.AgentSections(view.AgentSettings{}))
+	has(t, agent, `id="agent-sections" class="space-y-6"`)
+	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{}))
+	has(t, denied, `id="denied-section" class="space-y-6"`)
+	hasNot(t, task, `class="space-y-12" data-task-detail`, `class="space-y-4" data-task-detail`)
+	hasNot(t, audit, `class="space-y-12" data-audit-detail`, `class="space-y-4" data-audit-detail`)
+	hasNot(t, agent, `id="agent-sections" class="space-y-12"`)
+	hasNot(t, denied, `id="denied-section" class="space-y-12"`, `id="denied-section" class="space-y-4"`)
 	const cardTitle = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">`
 	has(t, task, cardTitle+"指示</h2>", cardTitle+"最終回答</h2>", cardTitle+"ステップ</h2>")
 	has(t, audit, cardTitle+"引数</h2>", cardTitle+"サムネイル</h2>")
+}
+
+// ビューアも同じ 24: ツールバー → 操作権 → 操作するウィンドウ → 映像の間が全部 24（以前はツールバーの下が 16、Card どうしが 48）。
+// htmx が差し替える枠・空の #viewer-ops・隠しの trigger を含む並びなので、Card は space-y ではなく gap-6 の枠にまとめ、空の #viewer-ops は empty:hidden にする。
+func TestViewerPartsAreSeparatedByGapGridLg(t *testing.T) {
+	root := webtest.Render(t, organisms.ViewerRoot(view.Viewer{ViewerID: "V"}))
+	has(t, root, `<main id="viewer-root" class="space-y-6"`, `<div class="flex flex-col gap-6" data-viewer-sections><div id="lease-panel"`)
+	hasNot(t, root, `<main id="viewer-root" class="space-y-4"`, `gap-12`, `space-y-12`)
+	// 枠の中は、操作権 → ウィンドウ → 隠しの trigger → 操作の順で、映像（<remo-screen-viewer>）は枠の外。
+	i, j, k := strings.Index(root, "data-viewer-sections"), strings.Index(root, `id="viewer-ops"`), strings.Index(root, "<remo-screen-viewer")
+	if i <= 0 || i >= j || j >= k || !strings.HasSuffix(root[j:k], "</div></div>") {
+		t.Errorf("the cards must be inside the gap-6 frame and the viewer after it:\n%s", root)
+	}
+	ops := webtest.Render(t, organisms.ViewerOps(view.ViewerOps{Enabled: true}))
+	has(t, ops, `id="viewer-ops" class="space-y-6 empty:hidden"`)
+	oob := webtest.Render(t, organisms.ViewerOpsOOB(view.ViewerOps{}))
+	has(t, oob, `id="viewer-ops" class="space-y-6 empty:hidden" hx-swap-oob="true"></div>`)
+	hasNot(t, ops, `class="space-y-4"><section`, `space-y-12`)
+}
+
+// 監査ログの絞り込みの補足文は、どれも 1 つの書式（入力の下 4px = --gap-help・12px・--mute）にそろえる。
+// 2 文以上の補足は FormField が本文色の 14px にするので、日時の補足は 1 文で書く。
+func TestAuditFilterHintsShareOneStyle(t *testing.T) {
+	out := webtest.Render(t, organisms.AuditFilters(view.AuditFilters{}))
+	const hint = `<p class="mt-1 text-xs text-mute">`
+	for _, text := range []string{
+		"RFC 3339 で、この日時以降（例: 2026-11-02T09:00:00+09:00）。",
+		"RFC 3339 で、この日時以前。",
+		"部分一致（例: lease、tool.left_click）。",
+		"削除済みのクライアントの行は、名前の記録だけが残ります。",
+	} {
+		has(t, out, hint+text+"</p>")
+	}
+	if n := strings.Count(out, `class="mt-1 `); n != 4 {
+		t.Errorf("want 4 hints, got %d:\n%s", n, out)
+	}
+	hasNot(t, out, `class="mt-1 text-sm text-ink"`)
+}
+
+// S2: ボタン列・インラインは 8（--gap-inline = gap-2）、フォームの項目 → 項目は 16（--gap-field = space-y-4）。拒否リストの編集フォームと追加フォーム、
+// API キーの登録済みの行、ページ送り、ウィンドウの行が 12（gap-3・space-y-3）で残らない（#208）。
+func TestButtonRowsAndFormFieldsUseInlineAndFieldGaps(t *testing.T) {
+	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Rows: []view.DeniedRow{{ID: "d1", Editing: true, ActionURL: "/apps/denied/d1"}}}))
+	has(t, denied, `class="space-y-4" data-denied-form="edit"`, `<div class="flex items-center gap-2">`)
+	key := webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", Registered: true}))
+	has(t, key, `<div class="flex flex-wrap items-center gap-2" data-secret-saved`)
+	pager := webtest.Render(t, molecules.Pager(molecules.PagerProps{Page: 1}))
+	has(t, pager, `justify-between gap-2" aria-label="ページ送り"`)
+	picker := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{Rows: []view.WindowRow{{ID: "w1", Selectable: true}}}))
+	has(t, picker, `<li class="flex items-center justify-between gap-2 py-2"`)
+	for _, out := range []string{denied, key, pager, picker} {
+		hasNot(t, out, "gap-3", "space-y-3")
+	}
 }
 
 // ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
@@ -143,6 +212,17 @@ func TestRunningTasksPanel(t *testing.T) {
 	has(t, oob, `id="running-tasks"`, `hx-swap-oob="true"`, "data-running-task")
 	for _, out := range []string{empty, full, oob} {
 		webtest.AssertCSPCompliantHTML(t, out)
+	}
+}
+
+// T3: クリックできるタスク ID のリンクは sm 14（補足サイズの xs 12 にしない）。実行中タスクのカードと一覧表のタスク列の両方。
+func TestTaskIDLinksAreSmall(t *testing.T) {
+	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK}}
+	running := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Items: []view.RunningTask{item}}))
+	list := webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{{DetailURL: "/tasks/t1", ShortID: "00LIST01"}}}))
+	for _, out := range []string{running, list} {
+		has(t, out, `class="font-mono text-sm link"`)
+		hasNot(t, out, `font-mono text-xs link`)
 	}
 }
 
@@ -213,15 +293,12 @@ func TestConnectionRequestListApprovalModeOnlyShowsAvailableModes(t *testing.T) 
 	hasNot(t, empty, "<button", "/approve")
 }
 
-// 補助テキスト（text-mute）の段落に入れた <code> チップは、--accent-soft 地の上で AA 4.5:1 を保つため文字色を --ink にする（C6）。
-func TestMuteParagraphCodeChipsAreInk(t *testing.T) {
-	chip := func(v string) string {
-		return `<code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">` + v + `</code>`
-	}
+// 補助テキスト（text-mute）の段落に入れた <code> は、クラスを付けない（チップの書体・地・文字色 --ink は app.css の code ルールが決める。C6・#209）。
+func TestMuteParagraphCodeChipsAreBare(t *testing.T) {
 	client := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc", NodeID: "node-1"}))
-	has(t, client, chip("node-1"))
+	has(t, client, "<code>node-1</code>")
 	request := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", RemoteIP: "100.64.0.9"}}}))
-	has(t, request, chip("100.64.0.9"))
+	has(t, request, "<code>100.64.0.9</code>")
 }
 
 // 接続要求の履歴: 6 列の表・結果のバッジ・読み取り専用（操作なし）。前後のページへのリンクは、その向きのページがあるときだけ出る。
@@ -238,7 +315,7 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	has(t, out, `id="request-history"`, "届いた日時", "処理した日時", `data-history-request="r1" data-result="approved"`, "許可", "拒否", "未処理",
 		"100.64.0.9", "bob@example.com", "2026-11-01 10:05",
 		`hx-get="/requests/history?page=1"`, `hx-get="/requests/history?page=3"`, `hx-target="#request-history"`, `hx-push-url="true"`,
-		"data-pager-prev", "data-pager-next", "2 ページ目")
+		"data-pager-prev", "data-pager-next", ">2</span> ページ目")
 	hasNot(t, out, "<button", "hx-post", "name=\"rev_requests\"")
 	webtest.AssertCSPCompliantHTML(t, out)
 
@@ -369,7 +446,7 @@ func TestAppFormCorruptNotice(t *testing.T) {
 }
 
 func TestSidebarHasTheAppsEntry(t *testing.T) {
-	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}, false))
+	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}))
 	has(t, out, `href="/apps"`, "起動許可アプリ")
 	if strings.Count(out, `aria-current="page"`) != 1 || !strings.Contains(out[strings.Index(out, `href="/apps"`):], `aria-current="page"`) {
 		t.Errorf("the apps entry must be the current page:\n%s", out)
@@ -485,7 +562,7 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
 		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<", `<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-2 text-sm text-ink">`,
 		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
-		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
+		"data-pager-prev", "data-pager-next", ">2</span> ページ目", `hx-target="#app-log"`)
 	has(t, out, "auth failed &lt;b&gt;")
 	hasNot(t, out, "auth failed <b>", "<form", "hx-post")
 	webtest.AssertCSPCompliantHTML(t, out)
@@ -515,6 +592,9 @@ func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
 	has(t, out, `data-key-state="registered"`, `data-secret-saved`, "登録済み", "bg-accent-soft", "text-mute-on-soft", `data-secret-change`, ">変更<",
 		`data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`, "置き換える", "新しい OpenAI API キー")
 	hasNot(t, out, "value=", "data-field-error", "未登録")
+	// T2: 行のラベルは Regular（SemiBold は見出しとボタンだけ）。
+	has(t, out, `<span class="text-sm text-ink">OpenAI API キー</span>`)
+	hasNot(t, out, "font-semibold text-ink\">OpenAI API キー")
 	savedTag := regexp.MustCompile(`<div[^>]*data-secret-saved[^>]*>`).FindString(out)
 	if strings.Contains(savedTag, "hidden") {
 		t.Errorf("the saved row must be visible: %s", savedTag)
@@ -589,12 +669,12 @@ func TestConsentErrorsUseFieldError(t *testing.T) {
 	has(t, fast, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="fastpath-consent"`)
 }
 
-// トースト・アラートの置き場: トーストは画面下の中央（端から 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
+// トースト・アラートの置き場: トーストは画面下の中央（端から --toast-offset の 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
 // app.ts が複製する雛形 #alert-template（role なし）。
 func TestToastAndAlertRoots(t *testing.T) {
 	toast := webtest.Render(t, organisms.ToastRoot())
-	has(t, toast, `id="toast-root"`, "bottom-6", "left-1/2", "-translate-x-1/2", "z-(--z-toast)")
-	hasNot(t, toast, "right-4", "z-50")
+	has(t, toast, `id="toast-root"`, "bottom-(--toast-offset)", "left-1/2", "-translate-x-1/2", "z-(--z-toast)", "max-w-[calc(100vw-2*var(--toast-offset))]")
+	hasNot(t, toast, "right-4", "z-50", "bottom-6", "100vw-3rem")
 	alert := webtest.Render(t, organisms.AlertRoot("px-4"))
 	has(t, alert, `id="alert-root"`, "empty:hidden", "px-4", `id="alert-template"`, "<template", "data-alert-message")
 	hasNot(t, alert, `role="alert"`)
@@ -607,11 +687,26 @@ func TestToastAndAlertRoots(t *testing.T) {
 
 // サイドナビ: 幅 240（md 未満のドロワーは約 78%）・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
 func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
-	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}, false))
+	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}))
 	has(t, nav, "w-[78%]", "md:w-60", "space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
 	hasNot(t, nav, "bg-slate", "md:w-56")
 	header := webtest.Render(t, organisms.Header(view.Header{}))
 	has(t, header, "h-14", "border-b", "border-border")
+}
+
+// ドロワーの枠（#sidebar-nav）は遷移の応答で差し替えない（退出のフェードが切れる。M5・#202）。差し替えるのはリンク群（#sidebar-nav-links）だけで、
+// 現在のページの強調（aria-current）と接続要求のバッジは、その中にある。
+func TestSidebarLinksAreSwappedWithoutTheDrawerFrame(t *testing.T) {
+	frame := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}))
+	has(t, frame, `<nav id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`, `id="sidebar-nav-links"`, `aria-current="page"`, `id="nav-requests-badge"`)
+	hasNot(t, frame, "hx-swap-oob")
+
+	links := webtest.Render(t, organisms.SidebarLinks(view.Chrome{Active: view.NavLogs}, true))
+	has(t, links, `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `href="/logs"`, `id="nav-requests-badge"`)
+	hasNot(t, links, "<nav", `id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`)
+	if strings.Count(links, `aria-current="page"`) != 1 || !strings.Contains(links[strings.Index(links, `href="/logs"`):], `aria-current="page"`) {
+		t.Errorf("the logs entry must be the current page:\n%s", links)
+	}
 }
 
 // モバイルナビ（P0）: ヘッダーのハンバーガーはドロワーを開閉し（aria-expanded・aria-controls）、md 以上では出さない。
@@ -678,6 +773,10 @@ func TestTableDateTimeCellsUseMono(t *testing.T) {
 	has(t, tasks, mono+"2026-11-01 08:00<")
 	tokens := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "a", CreatedAt: "2026-10-01", ExpiresAt: "2027-10-01", LastUsedAt: "2026-11-01"}}}, false))
 	has(t, tokens, mono+"2026-10-01<", mono+"2027-10-01<", mono+"2026-11-01<")
+	// #221: 値が無いときの文言（無期限・未使用）は Mono の外（Regular の text-mute）。
+	none := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "a", CreatedAt: "2026-10-01"}}}, false))
+	has(t, none, `text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>`, `text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>`)
+	hasNot(t, none, mono+"無期限", mono+"未使用")
 }
 
 // 空状態は molecules.EmptyState（破線・アイコン + 文言）を使う。
@@ -767,7 +866,7 @@ func TestFormAndNestedPanelSpacing(t *testing.T) {
 	has(t, req, `<p class="mt-2 text-xs text-mute">`)
 	has(t, webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc"})), `<p class="mt-2 text-xs text-mute">`)
 	dlg := webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Detail: "詳細", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30}}))
-	has(t, dlg, `rounded-md bg-bone p-4 text-sm text-ink" data-approval-detail`)
+	has(t, dlg, `rounded-md bg-bone p-4 text-sm text-ink" aria-label="承認内容の詳細" role="region" tabindex="0" data-approval-detail`)
 }
 
 // S2: 一覧画面の「絞り込み → 表 → ページ送り」を縦に積む外側のラッパーは、他の一覧と同じ 16px（space-y-4）にする。
@@ -813,8 +912,8 @@ func TestTaskDetailAuxRowUsesATooltipNotTitle(t *testing.T) {
 		{No: 2, KindLabel: "判定", Summary: "Judge"},
 	}}))
 	has(t, out,
-		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
-		`aria-describedby="step-row-tip-2"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
+		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
+		`aria-describedby="step-row-tip-2"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
 	hasNot(t, out, "title=", `id="step-row-tip-0"`)
 }
 
@@ -842,4 +941,96 @@ func TestItemNameHeadingsAreH3Base16(t *testing.T) {
 	}
 	detail := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc-main"}))
 	hasNot(t, detail, "<h1", "<h3", "pc-main</h")
+}
+
+// スクロール領域（overflow-auto / overflow-x-auto。B6）: 中にフォーカスできる要素が無くても Tab で領域に入れるよう、
+// atoms.ScrollRegion の tabindex="0"・role="region"・名前（aria-label）が付く。
+func TestScrollRegionsAreFocusableAndNamed(t *testing.T) {
+	rows := []view.LogRow{{Time: "t", Level: "INFO"}}
+	tests := []struct{ name, out, label string }{
+		{"アプリログ", webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: rows})), "アプリログ"},
+		{"承認の詳細", webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Kind: "safety_check", Detail: "d"})), "承認内容の詳細"},
+		{"監査の引数", webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click", Args: []view.AuditArg{{Key: "k", Value: "v"}}})), "引数"},
+		{"トークン一覧", webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "r", Label: "revoked", Prefix: "prm_rrrr"}}}, false)), "発行済みトークン"},
+		{"接続要求の履歴", webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1, Rows: []view.HistoryRow{{ID: "h1"}}})), "接続要求の履歴"},
+		{"タスクの指示", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Prompt: "p"})), "指示の全文"},
+		{"タスクの最終回答", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", ResultText: "r"})), "最終回答の全文"},
+		{"タスクのステップ", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "s"}}})), "ステップ"},
+		{"リリースノート", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Notes: "n"}})), "リリースノート"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tag := regexp.MustCompile(`<[a-z]+ [^>]*aria-label="` + tt.label + `"[^>]*>`).FindString(tt.out)
+			if tag == "" {
+				t.Fatalf("aria-label=%q の領域が無い:\n%s", tt.label, tt.out)
+			}
+			has(t, tag, `tabindex="0"`, `role="region"`)
+			if !regexp.MustCompile(`overflow-(x-)?auto`).MatchString(tag) {
+				t.Errorf("スクロールする要素に付いていない: %s", tag)
+			}
+		})
+	}
+}
+
+// T5: 文中に埋めた日時・経過時間・件数は、値だけ <span class="font-mono">（周りの「から」「まで有効」などは Regular）。
+// 同じ種類の値が画面ごとに Mono と Regular に分かれない（表・詳細の値は既に Mono。tasks.templ の経過と同じ書き方）。
+func TestSentenceValuesAreMono(t *testing.T) {
+	mono := func(v string) string { return `<span class="font-mono">` + v + `</span>` }
+	tests := []struct {
+		name string
+		out  string
+		want []string
+	}{
+		{"セッション", webtest.Render(t, organisms.SessionListBody(view.Sessions{Items: []view.Session{{ClientLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:00"}}})),
+			[]string{mono("2026-11-01 09:00") + " から"}},
+		{"承認待ちの操作権", webtest.Render(t, organisms.LeaseDisplay(view.Lease{Pending: true, HolderLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:01"})),
+			[]string{mono("2026-11-01 09:01") + " から ・ ホストの承認を待っています"}},
+		{"保持中の操作権", webtest.Render(t, organisms.LeaseDisplay(view.Lease{Held: true, HolderLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:02", IdleRemaining: "5分"})),
+			[]string{mono("2026-11-01 09:02") + " から ・ アイドル解放まで " + mono("5分")}},
+		{"キルスイッチ", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true, Since: "2026-11-01 09:03", Source: "gui"})),
+			[]string{mono("2026-11-01 09:03") + " に発動（gui）"}},
+		{"接続要求", webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "bob", Count: 3, FirstSeen: "2026-11-01 09:04", LastSeen: "2026-11-01 09:05", ExpiresAt: "2026-11-02 09:04"}}})),
+			[]string{mono("3") + " 回の要求 ・ 初回 " + mono("2026-11-01 09:04") + " ・ 最終 " + mono("2026-11-01 09:05"), mono("2026-11-02 09:04") + " まで有効"}},
+		{"更新の公開日", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "1.2.3", PublishedAt: "2026-11-01"}})),
+			[]string{mono("2026-11-01") + " 公開"}},
+		{"エージェントの同意", webtest.Render(t, organisms.AgentForm(view.AgentForm{ConsentAt: "2026-11-01 09:06"})),
+			[]string{"同意済み: " + mono("2026-11-01 09:06")}},
+		{"高速パスの同意", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{ConsentAt: "2026-11-01 09:07"})),
+			[]string{"同意済み: " + mono("2026-11-01 09:07")}},
+		{"アプリの登録数", webtest.Render(t, organisms.AppList(view.AppList{Count: 2, Max: 50})),
+			[]string{"登録 " + mono("2 / 50") + " 件"}},
+		{"クリップボード送信の文字数", webtest.Render(t, organisms.ClipboardSent(19)),
+			[]string{"（" + mono("19") + " 文字）"}},
+		{"拒否リストの登録数", webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Count: 1, Max: 200})),
+			[]string{"登録 " + mono("1 / 200") + " 件"}},
+		// 詳細の項目は dd を Mono にせず（日本語の文言は Regular）、数値だけを Mono にする（#215）。
+		{"タスク詳細の上限", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", MaxSteps: 50, MaxDurationSec: 600})),
+			[]string{`data-task-field="limits">ステップ ` + mono("50") + " ・ " + mono("600") + " 秒"}},
+		{"タスク詳細のステップ数", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", StepCount: 3, FastSteps: 1, OpenAISteps: 2})),
+			[]string{`data-task-field="step-count">` + mono("3") + "（高速パス " + mono("1") + " ・ OpenAI " + mono("2") + "）"}},
+		{"初回のみ承認の承認済み", webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", FirstTimeApprovedAt: "2026-11-01 09:08"})),
+			[]string{"承認済み（" + mono("2026-11-01 09:08") + "）"}},
+		// 識別子（ターゲット名・ショートカット）は <code>（#217。docs §8.4。`TestSentenceEmbeddedValuesAreWrapped` が templ 全体を走査する）。
+		{"資格情報のターゲット名", webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "k", Provider: "OpenAI", Target: "puppet-remo/openai:puppet-remo"})),
+			[]string{"資格情報マネージャー（<code>puppet-remo/openai:puppet-remo</code>）にだけ"}},
+		{"ショートカット送信", webtest.Render(t, organisms.KeysSent("alt+tab")),
+			[]string{"<code>alt+tab</code> を送信しました"}},
+		{"初回のみ承認の未承認", webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", FirstTimeStatus: "未承認（次のリース取得で承認が必要です）"})),
+			[]string{"未承認（次のリース取得で承認が必要です）"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { has(t, tt.out, tt.want...) })
+	}
+}
+
+// O8: 拒否リストの行の種別（パス／実行ファイル名）は、状態でない中立の表示なので共通の Badge（BadgeLabel）を使い、
+// 手書きのチップ（rounded-sm・枠なし）にしない。data-denied-kind は Badge を包む span に付く（#216）。
+func TestDeniedRowKindUsesBadgeLabel(t *testing.T) {
+	out := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Rows: []view.DeniedRow{
+		{ID: "d1", Value: "cmd.exe"},
+		{ID: "d2", Value: `C:\Windows\cmd.exe`, IsPath: true},
+	}}))
+	has(t, out, `data-denied-kind><span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs border-border bg-accent-soft text-ink">実行ファイル名</span>`,
+		`data-denied-kind><span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs border-border bg-accent-soft text-ink">パス</span>`)
+	hasNot(t, out, "rounded-sm")
 }

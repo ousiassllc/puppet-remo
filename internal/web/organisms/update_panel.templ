@@ -16,19 +16,17 @@ templ UpdatePanel(v view.UpdatePanel) {
 			<div class="space-y-6">
 				<dl class="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-2">
 					<dt class="text-mute">現在の版</dt>
-					<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-field="current-version">{ v.CurrentVersion }</code></dd>
+					<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all" data-field="current-version">{ v.CurrentVersion }</code></dd>
 					<dt class="text-mute">チャネル</dt>
 					<dd class="mb-1 sm:mb-0" data-field="channel">{ v.ChannelLabel }</dd>
 					<dt class="text-mute">適用方法</dt>
 					<dd class="mb-1 sm:mb-0" data-field="apply-mode">{ v.ApplyModeLabel }</dd>
 					<dt class="text-mute">最後の確認</dt>
-					<dd class="font-mono" data-field="last-checked">
-						if v.LastChecked == "" {
-							<span class="text-mute">未確認</span>
-						} else {
-							{ v.LastChecked }
-						}
-					</dd>
+					if v.LastChecked == "" {
+						<dd class="text-mute" data-field="last-checked">未確認</dd>
+					} else {
+						<dd class="font-mono" data-field="last-checked">{ v.LastChecked }</dd>
+					}
 				</dl>
 				if !v.Updatable {
 					@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "not-updatable"}) {
@@ -51,21 +49,21 @@ templ UpdatePanel(v view.UpdatePanel) {
 				if v.Latest != nil {
 					<div class="space-y-2 rounded-md bg-bone p-4" data-update="latest">
 						<div class="flex flex-wrap items-center gap-2">
-							<span class="text-sm text-ink">新しい版: <code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-field="latest-version">{ v.Latest.Version }</code></span>
+							<span class="text-sm text-ink">新しい版: <code class="break-all" data-field="latest-version">{ v.Latest.Version }</code></span>
 							if v.Latest.Verified {
 								@atoms.Badge(atoms.BadgeOK, "署名を確認済み")
 							} else {
 								@atoms.Badge(atoms.BadgeWarn, "適用できません")
 							}
 							if v.Latest.PublishedAt != "" {
-								<span class="text-xs text-mute">{ v.Latest.PublishedAt } 公開</span>
+								<span class="text-xs text-mute"><span class="font-mono">{ v.Latest.PublishedAt }</span> 公開</span>
 							}
 						</div>
 						if !v.Latest.Verified && v.Latest.Reject != "" {
 							<p class="text-sm text-ink" data-update="reject">{ v.Latest.Reject }</p>
 						}
 						if v.Latest.Notes != "" {
-							<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-4 font-sans text-sm text-ink" data-field="release-notes">{ v.Latest.Notes }</pre>
+							<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bone p-4 font-sans text-sm text-ink" { atoms.ScrollRegion("リリースノート")... } data-field="release-notes">{ v.Latest.Notes }</pre>
 						}
 					</div>
 				}

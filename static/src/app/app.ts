@@ -17,7 +17,17 @@
 import { installPickerRefreshGuard } from "./picker-guard";
 
 const TOAST_ROOT = "toast-root";
-const TOAST_LIFETIME_MS = 3000;
+// トーストの表示時間は :root の --toast-duration（app.css。ガイド O3 の 3s）から読む。読めないとき（CSS が無いテストなど）は同じ 3 秒。
+// 値は app.css の --toast-duration と同じ 3 秒で、テスト（app.test.ts と tokens_css_test.go）が同期を固定している。
+const TOAST_LIFETIME_FALLBACK_MS = 3000;
+function toastLifetimeMs(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--toast-duration").trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value)) {
+    return TOAST_LIFETIME_FALLBACK_MS;
+  }
+  return raw.endsWith("ms") ? value : raw.endsWith("s") ? value * 1000 : TOAST_LIFETIME_FALLBACK_MS;
+}
 const ALERT_ROOT = "alert-root";
 const ALERT_TEMPLATE = "alert-template";
 const MODAL_ROOT = "modal-root";
@@ -109,7 +119,7 @@ document.addEventListener("htmx:responseError", (event) => {
 });
 
 // 7. モバイルナビのドロワー（P0）。開閉の状態は body の data-nav-open で持ち、見た目は app.css の .nav-drawer・.nav-scrim が決める
-// （md 以上では CSS が無視する）。ナビは OOB で差し替わるので、状態はナビの外（body）に置く。開いたら先頭のリンクにフォーカスを移し、
+// （md 以上では CSS が無視する）。ナビのリンク群（#sidebar-nav-links）は OOB で差し替わるが、枠（#sidebar-nav）は差し替えない（退出のフェードを切らないため。#202）。状態は枠の外（body）に置く。開いたら先頭のリンクにフォーカスを移し、
 // Esc で閉じる。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
 // 開いている間は背面（data-nav-background。ヘッダー・本文の列）を inert にして、Tab・クリック・読み上げの対象から外し、Tab はドロワーの中を循環させる。
 // 閉じたら inert を外し、フォーカスを開く前にあった要素（無ければハンバーガー）へ戻す。ハンバーガーは md 以上では出ないので、開く操作は md 未満でしか起きない。
@@ -120,6 +130,7 @@ document.addEventListener("htmx:responseError", (event) => {
 const NAV_OPEN_ATTR = "data-nav-open";
 const NAV_BACKGROUND = "[data-nav-background]";
 const NAV_LIVE = "nav-live";
+// 768 は app.css の --bp-md（md）と同じ値（tokens_css_test.go が一致を検査する）。
 const desktopWidth = window.matchMedia("(min-width: 768px)");
 let navOpener: HTMLElement | null = null;
 
@@ -269,12 +280,14 @@ document.addEventListener("htmx:oobBeforeSwap", (event) => {
 });
 
 // 4. ボタン・クローズ（data-ripple）の押下のリップル: クリック点から円が広がって消える（app.css の .ripple。reduced-motion では出さない）。
+// <remo-screen-viewer> の Shadow DOM の中のボタンも同じ（document では event.target がホスト要素に付け替わるので、composedPath() の先頭で拾う。.ripple の規則は Lit 側の css が持つ）。
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 document.addEventListener("pointerdown", (event) => {
-  if (reducedMotion.matches || event.button !== 0 || !(event.target instanceof Element)) {
+  const origin = event.composedPath()[0];
+  if (reducedMotion.matches || event.button !== 0 || !(origin instanceof Element)) {
     return;
   }
-  const host = event.target.closest<HTMLElement>("[data-ripple]");
+  const host = origin.closest<HTMLElement>("[data-ripple]");
   if (!host || (host instanceof HTMLButtonElement && host.disabled)) {
     return;
   }
@@ -439,7 +452,7 @@ function settleToasts(root: Element): void {
       if (latest.isConnected) {
         leave(latest, () => latest.remove());
       }
-    }, TOAST_LIFETIME_MS);
+    }, toastLifetimeMs());
   });
 }
 

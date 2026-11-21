@@ -102,12 +102,12 @@ func TestTasksListPaging(t *testing.T) {
 	if n := rows(first); n != 50 {
 		t.Fatalf("first page rows = %d, want 50", n)
 	}
-	contains(t, first, "1 ページ目", "disabled data-pager-prev", "data-pager-next", `hx-target="#task-list"`, `hx-push-url="true"`, "task-prompt-000")
+	contains(t, first, ">1</span> ページ目", "disabled data-pager-prev", "data-pager-next", `hx-target="#task-list"`, `hx-push-url="true"`, "task-prompt-000")
 	lacks(t, first, "task-prompt-050")
 
 	second := r.get(hrefOf(first, "next"), hx...)
 	status(t, second, http.StatusOK)
-	contains(t, second, `id="task-list"`, "2 ページ目", "task-prompt-050")
+	contains(t, second, `id="task-list"`, ">2</span> ページ目", "task-prompt-050")
 	lacks(t, second, "<html", "task-prompt-000", "disabled data-pager")
 	if n := rows(second); n != 50 {
 		t.Errorf("second page rows = %d, want 50", n)
@@ -117,7 +117,7 @@ func TestTasksListPaging(t *testing.T) {
 	}
 
 	third := r.get(hrefOf(second, "next"), hx...)
-	contains(t, third, "3 ページ目", "task-prompt-100", "disabled data-pager-next")
+	contains(t, third, ">3</span> ページ目", "task-prompt-100", "disabled data-pager-next")
 	lacks(t, third, "disabled data-pager-prev", "task-prompt-050")
 	if n := rows(third); n != 1 {
 		t.Errorf("third page rows = %d, want 1", n)
@@ -125,7 +125,7 @@ func TestTasksListPaging(t *testing.T) {
 
 	// 3 ページ目の「前へ」は 2 ページ目と同じ行、その「前へ」は先頭（cursor なし）。
 	back := r.get(hrefOf(third, "prev"), hx...)
-	contains(t, back, "2 ページ目", "task-prompt-050", "task-prompt-099")
+	contains(t, back, ">2</span> ページ目", "task-prompt-050", "task-prompt-099")
 	if back.Body != second.Body {
 		t.Errorf("prev of page 3 is not page 2:\n%s\n---\n%s", back.Body, second.Body)
 	}
@@ -140,13 +140,13 @@ func TestTasksListHTMXForms(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idRunning, domain.TaskRunning, "p", 1) })
 	t.Run("boosted", func(t *testing.T) {
 		res := r.get("/tasks", "HX-Request", "true", "HX-Boosted", "true")
-		contains(t, res, "<title>タスク - Nefos Remote</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, `id="task-list"`)
+		contains(t, res, "<title>タスク - Nefos Remote</title>", `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `id="task-list"`)
 		lacks(t, res, "<html", "<body")
 	})
 	t.Run("fragment", func(t *testing.T) {
 		res := r.get("/tasks", hx...)
 		contains(t, res, `id="task-list"`)
-		lacks(t, res, "<html", `id="sidebar-nav"`)
+		lacks(t, res, "<html", `id="sidebar-nav-links"`)
 	})
 	t.Run("history restore gets the full page", func(t *testing.T) {
 		contains(t, r.get("/tasks", "HX-Request", "true", "HX-History-Restore-Request", "true"), "<html")
@@ -189,26 +189,29 @@ func TestTaskDetailPage(t *testing.T) {
 	res := r.get("/tasks/" + idFinished)
 	status(t, res, http.StatusOK)
 	contains(t, res, "<html", "<title>タスクの詳細 - Nefos Remote</title>", `data-task-detail="`+idFinished+`"`,
-		"メモ帳を開いて「こんにちは」と書く", "claude-desktop", "gpt-6.1-sol", "ステップ 50 ・ 600 秒",
+		"メモ帳を開いて「こんにちは」と書く", "claude-desktop", "gpt-6.1-sol",
 		// 日時・ID・数値は Mono、文章の項目は Regular のまま（ガイド T5）
 		`class="break-all text-ink font-mono" data-task-field="id"`, `class="break-all text-ink font-mono" data-task-field="input-tokens"`,
 		`class="break-all text-ink font-mono" data-task-field="created"`, `class="break-all text-ink" data-task-field="client"`,
-		// 日本語の文章を含む値（上限・ステップ数）は Mono にしない（T5）。
-		`class="break-all text-ink" data-task-field="limits">ステップ 50 ・ 600 秒`,
-		`class="break-all text-ink" data-task-field="step-count">3（高速パス 1 ・ OpenAI 2）`,
+		// 日本語の文言を含む値（上限・ステップ数）は dd を Mono にせず、数値だけを Mono にする（T5）。
+		`class="break-all text-ink" data-task-field="limits">ステップ <span class="font-mono">50</span> ・ <span class="font-mono">600</span> 秒`,
 		// step_count = fast + openai
-		"3（高速パス 1 ・ OpenAI 2）", `data-task-steps>3 / 50<`,
-		"確信度がしきい値に届かなかった（low_confidence）", "12345", "678",
+		`class="break-all text-ink" data-task-field="step-count"><span class="font-mono">3</span>（高速パス <span class="font-mono">1</span> ・ OpenAI <span class="font-mono">2</span>）`,
+		`data-task-steps>3 / 50<`,
+		// 引き継ぎ理由は、文言と「（ ）」は Regular、理由コードだけ Mono（#222）。
+		`data-task-field="handoff-reason">確信度がしきい値に届かなかった（<span class="font-mono">low_confidence</span>）`, "12345", "678",
 		// 完了はモデルの申告（FR-G13）
 		"メモ帳に書きました。", "data-task-result-note", "モデル（OpenAI）の申告",
 		// ステップは step_no の昇順、経路、結果、監査ログとサムネイル（監査の画面と同じ経路）
 		`data-step-no="1" data-route="fast"`, `data-step-no="2" data-route="openai"`, "高速パス", "OpenAI",
 		`href="/audit/901"`, `href="/audit/902"`, `src="/audit/902/thumbnail"`, "x:",
 		// 指示・最終回答は自然文（T1: <pre> でも等幅にしない）。
-		`rounded-md bg-bone p-4 font-sans text-sm text-ink" data-task-prompt`,
-		`rounded-md bg-bone p-4 font-sans text-sm text-ink" data-task-result>`,
+		`rounded-md bg-bone p-4 font-sans text-sm text-ink" aria-label="指示の全文" role="region" tabindex="0" data-task-prompt`,
+		`rounded-md bg-bone p-4 font-sans text-sm text-ink" aria-label="最終回答の全文" role="region" tabindex="0" data-task-result>`,
 		// 操作のリンクは本文サイズ（T3）。
-		`class="mt-1 block text-sm link"`)
+		`class="mt-1 block text-sm link"`,
+		// ステップのイベント名は機械的な識別子なので Mono（T5）。
+		`<span class="ml-1 font-mono text-xs text-mute group-hover:text-mute-on-soft">agent.step</span>`)
 	lacks(t, res, `src="/audit/901/thumbnail"`, `hx-post=`, "中断")
 	if i, j, k := strings.Index(res.Body, `data-step-no="1"`), strings.Index(res.Body, `data-step-no="2"`), strings.Index(res.Body, `data-step-no="3"`); i >= j || j >= k {
 		t.Error("steps are not in step_no order")
@@ -276,6 +279,21 @@ func TestTaskDetailStates(t *testing.T) {
 	}
 }
 
+// 未知の理由コードは、文言なしでコードだけ（Mono）。プロセス名が無い対象は「pid N」だけ（#220・#222）。
+func TestTaskDetailUnknownHandoffAndUnnamedTarget(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedTask(f, idRunning, domain.TaskRunning, "p", 5, func(t *domain.Task) {
+			t.HandoffReason = domain.HandoffReason("something_new")
+			t.TargetWindowID, t.TargetPID = "1001", 4242
+		})
+	})
+	res := r.get("/tasks/" + idRunning)
+	contains(t, res, `data-task-field="handoff-reason"><span class="font-mono">something_new</span></dd>`,
+		`data-task-field="target">pid <span class="font-mono">4242</span> <span>・ window_id <span class="font-mono">1001</span></span>`)
+	lacks(t, res, "something_new）")
+	contains(t, r.get("/"), `data-task-target>pid <span class="font-mono">4242</span>`)
+}
+
 func TestTaskDetailNoHandoffNoSteps(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idRunning, domain.TaskRunning, "p", 1) })
 	res := r.get("/tasks/" + idRunning)
@@ -294,7 +312,7 @@ func TestTaskDetailNotFoundAndHTMX(t *testing.T) {
 	lacks(t, res, "<html")
 	res = r.get("/tasks/"+idRunning, "HX-Request", "true", "HX-Boosted", "true")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<title>タスクの詳細 - Nefos Remote</title>", `id="sidebar-nav"`)
+	contains(t, res, "<title>タスクの詳細 - Nefos Remote</title>", `id="sidebar-nav-links"`)
 	lacks(t, res, "<html")
 }
 
@@ -480,9 +498,12 @@ func TestScopedTaskShowsTargetWithoutTitle(t *testing.T) {
 	})
 	res := r.get("/")
 	status(t, res, http.StatusOK)
-	contains(t, res, "data-task-target", "notepad.exe（pid 4242）")
+	// 識別子（プロセス名・pid・window_id）だけが Mono。「対象:」「（ ）」「pid」「・」は Regular（#220）。
+	contains(t, res, `対象: <span class="text-ink" data-task-target><span class="font-mono">notepad.exe</span>（pid <span class="font-mono">4242</span>）`)
 	detail := r.get("/tasks/" + idRunning)
-	contains(t, detail, "対象ウィンドウ", "notepad.exe（pid 4242） ・ window_id 1001", "表示から除外", "capture_partial")
+	contains(t, detail, "対象ウィンドウ",
+		`data-task-field="target"><span class="font-mono">notepad.exe</span>（pid <span class="font-mono">4242</span>） <span>・ window_id <span class="font-mono">1001</span></span>`,
+		"表示から除外", "capture_partial")
 	plain := r.get("/tasks/" + idFinished)
 	lacks(t, plain, "対象ウィンドウ", "表示から除外", "data-task-target")
 }
