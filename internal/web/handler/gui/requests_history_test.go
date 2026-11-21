@@ -96,7 +96,7 @@ func TestRequestsHistoryPaging(t *testing.T) {
 	if n := strings.Count(page1.Body, "data-history-request="); n != size {
 		t.Errorf("page 1 rows = %d, want %d", n, size)
 	}
-	contains(t, page1, fmt.Sprintf(`data-history-request="req-%03d"`, total-1), `href="/requests/history?page=2"`, "data-pager-next", "1 ページ目")
+	contains(t, page1, fmt.Sprintf(`data-history-request="req-%03d"`, total-1), `href="/requests/history?page=2"`, "data-pager-next", ">1</span> ページ目")
 	contains(t, page1, "disabled data-pager-prev")
 
 	page3 := r.get("/requests/history?page=3")
@@ -104,14 +104,14 @@ func TestRequestsHistoryPaging(t *testing.T) {
 	if n := strings.Count(page3.Body, "data-history-request="); n != 3 {
 		t.Errorf("page 3 rows = %d, want 3", n)
 	}
-	contains(t, page3, `data-history-request="req-000"`, `href="/requests/history?page=2"`, "data-pager-prev", "3 ページ目")
+	contains(t, page3, `data-history-request="req-000"`, `href="/requests/history?page=2"`, "data-pager-prev", ">3</span> ページ目")
 	contains(t, page3, "disabled data-pager-next")
 
 	// 不正・範囲外のページ番号。
 	for _, q := range []string{"?page=0", "?page=-2", "?page=abc", "?page="} {
 		res := r.get("/requests/history" + q)
 		status(t, res, http.StatusOK)
-		contains(t, res, `data-history-request="req-`+fmt.Sprintf("%03d", total-1)+`"`, "1 ページ目")
+		contains(t, res, `data-history-request="req-`+fmt.Sprintf("%03d", total-1)+`"`, ">1</span> ページ目")
 	}
 	beyond := r.get("/requests/history?page=99")
 	status(t, beyond, http.StatusOK)
