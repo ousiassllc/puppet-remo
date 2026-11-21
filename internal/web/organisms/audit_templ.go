@@ -476,7 +476,7 @@ func AuditList(v view.AuditList) templ.Component {
 	})
 }
 
-// AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。
+// AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
 func AuditDetail(v view.AuditDetail) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -498,14 +498,14 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 			templ_7745c5c3_Var20 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"space-y-6\" data-audit-detail=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"space-y-12\" data-audit-detail=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(v.Event)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/audit.templ`, Line: 142, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/audit.templ`, Line: 142, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {

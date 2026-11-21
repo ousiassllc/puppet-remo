@@ -206,9 +206,9 @@ templ FastpathForm(f view.FastpathForm) {
 }
 
 // AgentSections はエージェント設定の本体（#agent-sections）。OpenAI のキーと設定、高速パスのキーと設定の 4 つ。
-// API キーの削除は、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。
+// API キーの削除は、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
 templ AgentSections(v view.AgentSettings) {
-	<div id="agent-sections" class="space-y-6">
+	<div id="agent-sections" class="space-y-12">
 		@molecules.Card("OpenAI エージェント") {
 			<div class="space-y-6">
 				@APIKeyPanel(v.AgentKey)
