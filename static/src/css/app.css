@@ -719,8 +719,8 @@
     }
   }
 
-  /* スピナー（O7・ガイド「スピナー」）: 20px・2px（track --accent-soft・先端 --accent）・0.9s。reduced-motion では回転を止める
-   * （先端の円弧・role="status"・ラベルで処理中は伝わる）。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
+  /* スピナー（O7・ガイド「スピナー」）: 20px・2px（track --accent-soft・先端 --accent）・0.9s。処理中表示なので reduced-motion でも回転を維持する
+   * （M3。ガイドは「スピナーなど処理中表示は reduced-motion でも維持」）。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
   .spinner {
     width: 20px;
     height: 20px;
@@ -728,11 +728,6 @@
     border-top-color: var(--accent);
     border-radius: var(--radius-full);
     animation: motion-spin var(--spinner-duration) linear infinite;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
   }
   @media (forced-colors: active) {
     .spinner {

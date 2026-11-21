@@ -170,6 +170,21 @@ func TestSpinnerDurationIsOneToken(t *testing.T) {
 	}
 }
 
+// M3: スピナーなど処理中表示は reduced-motion でも維持する（ガイド Feedback 節・check-criteria M3）。
+// app.css の .spinner と Lit のビューアの .spinner は、prefers-reduced-motion: reduce で回転を止めない。
+func TestSpinnerKeepsSpinningUnderReducedMotion(t *testing.T) {
+	stopped := regexp.MustCompile(`prefers-reduced-motion:\s*reduce\)\s*\{\s*\.spinner\s*\{[^}]*animation:\s*none`)
+	viewer, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "components", "screen-viewer", "remo-screen-viewer.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range map[string]string{"app.css": readAppCSS(t), "remo-screen-viewer.ts": string(viewer)} {
+		if stopped.MatchString(src) {
+			t.Errorf("%s must not stop the .spinner rotation under prefers-reduced-motion", name)
+		}
+	}
+}
+
 // C8: 暗幕（--scrim）は大きな面なので、ダークでも純黒にせず --bone（#050505）系にする（ライトは 0.4、ダークは 0.6）。
 func TestScrimIsNeverPureBlack(t *testing.T) {
 	css := readAppCSS(t)
