@@ -70,7 +70,7 @@ templ ClipboardPanel(scoped bool) {
 
 // ClipboardSent は送信できたことの応答。送ったテキストは返さない（文字数だけ）。
 templ ClipboardSent(chars int) {
-	<span data-clipboard-sent>ホストのクリップボードへ送信しました（{ strconv.Itoa(chars) } 文字）。</span>
+	<span data-clipboard-sent>ホストのクリップボードへ送信しました（<span class="font-mono">{ strconv.Itoa(chars) }</span> 文字）。</span>
 }
 
 // ClipboardFetched はホストのクリップボードの内容を、読み取り専用の表示欄に出す。利用者が選択して手動でコピーする。

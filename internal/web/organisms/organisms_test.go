@@ -966,6 +966,8 @@ func TestSentenceValuesAreMono(t *testing.T) {
 			[]string{"同意済み: " + mono("2026-11-01 09:07")}},
 		{"アプリの登録数", webtest.Render(t, organisms.AppList(view.AppList{Count: 2, Max: 50})),
 			[]string{"登録 " + mono("2 / 50") + " 件"}},
+		{"クリップボード送信の文字数", webtest.Render(t, organisms.ClipboardSent(19)),
+			[]string{"（" + mono("19") + " 文字）"}},
 		{"拒否リストの登録数", webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Count: 1, Max: 200})),
 			[]string{"登録 " + mono("1 / 200") + " 件"}},
 	}
