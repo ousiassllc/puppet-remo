@@ -183,8 +183,8 @@ type Token struct {
 	Status     string // 有効 / 失効済み / 期限切れ
 	StatusTone BadgeTone
 	CreatedAt  string
-	ExpiresAt  string // 「無期限」を含む
-	LastUsedAt string
+	ExpiresAt  string // 空は無期限（templ が「無期限」を Mono の外で出す）
+	LastUsedAt string // 空は未使用（同上）
 	// CanRevoke は有効なトークンだけ true。
 	CanRevoke     bool
 	RevokeConfirm string
