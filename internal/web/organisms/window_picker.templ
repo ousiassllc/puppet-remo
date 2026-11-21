@@ -65,7 +65,7 @@ templ WindowPicker(v view.WindowPicker) {
 }
 
 templ windowRow(r view.WindowRow) {
-	<li class="flex items-center justify-between gap-3 py-2" data-window-id={ r.ID } data-selectable?={ r.Selectable } if !r.Selectable { aria-disabled="true" }>
+	<li class="flex items-center justify-between gap-2 py-2" data-window-id={ r.ID } data-selectable?={ r.Selectable } if !r.Selectable { aria-disabled="true" }>
 		<div class={ rowTextClass(r) }>
 			<p class="truncate text-sm" data-window-title>{ r.Title }</p>
 			<p class="flex flex-wrap items-center gap-2 text-xs">

@@ -84,7 +84,7 @@ func APIKeyPanel(p view.APIKeyPanel) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if p.Registered {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"flex flex-wrap items-center gap-3\" data-secret-saved")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"flex flex-wrap items-center gap-2\" data-secret-saved")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

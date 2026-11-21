@@ -136,6 +136,39 @@ func TestTitledCardSectionsAreSeparatedByGapSectionSm(t *testing.T) {
 	has(t, audit, cardTitle+"引数</h2>", cardTitle+"サムネイル</h2>")
 }
 
+// ビューアの題付き Card（操作権・操作するウィンドウ・クリップボード・ショートカット）も同じ原則で 48（#208）。ツールバー（題なし）・映像との間は 16 のまま。
+// htmx が差し替える枠・空の #viewer-ops・隠しの trigger を含む並びなので、space-y ではなく gap-12 の枠にまとめ、空の #viewer-ops は empty:hidden にする。
+func TestViewerCardSectionsAreSeparatedByGapSectionSm(t *testing.T) {
+	root := webtest.Render(t, organisms.ViewerRoot(view.Viewer{ViewerID: "V"}))
+	has(t, root, `<main id="viewer-root" class="space-y-4"`, `<div class="flex flex-col gap-12" data-viewer-sections><div id="lease-panel"`)
+	// 枠の中は、操作権 → ウィンドウ → 隠しの trigger → 操作の順で、映像（<remo-screen-viewer>）は枠の外。
+	i, j, k := strings.Index(root, "data-viewer-sections"), strings.Index(root, `id="viewer-ops"`), strings.Index(root, "<remo-screen-viewer")
+	if i <= 0 || i >= j || j >= k || !strings.HasSuffix(root[j:k], "</div></div>") {
+		t.Errorf("the cards must be inside the gap-12 frame and the viewer after it:\n%s", root)
+	}
+	ops := webtest.Render(t, organisms.ViewerOps(view.ViewerOps{Enabled: true}))
+	has(t, ops, `id="viewer-ops" class="space-y-12 empty:hidden"`)
+	oob := webtest.Render(t, organisms.ViewerOpsOOB(view.ViewerOps{}))
+	has(t, oob, `id="viewer-ops" class="space-y-12 empty:hidden" hx-swap-oob="true"></div>`)
+	hasNot(t, ops, `class="space-y-4"><section`)
+}
+
+// S2: ボタン列・インラインは 8（--gap-inline = gap-2）、フォームの項目 → 項目は 16（--gap-field = space-y-4）。拒否リストの編集フォームと追加フォーム、
+// API キーの登録済みの行、ページ送り、ウィンドウの行が 12（gap-3・space-y-3）で残らない（#208）。
+func TestButtonRowsAndFormFieldsUseInlineAndFieldGaps(t *testing.T) {
+	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Rows: []view.DeniedRow{{ID: "d1", Editing: true, ActionURL: "/apps/denied/d1"}}}))
+	has(t, denied, `class="space-y-4" data-denied-form="edit"`, `<div class="flex items-center gap-2">`)
+	key := webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", Registered: true}))
+	has(t, key, `<div class="flex flex-wrap items-center gap-2" data-secret-saved`)
+	pager := webtest.Render(t, molecules.Pager(molecules.PagerProps{Page: 1}))
+	has(t, pager, `justify-between gap-2" aria-label="ページ送り"`)
+	picker := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{Rows: []view.WindowRow{{ID: "w1", Selectable: true}}}))
+	has(t, picker, `<li class="flex items-center justify-between gap-2 py-2"`)
+	for _, out := range []string{denied, key, pager, picker} {
+		hasNot(t, out, "gap-3", "space-y-3")
+	}
+}
+
 // ダッシュボードの実行中タスク: 項目が無ければ中身を描画しない（差し込み先と版の隠し入力だけ）。OOB は同じ id を差し替える。
 func TestRunningTasksPanel(t *testing.T) {
 	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Client: "claude", PromptExcerpt: "天気を調べる",

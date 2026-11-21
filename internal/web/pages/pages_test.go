@@ -114,6 +114,20 @@ func TestAppsPageSeparatesSectionsByGapSectionSm(t *testing.T) {
 	}
 }
 
+// ダッシュボード: 題付き Card（実行中のタスク）とカードのグリッドの間はセクション間の 48（--gap-section-sm。gap-12）。h1 の下は 24（外枠 space-y-6）、
+// グリッド内の横・縦は 16（--gap-grid。gap-4）のまま（S5・#208）。実行中のタスクが無いとき、空の枠（hidden）は間隔に入らない。
+func TestDashboardSeparatesCardAndGridByGapSectionSm(t *testing.T) {
+	out := webtest.Render(t, pages.Dashboard(view.Dashboard{Chrome: view.Chrome{Active: view.NavDashboard}}))
+	for _, want := range []string{
+		`<div class="space-y-6"><h1 class="text-3xl font-semibold text-ink">ダッシュボード</h1><div class="flex flex-col gap-12" data-dashboard-sections><div id="running-tasks" hidden>`,
+		`<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
 // リモートのビューアのページ（FR-W01）: 外部ファイルだけを読み、screen-viewer.js は app.js の後（モジュール）。
 func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
 	out := webtest.Render(t, pages.Viewer(view.Viewer{ViewerID: "V", WSURL: "ws://h/ws/screen?viewer_id=V"}))
@@ -133,7 +147,7 @@ func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
 		prev = i
 	}
 	// ガター（S5）はモバイル 16px・デスクトップ 24px（ホスト GUI と同じ）。
-	for _, want := range []string{`hx-ext="response-targets"`, `X-Puppet-Remo`, `id="toast-root"`, `id="alert-root"`, `id="viewer-root"`, `<remo-screen-viewer`, `<html lang="ja">`, "space-y-4 p-4 md:p-6"} {
+	for _, want := range []string{`hx-ext="response-targets"`, `X-Puppet-Remo`, `id="toast-root"`, `id="alert-root"`, `id="viewer-root"`, `<remo-screen-viewer`, `<html lang="ja">`, "space-y-4 p-4 md:p-6", `px-4 text-base text-ink md:px-6">`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("remote layout lacks %q", want)
 		}

@@ -26,16 +26,17 @@ templ TaskStatus(v view.TaskStatus) {
 }
 
 // runningTasks はダッシュボードの実行中タスクのパネル。いつも #running-tasks を描画し（GET /poll の OOB の差し込み先）、
-// 隠し入力 rev_tasks（data-poll-rev）に描画した状態の版を持つ。実行中・承認待ちのタスクが無いときは、パネルの中身は描画しない。
+// 隠し入力 rev_tasks（data-poll-rev）に描画した状態の版を持つ。実行中・承認待ちのタスクが無いときは、パネルの中身は描画せず、枠も hidden にする
+// （ダッシュボードの Card の積みの gap-12 = 48 に、空の枠の分が入らないように）。
 templ runningTasks(v view.RunningTasks, oob bool) {
-	<div id="running-tasks" { oobAttrs(oob)... }>
+	<div id="running-tasks" hidden?={ len(v.Items) == 0 } { oobAttrs(oob)... }>
 		<input type="hidden" name="rev_tasks" value={ v.Rev } data-poll-rev/>
 		if len(v.Items) > 0 {
 			@molecules.Card("実行中のエージェントタスク") {
 				<ul class="divide-y divide-border" data-running-tasks>
 					for _, t := range v.Items {
 						<li class="space-y-2 py-3 first:pt-0 last:pb-0" data-running-task>
-							<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+							<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
 								<a
 									href={ templ.SafeURL(t.DetailURL) }
 									class="font-mono text-sm link"
@@ -153,7 +154,7 @@ templ taskStepArgs(args []view.AuditArg) {
 // ステップは監査ログの行で、入力した文字列の本文・要素の値は持たない。サムネイルは監査の画面と同じ経路（/audit/{id}/thumbnail）。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
 templ TaskDetail(v view.TaskDetail) {
 	<div class="space-y-12" data-task-detail={ v.ID }>
-		<div class="space-y-3 rounded-lg border border-border bg-surface p-4">
+		<div class="space-y-4 rounded-lg border border-border bg-surface p-4">
 			@TaskStatus(v.Status)
 			<dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
 				@taskField("タスク ID", v.ID, "id", true)
