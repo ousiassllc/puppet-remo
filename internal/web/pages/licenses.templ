@@ -15,7 +15,7 @@ templ licensesBody(v view.Licenses) {
 			このアプリが同梱するフォント・アイコン・ライブラリのライセンスの全文です。同じ内容は、インストール先の <code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">THIRD_PARTY_NOTICES.txt</code> にもあります。
 		</p>
 		@molecules.Card("") {
-			<pre class="whitespace-pre-wrap break-words font-mono text-xs text-ink" data-licenses-text>{ v.Text }</pre>
+			<pre class="whitespace-pre-wrap break-words font-mono text-sm text-ink" data-licenses-text>{ v.Text }</pre>
 		}
 		<p class="text-base text-ink"><a href="/settings" class="link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">設定に戻る</a></p>
 	</div>
