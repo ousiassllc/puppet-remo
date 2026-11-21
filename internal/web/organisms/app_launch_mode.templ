@@ -107,11 +107,11 @@ templ DeniedSection(v view.DeniedSection) {
 							</li>
 						} else {
 							<li class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
-								<span class="rounded-sm bg-accent-soft px-2 py-1 text-xs text-ink" data-denied-kind>
+								<span data-denied-kind>
 									if row.IsPath {
-										パス
+										@atoms.Badge(atoms.BadgeLabel, "パス")
 									} else {
-										実行ファイル名
+										@atoms.Badge(atoms.BadgeLabel, "実行ファイル名")
 									}
 								</span>
 								<code class="min-w-0 flex-1 break-all" data-denied-value>{ row.Value }</code>

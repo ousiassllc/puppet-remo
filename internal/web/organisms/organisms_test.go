@@ -993,3 +993,15 @@ func TestSentenceValuesAreMono(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) { has(t, tt.out, tt.want...) })
 	}
 }
+
+// O8: 拒否リストの行の種別（パス／実行ファイル名）は、状態でない中立の表示なので共通の Badge（BadgeLabel）を使い、
+// 手書きのチップ（rounded-sm・枠なし）にしない。data-denied-kind は Badge を包む span に付く（#216）。
+func TestDeniedRowKindUsesBadgeLabel(t *testing.T) {
+	out := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Rows: []view.DeniedRow{
+		{ID: "d1", Value: "cmd.exe"},
+		{ID: "d2", Value: `C:\Windows\cmd.exe`, IsPath: true},
+	}}))
+	has(t, out, `data-denied-kind><span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs border-border bg-accent-soft text-ink">実行ファイル名</span>`,
+		`data-denied-kind><span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs border-border bg-accent-soft text-ink">パス</span>`)
+	hasNot(t, out, "rounded-sm")
+}
