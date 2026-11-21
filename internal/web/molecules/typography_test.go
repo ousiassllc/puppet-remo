@@ -99,3 +99,25 @@ func TestModalScrimHasGutter(t *testing.T) {
 		t.Errorf("modal scrim lacks the p-4 md:p-6 gutter:\n%s", out)
 	}
 }
+
+// T2: 本文中の強調（<strong>）は app.css の base が下線で表す。題（見出し役）の <strong> には下線を付けない（リンクに見えるため）。
+// 題はクラス no-underline で外す（utilities は base に勝つ）。実描画は remotedemo + Playwright の getComputedStyle で確かめた。
+func TestAlertTitleHasNoUnderline(t *testing.T) {
+	alert := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "失敗", Message: "m"}))
+	for _, e := range webtest.Elements(t, alert, "strong") {
+		if !slices.Contains(strings.Fields(e.Class), "no-underline") {
+			t.Errorf("alert title <strong> lacks no-underline: %q", e.Class)
+		}
+	}
+	if len(webtest.Elements(t, alert, "strong")) == 0 {
+		t.Fatalf("no <strong> title in:\n%s", alert)
+	}
+}
+
+// T5: トークン発行直後の通知の有効期限は、値だけ Mono（周りの文は Regular）。
+func TestTokenRevealExpiryIsMono(t *testing.T) {
+	reveal := webtest.Render(t, molecules.TokenReveal(view.TokenReveal{Label: "ci", Plaintext: "tok", ExpiresAt: "2026-12-01"}))
+	if !strings.Contains(reveal, `（有効期限: <span class="font-mono">2026-12-01</span>）`) {
+		t.Errorf("expiry is not a Mono span:\n%s", reveal)
+	}
+}

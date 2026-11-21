@@ -901,3 +901,38 @@ func TestScrollRegionsAreFocusableAndNamed(t *testing.T) {
 		})
 	}
 }
+
+// T5: 文中に埋めた日時・経過時間・件数は、値だけ <span class="font-mono">（周りの「から」「まで有効」などは Regular）。
+// 同じ種類の値が画面ごとに Mono と Regular に分かれない（表・詳細の値は既に Mono。tasks.templ の経過と同じ書き方）。
+func TestSentenceValuesAreMono(t *testing.T) {
+	mono := func(v string) string { return `<span class="font-mono">` + v + `</span>` }
+	tests := []struct {
+		name string
+		out  string
+		want []string
+	}{
+		{"セッション", webtest.Render(t, organisms.SessionListBody(view.Sessions{Items: []view.Session{{ClientLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:00"}}})),
+			[]string{mono("2026-11-01 09:00") + " から"}},
+		{"承認待ちの操作権", webtest.Render(t, organisms.LeaseDisplay(view.Lease{Pending: true, HolderLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:01"})),
+			[]string{mono("2026-11-01 09:01") + " から ・ ホストの承認を待っています"}},
+		{"保持中の操作権", webtest.Render(t, organisms.LeaseDisplay(view.Lease{Held: true, HolderLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:02", IdleRemaining: "5分"})),
+			[]string{mono("2026-11-01 09:02") + " から ・ アイドル解放まで " + mono("5分")}},
+		{"キルスイッチ", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true, Since: "2026-11-01 09:03", Source: "gui"})),
+			[]string{mono("2026-11-01 09:03") + " に発動（gui）"}},
+		{"接続要求", webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "bob", Count: 3, FirstSeen: "2026-11-01 09:04", LastSeen: "2026-11-01 09:05", ExpiresAt: "2026-11-02 09:04"}}})),
+			[]string{mono("3") + " 回の要求 ・ 初回 " + mono("2026-11-01 09:04") + " ・ 最終 " + mono("2026-11-01 09:05"), mono("2026-11-02 09:04") + " まで有効"}},
+		{"更新の公開日", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "1.2.3", PublishedAt: "2026-11-01"}})),
+			[]string{mono("2026-11-01") + " 公開"}},
+		{"エージェントの同意", webtest.Render(t, organisms.AgentForm(view.AgentForm{ConsentAt: "2026-11-01 09:06"})),
+			[]string{"同意済み: " + mono("2026-11-01 09:06")}},
+		{"高速パスの同意", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{ConsentAt: "2026-11-01 09:07"})),
+			[]string{"同意済み: " + mono("2026-11-01 09:07")}},
+		{"アプリの登録数", webtest.Render(t, organisms.AppList(view.AppList{Count: 2, Max: 50})),
+			[]string{"登録 " + mono("2 / 50") + " 件"}},
+		{"拒否リストの登録数", webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Count: 1, Max: 200})),
+			[]string{"登録 " + mono("1 / 200") + " 件"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { has(t, tt.out, tt.want...) })
+	}
+}

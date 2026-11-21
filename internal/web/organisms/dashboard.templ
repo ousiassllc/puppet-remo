@@ -70,7 +70,7 @@ templ SessionListBody(v view.Sessions) {
 					<span class="text-ink">{ s.ClientLabel }</span>
 					<span class="flex items-center gap-2">
 						@atoms.Badge(atoms.BadgeNeutral, s.KindLabel)
-						<span class="text-xs text-mute">{ s.Since } から</span>
+						<span class="text-xs text-mute"><span class="font-mono">{ s.Since }</span> から</span>
 					</span>
 				</li>
 			}
@@ -91,12 +91,12 @@ templ SessionList(v view.Sessions) {
 templ LeaseDisplay(v view.Lease) {
 	if v.Pending {
 		@molecules.LeasePendingBadge(v.HolderLabel, v.KindLabel)
-		<p class="mt-2 text-sm text-ink">{ v.Since } から ・ ホストの承認を待っています（承認ダイアログで許可・拒否します）</p>
+		<p class="mt-2 text-sm text-ink"><span class="font-mono">{ v.Since }</span> から ・ ホストの承認を待っています（承認ダイアログで許可・拒否します）</p>
 	} else {
 		@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
 	}
 	if v.Held {
-		<p class="mt-2 text-xs text-mute">{ v.Since } から ・ アイドル解放まで { v.IdleRemaining }</p>
+		<p class="mt-2 text-xs text-mute"><span class="font-mono">{ v.Since }</span> から ・ アイドル解放まで <span class="font-mono">{ v.IdleRemaining }</span></p>
 	}
 }
 
@@ -174,7 +174,7 @@ templ killSwitchPanel(v view.KillSwitch, oob bool) {
 						発動中です。すべての操作権を剥奪し、リモートからの要求を断っています。
 					}
 					if v.Since != "" {
-						<p class="text-xs text-mute">{ v.Since } に発動（{ v.Source }）</p>
+						<p class="text-xs text-mute"><span class="font-mono">{ v.Since }</span> に発動（{ v.Source }）</p>
 					}
 				} else {
 					<p class="text-base text-ink" data-killswitch="inactive">
