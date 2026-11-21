@@ -126,15 +126,23 @@ templ TaskList(v view.TaskList) {
 	</div>
 }
 
-// taskField はタスクの詳細の項目 1 つ。値が空の項目は描画しない（無い項目を「-」で埋めない）。
+// taskField はタスクの詳細の項目 1 つ（値が文字列 1 つのとき）。値が空の項目は描画しない（無い項目を「-」で埋めない）。
 // mono は値が日時・ID・数値のとき true（桁を揃える値は Mono。文章は Regular のまま）。
 templ taskField(label, value, name string, mono bool) {
 	if value != "" {
-		<div class="flex gap-2">
-			<dt class="w-28 shrink-0 text-mute">{ label }</dt>
-			<dd class={ "break-all text-ink", templ.KV("font-mono", mono) } data-task-field={ name }>{ value }</dd>
-		</div>
+		@taskRow(label, name, mono) {
+			{ value }
+		}
 	}
+}
+
+// taskRow は詳細の項目 1 つの枠。値は children で渡す。「ステップ N ・ M 秒」のように日本語の文言と数値が混ざる値は、
+// mono = false のまま、数値だけを <span class="font-mono"> で包んで渡す（ガイド T5。文に埋めた値と同じ書き方）。
+templ taskRow(label, name string, mono bool) {
+	<div class="flex gap-2">
+		<dt class="w-28 shrink-0 text-mute">{ label }</dt>
+		<dd class={ "break-all text-ink", templ.KV("font-mono", mono) } data-task-field={ name }>{ children... }</dd>
+	</div>
 }
 
 templ taskStepArgs(args []view.AuditArg) {
@@ -160,8 +168,12 @@ templ TaskDetail(v view.TaskDetail) {
 				@taskField("タスク ID", v.ID, "id", true)
 				@taskField("依頼元", v.Client, "client", false)
 				@taskField("モデル", v.Model, "model", false)
-				@taskField("上限", "ステップ "+strconv.Itoa(v.MaxSteps)+" ・ "+strconv.Itoa(v.MaxDurationSec)+" 秒", "limits", false)
-				@taskField("ステップ数", strconv.Itoa(v.StepCount)+"（高速パス "+strconv.Itoa(v.FastSteps)+" ・ OpenAI "+strconv.Itoa(v.OpenAISteps)+"）", "step-count", false)
+				@taskRow("上限", "limits", false) {
+					ステップ <span class="font-mono">{ strconv.Itoa(v.MaxSteps) }</span> ・ <span class="font-mono">{ strconv.Itoa(v.MaxDurationSec) }</span> 秒
+				}
+				@taskRow("ステップ数", "step-count", false) {
+					<span class="font-mono">{ strconv.Itoa(v.StepCount) }</span>（高速パス <span class="font-mono">{ strconv.Itoa(v.FastSteps) }</span> ・ OpenAI <span class="font-mono">{ strconv.Itoa(v.OpenAISteps) }</span>）
+				}
 				@taskField("引き継ぎ理由", v.Handoff, "handoff-reason", false)
 				@taskField("対象ウィンドウ", v.Target, "target", false)
 				@taskField("表示から除外", v.CapturePartial, "capture-partial", false)

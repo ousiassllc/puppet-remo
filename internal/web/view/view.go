@@ -142,7 +142,9 @@ type Client struct {
 	// Modes は承認モードの選択肢（現在の値が Selected）。変更は UpdateURL へ PATCH する（approved_at が NULL に戻る。FR-H04）。
 	Modes     []ApprovalModeOption
 	UpdateURL string
-	// FirstTimeStatus は first_time のときだけ、承認済み（日時）・未承認の表示。それ以外は空。
+	// FirstTimeApprovedAt は first_time で承認済みのときだけ、承認した日時（テンプレートが「承認済み（日時）」にし、日時だけ Mono にする）。
+	FirstTimeApprovedAt string
+	// FirstTimeStatus は first_time で未承認のときだけ、未承認の表示。承認済み・それ以外は空。
 	FirstTimeStatus string
 	// CanResetApproval は first_time で承認済みのときだけ true（承認の取り消しのボタン。確認は要らない）。
 	CanResetApproval bool

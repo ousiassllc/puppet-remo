@@ -298,7 +298,7 @@ func (h *Handler) clientView(c domain.Client, inList bool) view.Client {
 	if c.ApprovalMode == domain.ApprovalFirstTime {
 		v.FirstTimeStatus = "未承認（次のリース取得で承認が必要です）"
 		if c.ApprovedAt != nil {
-			v.FirstTimeStatus = "承認済み（" + h.formatTime(*c.ApprovedAt) + "）"
+			v.FirstTimeStatus, v.FirstTimeApprovedAt = "", h.formatTime(*c.ApprovedAt)
 			v.CanResetApproval = true
 			v.ResetApprovalURL = "/clients/" + id + "/approval/reset"
 			if !inList {
