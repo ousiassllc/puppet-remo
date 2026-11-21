@@ -410,7 +410,7 @@ func AuditList(v view.AuditList) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" class=\"link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" class=\"link font-mono\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -523,7 +523,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = auditField("イベント", v.Event, "event", false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = auditField("イベント", v.Event, "event", true).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -543,7 +543,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = auditField("ツール", v.Tool, "tool", false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = auditField("ツール", v.Tool, "tool", true).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -559,7 +559,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = auditField("エラーコード", v.ErrorCode, "error-code", false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = auditField("エラーコード", v.ErrorCode, "error-code", true).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

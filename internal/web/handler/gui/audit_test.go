@@ -51,6 +51,9 @@ func TestAuditPageListsNewestFirstWithBadgesAndLocalTime(t *testing.T) {
 		}
 		last = i
 	}
+	// イベント名は機械的な識別子なので、リンクも Mono（T5）。
+	contains(t, res, `class="link font-mono"`)
+	lacks(t, res, `class="link"`)
 	// サムネイルの有無（id 6 のみ）。
 	if n := strings.Count(res.Body, ">あり<"); n != 1 {
 		t.Errorf("thumbnail badges = %d, want 1", n)
@@ -242,6 +245,8 @@ func TestAuditDetailShowsFieldsArgsAndThumbnail(t *testing.T) {
 	contains(t, res, `class="break-all text-ink font-mono" data-audit-field="time"`, `class="break-all text-ink font-mono" data-audit-field="session"`,
 		`class="break-all text-ink font-mono" data-audit-field="lease"`, `class="break-all text-ink font-mono" data-audit-field="duration"`,
 		`class="break-all text-ink" data-audit-field="client"`)
+	// イベント名・ツール名・エラーコードも機械的な識別子なので Mono（セッション・リースの ID と同じ。T5）。
+	contains(t, res, `class="break-all text-ink font-mono" data-audit-field="event"`, `class="break-all text-ink font-mono" data-audit-field="tool"`)
 
 	// HX-Boosted は #main の中身。
 	b := r.get("/audit/6", "HX-Request", "true", "HX-Boosted", "true")
@@ -253,7 +258,8 @@ func TestAuditDetailWithoutThumbnailOrArgs(t *testing.T) {
 	r := newRig(t, seedAudit)
 	res := r.get("/audit/5")
 	status(t, res, http.StatusOK)
-	contains(t, res, `data-empty="audit-args"`, `data-empty="audit-thumb"`, "サムネイルはありません", `data-audit-field="error-code"`, "lease_held")
+	contains(t, res, `data-empty="audit-args"`, `data-empty="audit-thumb"`, "サムネイルはありません", "lease_held",
+		`class="break-all text-ink font-mono" data-audit-field="error-code"`)
 	lacks(t, res, `src="/audit/5/thumbnail"`, "data-audit-thumb") // ヘッダーのロゴも <img> なので、サムネイルの <img> は src で見分ける
 }
 

@@ -208,7 +208,9 @@ func TestTaskDetailPage(t *testing.T) {
 		`rounded-md bg-bone p-4 font-sans text-sm text-ink" aria-label="指示の全文" role="region" tabindex="0" data-task-prompt`,
 		`rounded-md bg-bone p-4 font-sans text-sm text-ink" aria-label="最終回答の全文" role="region" tabindex="0" data-task-result>`,
 		// 操作のリンクは本文サイズ（T3）。
-		`class="mt-1 block text-sm link"`)
+		`class="mt-1 block text-sm link"`,
+		// ステップのイベント名は機械的な識別子なので Mono（T5）。
+		`<span class="ml-1 font-mono text-xs text-mute group-hover:text-mute-on-soft">agent.step</span>`)
 	lacks(t, res, `src="/audit/901/thumbnail"`, `hx-post=`, "中断")
 	if i, j, k := strings.Index(res.Body, `data-step-no="1"`), strings.Index(res.Body, `data-step-no="2"`), strings.Index(res.Body, `data-step-no="3"`); i >= j || j >= k {
 		t.Error("steps are not in step_no order")
