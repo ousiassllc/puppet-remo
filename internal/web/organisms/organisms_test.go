@@ -109,10 +109,19 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 }
 
 // タスク詳細のステップの引数: キーだけが補助（text-mute。行のホバーでは group-hover:text-mute-on-soft に切り替える）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
+// キー・値とも機械的な識別子・数値なので Mono（T5。#214）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<tr class="group hover:bg-accent-soft"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
+	has(t, out, `<tr class="group hover:bg-accent-soft"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="font-mono text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all font-mono">送信ボタン</dd>`)
 	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
+}
+
+// T5（#214）: 監査詳細の「引数」表・アプリのログの属性（キー・値）も、タスクのステップの引数と同じく Mono。
+func TestKeyValueAttributesUseMono(t *testing.T) {
+	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "tool.click", Args: []view.AuditArg{{Key: "x", Value: "640"}}}))
+	has(t, audit, `text-left font-mono text-ink">x</th>`, `font-mono text-ink">640</td>`)
+	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: []view.LogRow{{Time: "t", Level: "INFO", Attrs: []view.LogAttr{{Key: "tool", Value: "screenshot"}}}}}))
+	has(t, log, `<dt class="inline font-mono text-mute group-hover:text-mute-on-soft">tool</dt><dd class="ml-1 inline font-mono">screenshot</dd>`)
 }
 
 // 題付きのセクション（molecules.Card。#166）同士は、48（--gap-section-sm。space-y-12）で区切る（S5・#204）。ガイドの --gap-card-section 24 は
