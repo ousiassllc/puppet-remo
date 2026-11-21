@@ -58,7 +58,9 @@ templ ClientCard(c view.Client) {
 				<label for={ "mode-" + c.ID } class="shrink-0 whitespace-nowrap text-sm text-ink">承認モード</label>
 				@atoms.Select("mode-"+c.ID, "approval_mode", approvalOptions(c.Modes))
 			</form>
-			if c.FirstTimeStatus != "" {
+			if c.FirstTimeApprovedAt != "" {
+				<span class="text-xs text-ink" data-first-time-status>承認済み（<span class="font-mono">{ c.FirstTimeApprovedAt }</span>）</span>
+			} else if c.FirstTimeStatus != "" {
 				<span class="text-xs text-ink" data-first-time-status>{ c.FirstTimeStatus }</span>
 			}
 			if c.CanResetApproval {

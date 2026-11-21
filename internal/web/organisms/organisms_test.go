@@ -979,6 +979,15 @@ func TestSentenceValuesAreMono(t *testing.T) {
 			[]string{"（" + mono("19") + " 文字）"}},
 		{"拒否リストの登録数", webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Count: 1, Max: 200})),
 			[]string{"登録 " + mono("1 / 200") + " 件"}},
+		// 詳細の項目は dd を Mono にせず（日本語の文言は Regular）、数値だけを Mono にする（#215）。
+		{"タスク詳細の上限", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", MaxSteps: 50, MaxDurationSec: 600})),
+			[]string{`data-task-field="limits">ステップ ` + mono("50") + " ・ " + mono("600") + " 秒"}},
+		{"タスク詳細のステップ数", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", StepCount: 3, FastSteps: 1, OpenAISteps: 2})),
+			[]string{`data-task-field="step-count">` + mono("3") + "（高速パス " + mono("1") + " ・ OpenAI " + mono("2") + "）"}},
+		{"初回のみ承認の承認済み", webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", FirstTimeApprovedAt: "2026-11-01 09:08"})),
+			[]string{"承認済み（" + mono("2026-11-01 09:08") + "）"}},
+		{"初回のみ承認の未承認", webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", FirstTimeStatus: "未承認（次のリース取得で承認が必要です）"})),
+			[]string{"未承認（次のリース取得で承認が必要です）"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { has(t, tt.out, tt.want...) })
