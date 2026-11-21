@@ -108,10 +108,10 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 	}
 }
 
-// タスク詳細のステップの引数: キーだけが補助（text-mute）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
+// タスク詳細のステップの引数: キーだけが補助（text-mute。行のホバーでは group-hover:text-mute-on-soft に切り替える）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
+	has(t, out, `<tr class="group hover:bg-accent-soft"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
 	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
@@ -143,6 +143,17 @@ func TestRunningTasksPanel(t *testing.T) {
 	has(t, oob, `id="running-tasks"`, `hx-swap-oob="true"`, "data-running-task")
 	for _, out := range []string{empty, full, oob} {
 		webtest.AssertCSPCompliantHTML(t, out)
+	}
+}
+
+// T3: クリックできるタスク ID のリンクは sm 14（補足サイズの xs 12 にしない）。実行中タスクのカードと一覧表のタスク列の両方。
+func TestTaskIDLinksAreSmall(t *testing.T) {
+	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK}}
+	running := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Items: []view.RunningTask{item}}))
+	list := webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{{DetailURL: "/tasks/t1", ShortID: "00LIST01"}}}))
+	for _, out := range []string{running, list} {
+		has(t, out, `class="font-mono text-sm link"`)
+		hasNot(t, out, `font-mono text-xs link`)
 	}
 }
 
@@ -816,8 +827,8 @@ func TestTaskDetailAuxRowUsesATooltipNotTitle(t *testing.T) {
 		{No: 2, KindLabel: "判定", Summary: "Judge"},
 	}}))
 	has(t, out,
-		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
-		`aria-describedby="step-row-tip-2"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
+		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
+		`aria-describedby="step-row-tip-2"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
 	hasNot(t, out, "title=", `id="step-row-tip-0"`)
 }
 
