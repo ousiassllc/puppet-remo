@@ -385,3 +385,41 @@ func TestBreakpointTokensMatchTheTailwindThemeAndAppTS(t *testing.T) {
 		t.Error("app.ts must use md (--bp-md = 768px) for the desktop width")
 	}
 }
+
+// O3: トーストの高さ・表示時間・端からの距離は --toast-h 40・--toast-duration 3s・--toast-offset 24px（--s-6）。
+// toast.templ・chrome.templ は値を直書きせずトークンで参照し（h-(--toast-h)・bottom-(--toast-offset)）、app.ts は --toast-duration を読む。
+// CSS を読めないとき（テストなど）の app.ts の既定 3000ms も、トークンの 3s と同じ値に固定する。
+func TestToastTokensAreTheGuideValuesAndSyncedWithAppTS(t *testing.T) {
+	css := readAppCSS(t)
+	for _, want := range []string{`--toast-h: 40px;`, `--toast-duration: 3s;`, `--toast-offset: var(--s-6);`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("app.css must define %s", want)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^\s*--s-6:\s*24px;`).MatchString(css) {
+		t.Error("--toast-offset (--s-6) must be 24px")
+	}
+	src, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "app", "app.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`TOAST_LIFETIME_FALLBACK_MS = 3000;`, `getPropertyValue("--toast-duration")`} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("app.ts must contain %q (the toast lifetime follows --toast-duration, 3s)", want)
+		}
+	}
+}
+
+// O4: Lit ビューアの .sourcebar・.banner の z-index は、--z-* のトークン（--z-dropdown）で書く。数値の直書き（z-index: 1）に戻さない。
+func TestViewerLocalStackingUsesZTokens(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "components", "screen-viewer", "remo-screen-viewer.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bare := regexp.MustCompile(`z-index:\s*[0-9]`).FindString(string(src)); bare != "" {
+		t.Errorf("remo-screen-viewer.ts must not hardcode z-index (%q); use var(--z-*)", bare)
+	}
+	if n := strings.Count(string(src), "z-index: var(--z-dropdown);"); n != 2 {
+		t.Errorf("want .sourcebar and .banner to use z-index: var(--z-dropdown), found %d", n)
+	}
+}

@@ -731,6 +731,19 @@ describe("<remo-screen-viewer>", () => {
       });
     }
 
+    // O4: .sourcebar・.banner の局所の積み順は --z-dropdown（覆い .overlay より手前）。トークンは :root のカスタムプロパティなので、定義のあるページでだけ数値になる。
+    it("バナーは覆い（z-index auto）より手前に出す（z-index は --z-dropdown）", async () => {
+      document.documentElement.style.setProperty("--z-dropdown", "100");
+      try {
+        const h = await connect({ lease: heldByMe });
+        h.socket.receiveJson(halted("related_cross_process"));
+        await h.viewer.updateComplete;
+        expect(getComputedStyle(banner(h.viewer) as HTMLElement).zIndex).to.equal("100");
+      } finally {
+        document.documentElement.style.removeProperty("--z-dropdown");
+      }
+    });
+
     // M4: ビューア内のボタンは data-ripple を持つ（押下でリップルを足すのは app.ts の pointerdown。Shadow DOM の中のボタンの確認は app.test.ts）。
     // O7: ビューア内のボタンは atoms.Button（Secondary・Small）と同じ SemiBold・高さ 32。
     it("ビューア内のボタンは SemiBold・高さ 32", async () => {

@@ -180,9 +180,11 @@ export class RemoScreenViewer extends LitElement {
       pointer-events: none;
     }
     .sourcebar {
-      /* 「対象を表示できません」の覆いの上に出す（表示できないときこそ、モニター表示へ切り替えられるように）。 */
+      /* 「対象を表示できません」の覆いの上に出す（表示できないときこそ、モニター表示へ切り替えられるように）。
+         z-index は --z-dropdown（O4）。覆い（.overlay。position:absolute・z-index auto）より手前に出せればよい局所の積み順で、
+         --z-base（0）では auto と並んで覆いの後ろになるため、--z-* で最も低い段の --z-dropdown を使う（ホスト外の面とは重ならない）。 */
       position: relative;
-      z-index: 1;
+      z-index: var(--z-dropdown);
       display: flex;
       justify-content: flex-end;
       padding: 0.25rem 0;
@@ -243,9 +245,10 @@ export class RemoScreenViewer extends LitElement {
     }
     .banner {
       /* 「対象を表示できません」の覆い（.overlay。ホスト全体）の上に出す（「再開」「別のウィンドウを選ぶ」を押せるように）。
-         枠付きの面なので、atoms.Alert/Notice と同じ角丸 --r-md（S1）・padding 12×16（--s-3/--s-4）。 */
+         枠付きの面なので、atoms.Alert/Notice と同じ角丸 --r-md（S1）・padding 12×16（--s-3/--s-4）。
+         z-index は .sourcebar と同じ理由で --z-dropdown（O4）。 */
       position: relative;
-      z-index: 1;
+      z-index: var(--z-dropdown);
       display: flex;
       flex-wrap: wrap;
       align-items: center;

@@ -610,12 +610,12 @@ func TestConsentErrorsUseFieldError(t *testing.T) {
 	has(t, fast, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="fastpath-consent"`)
 }
 
-// トースト・アラートの置き場: トーストは画面下の中央（端から 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
+// トースト・アラートの置き場: トーストは画面下の中央（端から --toast-offset の 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
 // app.ts が複製する雛形 #alert-template（role なし）。
 func TestToastAndAlertRoots(t *testing.T) {
 	toast := webtest.Render(t, organisms.ToastRoot())
-	has(t, toast, `id="toast-root"`, "bottom-6", "left-1/2", "-translate-x-1/2", "z-(--z-toast)")
-	hasNot(t, toast, "right-4", "z-50")
+	has(t, toast, `id="toast-root"`, "bottom-(--toast-offset)", "left-1/2", "-translate-x-1/2", "z-(--z-toast)", "max-w-[calc(100vw-2*var(--toast-offset))]")
+	hasNot(t, toast, "right-4", "z-50", "bottom-6", "100vw-3rem")
 	alert := webtest.Render(t, organisms.AlertRoot("px-4"))
 	has(t, alert, `id="alert-root"`, "empty:hidden", "px-4", `id="alert-template"`, "<template", "data-alert-message")
 	hasNot(t, alert, `role="alert"`)
