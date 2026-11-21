@@ -234,14 +234,16 @@ export class RemoScreenViewer extends LitElement {
       outline-offset: 2px;
     }
     .banner {
-      /* 「対象を表示できません」の覆い（.overlay。ホスト全体）の上に出す（「再開」「別のウィンドウを選ぶ」を押せるように）。 */
+      /* 「対象を表示できません」の覆い（.overlay。ホスト全体）の上に出す（「再開」「別のウィンドウを選ぶ」を押せるように）。
+         枠付きの面なので、atoms.Alert/Notice と同じ角丸 --r-md（S1）・padding 12×16（--s-3/--s-4）。 */
       position: relative;
       z-index: 1;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 0.5rem 1rem;
-      padding: 0.5rem 0.75rem;
+      padding: var(--s-3) var(--s-4);
+      border-radius: var(--r-md);
       font-size: 0.875rem;
       color: var(--ink);
     }

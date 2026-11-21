@@ -90,8 +90,11 @@ describe("<remo-screen-viewer>", () => {
   const originalWarn = console.warn;
   const originalError = console.error;
 
-  // モーションのトークンは app.css の :root が定義する（テストでは app.css を読み込まないので、同じ値を当てる）。
-  const motionTokens: Record<string, string> = {
+  // トークンは app.css の :root が定義する（テストでは app.css を読み込まないので、同じ値を当てる）。
+  const rootTokens: Record<string, string> = {
+    "--r-md": "8px",
+    "--s-3": "12px",
+    "--s-4": "16px",
     "--motion-fade-in": "320ms",
     "--motion-fade-out": "240ms",
     "--ease-out": "cubic-bezier(0.2, 0.8, 0.2, 1)",
@@ -100,7 +103,7 @@ describe("<remo-screen-viewer>", () => {
 
   beforeEach(() => {
     restoreSocket = installFakeWebSocket();
-    for (const [name, value] of Object.entries(motionTokens)) {
+    for (const [name, value] of Object.entries(rootTokens)) {
       document.documentElement.style.setProperty(name, value);
     }
     // 意図したログの出力でテストの出力を汚さない。
@@ -110,7 +113,7 @@ describe("<remo-screen-viewer>", () => {
 
   afterEach(() => {
     restoreSocket();
-    for (const name of Object.keys(motionTokens)) {
+    for (const name of Object.keys(rootTokens)) {
       document.documentElement.style.removeProperty(name);
     }
     console.warn = originalWarn;
@@ -693,6 +696,22 @@ describe("<remo-screen-viewer>", () => {
       expect(banner(h.viewer)).to.equal(null);
       await until(() => h.viewer.shadowRoot?.querySelector(".banner") === null, "banner is faded out");
     });
+
+    // S1: 停止・通知のバナーは枠付きの面で、atoms.Alert/Notice と同じ角丸 --r-md（8px）・padding 12×16。
+    for (const [label, message] of [
+      ["停止（halted）", halted("related_cross_process")],
+      ["通知（notice）", { ...active, notices: ["capture_partial"], excluded: [{ window_id: "1002", process: "fakenotepad.exe", reason: "related_unverifiable" }] }],
+    ] as const) {
+      it(`${label}のバナーは角丸 8px・padding 12×16`, async () => {
+        const h = await connect({ lease: heldByMe });
+        h.socket.receiveJson(message);
+        await h.viewer.updateComplete;
+        const style = getComputedStyle(banner(h.viewer) as HTMLElement);
+        expect(style.borderTopLeftRadius).to.equal("8px");
+        expect(style.paddingTop).to.equal("12px");
+        expect(style.paddingLeft).to.equal("16px");
+      });
+    }
 
     // M4: ビューア内のボタンは data-ripple を持つ（押下でリップルを足すのは app.ts の pointerdown。Shadow DOM の中のボタンの確認は app.test.ts）。
     // O7: ビューア内のボタンは atoms.Button（Secondary・Small）と同じ SemiBold・高さ 32。
