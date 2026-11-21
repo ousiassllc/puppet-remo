@@ -297,6 +297,33 @@ func TestModalMotionUsesTheSlowBand(t *testing.T) {
 	}
 }
 
+// M5（#201）: モバイルナビのドロワー・スクラムと .htmx-indicator は、出現が行き先の状態（開いた・処理中）の transition、退出が既定の側の transition。
+// 出現は --motion-slow（インジケーターは --motion-fade-in）・--ease-out、退出は --motion-fade-out（240ms）・--ease-in。--motion-base（ホバー用）は使わない。
+func TestDrawerScrimAndIndicatorUseEnterAndExitTokens(t *testing.T) {
+	css := readAppCSS(t)
+	rule := func(selector string) string {
+		t.Helper()
+		m := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(selector) + ` \{([^}]*)\}`).FindStringSubmatch(css)
+		if m == nil {
+			t.Fatalf("app.css has no rule for %s", selector)
+		}
+		return m[1]
+	}
+	collapse := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	for selector, want := range map[string]string{
+		".nav-drawer":                     "transition: opacity var(--motion-fade-out) var(--ease-in), transform var(--motion-fade-out) var(--ease-in), visibility 0s linear var(--motion-fade-out);",
+		"body[data-nav-open] .nav-drawer": "transition: opacity var(--motion-slow) var(--ease-out), transform var(--motion-slow) var(--ease-out), visibility 0s linear 0s;",
+		".nav-scrim":                      "transition: opacity var(--motion-fade-out) var(--ease-in), visibility 0s linear var(--motion-fade-out);",
+		"body[data-nav-open] .nav-scrim":  "transition: opacity var(--motion-slow) var(--ease-out), visibility 0s linear 0s;",
+		".htmx-indicator":                 "transition: opacity var(--motion-fade-out) var(--ease-in);",
+		".htmx-request.htmx-indicator":    "transition: opacity var(--motion-fade-in) var(--ease-out);",
+	} {
+		if got := collapse(rule(selector)); !strings.Contains(got, want) {
+			t.Errorf("%s must declare %q, got: %s", selector, want, got)
+		}
+	}
+}
+
 // #169: ツールチップ（atoms.Tooltip）はホバーでもキーボードのフォーカスでも出る（ガイド「ツールチップ」）。padding は --tip-pad-*、角丸は --r-sm、
 // 表示の遅延はホバーだけ 400ms（フォーカスは即時）。隠れている間は visibility: hidden で、非対話（pointer-events: none）。
 func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
