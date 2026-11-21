@@ -362,6 +362,72 @@ describe("モバイルナビのドロワー", () => {
   });
 });
 
+describe("モバイルナビのドロワーとサイドバーのリンク群の OOB 差し替え（#202）", () => {
+  // layout.Boosted は #sidebar-nav-links だけを OOB で差し替える。枠（#sidebar-nav）は同じ要素のまま残るので、リンクのクリックで始まった退出の transition が切れない。
+  const markup = html`
+    <div>
+      <div id="nav-scrim"></div>
+      <nav id="sidebar-nav" aria-label="メイン">
+        <p id="sidebar-nav-title">メニュー</p>
+        <div id="nav-live" role="status"></div>
+        <div id="sidebar-nav-links">
+          <a href="#a" id="nav-first" aria-current="page">一覧</a><a href="#b" id="nav-last">設定</a>
+        </div>
+      </nav>
+      <div id="background" data-nav-background>
+        <button data-nav-toggle aria-expanded="false" aria-label="メニューを開く">開く</button>
+      </div>
+      <div id="toast-root" role="status"></div>
+    </div>
+  `;
+  const swapLinks = (root: HTMLElement): void => {
+    root.querySelector("#sidebar-nav-links")!.outerHTML =
+      '<div id="sidebar-nav-links"><a href="#a" id="nav-first">一覧</a><a href="#b" id="nav-last" aria-current="page">設定</a></div>';
+  };
+
+  afterEach(() => {
+    document.body.removeAttribute("data-nav-open");
+  });
+
+  it("リンクのクリックで閉じたあと、リンク群が差し替わっても枠は同じ要素のままで、閉じた状態を保つ", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const nav = root.querySelector<HTMLElement>("#sidebar-nav")!;
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    expect(nav.getAttribute("role")).to.equal("dialog");
+    root.querySelector<HTMLElement>("#nav-first")!.click();
+    swapLinks(root);
+    expect(root.querySelector("#sidebar-nav")!.isSameNode(nav)).to.equal(true);
+    expect(document.body.hasAttribute("data-nav-open")).to.equal(false);
+    expect(nav.hasAttribute("role")).to.equal(false);
+    expect(root.querySelector("#nav-last")?.getAttribute("aria-current")).to.equal("page");
+    expect(root.querySelector("#nav-first")?.hasAttribute("aria-current")).to.equal(false);
+  });
+
+  it("差し替えたあとのリンクも、開く・Tab の循環・クリックで閉じるが効く", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    swapLinks(root);
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    expect(document.activeElement?.id).to.equal("nav-first");
+    root.querySelector<HTMLElement>("#nav-last")!.focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", cancelable: true });
+    document.dispatchEvent(tab);
+    expect(tab.defaultPrevented).to.equal(true);
+    expect(document.activeElement?.id).to.equal("nav-first");
+    root.querySelector<HTMLElement>("#nav-last")!.click();
+    expect(document.body.hasAttribute("data-nav-open")).to.equal(false);
+  });
+
+  it("開いている間にリンク群が差し替わっても、#nav-live（トーストの読み上げの写し先）は同じ要素のまま内容を保つ", async () => {
+    const root = await fixture<HTMLElement>(markup);
+    const live = root.querySelector<HTMLElement>("#nav-live")!;
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    live.textContent = "保存しました。";
+    swapLinks(root);
+    expect(root.querySelector("#nav-live")).to.equal(live);
+    expect(live.textContent).to.equal("保存しました。");
+  });
+});
+
 describe("ドロワーが開いている間のトースト", () => {
   const markup = html`
     <div>

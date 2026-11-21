@@ -380,7 +380,7 @@ func TestAppFormCorruptNotice(t *testing.T) {
 }
 
 func TestSidebarHasTheAppsEntry(t *testing.T) {
-	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}, false))
+	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}))
 	has(t, out, `href="/apps"`, "起動許可アプリ")
 	if strings.Count(out, `aria-current="page"`) != 1 || !strings.Contains(out[strings.Index(out, `href="/apps"`):], `aria-current="page"`) {
 		t.Errorf("the apps entry must be the current page:\n%s", out)
@@ -621,11 +621,26 @@ func TestToastAndAlertRoots(t *testing.T) {
 
 // サイドナビ: 幅 240（md 未満のドロワーは約 78%）・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
 func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
-	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}, false))
+	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}))
 	has(t, nav, "w-[78%]", "md:w-60", "space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
 	hasNot(t, nav, "bg-slate", "md:w-56")
 	header := webtest.Render(t, organisms.Header(view.Header{}))
 	has(t, header, "h-14", "border-b", "border-border")
+}
+
+// ドロワーの枠（#sidebar-nav）は遷移の応答で差し替えない（退出のフェードが切れる。M5・#202）。差し替えるのはリンク群（#sidebar-nav-links）だけで、
+// 現在のページの強調（aria-current）と接続要求のバッジは、その中にある。
+func TestSidebarLinksAreSwappedWithoutTheDrawerFrame(t *testing.T) {
+	frame := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}))
+	has(t, frame, `<nav id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`, `id="sidebar-nav-links"`, `aria-current="page"`, `id="nav-requests-badge"`)
+	hasNot(t, frame, "hx-swap-oob")
+
+	links := webtest.Render(t, organisms.SidebarLinks(view.Chrome{Active: view.NavLogs}, true))
+	has(t, links, `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `href="/logs"`, `id="nav-requests-badge"`)
+	hasNot(t, links, "<nav", `id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`)
+	if strings.Count(links, `aria-current="page"`) != 1 || !strings.Contains(links[strings.Index(links, `href="/logs"`):], `aria-current="page"`) {
+		t.Errorf("the logs entry must be the current page:\n%s", links)
+	}
 }
 
 // モバイルナビ（P0）: ヘッダーのハンバーガーはドロワーを開閉し（aria-expanded・aria-controls）、md 以上では出さない。

@@ -70,7 +70,7 @@ func TestAuditDetailArgsThumbnailAndEscaping(t *testing.T) {
 }
 
 func TestSidebarHasTheAuditEntry(t *testing.T) {
-	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavAudit}, false))
+	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavAudit}))
 	has(t, out, `href="/audit"`, "監査ログ")
 	if strings.Count(out, `aria-current="page"`) != 1 || !strings.Contains(out[strings.Index(out, `href="/audit"`):], `aria-current="page"`) {
 		t.Errorf("the audit entry must be the current page:\n%s", out)

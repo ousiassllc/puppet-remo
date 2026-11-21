@@ -146,7 +146,7 @@ func TestLogsFragmentVariants(t *testing.T) {
 
 	boosted := r.get("/logs", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, "<title>ログ - Nefos Remote</title>", `id="app-log"`, `id="sidebar-nav"`)
+	contains(t, boosted, "<title>ログ - Nefos Remote</title>", `id="app-log"`, `id="sidebar-nav-links"`)
 	lacks(t, boosted, "<html")
 
 	restore := r.get("/logs", "HX-Request", "true", "HX-History-Restore-Request", "true")

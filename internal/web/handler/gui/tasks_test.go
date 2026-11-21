@@ -140,13 +140,13 @@ func TestTasksListHTMXForms(t *testing.T) {
 	r := newRig(t, func(f *guitest.Fakes) { seedTask(f, idRunning, domain.TaskRunning, "p", 1) })
 	t.Run("boosted", func(t *testing.T) {
 		res := r.get("/tasks", "HX-Request", "true", "HX-Boosted", "true")
-		contains(t, res, "<title>タスク - Nefos Remote</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, `id="task-list"`)
+		contains(t, res, "<title>タスク - Nefos Remote</title>", `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `id="task-list"`)
 		lacks(t, res, "<html", "<body")
 	})
 	t.Run("fragment", func(t *testing.T) {
 		res := r.get("/tasks", hx...)
 		contains(t, res, `id="task-list"`)
-		lacks(t, res, "<html", `id="sidebar-nav"`)
+		lacks(t, res, "<html", `id="sidebar-nav-links"`)
 	})
 	t.Run("history restore gets the full page", func(t *testing.T) {
 		contains(t, r.get("/tasks", "HX-Request", "true", "HX-History-Restore-Request", "true"), "<html")
@@ -294,7 +294,7 @@ func TestTaskDetailNotFoundAndHTMX(t *testing.T) {
 	lacks(t, res, "<html")
 	res = r.get("/tasks/"+idRunning, "HX-Request", "true", "HX-Boosted", "true")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<title>タスクの詳細 - Nefos Remote</title>", `id="sidebar-nav"`)
+	contains(t, res, "<title>タスクの詳細 - Nefos Remote</title>", `id="sidebar-nav-links"`)
 	lacks(t, res, "<html")
 }
 
