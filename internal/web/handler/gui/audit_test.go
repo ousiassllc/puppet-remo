@@ -115,7 +115,7 @@ func TestAuditPaginationWithCursorAndLimit(t *testing.T) {
 	r := newRig(t, seedAudit)
 	res := r.get("/audit?limit=2")
 	status(t, res, http.StatusOK)
-	contains(t, res, ">tool.left_click<", ">lease.acquire<", "1 ページ目", "disabled data-pager-prev", "data-pager-next", `href="/audit?cursor=5&amp;limit=2"`, `hx-push-url="true"`)
+	contains(t, res, ">tool.left_click<", ">lease.acquire<", ">1</span> ページ目", "disabled data-pager-prev", "data-pager-next", `href="/audit?cursor=5&amp;limit=2"`, `hx-push-url="true"`)
 	lacks(t, res, ">tool.key<")
 	if q := r.f.Audit.LastQuery(); q.Limit != 2 || q.Cursor != 0 {
 		t.Errorf("query = %+v", q)
@@ -127,7 +127,7 @@ func TestAuditPaginationWithCursorAndLimit(t *testing.T) {
 
 	// 2 ページ目: 前へは 1 ページ目（cursor なし）、次へは戻り道（back）に今の cursor を積んで進む。
 	res = r.get("/audit?limit=2&cursor=5")
-	contains(t, res, ">tool.key<", ">auth.bearer_failed<", "2 ページ目", `href="/audit?limit=2"`, `href="/audit?back=5&amp;cursor=3&amp;limit=2"`)
+	contains(t, res, ">tool.key<", ">auth.bearer_failed<", ">2</span> ページ目", `href="/audit?limit=2"`, `href="/audit?back=5&amp;cursor=3&amp;limit=2"`)
 	lacks(t, res, ">tool.left_click<", ">lease.acquire<", "disabled data-pager")
 	if q := r.f.Audit.LastQuery(); q.Cursor != 5 {
 		t.Errorf("cursor = %d", q.Cursor)
@@ -135,10 +135,10 @@ func TestAuditPaginationWithCursorAndLimit(t *testing.T) {
 
 	// 最後のページは「次へ」が押せない。前へは back をたどって 2 ページ目に戻り、同じ行が出る。
 	res = r.get("/audit?back=5&cursor=3&limit=2")
-	contains(t, res, ">tool.wheel<", ">settings.update<", "3 ページ目", "disabled data-pager-next", `href="/audit?cursor=5&amp;limit=2"`)
+	contains(t, res, ">tool.wheel<", ">settings.update<", ">3</span> ページ目", "disabled data-pager-next", `href="/audit?cursor=5&amp;limit=2"`)
 	lacks(t, res, "disabled data-pager-prev")
 	res = r.get("/audit?cursor=5&limit=2")
-	contains(t, res, ">tool.key<", ">auth.bearer_failed<", "2 ページ目")
+	contains(t, res, ">tool.key<", ">auth.bearer_failed<", ">2</span> ページ目")
 
 	// 1 ページに収まる一覧にはページ送りを出さない。
 	lacks(t, r.get("/audit?limit=200"), "data-pager")

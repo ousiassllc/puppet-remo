@@ -485,3 +485,93 @@ func TestFontMonoKeepsTheApprovedJapaneseFallback(t *testing.T) {
 		t.Errorf("app.css must define %s", want)
 	}
 }
+
+// T1・T5: 文（日本語の文言）の中に素のまま埋めた `{ 値 }` を残さない（#205・#210・#213〜#215・#217 と同じ種類の漏れの再発防止）。
+// 文中の値は、識別子（パス・ID・ターゲット名・IP・ショートカット）なら `<code>`、日時・数値・件数・バージョンなら `<span class="font-mono">` で包む。
+// 値だけの要素（`<td>{ v }</td>`）は要素の class で決める別の規則なので対象外。この検査は「同じテキストノードに、`{ 値 }` と日本語・英単語の文言が一緒にある」ものを拾う。
+// 包まないまま残してよいのは、値が名前・ラベル・文章そのもの（識別子でも数値でもない）の次の表だけで、1 件ごとに理由を書く。
+func TestSentenceEmbeddedValuesAreWrapped(t *testing.T) {
+	// キーは「ファイル名: 式」。値が人が付けた名前・ラベル・Go 側で組み立てた文言のもの。
+	plain := map[string]string{
+		"agent.templ: p.Provider":     "プロバイダーの製品名（OpenAI など）で、識別子ではない",
+		"clients.templ: c.Approved":   "承認モードの日本語のラベル",
+		"clients.templ: c.LoginName":  "利用者の名前。表の同じ列（ユーザー）も Regular",
+		"requests.templ: r.LoginName": "同上",
+		"dashboard.templ: v.Source":   "発動元の日本語のラベル（ホスト GUI・ホットキー）",
+		"token_reveal.templ: v.Label": "利用者が付けたトークンの名前",
+	}
+	// Go の文（if・for・} else {・@コンポーネント・コメント）の行は、テキストノードから外す。
+	goLine := regexp.MustCompile(`^(if |for |switch |case |default:|\} else|\}$|@|\{\{|//)`)
+	tag := regexp.MustCompile(`<[a-zA-Z/!][^>]*>`)
+	expr := regexp.MustCompile(`\{ [^{}]*\}`)
+	words := regexp.MustCompile(`[\p{Han}\p{Hiragana}\p{Katakana}A-Za-z]`)
+	found := 0
+	used := map[string]bool{}
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var body []string // templ ブロックの中の行だけ
+		in := false
+		for _, line := range strings.Split(string(src), "\n") {
+			switch {
+			case strings.HasPrefix(line, "templ "):
+				in = true
+			case line == "}":
+				in = false
+			case in && !goLine.MatchString(strings.TrimSpace(line)):
+				body = append(body, line)
+			default:
+				if in {
+					body = append(body, "<go>") // Go の行はテキストノードの区切りにする
+				}
+			}
+		}
+		text := strings.Join(body, "\n")
+		prev := 0
+		last := ""
+		nodes := map[string]string{} // テキストノード → 直前のタグ
+		var order []string
+		for _, loc := range tag.FindAllStringIndex(text, -1) {
+			node := text[prev:loc[0]]
+			if expr.MatchString(node) {
+				nodes[node] = last
+				order = append(order, node)
+			}
+			prev, last = loc[1], text[loc[0]:loc[1]]
+		}
+		for _, node := range order {
+			found++
+			if strings.HasPrefix(nodes[node], "<title") {
+				continue
+			}
+			if !words.MatchString(expr.ReplaceAllString(node, "")) {
+				continue // 値だけ（または「 / 」「…」のような記号だけをはさむ）
+			}
+			for _, e := range expr.FindAllString(node, -1) {
+				key := filepath.Base(path) + ": " + strings.TrimSpace(strings.Trim(e, "{}"))
+				if _, ok := plain[key]; ok {
+					used[key] = true
+					continue
+				}
+				t.Errorf("%s: 文中に素のまま埋めた値 %s がある（識別子は <code>、日時・数値・件数は <span class=\"font-mono\"> で包む。名前・ラベルなら plain の表に理由つきで足す）:\n%s", path, e, strings.TrimSpace(node))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("no `{ value }` text found; the test is looking in the wrong place")
+	}
+	for key := range plain {
+		if !used[key] {
+			t.Errorf("plain の表の %q は、もう文中に無い。表から外す", key)
+		}
+	}
+}

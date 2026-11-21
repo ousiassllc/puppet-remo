@@ -102,12 +102,12 @@ func TestTasksListPaging(t *testing.T) {
 	if n := rows(first); n != 50 {
 		t.Fatalf("first page rows = %d, want 50", n)
 	}
-	contains(t, first, "1 ページ目", "disabled data-pager-prev", "data-pager-next", `hx-target="#task-list"`, `hx-push-url="true"`, "task-prompt-000")
+	contains(t, first, ">1</span> ページ目", "disabled data-pager-prev", "data-pager-next", `hx-target="#task-list"`, `hx-push-url="true"`, "task-prompt-000")
 	lacks(t, first, "task-prompt-050")
 
 	second := r.get(hrefOf(first, "next"), hx...)
 	status(t, second, http.StatusOK)
-	contains(t, second, `id="task-list"`, "2 ページ目", "task-prompt-050")
+	contains(t, second, `id="task-list"`, ">2</span> ページ目", "task-prompt-050")
 	lacks(t, second, "<html", "task-prompt-000", "disabled data-pager")
 	if n := rows(second); n != 50 {
 		t.Errorf("second page rows = %d, want 50", n)
@@ -117,7 +117,7 @@ func TestTasksListPaging(t *testing.T) {
 	}
 
 	third := r.get(hrefOf(second, "next"), hx...)
-	contains(t, third, "3 ページ目", "task-prompt-100", "disabled data-pager-next")
+	contains(t, third, ">3</span> ページ目", "task-prompt-100", "disabled data-pager-next")
 	lacks(t, third, "disabled data-pager-prev", "task-prompt-050")
 	if n := rows(third); n != 1 {
 		t.Errorf("third page rows = %d, want 1", n)
@@ -125,7 +125,7 @@ func TestTasksListPaging(t *testing.T) {
 
 	// 3 ページ目の「前へ」は 2 ページ目と同じ行、その「前へ」は先頭（cursor なし）。
 	back := r.get(hrefOf(third, "prev"), hx...)
-	contains(t, back, "2 ページ目", "task-prompt-050", "task-prompt-099")
+	contains(t, back, ">2</span> ページ目", "task-prompt-050", "task-prompt-099")
 	if back.Body != second.Body {
 		t.Errorf("prev of page 3 is not page 2:\n%s\n---\n%s", back.Body, second.Body)
 	}
