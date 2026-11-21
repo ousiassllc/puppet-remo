@@ -134,6 +134,13 @@
   --s-12: 48px;
   --s-16: 64px;
 
+  /* ブレークポイント（S5）: 640 / 768 / 1024 / 1280。Tailwind の sm・md・lg・xl（@theme の --breakpoint-*）と同じ値で、同じ値を二重に書く（@media は var() を取れない）。
+   * 一致は tokens_css_test.go が検査する。JS の matchMedia（app.ts の desktopWidth）と max-width の 47.9975rem（md 未満）も md（768）から出す。 */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+
   --gap-menu: var(--s-2);
   --menu-item-h: 40px;
   --menu-pad-x: var(--s-3);
@@ -185,6 +192,12 @@
 
 @theme {
   --spacing: var(--s-1);
+
+  --breakpoint-*: initial;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
 
   --radius-*: initial;
   --radius-none: var(--r-none);
@@ -389,11 +402,11 @@
     cursor: not-allowed;
   }
 
-  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の Iconoir nav-arrow-down（--icon-sm）を重ねる（右 padding 36 は select.templ）。 */
+  /* 選択欄（ネイティブを入力欄と同じ見た目に）: 標準の矢印を消し、--mute の Iconoir nav-arrow-down（--icon-sm）を重ねる（右 padding --s-8 は select.templ。矢印は右 --s-2）。 */
   select {
     appearance: none;
     background-image: var(--select-arrow);
-    background-position: right 12px center;
+    background-position: right var(--s-2) center;
     background-size: var(--icon-sm) var(--icon-sm);
     background-repeat: no-repeat;
   }

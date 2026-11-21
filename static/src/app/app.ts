@@ -120,6 +120,7 @@ document.addEventListener("htmx:responseError", (event) => {
 const NAV_OPEN_ATTR = "data-nav-open";
 const NAV_BACKGROUND = "[data-nav-background]";
 const NAV_LIVE = "nav-live";
+// 768 は app.css の --bp-md（md）と同じ値（tokens_css_test.go が一致を検査する）。
 const desktopWidth = window.matchMedia("(min-width: 768px)");
 let navOpener: HTMLElement | null = null;
 
