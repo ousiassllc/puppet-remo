@@ -104,28 +104,32 @@ func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 	}
 }
 
-// 起動許可アプリ: 題付きのセクション（起動の方式・アプリの追加・拒否リスト）の積みは 48（--gap-section-sm。space-y-12）。
-// h1・説明文は 24（外枠 space-y-6）のまま、セクションの積みだけを内側の枠にする（S5・#204）。
-func TestAppsPageSeparatesSectionsByGapSectionSm(t *testing.T) {
+// 起動許可アプリ: h1・説明文・題付きの Card（起動の方式・アプリの追加・拒否リスト）は、どれも 24（--gap-grid-lg。外枠 space-y-6）で並ぶ。
+// 以前は Card の積みだけを 48 の内側の枠にしていた（#204）が、題付き Card は部品なので節の間隔にしない。
+func TestAppsPageStacksCardsAtGapGridLg(t *testing.T) {
 	out := webtest.Render(t, pages.Apps(view.Apps{Chrome: view.Chrome{Active: view.NavApps}, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}}))
-	for _, want := range []string{`<div class="max-w-3xl space-y-6">`, `<div class="space-y-12"><div id="launch-mode"`} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q in:\n%s", want, out)
-		}
+	if !strings.Contains(out, `<div class="max-w-3xl space-y-6">`) || !strings.Contains(out, `</p><div id="launch-mode"`) {
+		t.Errorf("the cards must follow the intro directly inside the space-y-6 frame:\n%s", out)
+	}
+	if strings.Contains(out, "space-y-12") {
+		t.Errorf("titled cards must not be separated by 48:\n%s", out)
 	}
 }
 
-// ダッシュボード: 題付き Card（実行中のタスク）とカードのグリッドの間はセクション間の 48（--gap-section-sm。gap-12）。h1 の下は 24（外枠 space-y-6）、
-// グリッド内の横・縦は 16（--gap-grid。gap-4）のまま（S5・#208）。実行中のタスクが無いとき、空の枠（hidden）は間隔に入らない。
-func TestDashboardSeparatesCardAndGridByGapSectionSm(t *testing.T) {
+// ダッシュボード: 題付き Card（実行中のタスク）とカードのグリッドの間、グリッド内の横・縦、h1 の下は、どれも 24（--gap-grid-lg。gap-6・外枠 space-y-6）。
+// 実行中のタスクが無いとき、空の枠（hidden）は間隔に入らない。
+func TestDashboardSeparatesCardsByGapGridLg(t *testing.T) {
 	out := webtest.Render(t, pages.Dashboard(view.Dashboard{Chrome: view.Chrome{Active: view.NavDashboard}}))
 	for _, want := range []string{
-		`<div class="space-y-6"><h1 class="text-3xl font-semibold text-ink">ダッシュボード</h1><div class="flex flex-col gap-12" data-dashboard-sections><div id="running-tasks" hidden>`,
-		`<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">`,
+		`<div class="space-y-6"><h1 class="text-3xl font-semibold text-ink">ダッシュボード</h1><div class="flex flex-col gap-6" data-dashboard-sections><div id="running-tasks" hidden>`,
+		`<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "gap-12") || strings.Contains(out, "gap-4 lg:") {
+		t.Errorf("dashboard cards must not use 48 or 16:\n%s", out)
 	}
 }
 

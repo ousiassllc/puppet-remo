@@ -786,7 +786,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 }
 
 // AgentSections はエージェント設定の本体（#agent-sections）。OpenAI のキーと設定、高速パスのキーと設定の 4 つ。
-// API キーの削除は、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
+// API キーの削除は、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 func AgentSections(v view.AgentSettings) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -808,7 +808,7 @@ func AgentSections(v view.AgentSettings) templ.Component {
 			templ_7745c5c3_Var31 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<div id=\"agent-sections\" class=\"space-y-12\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<div id=\"agent-sections\" class=\"space-y-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

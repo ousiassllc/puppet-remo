@@ -123,7 +123,7 @@ func TaskStatus(v view.TaskStatus) templ.Component {
 
 // runningTasks はダッシュボードの実行中タスクのパネル。いつも #running-tasks を描画し（GET /poll の OOB の差し込み先）、
 // 隠し入力 rev_tasks（data-poll-rev）に描画した状態の版を持つ。実行中・承認待ちのタスクが無いときは、パネルの中身は描画せず、枠も hidden にする
-// （ダッシュボードの Card の積みの gap-12 = 48 に、空の枠の分が入らないように）。
+// （ダッシュボードの Card の積みの gap-6 = 24 に、空の枠の分が入らないように）。
 func runningTasks(v view.RunningTasks, oob bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -868,7 +868,7 @@ func taskStepArgs(args []view.AuditArg) templ.Component {
 }
 
 // TaskDetail はタスク 1 件の詳細（FR-H10・FR-G23）。指示・最終回答・ステップの文字列はすべて templ が HTML エスケープする。
-// ステップは監査ログの行で、入力した文字列の本文・要素の値は持たない。サムネイルは監査の画面と同じ経路（/audit/{id}/thumbnail）。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
+// ステップは監査ログの行で、入力した文字列の本文・要素の値は持たない。サムネイルは監査の画面と同じ経路（/audit/{id}/thumbnail）。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 func TaskDetail(v view.TaskDetail) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -890,14 +890,14 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 			templ_7745c5c3_Var42 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<div class=\"space-y-12\" data-task-detail=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<div class=\"space-y-6\" data-task-detail=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 177, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 177, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {

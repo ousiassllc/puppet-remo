@@ -124,42 +124,62 @@ func TestKeyValueAttributesUseMono(t *testing.T) {
 	has(t, log, `<dt class="inline font-mono text-mute group-hover:text-mute-on-soft">tool</dt><dd class="ml-1 inline font-mono">screenshot</dd>`)
 }
 
-// 題付きのセクション（molecules.Card。#166）同士は、48（--gap-section-sm。space-y-12）で区切る（S5・#204）。ガイドの --gap-card-section 24 は
-// 「カード内のまとまり同士」で、題付き Card はセクションなので当てない。タスク・監査ログの詳細・エージェント設定・拒否リストが対象。
+// 題付きのセクション（molecules.Card。#166）同士は、部品どうしの 24（--gap-grid-lg。space-y-6）で区切る（ガイド「部品どうし 16–24」・S5。#204 の 48 は
+// 部品をセクション扱いにした誤り）。48（--gap-section-sm）はページの見出しで区切る節どうしだけ。タスク・監査ログの詳細・エージェント設定・拒否リストが対象。
 // 題は Card の h2（lg 18）で、直書きの text-2xl の h2 ではない。
-func TestTitledCardSectionsAreSeparatedByGapSectionSm(t *testing.T) {
+func TestTitledCardsAreSeparatedByGapGridLg(t *testing.T) {
 	task := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1"}))
-	has(t, task, `class="space-y-12" data-task-detail="t1"`)
+	has(t, task, `class="space-y-6" data-task-detail="t1"`)
 	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click"}))
-	has(t, audit, `class="space-y-12" data-audit-detail="click"`)
+	has(t, audit, `class="space-y-6" data-audit-detail="click"`)
 	agent := webtest.Render(t, organisms.AgentSections(view.AgentSettings{}))
-	has(t, agent, `id="agent-sections" class="space-y-12"`)
+	has(t, agent, `id="agent-sections" class="space-y-6"`)
 	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{}))
-	has(t, denied, `id="denied-section" class="space-y-12"`)
-	hasNot(t, task, `class="space-y-6" data-task-detail`, `class="space-y-4" data-task-detail`)
-	hasNot(t, audit, `class="space-y-6" data-audit-detail`, `class="space-y-4" data-audit-detail`)
-	hasNot(t, agent, `id="agent-sections" class="space-y-6"`)
-	hasNot(t, denied, `id="denied-section" class="space-y-4"`)
+	has(t, denied, `id="denied-section" class="space-y-6"`)
+	hasNot(t, task, `class="space-y-12" data-task-detail`, `class="space-y-4" data-task-detail`)
+	hasNot(t, audit, `class="space-y-12" data-audit-detail`, `class="space-y-4" data-audit-detail`)
+	hasNot(t, agent, `id="agent-sections" class="space-y-12"`)
+	hasNot(t, denied, `id="denied-section" class="space-y-12"`, `id="denied-section" class="space-y-4"`)
 	const cardTitle = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">`
 	has(t, task, cardTitle+"指示</h2>", cardTitle+"最終回答</h2>", cardTitle+"ステップ</h2>")
 	has(t, audit, cardTitle+"引数</h2>", cardTitle+"サムネイル</h2>")
 }
 
-// ビューアの題付き Card（操作権・操作するウィンドウ・クリップボード・ショートカット）も同じ原則で 48（#208）。ツールバー（題なし）・映像との間は 16 のまま。
-// htmx が差し替える枠・空の #viewer-ops・隠しの trigger を含む並びなので、space-y ではなく gap-12 の枠にまとめ、空の #viewer-ops は empty:hidden にする。
-func TestViewerCardSectionsAreSeparatedByGapSectionSm(t *testing.T) {
+// ビューアも同じ 24: ツールバー → 操作権 → 操作するウィンドウ → 映像の間が全部 24（以前はツールバーの下が 16、Card どうしが 48）。
+// htmx が差し替える枠・空の #viewer-ops・隠しの trigger を含む並びなので、Card は space-y ではなく gap-6 の枠にまとめ、空の #viewer-ops は empty:hidden にする。
+func TestViewerPartsAreSeparatedByGapGridLg(t *testing.T) {
 	root := webtest.Render(t, organisms.ViewerRoot(view.Viewer{ViewerID: "V"}))
-	has(t, root, `<main id="viewer-root" class="space-y-4"`, `<div class="flex flex-col gap-12" data-viewer-sections><div id="lease-panel"`)
+	has(t, root, `<main id="viewer-root" class="space-y-6"`, `<div class="flex flex-col gap-6" data-viewer-sections><div id="lease-panel"`)
+	hasNot(t, root, `<main id="viewer-root" class="space-y-4"`, `gap-12`, `space-y-12`)
 	// 枠の中は、操作権 → ウィンドウ → 隠しの trigger → 操作の順で、映像（<remo-screen-viewer>）は枠の外。
 	i, j, k := strings.Index(root, "data-viewer-sections"), strings.Index(root, `id="viewer-ops"`), strings.Index(root, "<remo-screen-viewer")
 	if i <= 0 || i >= j || j >= k || !strings.HasSuffix(root[j:k], "</div></div>") {
-		t.Errorf("the cards must be inside the gap-12 frame and the viewer after it:\n%s", root)
+		t.Errorf("the cards must be inside the gap-6 frame and the viewer after it:\n%s", root)
 	}
 	ops := webtest.Render(t, organisms.ViewerOps(view.ViewerOps{Enabled: true}))
-	has(t, ops, `id="viewer-ops" class="space-y-12 empty:hidden"`)
+	has(t, ops, `id="viewer-ops" class="space-y-6 empty:hidden"`)
 	oob := webtest.Render(t, organisms.ViewerOpsOOB(view.ViewerOps{}))
-	has(t, oob, `id="viewer-ops" class="space-y-12 empty:hidden" hx-swap-oob="true"></div>`)
-	hasNot(t, ops, `class="space-y-4"><section`)
+	has(t, oob, `id="viewer-ops" class="space-y-6 empty:hidden" hx-swap-oob="true"></div>`)
+	hasNot(t, ops, `class="space-y-4"><section`, `space-y-12`)
+}
+
+// 監査ログの絞り込みの補足文は、どれも 1 つの書式（入力の下 4px = --gap-help・12px・--mute）にそろえる。
+// 2 文以上の補足は FormField が本文色の 14px にするので、日時の補足は 1 文で書く。
+func TestAuditFilterHintsShareOneStyle(t *testing.T) {
+	out := webtest.Render(t, organisms.AuditFilters(view.AuditFilters{}))
+	const hint = `<p class="mt-1 text-xs text-mute">`
+	for _, text := range []string{
+		"RFC 3339 で、この日時以降（例: 2026-11-02T09:00:00+09:00）。",
+		"RFC 3339 で、この日時以前。",
+		"部分一致（例: lease、tool.left_click）。",
+		"削除済みのクライアントの行は、名前の記録だけが残ります。",
+	} {
+		has(t, out, hint+text+"</p>")
+	}
+	if n := strings.Count(out, `class="mt-1 `); n != 4 {
+		t.Errorf("want 4 hints, got %d:\n%s", n, out)
+	}
+	hasNot(t, out, `class="mt-1 text-sm text-ink"`)
 }
 
 // S2: ボタン列・インラインは 8（--gap-inline = gap-2）、フォームの項目 → 項目は 16（--gap-field = space-y-4）。拒否リストの編集フォームと追加フォーム、

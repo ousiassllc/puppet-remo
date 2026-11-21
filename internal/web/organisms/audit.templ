@@ -34,10 +34,10 @@ templ AuditFilters(f view.AuditFilters) {
 		hx-disabled-elt="find button[type=submit]"
 	>
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			@molecules.FormField("audit-from", "開始日時", "RFC 3339（例: 2026-11-02T09:00:00+09:00）。この日時以降。", f.Errors.From) {
+			@molecules.FormField("audit-from", "開始日時", "RFC 3339 で、この日時以降（例: 2026-11-02T09:00:00+09:00）。", f.Errors.From) {
 				@atoms.Input(atoms.InputProps{ID: "audit-from", Name: "from", Value: f.From, Placeholder: "2026-11-02T09:00:00+09:00", Invalid: f.Errors.From != "", Attrs: atoms.Attrs{"autocomplete": "off"}})
 			}
-			@molecules.FormField("audit-to", "終了日時", "RFC 3339。この日時以前。", f.Errors.To) {
+			@molecules.FormField("audit-to", "終了日時", "RFC 3339 で、この日時以前。", f.Errors.To) {
 				@atoms.Input(atoms.InputProps{ID: "audit-to", Name: "to", Value: f.To, Placeholder: "2026-11-02T18:00:00+09:00", Invalid: f.Errors.To != "", Attrs: atoms.Attrs{"autocomplete": "off"}})
 			}
 			@molecules.FormField("audit-q", "イベント名", "部分一致（例: lease、tool.left_click）。", "") {
@@ -137,9 +137,9 @@ templ AuditList(v view.AuditList) {
 	</div>
 }
 
-// AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
+// AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 templ AuditDetail(v view.AuditDetail) {
-	<div class="space-y-12" data-audit-detail={ v.Event }>
+	<div class="space-y-6" data-audit-detail={ v.Event }>
 		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2">
 			@auditField("日時", v.Time, "time", true)
 			@auditField("種別", v.Kind, "kind", false)

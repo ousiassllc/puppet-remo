@@ -191,7 +191,7 @@ func deniedFormAttrs(put bool, url string) atoms.Attrs {
 
 // DeniedSection は拒否リストの一覧と追加フォーム（FR-H12）。拒否リストはブラックリスト方式のときだけ効く。
 // 入力は実行ファイルのパス（実体のパスで照合。リンク・8.3 短縮名を解決する）か、フォルダーを付けない実行ファイル名（どこにあっても当たる）。
-// 一覧と追加フォームはそれぞれ molecules.Card（題は「拒否リスト」「拒否リストに追加」）。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
+// 一覧と追加フォームはそれぞれ molecules.Card（題は「拒否リスト」「拒否リストに追加」）。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 func DeniedSection(v view.DeniedSection) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -213,14 +213,14 @@ func DeniedSection(v view.DeniedSection) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div id=\"denied-section\" class=\"space-y-12\" data-denied-active=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div id=\"denied-section\" class=\"space-y-6\" data-denied-active=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(v.Active))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 83, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 83, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {

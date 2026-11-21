@@ -78,9 +78,9 @@ func deniedFormAttrs(put bool, url string) atoms.Attrs {
 
 // DeniedSection は拒否リストの一覧と追加フォーム（FR-H12）。拒否リストはブラックリスト方式のときだけ効く。
 // 入力は実行ファイルのパス（実体のパスで照合。リンク・8.3 短縮名を解決する）か、フォルダーを付けない実行ファイル名（どこにあっても当たる）。
-// 一覧と追加フォームはそれぞれ molecules.Card（題は「拒否リスト」「拒否リストに追加」）。題付きの Card（セクション）同士は 48（--gap-section-sm。space-y-12）。
+// 一覧と追加フォームはそれぞれ molecules.Card（題は「拒否リスト」「拒否リストに追加」）。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 templ DeniedSection(v view.DeniedSection) {
-	<div id="denied-section" class="space-y-12" data-denied-active={ strconv.FormatBool(v.Active) } { deniedSectionAttrs(v)... }>
+	<div id="denied-section" class="space-y-6" data-denied-active={ strconv.FormatBool(v.Active) } { deniedSectionAttrs(v)... }>
 		@molecules.Card("拒否リスト") {
 			<div class="space-y-4">
 				<div>

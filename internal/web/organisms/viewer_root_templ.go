@@ -17,9 +17,9 @@ import (
 // hx-headers の X-Viewer-Id は子孫へ継承され、ツールバー・リース・クリップボード・ショートカットのリクエストに付く。
 // 確認モーダルの置き場（#modal-root）もここに置く（強制剥奪の確定のリクエストにも X-Viewer-Id を付けるため）。
 // ページの h1 は見せない（visually-hidden。画面は映像が主）。<remo-screen-viewer> は HTMX が差し替えない領域に置き（Lit の描画を壊さない）、readonly は描画時の操作権の有無から決める。
-// 題付きの Card（操作権・操作するウィンドウ・クリップボード・ショートカット）はセクションなので、1 つの枠（flex-col gap-12 = 48 =
-// --gap-section-sm）にまとめて並べる（#204 と同じ原則）。htmx が差し替える枠・空の #viewer-ops・隠しの trigger がある並びは、space-y ではなく
-// gap で間隔を作る（描画しない要素の分の隙間が入らない）。ツールバー（題なし）・映像との間は 16。
+// ツールバー・題付きの Card（操作権・操作するウィンドウ・クリップボード・ショートカット）・映像は、どれも部品なので 24（--gap-grid-lg。
+// space-y-6 / gap-6）で並べる。Card は 1 つの枠（flex-col gap-6）にまとめる。htmx が差し替える枠・空の #viewer-ops・隠しの trigger がある並びは、
+// space-y ではなく gap で間隔を作る（描画しない要素の分の隙間が入らない）。
 func ViewerRoot(v view.Viewer) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -41,7 +41,7 @@ func ViewerRoot(v view.Viewer) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main id=\"viewer-root\" class=\"space-y-4\" hx-headers=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main id=\"viewer-root\" class=\"space-y-6\" hx-headers=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -62,7 +62,7 @@ func ViewerRoot(v view.Viewer) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"flex flex-col gap-12\" data-viewer-sections>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"flex flex-col gap-6\" data-viewer-sections>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
