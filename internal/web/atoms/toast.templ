@@ -3,7 +3,8 @@ package atoms
 import "github.com/ousiassllc/puppet-remo/internal/web/view"
 
 // Toast は完了の短い通知 1 件（ピル・高さ 40・インク地にボーン字・1 行の短文）。自動で消える（3 秒。app.ts が取り除く）。
+// 高さは --toast-h（O3）に固定し、文が長くても折り返さず 1 行で、はみ出しは省略記号にする（文言は呼び出し側の自由文）。
 // エラー・フォーム検証・確認・破壊的操作には使わない（インラインアラート atoms.Alert・確認モーダル molecules.Modal）。
 templ Toast(t view.Toast) {
-	<div class="motion-rise-in pointer-events-auto inline-flex min-h-10 items-center rounded-full bg-ink px-4 py-2 text-sm text-bone" data-toast>{ t.Message }</div>
+	<div class="motion-rise-in pointer-events-auto inline-flex h-(--toast-h) max-w-full items-center rounded-full bg-ink px-4 text-sm text-bone" data-toast><span class="min-w-0 truncate">{ t.Message }</span></div>
 }

@@ -264,15 +264,12 @@ func TestConnectionRequestListApprovalModeOnlyShowsAvailableModes(t *testing.T) 
 	hasNot(t, empty, "<button", "/approve")
 }
 
-// 補助テキスト（text-mute）の段落に入れた <code> チップは、--accent-soft 地の上で AA 4.5:1 を保つため文字色を --ink にする（C6）。
-func TestMuteParagraphCodeChipsAreInk(t *testing.T) {
-	chip := func(v string) string {
-		return `<code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">` + v + `</code>`
-	}
+// 補助テキスト（text-mute）の段落に入れた <code> は、クラスを付けない（チップの書体・地・文字色 --ink は app.css の code ルールが決める。C6・#209）。
+func TestMuteParagraphCodeChipsAreBare(t *testing.T) {
 	client := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc", NodeID: "node-1"}))
-	has(t, client, chip("node-1"))
+	has(t, client, "<code>node-1</code>")
 	request := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", RemoteIP: "100.64.0.9"}}}))
-	has(t, request, chip("100.64.0.9"))
+	has(t, request, "<code>100.64.0.9</code>")
 }
 
 // 接続要求の履歴: 6 列の表・結果のバッジ・読み取り専用（操作なし）。前後のページへのリンクは、その向きのページがあるときだけ出る。
@@ -643,12 +640,12 @@ func TestConsentErrorsUseFieldError(t *testing.T) {
 	has(t, fast, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="fastpath-consent"`)
 }
 
-// トースト・アラートの置き場: トーストは画面下の中央（端から 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
+// トースト・アラートの置き場: トーストは画面下の中央（端から --toast-offset の 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
 // app.ts が複製する雛形 #alert-template（role なし）。
 func TestToastAndAlertRoots(t *testing.T) {
 	toast := webtest.Render(t, organisms.ToastRoot())
-	has(t, toast, `id="toast-root"`, "bottom-6", "left-1/2", "-translate-x-1/2", "z-(--z-toast)")
-	hasNot(t, toast, "right-4", "z-50")
+	has(t, toast, `id="toast-root"`, "bottom-(--toast-offset)", "left-1/2", "-translate-x-1/2", "z-(--z-toast)", "max-w-[calc(100vw-2*var(--toast-offset))]")
+	hasNot(t, toast, "right-4", "z-50", "bottom-6", "100vw-3rem")
 	alert := webtest.Render(t, organisms.AlertRoot("px-4"))
 	has(t, alert, `id="alert-root"`, "empty:hidden", "px-4", `id="alert-template"`, "<template", "data-alert-message")
 	hasNot(t, alert, `role="alert"`)

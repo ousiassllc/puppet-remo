@@ -385,3 +385,103 @@ func TestBreakpointTokensMatchTheTailwindThemeAndAppTS(t *testing.T) {
 		t.Error("app.ts must use md (--bp-md = 768px) for the desktop width")
 	}
 }
+
+// O3: トーストの高さ・表示時間・端からの距離は --toast-h 40・--toast-duration 3s・--toast-offset 24px（--s-6）。
+// toast.templ・chrome.templ は値を直書きせずトークンで参照し（h-(--toast-h)・bottom-(--toast-offset)）、app.ts は --toast-duration を読む。
+// CSS を読めないとき（テストなど）の app.ts の既定 3000ms も、トークンの 3s と同じ値に固定する。
+func TestToastTokensAreTheGuideValuesAndSyncedWithAppTS(t *testing.T) {
+	css := readAppCSS(t)
+	for _, want := range []string{`--toast-h: 40px;`, `--toast-duration: 3s;`, `--toast-offset: var(--s-6);`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("app.css must define %s", want)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^\s*--s-6:\s*24px;`).MatchString(css) {
+		t.Error("--toast-offset (--s-6) must be 24px")
+	}
+	src, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "app", "app.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`TOAST_LIFETIME_FALLBACK_MS = 3000;`, `getPropertyValue("--toast-duration")`} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("app.ts must contain %q (the toast lifetime follows --toast-duration, 3s)", want)
+		}
+	}
+}
+
+// O4: Lit ビューアの .sourcebar・.banner の z-index は、--z-* のトークン（--z-dropdown）で書く。数値の直書き（z-index: 1）に戻さない。
+func TestViewerLocalStackingUsesZTokens(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "components", "screen-viewer", "remo-screen-viewer.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bare := regexp.MustCompile(`z-index:\s*[0-9]`).FindString(string(src)); bare != "" {
+		t.Errorf("remo-screen-viewer.ts must not hardcode z-index (%q); use var(--z-*)", bare)
+	}
+	if n := strings.Count(string(src), "z-index: var(--z-dropdown);"); n != 2 {
+		t.Errorf("want .sourcebar and .banner to use z-index: var(--z-dropdown), found %d", n)
+	}
+}
+
+// T1・T3（#209）: 文中・値のインライン code は 1 つの書き方で、app.css の `code` ルールが決める（Mono・--accent-soft 地・--r-sm・左右 4px・
+// 大きさは親に従う・文字色 --ink）。テンプレートの <code> には、チップの見た目のクラス（text-xs・px-*・py-*・bg-*・rounded-*・text-*・font-*）を付けない。
+// 付けると画面ごとに大きさ・余白が分かれ、本文の中で 12px に縮む。折り返し・レイアウトのクラス（break-all・min-w-0 など）は付けてよい。
+func TestInlineCodeHasOneStyleFromAppCSS(t *testing.T) {
+	css := readAppCSS(t)
+	rule := regexp.MustCompile(`(?s)\n\s*code\s*\{([^}]*)\}`).FindStringSubmatch(css)
+	if rule == nil {
+		t.Fatal("app.css must define a global `code` rule")
+	}
+	for _, want := range []string{
+		"border-radius: var(--radius-sm);", "background-color: var(--accent-soft);", "padding-inline: var(--s-1);",
+		"color: var(--ink);", "font-family: var(--font-mono);", "font-size: inherit;",
+	} {
+		if !strings.Contains(rule[1], want) {
+			t.Errorf("app.css `code` rule lacks %q:\n%s", want, rule[1])
+		}
+	}
+
+	codeOpen := regexp.MustCompile(`<code\b[^>]*>`)
+	classAttr := regexp.MustCompile(`class="([^"]*)"`)
+	styled := regexp.MustCompile(`^(text-(xs|sm|base|lg|xl|2xl|3xl|2xs|ink|mute)|px-|py-|p-|bg-|rounded|font-|border)`)
+	found := 0
+	err := filepath.WalkDir(filepath.Join("..", "web"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			for _, tag := range codeOpen.FindAllString(line, -1) {
+				found++
+				m := classAttr.FindStringSubmatch(tag)
+				if m == nil {
+					continue
+				}
+				for _, c := range strings.Fields(m[1]) {
+					if styled.MatchString(c) {
+						t.Errorf("%s:%d: <code> must not carry the chip style %q (app.css `code` rule owns it): %s", path, i+1, c, tag)
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("no <code> found; the test is looking in the wrong place")
+	}
+}
+
+// T1: --font-mono は JetBrains Mono を先頭に、和文のフォールバックとして Noto Sans JP を挟む（承認済みの逸脱。docs §8.4 の T の行に理由）。
+func TestFontMonoKeepsTheApprovedJapaneseFallback(t *testing.T) {
+	want := `--font-mono: "JetBrains Mono", "Noto Sans JP", ui-monospace, monospace;`
+	if !strings.Contains(readAppCSS(t), want) {
+		t.Errorf("app.css must define %s", want)
+	}
+}

@@ -114,7 +114,7 @@ templ DeniedSection(v view.DeniedSection) {
 										実行ファイル名
 									}
 								</span>
-								<code class="min-w-0 flex-1 break-all rounded-sm bg-accent-soft px-2 py-1 text-xs" data-denied-value>{ row.Value }</code>
+								<code class="min-w-0 flex-1 break-all" data-denied-value>{ row.Value }</code>
 								@atoms.Button(atoms.ButtonProps{Label: "編集", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 									"hx-get": row.EditURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",
 								}})

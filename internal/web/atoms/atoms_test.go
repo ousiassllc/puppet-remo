@@ -127,10 +127,11 @@ func TestNoticeAnimatedRisesInOnlyWhenAsked(t *testing.T) {
 }
 
 // トースト: 完了の短い通知。ピル・インク地・role や閉じるボタンは持たない（3 秒で自動消去）。エラーの表示には使わない。
+// 高さは --toast-h（40）で、長い文でも折り返さず 1 行（truncate）。min-h・py での可変にしない（O3）。
 func TestToastIsAShortInkPill(t *testing.T) {
 	out := webtest.Render(t, atoms.Toast(view.Toast{Message: "保存しました。"}))
-	has(t, out, "data-toast", "rounded-full", "bg-ink", "text-bone", "min-h-10", "保存しました。")
-	hasNot(t, out, "data-toast-dismiss", "data-toast-level", "data-error-code", "<button")
+	has(t, out, "data-toast", "rounded-full", "bg-ink", "text-bone", "h-(--toast-h)", `<span class="min-w-0 truncate">保存しました。</span>`)
+	hasNot(t, out, "data-toast-dismiss", "data-toast-level", "data-error-code", "<button", "min-h-10", "py-2")
 }
 
 // ボタン: 4 種（主・サブ・ゴースト・危険）。SemiBold・disabled は opacity .4・高さ 40（小は 32）。押下のリップルの対象。
