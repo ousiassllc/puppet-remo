@@ -69,7 +69,7 @@ templ SessionListBody(v view.Sessions) {
 				<li class="flex items-center justify-between py-2" data-session>
 					<span class="text-ink">{ s.ClientLabel }</span>
 					<span class="flex items-center gap-2">
-						@atoms.Badge(atoms.BadgeNeutral, s.KindLabel)
+						@atoms.Badge(atoms.BadgeLabel, s.KindLabel)
 						<span class="text-xs text-mute"><span class="font-mono">{ s.Since }</span> から</span>
 					</span>
 				</li>

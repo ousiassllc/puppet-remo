@@ -7,7 +7,7 @@ templ LeasePendingBadge(holder, kind string) {
 	<span class="inline-flex items-center gap-2 text-sm" data-lease-pending>
 		@atoms.Badge(atoms.BadgeWarn, "承認待ち")
 		<span class="text-ink">{ holder }</span>
-		@atoms.Badge(atoms.BadgeNeutral, kind)
+		@atoms.Badge(atoms.BadgeLabel, kind)
 	</span>
 }
 
@@ -17,7 +17,7 @@ templ LeaseBadge(held bool, holder, kind string) {
 		<span class="inline-flex items-center gap-2 text-sm">
 			@atoms.Badge(atoms.BadgeOK, "保持中")
 			<span class="text-ink">{ holder }</span>
-			@atoms.Badge(atoms.BadgeNeutral, kind)
+			@atoms.Badge(atoms.BadgeLabel, kind)
 		</span>
 	} else {
 		<span class="inline-flex items-center gap-2 text-sm">

@@ -309,7 +309,7 @@ func SessionListBody(v view.Sessions) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = atoms.Badge(atoms.BadgeNeutral, s.KindLabel).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = atoms.Badge(atoms.BadgeLabel, s.KindLabel).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

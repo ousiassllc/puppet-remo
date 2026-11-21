@@ -251,7 +251,7 @@ func auditThumbCell(has bool) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if has {
-			templ_7745c5c3_Err = atoms.Badge(atoms.BadgeNeutral, "あり").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.Badge(atoms.BadgeLabel, "あり").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
