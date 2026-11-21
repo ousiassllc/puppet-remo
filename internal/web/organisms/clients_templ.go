@@ -464,6 +464,10 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = templ.RenderAttributes(ctx, templ_7745c5c3_Buffer, atoms.ScrollRegion("発行済みトークン"))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = templ.RenderAttributes(ctx, templ_7745c5c3_Buffer, tokenListAttrs(oob))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
