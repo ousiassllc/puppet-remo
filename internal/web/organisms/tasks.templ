@@ -170,7 +170,7 @@ templ TaskDetail(v view.TaskDetail) {
 				@taskField("作成", v.Created, "created", true)
 				@taskField("開始", v.Started, "started", true)
 				@taskField("終了", v.Finished, "finished", true)
-				@taskField("エラーコード", v.ErrorCode, "error-code", false)
+				@taskField("エラーコード", v.ErrorCode, "error-code", true)
 				@taskField("エラーの内容", v.ErrorLabel, "error-label", false)
 			</dl>
 		</div>
@@ -229,7 +229,7 @@ templ TaskDetail(v view.TaskDetail) {
 											<span class="mr-1 text-xs text-ink" data-step-kind-label>{ s.KindLabel }</span>
 										}
 										<span>{ s.Summary }</span>
-										<span class="ml-1 text-xs text-mute group-hover:text-mute-on-soft">{ s.Event }</span>
+										<span class="ml-1 font-mono text-xs text-mute group-hover:text-mute-on-soft">{ s.Event }</span>
 										@taskStepArgs(s.Args)
 										if s.AuditURL != "" {
 											<a

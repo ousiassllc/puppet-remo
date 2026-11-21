@@ -40,7 +40,7 @@ func TestWindowPickerListsSelectableAndGreyedWindows(t *testing.T) {
 	res := r.get("/viewer/windows", h...)
 	status(t, res, http.StatusOK)
 	contains(t, res, `id="window-picker"`, `hx-get="/viewer/windows"`, "every 3s", "remo:lease-changed", "一覧を更新", `data-window-refresh`,
-		"title-101", "app101.exe", "前面", `data-window-id="101"`, `hx-post="/viewer/target"`, "&#34;window_id&#34;:&#34;101&#34;",
+		"title-101", `<span class="font-mono" data-window-process>app101.exe</span>`, "前面", `data-window-id="101"`, `hx-post="/viewer/target"`, "&#34;window_id&#34;:&#34;101&#34;",
 		// 昇格・最小化は灰色で選べない（理由つき・「選ぶ」ボタンなし）。
 		`data-window-id="102"`, "管理者権限のため選べません", `data-window-id="103"`, "最小化されています",
 		// 選べない行だけが aria-disabled="true"（選べる行に空の属性を付けない）。
@@ -73,7 +73,7 @@ func TestWindowPickerStateWhenTheLeaseIsNotFree(t *testing.T) {
 		_, h := r.viewer()
 		status(t, r.post("/viewer/target", form("101", "10", "910"), h...), http.StatusOK)
 		res := r.get("/viewer/windows", h...)
-		contains(t, res, "data-window-scoped", "app.exe", "ウィンドウ 1 枚と関連するダイアログ・メニューだけ")
+		contains(t, res, "data-window-scoped", `<span class="font-mono">app.exe</span>`, "ウィンドウ 1 枚と関連するダイアログ・メニューだけ")
 		lacks(t, res, "data-window-list")
 	})
 	t.Run("一覧を読めないときは理由を出す", func(t *testing.T) {
@@ -89,7 +89,7 @@ func TestSelectTargetBindsTheScopedLease(t *testing.T) {
 	id, h := r.viewer()
 	res := r.post("/viewer/target", form("101", "10", "910"), h...)
 	status(t, res, http.StatusOK)
-	contains(t, res, `data-lease-state="mine"`, "対象: app.exe", `data-lease-scope`,
+	contains(t, res, `data-lease-state="mine"`, `対象: <span class="font-mono">app.exe</span>`, `data-lease-scope`,
 		// スコープ付きではクリップボードの読み取りの UI が無く、Alt+Tab・Win+D は無効、Alt+F4・Ctrl+W・Esc は使える。
 		`id="clipboard-panel"`, "data-clipboard-write-only", `data-key-disabled`)
 	lacks(t, res, "/viewer/clipboard/fetch", `"keys":"alt+tab"`, `"keys":"win+d"`)
