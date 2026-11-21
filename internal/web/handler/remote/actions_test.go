@@ -27,7 +27,7 @@ func TestClipboardSend(t *testing.T) {
 	text := sample()
 	res := r.post("/viewer/clipboard/send", url.Values{"text": {text}}, h...)
 	status(t, res, http.StatusOK)
-	contains(t, res, "ホストのクリップボードへ送信しました", "（19 文字）")
+	contains(t, res, "ホストのクリップボードへ送信しました", `（<span class="font-mono">19</span> 文字）`)
 	// 送ったテキストは応答に出さない（文字数だけ）。
 	lacks(t, res, "clip-", "<html")
 	if r.f.Control.Clipboard != text {
@@ -42,7 +42,7 @@ func TestClipboardSendCountsCharactersNotBytes(t *testing.T) {
 	r := newRig(t)
 	h := held(t, r)
 	res := r.post("/viewer/clipboard/send", url.Values{"text": {"こんにちは"}}, h...)
-	contains(t, res, "（5 文字）")
+	contains(t, res, `（<span class="font-mono">5</span> 文字）`)
 }
 
 func TestClipboardSendLimits(t *testing.T) {
