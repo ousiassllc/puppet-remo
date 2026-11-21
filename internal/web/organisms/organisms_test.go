@@ -767,7 +767,7 @@ func TestFormAndNestedPanelSpacing(t *testing.T) {
 	has(t, req, `<p class="mt-2 text-xs text-mute">`)
 	has(t, webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc"})), `<p class="mt-2 text-xs text-mute">`)
 	dlg := webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Detail: "詳細", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30}}))
-	has(t, dlg, `rounded-md bg-bone p-4 text-sm text-ink" data-approval-detail`)
+	has(t, dlg, `rounded-md bg-bone p-4 text-sm text-ink" aria-label="承認内容の詳細" role="region" tabindex="0" data-approval-detail`)
 }
 
 // S2: 一覧画面の「絞り込み → 表 → ページ送り」を縦に積む外側のラッパーは、他の一覧と同じ 16px（space-y-4）にする。
@@ -842,4 +842,33 @@ func TestItemNameHeadingsAreH3Base16(t *testing.T) {
 	}
 	detail := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", DisplayName: "pc-main"}))
 	hasNot(t, detail, "<h1", "<h3", "pc-main</h")
+}
+
+// スクロール領域（overflow-auto / overflow-x-auto。B6）: 中にフォーカスできる要素が無くても Tab で領域に入れるよう、
+// atoms.ScrollRegion の tabindex="0"・role="region"・名前（aria-label）が付く。
+func TestScrollRegionsAreFocusableAndNamed(t *testing.T) {
+	rows := []view.LogRow{{Time: "t", Level: "INFO"}}
+	tests := []struct{ name, out, label string }{
+		{"アプリログ", webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: rows})), "アプリログ"},
+		{"承認の詳細", webtest.Render(t, organisms.ApprovalDialog(view.ApprovalDialog{ID: "a1", Kind: "safety_check", Detail: "d"})), "承認内容の詳細"},
+		{"監査の引数", webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click", Args: []view.AuditArg{{Key: "k", Value: "v"}}})), "引数"},
+		{"トークン一覧", webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "r", Label: "revoked", Prefix: "prm_rrrr"}}}, false)), "発行済みトークン"},
+		{"接続要求の履歴", webtest.Render(t, organisms.ConnectionRequestHistory(view.RequestHistory{Page: 1, Rows: []view.HistoryRow{{ID: "h1"}}})), "接続要求の履歴"},
+		{"タスクの指示", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Prompt: "p"})), "指示の全文"},
+		{"タスクの最終回答", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", ResultText: "r"})), "最終回答の全文"},
+		{"タスクのステップ", webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "s"}}})), "ステップ"},
+		{"リリースノート", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Notes: "n"}})), "リリースノート"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tag := regexp.MustCompile(`<[a-z]+ [^>]*aria-label="` + tt.label + `"[^>]*>`).FindString(tt.out)
+			if tag == "" {
+				t.Fatalf("aria-label=%q の領域が無い:\n%s", tt.label, tt.out)
+			}
+			has(t, tag, `tabindex="0"`, `role="region"`)
+			if !regexp.MustCompile(`overflow-(x-)?auto`).MatchString(tag) {
+				t.Errorf("スクロールする要素に付いていない: %s", tag)
+			}
+		})
+	}
 }

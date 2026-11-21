@@ -120,7 +120,7 @@ func tokenListAttrs(oob bool) atoms.Attrs {
 // TokenList は 1 クライアントのトークン一覧（接頭辞のみ。平文は発行時の 1 回だけ）。失効は有効なトークンだけに出す。
 // oob = true は、アクションの応答に添えて一覧を更新するとき（OOB）。
 templ TokenList(v view.TokenList, oob bool) {
-	<div id="token-list" class="overflow-x-auto" { tokenListAttrs(oob)... }>
+	<div id="token-list" class="overflow-x-auto" { atoms.ScrollRegion("発行済みトークン")... } { tokenListAttrs(oob)... }>
 		if len(v.Items) == 0 {
 			@molecules.EmptyState("tokens") {
 				発行済みのトークンはありません。
