@@ -32,7 +32,7 @@ templ GUI(title string, c view.Chrome) {
 		>
 			<div class="flex min-h-screen flex-col md:flex-row">
 				@organisms.NavScrim()
-				@organisms.Sidebar(c, false)
+				@organisms.Sidebar(c)
 				<div class="flex min-w-0 flex-1 flex-col" data-nav-background>
 					@organisms.Header(c.Header)
 					@organisms.AlertRoot("px-4 pt-4 md:px-6")
@@ -48,10 +48,11 @@ templ GUI(title string, c view.Chrome) {
 	</html>
 }
 
-// Boosted はサイドバーの hx-boost による遷移の応答。#main の中身（title を含む）に、サイドバーの強調を OOB で添える。
+// Boosted はサイドバーの hx-boost による遷移の応答。#main の中身（title を含む）に、サイドバーのリンク群（強調）だけを OOB で添える。
+// ドロワーの枠（#sidebar-nav）は差し替えない: 差し替えるとリンクのクリックで始まった退出のフェード（240ms）が切れる（M5・#202）。
 templ Boosted(title string, c view.Chrome) {
 	<title>{ title } - Nefos Remote</title>
-	@organisms.Sidebar(c, true)
+	@organisms.SidebarLinks(c, true)
 	{ children... }
 }
 

@@ -82,7 +82,7 @@ func GUI(title string, c view.Chrome) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = organisms.Sidebar(c, false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = organisms.Sidebar(c).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -130,7 +130,8 @@ func GUI(title string, c view.Chrome) templ.Component {
 	})
 }
 
-// Boosted はサイドバーの hx-boost による遷移の応答。#main の中身（title を含む）に、サイドバーの強調を OOB で添える。
+// Boosted はサイドバーの hx-boost による遷移の応答。#main の中身（title を含む）に、サイドバーのリンク群（強調）だけを OOB で添える。
+// ドロワーの枠（#sidebar-nav）は差し替えない: 差し替えるとリンクのクリックで始まった退出のフェード（240ms）が切れる（M5・#202）。
 func Boosted(title string, c view.Chrome) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -159,7 +160,7 @@ func Boosted(title string, c view.Chrome) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/gui.templ`, Line: 53, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/gui.templ`, Line: 54, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -169,7 +170,7 @@ func Boosted(title string, c view.Chrome) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = organisms.Sidebar(c, true).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = organisms.SidebarLinks(c, true).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -211,7 +212,7 @@ func Dialog(title string) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/gui.templ`, Line: 66, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/gui.templ`, Line: 67, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -232,7 +233,7 @@ func Dialog(title string) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(templ.JSONString(map[string]string{"X-Puppet-Remo": "1"}))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/gui.templ`, Line: 77, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/gui.templ`, Line: 78, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
