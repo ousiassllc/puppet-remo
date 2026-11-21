@@ -146,6 +146,17 @@ func TestRunningTasksPanel(t *testing.T) {
 	}
 }
 
+// T3: クリックできるタスク ID のリンクは sm 14（補足サイズの xs 12 にしない）。実行中タスクのカードと一覧表のタスク列の両方。
+func TestTaskIDLinksAreSmall(t *testing.T) {
+	item := view.RunningTask{ShortID: "00RUN001", DetailURL: "/tasks/t1", Status: view.TaskStatus{Code: "running", Label: "実行中", Tone: view.ToneOK}}
+	running := webtest.Render(t, organisms.RunningTasksPanel(view.RunningTasks{Items: []view.RunningTask{item}}))
+	list := webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{{DetailURL: "/tasks/t1", ShortID: "00LIST01"}}}))
+	for _, out := range []string{running, list} {
+		has(t, out, `class="font-mono text-sm link"`)
+		hasNot(t, out, `font-mono text-xs link`)
+	}
+}
+
 // 承認ダイアログは種類ごとの見出し・内容を出し、Detail・Note が空なら枠を描画しない。
 func TestApprovalDialogKinds(t *testing.T) {
 	base := view.ApprovalDialog{ID: "a1", ClientLabel: "claude", KindLabel: "エージェント", Remaining: view.ApprovalRemaining{ID: "a1", Seconds: 30, RefreshURL: "/approvals/a1"},

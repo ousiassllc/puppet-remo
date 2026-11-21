@@ -38,7 +38,7 @@ templ runningTasks(v view.RunningTasks, oob bool) {
 							<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
 								<a
 									href={ templ.SafeURL(t.DetailURL) }
-									class="font-mono text-xs link"
+									class="font-mono text-sm link"
 									hx-boost="true"
 									hx-target="#main"
 									hx-target-error="#main"
@@ -99,7 +99,7 @@ templ TaskList(v view.TaskList) {
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y)">
 									<a
 										href={ templ.SafeURL(r.DetailURL) }
-										class="font-mono text-xs link"
+										class="font-mono text-sm link"
 										hx-boost="true"
 										hx-target="#main"
 										hx-target-error="#main"

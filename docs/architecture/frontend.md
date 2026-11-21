@@ -786,3 +786,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.51 | 2026-11-21 | スクロール領域のキーボード操作（#197。B6）: ログ表・接続要求の履歴・監査の引数表・タスクのステップ表・トークン一覧（横スクロール）と、承認の詳細・タスクの指示と最終回答・リリースノート（縦スクロール）に `atoms.ScrollRegion`（`tabindex="0"`・`role="region"`・`aria-label`）を付けた。§4.2 に規約を追記 | #197 |
 | 1.52 | 2026-11-21 | タイポグラフィ（T）の再点検（#193。§8.4）: 桁を揃える数値の入力欄（`type="number"`）を `atoms.Input` が自動で Mono に、API キー行のラベルを Regular に、ライセンス全文を xs 12px から sm 14px の Mono に | #193 |
 | 1.53 | 2026-11-21 | 色（C6）の指摘（#198。§8.4 の規約）: 表の行（ログ・監査・タスクのステップ）の中の `text-mute` を、行のホバー（`--accent-soft` 地）で `--mute-on-soft` に切り替える（行に `group`・文字に `group-hover:text-mute-on-soft`）。`hover_row_contrast_test.go` を追加 | #198 |
+| 1.54 | 2026-11-21 | タイポグラフィ（T3）の指摘（#199。§8.4 の T の行「操作のリンクは `text-sm`」の適用漏れ）: 実行中タスクのカードと一覧表のタスク ID のリンク（`tasks.templ`）を `font-mono text-xs link` から `font-mono text-sm link` に。`TestTaskIDLinksAreSmall` を追加 | #199 |
