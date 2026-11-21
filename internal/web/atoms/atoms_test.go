@@ -53,7 +53,7 @@ func TestAtomsUseOnlyDesignTokens(t *testing.T) {
 	}
 }
 
-// 状態はアイコン + 文言 + 状態色で伝える（色だけにしない）。中立のバッジ（種別・件数）にはアイコンを付けない。
+// 状態はアイコン + 文言 + 状態色で伝える（色だけにしない）。中立のバッジ（状態の中立 BadgeNeutral・状態でない BadgeLabel）にはアイコンを付けない。
 func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 	for tone, color := range map[atoms.BadgeTone]string{atoms.BadgeOK: "success", atoms.BadgeWarn: "warning", atoms.BadgeDanger: "danger"} {
 		out := webtest.Render(t, atoms.Badge(tone, "状態"))
@@ -62,9 +62,20 @@ func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 			t.Errorf("the text must follow the icon: %s", out)
 		}
 	}
-	neutral := webtest.Render(t, atoms.Badge(atoms.BadgeNeutral, "MCP"))
-	hasNot(t, neutral, "<svg")
-	has(t, neutral, "MCP")
+	for tone, c := range map[atoms.BadgeTone]string{atoms.BadgeNeutral: "text-mute-on-soft", atoms.BadgeLabel: "text-ink"} {
+		out := webtest.Render(t, atoms.Badge(tone, "MCP"))
+		hasNot(t, out, "<svg")
+		has(t, out, "MCP", c, "border-border", "bg-accent-soft")
+	}
+}
+
+// 中立のバッジは 2 つに分ける（C4）: 状態の中立（空き・無効・最小化。ガイドの中立の「下書き」）は --mute 系の文字（--bone・行ホバーの --accent-soft 上で
+// AA に届くよう --mute-on-soft）、状態でない表示（種別・経路・件数。ガイドに規定が無い）は --ink。互いの色を持たない。
+func TestNeutralBadgeSeparatesStateFromLabel(t *testing.T) {
+	state := webtest.Render(t, atoms.Badge(atoms.BadgeNeutral, "空き"))
+	hasNot(t, state, "text-ink")
+	label := webtest.Render(t, atoms.Badge(atoms.BadgeLabel, "MCP"))
+	hasNot(t, label, "text-mute")
 }
 
 // インラインアラート: 4 種（お知らせ・成功・注意・エラー）の状態色・アイコン・見出し・本文。閉じるボタンは Dismissible のときだけ。

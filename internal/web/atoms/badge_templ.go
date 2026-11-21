@@ -12,10 +12,14 @@ import templruntime "github.com/a-h/templ/runtime"
 type BadgeTone string
 
 const (
+	// BadgeNeutral は中立の「状態」（空き・無効・最小化・失効など。ガイドの中立の「下書き」）。--accent-soft 地に --mute-on-soft の文字。
+	// 文字を --mute にしないのは、--bone 上・行ホバーの --accent-soft 上で AA 4.5:1 に届かないため（docs §8.4 C）。
 	BadgeNeutral BadgeTone = "neutral"
-	BadgeOK      BadgeTone = "ok"
-	BadgeWarn    BadgeTone = "warn"
-	BadgeDanger  BadgeTone = "danger"
+	// BadgeLabel は状態でない中立の表示（種別・経路・件数など。ガイドに規定が無い）。--accent-soft 地に --ink の文字。
+	BadgeLabel  BadgeTone = "label"
+	BadgeOK     BadgeTone = "ok"
+	BadgeWarn   BadgeTone = "warn"
+	BadgeDanger BadgeTone = "danger"
 	// BadgeSoft は --accent-soft 地に --mute-on-soft の文字（状態色を持たない短い注記。秘密の入力欄の「登録済み」）。
 	BadgeSoft BadgeTone = "soft"
 )
@@ -33,12 +37,14 @@ func badgeClass(t BadgeTone) string {
 		return base + "border-warning-line bg-warning-wash text-warning"
 	case BadgeDanger:
 		return base + "border-danger-line bg-danger-wash text-danger"
-	default:
+	case BadgeLabel:
 		return base + "border-border bg-accent-soft text-ink"
+	default:
+		return base + "border-border bg-accent-soft text-mute-on-soft"
 	}
 }
 
-// badgeIcon は状態のアイコン（色だけで意味を伝えない）。中立（種別・件数などの状態でない表示）には付けない。
+// badgeIcon は状態のアイコン（色だけで意味を伝えない）。中立（状態の中立 BadgeNeutral・状態でない BadgeLabel）には付けない。
 func badgeIcon(t BadgeTone) (IconName, bool) {
 	switch t {
 	case BadgeOK:
@@ -105,7 +111,7 @@ func Badge(tone BadgeTone, text string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 53, Col: 8}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/badge.templ`, Line: 59, Col: 8}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

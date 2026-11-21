@@ -69,7 +69,7 @@ templ AuditFilters(f view.AuditFilters) {
 // auditThumbCell はサムネイルの有無の表示。
 templ auditThumbCell(has bool) {
 	if has {
-		@atoms.Badge(atoms.BadgeNeutral, "あり")
+		@atoms.Badge(atoms.BadgeLabel, "あり")
 	} else {
 		<span class="text-mute group-hover:text-mute-on-soft">-</span>
 	}
