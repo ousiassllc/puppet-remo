@@ -21,3 +21,14 @@ func TestTokenRevealHeadingAndCopyStatus(t *testing.T) {
 		t.Errorf("heading must be h3 and copy status must not be text-xs:\n%s", out)
 	}
 }
+
+// M5: 発行の結果は POST の応答で現れる操作の結果なので、出現に motion-rise-in が付く（退出は data-leaving の motion-rise-out）。
+// 平文を履歴に残さない hx-history="false" と data-token-reveal は、枠の属性として残る。
+func TestTokenRevealRisesIn(t *testing.T) {
+	out := webtest.Render(t, molecules.TokenReveal(view.TokenReveal{Label: "ci", Plaintext: "tok", ExpiresAt: "2026-12-01"}))
+	for _, want := range []string{`class="motion-rise-in `, `data-token-reveal`, `hx-history="false"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}

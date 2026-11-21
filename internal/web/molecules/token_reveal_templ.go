@@ -99,7 +99,7 @@ func TokenReveal(v view.TokenReveal) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-token-reveal": true, "hx-history": "false"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"data-token-reveal": true, "hx-history": "false"}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
