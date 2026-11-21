@@ -198,7 +198,8 @@ func TestTaskDetailPage(t *testing.T) {
 		// step_count = fast + openai
 		`class="break-all text-ink" data-task-field="step-count"><span class="font-mono">3</span>（高速パス <span class="font-mono">1</span> ・ OpenAI <span class="font-mono">2</span>）`,
 		`data-task-steps>3 / 50<`,
-		"確信度がしきい値に届かなかった（low_confidence）", "12345", "678",
+		// 引き継ぎ理由は、文言と「（ ）」は Regular、理由コードだけ Mono（#222）。
+		`data-task-field="handoff-reason">確信度がしきい値に届かなかった（<span class="font-mono">low_confidence</span>）`, "12345", "678",
 		// 完了はモデルの申告（FR-G13）
 		"メモ帳に書きました。", "data-task-result-note", "モデル（OpenAI）の申告",
 		// ステップは step_no の昇順、経路、結果、監査ログとサムネイル（監査の画面と同じ経路）
@@ -276,6 +277,21 @@ func TestTaskDetailStates(t *testing.T) {
 			lacks(t, res, tt.not...)
 		})
 	}
+}
+
+// 未知の理由コードは、文言なしでコードだけ（Mono）。プロセス名が無い対象は「pid N」だけ（#220・#222）。
+func TestTaskDetailUnknownHandoffAndUnnamedTarget(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) {
+		seedTask(f, idRunning, domain.TaskRunning, "p", 5, func(t *domain.Task) {
+			t.HandoffReason = domain.HandoffReason("something_new")
+			t.TargetWindowID, t.TargetPID = "1001", 4242
+		})
+	})
+	res := r.get("/tasks/" + idRunning)
+	contains(t, res, `data-task-field="handoff-reason"><span class="font-mono">something_new</span></dd>`,
+		`data-task-field="target">pid <span class="font-mono">4242</span> <span>・ window_id <span class="font-mono">1001</span></span>`)
+	lacks(t, res, "something_new）")
+	contains(t, r.get("/"), `data-task-target>pid <span class="font-mono">4242</span>`)
 }
 
 func TestTaskDetailNoHandoffNoSteps(t *testing.T) {
@@ -482,9 +498,12 @@ func TestScopedTaskShowsTargetWithoutTitle(t *testing.T) {
 	})
 	res := r.get("/")
 	status(t, res, http.StatusOK)
-	contains(t, res, "data-task-target", "notepad.exe（pid 4242）")
+	// 識別子（プロセス名・pid・window_id）だけが Mono。「対象:」「（ ）」「pid」「・」は Regular（#220）。
+	contains(t, res, `対象: <span class="text-ink" data-task-target><span class="font-mono">notepad.exe</span>（pid <span class="font-mono">4242</span>）`)
 	detail := r.get("/tasks/" + idRunning)
-	contains(t, detail, "対象ウィンドウ", "notepad.exe（pid 4242） ・ window_id 1001", "表示から除外", "capture_partial")
+	contains(t, detail, "対象ウィンドウ",
+		`data-task-field="target"><span class="font-mono">notepad.exe</span>（pid <span class="font-mono">4242</span>） <span>・ window_id <span class="font-mono">1001</span></span>`,
+		"表示から除外", "capture_partial")
 	plain := r.get("/tasks/" + idFinished)
 	lacks(t, plain, "対象ウィンドウ", "表示から除外", "data-task-target")
 }
