@@ -73,7 +73,7 @@ templ ConnectionRequestHistory(v view.RequestHistory) {
 							<tr class="hover:bg-accent-soft" data-history-request={ r.ID } data-result={ r.ResultCode }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.ReceivedAt }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.DisplayName }</td>
-								<td class="px-(--table-pad-x) py-(--table-pad-y)"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ r.RemoteIP }</code></td>
+								<td class="px-(--table-pad-x) py-(--table-pad-y)"><code>{ r.RemoteIP }</code></td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.LoginName }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y)">
 									@atoms.Badge(badgeTone(r.ResultTone), r.Result)
