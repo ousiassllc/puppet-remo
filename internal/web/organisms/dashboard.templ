@@ -22,12 +22,12 @@ templ ServerStatusBody(v view.ServerStatus) {
 				<span class="text-mute">未取得</span>
 			}
 			for _, ip := range v.TailnetIPs {
-				<code class="max-w-full break-all rounded-sm bg-accent-soft px-2 py-1 text-xs">{ ip }</code>
+				<code class="max-w-full break-all">{ ip }</code>
 			}
 		</dd>
 		if v.DNSName != "" {
 			<dt class="text-mute">MagicDNS 名</dt>
-			<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all rounded-sm bg-accent-soft px-2 py-1 text-xs">{ v.DNSName }</code></dd>
+			<dd class="mb-1 min-w-0 sm:mb-0"><code class="break-all">{ v.DNSName }</code></dd>
 		}
 		<dt class="text-mute">ポート</dt>
 		<dd data-field="port" class="mb-1 min-w-0 font-mono sm:mb-0">{ strconv.Itoa(v.Port) }</dd>
@@ -35,7 +35,7 @@ templ ServerStatusBody(v view.ServerStatus) {
 		<dd class="flex min-w-0 flex-wrap items-center gap-2">
 			@atoms.Badge(tone(v.ListenTone), v.ListenLabel)
 			for _, a := range v.ListenAddrs {
-				<code class="max-w-full break-all rounded-sm bg-accent-soft px-2 py-1 text-xs">{ a }</code>
+				<code class="max-w-full break-all">{ a }</code>
 			}
 		</dd>
 	</dl>
