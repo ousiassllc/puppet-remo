@@ -137,6 +137,7 @@ static/
 - バリエーションは `const` + 独自型で型安全にする（`ButtonVariant` など）
 - 子要素は `templ.Component` のスロット（`{ children... }`）で受ける
 - HTML 属性のパススルーは `Attrs templ.Attributes`
+- スクロールする領域（`overflow-auto` / `overflow-x-auto` の要素。表の横スクロール・`max-h` の `<pre>` など）には `{ atoms.ScrollRegion("名前")... }` を付ける（B6）。`tabindex="0"`・`role="region"`・`aria-label` を 1 か所で付ける属性で、中にフォーカスできる要素が無くても Tab で領域に入れ、矢印・PageUp/PageDown・Space・Home/End でスクロールできる。リングは `app.css` の `:focus-visible`。行にリンクがある一覧表のように、中の要素でキーボード操作できる領域には付けない
 - 状態の分岐・権限の判定は**ハンドラが行い、`view` に結果として渡す**。テンプレートは `if` で描画の有無を決めるだけで、権限のロジックを持たない
 
 ### 4.3 状態駆動レンダリングの例（リースパネル）
@@ -778,4 +779,5 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.45 | 2026-11-14 | ラベルと入力欄のすき間 `--gap-label` を 8px から、ガイド（基準 `a66e8514`）の 6px にそろえた（#171。ガイドは直さずアプリ側を直す）: §8.4 のフォームの間隔を「ラベル→入力 6（`mb-(--gap-label)`）」に、「合わせていない」リストから `--gap-label` を削除。`FormField`・クリップボードのラベルは `mb-2` をやめてトークンを参照する | #171 |
 | 1.46 | 2026-11-14 | カードの見出し・ページ送り・ツールチップ（#166・#167・#169。§8.4）: 起動許可アプリ（起動の方式・拒否リスト・追加／編集フォーム）・監査ログとタスクの詳細・操作権のパネルを `molecules.Card` の題（lg 18）にそろえ、項目名の見出し（クライアント名・アプリ名・接続要求のデバイス名）は h3 の base 16 に決めた（クライアント詳細の名前はページの h1）。監査ログ・タスクのページ送りを `molecules.Pager` にした（前へは URL の `back` で戻る）。`title` 属性を `atoms.Tooltip`（`--tip-pad-*`）に置き換えた | #166・#167・#169 |
 | 1.47 | 2026-11-18 | アプリのアイコンとロゴを Nefos Remote の v5c の素材に差し替え（#189。§8.4 のロゴ・favicon の行）: ヘッダーのテキストの製品名を `atoms.Lockup` に、`<head>` に favicon を追加。トレイは明るい・暗いタスクバー用の ICO を `internal/app` に置き、Wails の SetIcon・SetDarkModeIcon に渡す（SystemUsesLightTheme で選び、WM_SETTINGCHANGE の ImmersiveColorSet で追従する）。`build/icons`（SVG から PNG・ICO を作っていた生成スクリプト）は、素材をそのまま使うため廃止 |
-| 1.48 | 2026-11-21 | タイポグラフィ（T）の再点検（#193。§8.4）: 桁を揃える数値の入力欄（`type="number"`）を `atoms.Input` が自動で Mono に、API キー行のラベルを Regular に、ライセンス全文を xs 12px から sm 14px の Mono に | #193 |
+| 1.48 | 2026-11-21 | スクロール領域のキーボード操作（#197。B6）: ログ表・接続要求の履歴・監査の引数表・タスクのステップ表・トークン一覧（横スクロール）と、承認の詳細・タスクの指示と最終回答・リリースノート（縦スクロール）に `atoms.ScrollRegion`（`tabindex="0"`・`role="region"`・`aria-label`）を付けた。§4.2 に規約を追記 | #197 |
+| 1.49 | 2026-11-21 | タイポグラフィ（T）の再点検（#193。§8.4）: 桁を揃える数値の入力欄（`type="number"`）を `atoms.Input` が自動で Mono に、API キー行のラベルを Regular に、ライセンス全文を xs 12px から sm 14px の Mono に | #193 |
