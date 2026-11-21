@@ -515,6 +515,9 @@ func TestAPIKeyPanelNeverRendersValueAndFollowsState(t *testing.T) {
 	has(t, out, `data-key-state="registered"`, `data-secret-saved`, "登録済み", "bg-accent-soft", "text-mute-on-soft", `data-secret-change`, ">変更<",
 		`data-key-delete="OpenAI"`, `hx-get="/agent/api-key/delete/confirm"`, `hx-target="#modal-root"`, "置き換える", "新しい OpenAI API キー")
 	hasNot(t, out, "value=", "data-field-error", "未登録")
+	// T2: 行のラベルは Regular（SemiBold は見出しとボタンだけ）。
+	has(t, out, `<span class="text-sm text-ink">OpenAI API キー</span>`)
+	hasNot(t, out, "font-semibold text-ink\">OpenAI API キー")
 	savedTag := regexp.MustCompile(`<div[^>]*data-secret-saved[^>]*>`).FindString(out)
 	if strings.Contains(savedTag, "hidden") {
 		t.Errorf("the saved row must be visible: %s", savedTag)

@@ -18,7 +18,7 @@ type InputProps struct {
 	Required    bool
 	Readonly    bool
 	Invalid     bool
-	Mono        bool // true なら JetBrains Mono（トークンなど、文字の判読が要る識別子）
+	Mono        bool // true なら JetBrains Mono（トークンなど、文字の判読が要る識別子）。Type が number の入力欄（ポート・秒数など桁を揃える値）は常に Mono
 	Attrs       Attrs
 }
 
@@ -74,7 +74,7 @@ func Input(p InputProps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{inputClass(p.Invalid, p.Mono)}
+		var templ_7745c5c3_Var2 = []any{inputClass(p.Invalid, p.Mono || p.Type == "number")}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
