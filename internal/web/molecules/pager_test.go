@@ -22,7 +22,7 @@ func TestPagerDisablesTheEdgeSide(t *testing.T) {
 	first := base
 	first.Page, first.NextURL = 1, "/x?page=2"
 	out := render(first)
-	for _, want := range []string{`aria-label="ページ送り"`, "1 ページ目", `disabled data-pager-prev>前へ</button>`, `hx-get="/x?page=2"`, `data-pager-next>次へ</a>`, `hx-target="#list"`} {
+	for _, want := range []string{`aria-label="ページ送り"`, `<span class="font-mono">1</span> ページ目`, `disabled data-pager-prev>前へ</button>`, `hx-get="/x?page=2"`, `data-pager-next>次へ</a>`, `hx-target="#list"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("first page lacks %q:\n%s", want, out)
 		}
@@ -31,7 +31,7 @@ func TestPagerDisablesTheEdgeSide(t *testing.T) {
 	last := base
 	last.Page, last.PrevURL = 3, "/x?page=2"
 	out = render(last)
-	for _, want := range []string{"3 ページ目", `data-pager-prev>前へ</a>`, `disabled data-pager-next>次へ</button>`} {
+	for _, want := range []string{`<span class="font-mono">3</span> ページ目`, `data-pager-prev>前へ</a>`, `disabled data-pager-next>次へ</button>`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("last page lacks %q:\n%s", want, out)
 		}

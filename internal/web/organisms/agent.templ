@@ -38,7 +38,7 @@ templ APIKeyPanel(p view.APIKeyPanel) {
 				}
 			</div>
 			<p class="text-sm text-ink" data-notice="key-storage">
-				キーは Windows の資格情報マネージャー（{ p.Target }）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。
+				キーは Windows の資格情報マネージャー（<code>{ p.Target }</code>）にだけ保存します。登録後は、この画面にも、ログ・監査ログにも表示しません（もう一度見ることはできません）。
 			</p>
 			<div class="flex flex-wrap items-center gap-2">
 				@atoms.Button(atoms.ButtonProps{Label: keyButtonLabel(p.Registered), Variant: atoms.ButtonPrimary, Type: "submit", Attrs: keyEditAttrs(p)})

@@ -295,7 +295,7 @@ func TestConnectionRequestHistoryRowsAndPager(t *testing.T) {
 	has(t, out, `id="request-history"`, "届いた日時", "処理した日時", `data-history-request="r1" data-result="approved"`, "許可", "拒否", "未処理",
 		"100.64.0.9", "bob@example.com", "2026-11-01 10:05",
 		`hx-get="/requests/history?page=1"`, `hx-get="/requests/history?page=3"`, `hx-target="#request-history"`, `hx-push-url="true"`,
-		"data-pager-prev", "data-pager-next", "2 ページ目")
+		"data-pager-prev", "data-pager-next", ">2</span> ページ目")
 	hasNot(t, out, "<button", "hx-post", "name=\"rev_requests\"")
 	webtest.AssertCSPCompliantHTML(t, out)
 
@@ -542,7 +542,7 @@ func TestAppLogRendersLevelsAttrsFiltersAndPager(t *testing.T) {
 	has(t, out, `id="app-log"`, `data-log-filter="warn"`, ">日時<", ">レベル<", ">内容<",
 		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`, ">tool<", ">screenshot<", `<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-2 text-sm text-ink">`,
 		`data-log-filter-link="error"`, `hx-get="/logs?level=error"`, `aria-current="true"`,
-		"data-pager-prev", "data-pager-next", "2 ページ目", `hx-target="#app-log"`)
+		"data-pager-prev", "data-pager-next", ">2</span> ページ目", `hx-target="#app-log"`)
 	has(t, out, "auth failed &lt;b&gt;")
 	hasNot(t, out, "auth failed <b>", "<form", "hx-post")
 	webtest.AssertCSPCompliantHTML(t, out)
@@ -986,6 +986,11 @@ func TestSentenceValuesAreMono(t *testing.T) {
 			[]string{`data-task-field="step-count">` + mono("3") + "（高速パス " + mono("1") + " ・ OpenAI " + mono("2") + "）"}},
 		{"初回のみ承認の承認済み", webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", FirstTimeApprovedAt: "2026-11-01 09:08"})),
 			[]string{"承認済み（" + mono("2026-11-01 09:08") + "）"}},
+		// 識別子（ターゲット名・ショートカット）は <code>（#217。docs §8.4。`TestSentenceEmbeddedValuesAreWrapped` が templ 全体を走査する）。
+		{"資格情報のターゲット名", webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "k", Provider: "OpenAI", Target: "puppet-remo/openai:puppet-remo"})),
+			[]string{"資格情報マネージャー（<code>puppet-remo/openai:puppet-remo</code>）にだけ"}},
+		{"ショートカット送信", webtest.Render(t, organisms.KeysSent("alt+tab")),
+			[]string{"<code>alt+tab</code> を送信しました"}},
 		{"初回のみ承認の未承認", webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1", FirstTimeStatus: "未承認（次のリース取得で承認が必要です）"})),
 			[]string{"未承認（次のリース取得で承認が必要です）"}},
 	}
