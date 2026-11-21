@@ -79,7 +79,7 @@ func TestIssueTokenExpiry(t *testing.T) {
 			if len(r.f.Admin.Issued) != 1 || !tt.wantTTL(r.f.Admin.Issued[0].TTL) {
 				t.Fatalf("issued = %+v", r.f.Admin.Issued)
 			}
-			contains(t, res, "（有効期限: "+tt.expires+"）")
+			contains(t, res, `（有効期限: <span class="font-mono">`+tt.expires+`</span>）`)
 		})
 	}
 }

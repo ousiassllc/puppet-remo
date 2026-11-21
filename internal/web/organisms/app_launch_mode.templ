@@ -92,7 +92,7 @@ templ DeniedSection(v view.DeniedSection) {
 					if !v.Active {
 						<p class="text-xs text-mute" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>
 					}
-					<p class="mt-2 text-xs text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
+					<p class="mt-2 text-xs text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 <span class="font-mono">{ strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) }</span> 件</p>
 				</div>
 				if len(v.Rows) == 0 {
 					@molecules.EmptyState("denied") {

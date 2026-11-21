@@ -17,7 +17,7 @@ func TestRequestsPage(t *testing.T) {
 	})
 	res := r.get("/requests")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "bob-laptop", "carol-phone", "bob@example.com", "100.64.0.9", "3 回の要求",
+	contains(t, res, "<html", "bob-laptop", "carol-phone", "bob@example.com", "100.64.0.9", `<span class="font-mono">3</span> 回の要求`,
 		`hx-post="/requests/req-1/approve"`, `hx-post="/requests/req-1/deny"`, `hx-post="/requests/req-2/approve"`,
 		`name="rev_requests"`,
 		// サイドバーの件数バッジ。

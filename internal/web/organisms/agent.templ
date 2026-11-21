@@ -118,7 +118,7 @@ templ AgentForm(f view.AgentForm) {
 			</label>
 			<p class="mt-4">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
 			if f.ConsentAt != "" {
-				<p class="text-xs text-mute" data-consent-at="openai">同意済み: { f.ConsentAt }</p>
+				<p class="text-xs text-mute" data-consent-at="openai">同意済み: <span class="font-mono">{ f.ConsentAt }</span></p>
 			}
 			if f.Errors.Consent != "" {
 				@molecules.FieldError("agent-consent", f.Errors.Consent)
@@ -180,7 +180,7 @@ templ FastpathForm(f view.FastpathForm) {
 			</label>
 			<p class="mt-4">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>
 			if f.ConsentAt != "" {
-				<p class="text-xs text-mute" data-consent-at="typesafe">同意済み: { f.ConsentAt }</p>
+				<p class="text-xs text-mute" data-consent-at="typesafe">同意済み: <span class="font-mono">{ f.ConsentAt }</span></p>
 			}
 			if f.Errors.Consent != "" {
 				@molecules.FieldError("fastpath-consent", f.Errors.Consent)

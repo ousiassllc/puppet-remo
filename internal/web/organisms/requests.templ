@@ -42,10 +42,10 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 			<article class="rounded-lg border border-border bg-surface p-4" data-request={ r.ID }>
 				<div class="flex flex-wrap items-baseline justify-between gap-2">
 					<h3 class="text-base font-semibold text-ink">{ r.DisplayName }</h3>
-					<span class="text-xs text-mute">{ strconv.Itoa(r.Count) } 回の要求 ・ 初回 { r.FirstSeen } ・ 最終 { r.LastSeen }</span>
+					<span class="text-xs text-mute"><span class="font-mono">{ strconv.Itoa(r.Count) }</span> 回の要求 ・ 初回 <span class="font-mono">{ r.FirstSeen }</span> ・ 最終 <span class="font-mono">{ r.LastSeen }</span></span>
 				</div>
 				<p class="mt-2 text-xs text-mute">
-					ユーザー { r.LoginName } ・ 接続元 <code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">{ r.RemoteIP }</code> ・ { r.ExpiresAt } まで有効
+					ユーザー { r.LoginName } ・ 接続元 <code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">{ r.RemoteIP }</code> ・ <span class="font-mono">{ r.ExpiresAt }</span> まで有効
 				</p>
 				<form
 					class="mt-3 grid gap-4 sm:grid-cols-2"

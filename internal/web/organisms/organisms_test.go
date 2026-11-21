@@ -387,7 +387,7 @@ func TestAppFormCorruptNotice(t *testing.T) {
 }
 
 func TestSidebarHasTheAppsEntry(t *testing.T) {
-	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}, false))
+	out := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavApps}))
 	has(t, out, `href="/apps"`, "起動許可アプリ")
 	if strings.Count(out, `aria-current="page"`) != 1 || !strings.Contains(out[strings.Index(out, `href="/apps"`):], `aria-current="page"`) {
 		t.Errorf("the apps entry must be the current page:\n%s", out)
@@ -628,11 +628,26 @@ func TestToastAndAlertRoots(t *testing.T) {
 
 // サイドナビ: 幅 240（md 未満のドロワーは約 78%）・項目高さ 40・間隔 8・現在の項目は --accent-soft + --ink。ヘッダーは高さ 56。
 func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
-	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}, false))
+	nav := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}))
 	has(t, nav, "w-[78%]", "md:w-60", "space-y-2", "h-10", "bg-accent-soft text-ink", `aria-current="page"`, "text-mute")
 	hasNot(t, nav, "bg-slate", "md:w-56")
 	header := webtest.Render(t, organisms.Header(view.Header{}))
 	has(t, header, "h-14", "border-b", "border-border")
+}
+
+// ドロワーの枠（#sidebar-nav）は遷移の応答で差し替えない（退出のフェードが切れる。M5・#202）。差し替えるのはリンク群（#sidebar-nav-links）だけで、
+// 現在のページの強調（aria-current）と接続要求のバッジは、その中にある。
+func TestSidebarLinksAreSwappedWithoutTheDrawerFrame(t *testing.T) {
+	frame := webtest.Render(t, organisms.Sidebar(view.Chrome{Active: view.NavClients}))
+	has(t, frame, `<nav id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`, `id="sidebar-nav-links"`, `aria-current="page"`, `id="nav-requests-badge"`)
+	hasNot(t, frame, "hx-swap-oob")
+
+	links := webtest.Render(t, organisms.SidebarLinks(view.Chrome{Active: view.NavLogs}, true))
+	has(t, links, `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `href="/logs"`, `id="nav-requests-badge"`)
+	hasNot(t, links, "<nav", `id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`)
+	if strings.Count(links, `aria-current="page"`) != 1 || !strings.Contains(links[strings.Index(links, `href="/logs"`):], `aria-current="page"`) {
+		t.Errorf("the logs entry must be the current page:\n%s", links)
+	}
 }
 
 // モバイルナビ（P0）: ヘッダーのハンバーガーはドロワーを開閉し（aria-expanded・aria-controls）、md 以上では出さない。
@@ -891,5 +906,40 @@ func TestScrollRegionsAreFocusableAndNamed(t *testing.T) {
 				t.Errorf("スクロールする要素に付いていない: %s", tag)
 			}
 		})
+	}
+}
+
+// T5: 文中に埋めた日時・経過時間・件数は、値だけ <span class="font-mono">（周りの「から」「まで有効」などは Regular）。
+// 同じ種類の値が画面ごとに Mono と Regular に分かれない（表・詳細の値は既に Mono。tasks.templ の経過と同じ書き方）。
+func TestSentenceValuesAreMono(t *testing.T) {
+	mono := func(v string) string { return `<span class="font-mono">` + v + `</span>` }
+	tests := []struct {
+		name string
+		out  string
+		want []string
+	}{
+		{"セッション", webtest.Render(t, organisms.SessionListBody(view.Sessions{Items: []view.Session{{ClientLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:00"}}})),
+			[]string{mono("2026-11-01 09:00") + " から"}},
+		{"承認待ちの操作権", webtest.Render(t, organisms.LeaseDisplay(view.Lease{Pending: true, HolderLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:01"})),
+			[]string{mono("2026-11-01 09:01") + " から ・ ホストの承認を待っています"}},
+		{"保持中の操作権", webtest.Render(t, organisms.LeaseDisplay(view.Lease{Held: true, HolderLabel: "c", KindLabel: "MCP", Since: "2026-11-01 09:02", IdleRemaining: "5分"})),
+			[]string{mono("2026-11-01 09:02") + " から ・ アイドル解放まで " + mono("5分")}},
+		{"キルスイッチ", webtest.Render(t, organisms.KillSwitchPanel(view.KillSwitch{Active: true, Since: "2026-11-01 09:03", Source: "gui"})),
+			[]string{mono("2026-11-01 09:03") + " に発動（gui）"}},
+		{"接続要求", webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", DisplayName: "bob", Count: 3, FirstSeen: "2026-11-01 09:04", LastSeen: "2026-11-01 09:05", ExpiresAt: "2026-11-02 09:04"}}})),
+			[]string{mono("3") + " 回の要求 ・ 初回 " + mono("2026-11-01 09:04") + " ・ 最終 " + mono("2026-11-01 09:05"), mono("2026-11-02 09:04") + " まで有効"}},
+		{"更新の公開日", webtest.Render(t, organisms.UpdatePanel(view.UpdatePanel{Updatable: true, Latest: &view.UpdateLatest{Version: "1.2.3", PublishedAt: "2026-11-01"}})),
+			[]string{mono("2026-11-01") + " 公開"}},
+		{"エージェントの同意", webtest.Render(t, organisms.AgentForm(view.AgentForm{ConsentAt: "2026-11-01 09:06"})),
+			[]string{"同意済み: " + mono("2026-11-01 09:06")}},
+		{"高速パスの同意", webtest.Render(t, organisms.FastpathForm(view.FastpathForm{ConsentAt: "2026-11-01 09:07"})),
+			[]string{"同意済み: " + mono("2026-11-01 09:07")}},
+		{"アプリの登録数", webtest.Render(t, organisms.AppList(view.AppList{Count: 2, Max: 50})),
+			[]string{"登録 " + mono("2 / 50") + " 件"}},
+		{"拒否リストの登録数", webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Count: 1, Max: 200})),
+			[]string{"登録 " + mono("1 / 200") + " 件"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { has(t, tt.out, tt.want...) })
 	}
 }
