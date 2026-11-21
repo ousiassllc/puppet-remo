@@ -183,13 +183,21 @@ export class RemoScreenViewer extends LitElement {
     .banner button {
       position: relative;
       overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      white-space: nowrap;
       border: 1px solid var(--border);
       border-radius: var(--r-md);
       background: transparent;
       color: var(--ink);
-      padding: 0.25rem 0.75rem;
+      /* atoms.Button（Secondary・Small）と同じ: SemiBold・高さ 32（h-8）・横 12（px-3）・14px。 */
+      height: 2rem;
+      padding: 0 0.75rem;
       font: inherit;
       font-size: 0.875rem;
+      font-weight: 600;
       cursor: pointer;
     }
     /* ボタンの押下のリップル（M4）: app.css の .ripple と同じ（クリック点から円が広がって消える）。span.ripple は app.ts の pointerdown が
@@ -222,7 +230,7 @@ export class RemoScreenViewer extends LitElement {
     }
     .sourcebar button:focus-visible,
     .banner button:focus-visible {
-      outline: 2px solid var(--focus);
+      outline: 3px solid var(--focus);
       outline-offset: 2px;
     }
     .banner {

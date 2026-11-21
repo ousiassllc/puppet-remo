@@ -695,6 +695,20 @@ describe("<remo-screen-viewer>", () => {
     });
 
     // M4: ビューア内のボタンは data-ripple を持つ（押下でリップルを足すのは app.ts の pointerdown。Shadow DOM の中のボタンの確認は app.test.ts）。
+    // O7: ビューア内のボタンは atoms.Button（Secondary・Small）と同じ SemiBold・高さ 32。
+    it("ビューア内のボタンは SemiBold・高さ 32", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      const buttons = h.viewer.shadowRoot?.querySelectorAll("button") ?? [];
+      expect(buttons.length).to.be.greaterThan(0);
+      for (const button of buttons) {
+        const style = getComputedStyle(button);
+        expect(style.fontWeight).to.equal("600");
+        expect(button.getBoundingClientRect().height).to.equal(32);
+      }
+    });
+
     it("ビューア内のボタンは data-ripple を持つ", async () => {
       const h = await connect({ lease: heldByMe });
       await showGroup(h, 64, 48, { x: 100, y: 100 });
