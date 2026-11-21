@@ -244,6 +244,8 @@ func TestModalConfirmButtonFollowsDestructive(t *testing.T) {
 func TestInputMonoIsOptIn(t *testing.T) {
 	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")
 	hasNot(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"})), "font-mono")
+	// 桁を揃える数値の入力欄（ポート・上限・秒数など。Type が number）は、Mono を渡さなくても font-mono。
+	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Type: "number"})), "font-mono", `type="number"`)
 }
 
 // #169: ツールチップは、フォーカスできる出す側（tabindex="0"）から、aria-describedby で role="tooltip" の本文につなぐ（ホバーのほかキーボードでも出る）。

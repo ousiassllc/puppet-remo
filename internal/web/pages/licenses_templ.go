@@ -53,7 +53,7 @@ func licensesBody(v view.Licenses) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<pre class=\"whitespace-pre-wrap break-words font-mono text-xs text-ink\" data-licenses-text>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<pre class=\"whitespace-pre-wrap break-words font-mono text-sm text-ink\" data-licenses-text>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

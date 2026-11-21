@@ -25,6 +25,10 @@ func TestLicensesPageShowsFullNotices(t *testing.T) {
 	if !strings.Contains(res.Body, `aria-current="page"`) {
 		t.Error("the settings item in the sidebar must be current")
 	}
+	// T3: 全文は長文の本文なので sm 14px 以上の Mono（xs 12px は注記・バッジ用）。
+	if !strings.Contains(res.Body, `font-mono text-sm text-ink" data-licenses-text`) || strings.Contains(res.Body, `font-mono text-xs text-ink" data-licenses-text`) {
+		t.Error("the licenses text must be font-mono text-sm, not text-xs")
+	}
 }
 
 func TestLicensesPageBoostedIsFragment(t *testing.T) {
