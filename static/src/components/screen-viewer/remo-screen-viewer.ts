@@ -94,28 +94,36 @@ export function targetBanner(target: TargetState | null): TargetBanner | null {
   return null;
 }
 
-// 接続状態のオーバーレイの先頭に置く印（C4: 状態は色だけにせず、アイコンと文言で伝える）。
-// 接続中・再接続中はスピナー（app.css の .spinner と同じ 20px・2px）、失敗・キルスイッチは Iconoir の SVG（atoms/icon.templ と同じ path）。
-// Shadow DOM にはページの CSS が届かないので、色は css の var(--danger) などで当てる。
+// 状態の印（C4: 状態は色だけにせず、アイコンと文言で伝える）。Iconoir の SVG（atoms/icon.templ と同じ path）を、接続状態のオーバーレイと
+// 対象バナーの両方で使う（ここ 1 か所に持つ）。Shadow DOM にはページの CSS が届かないので、色は css の var(--danger) などで当てる。
+const xmarkCircleIcon = () => html`<svg class="icon tone-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  <path d="M9.17218 14.8284L12.0006 12M14.829 9.17157L12.0006 12M12.0006 12L9.17218 9.17157M12.0006 12L14.829 14.8284"></path>
+  <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"></path>
+</svg>`;
+const warningTriangleIcon = () => html`<svg class="icon tone-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  <path d="M20.0429 21H3.95705C2.41902 21 1.45658 19.3364 2.22324 18.0031L10.2662 4.01533C11.0352 2.67792 12.9648 2.67791 13.7338 4.01532L21.7768 18.0031C22.5434 19.3364 21.581 21 20.0429 21Z"></path>
+  <path d="M12 9V13"></path>
+  <path d="M12 17.01L12.01 16.9989"></path>
+</svg>`;
+
+// 接続状態のオーバーレイの先頭に置く印。接続中・再接続中はスピナー（app.css の .spinner と同じ 20px・2px）、失敗・キルスイッチはアイコン。
 function overlayIcon(status: ViewerStatus): TemplateResult | typeof nothing {
   switch (status) {
     case "connecting":
     case "reconnecting":
       return html`<span class="spinner" aria-hidden="true"></span>`;
     case "failed":
-      return html`<svg class="icon tone-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        <path d="M9.17218 14.8284L12.0006 12M14.829 9.17157L12.0006 12M12.0006 12L9.17218 9.17157M12.0006 12L14.829 14.8284"></path>
-        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"></path>
-      </svg>`;
+      return xmarkCircleIcon();
     case "killswitch":
-      return html`<svg class="icon tone-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        <path d="M20.0429 21H3.95705C2.41902 21 1.45658 19.3364 2.22324 18.0031L10.2662 4.01533C11.0352 2.67792 12.9648 2.67791 13.7338 4.01532L21.7768 18.0031C22.5434 19.3364 21.581 21 20.0429 21Z"></path>
-        <path d="M12 9V13"></path>
-        <path d="M12 17.01L12.01 16.9989"></path>
-      </svg>`;
+      return warningTriangleIcon();
     case "open":
       return nothing;
   }
+}
+
+// 対象バナーの先頭に置く印: 停止（halted）は danger の xmark-circle、通知（notice）は warning の warning-triangle。
+function bannerIcon(tone: TargetBanner["tone"]): TemplateResult {
+  return tone === "halted" ? xmarkCircleIcon() : warningTriangleIcon();
 }
 
 export class RemoScreenViewer extends LitElement {
@@ -270,8 +278,16 @@ export class RemoScreenViewer extends LitElement {
         transform: translateY(var(--motion-shift));
       }
     }
-    .banner .text {
+    /* アイコンと文言は 1 かたまりで折り返す（狭い幅でアイコンだけが前の行に残らないように）。 */
+    .banner .message {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
       flex: 1 1 18rem;
+    }
+    .banner .text {
+      flex: 1 1 auto;
+      min-width: 0;
     }
     /* 出現はフェードイン、退出はフェードアウト（M5）。トークンは :root のカスタムプロパティで、Shadow DOM にも継承される
        （reduced-motion では 100ms になる）。退出は status が open に戻ったとき、data-leaving を付けて終わるまで残す。 */
@@ -520,11 +536,11 @@ export class RemoScreenViewer extends LitElement {
   // 退出中のバナー（leavingBanner）は見た目だけを残す（操作できない・読み上げない）。
   private renderBanner(banner: TargetBanner, leaving: boolean) {
     if (leaving) {
-      return html`<div class="banner ${banner.tone}" data-leaving aria-hidden="true"><span class="text">${banner.text}</span></div>`;
+      return html`<div class="banner ${banner.tone}" data-leaving aria-hidden="true"><span class="message">${bannerIcon(banner.tone)}<span class="text">${banner.text}</span></span></div>`;
     }
     return html`
       <div class="banner ${banner.tone}" role=${banner.tone === "halted" ? "alert" : "status"} data-target-banner data-target-tone=${banner.tone}>
-        <span class="text">${banner.text}</span>
+        <span class="message">${bannerIcon(banner.tone)}<span class="text">${banner.text}</span></span>
         ${banner.tone === "halted"
           ? html`
               ${banner.resumable

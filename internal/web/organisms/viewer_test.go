@@ -117,3 +117,12 @@ func TestWindowPickerIsACard(t *testing.T) {
 		}
 	}
 }
+
+// C6: 一覧が空のときの案内は、この領域の唯一の内容（空状態の主メッセージ）なので --ink。--mute は補助テキスト・キャプションだけ（molecules.EmptyState の文言と同じ）。
+func TestWindowPickerEmptyMessageIsInk(t *testing.T) {
+	out := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{CanSelect: true}))
+	const want = `<p class="text-sm text-ink" data-window-empty>選べるウィンドウがありません。</p>`
+	if !strings.Contains(out, want) {
+		t.Errorf("window picker's empty message must be text-ink (%q):\n%s", want, out)
+	}
+}

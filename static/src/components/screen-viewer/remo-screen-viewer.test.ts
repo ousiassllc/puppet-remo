@@ -713,6 +713,24 @@ describe("<remo-screen-viewer>", () => {
       });
     }
 
+    // C4: 状態は色だけにせず、アイコンと文言で伝える。停止（halted）は danger の xmark-circle、通知（notice）は warning の warning-triangle（接続オーバーレイと同じ Iconoir の SVG）。
+    for (const [label, message, tone] of [
+      ["停止（halted）", halted("related_cross_process"), "tone-danger"],
+      ["通知（notice）", { ...active, notices: ["capture_partial"], excluded: [{ window_id: "1002", process: "fakenotepad.exe", reason: "related_unverifiable" }] }, "tone-warning"],
+    ] as const) {
+      it(`${label}のバナーは、文言の前に ${tone} のアイコンを出す（読み上げない）`, async () => {
+        const h = await connect({ lease: heldByMe });
+        h.socket.receiveJson(message);
+        await h.viewer.updateComplete;
+        const b = banner(h.viewer) as HTMLElement;
+        const icon = b.querySelector<SVGElement>("svg.icon");
+        expect(icon?.classList.contains(tone)).to.equal(true);
+        expect(icon?.getAttribute("aria-hidden")).to.equal("true");
+        expect(icon?.nextElementSibling?.classList.contains("text"), "アイコンは文言の直前").to.equal(true);
+        expect(getComputedStyle(icon as SVGElement).width).to.equal("20px");
+      });
+    }
+
     // M4: ビューア内のボタンは data-ripple を持つ（押下でリップルを足すのは app.ts の pointerdown。Shadow DOM の中のボタンの確認は app.test.ts）。
     // O7: ビューア内のボタンは atoms.Button（Secondary・Small）と同じ SemiBold・高さ 32。
     it("ビューア内のボタンは SemiBold・高さ 32", async () => {
