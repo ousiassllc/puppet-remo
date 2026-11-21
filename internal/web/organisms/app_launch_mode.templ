@@ -136,7 +136,7 @@ templ DeniedSection(v view.DeniedSection) {
 			@molecules.Card("拒否リストに追加") {
 				<div class="space-y-4">
 					@deniedValueField("denied-form-new", v.AddValue, v.AddError)
-					<div class="flex items-center gap-3">
+					<div class="flex items-center gap-2">
 						@atoms.Button(atoms.ButtonProps{Label: "追加", Variant: atoms.ButtonPrimary, Type: "submit"})
 					</div>
 				</div>
@@ -149,12 +149,12 @@ templ deniedEditForm(row view.DeniedRow, cancelURL string) {
 	<form
 		id={ "denied-form-" + row.ID }
 		novalidate
-		class="space-y-3"
+		class="space-y-4"
 		data-denied-form="edit"
 		{ deniedFormAttrs(true, row.ActionURL)... }
 	>
 		@deniedValueField("denied-form-"+row.ID, row.EditValue, row.EditError)
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-2">
 			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Type: "submit"})
 			@atoms.Button(atoms.ButtonProps{Label: "キャンセル", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
 				"hx-get": cancelURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",

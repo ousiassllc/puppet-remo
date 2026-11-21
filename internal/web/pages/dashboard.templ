@@ -12,12 +12,14 @@ const dashboardTitle = "ダッシュボード"
 templ dashboardBody(v view.Dashboard) {
 	<div class="space-y-6">
 		<h1 class="text-3xl font-semibold text-ink">ダッシュボード</h1>
-		@organisms.RunningTasksPanel(v.Tasks)
-		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-			@organisms.ServerStatusPanel(v.Status)
-			@organisms.KillSwitchPanel(v.KillSwitch)
-			@organisms.LeasePanel(v.Lease)
-			@organisms.SessionList(v.Sessions)
+		<div class="flex flex-col gap-12" data-dashboard-sections>
+			@organisms.RunningTasksPanel(v.Tasks)
+			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+				@organisms.ServerStatusPanel(v.Status)
+				@organisms.KillSwitchPanel(v.KillSwitch)
+				@organisms.LeasePanel(v.Lease)
+				@organisms.SessionList(v.Sessions)
+			</div>
 		</div>
 		<div class="flex flex-wrap gap-2 text-sm">
 			<a href="/requests" class="inline-flex items-center gap-2 link" hx-boost="true" hx-target="#main" hx-target-error="#main" hx-swap="innerHTML">

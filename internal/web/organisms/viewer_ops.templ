@@ -11,15 +11,16 @@ import (
 
 // ViewerOps は操作権を持つ間だけ出す、クリップボードとショートカット送信（FR-W06・W07）。
 // 持っていないときは中身を描画しない（状態駆動）。#viewer-ops はリースパネルの応答に OOB で添えて更新する。
+// クリップボード・ショートカットは題付きの Card（セクション）なので 48（--gap-section-sm。space-y-12）。空のときは empty:hidden で、ViewerRoot の gap に枠の分が入らないようにする。
 templ ViewerOps(v view.ViewerOps) {
-	<div id="viewer-ops" class="space-y-4">
+	<div id="viewer-ops" class="space-y-12 empty:hidden">
 		@viewerOpsBody(v)
 	</div>
 }
 
 // ViewerOpsOOB はリースパネルの応答に添えて、#viewer-ops を差し替える（OOB）。
 templ ViewerOpsOOB(v view.ViewerOps) {
-	<div id="viewer-ops" class="space-y-4" hx-swap-oob="true">
+	<div id="viewer-ops" class="space-y-12 empty:hidden" hx-swap-oob="true">
 		@viewerOpsBody(v)
 	</div>
 }

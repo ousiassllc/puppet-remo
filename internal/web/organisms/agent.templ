@@ -14,7 +14,7 @@ import (
 templ APIKeyPanel(p view.APIKeyPanel) {
 	<div id={ p.ID } class="space-y-4" data-api-key={ p.Provider } data-key-state={ keyState(p.Registered) } data-secret>
 		if p.Registered {
-			<div class="flex flex-wrap items-center gap-3" data-secret-saved hidden?={ keyEditing(p) }>
+			<div class="flex flex-wrap items-center gap-2" data-secret-saved hidden?={ keyEditing(p) }>
 				<span class="text-sm text-ink">{ p.Provider } API キー</span>
 				@atoms.Badge(atoms.BadgeSoft, "登録済み")
 				@atoms.Button(atoms.ButtonProps{Label: "変更", Variant: atoms.ButtonSecondary, Small: true, Attrs: atoms.Attrs{
