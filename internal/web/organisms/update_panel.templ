@@ -22,13 +22,11 @@ templ UpdatePanel(v view.UpdatePanel) {
 					<dt class="text-mute">適用方法</dt>
 					<dd class="mb-1 sm:mb-0" data-field="apply-mode">{ v.ApplyModeLabel }</dd>
 					<dt class="text-mute">最後の確認</dt>
-					<dd class="font-mono" data-field="last-checked">
-						if v.LastChecked == "" {
-							<span class="text-mute">未確認</span>
-						} else {
-							{ v.LastChecked }
-						}
-					</dd>
+					if v.LastChecked == "" {
+						<dd class="text-mute" data-field="last-checked">未確認</dd>
+					} else {
+						<dd class="font-mono" data-field="last-checked">{ v.LastChecked }</dd>
+					}
 				</dl>
 				if !v.Updatable {
 					@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-update": "not-updatable"}) {
