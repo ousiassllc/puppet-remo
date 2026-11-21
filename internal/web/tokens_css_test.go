@@ -31,6 +31,7 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		"--gap-h1", "--gap-h2", "--gap-h3", "--gap-heading-body", "--gap-para",
 		"--pad-card", "--pad-card-sm", "--gap-card-section", "--gap-inline",
 		"--gap-section", "--gap-section-sm",
+		"--bp-sm", "--bp-md", "--bp-lg", "--bp-xl",
 		"--tip-pad-y", "--tip-pad-x", "--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
 		"--toast-h", "--icon-sm", "--icon-md", "--icon-lg", "--icon-xl",
 		"--table-pad-y", "--table-pad-x", "--table-pad-y-compact", "--table-pad-x-compact",
@@ -166,6 +167,21 @@ func TestSpinnerDurationIsOneToken(t *testing.T) {
 	}
 	if strings.Contains(css, "0.8s linear") {
 		t.Error("app.css must not hard-code a spinner duration")
+	}
+}
+
+// M3: スピナーなど処理中表示は reduced-motion でも維持する（ガイド Feedback 節・check-criteria M3）。
+// app.css の .spinner と Lit のビューアの .spinner は、prefers-reduced-motion: reduce で回転を止めない。
+func TestSpinnerKeepsSpinningUnderReducedMotion(t *testing.T) {
+	stopped := regexp.MustCompile(`prefers-reduced-motion:\s*reduce\)\s*\{\s*\.spinner\s*\{[^}]*animation:\s*none`)
+	viewer, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "components", "screen-viewer", "remo-screen-viewer.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range map[string]string{"app.css": readAppCSS(t), "remo-screen-viewer.ts": string(viewer)} {
+		if stopped.MatchString(src) {
+			t.Errorf("%s must not stop the .spinner rotation under prefers-reduced-motion", name)
+		}
 	}
 }
 
@@ -311,5 +327,25 @@ func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
 	}
 	if !strings.Contains(hover, "400ms") || strings.Contains(focus, "400ms") {
 		t.Errorf("the 400ms show delay applies to hover only (focus is immediate):\nhover: %s\nfocus: %s", hover, focus)
+	}
+}
+
+// S5: ブレークポイントは --bp-*（640/768/1024/1280）で、Tailwind の @theme の --breakpoint-*、app.ts の matchMedia と同じ値。
+// Tailwind の既定に暗黙に頼らず、@media は var() を取れないので、同じ値を並べて書き、ここで一致を検査する。
+func TestBreakpointTokensMatchTheTailwindThemeAndAppTS(t *testing.T) {
+	css := readAppCSS(t)
+	for name, px := range map[string]string{"sm": "640", "md": "768", "lg": "1024", "xl": "1280"} {
+		for _, prefix := range []string{"--bp-", "--breakpoint-"} {
+			if !regexp.MustCompile(`(?m)^\s*` + prefix + name + `:\s*` + px + `px;`).MatchString(css) {
+				t.Errorf("app.css must define %s%s as %spx", prefix, name, px)
+			}
+		}
+	}
+	src, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "app", "app.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `matchMedia("(min-width: 768px)")`) {
+		t.Error("app.ts must use md (--bp-md = 768px) for the desktop width")
 	}
 }

@@ -176,8 +176,9 @@ func TestReadonlyBackgroundNeedsTheReadonlyAttribute(t *testing.T) {
 		has(t, out, "[&amp;[readonly]]:bg-bone", "bg-surface")
 		hasNot(t, out, "read-only:")
 	}
-	// 選択欄は標準の矢印を消す（app.css の select）ので、矢印の分の右 padding 36 を持つ。
-	has(t, sel, "pr-9")
+	// 選択欄は標準の矢印を消す（app.css の select）ので、矢印の分の右 padding を --s-8（32）で持つ（36 の pr-9 は --s-* に無い）。
+	has(t, sel, "pr-(--s-8)")
+	hasNot(t, sel, "pr-9")
 }
 
 // スライダー（P1）: 1 行入力欄の枠（高さ・border・背景・padding）を持たず、幅いっぱいに置く。

@@ -219,6 +219,16 @@ describe("ボタンの押下のリップル", () => {
     expect(button.querySelector(".ripple")).to.equal(null);
   });
 
+  it("Shadow DOM の中の data-ripple のボタンにも出す", async () => {
+    const host = await fixture<HTMLElement>(html`<div></div>`);
+    const root = host.attachShadow({ mode: "open" });
+    const button = document.createElement("button");
+    button.setAttribute("data-ripple", "");
+    root.append(button);
+    button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true, button: 0, clientX: 5, clientY: 6 }));
+    expect(button.querySelector(".ripple")).to.not.equal(null);
+  });
+
   it("無効のボタン・data-ripple の無い要素には出さない", async () => {
     const disabled = await fixture<HTMLButtonElement>(html`<button data-ripple disabled>無効</button>`);
     disabled.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));

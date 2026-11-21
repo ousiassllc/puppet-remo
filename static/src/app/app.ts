@@ -120,6 +120,7 @@ document.addEventListener("htmx:responseError", (event) => {
 const NAV_OPEN_ATTR = "data-nav-open";
 const NAV_BACKGROUND = "[data-nav-background]";
 const NAV_LIVE = "nav-live";
+// 768 は app.css の --bp-md（md）と同じ値（tokens_css_test.go が一致を検査する）。
 const desktopWidth = window.matchMedia("(min-width: 768px)");
 let navOpener: HTMLElement | null = null;
 
@@ -269,12 +270,14 @@ document.addEventListener("htmx:oobBeforeSwap", (event) => {
 });
 
 // 4. ボタン・クローズ（data-ripple）の押下のリップル: クリック点から円が広がって消える（app.css の .ripple。reduced-motion では出さない）。
+// <remo-screen-viewer> の Shadow DOM の中のボタンも同じ（document では event.target がホスト要素に付け替わるので、composedPath() の先頭で拾う。.ripple の規則は Lit 側の css が持つ）。
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 document.addEventListener("pointerdown", (event) => {
-  if (reducedMotion.matches || event.button !== 0 || !(event.target instanceof Element)) {
+  const origin = event.composedPath()[0];
+  if (reducedMotion.matches || event.button !== 0 || !(origin instanceof Element)) {
     return;
   }
-  const host = event.target.closest<HTMLElement>("[data-ripple]");
+  const host = origin.closest<HTMLElement>("[data-ripple]");
   if (!host || (host instanceof HTMLButtonElement && host.disabled)) {
     return;
   }

@@ -130,6 +130,7 @@ export class RemoScreenViewer extends LitElement {
     target: { state: true },
     source: { state: true },
     leaving: { state: true },
+    leavingBanner: { state: true },
   };
 
   static styles = css`
@@ -180,14 +181,48 @@ export class RemoScreenViewer extends LitElement {
     }
     .sourcebar button,
     .banner button {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      white-space: nowrap;
       border: 1px solid var(--border);
       border-radius: var(--r-md);
       background: transparent;
       color: var(--ink);
-      padding: 0.25rem 0.75rem;
+      /* atoms.Button（Secondary・Small）と同じ: SemiBold・高さ 32（h-8）・横 12（px-3）・14px。 */
+      height: 2rem;
+      padding: 0 0.75rem;
       font: inherit;
       font-size: 0.875rem;
+      font-weight: 600;
       cursor: pointer;
+    }
+    /* ボタンの押下のリップル（M4）: app.css の .ripple と同じ（クリック点から円が広がって消える）。span.ripple は app.ts の pointerdown が
+       composedPath() で Shadow DOM の中のボタン（data-ripple）を拾って足す。reduced-motion では足さない。 */
+    .ripple {
+      position: absolute;
+      left: var(--ripple-x);
+      top: var(--ripple-y);
+      width: var(--ripple-size);
+      height: var(--ripple-size);
+      margin: calc(var(--ripple-size) / -2) 0 0 calc(var(--ripple-size) / -2);
+      border-radius: var(--r-full);
+      background-color: currentColor;
+      pointer-events: none;
+      animation: overlay-ripple var(--motion-slow) var(--ease-out) forwards;
+    }
+    @keyframes overlay-ripple {
+      from {
+        opacity: 0.2;
+        transform: scale(0);
+      }
+      to {
+        opacity: 0;
+        transform: scale(1);
+      }
     }
     .sourcebar button:hover,
     .banner button:hover {
@@ -195,7 +230,7 @@ export class RemoScreenViewer extends LitElement {
     }
     .sourcebar button:focus-visible,
     .banner button:focus-visible {
-      outline: 2px solid var(--focus);
+      outline: 3px solid var(--focus);
       outline-offset: 2px;
     }
     .banner {
@@ -218,6 +253,20 @@ export class RemoScreenViewer extends LitElement {
     .banner.notice {
       border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
       background: color-mix(in srgb, var(--warning) 10%, transparent);
+    }
+    .banner.halted,
+    .banner.notice {
+      animation: banner-in var(--motion-fade-in) var(--ease-out) both;
+    }
+    .banner[data-leaving] {
+      animation: overlay-fade-out var(--motion-fade-out) var(--ease-in) both;
+      pointer-events: none;
+    }
+    @keyframes banner-in {
+      from {
+        opacity: 0;
+        transform: translateY(var(--motion-shift));
+      }
     }
     .banner .text {
       flex: 1 1 18rem;
@@ -264,7 +313,7 @@ export class RemoScreenViewer extends LitElement {
       color: var(--warning);
     }
     /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。
-       reduced-motion では回転を止める。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
+       処理中表示なので reduced-motion でも回転を維持する（M3）。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
     .spinner {
       width: 20px;
       height: 20px;
@@ -274,11 +323,6 @@ export class RemoScreenViewer extends LitElement {
       border-top-color: var(--accent);
       border-radius: var(--r-full);
       animation: overlay-spin var(--spinner-duration) linear infinite;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .spinner {
-        animation: none;
-      }
     }
     @media (forced-colors: active) {
       .spinner {
@@ -306,6 +350,8 @@ export class RemoScreenViewer extends LitElement {
   declare source: StreamSource;
   // status が open に戻ったあと、フェードアウトが終わるまで残すオーバーレイ（null なら残さない）。
   declare leaving: { status: ViewerStatus; text: string } | null;
+  // target のバナーが無くなったあと、フェードアウトが終わるまで残すバナー（null なら残さない）。
+  declare leavingBanner: TargetBanner | null;
 
   private ws: WsClient | null = null;
   private canvas: HTMLCanvasElement | null = null;
@@ -341,6 +387,7 @@ export class RemoScreenViewer extends LitElement {
     this.target = null;
     this.source = "monitor";
     this.leaving = null;
+    this.leavingBanner = null;
   }
 
   // 入力が有効: 最後に受信した lease が held かつ mine: true（pending_approval は承認待ちの本人でも readonly 扱い。
@@ -382,27 +429,36 @@ export class RemoScreenViewer extends LitElement {
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
-    if (!changed.has("status")) {
-      return;
+    if (changed.has("status")) {
+      const previous = changed.get("status");
+      if (this.status !== "open") {
+        this.leaving = null;
+      } else if (previous !== undefined && previous !== "open") {
+        this.leaving = { status: previous, text: overlayText(previous, this.closeCode) };
+      }
     }
-    const previous = changed.get("status");
-    if (this.status !== "open") {
-      this.leaving = null;
-    } else if (previous !== undefined && previous !== "open") {
-      this.leaving = { status: previous, text: overlayText(previous, this.closeCode) };
+    if (changed.has("target")) {
+      // バナーが無くなったとき（停止の解除・通知の解消）は、フェードアウトが終わるまで見た目だけ残す（M5）。
+      const previous = targetBanner(changed.get("target") ?? null);
+      this.leavingBanner = targetBanner(this.target) === null ? previous : null;
     }
   }
 
   protected updated(): void {
-    const leaving = this.leaving;
-    const overlay = this.renderRoot.querySelector(".overlay[data-leaving]");
-    if (!leaving || !overlay) {
+    this.removeAfterFadeOut(".overlay[data-leaving]", () => this.leaving, () => (this.leaving = null));
+    this.removeAfterFadeOut(".banner[data-leaving]", () => this.leavingBanner, () => (this.leavingBanner = null));
+  }
+
+  // フェードアウトが終わったら、残していた退出中の要素（current）を取り除く（アニメーションが無ければすぐ。そのあいだに別の値になっていたら何もしない）。
+  private removeAfterFadeOut(selector: string, current: () => object | null, clear: () => void): void {
+    const leaving = current();
+    const element = this.renderRoot.querySelector(selector);
+    if (!leaving || !element) {
       return;
     }
-    // フェードアウトが終わったら取り除く（アニメーションが無ければすぐ）。
-    void Promise.allSettled(overlay.getAnimations().map((a) => a.finished)).then(() => {
-      if (this.leaving === leaving) {
-        this.leaving = null;
+    void Promise.allSettled(element.getAnimations().map((a) => a.finished)).then(() => {
+      if (current() === leaving) {
+        clear();
       }
     });
   }
@@ -432,7 +488,7 @@ export class RemoScreenViewer extends LitElement {
       ${shown === null
         ? nothing
         : html`<div class="overlay" role="status" ?data-leaving=${text === ""}>${overlayIcon(shown.status)}<span>${shown.text}</span></div>`}
-      ${banner === null ? nothing : this.renderBanner(banner)}
+      ${banner !== null ? this.renderBanner(banner, false) : this.leavingBanner !== null ? this.renderBanner(this.leavingBanner, true) : nothing}
     `;
   }
 
@@ -445,8 +501,8 @@ export class RemoScreenViewer extends LitElement {
     return html`
       <div class="sourcebar" data-source-bar>
         ${this.source === "group"
-          ? html`<button type="button" data-source-monitor @click=${this.onShowMonitor}>モニター表示</button>`
-          : html`<button type="button" data-source-group @click=${this.onShowWindow}>ウィンドウ表示（選択中の対象に戻る）</button>`}
+          ? html`<button type="button" data-ripple data-source-monitor @click=${this.onShowMonitor}>モニター表示</button>`
+          : html`<button type="button" data-ripple data-source-group @click=${this.onShowWindow}>ウィンドウ表示（選択中の対象に戻る）</button>`}
       </div>
     `;
   }
@@ -459,14 +515,20 @@ export class RemoScreenViewer extends LitElement {
     this.sendInput({ type: "config", source: "group" });
   };
 
-  private renderBanner(banner: TargetBanner) {
+  // 退出中のバナー（leavingBanner）は見た目だけを残す（操作できない・読み上げない）。
+  private renderBanner(banner: TargetBanner, leaving: boolean) {
+    if (leaving) {
+      return html`<div class="banner ${banner.tone}" data-leaving aria-hidden="true"><span class="text">${banner.text}</span></div>`;
+    }
     return html`
       <div class="banner ${banner.tone}" role=${banner.tone === "halted" ? "alert" : "status"} data-target-banner data-target-tone=${banner.tone}>
         <span class="text">${banner.text}</span>
         ${banner.tone === "halted"
           ? html`
-              ${banner.resumable ? html`<button type="button" data-target-resume @click=${this.onResume}>再開</button>` : nothing}
-              <button type="button" data-target-reselect @click=${this.onReselect}>別のウィンドウを選ぶ</button>
+              ${banner.resumable
+                ? html`<button type="button" data-ripple data-target-resume @click=${this.onResume}>再開</button>`
+                : nothing}
+              <button type="button" data-ripple data-target-reselect @click=${this.onReselect}>別のウィンドウを選ぶ</button>
             `
           : nothing}
       </div>

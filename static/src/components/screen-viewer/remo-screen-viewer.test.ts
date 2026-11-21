@@ -679,6 +679,48 @@ describe("<remo-screen-viewer>", () => {
       expect(h.socket.sent).to.deep.equal([]);
     });
 
+    // M5: バナーはフェードインで出て、無くなるときはフェードアウトのあとに取り除く（退出中は操作・読み上げの対象にしない）。
+    it("バナーが無くなるときは data-leaving を付けて残し、フェードアウトのあとに取り除く", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      h.socket.receiveJson(active);
+      await h.viewer.updateComplete;
+      const leaving = h.viewer.shadowRoot?.querySelector(".banner[data-leaving]");
+      expect(leaving).to.not.equal(null);
+      expect(leaving?.getAttribute("aria-hidden")).to.equal("true");
+      expect(leaving?.querySelector("button")).to.equal(null);
+      expect(banner(h.viewer)).to.equal(null);
+      await until(() => h.viewer.shadowRoot?.querySelector(".banner") === null, "banner is faded out");
+    });
+
+    // M4: ビューア内のボタンは data-ripple を持つ（押下でリップルを足すのは app.ts の pointerdown。Shadow DOM の中のボタンの確認は app.test.ts）。
+    // O7: ビューア内のボタンは atoms.Button（Secondary・Small）と同じ SemiBold・高さ 32。
+    it("ビューア内のボタンは SemiBold・高さ 32", async () => {
+      const h = await connect({ lease: heldByMe });
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      const buttons = h.viewer.shadowRoot?.querySelectorAll("button") ?? [];
+      expect(buttons.length).to.be.greaterThan(0);
+      for (const button of buttons) {
+        const style = getComputedStyle(button);
+        expect(style.fontWeight).to.equal("600");
+        expect(button.getBoundingClientRect().height).to.equal(32);
+      }
+    });
+
+    it("ビューア内のボタンは data-ripple を持つ", async () => {
+      const h = await connect({ lease: heldByMe });
+      await showGroup(h, 64, 48, { x: 100, y: 100 });
+      h.socket.receiveJson(halted("related_cross_process"));
+      await h.viewer.updateComplete;
+      const buttons = h.viewer.shadowRoot?.querySelectorAll("button") ?? [];
+      expect(buttons.length).to.equal(3); // モニター表示・再開・別のウィンドウを選ぶ
+      for (const button of buttons) {
+        expect(button.hasAttribute("data-ripple")).to.equal(true);
+      }
+    });
+
     it("target が none（リースの解放）になるとバナーが消える。切断でも消える", async () => {
       const h = await connect({ lease: heldByMe });
       h.socket.receiveJson(halted("related_cross_process"));

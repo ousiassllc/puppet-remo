@@ -7,9 +7,9 @@ type SelectOption struct {
 	Selected bool
 }
 
-// Select は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding 36 は矢印の分。
+// Select は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding は --s-8（32）。矢印は右 --s-2（8）から --icon-sm（16）なので、文字との間に 8px あく。
 templ Select(id, name string, options []SelectOption) {
-	<select id={ id } name={ name } class={ fieldClass("h-10 pl-3 pr-9 ", false) }>
+	<select id={ id } name={ name } class={ fieldClass("h-10 pl-3 pr-(--s-8) ", false) }>
 		for _, o := range options {
 			<option value={ o.Value } selected?={ o.Selected }>{ o.Label }</option>
 		}
