@@ -71,7 +71,7 @@ templ auditThumbCell(has bool) {
 	if has {
 		@atoms.Badge(atoms.BadgeNeutral, "あり")
 	} else {
-		<span class="text-mute">-</span>
+		<span class="text-mute group-hover:text-mute-on-soft">-</span>
 	}
 }
 
@@ -104,7 +104,7 @@ templ AuditList(v view.AuditList) {
 					</thead>
 					<tbody class="divide-y divide-border">
 						for _, r := range v.Rows {
-							<tr class="hover:bg-accent-soft" data-audit-row={ r.DetailURL } data-result={ r.Result }>
+							<tr class="group hover:bg-accent-soft" data-audit-row={ r.DetailURL } data-result={ r.Result }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Time }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Client }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Kind }</td>

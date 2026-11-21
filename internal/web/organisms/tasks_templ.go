@@ -680,14 +680,14 @@ func taskStepArgs(args []view.AuditArg) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, a := range args {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div class=\"flex gap-1\"><dt class=\"text-mute\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<div class=\"flex gap-1\"><dt class=\"text-mute group-hover:text-mute-on-soft\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var34 string
 				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(a.Key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 144, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 144, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 				if templ_7745c5c3_Err != nil {
@@ -1021,14 +1021,14 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				for i, s := range v.Steps {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<tr class=\"hover:bg-accent-soft\" data-step-no=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<tr class=\"group hover:bg-accent-soft\" data-step-no=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var47 string
 					templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(s.No))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 213, Col: 74}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 213, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 					if templ_7745c5c3_Err != nil {
@@ -1041,7 +1041,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 					var templ_7745c5c3_Var48 string
 					templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(s.Route)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 213, Col: 97}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 213, Col: 103}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 					if templ_7745c5c3_Err != nil {
@@ -1054,7 +1054,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 					var templ_7745c5c3_Var49 string
 					templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(stepKind(s))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 213, Col: 128}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 213, Col: 134}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 					if templ_7745c5c3_Err != nil {
@@ -1087,7 +1087,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 								}()
 							}
 							ctx = templ.InitializeContext(ctx)
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<span class=\"text-mute\">-</span>")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<span class=\"text-mute group-hover:text-mute-on-soft\">-</span>")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -1142,14 +1142,14 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</span> <span class=\"ml-1 text-xs text-mute\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</span> <span class=\"ml-1 text-xs text-mute group-hover:text-mute-on-soft\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var54 string
 					templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(s.Event)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 231, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 231, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 					if templ_7745c5c3_Err != nil {
@@ -1239,7 +1239,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 							return templ_7745c5c3_Err
 						}
 					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<span class=\"text-mute\">-</span>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<span class=\"text-mute group-hover:text-mute-on-soft\">-</span>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}

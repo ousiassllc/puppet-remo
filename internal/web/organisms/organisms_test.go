@@ -108,10 +108,10 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 	}
 }
 
-// タスク詳細のステップの引数: キーだけが補助（text-mute）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
+// タスク詳細のステップの引数: キーだけが補助（text-mute。行のホバーでは group-hover:text-mute-on-soft に切り替える）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
+	has(t, out, `<tr class="group hover:bg-accent-soft"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all">送信ボタン</dd>`)
 	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
@@ -816,8 +816,8 @@ func TestTaskDetailAuxRowUsesATooltipNotTitle(t *testing.T) {
 		{No: 2, KindLabel: "判定", Summary: "Judge"},
 	}}))
 	has(t, out,
-		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
-		`aria-describedby="step-row-tip-2"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
+		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
+		`aria-describedby="step-row-tip-2"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
 	hasNot(t, out, "title=", `id="step-row-tip-0"`)
 }
 
