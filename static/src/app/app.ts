@@ -17,7 +17,17 @@
 import { installPickerRefreshGuard } from "./picker-guard";
 
 const TOAST_ROOT = "toast-root";
-const TOAST_LIFETIME_MS = 3000;
+// トーストの表示時間は :root の --toast-duration（app.css。ガイド O3 の 3s）から読む。読めないとき（CSS が無いテストなど）は同じ 3 秒。
+// 値は app.css の --toast-duration と同じ 3 秒で、テスト（app.test.ts と tokens_css_test.go）が同期を固定している。
+const TOAST_LIFETIME_FALLBACK_MS = 3000;
+function toastLifetimeMs(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--toast-duration").trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value)) {
+    return TOAST_LIFETIME_FALLBACK_MS;
+  }
+  return raw.endsWith("ms") ? value : raw.endsWith("s") ? value * 1000 : TOAST_LIFETIME_FALLBACK_MS;
+}
 const ALERT_ROOT = "alert-root";
 const ALERT_TEMPLATE = "alert-template";
 const MODAL_ROOT = "modal-root";
@@ -442,7 +452,7 @@ function settleToasts(root: Element): void {
       if (latest.isConnected) {
         leave(latest, () => latest.remove());
       }
-    }, TOAST_LIFETIME_MS);
+    }, toastLifetimeMs());
   });
 }
 

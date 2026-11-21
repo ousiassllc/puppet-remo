@@ -51,7 +51,7 @@ templ WindowPicker(v view.WindowPicker) {
 						{ v.Error }
 					}
 				} else if len(v.Rows) == 0 {
-					<p class="text-sm text-mute" data-window-empty>選べるウィンドウがありません。</p>
+					<p class="text-sm text-ink" data-window-empty>選べるウィンドウがありません。</p>
 				} else {
 					<ul class="divide-y divide-border" data-window-list>
 						for _, r := range v.Rows {

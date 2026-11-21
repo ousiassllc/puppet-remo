@@ -176,6 +176,28 @@ describe("トースト", () => {
     }
   });
 
+  // O3: 表示時間は :root の --toast-duration（app.css の 3s）から読む。CSS が無ければ既定の 3 秒（上のテスト）。
+  for (const [value, expected] of [["1.5s", 1500], ["800ms", 800]] as const) {
+    it(`表示時間は --toast-duration（${value}）に従う`, async () => {
+      const root = await fixture<HTMLDivElement>(html`<div id="toast-root"><div data-toast>新しい</div></div>`);
+      const delays: number[] = [];
+      const original = window.setTimeout;
+      window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+        delays.push(delay ?? 0);
+        return original(handler, 1_000_000, ...args);
+      }) as typeof window.setTimeout;
+      document.documentElement.style.setProperty("--toast-duration", value);
+      try {
+        root.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: root } }));
+        await until(() => delays.length > 0, "the timer starts");
+        expect(delays).to.deep.equal([expected]);
+      } finally {
+        document.documentElement.style.removeProperty("--toast-duration");
+        window.setTimeout = original;
+      }
+    });
+  }
+
   it("#toast-root 以外への OOB には触らない", async () => {
     const other = await fixture<HTMLDivElement>(html`<div id="elsewhere"><div data-toast>a</div><div data-toast>b</div></div>`);
     other.dispatchEvent(new CustomEvent("htmx:oobAfterSwap", { bubbles: true, detail: { target: other } }));

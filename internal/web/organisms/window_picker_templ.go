@@ -163,7 +163,7 @@ func WindowPicker(v view.WindowPicker) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else if len(v.Rows) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p class=\"text-sm text-mute\" data-window-empty>選べるウィンドウがありません。</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<p class=\"text-sm text-ink\" data-window-empty>選べるウィンドウがありません。</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

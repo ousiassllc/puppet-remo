@@ -516,7 +516,7 @@ func SidebarLinks(c view.Chrome, oob bool) templ.Component {
 	})
 }
 
-// ToastRoot はトーストの置き場（画面下の中央・端から 24px）。完了の短い通知（OOB の ToastOOB と GET /poll の応答）がここへ追加する。
+// ToastRoot はトーストの置き場（画面下の中央・端から --toast-offset の 24px）。完了の短い通知（OOB の ToastOOB と GET /poll の応答）がここへ追加する。
 // 同時に表示するのは 1 つで、新しいものが前を置き換える（app.ts）。エラーは AlertRoot のインラインアラートに出し、トーストには出さない。
 func ToastRoot() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -539,7 +539,7 @@ func ToastRoot() templ.Component {
 			templ_7745c5c3_Var16 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div id=\"toast-root\" class=\"pointer-events-none fixed bottom-6 left-1/2 z-(--z-toast) flex max-w-[calc(100vw-3rem)] -translate-x-1/2 flex-col items-center\" role=\"status\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div id=\"toast-root\" class=\"pointer-events-none fixed bottom-(--toast-offset) left-1/2 z-(--z-toast) flex max-w-[calc(100vw-2*var(--toast-offset))] -translate-x-1/2 flex-col items-center\" role=\"status\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
