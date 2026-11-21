@@ -103,6 +103,17 @@ func TestEveryPageRendersCSPCompliantHTMLInBothForms(t *testing.T) {
 	}
 }
 
+// 起動許可アプリ: 題付きのセクション（起動の方式・アプリの追加・拒否リスト）の積みは 48（--gap-section-sm。space-y-12）。
+// h1・説明文は 24（外枠 space-y-6）のまま、セクションの積みだけを内側の枠にする（S5・#204）。
+func TestAppsPageSeparatesSectionsByGapSectionSm(t *testing.T) {
+	out := webtest.Render(t, pages.Apps(view.Apps{Chrome: view.Chrome{Active: view.NavApps}, NewForm: view.AppForm{DOMID: "app-form-new", ActionURL: "/apps", PickURL: "/apps/pick-file"}}))
+	for _, want := range []string{`<div class="max-w-3xl space-y-6">`, `<div class="space-y-12"><div id="launch-mode"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
 // リモートのビューアのページ（FR-W01）: 外部ファイルだけを読み、screen-viewer.js は app.js の後（モジュール）。
 func TestRemoteLayoutLoadsViewerScripts(t *testing.T) {
 	out := webtest.Render(t, pages.Viewer(view.Viewer{ViewerID: "V", WSURL: "ws://h/ws/screen?viewer_id=V"}))

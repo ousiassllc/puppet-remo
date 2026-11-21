@@ -392,6 +392,18 @@
   input[type="checkbox"]:checked::before {
     display: block;
   }
+  /* forced-colors（ハイコントラスト）では背景色が Canvas に置き換わり、ON の地（--accent）もチェック（--bone）も同じ色になって、ON が OFF と見分けがつかない
+   * （Chromium の forcedColors: 'active' で ON の地・チェックとも Canvas 色になることを実描画で確認した。#203）。システムカラーは強制色でも残るので、
+   * ON の地を Highlight、チェックを HighlightText にする。 */
+  @media (forced-colors: active) {
+    input[type="checkbox"]:checked {
+      border-color: Highlight;
+      background-color: Highlight;
+    }
+    input[type="checkbox"]:checked::before {
+      background-color: HighlightText;
+    }
+  }
   /* フォーカスは離散コントロールの 3px・--focus の実線リング（outline-offset 2px。ガイド「フォーカスリング」）。 */
   input[type="checkbox"]:focus-visible {
     outline: 3px solid var(--focus);

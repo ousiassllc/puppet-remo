@@ -115,15 +115,22 @@ func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	hasNot(t, out, `class="mt-1 space-y-2 text-xs text-mute"`)
 }
 
-// タスク・監査ログの詳細: 題付きのセクション（molecules.Card。#166）同士は、24（--gap-card-section。space-y-6）で区切る。
+// 題付きのセクション（molecules.Card。#166）同士は、48（--gap-section-sm。space-y-12）で区切る（S5・#204）。ガイドの --gap-card-section 24 は
+// 「カード内のまとまり同士」で、題付き Card はセクションなので当てない。タスク・監査ログの詳細・エージェント設定・拒否リストが対象。
 // 題は Card の h2（lg 18）で、直書きの text-2xl の h2 ではない。
-func TestDetailPagesSeparateCardsByGapCardSection(t *testing.T) {
+func TestTitledCardSectionsAreSeparatedByGapSectionSm(t *testing.T) {
 	task := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1"}))
-	has(t, task, `class="space-y-6" data-task-detail="t1"`)
+	has(t, task, `class="space-y-12" data-task-detail="t1"`)
 	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "click"}))
-	has(t, audit, `class="space-y-6" data-audit-detail="click"`)
-	hasNot(t, task, `class="space-y-4" data-task-detail`, `class="space-y-12"`)
-	hasNot(t, audit, `class="space-y-4" data-audit-detail`, `class="space-y-12"`)
+	has(t, audit, `class="space-y-12" data-audit-detail="click"`)
+	agent := webtest.Render(t, organisms.AgentSections(view.AgentSettings{}))
+	has(t, agent, `id="agent-sections" class="space-y-12"`)
+	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{}))
+	has(t, denied, `id="denied-section" class="space-y-12"`)
+	hasNot(t, task, `class="space-y-6" data-task-detail`, `class="space-y-4" data-task-detail`)
+	hasNot(t, audit, `class="space-y-6" data-audit-detail`, `class="space-y-4" data-audit-detail`)
+	hasNot(t, agent, `id="agent-sections" class="space-y-6"`)
+	hasNot(t, denied, `id="denied-section" class="space-y-4"`)
 	const cardTitle = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">`
 	has(t, task, cardTitle+"指示</h2>", cardTitle+"最終回答</h2>", cardTitle+"ステップ</h2>")
 	has(t, audit, cardTitle+"引数</h2>", cardTitle+"サムネイル</h2>")
