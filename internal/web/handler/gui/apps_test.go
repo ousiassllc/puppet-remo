@@ -71,7 +71,7 @@ func TestAppsFragmentsFollowHXRequest(t *testing.T) {
 	contains(t, frag, `id="app-list"`, "メモ帳")
 	lacks(t, frag, "<html", `id="app-form-new"`)
 	boosted := r.get("/apps", append([]string{"HX-Boosted", "true"}, hx...)...)
-	contains(t, boosted, "<title>起動許可アプリ - Nefos Remote</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, `id="app-list"`, `id="app-form-new"`)
+	contains(t, boosted, "<title>起動許可アプリ - Nefos Remote</title>", `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `id="app-list"`, `id="app-form-new"`)
 	lacks(t, boosted, "<html")
 
 	// /apps/new: 部分更新は追加フォームだけ。それ以外はページ。

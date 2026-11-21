@@ -133,7 +133,7 @@ func TestRequestsHistoryFragmentVariants(t *testing.T) {
 
 	boosted := r.get("/requests/history", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, "<title>接続要求の履歴 - Nefos Remote</title>", `id="request-history"`, `id="sidebar-nav"`)
+	contains(t, boosted, "<title>接続要求の履歴 - Nefos Remote</title>", `id="request-history"`, `id="sidebar-nav-links"`)
 	lacks(t, boosted, "<html")
 
 	// 履歴の復元（戻る）はフルページ。

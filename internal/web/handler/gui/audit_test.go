@@ -200,7 +200,7 @@ func TestAuditRenderingBranches(t *testing.T) {
 	frag := r.get("/audit?kind=tool", hx...)
 	status(t, frag, http.StatusOK)
 	contains(t, frag, `id="audit-list"`, "tool.left_click")
-	lacks(t, frag, "<html", `id="sidebar-nav"`)
+	lacks(t, frag, "<html", `id="sidebar-nav-links"`)
 	// HX-Boosted: #main の中身（フルページの枠は出さない）。
 	boosted := r.get("/audit", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
