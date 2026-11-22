@@ -231,7 +231,7 @@ tasks:
       - go mod tidy
 
   ci:
-    desc: CI と同じ検査を一通り実行する
+    desc: CI の主な検査を一通り実行する（Windows の本番ビルド・-race・配信スクリプトのテスト・actionlint・installer は含まない。docs/environment/setup.md）
     cmds:
       - task: fmt:check
       - task: templ:check
