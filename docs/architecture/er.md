@@ -243,7 +243,6 @@ erDiagram
 | `update.apply_mode` | string `"confirm"` / `"auto_idle"` | `"confirm"` | FR-S09 |
 | `update.channel` | string `"stable"` / `"nightly"` | `"stable"` | FR-S09（更新のチャネル。#74） |
 | `update.last_checked_at` | number（UTC ミリ秒） | なし | FR-H09（最後に更新を確認した時刻。成功・失敗を問わず確認のたびに `service.Updater` が保存する。#74） |
-| `log.level` | string | `"info"` | NFR-O01 |
 | `launch.mode` | string（`"allowlist"` / `"denylist"`） | `"allowlist"`（行が無いとき。読めない値・定義外の値も `allowlist` として扱う〔fail closed〕。v5 のマイグレーションは行を書かないので、既存のインストールは `allowlist` のまま） | FR-M18・M19・H12、NFR-S20（`launch_app` の起動の方式。`allowlist` = ホワイトリスト方式〔既定。`launchable_apps` のアプリだけを `app_id` で起動〕、`denylist` = ブラックリスト方式〔`launch_denylist` に当たらない固定ディスク上の `.exe` を `path` でも起動できる〕。**ホスト GUI の `/apps` だけが変更できる**（MCP・Web UI には経路が無い）。`denylist` への切り替えは確認モーダルを経る。変わるときだけ `settings.launch_mode.update` を監査する） |
 | `agent.enabled` | boolean | false | FR-S10、FR-G14 |
 | `agent.consent_at` | number（UTC ミリ秒） | なし | FR-G14（OpenAI へのスクリーンショット送信への同意の日時。有効化時に記録し、無効化で削除） |
@@ -637,3 +636,4 @@ erDiagram
 | 1.32 | 2026-11-02 | `agent_tasks` に `CHECK (connection IN ('chatgpt','openai_api_key'))`、`agent.task_start` の `detail_json` に `connection`、`agent.chatgpt.signin` の分類は `detail.reason` に統一（`reauth_required`・`usage_limit` は `error_code`）と明記 | #49（レビュー指摘） |
 | 1.33 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: `settings` のキー `launch.mode`（行が無い・不正な値は `allowlist`）、拒否リスト `launch_denylist`（v5 のマイグレーション `0005_launch_denylist.sql`。`path` / `name`・`dedup_key`・上限 200・ホスト GUI だけが書く・照合の規則と既知の限界）を全体 ER 図・テーブル一覧・テーブル定義に追加し、`launchable_apps` の起動時の扱いを方式別に更新。監査イベント `settings.launch_mode.update`・`settings.launch_denylist.create` / `.update` / `.delete` をカタログに追加し、`tool.launch_app`・`tool.launch_app.attempt`・`agent.launch_attempt`・`agent.step` の `detail` に `path`・`launch_mode`（`app_id` は path 起動では無し）を追記 | #88 |
 | 1.34 | 2026-11-08 | 監査イベント `lease.target_set` / `lease.target_resumed`（`kind = lease`）・`input.target_halted`（`kind = input`）をカタログと説明に追加 | #156（A-1） |
+| 1.35 | 2026-11-23 | `settings` のキー一覧から `log.level` を削除（実装に無い。ログのレベルは環境変数 `PUPPET_REMO_LOG_LEVEL` だけで指定する。NFR-O01） | #230 |
