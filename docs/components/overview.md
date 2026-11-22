@@ -430,11 +430,14 @@ type Audit interface {
     PurgeMissingThumbs(ctx, exists func(rel string) bool) (int, error)   // 孤児の掃除用: ファイルの無い行を削除（ログ行は残す）
 }
 type Tasks interface {
-    Create(ctx, t TaskRecord) error
-    Update(ctx, id string, patch TaskPatch) error
-    Get(ctx, id string) (TaskRecord, error)
-    List(ctx, clientID string, limit int) ([]TaskRecord, error)
-    AbortActive(ctx, now time.Time) (int, error) // 起動時: pending_approval/running → aborted
+    // 書き込みは service.Agent だけ。Tasks が扱う型は domain.Task
+    Create(ctx, t domain.Task) error                                   // 状態は pending_approval / running だけ。ID の重複は ErrConflict
+    Update(ctx, t domain.Task) error                                   // 可変の列だけを置き換える。終了状態の行は ErrConflict、無ければ ErrNotFound
+    Get(ctx, id string) (domain.Task, error)                           // 無ければ ErrNotFound
+    List(ctx, q TaskQuery) (TaskPage, error)                           // TaskQuery{ClientID, Cursor, Limit}。created_at 降順。TaskPage{Tasks, Next}
+    ListActive(ctx) ([]domain.Task, error)                             // pending_approval / running を created_at 昇順で
+    AbortActive(ctx, at time.Time) (int, error)                        // 起動時: pending_approval/running → aborted
+    PurgeFinishedBefore(ctx, before time.Time) (int, error)            // finished_at < before の行を削除（保持期間）。実行中・承認待ちは消さない
 }
 type ThumbStore interface { // thumbs/ 配下のファイル
     Save(ctx, relPath string, jpeg []byte) error
@@ -447,7 +450,7 @@ type ThumbStore interface { // thumbs/ 配下のファイル
 
 **所有する goroutine / 状態**: `repository` は goroutine を持たない（保守処理のタイマーは `service/maintenance` が持つ）。マイグレーションは `Open` が起動時に同期で実行する。
 
-`TaskRecord` / `TaskPatch` は `fast_steps`、`openai_steps`、`handoff_reason`（NULL 可。8 種の列挙を `CHECK`）を持つ（[ER](../architecture/er.md)、FR-G23）。
+`domain.Task` は `fast_steps`、`openai_steps`、`handoff_reason`（NULL 可。8 種の列挙を `CHECK`）を持つ（[ER](../architecture/er.md)、FR-G23）。
 
 ### 4.2 tailnet
 
