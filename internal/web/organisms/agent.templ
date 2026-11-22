@@ -93,7 +93,10 @@ templ AgentForm(f view.AgentForm) {
 		<p class="text-sm text-ink">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p>
 		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "openai"}) {
 			<label class="flex items-start gap-2">
-				@atoms.Checkbox("agent-consent", "consent", f.Values.Consent)
+				if f.Errors.Consent != "" {
+					{{ ctx = atoms.WithDescribedBy(ctx, "agent-consent", "agent-consent-error") }}
+				}
+				@atoms.CheckboxWith(atoms.CheckboxProps{ID: "agent-consent", Name: "consent", Checked: f.Values.Consent, Invalid: f.Errors.Consent != ""})
 				<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span>
 			</label>
 			<p class="mt-4">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
@@ -155,7 +158,10 @@ templ FastpathForm(f view.FastpathForm) {
 		<p class="text-sm text-ink">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p>
 		@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-consent": "typesafe"}) {
 			<label class="flex items-start gap-2">
-				@atoms.Checkbox("fastpath-consent", "consent", f.Values.Consent)
+				if f.Errors.Consent != "" {
+					{{ ctx = atoms.WithDescribedBy(ctx, "fastpath-consent", "fastpath-consent-error") }}
+				}
+				@atoms.CheckboxWith(atoms.CheckboxProps{ID: "fastpath-consent", Name: "consent", Checked: f.Values.Consent, Invalid: f.Errors.Consent != ""})
 				<span>タスクの指示、前面のウィンドウのタイトルとプロセス名、操作できる要素の ID・役割・ラベル・有効かどうか、直近 5 件の高速ステップの短い説明文が <strong>TypeSafe（api.typesafe.ai）に送信される</strong>ことに同意します。</span>
 			</label>
 			<p class="mt-4">スクリーンショット、要素の値・テキスト内容、入力した文字（type の本文）、キー入力、API キーは送信しません。ウィンドウのタイトルには、文書名や URL などの機微な情報が含まれることがあります。</p>
