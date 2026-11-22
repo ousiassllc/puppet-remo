@@ -124,13 +124,13 @@ templ TokenList(v view.TokenList, oob bool) {
 			<table class="min-w-full text-left text-sm">
 				<thead class="border-b border-border text-xs font-semibold text-mute">
 					<tr>
-						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">ラベル</th>
-						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">接頭辞</th>
-						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">状態</th>
-						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">発行</th>
-						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">有効期限</th>
-						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">最終使用</th>
-						<th class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"></th>
+						<th scope="col" class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">ラベル</th>
+						<th scope="col" class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">接頭辞</th>
+						<th scope="col" class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">状態</th>
+						<th scope="col" class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">発行</th>
+						<th scope="col" class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">有効期限</th>
+						<th scope="col" class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">最終使用</th>
+						<th scope="col" class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><span class="sr-only">操作</span></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-border">
@@ -146,7 +146,7 @@ templ TokenList(v view.TokenList, oob bool) {
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-right">
 								if t.CanRevoke {
 									@atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-										"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+										"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML", "aria-label": "「" + t.Label + "」を失効",
 									}})
 								}
 							</td>
