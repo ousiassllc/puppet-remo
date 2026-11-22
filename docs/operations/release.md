@@ -146,6 +146,6 @@ task windows:package
 
 - Windows 実機でのインストール・起動は、この仕組みでは確かめていません（[Windows 実機スモーク手順](smoke-windows.md) §4.7）。
 - Authenticode の署名がないため、SmartScreen の警告が出ます（更新用の minisign 署名とは別です）。
-- リポジトリの設定（ブランチ保護など）は使えない（private・Free プラン）ので、「`main` へは `develop` からの PR だけ」はルール（運用）です。
+- ブランチ保護は設定していないので、「`main` へは `develop` からの PR だけ」はルール（運用）です。
 - PR 本文の `Closes #N` が Issue を閉じるのは、既定ブランチ（`main`）へのマージだけです。`develop` 向けの PR では閉じないので、`develop` → `main` の PR の本文に `Closes #N` をまとめるか、手で閉じます。
 - `schedule`（定時実行）は使いません。使うなら、既定ブランチ（`main`）にあるワークフローでしか動きません。
