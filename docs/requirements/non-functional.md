@@ -114,7 +114,7 @@
 
 | ID | 要件 |
 |----|------|
-| NFR-O01 | アプリ運用ログ（slog、JSON）を `%LOCALAPPDATA%\puppet-remo\logs\` にローテーション（10 MiB × 5 世代）で出力する。監査ログ（業務記録）とは別物。レベルは設定可。ホスト GUI の「ログ」画面（[FR-H13](functional.md)）が読む。読み方（ファイルを末尾から一定のブロックずつ逆向きに読む。ローテーション済みのファイルにも続く）は [フロントエンド §5.4](../architecture/frontend.md)・[コンポーネント §13.6](../components/overview.md) |
+| NFR-O01 | アプリ運用ログ（slog、JSON）を `%LOCALAPPDATA%\puppet-remo\logs\` にローテーション（10 MiB × 5 世代）で出力する。監査ログ（業務記録）とは別物。レベルは環境変数 `PUPPET_REMO_LOG_LEVEL`（`debug` / `info` / `warn` / `error`。既定 `info`。起動時に 1 回読む）で指定する。設定画面・設定のキーでは変えられない。ホスト GUI の「ログ」画面（[FR-H13](functional.md)）が読む。読み方（ファイルを末尾から一定のブロックずつ逆向きに読む。ローテーション済みのファイルにも続く）は [フロントエンド §5.4](../architecture/frontend.md)・[コンポーネント §13.6](../components/overview.md) |
 | NFR-O02 | 配布は GitHub Releases の NSIS インストーラ（Wails 標準）。更新はアプリ内自動更新（NFR-S10）。更新の適用はホスト GUI の確認後を既定とし、リース保持中・接続中は適用しない |
 | NFR-O03 | OS 依存部（画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation・オーバーレイ・アプリ起動（`CreateProcess`。M1.5）・ファイル選択ダイアログ（M1.5））はインターフェースの背後に置き、コアロジックは OS 非依存でテスト可能にする（将来の他 OS 対応のため） |
 | NFR-O04 | CI は GitHub Actions で実行し、すべてのジョブを GitHub のランナー（`ubuntu-latest`）で動かす。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）で検査する。Lit のテストと Playwright E2E（偽の platform・偽の tailnet により OS 非依存。[フロントエンド設計](../architecture/frontend.md) §9）は、M2 の受け入れ条件には含めず、あとから CI の改善として別ジョブ `e2e` で足した（オーナーの決定。#64）。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`（`--with-deps`・sudo なし）で導入する。OS アダプタの実機スモークテストは手動とし、手順を `docs` に記載する |
@@ -226,3 +226,4 @@
 | 1.22 | 2026-11-02 | 「ChatGPT プラン経路: 未確認」の利用資格に、ライセンスが GNU AGPL-3.0 である旨を追記 | #49 |
 | 1.23 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）に対応: 脅威モデルの「許可していないプログラムの起動」の行と NFR-S20 を、ホワイトリスト方式（既定）の記述に限定し、ブラックリスト方式（`path` の受け付け・固定ディスクと実体のパスへの解決・拒否リストの照合と `app_denied`・許可リストのアプリも照合・方式の切り替えと拒否リストの監査・残存リスク〔インタープリタ、名前を変えたコピーは検出できない〕・試行の行の fail-closed）を追記。NFR-C06 に拒否リストの上限 200 を追加 | #88 |
 | 1.24 | 2026-11-08 | NFR-S06 に、スコープ付きのリース（入力スコープ。FR-L09〜L14）の自己保護の追記（G の検証・停止・明示的な再開・クリップボード・撮影できないときの安全停止・ガードレールであること、Windows 実機の検証待ち） | #156（A-1） |
+| 1.25 | 2026-11-23 | NFR-O01 のログのレベルを「設定可」から、環境変数 `PUPPET_REMO_LOG_LEVEL`（既定 `info`）での指定に直した（実装に合わせた） | #230 |
