@@ -567,6 +567,19 @@ func TestConsentErrorsUseFieldError(t *testing.T) {
 
 	fast := webtest.Render(t, organisms.FastpathForm(view.FastpathForm{Errors: view.FastpathErrors{Consent: "同意が必要です"}}))
 	has(t, fast, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="fastpath-consent"`)
+	// 同意のチェックボックスは、エラーがあるときだけ aria-invalid を出し、エラー文を aria-describedby で指す。
+	for _, c := range []struct{ out, id string }{{agent, "agent-consent"}, {fast, "fastpath-consent"}} {
+		input := c.out[strings.Index(c.out, `<input id="`+c.id+`"`):]
+		input = input[:strings.Index(input, ">")]
+		has(t, input, `aria-invalid`, `aria-describedby="`+c.id+`-error"`)
+	}
+	okAgent := webtest.Render(t, organisms.AgentForm(view.AgentForm{}))
+	okFast := webtest.Render(t, organisms.FastpathForm(view.FastpathForm{}))
+	for _, c := range []struct{ out, id string }{{okAgent, "agent-consent"}, {okFast, "fastpath-consent"}} {
+		input := c.out[strings.Index(c.out, `<input id="`+c.id+`"`):]
+		input = input[:strings.Index(input, ">")]
+		hasNot(t, input, "aria-invalid", "aria-describedby")
+	}
 }
 
 // トースト・アラートの置き場: トーストは画面下の中央（端から 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
