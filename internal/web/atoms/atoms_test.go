@@ -166,6 +166,17 @@ func TestFieldsFollowTheFormSpec(t *testing.T) {
 	}
 }
 
+// 選択欄も、不正なときは --danger の枠と aria-invalid を出す（入力欄と同じ）。Select（エラーを持たない欄）は出さない。
+func TestSelectShowsInvalidState(t *testing.T) {
+	opts := []atoms.SelectOption{{Value: "a", Label: "A"}}
+	bad := webtest.Render(t, atoms.SelectWith(atoms.SelectProps{ID: "s", Name: "s", Options: opts, Invalid: true}))
+	has(t, bad, "border-danger", `aria-invalid`, `<option value="a">A</option>`)
+	for _, out := range []string{webtest.Render(t, atoms.Select("s", "s", opts)), webtest.Render(t, atoms.SelectWith(atoms.SelectProps{ID: "s", Name: "s", Options: opts}))} {
+		has(t, out, "border-border")
+		hasNot(t, out, "border-danger", "aria-invalid")
+	}
+}
+
 // 読み取り専用の --bone 地は readonly 属性のある要素だけ。:read-only は select・range にも一致するので使わない（使うと select の地が変わる）。
 func TestReadonlyBackgroundNeedsTheReadonlyAttribute(t *testing.T) {
 	ok := webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"}))

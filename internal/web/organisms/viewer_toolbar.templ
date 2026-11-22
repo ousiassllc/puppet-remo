@@ -35,7 +35,7 @@ templ ViewerToolbar(v view.ViewerToolbar) {
 		{ toolbarErrorAttrs(v)... }
 	>
 		@molecules.FormField("viewer-monitor", "モニター", "", v.Errors.Monitor) {
-			@atoms.Select("viewer-monitor", "monitor", selectOptions(v.Monitors))
+			@atoms.SelectWith(atoms.SelectProps{ID: "viewer-monitor", Name: "monitor", Options: selectOptions(v.Monitors), Invalid: v.Errors.Monitor != ""})
 		}
 		@molecules.FormField("viewer-quality", "画質（1〜100）", "", v.Errors.Quality) {
 			<div class="flex items-center gap-2">
