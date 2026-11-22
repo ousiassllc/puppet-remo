@@ -190,6 +190,16 @@ func TestTokenListRevokeOnlyForActiveTokens(t *testing.T) {
 	hasNot(t, out, "/tokens/r/revoke", "hx-swap-oob")
 	webtest.AssertCSPCompliantHTML(t, out)
 
+	// 7 つの見出しすべてに scope="col"。末尾（操作列）の見出しは空にせず名前を持つ。行の「失効」は対象のラベルを名前に含む。
+	if got := strings.Count(out, "<th "); got != 7 {
+		t.Errorf("th count = %d, want 7", got)
+	}
+	if got := strings.Count(out, `<th scope="col"`); got != 7 {
+		t.Errorf(`th scope="col" count = %d, want 7`, got)
+	}
+	has(t, out, `<span class="sr-only">操作</span></th>`, `aria-label="「active」を失効"`)
+	hasNot(t, out, `aria-label="「revoked」を失効"`)
+
 	oob := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1"}, true))
 	has(t, oob, `hx-swap-oob="true"`, `data-empty="tokens"`)
 }
