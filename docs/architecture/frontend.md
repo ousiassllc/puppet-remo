@@ -489,13 +489,16 @@ graph LR
     "build:js": "bun esbuild.config.mjs",
     "build:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
     "copy:htmx": "bun scripts/copy-htmx.mjs",
+    "test": "bun --bun web-test-runner",
+    "e2e": "bun --bun playwright test",
     "dev": "bun --bun concurrently \"bun run dev:css\" \"bun run dev:js\"",
     "dev:css": "bun run build:fonts && bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
-    "dev:js": "bun esbuild.config.mjs --watch",
-    "test": "bun --bun web-test-runner \"src/**/*.test.ts\" --node-resolve"
+    "dev:js": "bun esbuild.config.mjs --watch"
   }
 }
 ```
+
+`test` の対象（`src/**/*.test.ts`）と `--node-resolve` 相当の設定は、スクリプトの引数ではなく `web-test-runner.config.mjs` の `files` / `nodeResolve` が持つ。`e2e` は Playwright のテスト（`bun --bun playwright test`）を実行する。
 
 `esbuild.config.mjs` は `--watch` のとき、ウォッチに加えて esbuild の `serve`（`servedir: "dist"`）を、環境変数 `WAILS_VITE_PORT`（`wails3 dev` が設定。既定 9245）のポートで開始する。環境変数の展開が OS のシェルに依存しないよう、ポートはシェルではなく `esbuild.config.mjs`（`process.env`）が読む。
 
