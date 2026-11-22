@@ -272,6 +272,14 @@ func TestSettingsFormAuditAndUpdateFields(t *testing.T) {
 		`name="audit.thumbs_max_bytes"`, `value="1073741824"`, `<option value="auto_idle" selected>`,
 		`data-field-error="set-audit-days"`, `data-field-error="set-update-mode"`, `data-field-error="set-update-channel"`, `<option value="nightly" selected>`)
 	hasNot(t, out, `data-field-error="set-audit-cap"`, `<option value="confirm" selected>`)
+	// エラーのある選択欄は不正の状態とエラー文を持ち、エラーのない選択欄は不正にしない。
+	has(t, out, `id="set-update-channel-error"`, `aria-describedby="set-update-channel-hint set-update-channel-error"`, `id="set-audit-days-hint"`, `aria-describedby="set-audit-days-hint set-audit-days-error"`)
+	if got := strings.Count(out, `<select`); got != 2 {
+		t.Errorf("want 2 selects, got %d", got)
+	}
+	if got := strings.Count(out, `<select id="set-update-channel" name="update.channel" class="block w-full min-w-0 rounded-md border bg-surface text-base [&amp;[readonly]]:bg-bone disabled:cursor-not-allowed disabled:opacity-50 h-10 pl-3 pr-9 border-danger" aria-invalid`); got != 1 {
+		t.Errorf("set-update-channel select must be invalid, got %d:\n%s", got, out)
+	}
 	if got := strings.Count(out, "checked"); got != 1 {
 		t.Errorf("only audit.thumbnails_enabled must be checked, got %d", got)
 	}

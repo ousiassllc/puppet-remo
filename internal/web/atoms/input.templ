@@ -56,6 +56,6 @@ templ Input(p InputProps) {
 		required?={ p.Required }
 		readonly?={ p.Readonly }
 		aria-invalid?={ p.Invalid }
-		{ p.Attrs... }
+		{ describedAttrs(ctx, p.ID, p.Attrs)... }
 	/>
 }
