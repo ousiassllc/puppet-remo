@@ -69,13 +69,14 @@ tasks:
           if [ -n "$out" ]; then echo "gofmt が必要なファイル:"; echo "$out"; exit 1; fi
 
   lint:
-    desc: golangci-lint（ホスト OS と Windows の両方）
+    desc: golangci-lint（ホスト OS・Windows・-tags e2e の 3 回。CI の lint ジョブと同じ）
     cmds:
       - golangci-lint run ./...
       - cmd: golangci-lint run ./...
         env:
           GOOS: windows
           GOARCH: amd64
+      - golangci-lint run --build-tags e2e ./...
 
   check:imports:
     desc: レイヤー間の import 規則を検査する（domain は他の内部パッケージを import しない）
