@@ -64,7 +64,7 @@
 | `task package` | NSIS インストーラを作る → `bin/puppet-remo-amd64-installer.exe`（`makensis` が要る。版は `VERSION` ファイル。`RELEASE_VERSION=` / `APP_VERSION=` で上書き） |
 | `task dev` | `wails3 dev`（Windows）。別ターミナルで `task templ:watch` を動かす |
 | `task tidy` | `go mod tidy` |
-| `task ci` | CI と同じ検査を一通り実行する（下の「CI/CD」） |
+| `task ci` | CI の主な検査を一通り実行する（CI と違う点は下の「CI/CD」） |
 
 Linux / macOS では、Windows 専用のコード（`//go:build windows`）を除いてビルド・テストできる。実機でしか確かめられない項目は [Windows 実機スモーク手順](../operations/smoke-windows.md) にまとめている。
 
