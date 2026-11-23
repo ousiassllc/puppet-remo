@@ -658,10 +658,9 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 
 | 項目 | M1 の実装 |
 |------|----------|
-| `internal/openai`・`internal/typesafe`・`internal/ws` | 無い（M4・M4・M2 で作る） |
-| `internal/web` | `handler/gui` と `handler/remote`（M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`・`handler/remote/remotetest/`（偽の service）を持つ |
-| `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ。`windows/` の `secret`（資格情報）は無い |
-| `internal/router` | `gui.go`・`remote.go` と `internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
+| `internal/web` | `handler/gui` と `handler/remote`（M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`・`bodylimit`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`・`handler/remote/remotetest/`（偽の service）を持つ |
+| `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ |
+| `internal/router` | `gui.go`・`remote.go` と `internal/router/internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
 | `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`・`wails_overlay_windows.go`。承認ダイアログ（`approval_dialogs.go`。M3・#68）とオーバーレイ（`overlay.go`。M3・#69）の購読側は OS に依存せず、Wails の実装だけが Windows 専用 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
 | `cmd/puppet-remo-e2e`・`internal/app/e2e.go`・`internal/tailnet/e2e.go`（#64） | Playwright の E2E のテスト専用サーバー。すべて `//go:build e2e`（`go build ./...` は無視し、本番のバイナリに入らない）。偽の platform・偽の tailnet・loopback の待ち受けと、e2e ビルドだけの制御エンドポイント（loopback の IP リテラルにだけ bind）。[コンポーネント設計](../components/overview.md) §13.13 |
@@ -724,3 +723,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.29 | 2026-11-03 | 操作中オーバーレイを、WebView2 の全面ウィンドウから、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（真ん中は覆わない）に改めた | #86 |
 | 1.30 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: 構成図の許可リスト・拒否リスト・起動の方式（`AppRegistry`・`AppReader`）、「アプリ起動」の流れ図（起動の方式の確認・`path` の分岐・`app_denied`・実体のパスの解決）と本文、`AppRegistry` が方式と拒否リストの書き込みを持ち `Control` は読み取り専用の `AppReader`（`LaunchMode`・`ListDenied` を含む）だけを受け取ること | #88 |
 | 1.31 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。「ビルドと配布」に表示名の方針（変えるもの・変えないもの）を追記 | #188 |
+| 1.32 | 2026-11-23 | M1 実装での差分のディレクトリ構成の表を現状に合わせた: `internal/openai`・`internal/typesafe`・`internal/ws` の行（実装済みのため）と `windows/` の `secret` は無い、の記述を削除、`internal/router` のデモサーバーのパスを `internal/router/internal/guidemo` に訂正、`middleware/` の一覧に `bodylimit` を追加 | #235 |

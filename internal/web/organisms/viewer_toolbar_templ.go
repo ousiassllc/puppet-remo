@@ -74,7 +74,7 @@ func ViewerToolbar(v view.ViewerToolbar) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = atoms.Select("viewer-monitor", "monitor", selectOptions(v.Monitors)).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.SelectWith(atoms.SelectProps{ID: "viewer-monitor", Name: "monitor", Options: selectOptions(v.Monitors), Invalid: v.Errors.Monitor != ""}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

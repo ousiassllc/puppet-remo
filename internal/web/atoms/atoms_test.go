@@ -179,6 +179,44 @@ func TestFieldsFollowTheFormSpec(t *testing.T) {
 	}
 }
 
+// 選択欄も、不正なときは --danger の枠と aria-invalid を出す（入力欄と同じ）。Select（エラーを持たない欄）は出さない。
+func TestSelectShowsInvalidState(t *testing.T) {
+	opts := []atoms.SelectOption{{Value: "a", Label: "A"}}
+	bad := webtest.Render(t, atoms.SelectWith(atoms.SelectProps{ID: "s", Name: "s", Options: opts, Invalid: true}))
+	has(t, bad, "border-danger", `aria-invalid`, `<option value="a">A</option>`)
+	for _, out := range []string{webtest.Render(t, atoms.Select("s", "s", opts)), webtest.Render(t, atoms.SelectWith(atoms.SelectProps{ID: "s", Name: "s", Options: opts}))} {
+		has(t, out, "border-border")
+		hasNot(t, out, "border-danger", "aria-invalid")
+	}
+}
+
+func renderIn(t *testing.T, ctx context.Context, c templ.Component) string {
+	t.Helper()
+	var sb strings.Builder
+	if err := c.Render(ctx, &sb); err != nil {
+		t.Fatal(err)
+	}
+	return sb.String()
+}
+
+// チェックボックスも、不正なときだけ aria-invalid を出し、WithDescribedBy で伝えられた id が一致するときだけ aria-describedby を出す。
+func TestCheckboxShowsInvalidAndDescribedBy(t *testing.T) {
+	p := atoms.CheckboxProps{ID: "c", Name: "c", Invalid: true}
+	bad := webtest.Render(t, atoms.CheckboxWith(p))
+	has(t, bad, `aria-invalid`)
+	hasNot(t, bad, "aria-describedby")
+
+	ctx := atoms.WithDescribedBy(context.Background(), "c", "c-error")
+	described := renderIn(t, ctx, atoms.CheckboxWith(p))
+	has(t, described, `aria-invalid`, `aria-describedby="c-error"`)
+	other := renderIn(t, atoms.WithDescribedBy(context.Background(), "x", "x-error"), atoms.CheckboxWith(p))
+	hasNot(t, other, "aria-describedby")
+
+	for _, out := range []string{webtest.Render(t, atoms.Checkbox("c", "c", true)), webtest.Render(t, atoms.CheckboxWith(atoms.CheckboxProps{ID: "c", Name: "c"}))} {
+		hasNot(t, out, "aria-invalid", "aria-describedby")
+	}
+}
+
 // 読み取り専用の --bone 地は readonly 属性のある要素だけ。:read-only は select・range にも一致するので使わない（使うと select の地が変わる）。
 func TestReadonlyBackgroundNeedsTheReadonlyAttribute(t *testing.T) {
 	ok := webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"}))

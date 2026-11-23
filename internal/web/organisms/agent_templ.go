@@ -355,7 +355,10 @@ func AgentForm(f view.AgentForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = atoms.Checkbox("agent-consent", "consent", f.Values.Consent).Render(ctx, templ_7745c5c3_Buffer)
+			if f.Errors.Consent != "" {
+				ctx = atoms.WithDescribedBy(ctx, "agent-consent", "agent-consent-error")
+			}
+			templ_7745c5c3_Err = atoms.CheckboxWith(atoms.CheckboxProps{ID: "agent-consent", Name: "consent", Checked: f.Values.Consent, Invalid: f.Errors.Consent != ""}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -371,7 +374,7 @@ func AgentForm(f view.AgentForm) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(f.ConsentAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 121, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 124, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -593,7 +596,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(f.Errors.General)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 168, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 171, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -634,7 +637,10 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = atoms.Checkbox("fastpath-consent", "consent", f.Values.Consent).Render(ctx, templ_7745c5c3_Buffer)
+			if f.Errors.Consent != "" {
+				ctx = atoms.WithDescribedBy(ctx, "fastpath-consent", "fastpath-consent-error")
+			}
+			templ_7745c5c3_Err = atoms.CheckboxWith(atoms.CheckboxProps{ID: "fastpath-consent", Name: "consent", Checked: f.Values.Consent, Invalid: f.Errors.Consent != ""}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -650,7 +656,7 @@ func FastpathForm(f view.FastpathForm) templ.Component {
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(f.ConsentAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 183, Col: 111}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/agent.templ`, Line: 189, Col: 111}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {

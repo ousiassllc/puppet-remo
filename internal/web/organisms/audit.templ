@@ -47,10 +47,10 @@ templ AuditFilters(f view.AuditFilters) {
 				@atoms.Select("audit-client", "client_id", auditSelectOptions(f.Clients))
 			}
 			@molecules.FormField("audit-kind", "種別", "", f.Errors.Kind) {
-				@atoms.Select("audit-kind", "kind", auditSelectOptions(f.Kinds))
+				@atoms.SelectWith(atoms.SelectProps{ID: "audit-kind", Name: "kind", Options: auditSelectOptions(f.Kinds), Invalid: f.Errors.Kind != ""})
 			}
 			@molecules.FormField("audit-result", "結果", "", f.Errors.Result) {
-				@atoms.Select("audit-result", "result", auditSelectOptions(f.Results))
+				@atoms.SelectWith(atoms.SelectProps{ID: "audit-result", Name: "result", Options: auditSelectOptions(f.Results), Invalid: f.Errors.Result != ""})
 			}
 		</div>
 		if f.Limit != "" {

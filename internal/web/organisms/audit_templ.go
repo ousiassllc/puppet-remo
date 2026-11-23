@@ -151,7 +151,7 @@ func AuditFilters(f view.AuditFilters) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = atoms.Select("audit-kind", "kind", auditSelectOptions(f.Kinds)).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.SelectWith(atoms.SelectProps{ID: "audit-kind", Name: "kind", Options: auditSelectOptions(f.Kinds), Invalid: f.Errors.Kind != ""}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -173,7 +173,7 @@ func AuditFilters(f view.AuditFilters) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = atoms.Select("audit-result", "result", auditSelectOptions(f.Results)).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = atoms.SelectWith(atoms.SelectProps{ID: "audit-result", Name: "result", Options: auditSelectOptions(f.Results), Invalid: f.Errors.Result != ""}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
 	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
 )
 
@@ -51,5 +52,48 @@ func TestFormFieldHintFollowsLength(t *testing.T) {
 		if !strings.Contains(out, `class="mt-1 text-sm text-ink"`) || strings.Contains(out, "text-mute") {
 			t.Errorf("multi-sentence hint %q should be text-sm text-ink: %s", hint, out)
 		}
+	}
+}
+
+// WCAG 1.3.1・3.3.1: ヒントとエラー文は id を持ち、同じ id の入力欄が aria-describedby で指す。ヒント・エラーのない欄は何も付けない。
+func TestFormFieldDescribesTheControl(t *testing.T) {
+	render := func(hint, errMsg string, control templ.Component) string {
+		var sb strings.Builder
+		ctx := templ.WithChildren(context.Background(), control)
+		if err := molecules.FormField("f", "名前", hint, errMsg).Render(ctx, &sb); err != nil {
+			t.Fatal(err)
+		}
+		return sb.String()
+	}
+	input := atoms.Input(atoms.InputProps{ID: "f", Name: "f", Invalid: true})
+	both := render("ヒント", "エラー", input)
+	for _, want := range []string{`aria-describedby="f-hint f-error"`, `<p id="f-hint"`, `role="alert" data-field-error="f" id="f-error"`} {
+		if !strings.Contains(both, want) {
+			t.Errorf("missing %q in:\n%s", want, both)
+		}
+	}
+	if out := render("ヒント", "", input); !strings.Contains(out, `aria-describedby="f-hint"`) || strings.Contains(out, "f-error") {
+		t.Errorf("hint only: %s", out)
+	}
+	if out := render("", "エラー", input); !strings.Contains(out, `aria-describedby="f-error"`) || strings.Contains(out, "f-hint") {
+		t.Errorf("error only: %s", out)
+	}
+	if out := render("", "", input); strings.Contains(out, "aria-describedby") {
+		t.Errorf("no hint or error must not describe the control: %s", out)
+	}
+	// 入力欄の atom 全部が受け取る。id が違う欄（<output> のすぐ隣の別の入力など）には付けない。
+	for name, c := range map[string]templ.Component{
+		"textarea": atoms.Textarea(atoms.TextareaProps{ID: "f", Name: "f"}),
+		"range":    atoms.Range(atoms.RangeProps{ID: "f", Name: "f"}),
+		"secret":   atoms.SecretInput("f", "f", false),
+		"select":   atoms.Select("f", "f", nil),
+		"selectw":  atoms.SelectWith(atoms.SelectProps{ID: "f", Name: "f", Invalid: true}),
+	} {
+		if out := render("ヒント", "エラー", c); !strings.Contains(out, `aria-describedby="f-hint f-error"`) {
+			t.Errorf("%s must be described: %s", name, out)
+		}
+	}
+	if out := render("ヒント", "エラー", atoms.Input(atoms.InputProps{ID: "other", Name: "o"})); strings.Contains(out, "aria-describedby") {
+		t.Errorf("a control with another id must not be described: %s", out)
 	}
 }

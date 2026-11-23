@@ -92,10 +92,10 @@ templ SettingsForm(f view.SettingsForm) {
 		}
 		@molecules.FieldGroup("更新", "", atoms.Attrs{"data-settings-group": "update"}) {
 			@molecules.FormField("set-update-channel", "更新のチャネル", "追いかける版です。署名を検証できた更新だけを適用します。ナイトリーから正式版へは、新しい正式版が出たときに切り替わります。", f.Errors.UpdateChannel) {
-				@atoms.Select("set-update-channel", "update.channel", updateChannelOptions(f.Values.UpdateChannel))
+				@atoms.SelectWith(atoms.SelectProps{ID: "set-update-channel", Name: "update.channel", Options: updateChannelOptions(f.Values.UpdateChannel), Invalid: f.Errors.UpdateChannel != ""})
 			}
 			@molecules.FormField("set-update-mode", "更新の適用方法", "新しい版は 6 時間ごとに確認します。自動で適用するのは、操作権の保持・接続・実行中のタスクがないときだけです。", f.Errors.UpdateApplyMode) {
-				@atoms.Select("set-update-mode", "update.apply_mode", updateApplyModeOptions(f.Values.UpdateApplyMode))
+				@atoms.SelectWith(atoms.SelectProps{ID: "set-update-mode", Name: "update.apply_mode", Options: updateApplyModeOptions(f.Values.UpdateApplyMode), Invalid: f.Errors.UpdateApplyMode != ""})
 			}
 		}
 		<div class="flex items-center gap-2">

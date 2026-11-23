@@ -518,7 +518,7 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<table class=\"min-w-full text-left text-sm\"><thead class=\"border-b border-border text-xs font-semibold text-mute\"><tr><th class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">ラベル</th><th class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">接頭辞</th><th class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">状態</th><th class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">発行</th><th class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">有効期限</th><th class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">最終使用</th><th class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\"></th></tr></thead> <tbody class=\"divide-y divide-border\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<table class=\"min-w-full text-left text-sm\"><thead class=\"border-b border-border text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">ラベル</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">接頭辞</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">状態</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">発行</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">有効期限</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">最終使用</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\"><span class=\"sr-only\">操作</span></th></tr></thead> <tbody class=\"divide-y divide-border\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -641,7 +641,7 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 				}
 				if t.CanRevoke {
 					templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-						"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+						"hx-get": t.RevokeConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML", "aria-label": "「" + t.Label + "」を失効",
 					}}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err

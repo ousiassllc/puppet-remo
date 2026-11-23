@@ -7,10 +7,24 @@ type SelectOption struct {
 	Selected bool
 }
 
-// Select は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding は --s-8（32）。矢印は右 --s-2（8）から --icon-sm（16）なので、文字との間に 8px あく。
+// SelectProps は選択欄の引数。
+type SelectProps struct {
+	ID      string
+	Name    string
+	Options []SelectOption
+	Invalid bool
+	Attrs   Attrs
+}
+
+// Select は、エラーを持たない選択欄。エラーを FormField に渡す選択欄は SelectWith で Invalid を渡す。
 templ Select(id, name string, options []SelectOption) {
-	<select id={ id } name={ name } class={ fieldClass("h-10 pl-3 pr-(--s-8) ", false) }>
-		for _, o := range options {
+	@SelectWith(SelectProps{ID: id, Name: name, Options: options})
+}
+
+// SelectWith は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding は --s-8（32）。矢印は右 --s-2（8）から --icon-sm（16）なので、文字との間に 8px あく。
+templ SelectWith(p SelectProps) {
+	<select id={ p.ID } name={ p.Name } class={ fieldClass("h-10 pl-3 pr-(--s-8) ", p.Invalid) } aria-invalid?={ p.Invalid } { describedAttrs(ctx, p.ID, p.Attrs)... }>
+		for _, o := range p.Options {
 			<option value={ o.Value } selected?={ o.Selected }>{ o.Label }</option>
 		}
 	</select>

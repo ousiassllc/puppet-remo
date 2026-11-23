@@ -63,6 +63,13 @@
 - 保存したくないときは、設定でサムネイルの保存を無効にできます（FR-AU02）。
 - OpenAI などの API キーと、ChatGPT のサインインで得るトークン（アクセス・リフレッシュ。仕様のみ・未実装）は、このフォルダーには置きません（Windows 資格情報マネージャーに保存します）。
 
+## MCP のスクリーンショットの送信について（NFR-PR01）
+
+MCP の低レベル `screenshot` の画像は、MCP クライアントが接続している AI サービスへ送られることがあります。この送信は **Nefos Remote の管轄外**です。
+
+- 機密画面（パスワード、個人情報、業務上の秘密など）を映さない運用は、**利用者の責任**です。たとえば、機密のウィンドウを最小化してから MCP クライアントで画面を取ってください。
+- Nefos Remote は、MCP クライアントが画像をどこへ送るか、送った先でどう扱われるかを制御できません。利用する MCP クライアントと AI サービスの規約・設定を確認してください。
+
 ## 起動許可アプリ（M1.5。NFR-S20）
 
 MCP の `launch_app` の起動の方式は 2 つで、**ホスト所有者がホストの GUI（起動許可アプリ画面）でだけ**選びます。MCP クライアント・Web UI・リモートからは、方式を変えられません。**既定は「ホワイトリスト方式」**で、更新したあとも既存の端末は変わりません。ブラックリスト方式は、所有者が確認のうえ明示的に選んだときだけ有効になります。
@@ -112,12 +119,12 @@ task build         # Go のビルド（ホスト OS）
 task build:windows # Windows 向けのビルド（クロスビルドの確認）
 task windows:build # Windows 向けの本番ビルド（フロントエンドのビルド込み）
 task test          # テスト
-task lint          # golangci-lint（ホスト OS と Windows）
+task lint          # golangci-lint（ホスト OS・Windows・-tags e2e の 3 回）
 task templ:generate # .templ から _templ.go を生成（生成物はコミットする）
 task frontend:build # static/dist を作る（esbuild・Tailwind CSS・htmx）
 task frontend:test # Lit のテスト（ヘッドレス Chromium。task frontend:browsers で導入）
 task e2e           # Playwright の E2E（テスト専用サーバー -tags e2e。偽の platform・tailnet）
-task ci            # CI と同じ検査を一通り実行
+task ci            # CI の主な検査を一通り実行（違いは docs/environment/setup.md）
 task package       # NSIS インストーラを作る（版は VERSION ファイル。RELEASE_VERSION= で上書き）
 task dev           # wails3 dev で開発する（Windows。別ターミナルで task templ:watch）
 ```

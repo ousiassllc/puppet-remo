@@ -92,6 +92,10 @@ func SecretInput(id, name string, invalid bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
+		templ_7745c5c3_Err = templ.RenderAttributes(ctx, templ_7745c5c3_Buffer, describedAttrs(ctx, id, nil))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "> <button type=\"button\" class=\"group motion-hover inline-flex size-10 shrink-0 items-center justify-center rounded-md text-ink hover:bg-accent-soft\" aria-label=\"入力を表示する\" aria-pressed=\"false\" aria-controls=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -99,7 +103,7 @@ func SecretInput(id, name string, invalid bool) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/secret_input.templ`, Line: 25, Col: 21}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/secret_input.templ`, Line: 26, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {

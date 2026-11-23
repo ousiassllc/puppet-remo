@@ -517,13 +517,16 @@ graph LR
     "build:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
     "copy:htmx": "bun scripts/copy-htmx.mjs",
     "copy:brand": "bun scripts/copy-brand.mjs",
+    "test": "bun --bun web-test-runner",
+    "e2e": "bun --bun playwright test",
     "dev": "bun --bun concurrently \"bun run dev:css\" \"bun run dev:js\"",
     "dev:css": "bun run build:fonts && bun run copy:brand && bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
-    "dev:js": "bun esbuild.config.mjs --watch",
-    "test": "bun --bun web-test-runner \"src/**/*.test.ts\" --node-resolve"
+    "dev:js": "bun esbuild.config.mjs --watch"
   }
 }
 ```
+
+`test` の対象（`src/**/*.test.ts`）と `--node-resolve` 相当の設定は、スクリプトの引数ではなく `web-test-runner.config.mjs` の `files` / `nodeResolve` が持つ。`e2e` は Playwright のテスト（`bun --bun playwright test`）を実行する。
 
 `esbuild.config.mjs` は `--watch` のとき、ウォッチに加えて esbuild の `serve`（`servedir: "dist"`）を、環境変数 `WAILS_VITE_PORT`（`wails3 dev` が設定。既定 9245）のポートで開始する。環境変数の展開が OS のシェルに依存しないよう、ポートはシェルではなく `esbuild.config.mjs`（`process.env`）が読む。
 
@@ -822,3 +825,4 @@ M1 はホスト GUI（GUI ルーター）だけを作る。本書にあって M1
 | 1.73 | 2026-11-21 | タイポグラフィ（T5）の指摘（#221。§8.4「値が無いときの文言は Mono の外」）: トークン一覧の「無期限」「未使用」と更新パネルの「未確認」が、日時の Mono の枠（`<td>`・`<dd class="font-mono">`）の中に出ていた。値の有無で `<td>`・`<dd>` を分け、文言は `text-mute` の Regular、日時は従来どおり `font-mono`。`views.go` は「無し」を空文字で渡す（`view.Token` の注記も更新）。`TestClientDetailPage`・`TestUpdatePageNeverChecked`・`TestTableDateTimeCellsUseMono` に文言が Mono の外であることの検査を追加 | #221 |
 | 1.74 | 2026-11-21 | タイポグラフィ（T5）の指摘（#220・#222。§8.4 の T の行）: タスクの「対象」を `view.TaskTarget`（プロセス名・pid・window_id を別フィールド）にし、`tasks.templ` の `taskTarget` で識別子だけを Mono、周りの文言は Regular にした（ダッシュボードの `data-task-target` と詳細の「対象ウィンドウ」。ウィンドウのタイトルは載せないまま）。タスク詳細の「引き継ぎ理由」は `view.TaskDetail.Handoff` を `HandoffText`・`HandoffReason` に分け、理由コードだけを Mono にした（未知のコードはコードだけ）。`TestScopedTaskShowsTargetWithoutTitle`・`TestTaskDetailPage` の期待を更新し、`TestTaskDetailUnknownHandoffAndUnnamedTarget` を追加 | #220・#222 |
 | 1.75 | 2026-11-21 | 形・余白・線（S2・S5）の見直し（#204・#208 の訂正。§8.4 の S の行）: 題付き Card を縦に積む間隔を、48（`--gap-section-sm`。`space-y-12`・`gap-12`）から部品どうしの 24（`--gap-grid-lg`。`space-y-6`・`gap-6`）に戻した。ガイドは部品どうし 16〜24・セクションどうし 48〜72 で、Card は部品。#204・#208 は Card をセクションと見たが、#166 の 24 にはこの根拠がある。ビューアはツールバー → 操作権 → 操作するウィンドウ → 映像のすべてを 24 に（以前は約 12・48・約 12）、ダッシュボードのグリッドも 16 から 24 に。48 はページの見出しで区切る節どうしだけ。監査ログの絞り込みの補足文（日時の RFC 3339 の例が `--ink` の 14px だった）を、どれも 1 文にして `FormField` の 1 文の書式（`mt-1 text-xs text-mute`）にそろえた。`TestTitledCardsAreSeparatedByGapGridLg`・`TestViewerPartsAreSeparatedByGapGridLg`・`TestAppsPageStacksCardsAtGapGridLg`・`TestDashboardSeparatesCardsByGapGridLg`・`TestAuditFilterHintsShareOneStyle` に置き換え | #204・#208 |
+| 1.76 | 2026-11-23 | §8.2 の scripts の抜粋を実際の static/package.json に合わせた（test の引数を web-test-runner.config.mjs に任せる形に、e2e を追加） | #227 |

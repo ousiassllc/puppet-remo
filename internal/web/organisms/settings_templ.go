@@ -367,7 +367,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = atoms.Select("set-update-channel", "update.channel", updateChannelOptions(f.Values.UpdateChannel)).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = atoms.SelectWith(atoms.SelectProps{ID: "set-update-channel", Name: "update.channel", Options: updateChannelOptions(f.Values.UpdateChannel), Invalid: f.Errors.UpdateChannel != ""}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -393,7 +393,7 @@ func SettingsForm(f view.SettingsForm) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = atoms.Select("set-update-mode", "update.apply_mode", updateApplyModeOptions(f.Values.UpdateApplyMode)).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = atoms.SelectWith(atoms.SelectProps{ID: "set-update-mode", Name: "update.apply_mode", Options: updateApplyModeOptions(f.Values.UpdateApplyMode), Invalid: f.Errors.UpdateApplyMode != ""}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

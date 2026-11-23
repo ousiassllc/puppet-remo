@@ -167,7 +167,8 @@ func TestViewerPartsAreSeparatedByGapGridLg(t *testing.T) {
 // 2 文以上の補足は FormField が本文色の 14px にするので、日時の補足は 1 文で書く。
 func TestAuditFilterHintsShareOneStyle(t *testing.T) {
 	out := webtest.Render(t, organisms.AuditFilters(view.AuditFilters{}))
-	const hint = `<p class="mt-1 text-xs text-mute">`
+	// ヒントの <p> は入力欄の aria-describedby が指す id（{入力 id}-hint）を class の前に持つ。
+	const hint = `-hint" class="mt-1 text-xs text-mute">`
 	for _, text := range []string{
 		"RFC 3339 で、この日時以降（例: 2026-11-02T09:00:00+09:00）。",
 		"RFC 3339 で、この日時以前。",
@@ -275,6 +276,16 @@ func TestTokenListRevokeOnlyForActiveTokens(t *testing.T) {
 	hasNot(t, out, "/tokens/r/revoke", "hx-swap-oob")
 	webtest.AssertCSPCompliantHTML(t, out)
 
+	// 7 つの見出しすべてに scope="col"。末尾（操作列）の見出しは空にせず名前を持つ。行の「失効」は対象のラベルを名前に含む。
+	if got := strings.Count(out, "<th "); got != 7 {
+		t.Errorf("th count = %d, want 7", got)
+	}
+	if got := strings.Count(out, `<th scope="col"`); got != 7 {
+		t.Errorf(`th scope="col" count = %d, want 7`, got)
+	}
+	has(t, out, `<span class="sr-only">操作</span></th>`, `aria-label="「active」を失効"`)
+	hasNot(t, out, `aria-label="「revoked」を失効"`)
+
 	oob := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1"}, true))
 	has(t, oob, `hx-swap-oob="true"`, `data-empty="tokens"`)
 }
@@ -353,6 +364,14 @@ func TestSettingsFormAuditAndUpdateFields(t *testing.T) {
 		`name="audit.thumbs_max_bytes"`, `value="1073741824"`, `<option value="auto_idle" selected>`,
 		`data-field-error="set-audit-days"`, `data-field-error="set-update-mode"`, `data-field-error="set-update-channel"`, `<option value="nightly" selected>`)
 	hasNot(t, out, `data-field-error="set-audit-cap"`, `<option value="confirm" selected>`)
+	// エラーのある選択欄は不正の状態とエラー文を持ち、エラーのない選択欄は不正にしない。
+	has(t, out, `id="set-update-channel-error"`, `aria-describedby="set-update-channel-hint set-update-channel-error"`, `id="set-audit-days-hint"`, `aria-describedby="set-audit-days-hint set-audit-days-error"`)
+	if got := strings.Count(out, `<select`); got != 2 {
+		t.Errorf("want 2 selects, got %d", got)
+	}
+	if got := strings.Count(out, `<select id="set-update-channel" name="update.channel" class="block w-full min-w-0 rounded-md border bg-surface text-base [&amp;[readonly]]:bg-bone disabled:cursor-not-allowed disabled:opacity-50 h-10 pl-3 pr-(--s-8) border-danger" aria-invalid`); got != 1 {
+		t.Errorf("set-update-channel select must be invalid, got %d:\n%s", got, out)
+	}
 	if got := strings.Count(out, "checked"); got != 1 {
 		t.Errorf("only audit.thumbnails_enabled must be checked, got %d", got)
 	}
@@ -667,6 +686,19 @@ func TestConsentErrorsUseFieldError(t *testing.T) {
 
 	fast := webtest.Render(t, organisms.FastpathForm(view.FastpathForm{Errors: view.FastpathErrors{Consent: "同意が必要です"}}))
 	has(t, fast, `class="motion-rise-in mt-1 text-sm text-danger" role="alert" data-field-error="fastpath-consent"`)
+	// 同意のチェックボックスは、エラーがあるときだけ aria-invalid を出し、エラー文を aria-describedby で指す。
+	for _, c := range []struct{ out, id string }{{agent, "agent-consent"}, {fast, "fastpath-consent"}} {
+		input := c.out[strings.Index(c.out, `<input id="`+c.id+`"`):]
+		input = input[:strings.Index(input, ">")]
+		has(t, input, `aria-invalid`, `aria-describedby="`+c.id+`-error"`)
+	}
+	okAgent := webtest.Render(t, organisms.AgentForm(view.AgentForm{}))
+	okFast := webtest.Render(t, organisms.FastpathForm(view.FastpathForm{}))
+	for _, c := range []struct{ out, id string }{{okAgent, "agent-consent"}, {okFast, "fastpath-consent"}} {
+		input := c.out[strings.Index(c.out, `<input id="`+c.id+`"`):]
+		input = input[:strings.Index(input, ">")]
+		hasNot(t, input, "aria-invalid", "aria-describedby")
+	}
 }
 
 // トースト・アラートの置き場: トーストは画面下の中央（端から --toast-offset の 24px・--z-toast）、アラートは #alert-root（中身が無ければ隠す）と、
