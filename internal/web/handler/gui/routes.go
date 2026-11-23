@@ -29,6 +29,8 @@ func (h *Handler) Register(r gin.IRoutes) {
 	r.GET("/clients/:id", h.ClientDetail)
 	r.GET("/settings", h.Settings)
 	r.GET("/update", h.Update)
+	// 同梱する第三者のライセンスの全文（#133）。設定の画面から開く。GUI ルーターだけにあり、リモートには出さない
+	r.GET("/licenses", h.Licenses)
 	r.GET("/apps", h.Apps)
 	r.GET("/apps/new", h.AppNew)
 	r.GET("/apps/denied", h.Denied)

@@ -41,7 +41,7 @@ templ FieldError(id, errMsg string) {
 // ヒント（id=「{id}-hint」）とエラー文（id=「{id}-error」）は、id が一致する入力欄の atom が aria-describedby で指す。
 templ FormField(id, label, hint, errMsg string) {
 	<div>
-		<label for={ id } class="mb-2 block text-sm text-ink">{ label }</label>
+		<label for={ id } class="mb-(--gap-label) block text-sm text-ink">{ label }</label>
 		{{ ctx = atoms.WithDescribedBy(ctx, id, describedByIDs(id, hint, errMsg)) }}
 		{ children... }
 		if hint != "" {

@@ -403,8 +403,8 @@ func TestLaunchAppRequestFormErrorsAreRejectedByControl(t *testing.T) {
 			e.ctl.mode = domain.LaunchModeDenylist
 			cs := e.connect("c1")
 			res := callTool(t, cs, "launch_app", args)
-			if !res.IsError || !strings.HasPrefix(res.text(), "invalid_argument") {
-				t.Errorf("result = %q (isError=%v), want invalid_argument", res.text(), res.IsError)
+			if got := res.errCode(t); got != domain.CodeInvalidArgument {
+				t.Errorf("error code = %q (%s), want invalid_argument", got, res.text())
 			}
 		})
 	}
@@ -505,8 +505,8 @@ func TestLaunchAppDeniedByTheHost(t *testing.T) {
 	cs := e.connect("c1")
 
 	res := callTool(t, cs, "launch_app", map[string]any{"path": `C:\Windows\System32\cmd.exe`})
-	if !res.IsError || !strings.HasPrefix(res.text(), "app_denied") {
-		t.Fatalf("result = %q (isError=%v), want app_denied", res.text(), res.IsError)
+	if got := res.errCode(t); got != domain.CodeAppDenied {
+		t.Fatalf("error code = %q (%s), want app_denied", got, res.text())
 	}
 	if strings.Contains(res.text(), "cmd.exe") || strings.Contains(res.text(), `C:\`) {
 		t.Errorf("error message leaks the path: %q", res.text())
@@ -520,7 +520,7 @@ func TestLaunchAppPathInAllowlistModeIsRejected(t *testing.T) {
 	cs := e.connect("c1")
 
 	res := callTool(t, cs, "launch_app", map[string]any{"path": `C:\Tools\a.exe`})
-	if !res.IsError || !strings.HasPrefix(res.text(), "invalid_argument") {
-		t.Errorf("result = %q (isError=%v), want invalid_argument", res.text(), res.IsError)
+	if got := res.errCode(t); got != domain.CodeInvalidArgument {
+		t.Errorf("error code = %q (%s), want invalid_argument", got, res.text())
 	}
 }

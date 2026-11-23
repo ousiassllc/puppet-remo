@@ -36,7 +36,7 @@ func TestAuditPageListsNewestFirstWithBadgesAndLocalTime(t *testing.T) {
 	r := newRig(t, seedAudit)
 	res := r.get("/audit")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>監査ログ - puppet-remo</title>", "日時", "クライアント", "種別", "イベント", "結果", "所要時間",
+	contains(t, res, "<html", "<title>監査ログ - Nefos Remote</title>", "日時", "クライアント", "種別", "イベント", "結果", "所要時間",
 		"2026-10-30 11:59:00", // 時計 12:00 UTC の 1 分前。Location は UTC
 		"tool.left_click", "lease.acquire", "auth.bearer_failed", "settings.update", "12 ms",
 		`data-result="ok"`, `data-result="denied"`, `data-result="error"`,
@@ -51,6 +51,9 @@ func TestAuditPageListsNewestFirstWithBadgesAndLocalTime(t *testing.T) {
 		}
 		last = i
 	}
+	// イベント名は機械的な識別子なので、リンクも Mono（T5）。
+	contains(t, res, `class="link font-mono"`)
+	lacks(t, res, `class="link"`)
 	// サムネイルの有無（id 6 のみ）。
 	if n := strings.Count(res.Body, ">あり<"); n != 1 {
 		t.Errorf("thumbnail badges = %d, want 1", n)
@@ -112,7 +115,7 @@ func TestAuditPaginationWithCursorAndLimit(t *testing.T) {
 	r := newRig(t, seedAudit)
 	res := r.get("/audit?limit=2")
 	status(t, res, http.StatusOK)
-	contains(t, res, ">tool.left_click<", ">lease.acquire<", "data-pager-next", `href="/audit?cursor=5&amp;limit=2"`, `hx-push-url="true"`)
+	contains(t, res, ">tool.left_click<", ">lease.acquire<", ">1</span> ページ目", "disabled data-pager-prev", "data-pager-next", `href="/audit?cursor=5&amp;limit=2"`, `hx-push-url="true"`)
 	lacks(t, res, ">tool.key<")
 	if q := r.f.Audit.LastQuery(); q.Limit != 2 || q.Cursor != 0 {
 		t.Errorf("query = %+v", q)
@@ -122,17 +125,26 @@ func TestAuditPaginationWithCursorAndLimit(t *testing.T) {
 	res = r.get("/audit?limit=1&kind=tool")
 	contains(t, res, "kind=tool", "cursor=6", "limit=1")
 
+	// 2 ページ目: 前へは 1 ページ目（cursor なし）、次へは戻り道（back）に今の cursor を積んで進む。
 	res = r.get("/audit?limit=2&cursor=5")
-	contains(t, res, ">tool.key<", ">auth.bearer_failed<", "cursor=3")
-	lacks(t, res, ">tool.left_click<", ">lease.acquire<")
+	contains(t, res, ">tool.key<", ">auth.bearer_failed<", ">2</span> ページ目", `href="/audit?limit=2"`, `href="/audit?back=5&amp;cursor=3&amp;limit=2"`)
+	lacks(t, res, ">tool.left_click<", ">lease.acquire<", "disabled data-pager")
 	if q := r.f.Audit.LastQuery(); q.Cursor != 5 {
 		t.Errorf("cursor = %d", q.Cursor)
 	}
 
-	// 最後のページには「次へ」が出ない。
-	res = r.get("/audit?limit=2&cursor=3")
-	contains(t, res, ">tool.wheel<", ">settings.update<")
-	lacks(t, res, "data-pager")
+	// 最後のページは「次へ」が押せない。前へは back をたどって 2 ページ目に戻り、同じ行が出る。
+	res = r.get("/audit?back=5&cursor=3&limit=2")
+	contains(t, res, ">tool.wheel<", ">settings.update<", ">3</span> ページ目", "disabled data-pager-next", `href="/audit?cursor=5&amp;limit=2"`)
+	lacks(t, res, "disabled data-pager-prev")
+	res = r.get("/audit?cursor=5&limit=2")
+	contains(t, res, ">tool.key<", ">auth.bearer_failed<", ">2</span> ページ目")
+
+	// 1 ページに収まる一覧にはページ送りを出さない。
+	lacks(t, r.get("/audit?limit=200"), "data-pager")
+
+	// back は cursor なしでは受け付けない（422）。
+	status(t, r.get("/audit?back=5"), http.StatusUnprocessableEntity)
 
 	// 範囲外の cursor は空の表示（200）。
 	res = r.get("/audit?cursor=1")
@@ -191,11 +203,11 @@ func TestAuditRenderingBranches(t *testing.T) {
 	frag := r.get("/audit?kind=tool", hx...)
 	status(t, frag, http.StatusOK)
 	contains(t, frag, `id="audit-list"`, "tool.left_click")
-	lacks(t, frag, "<html", `id="sidebar-nav"`)
+	lacks(t, frag, "<html", `id="sidebar-nav-links"`)
 	// HX-Boosted: #main の中身（フルページの枠は出さない）。
 	boosted := r.get("/audit", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, `id="audit-list"`, "<title>監査ログ - puppet-remo</title>")
+	contains(t, boosted, `id="audit-list"`, "<title>監査ログ - Nefos Remote</title>")
 	lacks(t, boosted, "<html")
 	// 履歴の復元はフルページ。
 	restore := r.get("/audit", "HX-Request", "true", "HX-History-Restore-Request", "true")
@@ -223,7 +235,7 @@ func TestAuditDetailShowsFieldsArgsAndThumbnail(t *testing.T) {
 	})
 	res := r.get("/audit/6")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>監査ログの詳細 - puppet-remo</title>", `data-audit-detail="tool.left_click"`,
+	contains(t, res, "<html", "<title>監査ログの詳細 - Nefos Remote</title>", `data-audit-detail="tool.left_click"`,
 		`data-audit-field="time"`, "2026-10-30 11:59:00", `data-audit-field="client"`, "alice-laptop", `data-audit-field="session"`, "sess-1",
 		`data-audit-field="lease"`, "lease-9", `data-audit-field="tool"`, "left_click", `data-audit-field="duration"`, "12 ms", `data-audit-field="actor"`, "mcp",
 		"data-audit-args", "button", "left", "100",
@@ -233,6 +245,8 @@ func TestAuditDetailShowsFieldsArgsAndThumbnail(t *testing.T) {
 	contains(t, res, `class="break-all text-ink font-mono" data-audit-field="time"`, `class="break-all text-ink font-mono" data-audit-field="session"`,
 		`class="break-all text-ink font-mono" data-audit-field="lease"`, `class="break-all text-ink font-mono" data-audit-field="duration"`,
 		`class="break-all text-ink" data-audit-field="client"`)
+	// イベント名・ツール名・エラーコードも機械的な識別子なので Mono（セッション・リースの ID と同じ。T5）。
+	contains(t, res, `class="break-all text-ink font-mono" data-audit-field="event"`, `class="break-all text-ink font-mono" data-audit-field="tool"`)
 
 	// HX-Boosted は #main の中身。
 	b := r.get("/audit/6", "HX-Request", "true", "HX-Boosted", "true")
@@ -244,8 +258,9 @@ func TestAuditDetailWithoutThumbnailOrArgs(t *testing.T) {
 	r := newRig(t, seedAudit)
 	res := r.get("/audit/5")
 	status(t, res, http.StatusOK)
-	contains(t, res, `data-empty="audit-args"`, `data-empty="audit-thumb"`, "サムネイルはありません", `data-audit-field="error-code"`, "lease_held")
-	lacks(t, res, "<img", "data-audit-thumb")
+	contains(t, res, `data-empty="audit-args"`, `data-empty="audit-thumb"`, "サムネイルはありません", "lease_held",
+		`class="break-all text-ink font-mono" data-audit-field="error-code"`)
+	lacks(t, res, `src="/audit/5/thumbnail"`, "data-audit-thumb") // ヘッダーのロゴも <img> なので、サムネイルの <img> は src で見分ける
 }
 
 func TestAuditDetailNotFound(t *testing.T) {

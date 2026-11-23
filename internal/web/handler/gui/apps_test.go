@@ -46,7 +46,7 @@ func TestAppsPageListsAppsWithPathsArgsAndNotice(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, "<html", `aria-current="page"`, `href="/apps"`, "起動許可アプリ",
 		`id="app-list"`, `data-app="app1"`, "メモ帳", notepad, argSecret, "two words", workDir,
-		`data-app="app2"`, "電卓", calc, "実行ファイルのあるディレクトリ", `data-app-count="2"`, "登録 2 / 50 件",
+		`data-app="app2"`, "電卓", calc, "実行ファイルのあるディレクトリ", `data-app-count="2"`, `登録 <span class="font-mono">2 / 50</span> 件`,
 		`hx-get="/apps/app1/edit"`, `hx-get="/apps/app1/delete/confirm"`,
 		// 追加フォーム（常時表示の注意書き・ファイル選択・引数は textarea）
 		`id="app-form-new"`, `hx-post="/apps"`, `hx-target="#app-list"`, `hx-target-422="this"`, ` novalidate`,
@@ -58,7 +58,7 @@ func TestAppsPageListsAppsWithPathsArgsAndNotice(t *testing.T) {
 func TestAppsPageEmpty(t *testing.T) {
 	res := newRig(t).get("/apps")
 	status(t, res, http.StatusOK)
-	contains(t, res, `data-empty="apps"`, "登録 0 / 50 件", `data-notice="interpreter"`)
+	contains(t, res, `data-empty="apps"`, `登録 <span class="font-mono">0 / 50</span> 件`, `data-notice="interpreter"`)
 	lacks(t, res, "data-app=")
 }
 
@@ -71,7 +71,7 @@ func TestAppsFragmentsFollowHXRequest(t *testing.T) {
 	contains(t, frag, `id="app-list"`, "メモ帳")
 	lacks(t, frag, "<html", `id="app-form-new"`)
 	boosted := r.get("/apps", append([]string{"HX-Boosted", "true"}, hx...)...)
-	contains(t, boosted, "<title>起動許可アプリ - puppet-remo</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, `id="app-list"`, `id="app-form-new"`)
+	contains(t, boosted, "<title>起動許可アプリ - Nefos Remote</title>", `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `id="app-list"`, `id="app-form-new"`)
 	lacks(t, boosted, "<html")
 
 	// /apps/new: 部分更新は追加フォームだけ。それ以外はページ。

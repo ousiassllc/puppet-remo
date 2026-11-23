@@ -93,6 +93,9 @@ type Control interface {
 	// （TargetStatus は halted と、停止の理由。ErrInputBlocked）。自動では前面にしない。target_closed / target_replaced / target_unsupported で止まった
 	// リースは再開できない（ErrInputBlocked。解放して選び直す）。active のリースには何もしない。スコープなしは ErrInvalidArgument。
 	ResumeTarget(ctx context.Context, who domain.Actor) (TargetStatus, error)
+	// GrabGroupFrame は ref の T と、その時点の対象グループ G を撮って合成した画像（GroupFrame）を返す（#156・#157・#158。リース・保持者は問わない）。
+	// 撮れない・検証できないときは画面全体に切り替えず、ErrInputBlocked（reason: capture_unavailable / capture_member_unavailable / target_*）を返す。
+	GrabGroupFrame(ctx context.Context, ref domain.WindowRef) (GroupFrame, error)
 }
 
 // LaunchRequest は Launch の指定。AppID と Path はどちらか一方だけ（同時指定は ErrInvalidArgument）。
@@ -274,7 +277,11 @@ func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Resul
 	start := c.clock.Now()
 	var tr judgeTrace
 	res, leaseID, executed, err := c.do(ctx, who, op, &tr)
-	if _, isMove := op.(domain.PointerMove); c.audit != nil && !isMove {
+	// エージェントのバッチの中断（#158）は、実行しなかった（一部だけ注入した）操作なので agent.step の行を残さない
+	// （result を ok にすると「実行して成功」に読めるため。実行・一部実行・未実行の件数と理由は agent.batch_yielded の行に残る）。
+	_, isMove := op.(domain.PointerMove)
+	yielded := who.Kind == domain.ActorAgent && IsGroupChanged(err)
+	if c.audit != nil && !isMove && !yielded {
 		tool, args := describeOp(op, res)
 		took := c.clock.Now().Sub(start)
 		var entry repository.AuditEntry
@@ -285,7 +292,8 @@ func (c *control) Do(ctx context.Context, who domain.Actor, op domain.Op) (Resul
 			entry = ToolAuditEntry(who, tool, args, leaseID, err, took)
 		}
 		var shot *thumbTarget
-		if err == nil && opChangesScreen(executed) {
+		// スコープ付きのリースの操作は、監査のサムネイルを撮らない（Capturer.Grab はモニター全体＝他アプリの画素を含む。モニター撮影に切り替えない規則）。
+		if err == nil && !tr.scoped && opChangesScreen(executed) {
 			t := thumbTargetOf(who, executed)
 			shot = &t
 		}
@@ -317,6 +325,7 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if err != nil {
 		return Result{}, "", nil, err
 	}
+	tr.scoped = scope != nil
 	p, err := c.plan(ctx, op)
 	if err != nil {
 		return Result{}, leaseID, nil, err

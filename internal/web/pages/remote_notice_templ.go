@@ -50,7 +50,7 @@ func Pending() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main data-error-code=\"device_not_registered\" data-connection-state=\"pending\"><h1>接続要求を送信しました</h1><p>接続要求を送信しました。ホストの許可を待っています。</p><p>許可されたあと、このページを再読み込みするとビューアが開きます。</p></main>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main data-error-code=\"device_not_registered\" data-connection-state=\"pending\"><h1 class=\"pg-t\">接続要求を送信しました</h1><p>接続要求を送信しました。ホストの許可を待っています。</p><p>許可されたあと、このページを再読み込みするとビューアが開きます。</p></main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -98,7 +98,7 @@ func Denied() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<main data-error-code=\"device_not_registered\" data-connection-state=\"denied\"><h1>接続要求は拒否されました</h1><p>ホストがこのデバイスの接続要求を拒否しました。心当たりがある場合は、ホストの所有者に連絡してください。</p><p>拒否から 24 時間は、このデバイスから新しい接続要求は送信されません。</p></main>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<main data-error-code=\"device_not_registered\" data-connection-state=\"denied\"><h1 class=\"pg-t\">接続要求は拒否されました</h1><p>ホストがこのデバイスの接続要求を拒否しました。心当たりがある場合は、ホストの所有者に連絡してください。</p><p>拒否から 24 時間は、このデバイスから新しい接続要求は送信されません。</p></main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -146,7 +146,7 @@ func Expired() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main data-error-code=\"device_not_registered\" data-connection-state=\"expired\"><h1>接続要求の有効期限が切れました</h1><p>ホストの許可がないまま、接続要求の有効期限（24 時間）が切れました。</p><p>しばらくしてからこのページを再読み込みすると、改めて接続要求を送信します。</p></main>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<main data-error-code=\"device_not_registered\" data-connection-state=\"expired\"><h1 class=\"pg-t\">接続要求の有効期限が切れました</h1><p>ホストの許可がないまま、接続要求の有効期限（24 時間）が切れました。</p><p>しばらくしてからこのページを再読み込みすると、改めて接続要求を送信します。</p></main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -207,14 +207,14 @@ func RemoteError(v view.RemoteError) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><h1>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><h1 class=\"pg-t\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(v.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/remote_notice.templ`, Line: 48, Col: 16}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/remote_notice.templ`, Line: 48, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {

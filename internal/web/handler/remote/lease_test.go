@@ -269,7 +269,7 @@ func TestLeasePanelShowsTheRunningAgentTask(t *testing.T) {
 	_, h := r.viewer()
 	res := r.get("/viewer/lease", h...) // r.get は CSP に適合した HTML かも検査する
 	status(t, res, http.StatusOK)
-	contains(t, res, `data-lease-state="other"`, "data-lease-task", "AI エージェントのタスク実行中", "実行中", "3 / 50", "1分35秒", "上限 10分",
+	contains(t, res, `data-lease-state="other"`, "data-lease-task", "AI エージェントのタスク実行中", "実行中", "3 / 50", `<span class="font-mono">1分35秒</span>（上限 <span class="font-mono">10分</span>）`,
 		started.Local().Format("15:04:05"), "requester-9", `hx-get="/viewer/lease/revoke/confirm"`)
 	lacks(t, res, "SECRET-PROMPT", "SECRET-RESULT", "task-1", "other-task")
 }

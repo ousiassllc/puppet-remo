@@ -34,7 +34,7 @@ func TestRequestsHistoryPageShowsAllResults(t *testing.T) {
 	})
 	res := r.get("/requests/history")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>接続要求の履歴 - puppet-remo</title>",
+	contains(t, res, "<html", "<title>接続要求の履歴 - Nefos Remote</title>",
 		"届いた日時", "デバイス名", "tailnet IP", "ユーザー", "結果", "処理した日時",
 		`data-history-request="req-ok" data-result="approved"`, "allowed-pc", "carol@example.com", "100.64.0.20",
 		`data-history-request="req-ng" data-result="denied"`, "denied-pc",
@@ -96,22 +96,22 @@ func TestRequestsHistoryPaging(t *testing.T) {
 	if n := strings.Count(page1.Body, "data-history-request="); n != size {
 		t.Errorf("page 1 rows = %d, want %d", n, size)
 	}
-	contains(t, page1, fmt.Sprintf(`data-history-request="req-%03d"`, total-1), `href="/requests/history?page=2"`, "data-pager-next", "1 ページ目")
-	lacks(t, page1, "data-pager-prev")
+	contains(t, page1, fmt.Sprintf(`data-history-request="req-%03d"`, total-1), `href="/requests/history?page=2"`, "data-pager-next", ">1</span> ページ目")
+	contains(t, page1, "disabled data-pager-prev")
 
 	page3 := r.get("/requests/history?page=3")
 	status(t, page3, http.StatusOK)
 	if n := strings.Count(page3.Body, "data-history-request="); n != 3 {
 		t.Errorf("page 3 rows = %d, want 3", n)
 	}
-	contains(t, page3, `data-history-request="req-000"`, `href="/requests/history?page=2"`, "data-pager-prev", "3 ページ目")
-	lacks(t, page3, "data-pager-next")
+	contains(t, page3, `data-history-request="req-000"`, `href="/requests/history?page=2"`, "data-pager-prev", ">3</span> ページ目")
+	contains(t, page3, "disabled data-pager-next")
 
 	// 不正・範囲外のページ番号。
 	for _, q := range []string{"?page=0", "?page=-2", "?page=abc", "?page="} {
 		res := r.get("/requests/history" + q)
 		status(t, res, http.StatusOK)
-		contains(t, res, `data-history-request="req-`+fmt.Sprintf("%03d", total-1)+`"`, "1 ページ目")
+		contains(t, res, `data-history-request="req-`+fmt.Sprintf("%03d", total-1)+`"`, ">1</span> ページ目")
 	}
 	beyond := r.get("/requests/history?page=99")
 	status(t, beyond, http.StatusOK)
@@ -133,7 +133,7 @@ func TestRequestsHistoryFragmentVariants(t *testing.T) {
 
 	boosted := r.get("/requests/history", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, "<title>接続要求の履歴 - puppet-remo</title>", `id="request-history"`, `id="sidebar-nav"`)
+	contains(t, boosted, "<title>接続要求の履歴 - Nefos Remote</title>", `id="request-history"`, `id="sidebar-nav-links"`)
 	lacks(t, boosted, "<html")
 
 	// 履歴の復元（戻る）はフルページ。

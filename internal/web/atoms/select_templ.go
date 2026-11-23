@@ -54,7 +54,7 @@ func Select(id, name string, options []SelectOption) templ.Component {
 	})
 }
 
-// SelectWith は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding 36 は矢印の分。
+// SelectWith は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding は --s-8（32）。矢印は右 --s-2（8）から --icon-sm（16）なので、文字との間に 8px あく。
 func SelectWith(p SelectProps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -76,7 +76,7 @@ func SelectWith(p SelectProps) templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var3 = []any{fieldClass("h-10 pl-3 pr-9 ", p.Invalid)}
+		var templ_7745c5c3_Var3 = []any{fieldClass("h-10 pl-3 pr-(--s-8) ", p.Invalid)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var3...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err

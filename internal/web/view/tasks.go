@@ -35,9 +35,11 @@ type TaskRow struct {
 	Elapsed       string
 }
 
-// TaskList はタスクの一覧の 1 ページ（表・「次へ」）。NextURL が空なら次のページは無い。
+// TaskList はタスクの一覧の 1 ページ（表・ページ送り）。PrevURL・NextURL が空なら、その向きのページは無い。
 type TaskList struct {
 	Rows    []TaskRow
+	Page    int
+	PrevURL string
 	NextURL string
 }
 
@@ -65,6 +67,17 @@ type TaskStepRow struct {
 	At         string
 }
 
+// TaskTarget はタスクの対象ウィンドウ。プロセス名・pid・window_id は機械的な識別子なので、1 つの文字列にせず別々に持つ
+// （識別子だけを Mono、周りの文言を Regular で描くため）。ウィンドウのタイトルは持たない。
+type TaskTarget struct {
+	Process  string // プロセス名。分からなければ空
+	PID      int
+	WindowID string
+}
+
+// Scoped は対象ウィンドウがある（window_id つきのタスク）か。
+func (t TaskTarget) Scoped() bool { return t.WindowID != "" }
+
 // TaskDetail はタスク 1 件の詳細。
 type TaskDetail struct {
 	Chrome         Chrome
@@ -78,7 +91,10 @@ type TaskDetail struct {
 	StepCount      int
 	FastSteps      int
 	OpenAISteps    int
-	Handoff        string // 引き継ぎ理由の説明（無ければ空）
+	HandoffText    string     // 引き継ぎ理由の説明（理由コードが未知なら空）
+	HandoffReason  string     // 引き継ぎ理由のコード（low_confidence など。機械的な識別子なので Mono。無ければ空）
+	Target         TaskTarget // 対象ウィンドウ（プロセス名・pid・window_id。タイトルは載せない）。スコープなしはゼロ値
+	CapturePartial string     // 所有関係を確かめられず画像から除外したウィンドウがあったことの説明。無ければ空
 	InputTokens    string
 	OutputTokens   string
 	ResultText     string
@@ -98,6 +114,7 @@ type RunningTask struct {
 	DetailURL     string
 	Client        string
 	PromptExcerpt string
+	Target        TaskTarget // 対象ウィンドウ（window_id つきのタスク。一覧ではプロセス名・pid だけ使う。タイトルは載せない）。無ければゼロ値
 	Status        TaskStatus
 }
 

@@ -5,16 +5,17 @@
   "description": "puppet-remo のホスト GUI のフロントエンド（HTMX + Tailwind。docs/architecture/frontend.md §8）",
   "type": "module",
   "scripts": {
-    "build": "bun run clean && bun run build:fonts && bun run build:css && bun run build:js && bun run copy:htmx",
+    "build": "bun run clean && bun run build:fonts && bun run build:css && bun run build:js && bun run copy:htmx && bun run copy:brand",
     "clean": "bun scripts/clean.mjs",
     "build:fonts": "bun scripts/copy-fonts.mjs",
     "build:js": "bun esbuild.config.mjs",
     "build:css": "bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --minify",
     "copy:htmx": "bun scripts/copy-htmx.mjs",
+    "copy:brand": "bun scripts/copy-brand.mjs",
     "test": "bun --bun web-test-runner",
     "e2e": "bun --bun playwright test",
     "dev": "bun --bun concurrently \"bun run dev:css\" \"bun run dev:js\"",
-    "dev:css": "bun run build:fonts && bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
+    "dev:css": "bun run build:fonts && bun run copy:brand && bun --bun tailwindcss -i src/css/app.css -o dist/css/app.css --watch",
     "dev:js": "bun esbuild.config.mjs --watch"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "@web/test-runner-playwright": "1.0.0",
     "concurrently": "10.0.6",
     "esbuild": "0.28.2",
+    "subset-font": "2.9.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2"
   },

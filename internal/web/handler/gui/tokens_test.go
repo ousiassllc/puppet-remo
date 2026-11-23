@@ -39,7 +39,7 @@ func TestIssueTokenRevealsPlaintextOnce(t *testing.T) {
 	contains(t, res, `data-token-reveal hx-history="false"`)
 	contains(t, res, ` novalidate`, `data-copy-target="issued-token"`, `data-fallback="`, "今だけ表示されます", "claude-desktop")
 	// 一覧の更新は OOB（接頭辞だけ）で添えられる。
-	contains(t, res, `id="token-list" class="overflow-x-auto" hx-swap-oob="true"`, "claude-desktop")
+	contains(t, res, `id="token-list" class="overflow-x-auto" aria-label="発行済みトークン" role="region" tabindex="0" hx-swap-oob="true"`, "claude-desktop")
 	lacks(t, res, "<html")
 	// フォームは空の状態に戻る（OOB）。発行したラベルも古いエラーも残さない。
 	contains(t, res, `id="token-form"`, `hx-swap-oob="true"`, `id="token-form-errors"`)
@@ -79,7 +79,7 @@ func TestIssueTokenExpiry(t *testing.T) {
 			if len(r.f.Admin.Issued) != 1 || !tt.wantTTL(r.f.Admin.Issued[0].TTL) {
 				t.Fatalf("issued = %+v", r.f.Admin.Issued)
 			}
-			contains(t, res, "（有効期限: "+tt.expires+"）")
+			contains(t, res, `（有効期限: <span class="font-mono">`+tt.expires+`</span>）`)
 		})
 	}
 }

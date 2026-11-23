@@ -1,0 +1,7 @@
+package layout
+
+// favicon はタブ・ウィンドウのアイコン（素材の favicon.ico。16・32・48px）。/static/brand/favicon.ico は dist に同梱する（static/scripts/copy-brand.mjs）。
+// /static を読み込めない RemoteNotice（未登録のデバイスは /static も 403）には付けない。
+templ favicon() {
+	<link rel="icon" href="/static/brand/favicon.ico" sizes="any"/>
+}

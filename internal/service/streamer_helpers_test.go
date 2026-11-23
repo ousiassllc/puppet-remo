@@ -228,6 +228,12 @@ func parseFrame(t *testing.T, data []byte) parsedFrame {
 	}
 	n := int(le.Uint16(data[12:]))
 	rest := data[frameHeaderSize:]
+	if f.flags&FrameFlagGroup != 0 { // グループ源は見出しの直後に原点（i32 x・y）が付く
+		if len(rest) < groupOriginSize {
+			t.Fatalf("group origin is truncated")
+		}
+		rest = rest[groupOriginSize:]
+	}
 	for i := range n {
 		if len(rest) < tileHeaderSize {
 			t.Fatalf("tile %d header is truncated", i)

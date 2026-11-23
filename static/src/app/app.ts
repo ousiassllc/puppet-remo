@@ -2,19 +2,48 @@
 // 状態とロジックはサーバーが持つ。ここにあるのは、サーバーに頼れない次のものだけ:
 //   1. ネットワーク障害・想定外の 5xx の汎用エラー（インラインアラート。サーバーの応答が無いので、ページに置いた雛形から作る）
 //   2. トークンのコピー
-//   3. トースト（サーバーが OOB で追加する完了の短い通知）の自動消去（3 秒）と、新しいものが前を置き換える動作
-//   4. 確認モーダルのキャンセル・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
+//   3. トースト（サーバーが OOB で追加する完了の短い通知）の自動消去（3 秒）と、新しいものが前を置き換える動作。ドロワーが開いている間は、読み上げをドロワーの中の #nav-live へ写す（7）
+//   4. 確認モーダルのキャンセル・×・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。モーダルを閉じたら、開いた要素へフォーカスを戻す。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をインラインアラートにする
-//   7. モバイルナビ（md 未満の左のドロワー）の開閉（ハンバーガー・スクラム・リンク・Esc）
+//   7. モバイルナビ（md 未満の左のドロワー）の開閉（ハンバーガー・スクラム・リンク・Esc）と、開いている間だけ role="dialog"・aria-modal・aria-labelledby を付けること
 //   8. アラートの差し込み（afterSwap・oobAfterSwap・新規作成）のあと、縦に長い画面でも見える位置へ寄せる（revealAlerts）
 //   9. クライアントで出すエラーのアラートは、同じ文言がすでに表示中（退出中でない）なら置き換えない（ちらつき・再読み上げの防止）
+//  10. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
+//  11. 秘密の入力欄（API キー）の「変更」（登録済みのバッジを空の入力欄に入れ替える）と、入力中の値の表示切り替え（data-secret-change・data-secret-toggle）
+//  12. 前へ／次へだけのページ送りの差し替えのあと、フォーカスを使えるボタンへ移す（押した側が端で disabled になったら反対側。data-pager）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
+import { installPickerRefreshGuard } from "./picker-guard";
+
 const TOAST_ROOT = "toast-root";
-const TOAST_LIFETIME_MS = 3000;
+// トーストの表示時間は :root の --toast-duration（app.css。ガイド O3 の 3s）から読む。読めないとき（CSS が無いテストなど）は同じ 3 秒。
+// 値は app.css の --toast-duration と同じ 3 秒で、テスト（app.test.ts と tokens_css_test.go）が同期を固定している。
+const TOAST_LIFETIME_FALLBACK_MS = 3000;
+function toastLifetimeMs(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--toast-duration").trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value)) {
+    return TOAST_LIFETIME_FALLBACK_MS;
+  }
+  return raw.endsWith("ms") ? value : raw.endsWith("s") ? value * 1000 : TOAST_LIFETIME_FALLBACK_MS;
+}
 const ALERT_ROOT = "alert-root";
 const ALERT_TEMPLATE = "alert-template";
+const MODAL_ROOT = "modal-root";
+
+// 確認モーダルを開いた要素（確認の GET を起こした要素）。モーダルを閉じるとき、フォーカスがモーダルの中（か、どこにも無い）なら、ここへ戻す。
+let modalOpener: Element | null = null;
+
+function restoreModalFocus(): void {
+  const opener = modalOpener;
+  modalOpener = null;
+  const active = document.activeElement;
+  const inModal = !active || active === document.body || document.getElementById(MODAL_ROOT)?.contains(active);
+  if (opener instanceof HTMLElement && opener.isConnected && inModal) {
+    opener.focus();
+  }
+}
 
 // 退出のモーション（app.css の `.motion-*-in[data-leaving]`）。data-leaving を付けると CSS のフェードアウトが始まり、終わったら after を呼ぶ。
 // アニメーションが無い（reduced-motion で 0 など）ときは、すぐ after を呼ぶ。
@@ -26,6 +55,9 @@ function leave(el: Element, after: () => void): void {
 
 // root の子をフェードアウトさせ、終わったものから取り除く。フェード中に差し込まれた新しい子（data-leaving の付いていないもの）は残す。
 function clearWithFade(root: Element): void {
+  if (root.id === MODAL_ROOT) {
+    restoreModalFocus();
+  }
   for (const child of [...root.children]) {
     leave(child, () => {
       child.remove();
@@ -71,6 +103,9 @@ function showErrorAlert(message: string): void {
   revealAlerts(root);
 }
 
+// 7. ウィンドウの一覧の自動更新の見送り（フォーカス・ポインターの操作中）。
+installPickerRefreshGuard();
+
 // 1. サーバーが HTML で返さないエラー（接続できない、想定外の 5xx）だけをクライアントで扱う。
 document.addEventListener("htmx:sendError", () => {
   showErrorAlert("サーバーに接続できませんでした。");
@@ -84,25 +119,83 @@ document.addEventListener("htmx:responseError", (event) => {
 });
 
 // 7. モバイルナビのドロワー（P0）。開閉の状態は body の data-nav-open で持ち、見た目は app.css の .nav-drawer・.nav-scrim が決める
-// （md 以上では CSS が無視する）。ナビは OOB で差し替わるので、状態はナビの外（body）に置く。開いたら先頭のリンクにフォーカスを移し、
-// Esc で閉じてハンバーガーに戻す。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
+// （md 以上では CSS が無視する）。ナビのリンク群（#sidebar-nav-links）は OOB で差し替わるが、枠（#sidebar-nav）は差し替えない（退出のフェードを切らないため。#202）。状態は枠の外（body）に置く。開いたら先頭のリンクにフォーカスを移し、
+// Esc で閉じる。md 以上へ広がったら閉じる（狭くしたときに開いたまま現れない）。
+// 開いている間は背面（data-nav-background。ヘッダー・本文の列）を inert にして、Tab・クリック・読み上げの対象から外し、Tab はドロワーの中を循環させる。
+// 閉じたら inert を外し、フォーカスを開く前にあった要素（無ければハンバーガー）へ戻す。ハンバーガーは md 以上では出ないので、開く操作は md 未満でしか起きない。
+// ナビは md 以上では常設のナビゲーション（landmark）なので、role="dialog"・aria-modal・aria-labelledby（見出しは #sidebar-nav-title の「メニュー」）は、
+// 開いている間だけここで付ける（閉じている間・md 以上でダイアログとして露出させない）。ダイアログの外は読み上げの対象から外れうる（aria-modal）ので、
+// トーストの読み上げ（#toast-root。ドロワーの外）は、開いている間はドロワーの中の #nav-live（role="status"）へ写し、#toast-root は aria-hidden にして二重に読ませない
+// （トーストは操作できる部品を持たないので、Tab の循環には関わらない。見た目は z-toast でドロワーの上のまま）。
 const NAV_OPEN_ATTR = "data-nav-open";
+const NAV_BACKGROUND = "[data-nav-background]";
+const NAV_LIVE = "nav-live";
+// 768 は app.css の --bp-md（md）と同じ値（tokens_css_test.go が一致を検査する）。
 const desktopWidth = window.matchMedia("(min-width: 768px)");
+let navOpener: HTMLElement | null = null;
+
+function syncNavDialog(open: boolean): void {
+  const nav = document.getElementById("sidebar-nav");
+  if (open) {
+    nav?.setAttribute("role", "dialog");
+    nav?.setAttribute("aria-modal", "true");
+    nav?.setAttribute("aria-labelledby", "sidebar-nav-title");
+    document.getElementById(TOAST_ROOT)?.setAttribute("aria-hidden", "true");
+  } else {
+    nav?.removeAttribute("role");
+    nav?.removeAttribute("aria-modal");
+    nav?.removeAttribute("aria-labelledby");
+    document.getElementById(TOAST_ROOT)?.removeAttribute("aria-hidden");
+    document.getElementById(NAV_LIVE)?.replaceChildren();
+  }
+}
 
 function setNavOpen(open: boolean): void {
+  const wasOpen = document.body.hasAttribute(NAV_OPEN_ATTR);
   document.body.toggleAttribute(NAV_OPEN_ATTR, open);
+  syncNavDialog(open);
   const toggle = document.querySelector<HTMLElement>("[data-nav-toggle]");
   toggle?.setAttribute("aria-expanded", String(open));
   toggle?.setAttribute("aria-label", open ? "メニューを閉じる" : "メニューを開く");
+  for (const background of document.querySelectorAll<HTMLElement>(NAV_BACKGROUND)) {
+    background.inert = open;
+  }
   if (open) {
+    if (!wasOpen) {
+      const active = document.activeElement;
+      navOpener = active instanceof HTMLElement && active !== document.body ? active : toggle;
+    }
     document.querySelector<HTMLElement>("#sidebar-nav a")?.focus();
+  } else if (wasOpen) {
+    (navOpener?.isConnected ? navOpener : toggle)?.focus();
+    navOpener = null;
+  }
+}
+
+// Tab をドロワーのリンクの中で循環させる（先頭で Shift+Tab → 末尾、末尾で Tab → 先頭。フォーカスがドロワーの外にあるときも中へ戻す）。
+function trapNavFocus(event: KeyboardEvent): void {
+  const links = [...document.querySelectorAll<HTMLElement>("#sidebar-nav a[href]")];
+  const first = links[0];
+  const last = links[links.length - 1];
+  if (!first || !last) {
+    return;
+  }
+  const active = document.activeElement;
+  const edge = event.shiftKey ? first : last;
+  if (active === edge || !document.getElementById("sidebar-nav")?.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
   }
 }
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && document.body.hasAttribute(NAV_OPEN_ATTR)) {
+  if (!document.body.hasAttribute(NAV_OPEN_ATTR)) {
+    return;
+  }
+  if (event.key === "Escape") {
     setNavOpen(false);
-    document.querySelector<HTMLElement>("[data-nav-toggle]")?.focus();
+  } else if (event.key === "Tab") {
+    trapNavFocus(event);
   }
 });
 
@@ -126,6 +219,17 @@ document.addEventListener("click", (event) => {
   }
   if (target.id === "nav-scrim" || target.closest("#sidebar-nav a")) {
     setNavOpen(false);
+    return;
+  }
+
+  // 11. 秘密の入力欄。
+  const secretToggle = target.closest<HTMLElement>("[data-secret-toggle]");
+  if (secretToggle) {
+    toggleSecretVisibility(secretToggle);
+    return;
+  }
+  if (target.closest("[data-secret-change]")) {
+    editSecret(target.closest("[data-secret]"));
     return;
   }
   const copyButton = target.closest<HTMLElement>("[data-copy-target]");
@@ -176,12 +280,14 @@ document.addEventListener("htmx:oobBeforeSwap", (event) => {
 });
 
 // 4. ボタン・クローズ（data-ripple）の押下のリップル: クリック点から円が広がって消える（app.css の .ripple。reduced-motion では出さない）。
+// <remo-screen-viewer> の Shadow DOM の中のボタンも同じ（document では event.target がホスト要素に付け替わるので、composedPath() の先頭で拾う。.ripple の規則は Lit 側の css が持つ）。
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 document.addEventListener("pointerdown", (event) => {
-  if (reducedMotion.matches || event.button !== 0 || !(event.target instanceof Element)) {
+  const origin = event.composedPath()[0];
+  if (reducedMotion.matches || event.button !== 0 || !(origin instanceof Element)) {
     return;
   }
-  const host = event.target.closest<HTMLElement>("[data-ripple]");
+  const host = origin.closest<HTMLElement>("[data-ripple]");
   if (!host || (host instanceof HTMLButtonElement && host.disabled)) {
     return;
   }
@@ -211,6 +317,32 @@ async function copyValue(input: HTMLInputElement, button: HTMLElement): Promise<
       status.textContent = status.dataset.fallback ?? "";
     }
   }
+}
+
+// 11. 入力中の値の表示切り替え。type=password ⇄ text と aria-pressed を合わせる（ラベルは固定。アイコンは aria-pressed を見て CSS が切り替える）。
+function toggleSecretVisibility(button: HTMLElement): void {
+  const input = document.getElementById(button.getAttribute("aria-controls") ?? "");
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+  const shown = input.type === "password";
+  input.type = shown ? "text" : "password";
+  button.setAttribute("aria-pressed", String(shown));
+}
+
+// 11. 登録済みのバッジと「変更」を隠し、空の入力欄と登録ボタンを出して、入力欄にフォーカスを移す。
+// 見せ分けはサーバーが描画した hidden 属性で、ここでは入れ替えるだけ（値は持たない・戻さない。NFR-S14）。
+function editSecret(root: Element | null): void {
+  if (!root) {
+    return;
+  }
+  for (const saved of root.querySelectorAll<HTMLElement>("[data-secret-saved]")) {
+    saved.hidden = true;
+  }
+  for (const edit of root.querySelectorAll<HTMLElement>("[data-secret-edit]")) {
+    edit.hidden = false;
+  }
+  root.querySelector<HTMLElement>("input")?.focus();
 }
 
 // 7. 承認ダイアログ（専用の Wails ウィンドウ。/approvals/{id}）の許可・拒否の応答は HX-Trigger: closeWindow を返す。
@@ -247,10 +379,19 @@ const wsErrorMessages: Readonly<Record<string, string>> = {
   internal: "内部エラーが発生しました。",
 };
 
+// 停止にならない拒否（スコープ付きのリースの、その操作だけの拒否。#157）の理由ごとの文言。code より優先する。
+const wsReasonMessages: Readonly<Record<string, string>> = {
+  clipboard_out_of_scope: "ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。",
+  key_out_of_scope: "このキーは、ウィンドウを選んだ操作中は送れません。",
+  target_halted: "対象の操作は停止中です。「再開」を押すか、別のウィンドウを選んでください。",
+};
+
 document.addEventListener("remo:error", (event) => {
-  const detail = (event as CustomEvent<{ code?: unknown; message?: unknown }>).detail;
+  const detail = (event as CustomEvent<{ code?: unknown; message?: unknown; reason?: unknown }>).detail;
   const code = detail?.code;
-  const mapped = typeof code === "string" && Object.hasOwn(wsErrorMessages, code) ? wsErrorMessages[code] : undefined;
+  const reason = detail?.reason;
+  const reasonMessage = typeof reason === "string" && Object.hasOwn(wsReasonMessages, reason) ? wsReasonMessages[reason] : undefined;
+  const mapped = reasonMessage ?? (typeof code === "string" && Object.hasOwn(wsErrorMessages, code) ? wsErrorMessages[code] : undefined);
   const message = mapped ?? detail?.message;
   showErrorAlert(typeof message === "string" && message !== "" ? message : "操作を実行できませんでした。");
 });
@@ -291,7 +432,7 @@ document.addEventListener("htmx:load", (event) => {
 });
 
 // 3. サーバーが OOB（beforeend:#toast-root）で追加したトースト。同時に表示するのは 1 つで、新しいものが前を置き換える。
-// 表示は 3 秒で、フェードアウトして消える。
+// 表示は 3 秒で、フェードアウトして消える。3 秒は入場のアニメーションが終わってから数える（ガイド「ペイン型の例外」のトーストのタイマー）。
 function settleToasts(root: Element): void {
   const toasts = [...root.querySelectorAll<HTMLElement>("[data-toast]")];
   const latest = toasts.pop();
@@ -302,11 +443,17 @@ function settleToasts(root: Element): void {
     return;
   }
   latest.setAttribute("data-toast-timer", "");
-  window.setTimeout(() => {
-    if (latest.isConnected) {
-      leave(latest, () => latest.remove());
-    }
-  }, TOAST_LIFETIME_MS);
+  // ドロワーが開いている間は、aria-modal のダイアログの外（#toast-root）が読み上げられないことがあるので、中の #nav-live にも同じ文言を出す（トーストごとに 1 回）。
+  if (document.body.hasAttribute(NAV_OPEN_ATTR)) {
+    document.getElementById(NAV_LIVE)?.replaceChildren(latest.textContent ?? "");
+  }
+  void Promise.allSettled(latest.getAnimations().map((a) => a.finished)).then(() => {
+    window.setTimeout(() => {
+      if (latest.isConnected) {
+        leave(latest, () => latest.remove());
+      }
+    }, toastLifetimeMs());
+  });
 }
 
 document.addEventListener("htmx:oobAfterSwap", (event) => {
@@ -319,9 +466,32 @@ document.addEventListener("htmx:oobAfterSwap", (event) => {
 });
 
 // アクションの失敗（HX-Retarget: #alert-root の応答）の差し込み。アラートが見える位置へ寄せる（OOB は上の oobAfterSwap）。
+// 確認モーダル（#modal-root への確認の GET の応答）の差し込みでは、開いた要素（リクエストの要素）を覚える（閉じるときにフォーカスを戻す）。
 document.addEventListener("htmx:afterSwap", (event) => {
-  const target = (event as CustomEvent<{ target?: Element }>).detail?.target;
-  if (target?.id === ALERT_ROOT) {
-    revealAlerts(target);
+  const detail = (event as CustomEvent<{ target?: Element; requestConfig?: { elt?: Element } }>).detail;
+  if (detail?.target?.id === ALERT_ROOT) {
+    revealAlerts(detail.target);
+  } else if (detail?.target?.id === MODAL_ROOT && detail.target.querySelector("#modal")) {
+    modalOpener = detail.requestConfig?.elt ?? null;
   }
+});
+
+// 12. 前へ／次へだけのページ送り（data-pager。molecules.Pager）。ページ送りのリンクは一覧の領域ごと差し替わるので、押したリンクは消え、
+// フォーカスが失われる。差し替えのあと、押した側のボタンが使えればそこへ、端になって disabled なら反対側のボタンへフォーカスを移す
+// （キーボードの操作が途切れないように）。押した側は、その差し替えを起こしたリクエストの要素（afterSwap の detail.requestConfig.elt。
+// detail.elt ではなく、差し替えの対象になる）の data-pager-prev / data-pager-next で決める。状態を持たないので、#live-poll など
+// 別のリクエストが間に入っても、押していない差し替えにフォーカスを奪われることもない。
+document.addEventListener("htmx:afterSwap", (event) => {
+  const trigger = (event as CustomEvent<{ requestConfig?: { elt?: Element } }>).detail?.requestConfig?.elt;
+  const pressed = trigger?.hasAttribute("data-pager-prev") ? "prev" : trigger?.hasAttribute("data-pager-next") ? "next" : null;
+  if (!pressed || !(event.target instanceof Element) || !event.target.isConnected) {
+    return;
+  }
+  const pager = event.target.closest("[data-pager]") ?? event.target.querySelector("[data-pager]");
+  if (!pager) {
+    return;
+  }
+  const opposite = pressed === "prev" ? "next" : "prev";
+  const target = pager.querySelector<HTMLElement>(`[data-pager-${pressed}]:not([disabled])`) ?? pager.querySelector<HTMLElement>(`[data-pager-${opposite}]:not([disabled])`);
+  target?.focus({ preventScroll: true });
 });

@@ -66,7 +66,8 @@ type ViewerSession interface {
 	// ConfigChanged は設定が変わるたびに、反映後の設定が届くチャネル（WebSocket の config メッセージ用）。
 	// WebSocket の config と POST /viewer/settings のどちらから変えても届く。容量 1 で、読まれていなければ古い値を捨てて最新を残す。
 	ConfigChanged() <-chan ViewerConfig
-	// Configure は閲覧者のモニター・品質・FPS を変える。Quality・FPS が 0 なら今の値のまま、Monitor は常に反映する。
+	// Configure は閲覧者のモニター・品質・FPS・配信の源を変える。Quality・FPS が 0 なら今の値のまま、Monitor・Target は常に反映する
+	// （Target が零値ならモニター源、そうでなければそのウィンドウのグループ源。#157）。
 	// 範囲外は domain.ErrInvalidArgument（何も変えない）。終わったセッションも ErrInvalidArgument。
 	Configure(c ViewerConfig) error
 	// Done はセッションが終わったときに閉じる。閲覧者の登録の解除・OnEnd の fn・web のリースの解放がすべて済んでから閉じるので、
@@ -233,6 +234,13 @@ func (s *viewerSessions) Configure(viewerID string, client domain.Client, c View
 	if conn == nil {
 		return domain.ErrInvalidArgument.WithMsg("viewer is not connected")
 	}
+	// HTTP（POST /viewer/settings）は配信の源を知らない。モニターを今のものから変えたときだけモニター源へ戻し（利用者がモニター表示を選んだ）、
+	// 同じなら（画質・FPS の変更）今の源のままにする。
+	cur := conn.Config()
+	c.Target = cur.Target
+	if c.Monitor != cur.Monitor {
+		c.Target = domain.WindowRef{}
+	}
 	return conn.Configure(c)
 }
 
@@ -371,6 +379,7 @@ func (c *viewerSession) Configure(req ViewerConfig) error {
 	// Streamer.Configure と同じ規則（0 の品質・FPS は今の値のまま、モニターは常に反映）で今の設定を更新する。
 	next := c.cfg
 	next.Monitor = req.Monitor
+	next.Target = req.Target
 	if req.Quality != 0 {
 		next.Quality = req.Quality
 	}

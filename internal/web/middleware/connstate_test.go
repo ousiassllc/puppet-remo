@@ -69,7 +69,10 @@ func TestNotRegisteredPageFollowsTheConnectionRequestState(t *testing.T) {
 				if strings.Contains(body, "secret details") {
 					t.Errorf("internal error detail leaked: %q", body)
 				}
-				webtest.AssertCSPCompliantHTML(t, body)
+				webtest.AssertNoticeCSPCompliantHTML(t, body, w.Header().Get("Content-Security-Policy"))
+				if got := w.Header().Get("Content-Security-Policy"); got != NoticeCSPValue {
+					t.Errorf("CSP = %q, want the notice page CSP", got)
+				}
 				if states == nil {
 					return
 				}

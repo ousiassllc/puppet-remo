@@ -531,3 +531,25 @@ func TestGetControlStatusReportsAgentHolder(t *testing.T) {
 		t.Errorf("holder = %+v, want kind agent", eb.Holder)
 	}
 }
+
+// run_task の window_id は StartInput.WindowID に届き、監査の detail に残る（ウィンドウのタイトルは無い）。get_task は対象を返す。
+func TestRunTaskPassesWindowIDAndGetTaskShowsTarget(t *testing.T) {
+	e := newEnv(t)
+	cs := e.connect("c1")
+	res := callTool(t, cs, "run_task", map[string]any{"prompt": "save the file", "window_id": "1001"})
+	if res.IsError {
+		t.Fatal(res.text())
+	}
+	if in := e.agent.recorded()[0].In; in.WindowID != "1001" {
+		t.Errorf("StartInput.WindowID = %q, want 1001", in.WindowID)
+	}
+	e.agent.put("c1", domain.Task{
+		ID: "t-scoped", Status: domain.TaskRunning, MaxSteps: 50, CreatedAt: taskCreated, StartedAt: new(taskStarted),
+		TargetWindowID: "1001", TargetProcess: "notepad.exe", TargetPID: 4242,
+	})
+	body := callTool(t, cs, "get_task", map[string]any{"task_id": "t-scoped"}).rawBody(t)
+	target, _ := body["target"].(map[string]any)
+	if target["window_id"] != "1001" || target["process"] != "notepad.exe" || target["pid"] != float64(4242) || len(target) != 3 {
+		t.Errorf("target = %v", target)
+	}
+}

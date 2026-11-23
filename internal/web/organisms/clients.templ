@@ -24,14 +24,18 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 
 // ClientCard はクライアント 1 件（有効・無効の切り替え）。PATCH の応答もこのフラグメントを返す（API 仕様 §7.2）。
 // 切り替えは現在の状態の逆だけを描画する。削除と詳細への導線は、一覧のカードだけに出す。
+// 名前の見出し（項目名）は、一覧のカードだけが h3（sr-only の h2「クライアント一覧」の下。base 16 SemiBold）。詳細ページの名前はページの h1
+// （pages/clients.templ の text-3xl）なので、このカードは名前を出さない。
 templ ClientCard(c view.Client) {
 	<article id={ cardID(c) } class="rounded-lg border border-border bg-surface p-4" data-client={ c.ID }>
 		<div class="flex flex-wrap items-baseline justify-between gap-2">
-			<h3 class="text-xl font-semibold text-ink">{ c.DisplayName }</h3>
+			if c.CanOpenDetail {
+				<h3 class="text-base font-semibold text-ink">{ c.DisplayName }</h3>
+			}
 			<span class="text-xs text-mute" data-approval-mode>承認モード: { c.Approved }</span>
 		</div>
 		<p class="mt-2 text-xs text-mute">
-			ユーザー { c.LoginName } ・ ノード <code class="rounded-sm bg-accent-soft px-2 py-1 text-ink">{ c.NodeID }</code>
+			ユーザー { c.LoginName } ・ ノード <code>{ c.NodeID }</code>
 		</p>
 		<ul class="mt-3 flex flex-wrap gap-x-6 gap-y-2">
 			for _, f := range c.Flags {
@@ -54,7 +58,9 @@ templ ClientCard(c view.Client) {
 				<label for={ "mode-" + c.ID } class="shrink-0 whitespace-nowrap text-sm text-ink">承認モード</label>
 				@atoms.Select("mode-"+c.ID, "approval_mode", approvalOptions(c.Modes))
 			</form>
-			if c.FirstTimeStatus != "" {
+			if c.FirstTimeApprovedAt != "" {
+				<span class="text-xs text-ink" data-first-time-status>承認済み（<span class="font-mono">{ c.FirstTimeApprovedAt }</span>）</span>
+			} else if c.FirstTimeStatus != "" {
 				<span class="text-xs text-ink" data-first-time-status>{ c.FirstTimeStatus }</span>
 			}
 			if c.CanResetApproval {
@@ -94,6 +100,7 @@ templ flagBadgeView(f view.ClientFlag) {
 // ClientList は許可リスト（FR-H04）。空なら、一覧ではなく案内だけを描画する。
 templ ClientList(v view.ClientList) {
 	<div id="client-list" class="space-y-4">
+		<h2 class="sr-only">クライアント一覧</h2>
 		if len(v.Items) == 0 {
 			@molecules.EmptyState("clients") {
 				登録済みのクライアントはありません。接続要求を許可すると、ここに登録されます。
@@ -115,7 +122,7 @@ func tokenListAttrs(oob bool) atoms.Attrs {
 // TokenList は 1 クライアントのトークン一覧（接頭辞のみ。平文は発行時の 1 回だけ）。失効は有効なトークンだけに出す。
 // oob = true は、アクションの応答に添えて一覧を更新するとき（OOB）。
 templ TokenList(v view.TokenList, oob bool) {
-	<div id="token-list" class="overflow-x-auto" { tokenListAttrs(oob)... }>
+	<div id="token-list" class="overflow-x-auto" { atoms.ScrollRegion("発行済みトークン")... } { tokenListAttrs(oob)... }>
 		if len(v.Items) == 0 {
 			@molecules.EmptyState("tokens") {
 				発行済みのトークンはありません。
@@ -135,14 +142,22 @@ templ TokenList(v view.TokenList, oob bool) {
 				</thead>
 				<tbody class="divide-y divide-border">
 					for _, t := range v.Items {
-						<tr class="hover:bg-accent-soft" data-token={ t.ID }>
+						<tr class="group hover:bg-accent-soft" data-token={ t.ID }>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.Label }</td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ t.Prefix }…</code></td>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><code>{ t.Prefix }…</code></td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">@atoms.Badge(tone(t.StatusTone), t.Status)
 </td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.CreatedAt }</td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.ExpiresAt }</td>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.LastUsedAt }</td>
+							if t.ExpiresAt == "" {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>
+							} else {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.ExpiresAt }</td>
+							}
+							if t.LastUsedAt == "" {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>
+							} else {
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.LastUsedAt }</td>
+							}
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-right">
 								if t.CanRevoke {
 									@atoms.Button(atoms.ButtonProps{Label: "失効", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{

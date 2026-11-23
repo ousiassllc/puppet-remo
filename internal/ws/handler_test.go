@@ -74,7 +74,7 @@ func TestReadyIsTheFirstMessage(t *testing.T) {
 	c := e.dial(e.issue())
 	got := readType(t, c, "ready")
 	want := map[string]any{
-		"type": "ready", "monitor": 1.0, "width": 1920.0, "height": 1080.0, "quality": 70.0, "fps": 10.0,
+		"type": "ready", "monitor": 1.0, "source": "monitor", "width": 1920.0, "height": 1080.0, "quality": 70.0, "fps": 10.0,
 		"lease": map[string]any{"state": "idle", "mine": false},
 		"monitors": []any{
 			map[string]any{"index": 0.0, "name": "left", "primary": false, "origin": map[string]any{"x": -1280.0, "y": 0.0},
@@ -266,7 +266,7 @@ func TestConfigIsAppliedAndEchoed(t *testing.T) {
 	c, _ := e.connect()
 	send(t, c, map[string]any{"type": "config", "monitor": 0, "quality": 40, "fps": 5})
 	got := readType(t, c, "config")
-	want := map[string]any{"type": "config", "monitor": 0.0, "width": 1280.0, "height": 720.0, "quality": 40.0, "fps": 5.0}
+	want := map[string]any{"type": "config", "monitor": 0.0, "source": "monitor", "width": 1280.0, "height": 720.0, "quality": 40.0, "fps": 5.0}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("config = %#v, want %#v", got, want)
 	}
@@ -277,7 +277,7 @@ func TestConfigIsAppliedAndEchoed(t *testing.T) {
 	// 項目を省くと今の値のまま（モニターも今のまま）。
 	send(t, c, map[string]any{"type": "config", "fps": 20})
 	got = readType(t, c, "config")
-	want = map[string]any{"type": "config", "monitor": 0.0, "width": 1280.0, "height": 720.0, "quality": 40.0, "fps": 20.0}
+	want = map[string]any{"type": "config", "monitor": 0.0, "source": "monitor", "width": 1280.0, "height": 720.0, "quality": 40.0, "fps": 20.0}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("config = %#v, want %#v", got, want)
 	}

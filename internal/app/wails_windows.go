@@ -26,8 +26,9 @@ const singleInstanceID = "io.github.ousiassllc.puppet-remo"
 type WailsOptions struct {
 	// Background が true なら、起動時にメインウィンドウを開かずトレイだけに常駐する（ログオン時の自動起動）。
 	Background bool
-	// Icon はトレイのアイコン（PNG または ICO）。
-	Icon []byte
+	// IconLightTaskbar・IconDarkTaskbar はトレイのアイコン（ICO。明るい・暗いタスクバー用）。どちらを出すかは wailsTray が決める。
+	IconLightTaskbar []byte
+	IconDarkTaskbar  []byte
 	// WebviewDataDir は WebView2 のユーザーデータの置き場（%LOCALAPPDATA%\puppet-remo\webview。NFR-S11）。
 	WebviewDataDir string
 	Logger         *slog.Logger
@@ -57,9 +58,8 @@ func NewWailsHost(opts WailsOptions) *WailsHost {
 		h.log = slog.Default()
 	}
 	h.wails = application.New(application.Options{
-		Name:        "puppet-remo",
+		Name:        "Nefos Remote",
 		Description: "tailnet 経由でこの PC を操作させる常駐アプリ",
-		Icon:        opts.Icon,
 		Logger:      h.log,
 		LogLevel:    slog.LevelWarn,
 		// ホスト GUI は GUI ルーターが配信する。ソケットは開かず、プロセス内の AssetOptions.Handler だけを使う。
@@ -132,7 +132,7 @@ func (w wailsWindows) Main() MainWindow {
 func (w wailsWindows) OpenApproval(id, kind string) Window {
 	win := w.h.wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "approval-" + id,
-		Title:            "puppet-remo 承認",
+		Title:            "Nefos Remote 承認",
 		Width:            approvalWidth,
 		Height:           approvalWindowHeight(kind),
 		DisableResize:    true,
@@ -172,7 +172,7 @@ func (h *WailsHost) Run(a *App) error {
 
 	win := h.wails.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "main",
-		Title:  "puppet-remo",
+		Title:  "Nefos Remote",
 		Width:  1120,
 		Height: 780, MinWidth: 800, MinHeight: 560,
 		URL:              "/",
@@ -188,7 +188,7 @@ func (h *WailsHost) Run(a *App) error {
 		win.SetBackgroundColour(h.windowBackground())
 	})
 
-	tray := newWailsTray(h.wails, h.opts.Icon)
+	tray := newWailsTray(h.wails, h.opts.IconLightTaskbar, h.opts.IconDarkTaskbar)
 	shell := NewShell(a, h.Windows().Main(), tray, h.wails.Quit, h.log)
 	h.shell.Store(shell)
 	tray.bind(shell)
@@ -241,6 +241,12 @@ func (w wailsWindow) Close() { w.w.Close() }
 func (w wailsWindow) Visible() bool { return w.w.IsVisible() }
 
 // wailsTray はトレイアイコンとそのメニュー。
+//
+// アイコンはタスクバーの明るさで選ぶ。Wails v3.0.0 の Windows の実装（systemtray_windows.go・application_windows.go）が、
+// HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize の SystemUsesLightTheme（AppsUseLightTheme ではない。w32.IsSystemCurrentlyDarkMode）を読み、
+// SetIcon のアイコンを「明るいタスクバー」（SystemUsesLightTheme = 1）、SetDarkModeIcon のアイコンを「暗いタスクバー」（0）に使う。
+// WM_SETTINGCHANGE の "ImmersiveColorSet" を受けると、値が変わっていれば SystemThemeChanged を起こして、動かしたままのトレイのアイコンも差し替える。
+// 拡大率ごとの大きさ（16・20・24・32）は、ICO の中から SM_CXSMICON に合うものを Wails が選ぶ。
 type wailsTray struct {
 	tray     *application.SystemTray
 	menu     *application.Menu
@@ -250,10 +256,13 @@ type wailsTray struct {
 	quit     *application.MenuItem
 }
 
-func newWailsTray(app *application.App, icon []byte) *wailsTray {
+func newWailsTray(app *application.App, lightTaskbar, darkTaskbar []byte) *wailsTray {
 	t := &wailsTray{tray: app.SystemTray.New(), menu: app.NewMenu()}
-	if len(icon) > 0 {
-		t.tray.SetIcon(icon)
+	if len(lightTaskbar) > 0 {
+		t.tray.SetIcon(lightTaskbar)
+	}
+	if len(darkTaskbar) > 0 {
+		t.tray.SetDarkModeIcon(darkTaskbar)
 	}
 	t.dash = t.menu.Add("ダッシュボードを開く")
 	t.requests = t.menu.Add("接続要求を確認").SetHidden(true)
@@ -262,7 +271,7 @@ func newWailsTray(app *application.App, icon []byte) *wailsTray {
 	t.menu.AddSeparator()
 	t.quit = t.menu.Add("終了")
 	t.tray.SetMenu(t.menu)
-	t.tray.SetTooltip("puppet-remo")
+	t.tray.SetTooltip("Nefos Remote")
 	return t
 }
 

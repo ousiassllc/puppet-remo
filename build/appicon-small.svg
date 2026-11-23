@@ -1,16 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <!-- 小さいサイズ（16〜64px。ICO の 16・24・32・48・64px と internal/app/tray.png。build/icons/render.mjs の SMALL_MAX=64）用。appicon.svg と同じ骨格（棒 2 本の交差と糸 4 本）のまま、細い輪郭線では 16px で潰れるので、
-       棒は塗りの太い線、糸は幅 2 単位（16px で 1px）にして、手前の棒の周りに白い縁を取り、奥の棒が分かれて見えるようにした。
-       糸の x は 16px の列（0 始まりで 3・6・9・12 列目）の中心に合わせてある（1 単位 = 32px で 1px、16px で 0.5px）。 -->
-  <rect width="32" height="32" rx="6" fill="#fff"/>
-  <g fill="none" stroke="#000" stroke-width="2">
-    <!-- 奥の短い棒 -->
-    <path d="M13 19L23 4.5" stroke-width="4"/>
-    <!-- 手前の長い棒の白い縁 -->
-    <path d="M4 7L28 14" stroke="#fff" stroke-width="6"/>
-    <!-- 糸（棒の下から真下に板の下端まで） -->
-    <path d="M7 9V32M13 16V32M19 12V32M25 14V32"/>
-    <!-- 手前の長い棒 -->
-    <path d="M4 7L28 14" stroke-width="4"/>
-  </g>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="32" height="32" viewBox="0 0 32 32" fill="none">
+
+<rect width="32" height="32" rx="1.92" fill="#f5f5f4"/>
+<path fill-rule="evenodd" d="M26.20,16.00 A10.20,10.20 0 1 1 5.80,16.00 A10.20,10.20 0 1 1 26.20,16.00Z M25.10,16.00 A9.10,8.30 0 1 1 6.90,16.00 A9.10,8.30 0 1 1 25.10,16.00Z" fill="#050505"/>
+<path d="M11.86,11.86 L21.26,15.62 L16.56,16.56 L15.62,21.26 Z" fill="none" stroke="#050505" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

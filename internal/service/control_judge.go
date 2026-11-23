@@ -42,6 +42,8 @@ type judgeTrace struct {
 	verdict  domain.Verdict
 	reason   Reason
 	approval string // "" は承認を求めていない
+	// scoped は操作の保持者のリースがウィンドウに束縛されている（スコープ付き）こと。監査のサムネイル（モニター全体の撮影）を撮らない判断に使う。
+	scoped bool
 }
 
 // judgeAgent は ActorAgent の plan（検査済み・物理座標）に Judge を適用する。

@@ -13,6 +13,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
+	"github.com/ousiassllc/puppet-remo/internal/web/webtest"
 )
 
 type problem struct {
@@ -289,6 +290,16 @@ func TestRejectionFormats(t *testing.T) {
 					if strings.Contains(body, bad) {
 						t.Fatalf("HTML contains %q (CSP): %q", bad, body)
 					}
+				}
+				// ページ（待機・エラー）は、インライン <style> のハッシュを許す CSP。フラグメントは <style> を持たない（CSP の既定のまま）。
+				csp := w.Header().Get("Content-Security-Policy")
+				if tt.wantKind == "page" {
+					if csp != NoticeCSPValue {
+						t.Fatalf("page CSP = %q, want %q", csp, NoticeCSPValue)
+					}
+					webtest.AssertNoticeCSPCompliantHTML(t, body, csp)
+				} else if csp == NoticeCSPValue {
+					t.Fatalf("fragment must not use the notice CSP")
 				}
 			}
 			for k, v := range tt.wantHeader {

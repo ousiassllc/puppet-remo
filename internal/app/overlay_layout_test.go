@@ -1,6 +1,10 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -135,5 +139,110 @@ func TestSplitOverlayLabel(t *testing.T) {
 				t.Errorf("splitOverlayLabel(%q) = (%q, %q), want (%q, %q)", tc.in, first, detail, tc.first, tc.detail)
 			}
 		})
+	}
+}
+
+// 枠は外側の線（--ink）と内側の線（--bone）の 2 重線。外側の線はモニターの縁から overlayOuterDIP の輪で、4 本をまたいで途切れず
+// （角で内側の線が外へ食い込まない）、各本の残りが内側の線になる。ウィンドウの左上が原点。
+func TestOverlayOuterInkIsAContinuousRing(t *testing.T) {
+	for name, m := range layoutMonitors() {
+		t.Run(name, func(t *testing.T) {
+			outer, border := overlayPx(m, overlayOuterDIP), overlayPx(m, overlayBorderDIP)
+			if outer >= border {
+				t.Fatalf("outer line %d px must leave an inner line within the %d px border", outer, border)
+			}
+			// 枠の各画素を、モニターの縁からの距離で外側（< outer）・内側（< border）に分けた結果と、overlayOuterInk の塗りが一致する。
+			for i, bar := range overlayBars(m) {
+				ink := overlayOuterInk(m, bar)
+				for y := range bar.H {
+					for x := range bar.W {
+						gx, gy := bar.X+x-m.Origin.X, bar.Y+y-m.Origin.Y
+						dist := min(gx, gy, m.Size.W-1-gx, m.Size.H-1-gy)
+						if dist >= border {
+							t.Fatalf("bar %d pixel (%d,%d) is %d px from the edge, beyond the border", i, x, y, dist)
+						}
+						painted := false
+						for _, r := range ink {
+							if x >= r.X && x < r.X+r.W && y >= r.Y && y < r.Y+r.H {
+								painted = true
+							}
+						}
+						if painted != (dist < outer) {
+							t.Fatalf("bar %d pixel (%d,%d): outer-ink = %v, want %v (distance %d, outer %d px)", i, x, y, painted, dist < outer, dist, outer)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// 小さすぎるモニターの 1 本（モニター全体）でも、外側の線の範囲は枠の中に収まる。
+func TestOverlayOuterInkOnATinyMonitor(t *testing.T) {
+	m := domain.Monitor{Size: domain.Size{W: 6, H: 100}, DPI: 96}
+	bar := overlayBars(m)[0]
+	for _, r := range overlayOuterInk(m, bar) {
+		if r.X < 0 || r.Y < 0 || r.X+r.W > bar.W || r.Y+r.H > bar.H {
+			t.Errorf("ink %+v is outside the bar %+v", r, bar)
+		}
+	}
+}
+
+// 色は app.css のトークンの値（ライト: --ink #050505・--bone #f5f5f4・--surface #ffffff、ダーク: --ink #ffffff・--bone #050505・--surface #141414）。
+// 枠は外側が --ink・内側が --bone、札は --surface の地に --ink の文字。COLORREF は 0x00BBGGRR。
+func TestOverlayColorsMatchTheTokens(t *testing.T) {
+	if got := colorRef(0xf5f5f4); got != 0xf4f5f5 {
+		t.Errorf("colorRef(0xf5f5f4) = %#x, want 0xf4f5f5", got)
+	}
+	if got := colorRef(0x123456); got != 0x563412 {
+		t.Errorf("colorRef(0x123456) = %#x, want 0x563412", got)
+	}
+	want := map[bool]overlayColors{
+		false: {Outer: 0x050505, Inner: 0xf4f5f5, LabelBG: 0xffffff, LabelText: 0x050505},
+		true:  {Outer: 0xffffff, Inner: 0x050505, LabelBG: 0x141414, LabelText: 0xffffff},
+	}
+	for dark, w := range want {
+		if got := overlayColorsFor(dark); got != w {
+			t.Errorf("overlayColorsFor(%v) = %+v, want %+v", dark, got, w)
+		}
+	}
+}
+
+// overlayColorsFor の 16 進は、app.css の :root（ライト）と [data-theme="dark"]（ダーク）のトークンと同じ値（コピーのずれを拾う）。
+func TestOverlayColorsMatchAppCSS(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "static", "src", "css", "app.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := func(block, name string) uint32 {
+		t.Helper()
+		start := strings.Index(string(src), block)
+		if start < 0 {
+			t.Fatalf("app.css lacks %q", block)
+		}
+		end := strings.Index(string(src[start:]), "}")
+		m := regexp.MustCompile(`\n\s*` + regexp.QuoteMeta(name) + `: #([0-9a-f]{6});`).FindStringSubmatch(string(src[start : start+end]))
+		if m == nil {
+			t.Fatalf("%s lacks %s", block, name)
+		}
+		v, err := strconv.ParseUint(m[1], 16, 32)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return uint32(v)
+	}
+	for _, tt := range []struct {
+		dark  bool
+		block string
+	}{{false, ":root {"}, {true, `[data-theme="dark"] {`}} {
+		want := overlayColors{
+			Outer:     colorRef(token(tt.block, "--ink")),
+			Inner:     colorRef(token(tt.block, "--bone")),
+			LabelBG:   colorRef(token(tt.block, "--surface")),
+			LabelText: colorRef(token(tt.block, "--ink")),
+		}
+		if got := overlayColorsFor(tt.dark); got != want {
+			t.Errorf("overlayColorsFor(%v) = %+v, app.css tokens give %+v", tt.dark, got, want)
+		}
 	}
 }

@@ -96,6 +96,13 @@ func TestSidebarIsADrawerBelowMd(t *testing.T) {
 			t.Errorf("sidebar nav lacks %q: %s", want, nav)
 		}
 	}
+	// md 以上では常設のナビゲーションなので、role="dialog" は静的に付けない（開いている間だけ app.ts が付ける）。見出し（#sidebar-nav-title）と、開いている間のトーストの読み上げの写し先（#nav-live）は在る。
+	for _, bad := range []string{`role="dialog"`, "aria-modal", "aria-labelledby"} {
+		if strings.Contains(nav, bad) {
+			t.Errorf("sidebar nav must not carry %s statically: %s", bad, nav)
+		}
+	}
+	contains(t, res, `id="sidebar-nav-title"`, `id="nav-live"`)
 	contains(t, res, `id="nav-scrim"`, "md:hidden", `data-nav-toggle`, `aria-controls="sidebar-nav"`, `aria-expanded="false"`, "flex-col md:flex-row", "p-4 md:p-6")
 	if strings.Index(res.Body, `id="nav-scrim"`) > start {
 		t.Error("the scrim must come before the nav (both are fixed at the same z-index)")
@@ -107,8 +114,10 @@ func TestDashboardHTMXRequestsReturnFragments(t *testing.T) {
 	t.Run("boosted navigation returns main content with sidebar OOB and no document", func(t *testing.T) {
 		res := r.get("/", "HX-Request", "true", "HX-Boosted", "true")
 		status(t, res, http.StatusOK)
-		contains(t, res, "<title>ダッシュボード - puppet-remo</title>", `id="sidebar-nav"`, `hx-swap-oob="true"`, "サーバー状態")
+		contains(t, res, "<title>ダッシュボード - Nefos Remote</title>", `id="sidebar-nav-links"`, `hx-swap-oob="true"`, `aria-current="page"`, "サーバー状態")
 		lacks(t, res, "<html", "<body", "<!doctype")
+		// ドロワーの枠（退出のフェードを持つ #sidebar-nav と、その見出し・#nav-live）は差し替えない。差し替えると退出が切れる（M5・#202）。
+		lacks(t, res, `id="sidebar-nav"`, `id="sidebar-nav-title"`, `id="nav-live"`, "<nav")
 	})
 	t.Run("history restore gets the full page", func(t *testing.T) {
 		res := r.get("/", "HX-Request", "true", "HX-History-Restore-Request", "true")

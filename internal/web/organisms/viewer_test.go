@@ -1,6 +1,7 @@
 package organisms_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/web/organisms"
@@ -31,7 +32,8 @@ func TestViewerLeasePanelRendersOnlyAvailableActions(t *testing.T) {
 			[]string{"agent", "保持中"}, []string{acquire, release, revoke, "<button", "data-lease-task"}},
 		{"agent のタスク実行中", view.ViewerLease{Held: true, HolderLabel: "bot", KindLabel: "agent", CanRevoke: true, Task: &view.ViewerTask{
 			Status: "実行中", Steps: "3 / 50", Elapsed: "45秒", MaxTime: "10分", StartedAt: "09:00:00", Requester: "<b>req</b>"}},
-			[]string{revoke, "data-lease-task", `<h3 class="text-base font-semibold">AI エージェントのタスク実行中</h3>`, `<dl class="space-y-2 text-sm">`, "実行中", "3 / 50", "45秒（上限 10分）", "09:00:00", "&lt;b&gt;req&lt;/b&gt;"}, []string{"<b>req</b>"}},
+			[]string{revoke, "data-lease-task", `<h3 class="text-sm font-semibold">AI エージェントのタスク実行中</h3>`, `<dl class="space-y-2 text-sm">`, "実行中", `<dd data-task-steps><span class="font-mono">3 / 50</span></dd>`,
+				`<dd data-task-elapsed><span class="font-mono">45秒</span>（上限 <span class="font-mono">10分</span>）</dd>`, `<dd data-task-started><span class="font-mono">09:00:00</span></dd>`, "&lt;b&gt;req&lt;/b&gt;"}, []string{"<b>req</b>"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -61,6 +63,16 @@ func TestViewerOpsRendersOnlyWithTheLease(t *testing.T) {
 
 	oob := webtest.Render(t, organisms.ViewerOpsOOB(view.ViewerOps{}))
 	has(t, oob, `id="viewer-ops"`, `hx-swap-oob="true"`)
+}
+
+// #169: 無効のキー（スコープ付きリースで送れない Alt+Tab など）の理由は、title 属性ではなくツールチップ（atoms.Tooltip）で出す。
+// 無効のボタンは hover・focus を受けないので、tabindex="0" の出す側が包み、キーごとに id が違う。有効のキーは包まない。
+func TestKeyMenuDisabledKeyUsesATooltipNotTitle(t *testing.T) {
+	out := webtest.Render(t, organisms.KeyMenu([]view.KeyMenuItem{{Label: "Alt+Tab", Keys: "alt+tab", Disabled: true}, {Label: "Esc", Keys: "escape"}}))
+	has(t, out, `<span class="tip-host" tabindex="0" aria-describedby="key-tip-0">`, `data-key-disabled`,
+		`<span role="tooltip" id="key-tip-0" class="tip">ウィンドウを選んだ操作中は使えません</span>`)
+	hasNot(t, out, "title=", `id="key-tip-1"`)
+	webtest.AssertCSPCompliantHTML(t, out)
 }
 
 func TestViewerToolbarRendersFieldsAndErrors(t *testing.T) {
@@ -95,4 +107,33 @@ func TestViewerRootPlacesTheViewerOutsideHTMXTargets(t *testing.T) {
 	v.Lease = view.ViewerLease{Held: true, Mine: true, CanRelease: true}
 	out = webtest.Render(t, organisms.ViewerRoot(v))
 	hasNot(t, out, " readonly")
+}
+
+// #166: 「操作するウィンドウ」も molecules.Card の題（h2・lg 18）。htmx が差し替える #window-picker は Card を包む div で、
+// 更新ボタンは本文（Card の p-6）の中にある。直書きの枠・題（rounded-lg border ... p-4・text-base の h2）を残さない。
+func TestWindowPickerIsACard(t *testing.T) {
+	out := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{CanSelect: true}))
+	const title = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">操作するウィンドウ</h2><div class="p-6">`
+	for _, want := range []string{`<div id="window-picker" hx-get="/viewer/windows"`, title, "data-window-refresh"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("window picker lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "data-window-refresh") < strings.Index(out, title) {
+		t.Errorf("the refresh button must be in the card body, after the title:\n%s", out)
+	}
+	for _, bad := range []string{"bg-surface p-4", "text-base font-semibold"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("window picker still has %q:\n%s", bad, out)
+		}
+	}
+}
+
+// C6: 一覧が空のときの案内は、この領域の唯一の内容（空状態の主メッセージ）なので --ink。--mute は補助テキスト・キャプションだけ（molecules.EmptyState の文言と同じ）。
+func TestWindowPickerEmptyMessageIsInk(t *testing.T) {
+	out := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{CanSelect: true}))
+	const want = `<p class="text-sm text-ink" data-window-empty>選べるウィンドウがありません。</p>`
+	if !strings.Contains(out, want) {
+		t.Errorf("window picker's empty message must be text-ink (%q):\n%s", want, out)
+	}
 }

@@ -37,7 +37,7 @@ type Frame struct {
 }
 
 // GroupCapturer は対象グループ（domain.Group）のメンバーだけを撮る、Capturer のオプションの拡張。
-// Capturer には足さない（Windows 実装は実機での成立性の検証が済むまでない）。service は型アサーションで取り、実装がなければ
+// Capturer には足さない（Windows 実装は GrabGroup（PrintWindow）を実装済みだが実機での成立性は未確認）。service は型アサーションで取り、実装がなければ
 // 撮れないもの（capture_unavailable）として止める。**モニター撮影（Grab・Watch）やデスクトップの切り抜きに切り替えてはならない。**
 type GroupCapturer interface {
 	// GrabGroup は members を、各ウィンドウ自身の内容（PrintWindow など、ほかのウィンドウの画素が混ざらない方式）で撮り、

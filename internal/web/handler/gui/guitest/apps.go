@@ -32,6 +32,9 @@ type Apps struct {
 	Picks    int
 	ListErr  error
 	WriteErr error // 非 nil なら Create / Update / Delete がこれを返す
+	// ModeSwitchedThenErr が非 nil なら SetLaunchMode は、方式を切り替えたうえでこのエラーを返す
+	// （監査に書けず、戻す書き込みも失敗した service.AppRegistry の再現）。
+	ModeSwitchedThenErr error
 
 	// PickFunc は PickExecutable の振る舞い。nil なら、選択もキャンセルもせずにキャンセル（ok=false）を返す。
 	PickFunc func(ctx context.Context) (path string, ok bool, err error)
@@ -179,7 +182,7 @@ func (a *Apps) SetLaunchMode(_ context.Context, mode domain.LaunchMode) error {
 	}
 	a.Mode = mode
 	a.ModeSets = append(a.ModeSets, mode)
-	return nil
+	return a.ModeSwitchedThenErr
 }
 
 func (a *Apps) ListDenied(context.Context) ([]domain.DeniedApp, error) {

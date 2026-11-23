@@ -179,9 +179,20 @@ type ctlSettings struct {
 	mu     sync.Mutex
 	values map[string]json.RawMessage
 	setErr error
+	// okSets は、成功させる Set の残り回数（setErrAfter が決める。負なら制限しない）。使い切ったあとの Set は setErr で失敗する。
+	okSets int
 }
 
-func newCtlSettings() *ctlSettings { return &ctlSettings{values: map[string]json.RawMessage{}} }
+func newCtlSettings() *ctlSettings {
+	return &ctlSettings{values: map[string]json.RawMessage{}, okSets: -1}
+}
+
+// setErrAfter は、これから n 回の Set は成功させ、そのあとの Set を err で失敗させる。
+func (s *ctlSettings) setErrAfter(n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.okSets, s.setErr = n, err
+}
 
 func (s *ctlSettings) Get(_ context.Context, key string) (json.RawMessage, bool, error) {
 	s.mu.Lock()
@@ -193,8 +204,11 @@ func (s *ctlSettings) Get(_ context.Context, key string) (json.RawMessage, bool,
 func (s *ctlSettings) Set(_ context.Context, key string, value json.RawMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.setErr != nil {
+	if s.setErr != nil && s.okSets <= 0 {
 		return s.setErr
+	}
+	if s.okSets > 0 {
+		s.okSets--
 	}
 	s.values[key] = value
 	return nil

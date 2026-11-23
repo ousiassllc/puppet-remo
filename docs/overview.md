@@ -1,5 +1,7 @@
 # プロジェクト概要
 
+製品名は Nefos Remote（旧名 puppet-remo。リポジトリ名・ファイル名・コマンド名は puppet-remo のまま）。
+
 ## 目的
 
 自分の Windows PC（ホスト）に常駐する Wails アプリを通じて、tailnet 内の別端末から**デスクトップ全体を操作（computer-use）**できるようにする。ホストには **AI エージェントを内蔵**し、操作する側は「こういうことをして」と指示を送るだけで、ホストが OpenAI と直接通信し（**ChatGPT のプラン〔Sign in with ChatGPT。既定〕または OpenAI API キー**）、画面を見ながら実行する。操作の入口は 3 つ。
@@ -63,7 +65,7 @@ graph TD
         BR["ブラウザ (Web UI)"]
         subgraph Host["ホスト (Windows)"]
             TS["tailscaled (LocalAPI: WhoIs)"]
-            subgraph App["puppet-remo (Wails)"]
+            subgraph App["Nefos Remote (Wails)"]
                 SRV["HTTP サーバー<br/>(MCP / Web UI / WebSocket)"]
                 CORE["コア<br/>認可・リース・承認・監査"]
                 AGENT["内蔵エージェント<br/>(computer ツール / 関数ツールのループ)"]
@@ -172,3 +174,4 @@ graph TD
 | 1.15 | 2026-11-02 | tailnet IP だけで Listen する記述に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |
 | 1.16 | 2026-11-02 | 「リスクと前提」(4) のライセンスの記述を、GNU AGPL-3.0（`LICENSE`）に合わせた | #49 |
 | 1.17 | 2026-11-03 | 起動の方式（`launch.mode`）を追加: ホワイトリスト方式（既定）とブラックリスト方式（拒否リスト `launch_denylist`。`launch_app` が `path` を受け付ける）をホスト GUI だけで切り替える。スコープ（含む・含まない）・M1.5・用語集（拒否リスト・起動の方式）・ドキュメントマップの ER の表に反映し、任意のパスを起動できないとする記述をホワイトリスト方式（既定）に限定 | #88 |
+| 1.18 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。構成図の表記だけを差し替え | #188 |

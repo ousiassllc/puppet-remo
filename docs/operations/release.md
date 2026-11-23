@@ -63,6 +63,8 @@ Windows 向けの NSIS インストーラを、GitHub Releases に自動で公�
 | 上記の `.sha256` | `sha256sum` 形式。同じ commit でもインストーラのバイト列は毎回少し違う（NSIS が時刻を入れる）ので、Release に載せた値で確かめる |
 | 上記の `.minisig` | 更新用の署名（minisign 形式。[署名](#署名更新用)）。署名の Secret があるときだけ付く |
 
+インストーラーには、第三者のライセンス表記 [`licenses/THIRD_PARTY_NOTICES.txt`](../../licenses/THIRD_PARTY_NOTICES.txt)（Noto Sans JP・Sora・JetBrains Mono の OFL、Iconoir の MIT など）も同梱し、インストール先（`$INSTDIR`）に置きます（`build/windows/nsis/project.nsi` の `File`）。アプリの設定画面からも同じ内容を読めます。フォントや依存を足したときは表記を作り直します（CI の frontend ジョブが古さを検査します。手順は [フロントエンド設計 §8.6](../architecture/frontend.md)）。
+
 アプリの更新は、Release を**認証なし**で取得します。そのため、リポジトリ（Release）は**公開**にする必要があります（[オーナーの作業](#オーナーの作業署名鍵と公開)）。リポジトリが private の間は、アプリの更新の確認が失敗する（運用ログに残り、アプリは止まらない）だけです。人が private の Release をダウンロードするときは、リポジトリの読み取り権限が要ります（`gh release download <tag>`）。
 
 ## 署名（更新用）

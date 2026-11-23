@@ -5,7 +5,7 @@ import { LitElement, css, html, nothing, type PropertyValues, type TemplateResul
 import { createLogger } from "../lib/logger";
 import { MessageTooLargeError, NO_RECONNECT_CLOSE_CODES, WsClient, type WsMessage } from "../lib/ws";
 import { isImeKeyEvent, keyModifiers, mouseButtonName, toStreamPoint, wheelNotches, type MouseButtonName, type StreamPoint } from "./input";
-import { parseFrame, parseServerMessage, type Lease, type ScreenFrame, type ServerMessage, type Tile } from "./protocol";
+import { GROUP_MONITOR, parseFrame, parseServerMessage, type Lease, type ScreenFrame, type ServerMessage, type StreamGeometry, type StreamSource, type TargetState, type Tile } from "./protocol";
 
 const log = createLogger("screen-viewer");
 
@@ -14,6 +14,7 @@ export type ViewerStatus = "connecting" | "open" | "reconnecting" | "failed" | "
 export interface ViewerErrorDetail {
   code: string;
   message: string;
+  reason?: string;
 }
 
 const CLOSE_KILLSWITCH = 4503;
@@ -41,28 +42,88 @@ function overlayText(status: ViewerStatus, closeCode: number): string {
   }
 }
 
-// 接続状態のオーバーレイの先頭に置く印（C4: 状態は色だけにせず、アイコンと文言で伝える）。
-// 接続中・再接続中はスピナー（app.css の .spinner と同じ 20px・2px）、失敗・キルスイッチは Iconoir の SVG（atoms/icon.templ と同じ path）。
-// Shadow DOM にはページの CSS が届かないので、色は css の var(--danger) などで当てる。
+// 対象ウィンドウ（スコープ付きリース。#157）の停止の理由ごとの文言。停止中はサーバーも入力を受け付けない。
+const haltReasons: Record<string, string> = {
+  related_unverifiable: "関連するウィンドウ（メニューなど）の所有関係を確認できないため、入力を停止しました。",
+  related_cross_process: "別のアプリのダイアログが前面にあるため、入力を停止しました。",
+  unrelated_same_process: "同じアプリの別のウィンドウが前面にあるため、入力を停止しました。",
+  capture_unavailable: "対象のウィンドウを表示できないため、入力を停止しました。",
+  capture_member_unavailable: "関連するメニュー・ダイアログを表示できないため、入力を停止しました。",
+  target_not_foreground: "対象と関係のないウィンドウが前面にあるため、入力を停止しました。",
+  target_obscured: "対象に重なった別のウィンドウの上の操作だったため、入力を停止しました。",
+  outside_target_group: "対象のウィンドウの外の操作だったため、入力を停止しました。",
+  own_window: "Nefos Remote 自身のウィンドウが対象になったため、入力を停止しました。",
+  elevated_window: "管理者権限のウィンドウが対象になったため、入力を停止しました。",
+  target_minimized: "対象のウィンドウが最小化されているため、入力を停止しました。",
+  target_closed: "対象のウィンドウが閉じられました。",
+  target_replaced: "対象のウィンドウが別のウィンドウに置き換わりました。",
+  target_unsupported: "このウィンドウは対象にできません。",
+};
+
+// 表示できないことを示す停止の理由（モニター全体の表示には切り替えない）。
+const cannotDisplayReasons = new Set(["capture_unavailable", "capture_member_unavailable"]);
+
+const CAPTURE_PARTIAL = "capture_partial";
+
+export interface TargetBanner {
+  tone: "halted" | "notice";
+  text: string;
+  resumable: boolean; // 「再開」を出す（選び直しのみの理由では出さない）
+}
+
+// targetBanner は target の状態のバナー。halted は停止（入力を送らない）、capture_partial だけの active は通知（停止ではない）。
+export function targetBanner(target: TargetState | null): TargetBanner | null {
+  if (!target || target.state === "none") {
+    return null;
+  }
+  if (target.state === "halted") {
+    const reason = target.reason ?? "";
+    const base = haltReasons[reason] ?? `対象の操作を停止しました（理由: ${reason || "不明"}）。`;
+    const text = target.reselect
+      ? `${base}別のウィンドウを選んでください。`
+      : `${base}ホスト側で原因を取り除いてから「再開」を押してください（ブラウザからのキー・クリックでは戻りません）。`;
+    return { tone: "halted", text, resumable: !target.reselect };
+  }
+  if (target.notices.includes(CAPTURE_PARTIAL)) {
+    return {
+      tone: "notice",
+      text: "対象の表示から除外しているウィンドウがあります（所有関係を確認できないメニューなど）。そのウィンドウが前面になると入力を停止します。",
+      resumable: false,
+    };
+  }
+  return null;
+}
+
+// 状態の印（C4: 状態は色だけにせず、アイコンと文言で伝える）。Iconoir の SVG（atoms/icon.templ と同じ path）を、接続状態のオーバーレイと
+// 対象バナーの両方で使う（ここ 1 か所に持つ）。Shadow DOM にはページの CSS が届かないので、色は css の var(--danger) などで当てる。
+const xmarkCircleIcon = () => html`<svg class="icon tone-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  <path d="M9.17218 14.8284L12.0006 12M14.829 9.17157L12.0006 12M12.0006 12L9.17218 9.17157M12.0006 12L14.829 14.8284"></path>
+  <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"></path>
+</svg>`;
+const warningTriangleIcon = () => html`<svg class="icon tone-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  <path d="M20.0429 21H3.95705C2.41902 21 1.45658 19.3364 2.22324 18.0031L10.2662 4.01533C11.0352 2.67792 12.9648 2.67791 13.7338 4.01532L21.7768 18.0031C22.5434 19.3364 21.581 21 20.0429 21Z"></path>
+  <path d="M12 9V13"></path>
+  <path d="M12 17.01L12.01 16.9989"></path>
+</svg>`;
+
+// 接続状態のオーバーレイの先頭に置く印。接続中・再接続中はスピナー（app.css の .spinner と同じ 20px・2px）、失敗・キルスイッチはアイコン。
 function overlayIcon(status: ViewerStatus): TemplateResult | typeof nothing {
   switch (status) {
     case "connecting":
     case "reconnecting":
       return html`<span class="spinner" aria-hidden="true"></span>`;
     case "failed":
-      return html`<svg class="icon tone-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        <path d="M9.17218 14.8284L12.0006 12M14.829 9.17157L12.0006 12M12.0006 12L9.17218 9.17157M12.0006 12L14.829 14.8284"></path>
-        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"></path>
-      </svg>`;
+      return xmarkCircleIcon();
     case "killswitch":
-      return html`<svg class="icon tone-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        <path d="M20.0429 21H3.95705C2.41902 21 1.45658 19.3364 2.22324 18.0031L10.2662 4.01533C11.0352 2.67792 12.9648 2.67791 13.7338 4.01532L21.7768 18.0031C22.5434 19.3364 21.581 21 20.0429 21Z"></path>
-        <path d="M12 9V13"></path>
-        <path d="M12 17.01L12.01 16.9989"></path>
-      </svg>`;
+      return warningTriangleIcon();
     case "open":
       return nothing;
   }
+}
+
+// 対象バナーの先頭に置く印: 停止（halted）は danger の xmark-circle、通知（notice）は warning の warning-triangle。
+function bannerIcon(tone: TargetBanner["tone"]): TemplateResult {
+  return tone === "halted" ? xmarkCircleIcon() : warningTriangleIcon();
 }
 
 export class RemoScreenViewer extends LitElement {
@@ -74,7 +135,10 @@ export class RemoScreenViewer extends LitElement {
     fps: { type: Number },
     status: { state: true },
     closeCode: { state: true },
+    target: { state: true },
+    source: { state: true },
     leaving: { state: true },
+    leavingBanner: { state: true },
   };
 
   static styles = css`
@@ -95,6 +159,11 @@ export class RemoScreenViewer extends LitElement {
       height: auto;
       background: var(--bone);
     }
+    /* グループ源（#157）は等倍で出す（幅いっぱいに拡大しない。メニュー・ダイアログの開閉で画像の大きさが変わっても、T の表示の大きさ・位置が動かない。幅を超えるときだけ縮める）。 */
+    canvas[data-group] {
+      width: auto;
+      max-width: 100%;
+    }
     /* IME の入力を受ける、見えない入力要素（フォーカスを受ければ IME が動く。表示はしない）。 */
     .ime-sink {
       position: absolute;
@@ -109,6 +178,119 @@ export class RemoScreenViewer extends LitElement {
       resize: none;
       overflow: hidden;
       pointer-events: none;
+    }
+    .sourcebar {
+      /* 「対象を表示できません」の覆いの上に出す（表示できないときこそ、モニター表示へ切り替えられるように）。
+         z-index は --z-dropdown（O4）。覆い（.overlay。position:absolute・z-index auto）より手前に出せればよい局所の積み順で、
+         --z-base（0）では auto と並んで覆いの後ろになるため、--z-* で最も低い段の --z-dropdown を使う（ホスト外の面とは重ならない）。 */
+      position: relative;
+      z-index: var(--z-dropdown);
+      display: flex;
+      justify-content: flex-end;
+      padding: 0.25rem 0;
+    }
+    .sourcebar button,
+    .banner button {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      white-space: nowrap;
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      background: transparent;
+      color: var(--ink);
+      /* atoms.Button（Secondary・Small）と同じ: SemiBold・高さ 32（h-8）・横 12（px-3）・14px。 */
+      height: 2rem;
+      padding: 0 0.75rem;
+      font: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    /* ボタンの押下のリップル（M4）: app.css の .ripple と同じ（クリック点から円が広がって消える）。span.ripple は app.ts の pointerdown が
+       composedPath() で Shadow DOM の中のボタン（data-ripple）を拾って足す。reduced-motion では足さない。 */
+    .ripple {
+      position: absolute;
+      left: var(--ripple-x);
+      top: var(--ripple-y);
+      width: var(--ripple-size);
+      height: var(--ripple-size);
+      margin: calc(var(--ripple-size) / -2) 0 0 calc(var(--ripple-size) / -2);
+      border-radius: var(--r-full);
+      background-color: currentColor;
+      pointer-events: none;
+      animation: overlay-ripple var(--motion-slow) var(--ease-out) forwards;
+    }
+    @keyframes overlay-ripple {
+      from {
+        opacity: 0.2;
+        transform: scale(0);
+      }
+      to {
+        opacity: 0;
+        transform: scale(1);
+      }
+    }
+    .sourcebar button:hover,
+    .banner button:hover {
+      background: var(--accent-soft);
+    }
+    .sourcebar button:focus-visible,
+    .banner button:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+    .banner {
+      /* 「対象を表示できません」の覆い（.overlay。ホスト全体）の上に出す（「再開」「別のウィンドウを選ぶ」を押せるように）。
+         枠付きの面なので、atoms.Alert/Notice と同じ角丸 --r-md（S1）・padding 12×16（--s-3/--s-4）。
+         z-index は .sourcebar と同じ理由で --z-dropdown（O4）。 */
+      position: relative;
+      z-index: var(--z-dropdown);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 1rem;
+      padding: var(--s-3) var(--s-4);
+      border-radius: var(--r-md);
+      font-size: 0.875rem;
+      color: var(--ink);
+    }
+    /* 状態色の枠（40%）と地（10%）はガイド C4 の式（in srgb）。Shadow DOM には app.css の -line・-wash が届かないので、カスタムプロパティから混色する。 */
+    .banner.halted {
+      border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+      background: color-mix(in srgb, var(--danger) 10%, transparent);
+    }
+    .banner.notice {
+      border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+      background: color-mix(in srgb, var(--warning) 10%, transparent);
+    }
+    .banner.halted,
+    .banner.notice {
+      animation: banner-in var(--motion-fade-in) var(--ease-out) both;
+    }
+    .banner[data-leaving] {
+      animation: overlay-fade-out var(--motion-fade-out) var(--ease-in) both;
+      pointer-events: none;
+    }
+    @keyframes banner-in {
+      from {
+        opacity: 0;
+        transform: translateY(var(--motion-shift));
+      }
+    }
+    /* アイコンと文言は 1 かたまりで折り返す（狭い幅でアイコンだけが前の行に残らないように）。 */
+    .banner .message {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1 1 18rem;
+    }
+    .banner .text {
+      flex: 1 1 auto;
+      min-width: 0;
     }
     /* 出現はフェードイン、退出はフェードアウト（M5）。トークンは :root のカスタムプロパティで、Shadow DOM にも継承される
        （reduced-motion では 100ms になる）。退出は status が open に戻ったとき、data-leaving を付けて終わるまで残す。 */
@@ -151,7 +333,8 @@ export class RemoScreenViewer extends LitElement {
     .tone-warning {
       color: var(--warning);
     }
-    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。回転は reduced-motion でも止めない。 */
+    /* スピナー（O7）: app.css の .spinner と同じ 20px・2px・--spinner-duration（:root のトークンで Shadow DOM にも継承される）。
+       処理中表示なので reduced-motion でも回転を維持する（M3）。forced-colors ではトラックを透明にし、先端の円弧だけを CanvasText で残す。 */
     .spinner {
       width: 20px;
       height: 20px;
@@ -161,6 +344,12 @@ export class RemoScreenViewer extends LitElement {
       border-top-color: var(--accent);
       border-radius: var(--r-full);
       animation: overlay-spin var(--spinner-duration) linear infinite;
+    }
+    @media (forced-colors: active) {
+      .spinner {
+        border-color: transparent;
+        border-top-color: CanvasText;
+      }
     }
     @keyframes overlay-spin {
       to {
@@ -177,8 +366,13 @@ export class RemoScreenViewer extends LitElement {
   declare fps: number;
   declare status: ViewerStatus;
   declare closeCode: number;
+  declare target: TargetState | null;
+  // 配信の源（ready・config の source。#157）。表示の切り替えボタンが読む。
+  declare source: StreamSource;
   // status が open に戻ったあと、フェードアウトが終わるまで残すオーバーレイ（null なら残さない）。
   declare leaving: { status: ViewerStatus; text: string } | null;
+  // target のバナーが無くなったあと、フェードアウトが終わるまで残すバナー（null なら残さない）。
+  declare leavingBanner: TargetBanner | null;
 
   private ws: WsClient | null = null;
   private canvas: HTMLCanvasElement | null = null;
@@ -188,6 +382,9 @@ export class RemoScreenViewer extends LitElement {
   private epoch = 0;
   private lastSeq = -1;
   private currentMonitor = -1;
+  // グループ源で今 canvas に出している画像の原点・大きさ（#157）。入力の座標はこの画像の座標なので、
+  // マウスのメッセージに添えて送る（サーバーが今の画像と違えば、古い座標として注入しない）。画像が来るまで・モニター源は null。
+  private groupRef: { ox: number; oy: number; w: number; h: number } | null = null;
   private awaitingKeyframe = true;
   private renderChain: Promise<void> = Promise.resolve();
 
@@ -208,15 +405,20 @@ export class RemoScreenViewer extends LitElement {
     this.fps = 0;
     this.status = "connecting";
     this.closeCode = 0;
+    this.target = null;
+    this.source = "monitor";
     this.leaving = null;
+    this.leavingBanner = null;
   }
 
   // 入力が有効: 最後に受信した lease が held かつ mine: true（pending_approval は承認待ちの本人でも readonly 扱い。
   // サーバー側でも入力は常に検査される）。
   // readonly は描画時の操作権の有無を表す初期のヒントにすぎない。HTMX はこのコンポーネントを差し替えないので、
   // 操作権の取得・解放・剥奪で属性は更新されない。入力の可否は WebSocket の lease だけで決める（ready で現在の状態が届く）。
+  // 対象ウィンドウの操作が停止（halted。#157）している間は、Esc を含む一切の入力を送らない（サーバーも受け付けない）。
+  // 復帰は、ホスト側で原因を取り除いたうえでの明示的な「再開」だけ。
   private get inputEnabled(): boolean {
-    return this.leaseMine;
+    return this.leaseMine && this.target?.state !== "halted";
   }
 
   connectedCallback(): void {
@@ -248,35 +450,53 @@ export class RemoScreenViewer extends LitElement {
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
-    if (!changed.has("status")) {
-      return;
+    if (changed.has("status")) {
+      const previous = changed.get("status");
+      if (this.status !== "open") {
+        this.leaving = null;
+      } else if (previous !== undefined && previous !== "open") {
+        this.leaving = { status: previous, text: overlayText(previous, this.closeCode) };
+      }
     }
-    const previous = changed.get("status");
-    if (this.status !== "open") {
-      this.leaving = null;
-    } else if (previous !== undefined && previous !== "open") {
-      this.leaving = { status: previous, text: overlayText(previous, this.closeCode) };
+    if (changed.has("target")) {
+      // バナーが無くなったとき（停止の解除・通知の解消）は、フェードアウトが終わるまで見た目だけ残す（M5）。
+      const previous = targetBanner(changed.get("target") ?? null);
+      this.leavingBanner = targetBanner(this.target) === null ? previous : null;
     }
   }
 
   protected updated(): void {
-    const leaving = this.leaving;
-    const overlay = this.renderRoot.querySelector(".overlay[data-leaving]");
-    if (!leaving || !overlay) {
+    this.removeAfterFadeOut(".overlay[data-leaving]", () => this.leaving, () => (this.leaving = null));
+    this.removeAfterFadeOut(".banner[data-leaving]", () => this.leavingBanner, () => (this.leavingBanner = null));
+  }
+
+  // フェードアウトが終わったら、残していた退出中の要素（current）を取り除く（アニメーションが無ければすぐ。そのあいだに別の値になっていたら何もしない）。
+  private removeAfterFadeOut(selector: string, current: () => object | null, clear: () => void): void {
+    const leaving = current();
+    const element = this.renderRoot.querySelector(selector);
+    if (!leaving || !element) {
       return;
     }
-    // フェードアウトが終わったら取り除く（アニメーションが無ければすぐ）。
-    void Promise.allSettled(overlay.getAnimations().map((a) => a.finished)).then(() => {
-      if (this.leaving === leaving) {
-        this.leaving = null;
+    void Promise.allSettled(element.getAnimations().map((a) => a.finished)).then(() => {
+      if (current() === leaving) {
+        clear();
       }
     });
   }
 
   protected render() {
-    const text = overlayText(this.status, this.closeCode);
+    let text = overlayText(this.status, this.closeCode);
+    // 対象を撮れないときは、画像が来ない（接続中のまま）。再接続・失敗・キルスイッチの表示を優先し、それ以外は「表示できません」にする。
+    // 停止は「再開」を押すまで続く（原因が消えて画像が撮れるようになっても、自動では再開しない）ので、覆いも再開まで出す。
+    // モニター表示に切り替えているあいだは、モニターの画像が流れているので出さない。
+    const cannotDisplay = this.source === "group" && this.target?.state === "halted" && cannotDisplayReasons.has(this.target.reason ?? "");
+    if (cannotDisplay && (this.status === "open" || this.status === "connecting")) {
+      text = "対象を表示できません。画面全体の表示には切り替えません。停止は、原因を取り除いて「再開」を押すまで続きます。";
+    }
+    const banner = targetBanner(this.target);
     const shown = text === "" ? this.leaving : { status: this.status, text };
     return html`
+      ${this.renderSourceBar()}
       <canvas width="16" height="9"></canvas>
       <textarea
         class="ime-sink"
@@ -289,8 +509,63 @@ export class RemoScreenViewer extends LitElement {
       ${shown === null
         ? nothing
         : html`<div class="overlay" role="status" ?data-leaving=${text === ""}>${overlayIcon(shown.status)}<span>${shown.text}</span></div>`}
+      ${banner !== null ? this.renderBanner(banner, false) : this.leavingBanner !== null ? this.renderBanner(this.leavingBanner, true) : nothing}
     `;
   }
+
+  // 表示の切り替え（#157。D1）: スコープ付きのリースを持つあいだ、モニター表示（画面全体）と、選んだウィンドウの表示を行き来できる。
+  // スコープ付きのリースは切り替えても保たれる。ウィンドウ表示への切り替えは、このビューアが今もそのリースを持つときだけサーバーが受ける。
+  private renderSourceBar() {
+    if (this.target === null) {
+      return nothing;
+    }
+    return html`
+      <div class="sourcebar" data-source-bar>
+        ${this.source === "group"
+          ? html`<button type="button" data-ripple data-source-monitor @click=${this.onShowMonitor}>モニター表示</button>`
+          : html`<button type="button" data-ripple data-source-group @click=${this.onShowWindow}>ウィンドウ表示（選択中の対象に戻る）</button>`}
+      </div>
+    `;
+  }
+
+  private onShowMonitor = (): void => {
+    this.sendInput({ type: "config", source: "monitor" });
+  };
+
+  private onShowWindow = (): void => {
+    this.sendInput({ type: "config", source: "group" });
+  };
+
+  // 退出中のバナー（leavingBanner）は見た目だけを残す（操作できない・読み上げない）。
+  private renderBanner(banner: TargetBanner, leaving: boolean) {
+    if (leaving) {
+      return html`<div class="banner ${banner.tone}" data-leaving aria-hidden="true"><span class="message">${bannerIcon(banner.tone)}<span class="text">${banner.text}</span></span></div>`;
+    }
+    return html`
+      <div class="banner ${banner.tone}" role=${banner.tone === "halted" ? "alert" : "status"} data-target-banner data-target-tone=${banner.tone}>
+        <span class="message">${bannerIcon(banner.tone)}<span class="text">${banner.text}</span></span>
+        ${banner.tone === "halted"
+          ? html`
+              ${banner.resumable
+                ? html`<button type="button" data-ripple data-target-resume @click=${this.onResume}>再開</button>`
+                : nothing}
+              <button type="button" data-ripple data-target-reselect @click=${this.onReselect}>別のウィンドウを選ぶ</button>
+            `
+          : nothing}
+      </div>
+    `;
+  }
+
+  // 再開は、サーバーに全条件の再検証を求める（Control.ResumeTarget）。通れば target: active、通らなければ halted のまま理由が更新される。
+  // 自動では再開しない。
+  private onResume = (): void => {
+    this.sendInput({ type: "target.resume" });
+  };
+
+  // 「別のウィンドウを選ぶ」は、ページ側（HTMX）がリースを解放して一覧を出す。
+  private onReselect = (): void => {
+    this.emit("remo:reselect", {});
+  };
 
   // ---- 接続 ----
 
@@ -318,6 +593,9 @@ export class RemoScreenViewer extends LitElement {
   }
 
   private onOpen(): void {
+    this.target = null;
+    this.source = "monitor";
+    this.groupRef = null;
     // 新しい接続はサーバー側で最初からやり直す（連番・キーフレーム）。
     this.epoch++;
     this.lastSeq = -1;
@@ -330,6 +608,7 @@ export class RemoScreenViewer extends LitElement {
     // サーバーは切断で web のリースを解放する。押下中の入力もサーバーが解放する。
     this.releaseInput(false);
     this.leaseMine = false;
+    this.target = null;
     this.closeCode = code;
     if (code === CLOSE_KILLSWITCH) {
       this.status = "killswitch";
@@ -359,7 +638,7 @@ export class RemoScreenViewer extends LitElement {
         this.monitor = message.monitor;
         this.quality = message.quality;
         this.fps = message.fps;
-        this.applyGeometry(message.monitor, message.width, message.height);
+        this.applyGeometry(message);
         // 再接続の後はリースが失われている。ready のリース状態を反映し、HTMX にパネルを再取得させる。
         this.applyLease(message.lease);
         break;
@@ -367,7 +646,10 @@ export class RemoScreenViewer extends LitElement {
         this.monitor = message.monitor;
         this.quality = message.quality;
         this.fps = message.fps;
-        this.applyGeometry(message.monitor, message.width, message.height);
+        this.applyGeometry(message);
+        break;
+      case "target":
+        this.applyTarget(message.target);
         break;
       case "lease":
         this.applyLease(message.lease);
@@ -378,11 +660,24 @@ export class RemoScreenViewer extends LitElement {
         }
         break;
       case "error":
-        this.emit<ViewerErrorDetail>("remo:error", { code: message.code, message: message.message });
+        if (this.explainedByTargetBanner(message.code, message.reason)) {
+          break;
+        }
+        this.emit<ViewerErrorDetail>("remo:error", message.reason === undefined ? { code: message.code, message: message.message } : { code: message.code, message: message.message, reason: message.reason });
         break;
       case "pong":
         break;
     }
+  }
+
+  // スコープ付きのリースの最中の、停止につながる入力の拒否は、続く target メッセージの停止バナーが理由を示す（トーストにしない）。
+  // スコープの無い入力の拒否（自ウィンドウ・昇格など）は、バナーが出ないのでトーストにする。
+  private explainedByTargetBanner(code: string, reason: string | undefined): boolean {
+    if (code !== "input_blocked" || reason === undefined || this.target === null) {
+      return false;
+    }
+    // 停止の直前に送った入力（key up など）の拒否（target_halted）も、停止のバナーが出ていれば重ねて出さない。
+    return (Object.hasOwn(haltReasons, reason) && this.target.state !== "none") || (reason === "target_halted" && this.target.state === "halted");
   }
 
   private emit<T>(name: string, detail: T): void {
@@ -395,19 +690,43 @@ export class RemoScreenViewer extends LitElement {
     this.emit<Lease>("remo:lease-changed", lease);
   }
 
+  // applyTarget は target メッセージを反映する。halted になったら、押下中の入力を送らずに捨てる（サーバーが ReleaseAll で解放する）。
+  private applyTarget(target: TargetState): void {
+    this.target = target.state === "none" ? null : target;
+    this.syncInput();
+  }
+
   // ---- 描画 ----
 
-  // applyGeometry は、モニターか解像度が変わったら canvas を作り直し（サイズの設定で内容も消える）、次のキーフレームまで描画を保留する。
-  private applyGeometry(monitor: number, width: number, height: number): void {
+  // applyGeometry は、配信の源（モニター・グループ）か解像度が変わったら canvas を作り直し（サイズの設定で内容も消える）、
+  // 次のキーフレームまで描画を保留する。グループ源の width / height は合成画像の大きさで、メニュー・ダイアログの開閉で変わる。
+  // 入力の座標は canvas の座標（合成画像内の座標。サーバーが原点を足して物理座標にする）なので、大きさが変われば変換も追従する。
+  //
+  // グループ源のまま大きさだけが変わるとき（メニュー・ダイアログの開閉）は、canvas を今は作り直さない（作り直すと内容が消えてちらつく）。
+  // 次のキーフレーム（サーバーは大きさ・原点が変わると必ずキーフレームにする）が来たときに、onFrame が作り直す。それまでの入力は、古い画像の
+  // 原点・大きさ（groupRef）を添えて送るので、サーバーが古い座標として拒否する（stale_frame）。
+  private applyGeometry(geometry: StreamGeometry): void {
+    const { width, height } = geometry;
+    const monitor = geometry.source === "group" ? GROUP_MONITOR : geometry.monitor;
     const canvas = this.canvas;
+    this.source = geometry.source;
+    if (geometry.source !== "group" || width <= 0 || height <= 0 || geometry.origin === undefined) {
+      this.groupRef = null; // モニター源、または最初のコマの前（画像が来るまでグループ源の入力は送らない）
+    }
     if (!canvas || width <= 0 || height <= 0) {
       return;
     }
     if (monitor === this.currentMonitor && canvas.width === width && canvas.height === height) {
       return;
     }
+    if (monitor === this.currentMonitor && geometry.source === "group") {
+      this.awaitingKeyframe = true; // 大きさの変更は、次のキーフレームで反映する（上のコメント）
+      return;
+    }
     this.currentMonitor = monitor;
+    canvas.toggleAttribute("data-group", monitor === GROUP_MONITOR);
     this.resizeCanvas(canvas, width, height);
+    this.groupRef = geometry.source === "group" && geometry.origin !== undefined ? { ox: geometry.origin.x, oy: geometry.origin.y, w: width, h: height } : null;
     this.awaitingKeyframe = true;
   }
 
@@ -448,6 +767,9 @@ export class RemoScreenViewer extends LitElement {
         return;
       }
       this.resizeCanvas(canvas, frame.width, frame.height);
+    }
+    if (frame.group && frame.origin !== null) {
+      this.groupRef = { ox: frame.origin.x, oy: frame.origin.y, w: frame.width, h: frame.height };
     }
     this.awaitingKeyframe = false;
     this.enqueueDraw(canvas, frame);
@@ -502,7 +824,15 @@ export class RemoScreenViewer extends LitElement {
 
   private streamPoint(clientX: number, clientY: number): StreamPoint | null {
     const canvas = this.canvas;
+    if (this.source === "group" && this.groupRef === null) {
+      return null; // 対象の画像が来るまで、座標を送らない
+    }
     return canvas ? toStreamPoint(clientX, clientY, canvas.getBoundingClientRect(), canvas.width, canvas.height) : null;
+  }
+
+  // sendMouse はマウスの入力を送る。グループ源では、座標を読んだ画像の原点・大きさ（ox・oy・w・h）を添える。
+  private sendMouse(message: Record<string, unknown>): void {
+    this.sendInput(this.source === "group" && this.groupRef !== null ? { ...message, ...this.groupRef } : message);
   }
 
   // 入力が無効になったとき（リースの喪失）は、押下中の状態を送らずに捨てる（サーバーが解放する）。
@@ -524,7 +854,7 @@ export class RemoScreenViewer extends LitElement {
         this.sendInput({ type: "input.key", action: "up", code, key, modifiers: [] });
       }
       for (const button of this.pressedButtons) {
-        this.sendInput({ type: "input.mouse", action: "up", x: this.lastPoint.x, y: this.lastPoint.y, button });
+        this.sendMouse({ type: "input.mouse", action: "up", x: this.lastPoint.x, y: this.lastPoint.y, button });
       }
     }
     this.pressedKeys.clear();
@@ -534,6 +864,11 @@ export class RemoScreenViewer extends LitElement {
 
   private onMouseMove = (event: MouseEvent): void => {
     if (!this.inputEnabled) {
+      return;
+    }
+    // グループ源では、ボタンを押していないあいだのホバーの move は送らない: 画像の外（対象の外）の座標の move は、サーバーでは
+    // 停止の理由になる（ホバーでリース全体が止まらないように）。down / up は座標を持つので、クリックは従来どおり入る。ドラッグ（押下中）は送る。
+    if (this.source === "group" && this.pressedButtons.size === 0) {
       return;
     }
     this.pendingMove = { clientX: event.clientX, clientY: event.clientY };
@@ -546,7 +881,7 @@ export class RemoScreenViewer extends LitElement {
         const point = move && this.inputEnabled ? this.streamPoint(move.clientX, move.clientY) : null;
         if (point) {
           this.lastPoint = point;
-          this.sendInput({ type: "input.mouse", action: "move", x: point.x, y: point.y });
+          this.sendMouse({ type: "input.mouse", action: "move", x: point.x, y: point.y });
         }
       });
     }
@@ -565,10 +900,13 @@ export class RemoScreenViewer extends LitElement {
     event.preventDefault();
     this.sink?.focus({ preventScroll: true });
     this.lastPoint = point;
+    // 次のフレームへ持ち越した移動は捨てる（down が同じ位置へ動かす。メニューを閉じるクリックの直後に、古い画像の座標の移動が
+    // 対象の外の座標として届き、停止になるのを避ける）。
+    this.pendingMove = null;
     this.pressedButtons.add(button);
     // canvas の外で離されても up を送れるよう、window で受ける。
     window.addEventListener("mouseup", this.onWindowMouseUp);
-    this.sendInput({ type: "input.mouse", action: "down", x: point.x, y: point.y, button });
+    this.sendMouse({ type: "input.mouse", action: "down", x: point.x, y: point.y, button });
   };
 
   private onWindowMouseUp = (event: MouseEvent): void => {
@@ -578,7 +916,8 @@ export class RemoScreenViewer extends LitElement {
     }
     const point = this.streamPoint(event.clientX, event.clientY) ?? this.lastPoint;
     this.lastPoint = point;
-    this.sendInput({ type: "input.mouse", action: "up", x: point.x, y: point.y, button });
+    this.pendingMove = null; // down と同じ理由
+    this.sendMouse({ type: "input.mouse", action: "up", x: point.x, y: point.y, button });
     if (this.pressedButtons.size === 0) {
       window.removeEventListener("mouseup", this.onWindowMouseUp);
     }
@@ -594,7 +933,7 @@ export class RemoScreenViewer extends LitElement {
     if (!point || (dx === 0 && dy === 0)) {
       return;
     }
-    this.sendInput({ type: "input.mouse", action: "wheel", x: point.x, y: point.y, dx, dy });
+    this.sendMouse({ type: "input.mouse", action: "wheel", x: point.x, y: point.y, dx, dy });
   };
 
   private onContextMenu = (event: MouseEvent): void => {

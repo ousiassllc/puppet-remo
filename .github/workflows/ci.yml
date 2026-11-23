@@ -166,6 +166,10 @@ jobs:
       - name: 同梱した dist のテスト (production)
         run: go test -tags production ./static/...
 
+      - name: 第三者のライセンス表記が最新か（licenses/THIRD_PARTY_NOTICES.txt。依存を足したら作り直す）
+        working-directory: static
+        run: bun scripts/third-party-notices.mjs --check
+
   # Lit のテストと Playwright の E2E（docs/architecture/frontend.md §9）。どちらもヘッドレスの Chromium が要るので、同じジョブで走らせる
   # （frontend ジョブとは分ける: ブラウザの導入と E2E の所要時間で、ビルド・型検査の結果を遅らせない）。
   # Chromium はジョブ専用の領域（PLAYWRIGHT_BROWSERS_PATH）へ入れる。ブラウザが要るシステムのライブラリは --with-deps で入れる（ubuntu-latest は sudo を使える）。

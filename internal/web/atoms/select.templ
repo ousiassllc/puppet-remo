@@ -21,9 +21,9 @@ templ Select(id, name string, options []SelectOption) {
 	@SelectWith(SelectProps{ID: id, Name: name, Options: options})
 }
 
-// SelectWith は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding 36 は矢印の分。
+// SelectWith は選択欄。矢印は app.css の select（appearance: none + --mute の Iconoir nav-arrow-down）。右 padding は --s-8（32）。矢印は右 --s-2（8）から --icon-sm（16）なので、文字との間に 8px あく。
 templ SelectWith(p SelectProps) {
-	<select id={ p.ID } name={ p.Name } class={ fieldClass("h-10 pl-3 pr-9 ", p.Invalid) } aria-invalid?={ p.Invalid } { describedAttrs(ctx, p.ID, p.Attrs)... }>
+	<select id={ p.ID } name={ p.Name } class={ fieldClass("h-10 pl-3 pr-(--s-8) ", p.Invalid) } aria-invalid?={ p.Invalid } { describedAttrs(ctx, p.ID, p.Attrs)... }>
 		for _, o := range p.Options {
 			<option value={ o.Value } selected?={ o.Selected }>{ o.Label }</option>
 		}
