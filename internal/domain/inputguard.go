@@ -35,7 +35,7 @@ func CheckInputTarget(w WindowInfo) error {
 	switch InputBlockReason(w) {
 	case ReasonOwnWindow:
 		return ErrInputBlocked.
-			WithMsg("the target is a puppet-remo window").
+			WithMsg("the target is a Nefos Remote window").
 			WithDetail("reason", ReasonOwnWindow)
 	case ReasonElevatedWindow:
 		return ErrInputBlocked.
@@ -51,7 +51,7 @@ func CheckInputTarget(w WindowInfo) error {
 func CheckObserveTarget(w WindowInfo) error {
 	if w.Own {
 		return ErrInputBlocked.
-			WithMsg("the target is a puppet-remo window").
+			WithMsg("the target is a Nefos Remote window").
 			WithDetail("reason", ReasonOwnWindow)
 	}
 	return nil

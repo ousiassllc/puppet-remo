@@ -77,7 +77,7 @@ templ AppForm(f view.AppForm, oob bool) {
 		@molecules.Card(appFormTitle(f)) {
 			<div class="space-y-4">
 				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "note", "data-notice": "interpreter"}) {
-					cmd.exe・powershell.exe などのコマンドインタープリタやスクリプトホストを登録すると、リモートの AI に任意のコードの実行を許すことになります。信頼できる、目的の決まったアプリだけを登録してください。
+					<code>cmd.exe</code>・<code>powershell.exe</code> などのコマンドインタープリタやスクリプトホストを登録すると、リモートの AI に任意のコードの実行を許すことになります。信頼できる、目的の決まったアプリだけを登録してください。
 				}
 				if f.Corrupt {
 					@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-form-corrupt": true}) {

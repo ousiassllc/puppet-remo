@@ -297,7 +297,8 @@ a=$(commit "$r" "feat: old change")
 git -C "$r" tag v0.1.0 "$a"
 b=$(commit "$r" "fix: new change")
 notes=$(cd "$r" && "$here/release-notes.sh" release v0.1.1 "$b" v0.1.0)
-assert_contains "ノート: タグ" "$notes" "puppet-remo v0.1.1"
+assert_contains "ノート: 見出しの製品名とタグ" "$notes" "## Nefos Remote v0.1.1"
+assert_not_contains "ノート: 見出しに旧名を出さない" "$notes" "## puppet-remo"
 assert_contains "ノート: 新しい変更" "$notes" "fix: new change"
 assert_not_contains "ノート: 比較元以前の変更は含めない" "$notes" "feat: old change"
 notes=$(cd "$r" && "$here/release-notes.sh" nightly "nightly-x" "$b" "")

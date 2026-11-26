@@ -302,7 +302,7 @@ func TestKillSwitchActive(t *testing.T) {
 func TestErrorOwnWindowDetailIsSerialized(t *testing.T) {
 	e := newEnv(t)
 	e.ctl.err = domain.ErrInputBlocked.
-		WithMsg("the target is a puppet-remo window").
+		WithMsg("the target is a Nefos Remote window").
 		WithDetail("reason", domain.ReasonOwnWindow).
 		WithDetail(service.DetailOwnWindows, []domain.OwnRegion{
 			{Monitor: 0, Rect: domain.Rect{X: 784, Y: 0, W: 393, H: 442}},
@@ -314,7 +314,7 @@ func TestErrorOwnWindowDetailIsSerialized(t *testing.T) {
 	if got := res.errCode(t); got != domain.CodeInputBlocked {
 		t.Fatalf("code = %s", got)
 	}
-	const want = `{"code":"input_blocked","message":"the target is a puppet-remo window","detail":{"reason":"own_window","own_windows":[` +
+	const want = `{"code":"input_blocked","message":"the target is a Nefos Remote window","detail":{"reason":"own_window","own_windows":[` +
 		`{"monitor":0,"rect":{"x":784,"y":0,"width":393,"height":442}},` +
 		`{"monitor":1,"rect":{"x":0,"y":10,"width":20,"height":30}}]}}`
 	var wantBody any

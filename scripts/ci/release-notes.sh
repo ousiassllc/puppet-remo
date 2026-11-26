@@ -14,7 +14,7 @@ tag=$2
 sha=$3
 prev=${4:-}
 
-echo "## puppet-remo $tag"
+echo "## Nefos Remote $tag"
 echo
 case "$kind" in
   release) echo "正式版（main）です。" ;;

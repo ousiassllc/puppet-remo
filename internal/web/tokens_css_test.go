@@ -575,3 +575,72 @@ func TestSentenceEmbeddedValuesAreWrapped(t *testing.T) {
 		}
 	}
 }
+
+// T1・T5（#219）: `{ }` のない、templ に直書きした文の中の識別子（実行ファイル名・ショートカット・スネークケースの API 名・`名前: 値` の引数）も `<code>` で包む。
+// TestSentenceEmbeddedValuesAreWrapped は `{ 値 }` だけを見るので、直書きの識別子が取り残された（#217 の見落とし）。
+// 走査するのは templ ブロックのテキストノードだけ（属性値・Go の行・`{ }` の式・`<code>` の中は外す）。FormField の hint のような Go の文字列引数は対象外。
+// 包まないまま残してよいものは、`plain` の表に 1 件ずつ理由を書く。
+func TestHardcodedIdentifiersInSentencesAreWrapped(t *testing.T) {
+	plain := map[string]string{ // キーは「ファイル名: 識別子」。理由を値に書く
+		"tasks.templ: window_id": "値（font-mono の span）に付ける項目名のラベル。「pid」と同じく Regular（#220。docs §8.4）",
+	}
+	goLine := regexp.MustCompile(`^(if |for |switch |case |default:|\} else|\}$|@|\{\{|//)`)
+	skipped := regexp.MustCompile(`(?s)<code\b[^>]*>.*?</code>|<!--.*?-->|<[a-zA-Z/!][^>]*>|\{ [^{}]*\}`)
+	identifier := regexp.MustCompile(
+		`[A-Za-z0-9_-]+\.(?:exe|dll|bat|cmd|ps1|msi)\b` + // 実行ファイル名
+			`|\b(?:Ctrl|Alt|Shift|Win)(?:\+[A-Za-z0-9]+)+` + // ショートカット
+			`|\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b` + // launch_app・app_id のようなスネークケース
+			`|\b[a-z_]+: (?:true|false)\b`) // store: false のような引数
+	used := map[string]bool{}
+	scanned := 0
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var body []string
+		in := false
+		for _, line := range strings.Split(string(src), "\n") {
+			switch {
+			case strings.HasPrefix(line, "templ "):
+				in = true
+			case line == "}":
+				in = false
+			case in && !goLine.MatchString(strings.TrimSpace(line)):
+				body = append(body, line)
+			default:
+				if in {
+					body = append(body, "<go>") // Go の行は、タグをまたぐ文の区切りにする
+				}
+			}
+		}
+		// <code> の中・コメント・タグ（属性値を含む）・式を除いた、素のテキストだけを残す。
+		text := skipped.ReplaceAllString(strings.Join(body, "\n"), "\x00")
+		for _, node := range strings.Split(text, "\x00") {
+			scanned++
+			for _, id := range identifier.FindAllString(node, -1) {
+				key := filepath.Base(path) + ": " + id
+				if _, ok := plain[key]; ok {
+					used[key] = true
+					continue
+				}
+				t.Errorf("%s: 文中に素のまま直書きした識別子 %q がある（実行ファイル名・ショートカット・API の名前や引数は <code> で包む）:\n%s", path, id, strings.TrimSpace(node))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned == 0 {
+		t.Fatal("no templ text scanned; the test is looking in the wrong place")
+	}
+	for key := range plain {
+		if !used[key] {
+			t.Errorf("plain の表の %q は、もう文中に無い。表から外す", key)
+		}
+	}
+}

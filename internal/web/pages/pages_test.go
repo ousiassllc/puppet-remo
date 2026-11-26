@@ -218,3 +218,28 @@ func TestRemoteNoticeHeadingUsesARoleClass(t *testing.T) {
 		}
 	}
 }
+
+// B1・B2（#218）: 待機ページも、ページ全体のスクロールバーをガイドの形（8px・thumb --mute・矢印なし・透明トラック・forced-colors では OS 標準）にする。
+// --mute はライト #6b6b6e・ダーク #8b8b8e（app.css のトークンと同じ 16 進）。app.css を読まないので、NoticeStyle に持つ。
+func TestRemoteNoticeStylesTheScrollbar(t *testing.T) {
+	for _, want := range []string{
+		"--mute: #6b6b6e;", "--mute: #8b8b8e;",
+		"@media (forced-colors: none) {",
+		":root { scrollbar-width: thin; scrollbar-color: var(--mute) transparent; }",
+		"@supports selector(::-webkit-scrollbar) {",
+		"::-webkit-scrollbar { width: 8px; height: 8px; }",
+		"::-webkit-scrollbar-button { display: none; }",
+		"::-webkit-scrollbar-thumb { background: var(--mute); border-radius: 999px; }",
+		"::-webkit-scrollbar-thumb:hover",
+		"::-webkit-scrollbar-thumb:active",
+	} {
+		if !strings.Contains(layout.NoticeStyle, want) {
+			t.Errorf("NoticeStyle lacks %q:\n%s", want, layout.NoticeStyle)
+		}
+	}
+	// 待機ページはインラインの <style> 1 つだけ。スクロールバーの規定も、そのハッシュ（CSP）に入る。
+	out := webtest.Render(t, pages.Pending())
+	if !strings.Contains(out, "::-webkit-scrollbar-thumb") {
+		t.Errorf("Pending page lacks the scrollbar style:\n%s", out)
+	}
+}

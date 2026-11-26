@@ -299,7 +299,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, " <p class=\"mt-2 text-xs text-mute\">この画面から Ctrl+Alt+Del は送れません。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, " <p class=\"mt-2 text-xs text-mute\">この画面から <code>Ctrl+Alt+Del</code> は送れません。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

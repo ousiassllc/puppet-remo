@@ -11,17 +11,31 @@ import (
 // （docs/architecture/frontend.md §8.4「承認済みの逸脱」・§7.1）。CSP は 'unsafe-inline' ではなく、この文字列の SHA-256 ハッシュ
 // （NoticeStyleHash）を style-src に足して通す。1 バイトでも変えるとハッシュが変わるので、CSS はここ 1 か所にだけ書く。
 //
-// 値は app.css のトークンと同じ 16 進: --ink・--bone（ページの地。ライト #f5f5f4・ダーク #050505。--surface はカード用でここでは使わない）。余白は 4px 基準（--s-*）。
+// 値は app.css のトークンと同じ 16 進: --ink・--mute・--bone（ページの地。ライト #f5f5f4・ダーク #050505。--surface はカード用でここでは使わない）。余白は 4px 基準（--s-*）。
 // フォントはシステムフォント（Web フォントは使わない）。見出し（役割クラス .pg-t。h1 の要素セレクタには置かない。T6）は xl 24px SemiBold、本文は base 16px Regular。
+// スクロールバー（ガイド「スクロールバー」。B1・B2）は app.css の @layer base と同じ形（8px・thumb --mute・矢印なし・forced-colors では OS 標準）。
+// ページ全体（:root）のスクロールにだけ掛ける。ビューアの画面を除く :not(remo-screen-viewer) は、このページに無いので要らない。
 const NoticeStyle = `
-:root { --ink: #050505; --page: #f5f5f4; }
-@media (prefers-color-scheme: dark) { :root { --ink: #ffffff; --page: #050505; } }
+:root { --ink: #050505; --mute: #6b6b6e; --page: #f5f5f4; }
+@media (prefers-color-scheme: dark) { :root { --ink: #ffffff; --mute: #8b8b8e; --page: #050505; } }
 body { margin: 0; padding: 16px; background: var(--page); color: var(--ink); font-family: system-ui, sans-serif; font-size: 16px; font-weight: 400; line-height: 1.8; }
 main { max-width: 80rem; margin: 0 auto; }
 .pg-t { margin: 0 0 8px; font-size: 24px; font-weight: 600; line-height: 1.5; }
 p { margin: 0; }
 p + p { margin-top: 16px; }
 @media (min-width: 48rem) { body { padding: 24px; } }
+@media (forced-colors: none) {
+  :root { scrollbar-width: thin; scrollbar-color: var(--mute) transparent; }
+  @supports selector(::-webkit-scrollbar) {
+    :root { scrollbar-width: auto; scrollbar-color: auto; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+    ::-webkit-scrollbar-button { display: none; }
+    ::-webkit-scrollbar-thumb { background: var(--mute); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--ink) 35%, var(--mute)); }
+    ::-webkit-scrollbar-thumb:active { background: color-mix(in srgb, var(--ink) 65%, var(--mute)); }
+  }
+}
 `
 
 // NoticeStyleHash は NoticeStyle の CSP のハッシュソース（'sha256-…'）。

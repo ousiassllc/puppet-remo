@@ -66,11 +66,11 @@ var clicks = []struct {
 }
 
 // pointerBlockedNote は座標を取る入力ツールの説明に付ける、puppet-remo 自身のウィンドウの注意（NFR-S06）。
-const pointerBlockedNote = " puppet-remo's own windows are not shown in screenshots but input there fails with input_blocked (own_window); " +
+const pointerBlockedNote = " Nefos Remote's own windows are not shown in screenshots but input there fails with input_blocked (own_window); " +
 	"the error's detail.own_windows (and screenshot's own_windows) gives their rects in scaled coordinates, so avoid those areas."
 
 // focusBlockedNote は前面のウィンドウへ送る入力ツールの説明に付ける注意。
-const focusBlockedNote = " Fails with input_blocked (own_window) when the foreground window is one of puppet-remo's own windows, " +
+const focusBlockedNote = " Fails with input_blocked (own_window) when the foreground window is one of Nefos Remote's own windows, " +
 	"which screenshots do not show; detail.own_windows gives where they are."
 
 // addInputTools は入力系のツールを登録する: FR-M04〜M10。
