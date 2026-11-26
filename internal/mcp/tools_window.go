@@ -68,7 +68,7 @@ func (s *Server) addWindowTools() {
 		"List the top-level windows. rect is in the scaled coordinates of the monitor the window overlaps most, "+
 			"clipped to that monitor. Input into elevated windows is not possible. "+
 			"blocked is true (with blocked_reason) for windows that reject input: elevated_window, and own_window for "+
-			"puppet-remo's own windows, which are not captured in screenshots (so they do not appear there) - avoid clicking or typing inside their rect.",
+			"Nefos Remote's own windows, which are not captured in screenshots (so they do not appear there) - avoid clicking or typing inside their rect.",
 		true, noArgsSummary, func(ctx context.Context, _ domain.Actor, _ noArgs) (toolResult, error) {
 			wins, err := s.control.Windows(ctx)
 			if err != nil {

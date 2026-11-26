@@ -50,7 +50,7 @@ const (
 )
 
 // Instructions は initialize で返す指示文（API 仕様 §3.1）。
-const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
+const Instructions = "Nefos Remote lets you operate the host Windows desktop. " +
 	"All coordinates are in the scaled screenshot coordinate system: the origin is the top-left of each monitor " +
 	"and one unit is one pixel of the screenshot returned by the screenshot tool, not a physical pixel. " +
 	"Call get_screen_info for the monitors and their scale; pass monitor to address a monitor other than the primary. " +
@@ -69,7 +69,7 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"such as Windows 11 Notepad, browsers, Windows Terminal), and that window may hold the user's unsaved work: " +
 	"launch_app reports the launched app's own window (omitted when none was found, never another app's foreground window) and sets reused_existing_window when neither a window of the returned pid nor any new window was found, " +
 	"but always confirm the target with a screenshot or list_windows before typing or clicking. " +
-	"puppet-remo's own windows (its host GUI and dialogs) are never captured in screenshots, so they do not appear there, " +
+	"Nefos Remote's own windows (its host GUI and dialogs) are never captured in screenshots, so they do not appear there, " +
 	"and input into them is blocked: the input tools fail with input_blocked (detail.reason own_window) when the target point or the " +
 	"foreground window is one of them. screenshot lists them as own_windows, and the error carries detail.own_windows, " +
 	"as {monitor, rect} in the scaled coordinates of that monitor's screenshot, so you can avoid those areas; " +

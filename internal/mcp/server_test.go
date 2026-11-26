@@ -76,10 +76,13 @@ func TestInitializeAndToolList(t *testing.T) {
 		"already open window forward", "reused_existing_window", "screenshot or list_windows before typing",
 		"never captured in screenshots", "input_blocked", "own_window", "own_windows", "blocked: true",
 		"run_task", "get_task", "cancel_task", "asynchronously", "agent_disabled", "Only one task runs at a time",
-		"untrusted", "only the model's claim", "nor any new window"} {
+		"untrusted", "only the model's claim", "nor any new window", "Nefos Remote lets you operate", "Nefos Remote's own windows"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}
+	}
+	if strings.Contains(init.Instructions, "puppet-remo") {
+		t.Errorf("Instructions name the product puppet-remo, want Nefos Remote: %s", init.Instructions)
 	}
 
 	list, err := cs.ListTools(context.Background(), nil)
@@ -95,6 +98,9 @@ func TestInitializeAndToolList(t *testing.T) {
 		got[tool.Name] = tool.Annotations.ReadOnlyHint
 		if tool.Description == "" {
 			t.Errorf("%s has no description", tool.Name)
+		}
+		if strings.Contains(tool.Description, "puppet-remo") {
+			t.Errorf("%s description names the product puppet-remo, want Nefos Remote: %s", tool.Name, tool.Description)
 		}
 		// puppet-remo 自身のウィンドウは写らないが入力は拒否される。事前の手がかり（NFR-S06）。
 		for _, hint := range ownWindowHints[tool.Name] {

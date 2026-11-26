@@ -132,7 +132,7 @@ func (s *Server) addViewTools() {
 	addAuditedTool(s, "screenshot",
 		"Take a screenshot of a monitor. The image is scaled down so that its long side fits the configured maximum; "+
 			"coordinates for the other tools are pixels of this scaled image. "+
-			"puppet-remo's own windows are never captured, so the image shows what lies behind them, but input there is blocked "+
+			"Nefos Remote's own windows are never captured, so the image shows what lies behind them, but input there is blocked "+
 			"(input_blocked, reason own_window); own_windows in the result lists where they are, as rects in this image's pixels.",
 		true, screenshotArgs, func(ctx context.Context, _ domain.Actor, in screenshotIn) (toolResult, error) {
 			monitor, err := monitorArg(in.Monitor)

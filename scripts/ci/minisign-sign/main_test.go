@@ -129,6 +129,9 @@ func TestSignRoundTrip(t *testing.T) {
 			if !verify(t, k.pubText, data, sig, testVersion, testAsset) {
 				t.Fatal("the app's verification rejects the signature the tool made")
 			}
+			if first, _, _ := strings.Cut(string(sig), "\n"); first != "untrusted comment: signature from Nefos Remote release CI" {
+				t.Errorf("first line of the signature = %q, want the Nefos Remote CI comment", first)
+			}
 			// 改ざん・版の付け替え・別のファイル名は、検証に通らない。
 			tampered := bytes.Clone(data)
 			tampered[10] ^= 1

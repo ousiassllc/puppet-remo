@@ -71,7 +71,7 @@ func sign(args []string, getenv func(string) string, stdout io.Writer) error {
 		return errors.New("the installer is empty")
 	}
 	file := filepath.Base(*in)
-	sig := r.SignWithComments(priv, trustedComment(*version, file), "signature from puppet-remo release CI")
+	sig := r.SignWithComments(priv, trustedComment(*version, file), "signature from Nefos Remote release CI")
 	if err := os.WriteFile(*out, sig, 0o644); err != nil {
 		return fmt.Errorf("write signature: %w", err)
 	}
