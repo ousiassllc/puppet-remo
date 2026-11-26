@@ -27,6 +27,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/router"
 	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/tailnet"
+	"github.com/ousiassllc/puppet-remo/internal/web/handler/api"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui"
 	webremote "github.com/ousiassllc/puppet-remo/internal/web/handler/remote"
 	"github.com/ousiassllc/puppet-remo/internal/web/middleware"
@@ -147,6 +148,7 @@ type App struct {
 	viewers  service.ViewerSessions // viewer_id の発行・検証（/viewer と /ws/screen）
 	ws       *ws.Handler
 	web      *webremote.Handler // リモートの Web UI（/viewer）
+	api      *api.Handler       // リモートの JSON API（/api/v1）
 	// connStates は未登録デバイスのブラウザに返す待機・拒否・失効のページの選択に使う、接続要求の状態の読み取り専用の参照。
 	connStates service.ConnRequestStates
 	tracker    *service.StatusTracker
@@ -393,6 +395,13 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("web ui: %w", err)
 	}
+	// JSON API（/api/v1。API 仕様 §6）。サーバー状態は a（ServerStatus）経由で読む（tracker は buildRouters が作る）。
+	a.api, err = api.New(api.Deps{
+		Version: cfg.Version, Status: a, KillSwitch: killMgr, Agent: a.agentCfg, Monitors: control, Leases: a.leases, Viewers: a.viewers, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("json api: %w", err)
+	}
 
 	return a.buildRouters(killMgr)
 }
@@ -400,7 +409,7 @@ func (a *App) build(ctx context.Context) error {
 func (a *App) buildRouters(kill service.KillSwitchState) error {
 	cfg := a.cfg
 
-	// リモートルーター: tailnet の IP だけで Listen する。配信するのは /mcp・/ws/screen・Web UI（/viewer）・/static/*。
+	// リモートルーター: tailnet の IP だけで Listen する。配信するのは /mcp・/ws/screen・Web UI（/viewer）・/api/v1/*・/static/*。
 	remote, err := router.NewRemote(router.RemoteConfig{
 		Chain: middleware.RemoteConfig{
 			Hosts: a.allowedHosts, KillSwitch: kill, WhoIs: cfg.WhoIs, Authz: a.authz, ConnStates: a.connStates,
@@ -408,6 +417,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 		MCP:    a.mcp.Handler(),
 		WS:     a.ws,
 		Web:    a.web,
+		API:    a.api,
 		Static: cfg.Static,
 	})
 	if err != nil {

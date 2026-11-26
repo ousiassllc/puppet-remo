@@ -519,15 +519,16 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 ## 6. JSON API（`/api/v1`、Huma）
 
-運用確認と将来の Lit アイランドのための小さな参照専用 API（初版のビューアはこれを呼ばない）。OpenAPI は `GET /api/v1/openapi.json`。認可は §1 の連鎖（登録済みのクライアント）。エラーは problem+json。
+運用確認と将来の Lit アイランドのための小さな参照専用 API（初版のビューアはこれを呼ばない）。`web/handler/api`（Huma。`humago`）が実装し、`router.NewRemote` が `GET /api/v1/*` でマウントする。認可は §1 の連鎖（登録済みのクライアント）。エラーは problem+json（§2。内部の失敗は `internal`、内容はログにだけ残す）。
 
 | メソッド | パス | 概要 | 応答 |
 |---------|------|------|------|
-| GET | `/api/v1/status` | サーバー状態 | `{ "version", "tailnet_ip", "port", "killswitch": {"active": false}, "agent_enabled": false }` |
-| GET | `/api/v1/monitors` | モニター一覧 | MCP の `get_screen_info` の `monitors` と同じ |
-| GET | `/api/v1/lease` | リース状態 | MCP の `get_control_status` と同じ形（`mine` は呼び出しのクライアントの `viewer_id` を `X-Viewer-Id` で渡したときだけ意味を持つ） |
+| GET | `/api/v1/status` | サーバー状態 | `{ "version", "tailnet_ip", "port", "killswitch": {"active": false}, "agent_enabled": false }`（`tailnet_ip` は先頭の tailnet IP。無ければ空文字） |
+| GET | `/api/v1/monitors` | モニター一覧 | MCP の `get_screen_info` の `monitors` と同じ項目の配列（モニターが無ければ `[]`） |
+| GET | `/api/v1/lease` | リース状態 | MCP の `get_control_status` と同じ形（`mine` は呼び出しのクライアントの `viewer_id` を `X-Viewer-Id` で渡したときだけ意味を持つ。渡さなければ `false`。クライアントに束縛されていない `viewer_id` は 400 `invalid_argument`） |
+| GET | `/api/v1/openapi.json` | OpenAPI 3.1 の仕様 | 上の 3 経路だけを記述する（`application/vnd.oai.openapi+json`） |
 
-操作系の JSON API は設けない（入力は MCP と WebSocket のみ）。
+操作系の JSON API は設けない（入力は MCP と WebSocket のみ）。上の 4 経路以外（Huma 既定の `/docs`・`/schemas`・YAML 版の仕様など）は公開せず、404。
 
 ## 7. GUI ルーター（プロセス内）
 
@@ -682,7 +683,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
-| リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp`・`GET /ws/screen`（M2。#61）・Web UI（`GET /`・`/viewer*`。M2。#62）・`GET /static/*`（M2。#62）**。それ以外のパスは 404。`/api/v1`（Huma）は M2 以降の別の段階 |
+| リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp`・`GET /ws/screen`（M2。#61）・Web UI（`GET /`・`/viewer*`。M2。#62）・`GET /static/*`（M2。#62）・`GET /api/v1/*`（status・monitors・lease・openapi.json。#232）**。それ以外のパスは 404 |
 | GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`・`/lease/revoke/confirm`・`/tasks/{id}/cancel/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`・`/lease/revoke`（M2）、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。起動の方式と拒否リスト（#88）: `PUT /apps/mode`・`GET /apps/mode/confirm`・`GET /apps/denied`・`POST /apps/denied`・`GET /apps/denied/{id}/edit`・`PUT /apps/denied/{id}`・`GET /apps/denied/{id}/delete/confirm`・`DELETE /apps/denied/{id}`（ホスト GUI のルーターだけ。リモートルーターには無い）。M3 の監査ログの閲覧（#72）: `GET /audit`・`/audit/{id}`・`/audit/{id}/thumbnail`（読み取りだけ。ホスト GUI のルーターだけ）。M3 の更新（#74）: `GET /update`・`/update/apply/confirm`、`POST /update/check`・`/update/apply`（ホスト GUI のルーターだけ）。M3・M4 で足したルート（`/approvals/*`・`/tasks*`・`/agent*`・`POST /lease/revoke`・`/clients/{id}/approval/reset`）と、強制剥奪・タスク中断の確認モーダル（`GET /lease/revoke/confirm`・`GET /tasks/{id}/cancel/confirm`。ホスト GUI のルーターだけ。リモートの `GET /viewer/lease/revoke/confirm` は §4.2）は、それぞれ表のとおり。確認モーダルの確定（GET 以外）が失敗したときは、応答にモーダルを閉じる OOB を添える（アラートが暗幕の背面に隠れないように。GET の確認モーダルの取得の失敗には添えない。開いている別のモーダルを閉じてしまうため） |
 | `PUT /settings` の項目（§7.3） | 13 項目 | `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目（M1）に、M2 で `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を足した 7 項目。M3 の #73 で `audit.thumbnails_enabled`・`audit.record_text`（チェックボックス。外れていると値が送られず、off として保存する）・`audit.retention_days`（1〜36500）・`audit.thumbs_max_bytes`（1〜2^53。単位はバイトのまま表示する）・`update.apply_mode`（`confirm` / `auto_idle`。#74 で `service.Updater` が読む）を足した 12 項目。#74 で `update.channel`（`stable` / `nightly`。既定 `stable`。未知の値は 422）を 1 項目足した（左の項目数も 1 つ増える）。ログのレベルは設定項目ではなく環境変数 `PUPPET_REMO_LOG_LEVEL` だけで指定する（`log.level` という設定項目は無い。NFR-O01）。検証エラーは 422 のフラグメントで項目別に出す（`audit.retention_days` と `audit.thumbs_max_bytes` の範囲は `Maintenance` の読み取りと同じ。範囲・単位は所有者の確認待ち）。保存済みの `audit.*` の数値が範囲外のときは、フォームは既定値を表示する（`Maintenance` が実際に使う値）。他は各段階で足す |
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
@@ -804,3 +805,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.55 | 2026-11-14 | `launch_app` の監査の `detail` に `resolved_path` / `resolve_failed`（ブラックリスト方式の `path` 指定の起動。#173）。`PUT /apps/mode` を fail-closed に: 監査の行を書けなければ切り替えを戻して 503 `audit_unavailable`（#174） | #173・#174 |
 | 1.56 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。本文の製品名だけを差し替え、ヘッダー `X-Puppet-Remo`・MCP のサーバー名・サブプロトコル名・エラー型の URN・資格情報のターゲット名は変えない | #188 |
 | 1.57 | 2026-11-23 | §7.3 の `PUT /settings` から `log.level` を外し、ログのレベルは環境変数 `PUPPET_REMO_LOG_LEVEL` だけで指定すると明記（実装に合わせた。§7.5 の項目数も 14 → 13 に直した） | #230 |
+| 1.58 | 2026-11-26 | §6 の JSON API（`/api/v1/status`・`monitors`・`lease`・`openapi.json`）を実装した旨に改め、`openapi.json` を表に加えた。§7.5 の M1 の差分から `/api/v1` の「M2 以降」を外した | #232 |

@@ -641,7 +641,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
-| Huma（JSON API） | `/api/v1` を提供 | 使わない（`go.mod` に無い）。`/api/v1` は M2 以降 |
+| Huma（JSON API） | `/api/v1` を提供 | 実装した（#232。`github.com/danielgtaylor/huma/v2` v2.34.1、`humago` アダプター。`web/handler/api`）。Huma の既定の docs・schemas・YAML の経路は有効にしない |
 | WebSocket | `github.com/coder/websocket` v1.8.15 | M2（#61）で直接依存にした（`internal/ws`。v1.8.14 の間接依存だったものを v1.8.15 に上げた） |
 | 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | M4（#19）で依存に加え、`platform/windows` の `SecretStore` の背後に置いた（M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけだった）。呼び出しは M4 の後続の変更で足す |
 | DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | M2（#57）で直接依存に追加し採用を確定した（`internal/platform/windows` の `dxgi_windows.go`）。`Capturer.Watch` は DXGI を主、GDI をフォールバックとして実装した。変更矩形は使わず `Frame.Dirty` は全面 |

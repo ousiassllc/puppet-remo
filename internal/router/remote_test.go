@@ -62,6 +62,7 @@ type remoteKit struct {
 	// staticPaths は /static ハンドラに届いたパス（/static を外したあと）。
 	staticPaths []string
 	fakes       *remotetest.Fakes
+	api         *apiFakes
 	handler     http.Handler
 }
 
@@ -93,6 +94,7 @@ func newRemote(t *testing.T) *remoteKit {
 		w.Header().Set("ETag", `"build"`)
 		_, _ = w.Write([]byte("asset"))
 	})
+	k.api = newAPIFakes(k.fakes.Sessions)
 	h, err := router.NewRemote(router.RemoteConfig{
 		Chain: middleware.RemoteConfig{
 			Hosts:      func() ([]string, int) { return []string{remoteIP}, remotePort },
@@ -103,6 +105,7 @@ func newRemote(t *testing.T) *remoteKit {
 		MCP:    mcp,
 		WS:     ws,
 		Web:    web,
+		API:    k.api.handler(t, k.kill),
 		Static: static,
 	})
 	if err != nil {
@@ -226,7 +229,7 @@ func TestRemoteWebSocketRejectionsAreProblemJSON(t *testing.T) {
 	}
 }
 
-// tailnet 公開面は /mcp・GET /ws/screen・Web UI（/ と /viewer*）・GET /static/* だけ（/api/v1 は M2 以降の別の段階）。
+// tailnet 公開面は /mcp・GET /ws/screen・Web UI（/ と /viewer*）・GET /static/*・GET /api/v1/*（仕様の 4 経路）だけ。
 // 連鎖を通っても、ほかの経路は 404 で、ホスト GUI の経路は存在しない。
 func TestRemoteExposesNothingButTheDocumentedRoutes(t *testing.T) {
 	k := newRemote(t)
