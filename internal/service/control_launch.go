@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strings"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
@@ -225,7 +224,7 @@ func (c *control) withReresolvedPaths(ctx context.Context, denied []domain.Denie
 		var le *platform.LaunchError
 		switch {
 		case err == nil:
-			if !strings.EqualFold(domain.NormalizePathForMatch(r), domain.NormalizePathForMatch(d.Value)) {
+			if !domain.EqualOrdinalIgnoreCase(domain.NormalizePathForMatch(r), domain.NormalizePathForMatch(d.Value)) { // MatchDenied と同じ比較（不正な UTF-8 は「違う」として、解決した項目も足す）
 				extra = append(extra, domain.DeniedApp{ID: d.ID, Kind: domain.DeniedPath, Value: r})
 			}
 		case errors.As(err, &le), errors.Is(err, domain.ErrInvalidArgument):

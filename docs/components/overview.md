@@ -238,15 +238,17 @@ type DeniedKind string // "path"（実体のパスで照合）| "name"（実行�
 type DeniedApp struct{ ID string; Kind DeniedKind; Value string; CreatedAt, UpdatedAt time.Time }
 const MaxDeniedApps = 200
 func DeniedKey(kind DeniedKind, value string) string // 重複判定の正規形（kind + ":" + 小文字の value。path は区切りを "\" にそろえる）。launch_denylist.dedup_key
-func NormalizePathForMatch(p string) string          // "/" → "\"、連続する区切りを 1 つに（大文字小文字は畳まない。比較側が EqualFold）
+func NormalizePathForMatch(p string) string          // "/" → "\"、連続する区切りを 1 つに（大文字小文字は畳まない。比較側が EqualOrdinalIgnoreCase 相当）
 // 拒否リストの入力を、パス（"\"・"/"・":" を含む）か実行ファイル名に分け、形を検査する（純粋。msg が空なら有効。メッセージに入力値は含めない）。
 //  パス: ValidateLaunchPath と同じ規則。名前: 区切りを含まない .exe の名前（255 文字以内。予約デバイス名・使えない文字・制御文字は不可）。
 func ClassifyDenied(value string) (kind DeniedKind, msg string)
 func ValidateLaunchPath(p string) bool // launch_app の path の形（ExePath と同じパスの規則の絶対パスのローカルの .exe）。固定ディスク・実在は platform.AppLauncher.Resolve が確かめる
 func ExeBaseName(p string) string      // "\" か "/" 区切りの最後の要素
-// 照合: requested は呼び出し側の指定のパス、resolved は AppLauncher.Resolve が返した実体のパス。大文字小文字を区別しない。
+// 照合: requested は呼び出し側の指定のパス、resolved は AppLauncher.Resolve が返した実体のパス。大文字小文字を区別しない
+//  （Windows の OrdinalIgnoreCase 相当。1 文字ずつの単純な大文字化にそろえて比べる。strings.EqualFold は使わない。#183）。不正な UTF-8 は当たったものとして拒否（fail closed）。
 //  path の行は resolved と一致で当たり、name の行は resolved の末尾の名前か requested の末尾の名前と一致で当たる（解決の前後どちらかの名前が一致すれば拒否。fail closed）。
 func MatchDenied(entries []DeniedApp, requested, resolved string) bool
+func EqualOrdinalIgnoreCase(a, b string) bool // Windows の OrdinalIgnoreCase 相当の比較（ß≠ẞ・KELVIN SIGN≠k・Σ=ς=σ。ASCII 以外は ASCII へ写さない）。不正な UTF-8 は false
 // 定数 AppFieldDeniedValue / AppFieldLaunchMode（"value" / "mode"）。ErrAppDenied（code app_denied・HTTP 403。メッセージにパス・拒否リストの中身を含めない）を §2 のエラー型に加える。
 ```
 
@@ -1498,3 +1500,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.66 | 2026-11-14 | `AppRegistry.SetLaunchMode` を fail-closed にした: 監査の行を同期で書き、書けなければ設定を戻して `audit_unavailable`（#174）。denylist の `path` 指定の起動の監査に `resolved_path` / `resolve_failed` を追加（#173） | #173・#174 |
 | 1.67 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。本文の製品名だけを差し替え、パッケージ名・パス・資格情報のターゲット名・ログの文言は変えない | #188 |
 | 1.68 | 2026-11-23 | §4.1 の repository.Tasks の抜粋を実装（domain.Task・TaskQuery/TaskPage・ListActive・PurgeFinishedBefore）に合わせた | #228 |
+| 1.69 | 2026-11-27 | §2 の `MatchDenied` の大文字小文字の比較を `strings.EqualFold` から Windows の OrdinalIgnoreCase 相当に寄せ、`domain.EqualOrdinalIgnoreCase` を追加 | #183 |
