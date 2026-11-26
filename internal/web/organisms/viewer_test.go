@@ -39,7 +39,7 @@ func TestViewerLeasePanelRendersOnlyAvailableActions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			out := webtest.Render(t, organisms.ViewerLeasePanel(tt.v))
 			has(t, out, tt.has...)
-			has(t, out, `id="lease-panel"`, `hx-get="/viewer/lease"`, `hx-trigger="remo:lease-changed from:#viewer-root"`, "Ctrl+Alt+Del は送れません")
+			has(t, out, `id="lease-panel"`, `hx-get="/viewer/lease"`, `hx-trigger="remo:lease-changed from:#viewer-root"`, "<code>Ctrl+Alt+Del</code> は送れません")
 			hasNot(t, out, tt.not...)
 			if hiddenAttr.MatchString(out) {
 				t.Errorf("hidden/disabled attribute rendered:\n%s", out)

@@ -30,7 +30,7 @@ func TestViewerFullPage(t *testing.T) {
 		`<remo-screen-viewer`, `src="/static/js/screen-viewer.js"`, `src="/static/js/htmx.min.js"`, `src="/static/js/htmx-config.js"`,
 		`monitor="0"`, `quality="70"`, `fps="10"`,
 		// 操作権がないので readonly。UI から Ctrl+Alt+Del は送れない旨（FR-W08）。
-		` readonly`, `Ctrl+Alt+Del は送れません`,
+		` readonly`, `<code>Ctrl+Alt+Del</code> は送れません`,
 	)
 	if got := res.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
