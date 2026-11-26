@@ -39,7 +39,7 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 			}
 		}
 		for _, r := range v.Rows {
-			<article class="rounded-lg border border-border bg-surface p-4" data-request={ r.ID }>
+			<article class="rounded-lg border border-border bg-surface p-(--pad-card)" data-request={ r.ID }>
 				<div class="flex flex-wrap items-baseline justify-between gap-2">
 					<h3 class="text-base font-semibold text-ink">{ r.DisplayName }</h3>
 					<span class="text-xs text-mute"><span class="font-mono">{ strconv.Itoa(r.Count) }</span> 回の要求 ・ 初回 <span class="font-mono">{ r.FirstSeen }</span> ・ 最終 <span class="font-mono">{ r.LastSeen }</span></span>

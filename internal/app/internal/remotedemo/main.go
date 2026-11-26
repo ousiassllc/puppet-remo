@@ -83,11 +83,13 @@ func main() {
 	agentScope := flag.String("agent-scope", "", "-agent-demo に window_id つきの台本を足す（save: メニューを開いて保存ダイアログまで（1 バッチ内の click→click で中断）/ foreign: 前面が別のウィンドウに替わって failed）。偽のメモ帳（window_id 1001）が対象。偽 platform で、実機の代わりにならない")
 	viewerScope := flag.Bool("viewer-scope", false, "ビューアのウィンドウ選択・グループ表示・手動操作を、偽のメモ帳（window_id 1001）と周りの偽のウィンドウで確かめる（使い方は viewerscope.go の先頭のコメント。-agent-demo とは一緒に使えない）。偽 platform で、実機の代わりにならない")
 	agentSafety := flag.Bool("agent-safety-check", false, "-agent-demo の台本の 2 ステップ目に OpenAI の安全チェック（承認ダイアログ）を付ける")
+	taskHistory := flag.Int("task-history", 0, "/tasks の確認用に、終了済みのタスクの履歴を N 件入れる（60 など、1 ページ 50 件を超える数でページ送りが出る。スクリーンショット用）")
+	pendingRequest := flag.Bool("pending-request", false, "/requests の確認用に、未処理の接続要求を 1 件入れる（スクリーンショット用）")
 	approval := flag.String("approval", string(domain.ApprovalAuto), "デモのクライアントの承認モード（auto: 承認なしでリースを取る / always: 毎回承認。承認要求の id はログに出る）")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	if err := run(ctx, nil, *remoteAddr, *guiAddr, domain.ApprovalMode(*approval), *agentDemo, *agentSafety, *agentScope, *viewerScope); err != nil {
+	if err := run(ctx, nil, *remoteAddr, *guiAddr, domain.ApprovalMode(*approval), *agentDemo, *agentSafety, *agentScope, *viewerScope, *taskHistory, *pendingRequest); err != nil {
 		stop() // log.Fatal は defer を走らせないので、シグナルの購読を先に解く
 		log.Fatal(err)
 	}
@@ -112,7 +114,7 @@ func checkLoopback(flagName, addr string, minPort int) (int, error) {
 }
 
 // run はデモを起動し、ctx が終わるまで動かす。ready が nil でなければ、待ち受けを始めた後にホスト GUI のアドレスを渡して呼ぶ（テスト用）。
-func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, agentSafety bool, agentScope string, viewerScope bool) error {
+func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, agentSafety bool, agentScope string, viewerScope bool, taskHistory int, pendingRequest bool) error {
 	if viewerScope && agentDemo {
 		return errors.New("remotedemo: -viewer-scope は -agent-demo と一緒に使えない")
 	}
@@ -151,6 +153,16 @@ func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr 
 		WebEnabled: true, MCPEnabled: true, AgentEnabled: agentDemo, ApprovalMode: approval, // 既定の auto は承認を待たずにリースを取る。always は承認ダイアログ（偽のウィンドウ）を開き、ホスト GUI の /approvals/{id} で決める
 	}); err != nil {
 		return err
+	}
+
+	if err := seedTaskHistory(ctx, db, taskHistory); err != nil {
+		return err
+	}
+
+	if pendingRequest {
+		if err := seedPendingRequest(ctx, db); err != nil {
+			return err
+		}
 	}
 
 	secrets := platformtest.NewFakeSecretStore()

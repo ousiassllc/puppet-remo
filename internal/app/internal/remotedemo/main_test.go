@@ -59,7 +59,7 @@ func TestCheckLoopback(t *testing.T) {
 // run は不正な -addr を、待ち受けを始める前に理由つきのエラーで断る。
 func TestRunRejectsInvalidAddr(t *testing.T) {
 	for _, addr := range []string{"", "127.0.0.1", "127.0.0.1:99999", "0.0.0.0:9000", "127.0.0.1:80"} {
-		err := run(context.Background(), nil, addr, "127.0.0.1:0", domain.ApprovalAuto, false, false, "", false)
+		err := run(context.Background(), nil, addr, "127.0.0.1:0", domain.ApprovalAuto, false, false, "", false, 0, false)
 		if err == nil || !strings.Contains(err.Error(), "-addr") {
 			t.Errorf("run(-addr %q) error = %v; want an error that mentions -addr", addr, err)
 		}
@@ -108,7 +108,7 @@ func TestRunListensOnTheAddrPortAndHostCheckFollows(t *testing.T) {
 	ready := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, func(net.Addr) { close(ready) }, addr, "127.0.0.1:0", domain.ApprovalAuto, false, false, "", false)
+		done <- run(ctx, func(net.Addr) { close(ready) }, addr, "127.0.0.1:0", domain.ApprovalAuto, false, false, "", false, 0, false)
 	}()
 	defer func() {
 		cancel()

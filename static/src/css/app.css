@@ -379,6 +379,16 @@
     text-decoration-color: var(--ink);
   }
 
+  /* タスクのカード（sm 未満。organisms.taskCard。#178）: カード全体が 1 つのリンク（ID のリンクの ::after がカードを覆う）。
+   * キーボードで止まるのはその ID のリンクだけなので、フォーカスリングはリンクでなくカードの外周に、通常のリンクと同じ 2px・offset 2px の --focus の実線で描く。 */
+  .task-card:has(.task-card-link:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .task-card-link:focus-visible {
+    outline: none;
+  }
+
   /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック（Iconoir の check を --icon-sm でマスクし、--bone で塗る）。 */
   input[type="checkbox"] {
     appearance: none;
