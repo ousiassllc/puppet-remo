@@ -53,7 +53,7 @@ func TestAtomsUseOnlyDesignTokens(t *testing.T) {
 	}
 }
 
-// 状態はアイコン + 文言 + 状態色で伝える（色だけにしない）。中立のバッジ（種別・件数）にはアイコンを付けない。
+// 状態はアイコン + 文言 + 状態色で伝える（色だけにしない）。中立のバッジ（状態の中立 BadgeNeutral・状態でない BadgeLabel）にはアイコンを付けない。
 func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 	for tone, color := range map[atoms.BadgeTone]string{atoms.BadgeOK: "success", atoms.BadgeWarn: "warning", atoms.BadgeDanger: "danger"} {
 		out := webtest.Render(t, atoms.Badge(tone, "状態"))
@@ -62,9 +62,20 @@ func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 			t.Errorf("the text must follow the icon: %s", out)
 		}
 	}
-	neutral := webtest.Render(t, atoms.Badge(atoms.BadgeNeutral, "MCP"))
-	hasNot(t, neutral, "<svg")
-	has(t, neutral, "MCP")
+	for tone, c := range map[atoms.BadgeTone]string{atoms.BadgeNeutral: "text-mute-on-soft", atoms.BadgeLabel: "text-ink"} {
+		out := webtest.Render(t, atoms.Badge(tone, "MCP"))
+		hasNot(t, out, "<svg")
+		has(t, out, "MCP", c, "border-border", "bg-accent-soft")
+	}
+}
+
+// 中立のバッジは 2 つに分ける（C4）: 状態の中立（空き・無効・最小化。ガイドの中立の「下書き」）は --mute 系の文字（--bone・行ホバーの --accent-soft 上で
+// AA に届くよう --mute-on-soft）、状態でない表示（種別・経路・件数。ガイドに規定が無い）は --ink。互いの色を持たない。
+func TestNeutralBadgeSeparatesStateFromLabel(t *testing.T) {
+	state := webtest.Render(t, atoms.Badge(atoms.BadgeNeutral, "空き"))
+	hasNot(t, state, "text-ink")
+	label := webtest.Render(t, atoms.Badge(atoms.BadgeLabel, "MCP"))
+	hasNot(t, label, "text-mute")
 }
 
 // インラインアラート: 4 種（お知らせ・成功・注意・エラー）の状態色・アイコン・見出し・本文。閉じるボタンは Dismissible のときだけ。
@@ -88,7 +99,8 @@ func TestAlertTonesIconsAndDismiss(t *testing.T) {
 	hasNot(t, tmpl, `role="alert"`)
 }
 
-// 常設の注意書き: 4 種の状態色の枠・アイコン・本文（本文色 ink）。見出しと閉じるボタンは持たず、role などは attrs で渡す。
+// 題なしのインラインアラート: 状態色は左の線（3px）だけ。ほかの 3 辺は --border 1px・地は --surface。アイコンは状態色・本文は ink。
+// 見出しと閉じるボタンは持たず、role などは attrs で渡す。
 func TestNoticeTonesIconsAndBody(t *testing.T) {
 	for tone, color := range map[atoms.AlertTone]string{atoms.AlertInfo: "info", atoms.AlertSuccess: "success", atoms.AlertWarning: "warning", atoms.AlertDanger: "danger"} {
 		body := templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
@@ -100,8 +112,8 @@ func TestNoticeTonesIconsAndBody(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := sb.String()
-		has(t, out, `role="note"`, `data-notice="n"`, "border-"+color+"-line", "bg-"+color+"-wash", "text-"+color, "<svg", "text-sm text-ink", `class="min-w-0 flex-1 space-y-2"`, ">本文</div>")
-		hasNot(t, out, "<h3", "<button", "text-xs")
+		has(t, out, `role="note"`, `data-notice="n"`, "border border-border", "border-l-3", "border-l-"+color, "bg-surface", "rounded-md", "px-4 py-3", "text-"+color, "<svg", "text-sm text-ink", `class="min-w-0 flex-1 space-y-2"`, ">本文</div>")
+		hasNot(t, out, "<h3", "<button", "text-xs", "bg-"+color+"-wash", "border-"+color+"-line")
 		webtest.AssertCSPCompliantHTML(t, out)
 	}
 }
@@ -121,15 +133,16 @@ func TestNoticeAnimatedRisesInOnlyWhenAsked(t *testing.T) {
 	}
 	attrs := atoms.Attrs{"role": "alert", "data-notice": "n"}
 	animated := render(atoms.NoticeAnimated(atoms.AlertDanger, attrs))
-	has(t, animated, `class="motion-rise-in flex items-start gap-2`, `role="alert"`, `data-notice="n"`, "border-danger-line", "<svg", ">本文</div>")
+	has(t, animated, `class="motion-rise-in flex items-start gap-3`, `role="alert"`, `data-notice="n"`, "border-l-danger", "<svg", ">本文</div>")
 	hasNot(t, render(atoms.Notice(atoms.AlertDanger, attrs)), "motion-")
 }
 
 // トースト: 完了の短い通知。ピル・インク地・role や閉じるボタンは持たない（3 秒で自動消去）。エラーの表示には使わない。
+// 高さは --toast-h（40）で、長い文でも折り返さず 1 行（truncate）。min-h・py での可変にしない（O3）。
 func TestToastIsAShortInkPill(t *testing.T) {
 	out := webtest.Render(t, atoms.Toast(view.Toast{Message: "保存しました。"}))
-	has(t, out, "data-toast", "rounded-full", "bg-ink", "text-bone", "min-h-10", "保存しました。")
-	hasNot(t, out, "data-toast-dismiss", "data-toast-level", "data-error-code", "<button")
+	has(t, out, "data-toast", "rounded-full", "bg-ink", "text-bone", "h-(--toast-h)", `<span class="min-w-0 truncate">保存しました。</span>`)
+	hasNot(t, out, "data-toast-dismiss", "data-toast-level", "data-error-code", "<button", "min-h-10", "py-2")
 }
 
 // ボタン: 4 種（主・サブ・ゴースト・危険）。SemiBold・disabled は opacity .4・高さ 40（小は 32）。押下のリップルの対象。
@@ -166,6 +179,44 @@ func TestFieldsFollowTheFormSpec(t *testing.T) {
 	}
 }
 
+// 選択欄も、不正なときは --danger の枠と aria-invalid を出す（入力欄と同じ）。Select（エラーを持たない欄）は出さない。
+func TestSelectShowsInvalidState(t *testing.T) {
+	opts := []atoms.SelectOption{{Value: "a", Label: "A"}}
+	bad := webtest.Render(t, atoms.SelectWith(atoms.SelectProps{ID: "s", Name: "s", Options: opts, Invalid: true}))
+	has(t, bad, "border-danger", `aria-invalid`, `<option value="a">A</option>`)
+	for _, out := range []string{webtest.Render(t, atoms.Select("s", "s", opts)), webtest.Render(t, atoms.SelectWith(atoms.SelectProps{ID: "s", Name: "s", Options: opts}))} {
+		has(t, out, "border-border")
+		hasNot(t, out, "border-danger", "aria-invalid")
+	}
+}
+
+func renderIn(t *testing.T, ctx context.Context, c templ.Component) string {
+	t.Helper()
+	var sb strings.Builder
+	if err := c.Render(ctx, &sb); err != nil {
+		t.Fatal(err)
+	}
+	return sb.String()
+}
+
+// チェックボックスも、不正なときだけ aria-invalid を出し、WithDescribedBy で伝えられた id が一致するときだけ aria-describedby を出す。
+func TestCheckboxShowsInvalidAndDescribedBy(t *testing.T) {
+	p := atoms.CheckboxProps{ID: "c", Name: "c", Invalid: true}
+	bad := webtest.Render(t, atoms.CheckboxWith(p))
+	has(t, bad, `aria-invalid`)
+	hasNot(t, bad, "aria-describedby")
+
+	ctx := atoms.WithDescribedBy(context.Background(), "c", "c-error")
+	described := renderIn(t, ctx, atoms.CheckboxWith(p))
+	has(t, described, `aria-invalid`, `aria-describedby="c-error"`)
+	other := renderIn(t, atoms.WithDescribedBy(context.Background(), "x", "x-error"), atoms.CheckboxWith(p))
+	hasNot(t, other, "aria-describedby")
+
+	for _, out := range []string{webtest.Render(t, atoms.Checkbox("c", "c", true)), webtest.Render(t, atoms.CheckboxWith(atoms.CheckboxProps{ID: "c", Name: "c"}))} {
+		hasNot(t, out, "aria-invalid", "aria-describedby")
+	}
+}
+
 // 読み取り専用の --bone 地は readonly 属性のある要素だけ。:read-only は select・range にも一致するので使わない（使うと select の地が変わる）。
 func TestReadonlyBackgroundNeedsTheReadonlyAttribute(t *testing.T) {
 	ok := webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"}))
@@ -175,8 +226,9 @@ func TestReadonlyBackgroundNeedsTheReadonlyAttribute(t *testing.T) {
 		has(t, out, "[&amp;[readonly]]:bg-bone", "bg-surface")
 		hasNot(t, out, "read-only:")
 	}
-	// 選択欄は標準の矢印を消す（app.css の select）ので、矢印の分の右 padding 36 を持つ。
-	has(t, sel, "pr-9")
+	// 選択欄は標準の矢印を消す（app.css の select）ので、矢印の分の右 padding を --s-8（32）で持つ（36 の pr-9 は --s-* に無い）。
+	has(t, sel, "pr-(--s-8)")
+	hasNot(t, sel, "pr-9")
 }
 
 // スライダー（P1）: 1 行入力欄の枠（高さ・border・背景・padding）を持たず、幅いっぱいに置く。
@@ -215,6 +267,11 @@ func TestEmptyState(t *testing.T) {
 func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	out := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "削除しますか？", Message: "元に戻せません。", Label: "削除する", ConfirmURL: "/x", Method: "delete", Target: "#t", Swap: "outerHTML"}))
 	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "shadow-modal", "motion-modal-in", "motion-modal-rise-in")
+	// 右上の × はキャンセルと同じ data-clear（app.ts が #modal-root を空にして、開いた要素へフォーカスを戻す）。見出しと同じ行・パネルの中にある。
+	has(t, out, `aria-label="閉じる" data-clear="#modal-root"`)
+	if strings.Count(out, `data-clear="#modal-root"`) != 2 {
+		t.Errorf("modal must have two data-clear buttons (cancel and ×): %s", out)
+	}
 	// M5: モーダルの出現は --motion-slow（280ms）の専用クラス。出現 320ms の motion-fade-in・motion-rise-in は使わない。
 	hasNot(t, out, "motion-fade-in", "motion-rise-in")
 	hasNot(t, out, "shadow-xl", "z-40")
@@ -237,4 +294,14 @@ func TestModalConfirmButtonFollowsDestructive(t *testing.T) {
 func TestInputMonoIsOptIn(t *testing.T) {
 	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")
 	hasNot(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"})), "font-mono")
+	// 桁を揃える数値の入力欄（ポート・上限・秒数など。Type が number）は、Mono を渡さなくても font-mono。
+	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Type: "number"})), "font-mono", `type="number"`)
+}
+
+// #169: ツールチップは、フォーカスできる出す側（tabindex="0"）から、aria-describedby で role="tooltip" の本文につなぐ（ホバーのほかキーボードでも出る）。
+// 標準の title 属性は使わない。本文は隠れていても DOM に残る（読み上げ用）。
+func TestTooltipLinksTheTriggerToTheTooltip(t *testing.T) {
+	out := webtest.Render(t, atoms.Tooltip("tip-1", "ステップ 3 に付く行"))
+	has(t, out, `class="tip-host" tabindex="0" aria-describedby="tip-1"`, `<span role="tooltip" id="tip-1" class="tip">ステップ 3 に付く行</span>`)
+	hasNot(t, out, "title=", "<button", "<a ")
 }

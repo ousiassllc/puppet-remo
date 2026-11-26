@@ -53,7 +53,7 @@ graph TD
         OAI["OpenAI API<br/>(Responses / computer ツール または 関数ツール)"]
         TSAFE["TypeSafe API<br/>(Jev・高速パス有効時のみ)"]
     end
-    subgraph Host["ホスト (Windows) — 単一プロセス puppet-remo"]
+    subgraph Host["ホスト (Windows) — 単一プロセス Nefos Remote"]
         TS["tailscaled"]
         subgraph Net["tailnet 公開面 (tailnet IP のみ Listen。サインイン中だけ開く 127.0.0.1 のコールバック受信口を除く)"]
             RR["リモートルーター (Gin)<br/>/mcp /ws /viewer /api/v1"]
@@ -576,7 +576,7 @@ type Judge interface {
 | HTMX 拡張 | `response-targets`（両 UI）。ホスト GUI の更新は `GET /poll`（Wails の AssetServer が SSE をバッファするため） |
 | JSON API | `/api/v1` は読み取り専用。アクションは HTML を返す HTMX ルート |
 | 開発 | `wails3 dev` + `templ generate --watch` + esbuild / Tailwind のウォッチ（`air` は使わない）。`wails3 dev` が開発サーバーの待受を要求するため、esbuild の `--serve` を待受として起動する |
-| CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
+| CSP | すべての HTML レスポンスに、ミドルウェアから `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を送る（meta タグは使わない）。インラインのスクリプト・スタイル・イベント属性は置かない（例外は未登録デバイスの待機ページだけ。固定の `<style>` 1 つの SHA-256 ハッシュを `style-src` に置き、`'unsafe-inline'` は許さない。frontend.md §7.1）。両ルーターで共有するテンプレートに適用する（[NFR-S19](../requirements/non-functional.md)） |
 | 静的ファイル | `Cache-Control: no-cache` + `ETag`（ビルド ID） |
 | テスト | Go `httptest`、Templ のレンダリング、Lit は `@open-wc/testing`、E2E は Playwright（偽の platform・偽の tailnet のテスト専用サーバー。ビルドタグ `e2e`。Lit と Playwright は、M2 の受け入れ条件ではなくあとから CI に足した。#64） |
 
@@ -628,6 +628,7 @@ puppet-remo/
 | フロントエンド | Tailwind CSS ビルド、esbuild（Lit コンポーネント）、`htmx.min.js` のコピー → `static/dist/` |
 | Go ビルド | 純 Go（cgo なし）。Per-Monitor DPI Aware V2 のマニフェストを埋め込む |
 | パッケージ | `wails3 package` による NSIS インストーラ（WebView2 ブートストラップ込み） |
+| 表示名 | 製品名は Nefos Remote（旧名 puppet-remo）。変えるのは、ウィンドウのタイトル・トレイ・ホスト GUI と Web ビューアの画面・インストーラーの表示名（ショートカット・「アプリと機能」の名前）・README・文書の製品名だけ。リポジトリ名・Go のモジュールパス・ファイル名・インストーラーのファイル名・インストール先のフォルダー・アンインストール情報のレジストリのキー・データの場所・資格情報の名前・MCP のサーバー名とツール名・mutex などの内部の識別子は旧名のまま変えない。NSIS は `build/windows/nsis/project.nsi` で `UNINST_KEY_NAME`・`INSTALL_DIRNAME` を固定し、更新のときに旧名のスタートメニューのショートカットを消す |
 | 配布・更新 | GitHub Releases（リポジトリは公開が前提）。インストーラ・`.sha256`・署名ファイル `.minisig`（minisign 形式。Ed25519）を公開し、アプリが埋め込みの公開鍵で署名検証して適用する。署名の trusted comment に版とファイル名を入れ、Release との不一致（付け替え）を拒否する。署名の秘密鍵は GitHub Actions の Secret（`MINISIGN_SECRET_KEY`）にだけ置き、Secret が無いときは署名を省いて公開する（アプリは署名のないリリースを適用しない）。チャネルは正式版（既定）とナイトリー。確認は起動の 1 分後と 6 時間ごと。詳細は [リリース運用](../operations/release.md) |
 | CI | GitHub Actions。すべてのジョブを GitHub のランナー（`ubuntu-latest`）で実行する。templ 生成の差分チェック、フロントエンドのビルド、build / vet / lint / go test を行い、Windows 向けのコードは `GOOS=windows` の `go build` / `go vet`（Linux 上のクロスコンパイル）だけで検査する。Lit のテストと Playwright の E2E は別ジョブ `e2e` で行う（M2 の受け入れ条件ではなく、あとから足した CI の改善。#64。偽の platform と偽の tailnet により OS に依存しない。Chromium は `PLAYWRIGHT_BROWSERS_PATH`（ジョブ専用の領域）へ `playwright install chromium`。実機のスモークテストは手動）（[フロントエンド設計](frontend.md) §9） |
 | 署名 | v1 では Authenticode 署名をしない（個人利用）。README に SmartScreen の回避手順を書く。更新の完全性は Ed25519 署名検証（NFR-S10）で担保する（[NFR-O07](../requirements/non-functional.md)） |
@@ -657,10 +658,9 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 
 | 項目 | M1 の実装 |
 |------|----------|
-| `internal/openai`・`internal/typesafe`・`internal/ws` | 無い（M4・M4・M2 で作る） |
-| `internal/web` | `handler/gui` と `handler/remote`（M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`・`handler/remote/remotetest/`（偽の service）を持つ |
-| `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ。`windows/` の `secret`（資格情報）は無い |
-| `internal/router` | `gui.go`・`remote.go` と `internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
+| `internal/web` | `handler/gui` と `handler/remote`（M2）。`organisms/`・`pages/` は `gui/` / `remote/` のサブディレクトリに分けず平らに置く。`view/`（表示用モデル）、`middleware/`（`csp`・`hostcheck`・`csrfheader`・`killswitch`・`whois`・`allowlist`・`bearer`・`bodylimit`）、`webtest/`（ハンドラのテスト補助）、`handler/gui/guitest/`・`handler/remote/remotetest/`（偽の service）を持つ |
+| `internal/platform` | `platformtest/`（偽実装と契約テスト）を持つ |
+| `internal/router` | `gui.go`・`remote.go` と `internal/router/internal/guidemo`（GUI のデモサーバー。`task gui:demo`） |
 | `internal/app` | `app.go`・`lifecycle.go`・`shell.go`（トレイ・ダッシュボード・終了）・`hotkey.go`・`listen.go`・`logging.go`・`ids.go`・`wails_windows.go`・`wails_overlay_windows.go`。承認ダイアログ（`approval_dialogs.go`。M3・#68）とオーバーレイ（`overlay.go`。M3・#69）の購読側は OS に依存せず、Wails の実装だけが Windows 専用 |
 | `cmd/puppet-remo` | `main.go`（Windows）と `main_other.go`（Windows 以外はエラー終了するスタブ。`go build ./...` を Linux の CI で通すため） |
 | `cmd/puppet-remo-e2e`・`internal/app/e2e.go`・`internal/tailnet/e2e.go`（#64） | Playwright の E2E のテスト専用サーバー。すべて `//go:build e2e`（`go build ./...` は無視し、本番のバイナリに入らない）。偽の platform・偽の tailnet・loopback の待ち受けと、e2e ビルドだけの制御エンドポイント（loopback の IP リテラルにだけ bind）。[コンポーネント設計](../components/overview.md) §13.13 |
@@ -722,3 +722,5 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.28 | 2026-11-02 | 構成図の tailnet 公開面に、サインイン中だけ開く `127.0.0.1` のコールバック受信口の例外を追記 | #49（レビュー指摘） |
 | 1.29 | 2026-11-03 | 操作中オーバーレイを、WebView2 の全面ウィンドウから、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（真ん中は覆わない）に改めた | #86 |
 | 1.30 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: 構成図の許可リスト・拒否リスト・起動の方式（`AppRegistry`・`AppReader`）、「アプリ起動」の流れ図（起動の方式の確認・`path` の分岐・`app_denied`・実体のパスの解決）と本文、`AppRegistry` が方式と拒否リストの書き込みを持ち `Control` は読み取り専用の `AppReader`（`LaunchMode`・`ListDenied` を含む）だけを受け取ること | #88 |
+| 1.31 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。「ビルドと配布」に表示名の方針（変えるもの・変えないもの）を追記 | #188 |
+| 1.32 | 2026-11-23 | M1 実装での差分のディレクトリ構成の表を現状に合わせた: `internal/openai`・`internal/typesafe`・`internal/ws` の行（実装済みのため）と `windows/` の `secret` は無い、の記述を削除、`internal/router` のデモサーバーのパスを `internal/router/internal/guidemo` に訂正、`middleware/` の一覧に `bodylimit` を追加 | #235 |

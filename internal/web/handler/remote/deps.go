@@ -23,6 +23,8 @@ type Sessions interface {
 type Leases interface {
 	// RequestAcquire は承認を待たない取得（service.LeaseManager.RequestAcquire）。承認が要れば pending = true ですぐ返る。
 	RequestAcquire(ctx context.Context, who domain.Actor) (l service.Lease, pending bool, err error)
+	// RequestAcquireScoped は RequestAcquire と同じで、リースにウィンドウ target を束縛する（ビューアのウィンドウ選択。#157）。
+	RequestAcquireScoped(ctx context.Context, who domain.Actor, target domain.WindowRef) (l service.Lease, pending bool, err error)
 	Release(who domain.Actor)
 	Revoke(by domain.Actor) error
 	Holder() (service.Holder, bool)
@@ -43,6 +45,11 @@ type TaskSummaries interface {
 	Running(ctx context.Context) ([]domain.Task, error)
 }
 
+// Windows はウィンドウ選択の一覧（選べるウィンドウと、選べない理由）。実体は service.WindowPicker。
+type Windows interface {
+	Candidates(ctx context.Context) ([]domain.PickCandidate, error)
+}
+
 // Settings は既定の画質・FPS（viewer.default_*）の読み出し。実体は service.HostSettingsService。
 type Settings interface {
 	Load(ctx context.Context) (service.HostSettings, error)
@@ -55,6 +62,7 @@ type Deps struct {
 	Control  Control
 	Settings Settings
 	Tasks    TaskSummaries
+	Windows  Windows
 	Clock    domain.Clock // タスクの経過時間の基準
 	Logger   *slog.Logger // nil なら slog.Default()
 }
@@ -67,8 +75,8 @@ type Handler struct {
 
 // New は Handler を作る。
 func New(d Deps) (*Handler, error) {
-	if d.Sessions == nil || d.Leases == nil || d.Control == nil || d.Settings == nil || d.Tasks == nil || d.Clock == nil {
-		return nil, errors.New("remote: sessions, leases, control, settings, tasks and clock are required")
+	if d.Sessions == nil || d.Leases == nil || d.Control == nil || d.Settings == nil || d.Tasks == nil || d.Windows == nil || d.Clock == nil {
+		return nil, errors.New("remote: sessions, leases, control, settings, tasks, windows and clock are required")
 	}
 	h := &Handler{d: d, log: d.Logger}
 	if h.log == nil {

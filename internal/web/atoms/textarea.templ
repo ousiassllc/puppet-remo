@@ -27,6 +27,6 @@ templ Textarea(p TextareaProps) {
 		placeholder={ p.Placeholder }
 		class={ textareaClass(p.Invalid) }
 		aria-invalid?={ p.Invalid }
-		{ p.Attrs... }
+		{ describedAttrs(ctx, p.ID, p.Attrs)... }
 	>{ p.Value }</textarea>
 }

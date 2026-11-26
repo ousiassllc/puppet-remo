@@ -234,6 +234,7 @@ func TestRemoteExposesNothingButTheDocumentedRoutes(t *testing.T) {
 		"/ws/screen/", "/ws/other", "/api/v1/clients", "/events", "/poll", "/settings", "/killswitch", "/clients", "/requests",
 		"/mcp/", "/mcp/extra", "/viewer/nope", "/viewer/lease/", "/viewer/clipboard", "/viewer/keys",
 		"/audit", "/audit/1", "/audit/1/thumbnail", // 監査ログの閲覧（FR-AU05）はホスト GUI だけ
+		"/licenses",                                                          // ライセンス表記（#133）はホスト GUI だけ
 		"/update", "/update/check", "/update/apply", "/update/apply/confirm", // 更新（FR-H09）はホスト GUI だけ
 		"/apps", "/apps/new", "/apps/pick", "/apps/pick-file", "/apps/a1/edit", "/apps/a1/delete/confirm", "/api/v1/apps", "/settings/apps", // 起動許可リストの管理（FR-H12）はホスト GUI だけ
 		"/lease/revoke/confirm", "/tasks/t1/cancel/confirm", // 強制剥奪・タスク中断の確認モーダルはホスト GUI だけ（リモートは /viewer/lease/revoke/confirm）
@@ -309,9 +310,11 @@ func TestRemoteChainRunsBeforeRouting(t *testing.T) {
 func TestRemoteResponsesCarryCSP(t *testing.T) {
 	k := newRemote(t)
 	k.auth.registered = false
-	for _, rec := range []*httptest.ResponseRecorder{k.do(http.MethodGet, "/mcp"), k.do(http.MethodGet, "/nope")} {
-		if got := rec.Header().Get("Content-Security-Policy"); got != middleware.CSPValue {
-			t.Errorf("CSP = %q, want the shared policy (status %d)", got, rec.Code)
+	// problem+json（API・MCP）は共有の CSP。HTML のページ（未登録デバイスの待機ページ）は、インライン <style> のハッシュを足した CSP。
+	for path, want := range map[string]string{"/mcp": middleware.CSPValue, "/nope": middleware.NoticeCSPValue} {
+		rec := k.do(http.MethodGet, path)
+		if got := rec.Header().Get("Content-Security-Policy"); got != want {
+			t.Errorf("GET %s: CSP = %q, want %q (status %d)", path, got, want, rec.Code)
 		}
 	}
 }

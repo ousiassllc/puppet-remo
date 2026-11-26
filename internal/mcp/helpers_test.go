@@ -158,6 +158,10 @@ func (f *fakeControl) ResumeTarget(context.Context, domain.Actor) (service.Targe
 	return service.TargetStatus{}, nil
 }
 
+func (f *fakeControl) GrabGroupFrame(context.Context, domain.WindowRef) (service.GroupFrame, error) {
+	return service.GroupFrame{}, nil
+}
+
 func (f *fakeControl) LaunchableApps(context.Context) (service.LaunchableList, error) {
 	if err := f.viewErr(); err != nil {
 		return service.LaunchableList{}, err

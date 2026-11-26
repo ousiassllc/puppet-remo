@@ -2,6 +2,7 @@
 package atoms
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/a-h/templ"
@@ -21,4 +22,30 @@ func Merge(sets ...Attrs) Attrs {
 	return out
 }
 
+// ScrollRegion はスクロールする領域（overflow-auto / overflow-x-auto の要素）に付ける属性（B6）。
+// 領域の中にフォーカスできる要素が無くても Tab で領域自体にフォーカスでき、矢印・PageUp/PageDown・Space・Home/End でスクロールできるよう
+// tabindex="0" にし、role="region" と名前（label）を付ける。フォーカスリングは app.css の `:focus-visible`。
+func ScrollRegion(label string) Attrs {
+	return Attrs{"tabindex": "0", "role": "region", "aria-label": label}
+}
+
 func itoa(n int) string { return strconv.Itoa(n) }
+
+type describedByKey struct{}
+
+type describedBy struct{ id, ids string }
+
+// WithDescribedBy は、id の入力欄に aria-describedby=ids を付けるよう、children の描画に伝える。
+// FormField が、ヒント・エラー文の id を children の入力欄に結ぶ（入力欄の atom は ID が一致するときだけ受け取る）。
+func WithDescribedBy(ctx context.Context, id, ids string) context.Context {
+	return context.WithValue(ctx, describedByKey{}, describedBy{id: id, ids: ids})
+}
+
+// describedAttrs は attrs に、ctx で伝えられた aria-describedby を足す（id が一致するときだけ。attrs は書き換えない）。
+func describedAttrs(ctx context.Context, id string, attrs Attrs) Attrs {
+	d, ok := ctx.Value(describedByKey{}).(describedBy)
+	if !ok || d.id != id || d.ids == "" {
+		return attrs
+	}
+	return Merge(attrs, Attrs{"aria-describedby": d.ids})
+}

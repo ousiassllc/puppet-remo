@@ -42,7 +42,7 @@ type Tasks interface {
 	// Get は 1 件。無ければ ErrNotFound。
 	Get(ctx context.Context, id string) (domain.Task, error)
 	// Update は可変の列（status・started_at・finished_at・step_count・fast_steps・openai_steps・handoff_reason・
-	// input_tokens・output_tokens・result_text・error_code）だけを置き換える。それ以外の列は変えない。
+	// input_tokens・output_tokens・result_text・error_code・capture_partial）だけを置き換える。それ以外の列は変えない。
 	// 終了状態の行は二度と変えない（ErrConflict。cancel と完了の競合で、先に終わった結果が残る）。無ければ ErrNotFound。
 	// 終了状態にするときは FinishedAt が必須で、実行中・承認待ちにするときは FinishedAt を持たせない。
 	Update(ctx context.Context, t domain.Task) error
@@ -62,7 +62,7 @@ type taskStore struct{ db *DB }
 
 const taskColumns = `id, client_id, client_label, prompt, status, model, max_steps, max_duration_sec,
 	step_count, fast_steps, openai_steps, handoff_reason, input_tokens, output_tokens, result_text, error_code,
-	created_at, started_at, finished_at`
+	created_at, started_at, finished_at, target_window_id, target_process, target_pid, capture_partial`
 
 // taskActive は ix_task_active（部分索引）の条件。索引の WHERE と同じ式にして索引を使わせる。
 const taskActive = `status IN ('pending_approval', 'running')`
@@ -74,10 +74,13 @@ func scanTask(r rowScanner) (domain.Task, error) {
 		status                             string
 		created                            int64
 		started, finished                  sql.NullInt64
+		targetWindow, targetProc           sql.NullString
+		targetPID                          sql.NullInt64
+		partial                            int
 	)
 	if err := r.Scan(&t.ID, &client, &t.ClientLabel, &t.Prompt, &status, &t.Model, &t.MaxSteps, &t.MaxDurationSec,
 		&t.StepCount, &t.FastSteps, &t.OpenAISteps, &handoff, &t.InputTokens, &t.OutputTokens, &resultText, &errCd,
-		&created, &started, &finished); err != nil {
+		&created, &started, &finished, &targetWindow, &targetProc, &targetPID, &partial); err != nil {
 		return domain.Task{}, err
 	}
 	t.ClientID = client.String
@@ -86,6 +89,8 @@ func scanTask(r rowScanner) (domain.Task, error) {
 	t.ResultText, t.ErrorCode = resultText.String, errCd.String
 	t.CreatedAt = fromMS(created)
 	t.StartedAt, t.FinishedAt = fromNullMS(started), fromNullMS(finished)
+	t.TargetWindowID, t.TargetProcess, t.TargetPID = targetWindow.String, targetProc.String, uint32(targetPID.Int64)
+	t.CapturePartial = partial != 0
 	return t, nil
 }
 
@@ -125,11 +130,12 @@ func (s taskStore) Create(ctx context.Context, t domain.Task) error {
 	_, err := s.db.sql.ExecContext(ctx,
 		`INSERT INTO agent_tasks (id, client_id, client_label, prompt, status, model, max_steps, max_duration_sec,
 			step_count, fast_steps, openai_steps, handoff_reason, input_tokens, output_tokens, result_text, error_code,
-			created_at, started_at, finished_at)
-		VALUES (?, (SELECT id FROM clients WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_at, started_at, finished_at, target_window_id, target_process, target_pid, capture_partial)
+		VALUES (?, (SELECT id FROM clients WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, nullStr(t.ClientID), t.ClientLabel, t.Prompt, string(t.Status), t.Model, t.MaxSteps, t.MaxDurationSec,
 		t.StepCount, t.FastSteps, t.OpenAISteps, nullStr(string(t.HandoffReason)), t.InputTokens, t.OutputTokens,
-		nullStr(t.ResultText), nullStr(t.ErrorCode), toMS(created), toNullMS(t.StartedAt), toNullMS(t.FinishedAt))
+		nullStr(t.ResultText), nullStr(t.ErrorCode), toMS(created), toNullMS(t.StartedAt), toNullMS(t.FinishedAt),
+		nullStr(t.TargetWindowID), nullStr(t.TargetProcess), nullPID(t.TargetPID), boolInt(t.CapturePartial))
 	return mapErr(err)
 }
 
@@ -147,10 +153,11 @@ func (s taskStore) Update(ctx context.Context, t domain.Task) error {
 	}
 	res, err := s.db.sql.ExecContext(ctx,
 		`UPDATE agent_tasks SET status = ?, started_at = ?, finished_at = ?, step_count = ?, fast_steps = ?,
-			openai_steps = ?, handoff_reason = ?, input_tokens = ?, output_tokens = ?, result_text = ?, error_code = ?
+			openai_steps = ?, handoff_reason = ?, input_tokens = ?, output_tokens = ?, result_text = ?, error_code = ?,
+			capture_partial = ?
 		WHERE id = ? AND `+taskActive,
 		string(t.Status), toNullMS(t.StartedAt), toNullMS(t.FinishedAt), t.StepCount, t.FastSteps, t.OpenAISteps,
-		nullStr(string(t.HandoffReason)), t.InputTokens, t.OutputTokens, nullStr(t.ResultText), nullStr(t.ErrorCode), t.ID)
+		nullStr(string(t.HandoffReason)), t.InputTokens, t.OutputTokens, nullStr(t.ResultText), nullStr(t.ErrorCode), boolInt(t.CapturePartial), t.ID)
 	if err != nil {
 		return mapErr(err)
 	}
@@ -267,4 +274,19 @@ func (s taskStore) PurgeFinishedBefore(ctx context.Context, before time.Time) (i
 	}
 	n, err := res.RowsAffected()
 	return int(n), err
+}
+
+// nullPID は PID を NULL 可の列の値にする（0 は NULL）。
+func nullPID(pid uint32) any {
+	if pid == 0 {
+		return nil
+	}
+	return int64(pid)
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

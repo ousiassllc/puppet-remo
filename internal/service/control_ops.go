@@ -182,11 +182,15 @@ func (c *control) planPoints(ctx context.Context, monitor int, build func(pointC
 	if err != nil {
 		return plan{}, err
 	}
-	maxDim, err := c.MaxDimension(ctx)
-	if err != nil {
-		return plan{}, err
+	conv := func(p domain.Point) (domain.Point, error) { return p, nil } // 変換済みの物理座標（WithPhysicalCoords）
+	if !physicalCoords(ctx) {
+		maxDim, err := c.MaxDimension(ctx)
+		if err != nil {
+			return plan{}, err
+		}
+		conv = func(p domain.Point) (domain.Point, error) { return mon.ScaledToPhysical(p, maxDim) }
 	}
-	op, err := build(func(p domain.Point) (domain.Point, error) { return mon.ScaledToPhysical(p, maxDim) })
+	op, err := build(conv)
 	if err != nil {
 		return plan{}, err
 	}

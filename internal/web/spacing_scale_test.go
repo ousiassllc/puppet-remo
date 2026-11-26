@@ -66,12 +66,10 @@ func TestPageH1HasGapH1BelowIt(t *testing.T) {
 	}
 }
 
-// S2: セクションの見出し（h2・`text-2xl`）の下は 24px（`--gap-h2`）。枠線つきのカード見出し（`border-b`）は
-// 下に padding があるので対象外で、それ以外の h2 は直前の行が `space-y-6` のセクション、または自身が `mb-6`
-// （docs/architecture/frontend.md §8.4）。8px（`space-y-2`・`mb-2`）だと 32px の見出しの直下に本文が詰まる。
-func TestSectionH2HasGapH2BelowIt(t *testing.T) {
-	const h2 = `<h2 class="text-2xl`
-	const h2WithMargin = `<h2 class="mb-6 text-2xl`
+// T3・#166: カード状の枠の見出しは molecules.Card の題（lg 18 SemiBold）にそろえる。見出し（h1〜h4）に直書きの `text-2xl`・`text-xl` を
+// 残さない（ページの題は h1 の `text-3xl`、項目名の見出しは h3 の `text-base`）。32px・24px の見出しがカードの題 18px と並んで見える不揃いを防ぐ。
+func TestNoHardcodedLargeHeadingsInTemplates(t *testing.T) {
+	heading := regexp.MustCompile(`<h[1-6]\b[^>]*class="[^"]*\btext-(2xl|xl)\b`)
 	found := 0
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
@@ -81,16 +79,10 @@ func TestSectionH2HasGapH2BelowIt(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		lines := strings.Split(string(src), "\n")
-		for i, line := range lines {
-			switch {
-			case strings.Contains(line, h2WithMargin):
-				found++
-			case strings.Contains(line, h2):
-				found++
-				if i == 0 || !strings.Contains(lines[i-1], `<section class="space-y-6"`) {
-					t.Errorf("%s:%d: the section above a standalone h2 must use space-y-6 (24px below the heading)", path, i+1)
-				}
+		found++
+		for i, line := range strings.Split(string(src), "\n") {
+			if heading.MatchString(line) {
+				t.Errorf("%s:%d: a heading must not use text-2xl / text-xl; use molecules.Card (card title) or h3 text-base (item name): %s", path, i+1, strings.TrimSpace(line))
 			}
 		}
 		return nil
@@ -99,7 +91,30 @@ func TestSectionH2HasGapH2BelowIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	if found == 0 {
-		t.Fatal("no section h2 found; the test is looking in the wrong place")
+		t.Fatal("no .templ file found; the test is looking in the wrong place")
+	}
+}
+
+// #166: 見える h2 は molecules（Card の題・Modal の題）だけが出す。organisms・pages に直書きの `<h2`（枠付きの題）を置かない
+// （題付きの枠は molecules.Card）。見せない h2（`sr-only`。項目が並ぶ場所の階層用）は対象外。
+func TestVisibleH2OnlyInMolecules(t *testing.T) {
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") || strings.HasPrefix(path, "molecules"+string(filepath.Separator)) {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if strings.Contains(line, "<h2") && !strings.Contains(line, `class="sr-only"`) {
+				t.Errorf("%s:%d: a visible h2 title must come from molecules.Card: %s", path, i+1, strings.TrimSpace(line))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -117,6 +132,32 @@ func TestStylesUseRadiusTokens(t *testing.T) {
 		for i, line := range strings.Split(string(src), "\n") {
 			if literal.MatchString(line) {
 				t.Errorf("%s:%d: use var(--radius-*) instead of a literal border-radius: %s", path, i+1, strings.TrimSpace(line))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S2: ボタン列・インラインは 8（--gap-inline = gap-2）、フォームの項目 → 項目は 16（--gap-field = space-y-4）。12（gap-3・space-y-3）は、
+// ガイドが決めた間隔のどれにも当たらないので、templ に残さない（#208）。対象外は、ボタン列でも項目間でもない Notice/Alert のアイコンと本文の間と、
+// 空の状態（縦に積むアイコン・文・操作の組）。
+func TestTemplsDoNotUseTwelvePixelGapsForButtonRowsAndFields(t *testing.T) {
+	twelve := regexp.MustCompile(`\b(?:gap(?:-[xy])?|space-[xy])-3\b`)
+	allowed := map[string]bool{"atoms/alert.templ": true, "molecules/empty_state.templ": true}
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") || allowed[filepath.ToSlash(path)] {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if m := twelve.FindString(line); m != "" {
+				t.Errorf("%s:%d: 12px spacing %q (use gap-2 for button rows / space-y-4 for fields)", path, i+1, m)
 			}
 		}
 		return nil

@@ -53,6 +53,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/app"
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/platform"
 	"github.com/ousiassllc/puppet-remo/internal/platform/platformtest"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -72,10 +73,12 @@ func main() {
 	remoteAddr := flag.String("addr", "127.0.0.1:"+demoPort, "リモートルーターの待ち受けアドレス（loopback のみ。ポートは "+demoPort+" 固定）")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:8899", "ホスト GUI の待ち受けアドレス（loopback のみ）")
 	agentDemo := flag.Bool("agent-demo", false, "内蔵エージェントをオフラインで動かす（台本つきの偽のモデル。OpenAI・TypeSafe は呼ばない。使い方はこのファイルの先頭のコメント）")
+	agentScope := flag.String("agent-scope", "", "-agent-demo に window_id つきの台本を足す（save: メニューを開いて保存ダイアログまで（1 バッチ内の click→click で中断）/ foreign: 前面が別のウィンドウに替わって failed）。偽のメモ帳（window_id 1001）が対象。偽 platform で、実機の代わりにならない")
+	viewerScope := flag.Bool("viewer-scope", false, "ビューアのウィンドウ選択・グループ表示・手動操作を、偽のメモ帳（window_id 1001）と周りの偽のウィンドウで確かめる（使い方は viewerscope.go の先頭のコメント。-agent-demo とは一緒に使えない）。偽 platform で、実機の代わりにならない")
 	agentSafety := flag.Bool("agent-safety-check", false, "-agent-demo の台本の 2 ステップ目に OpenAI の安全チェック（承認ダイアログ）を付ける")
 	approval := flag.String("approval", string(domain.ApprovalAuto), "デモのクライアントの承認モード（auto: 承認なしでリースを取る / always: 毎回承認。承認要求の id はログに出る）")
 	flag.Parse()
-	if err := run(*remoteAddr, *guiAddr, domain.ApprovalMode(*approval), *agentDemo, *agentSafety); err != nil {
+	if err := run(*remoteAddr, *guiAddr, domain.ApprovalMode(*approval), *agentDemo, *agentSafety, *agentScope, *viewerScope); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -94,7 +97,13 @@ func checkLoopback(flagName, addr, wantPort string) error {
 	return nil
 }
 
-func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, agentSafety bool) error {
+func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, agentSafety bool, agentScope string, viewerScope bool) error {
+	if viewerScope && agentDemo {
+		return errors.New("remotedemo: -viewer-scope は -agent-demo と一緒に使えない")
+	}
+	if agentScope != "" && (!agentDemo || (agentScope != "save" && agentScope != "foreign")) {
+		return fmt.Errorf("remotedemo: -agent-scope は -agent-demo と一緒に save / foreign のどちらか（%q）", agentScope)
+	}
 	if approval != domain.ApprovalAuto && approval != domain.ApprovalAlways {
 		return fmt.Errorf("remotedemo: -approval は auto / always のどちらか（%q）", approval)
 	}
@@ -142,6 +151,18 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 		ID: "1001", Title: "Notes - demo-notes.txt", Process: "notes.exe", PID: 4242, Foreground: true,
 		Rect: domain.Rect{X: 153, Y: 57, W: 640, H: 446},
 	})
+	var capturer platform.Capturer = newCapturer(sc)
+	var injector platform.InputInjector = &input{FakeInput: platformtest.NewFakeInput(), scene: sc, log: logger}
+	if agentScope != "" { // 偽のメモ帳（window_id 1001）。画面・入力・ウィンドウ一覧をこの偽のアプリに替える（agentscope.go）
+		ss := newScopeDemoScene(clip)
+		model = &scopeDemoModel{scene: ss, mode: agentScope}
+		capturer, injector, hostWindows = ss.capture, ss.app, ss.windows
+	}
+	var scopeControls http.Handler // -viewer-scope の制御エンドポイント（viewerscope.go）
+	if viewerScope {
+		vs := newViewerScopeScene(clip)
+		capturer, injector, hostWindows, scopeControls = vs.capture, vs.app, vs.windows, vs
+	}
 	whois := &switchableWhoIs{}
 	whois.set(registeredIdentity)
 	watcher := &staticWatcher{st: tailnet.Status{LoggedIn: true, DNSName: demoDNSName, IPs: []netip.Addr{netip.MustParseAddr(demoTailnet)}}}
@@ -159,7 +180,7 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 		Repo:    db,
 		Windows: windows,
 		Platform: app.Platform{
-			Capturer: newCapturer(sc), Input: &input{FakeInput: platformtest.NewFakeInput(), scene: sc, log: logger},
+			Capturer: capturer, Input: injector,
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
 			Launcher: launcher, FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
 			Secrets: secrets,
@@ -188,6 +209,9 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 
 	mux := http.NewServeMux()
 	mux.Handle("/__demo/identity", whois)
+	if scopeControls != nil {
+		mux.Handle("/__demo/viewer-scope", scopeControls)
+	}
 	mux.Handle("/", a.GUIHandler())
 	gui := &http.Server{Addr: guiAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	ln, err := net.Listen("tcp", guiAddr)

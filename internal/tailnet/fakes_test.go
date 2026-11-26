@@ -77,6 +77,26 @@ func (c *fakeClock) waitTimer(t *testing.T) {
 	}
 }
 
+// waitPending は発火を待つ After が 1 つ以上登録されるまで待つ。Advance の前に呼ぶ（Advance は登録済みの After しか発火しないので、
+// 登録の前に進めると、あとから登録される再試行が永久に発火せず待ちが尽きる）。waitTimer と違い、過去の登録の通知ではなく今の登録の有無を見る。
+func (c *fakeClock) waitPending(t *testing.T) {
+	t.Helper()
+	deadline := time.After(waitTimeout)
+	for {
+		c.mu.Lock()
+		n := len(c.waiters)
+		c.mu.Unlock()
+		if n > 0 {
+			return
+		}
+		select {
+		case <-c.registered:
+		case <-deadline:
+			t.Fatal("timed out waiting for a pending timer")
+		}
+	}
+}
+
 // fakeAPI は偽の LocalAPI。
 type fakeAPI struct {
 	mu          sync.Mutex

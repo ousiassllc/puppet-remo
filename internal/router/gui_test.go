@@ -69,6 +69,7 @@ func TestEveryResponseCarriesCSP(t *testing.T) {
 		{http.MethodGet, "/clients/unknown", nil},
 		{http.MethodGet, "/settings", nil},
 		{http.MethodGet, "/update", nil},
+		{http.MethodGet, "/licenses", nil},
 		{http.MethodPost, "/update/check", []string{"HX-Request", "true"}},
 		{http.MethodGet, "/apps", nil},
 		{http.MethodGet, "/apps/new", nil},

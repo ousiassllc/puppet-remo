@@ -88,8 +88,8 @@ func TestMCPCanListAndLaunchAnAllowedApp(t *testing.T) {
 		t.Fatal("an unknown app_id was launched")
 	}
 	b, _ = json.Marshal(bad.StructuredContent)
-	if !strings.Contains(string(b), `"app_not_found"`) || strings.Contains(string(b), launchExe) {
-		t.Errorf("error = %s", b)
+	if got := errorCode(t, bad); got != domain.CodeAppNotFound || strings.Contains(string(b), launchExe) {
+		t.Errorf("error code = %q, body = %s, want app_not_found without the path", got, b)
 	}
 	if n := len(e.launcher.CallsTo("Launch")); n != 1 {
 		t.Errorf("Launch calls = %d after the rejected call, want still 1", n)
@@ -189,9 +189,8 @@ func TestMCPLaunchByPathFollowsTheLaunchMode(t *testing.T) {
 	}
 	for _, p := range []string{blocked, blockedLn, strings.ToUpper(blocked), `c:/tools//BLOCKED.exe`} {
 		res := callTool(t, cs, "launch_app", map[string]any{"path": p})
-		b, _ := json.Marshal(res.StructuredContent)
-		if !res.IsError || !strings.Contains(string(b), `"app_denied"`) || launches() != 1 {
-			t.Errorf("denied path %q: isError=%v launches=%d body=%s, want app_denied and no launch", p, res.IsError, launches(), b)
+		if !res.IsError || errorCode(t, res) != domain.CodeAppDenied || launches() != 1 {
+			t.Errorf("denied path %q: isError=%v launches=%d content=%+v, want app_denied and no launch", p, res.IsError, launches(), res.StructuredContent)
 		}
 	}
 	if res := callTool(t, cs, "launch_app", map[string]any{"path": okExe, "app_id": reg.ID}); !res.IsError || launches() != 1 {

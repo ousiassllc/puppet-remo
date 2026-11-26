@@ -10,7 +10,7 @@ type InputProps struct {
 	Required    bool
 	Readonly    bool
 	Invalid     bool
-	Mono        bool // true なら JetBrains Mono（トークンなど、文字の判読が要る識別子）
+	Mono        bool // true なら JetBrains Mono（トークンなど、文字の判読が要る識別子）。Type が number の入力欄（ポート・秒数など桁を揃える値）は常に Mono
 	Attrs       Attrs
 }
 
@@ -52,10 +52,10 @@ templ Input(p InputProps) {
 		type={ inputType(p.Type) }
 		value={ p.Value }
 		placeholder={ p.Placeholder }
-		class={ inputClass(p.Invalid, p.Mono) }
+		class={ inputClass(p.Invalid, p.Mono || p.Type == "number") }
 		required?={ p.Required }
 		readonly?={ p.Readonly }
 		aria-invalid?={ p.Invalid }
-		{ p.Attrs... }
+		{ describedAttrs(ctx, p.ID, p.Attrs)... }
 	/>
 }

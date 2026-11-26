@@ -3,6 +3,8 @@ package openai
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
@@ -17,7 +19,12 @@ const (
 	kindUser           itemKind = iota // 最初のユーザーメッセージ
 	kindOutput                         // モデルの出力アイテム（原文）
 	kindComputerOutput                 // computer_call_output
+	kindUserNote                       // role: user の input_text だけのメッセージ（AddUserNote。画像なし）
 )
+
+// ErrCallPairing は履歴の computer_call / function_call と、その call_id の出力が 1 対 1 になっていない（出力の欠落・重複）。
+// 履歴の組み立て（input）が返す。API は出力の欠けた call_id を拒否するので、送る前に止める（#158）。
+var ErrCallPairing = errors.New("openai: every call needs exactly one output with the same call_id")
 
 // historyItem は History の 1 要素。shot が nil のスクリーンショットは送らず、OmittedScreenshot で置き換える。
 type historyItem struct {
@@ -25,7 +32,7 @@ type historyItem struct {
 
 	raw json.RawMessage // kindOutput
 
-	texts []string // kindUser: 指示、高速パスの要約（あれば）
+	texts []string // kindUser: 指示、高速パスの要約（あれば）。kindUserNote: 本文
 
 	callID string        // kindComputerOutput
 	ack    []SafetyCheck // kindComputerOutput
@@ -79,6 +86,47 @@ func (h *History) AddComputerOutput(callID string, shot []byte, ack []SafetyChec
 	}
 }
 
+// AddUserNote は role: user の input_text だけのメッセージ（画像なし）を追加する。computer_call_output に未実行を示す欄が無いので、
+// 中断（対象グループの変化）をモデルへ伝えるのに使う。直前の computer_call_output の直後に置くこと（呼び出し側の規則）。
+func (h *History) AddUserNote(text string) {
+	h.items = append(h.items, historyItem{kind: kindUserNote, texts: []string{text}})
+}
+
+// callEnvelope はモデルの出力アイテム（原文）から種別と call_id だけを読む。
+type callEnvelope struct {
+	Type   string `json:"type"`
+	CallID string `json:"call_id"`
+}
+
+// validate は、すべての computer_call・function_call に、call_id が一致する出力がちょうど 1 件あることを確かめる
+// （欠落・重複は ErrCallPairing）。出力は computer_call_output だけを数える（function_call_output は ChatGPT の経路の実装で足す）。
+func (h *History) validate() error {
+	outputs := map[string]int{}
+	for i := range h.items {
+		if h.items[i].kind == kindComputerOutput {
+			outputs[h.items[i].callID]++
+		}
+	}
+	for id, n := range outputs {
+		if n > 1 {
+			return fmt.Errorf("%w: call_id %q has %d outputs", ErrCallPairing, id, n)
+		}
+	}
+	for i := range h.items {
+		if h.items[i].kind != kindOutput {
+			continue
+		}
+		var env callEnvelope
+		if json.Unmarshal(h.items[i].raw, &env) != nil {
+			continue
+		}
+		if (env.Type == "computer_call" || env.Type == "function_call") && outputs[env.CallID] != 1 {
+			return fmt.Errorf("%w: %s %q has %d outputs", ErrCallPairing, env.Type, env.CallID, outputs[env.CallID])
+		}
+	}
+	return nil
+}
+
 // Screenshots は画像つきで残っているスクリーンショットの枚数（keep 以下）。
 func (h *History) Screenshots() int {
 	n := 0
@@ -90,6 +138,16 @@ func (h *History) Screenshots() int {
 	return n
 }
 
+// LatestScreenshot は画像つきで残っている最新のスクリーンショット（PNG）。無ければ nil（テスト・デモが、モデルに渡った画像を確かめるのに使う）。
+func (h *History) LatestScreenshot() []byte {
+	for i := len(h.items) - 1; i >= 0; i-- {
+		if h.items[i].shot != nil {
+			return h.items[i].shot
+		}
+	}
+	return nil
+}
+
 func nonEmpty(b []byte) []byte {
 	if len(b) == 0 {
 		return nil
@@ -98,7 +156,11 @@ func nonEmpty(b []byte) []byte {
 }
 
 // input は Responses API の input を組み立てる。出力アイテムは Raw のまま（再エンコードしない）。
-func (h *History) input() responses.ResponseInputParam {
+// call_id の出力が欠けた・重複した履歴は ErrCallPairing で拒否する（validate）。
+func (h *History) input() (responses.ResponseInputParam, error) {
+	if err := h.validate(); err != nil {
+		return nil, err
+	}
 	in := make(responses.ResponseInputParam, 0, len(h.items))
 	for i := range h.items {
 		it := &h.items[i]
@@ -109,9 +171,23 @@ func (h *History) input() responses.ResponseInputParam {
 			in = append(in, param.Override[responses.ResponseInputItemUnionParam](it.raw))
 		case kindComputerOutput:
 			in = append(in, computerOutput(it))
+		case kindUserNote:
+			in = append(in, userNote(it))
 		}
 	}
-	return in
+	return in, nil
+}
+
+func userNote(it *historyItem) responses.ResponseInputItemUnionParam {
+	content := make(responses.ResponseInputMessageContentListParam, 0, len(it.texts))
+	for _, t := range it.texts {
+		content = append(content, responses.ResponseInputContentParamOfInputText(t))
+	}
+	return responses.ResponseInputItemUnionParam{OfInputMessage: &responses.ResponseInputItemMessageParam{
+		Content: content,
+		Role:    "user",
+		Type:    "message",
+	}}
 }
 
 func userMessage(it *historyItem) responses.ResponseInputItemUnionParam {

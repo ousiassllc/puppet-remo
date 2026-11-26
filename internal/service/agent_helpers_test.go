@@ -56,6 +56,7 @@ type scriptedModel struct {
 	calls   int
 	models  []string
 	shots   []int         // 呼び出しごとの履歴の画像つきスクリーンショットの枚数
+	images  [][]byte      // 呼び出しごとの、履歴の最新のスクリーンショット（PNG。モデルに渡った画像）
 	started chan struct{} // 呼び出しの開始ごとに 1 つ送る（容量 64）
 }
 
@@ -68,6 +69,7 @@ func (m *scriptedModel) Step(ctx context.Context, in openai.StepInput) (openai.S
 	m.calls++
 	m.models = append(m.models, in.Model)
 	m.shots = append(m.shots, in.History.Screenshots())
+	m.images = append(m.images, in.History.LatestScreenshot())
 	var spec modelStepSpec
 	if len(m.script) == 0 {
 		spec = modelStepSpec{err: errors.New("scripted model: the script is exhausted")}
@@ -185,6 +187,7 @@ type agentEnv struct {
 	model   *scriptedModel
 	chooser *scriptedChooser
 	agent   *AgentService
+	app     *platformtest.FakeApp // agentOpts.app のとき
 	fast    *FastPath
 	logs    *syncBuffer
 	toasts  <-chan Event
@@ -206,6 +209,10 @@ type agentOpts struct {
 	modelTimeout, cancelWait time.Duration
 	// noWatch は Agent.Watch を起動しない。
 	noWatch bool
+	// app は入力の宛先を偽アプリ（platformtest.FakeApp。T はメインウィンドウ。agentWindows は使わない）にする（window_id つきのタスクの試験。#158）。
+	app bool
+	// wrapInput は Control の入力（app なら FakeApp）を包む（注入のあとにウィンドウを変えるなど）。
+	wrapInput func(platform.InputInjector) platform.InputInjector
 }
 
 func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
@@ -218,7 +225,18 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 
 	// 画像の縮小・PNG の符号化は -race で遅いので、小さなモニター（960x540。最大辺 320 で 1/3 に縮小）で動かす。
 	e.capturer = platformtest.NewFakeCapturer(agentMonitor)
-	e.windows.SetWindows(agentWindows()...)
+	var app *platformtest.FakeApp
+	var input platform.InputInjector = e.input
+	if o.app {
+		app = platformtest.NewFakeApp(e.windows, e.input, e.clipboard)
+		e.capturer.AttachWindows(e.windows)
+		input = app
+	} else {
+		e.windows.SetWindows(agentWindows()...)
+	}
+	if o.wrapInput != nil {
+		input = o.wrapInput(input)
+	}
 	e.settings.put(settingScreenshotMaxDim, "320")
 
 	db, err := repository.Open(context.Background(), filepath.Join(t.TempDir(), "puppet-remo.db"))
@@ -237,7 +255,7 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 
 	ae := &agentEnv{
 		leaseApprovalEnv: le, db: db, secrets: platformtest.NewFakeSecretStore(), judge: &stubJudge{v: domain.VerdictAllow},
-		logs: &syncBuffer{}, by: domain.Actor{Kind: domain.ActorMCP, ClientID: "client-a", Label: "alice", SessionID: "sess-a"},
+		app: app, logs: &syncBuffer{}, by: domain.Actor{Kind: domain.ActorMCP, ClientID: "client-a", Label: "alice", SessionID: "sess-a"},
 	}
 	if err := ae.secrets.Set(platform.SecretOpenAI, "sk-test-placeholder"); err != nil {
 		t.Fatal(err)
@@ -256,7 +274,7 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 
 	// Control は agent のアクションが Judge・承認を通る構成にする（Judge は許可する偽物）。
 	e.control, err = NewControl(ControlConfig{
-		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
+		Capturer: e.capturer, Input: input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
 		Launcher: e.launcher, Apps: e.apps, Leases: e.leases, Kill: e.kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
 		Judge: ae.judge, Approval: le.approval, Logger: logger,
 		Sleep: func(context.Context, time.Duration) error { return nil },
@@ -292,7 +310,7 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 	ae.agent, err = NewAgent(AgentServiceConfig{
 		AfterFunc: ae.limit.AfterFunc,
 		Tasks:     tasks, Clients: db.Clients(), Settings: ae.cfg, Control: e.control, Leases: e.leases, Kill: e.kill,
-		Approval: le.approval, Model: model, Fast: ae.fast, Audit: e.audit, Bus: bus, Disabler: ae.cfg, Clock: e.clock, IDs: &taskIDs{}, Logger: logger,
+		Approval: le.approval, Model: model, Windows: e.windows, Fast: ae.fast, Audit: e.audit, Bus: bus, Disabler: ae.cfg, Clock: e.clock, IDs: &taskIDs{}, Logger: logger,
 		ModelTimeout: o.modelTimeout, CancelSettleWait: o.cancelWait,
 	})
 	if err != nil {

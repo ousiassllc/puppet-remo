@@ -1,0 +1,12 @@
+package atoms
+
+// Tooltip は補足の短い文を出すツールチップ（ガイドの「ツールチップ」: 12px・padding 6×10・--r-sm・fade-in 320ms・ホバー／フォーカスで出る・非対話）。
+// children（出す側の印。文字や記号）を、フォーカスできる要素（tabindex="0"）に包み、aria-describedby で role="tooltip" の本文につなぐ。
+// 本文は隠れている間も DOM に残る（読み上げ用）。id はページ内で一意にする（呼び出し側が決める）。
+// 本文はボタン・リンクを含めない（ホバーで出る文は触れない。ガイド）。見た目は app.css の .tip-host・.tip（--tip-* トークン）。
+templ Tooltip(id, text string) {
+	<span class="tip-host" tabindex="0" aria-describedby={ id }>
+		{ children... }
+		<span role="tooltip" id={ id } class="tip">{ text }</span>
+	</span>
+}

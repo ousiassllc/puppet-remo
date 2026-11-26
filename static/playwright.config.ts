@@ -22,6 +22,9 @@ export default defineConfig({
   use: {
     baseURL: remoteURL,
     trace: "retain-on-failure",
+    // headless の Chromium は既定でスクロールバーを隠す（--hide-scrollbars）。本番（WebView2・ブラウザ）は 8px のバーが出る
+    // （app.css のスクロールバー。リモートビューアの画面は除く）ので、E2E もバーを出した状態で走らせる（座標のずれの検出のため）。
+    launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/openai"
+	"github.com/ousiassllc/puppet-remo/internal/platform"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
 
@@ -43,6 +44,9 @@ const (
 	agentTaskEndAuditEvent     = "agent.task_end"     // タスクの終了（1 回だけ）。最終回答の本文は入れない
 	agentSafetyCheckAuditEvent = "agent.safety_check" // OpenAI の pending_safety_checks の承認の結果
 	agentTaskCancelAuditEvent  = "agent.task_cancel"  // ホスト GUI の中断ボタン（TaskAdmin。actor_type = host）
+	// agentBatchYieldedAuditEvent は、1 回の応答の途中で対象グループ（メニュー・ダイアログ）が変わり、残りのアクションを実行せず
+	// 新しい画像から計画し直したこと（#158。失敗ではない）。detail は step・executed・not_executed・reason・added・removed の数だけ。
+	agentBatchYieldedAuditEvent = "agent.batch_yielded"
 )
 
 // AgentClients は Agent が依頼元クライアントの agent_enabled を読む窓口（repository.Clients が満たす）。
@@ -66,6 +70,8 @@ type AgentServiceConfig struct {
 	// Approval は OpenAI の安全チェック（FR-G08）の承認。Control の Judge の承認と同じものを渡す。nil なら安全チェックは常に拒否（fail-closed）。
 	Approval Approval
 	Model    openai.Model
+	// Windows は window_id つきの run_task の対象の検査（ウィンドウ一覧）に使う。nil なら window_id つきの開始は ErrInvalidArgument。
+	Windows platform.WindowManager
 	// Fast は高速パス（FR-G16）。nil なら常に OpenAI のみで実行する。
 	Fast  *FastPath
 	Audit AuditRecorder // nil なら記録しない
@@ -140,6 +146,10 @@ func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput
 	if err != nil {
 		return domain.Task{}, err
 	}
+	target, err := a.resolveTarget(ctx, in.WindowID, cfg)
+	if err != nil {
+		return domain.Task{}, err
+	}
 
 	id := a.cfg.IDs.NewID()
 	runCtx, cancel := context.WithCancelCause(context.Background())
@@ -150,6 +160,10 @@ func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput
 			ID: id, ClientID: by.ClientID, ClientLabel: by.Label, Prompt: in.Prompt, Status: domain.TaskPendingApproval,
 			Model: cfg.Model, MaxSteps: maxSteps, MaxDurationSec: maxDur, CreatedAt: a.cfg.Clock.Now(),
 		},
+	}
+	if target != nil {
+		r.scope = newAgentScope(domain.RefOf(*target))
+		r.task.TargetWindowID, r.task.TargetProcess, r.task.TargetPID = target.ID, target.Process, target.PID
 	}
 
 	if err := a.reserve(r); err != nil {
@@ -175,6 +189,40 @@ func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput
 	accepted := r.task // goroutine が r.task を更新する前の写しを返す
 	go r.execute()
 	return accepted, nil
+}
+
+// resolveTarget は window_id（空ならスコープなしで nil）の対象を検査して返す（#156 の選択検査。タスクの行は作らない）。
+// 一覧にない → ErrWindowNotFound（reason target_closed）、自ウィンドウ・昇格・最小化・検証前の UWP → ErrInputBlocked（own_window /
+// elevated_window / target_minimized / target_unsupported）、agent.deny_processes に当たる → ErrInputBlocked（reason denied_process）。
+func (a *AgentService) resolveTarget(ctx context.Context, windowID string, cfg AgentConfig) (*domain.WindowInfo, error) {
+	if windowID == "" {
+		return nil, nil
+	}
+	if a.cfg.Windows == nil {
+		return nil, domain.ErrInvalidArgument.WithMsg("window_id is not available")
+	}
+	list, err := a.cfg.Windows.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var target *domain.WindowInfo
+	for i := range list {
+		if list[i].ID == windowID {
+			target = &list[i]
+			break
+		}
+	}
+	if target == nil {
+		return nil, domain.ErrWindowNotFound.WithMsg("the target window is not available: "+string(domain.ReasonTargetClosed)).
+			WithDetail("reason", string(domain.ReasonTargetClosed))
+	}
+	if _, err := bindTarget(ctx, a.cfg.Windows, domain.RefOf(*target)); err != nil {
+		return nil, err
+	}
+	if matchesProcess(cfg.DenyProcesses, normalizeProcessName(target.Process)) {
+		return nil, scopeBlocked(domain.ReasonDeniedProcess, byWindow(*target))
+	}
+	return target, nil
 }
 
 // validateStartInput は引数を検査する（FR-G02）。設定値との比較（下げる方向のみ）は appliedLimits。

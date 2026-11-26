@@ -1,4 +1,6 @@
-# puppet-remo
+# Nefos Remote
+
+旧名 puppet-remo。リポジトリ名・ファイル名・コマンド名は puppet-remo のまま。
 
 自分の Windows PC（ホスト）に常駐する [Wails](https://wails.io/) アプリです。tailnet（Tailscale）内の別端末から、MCP（Model Context Protocol）経由でこの PC のデスクトップ全体を操作（computer-use）できるようにします。個人利用（ホスト所有者＝操作者）が前提で、対象 OS は Windows のみです。
 
@@ -13,7 +15,9 @@
 
 1. 事前に、ホスト PC で Tailscale にログインし、`tailscaled` を動かしておきます。
 2. インストーラ（`puppet-remo-amd64-installer.exe`）を実行します。WebView2 ランタイムが無い環境では、インストーラが導入します。
-3. スタートメニューの「puppet-remo」から起動します。ウィンドウを閉じてもトレイに常駐します。終了はトレイメニューの「終了」です。
+3. スタートメニューの「Nefos Remote」から起動します。ウィンドウを閉じてもトレイに常駐します。終了はトレイメニューの「終了」です。
+
+旧名（puppet-remo）の版がすでに入っている PC は、同じ手順で、前の版と同じ方式（ユーザー単位または全ユーザー）のまま新しいインストーラーを実行します。インストール先のフォルダーは旧名のままで、設定・許可リスト・トークン・監査ログは `%LOCALAPPDATA%\puppet-remo\` にあり、インストーラーは消しません。スタートメニューの旧名のショートカット「puppet-remo」は、同じ方式のものをインストーラーが「Nefos Remote」へ置き換えます（別の場所へ移したショートカットや、方式が違うインストールのものは消えません。旧名の版の上に重ねる更新は、Windows 実機では未確認です。手順は [スモーク手順](docs/operations/smoke-windows.md) §4.7 の P3）。
 
 ### SmartScreen の警告について
 
@@ -58,6 +62,13 @@
 - スクリーンショットのサムネイルなど、画面の内容を保存する機能は、**平文**でディスクに書きます。ディスクの紛失・盗難に備えて、**BitLocker によるドライブ全体の暗号化を有効にしてください**。
 - 保存したくないときは、設定でサムネイルの保存を無効にできます（FR-AU02）。
 - OpenAI などの API キーと、ChatGPT のサインインで得るトークン（アクセス・リフレッシュ。仕様のみ・未実装）は、このフォルダーには置きません（Windows 資格情報マネージャーに保存します）。
+
+## MCP のスクリーンショットの送信について（NFR-PR01）
+
+MCP の低レベル `screenshot` の画像は、MCP クライアントが接続している AI サービスへ送られることがあります。この送信は **Nefos Remote の管轄外**です。
+
+- 機密画面（パスワード、個人情報、業務上の秘密など）を映さない運用は、**利用者の責任**です。たとえば、機密のウィンドウを最小化してから MCP クライアントで画面を取ってください。
+- Nefos Remote は、MCP クライアントが画像をどこへ送るか、送った先でどう扱われるかを制御できません。利用する MCP クライアントと AI サービスの規約・設定を確認してください。
 
 ## 起動許可アプリ（M1.5。NFR-S20）
 
@@ -108,12 +119,12 @@ task build         # Go のビルド（ホスト OS）
 task build:windows # Windows 向けのビルド（クロスビルドの確認）
 task windows:build # Windows 向けの本番ビルド（フロントエンドのビルド込み）
 task test          # テスト
-task lint          # golangci-lint（ホスト OS と Windows）
+task lint          # golangci-lint（ホスト OS・Windows・-tags e2e の 3 回）
 task templ:generate # .templ から _templ.go を生成（生成物はコミットする）
 task frontend:build # static/dist を作る（esbuild・Tailwind CSS・htmx）
 task frontend:test # Lit のテスト（ヘッドレス Chromium。task frontend:browsers で導入）
 task e2e           # Playwright の E2E（テスト専用サーバー -tags e2e。偽の platform・tailnet）
-task ci            # CI と同じ検査を一通り実行
+task ci            # CI の主な検査を一通り実行（違いは docs/environment/setup.md）
 task package       # NSIS インストーラを作る（版は VERSION ファイル。RELEASE_VERSION= で上書き）
 task dev           # wails3 dev で開発する（Windows。別ターミナルで task templ:watch）
 ```

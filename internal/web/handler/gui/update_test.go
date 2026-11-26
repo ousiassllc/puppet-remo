@@ -32,8 +32,9 @@ func TestUpdatePageNoUpdate(t *testing.T) {
 
 func TestUpdatePageNeverChecked(t *testing.T) {
 	res := newRig(t).get("/update")
-	contains(t, res, "未確認")
-	lacks(t, res, `data-update="up-to-date"`)
+	// #221: 「未確認」は Mono の外（text-mute の Regular）。日時があるときだけ font-mono。
+	contains(t, res, `<dd class="text-mute" data-field="last-checked">未確認</dd>`)
+	lacks(t, res, `class="font-mono" data-field="last-checked"`, `data-update="up-to-date"`)
 }
 
 func TestUpdatePageBoostedAndFragment(t *testing.T) {
@@ -52,7 +53,7 @@ func TestUpdatePageShowsVerifiedUpdate(t *testing.T) {
 		`hx-get="/update/apply/confirm"`, `hx-target="#modal-root"`)
 	// 入れ子パネルの角丸は md（8px。S1。sm の 4px はタグ・チェック用）。padding はカードの値に合わせた p-4（S2）。
 	// リリースノートは自然文なので、<pre> でも等幅にせず Sora + Noto Sans JP（T1）。
-	contains(t, res, `rounded-md bg-bone p-4 font-sans text-sm text-ink" data-field="release-notes"`)
+	contains(t, res, `rounded-md bg-bone p-4 font-sans text-sm text-ink" aria-label="リリースノート" role="region" tabindex="0" data-field="release-notes"`)
 	lacks(t, res, `data-update="reject"`)
 }
 

@@ -36,7 +36,7 @@ func TestLogsPageShowsSuccessAndErrorEntriesNewestFirst(t *testing.T) {
 	r := newRig(t, seedLogs)
 	res := r.get("/logs")
 	status(t, res, http.StatusOK)
-	contains(t, res, "<html", "<title>ログ - puppet-remo</title>", "日時", "レベル", "内容",
+	contains(t, res, "<html", "<title>ログ - Nefos Remote</title>", "日時", "レベル", "内容",
 		`data-log-level="ERROR"`, `data-log-level="WARN"`, `data-log-level="INFO"`,
 		"mcp tool failed", "capture failed", "bearer authentication failed", "alice-laptop", "lease acquired", "tailnet listener is listening",
 		"2026-10-30 11:59:00", // 時計は 2026-10-30 12:00（UTC）の 1 分前
@@ -117,19 +117,21 @@ func TestLogsPagingKeepsTheFilterInLinks(t *testing.T) {
 	if n := strings.Count(p1.Body, "data-log-level="); n != size {
 		t.Errorf("page 1 rows = %d, want %d", n, size)
 	}
-	contains(t, p1, "failure-000", `href="/logs?level=error&amp;page=2"`, "data-pager-next", "1 ページ目")
-	lacks(t, p1, "data-pager-prev", "ancient")
+	contains(t, p1, "failure-000", `href="/logs?level=error&amp;page=2"`, "data-pager-next", ">1</span> ページ目")
+	// 端の側（1 ページ目の前へ）は disabled で、リンクではない。
+	contains(t, p1, "disabled data-pager-prev")
+	lacks(t, p1, "ancient")
 
 	p3 := r.get("/logs?level=error&page=3")
 	if n := strings.Count(p3.Body, "data-log-level="); n != 3 {
 		t.Errorf("page 3 rows = %d, want 3", n)
 	}
-	contains(t, p3, fmt.Sprintf("failure-%03d", total-1), `href="/logs?level=error&amp;page=2"`, "data-pager-prev", "3 ページ目")
-	lacks(t, p3, "data-pager-next")
+	contains(t, p3, fmt.Sprintf("failure-%03d", total-1), `href="/logs?level=error&amp;page=2"`, "data-pager-prev", ">3</span> ページ目")
+	contains(t, p3, "disabled data-pager-next")
 
 	// 不正なページ番号は 1。フィルターの戻りリンク（ページ 1）は page を付けない。
 	for _, q := range []string{"&page=0", "&page=-1", "&page=abc"} {
-		contains(t, r.get("/logs?level=error"+q), "failure-000", "1 ページ目")
+		contains(t, r.get("/logs?level=error"+q), "failure-000", ">1</span> ページ目")
 	}
 	p2 := r.get("/logs?level=error&page=2")
 	contains(t, p2, `href="/logs?level=error"`, "data-pager-prev")
@@ -144,7 +146,7 @@ func TestLogsFragmentVariants(t *testing.T) {
 
 	boosted := r.get("/logs", "HX-Request", "true", "HX-Boosted", "true")
 	status(t, boosted, http.StatusOK)
-	contains(t, boosted, "<title>ログ - puppet-remo</title>", `id="app-log"`, `id="sidebar-nav"`)
+	contains(t, boosted, "<title>ログ - Nefos Remote</title>", `id="app-log"`, `id="sidebar-nav-links"`)
 	lacks(t, boosted, "<html")
 
 	restore := r.get("/logs", "HX-Request", "true", "HX-History-Restore-Request", "true")

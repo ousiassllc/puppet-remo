@@ -12,6 +12,8 @@ export interface TestTile {
 export interface TestFrame {
   keyframe: boolean;
   monitor?: number;
+  // origin を指定するとグループ源のフレーム（フラグ bit1、monitor 0xffff、見出しの後ろに i32 の原点）にする。
+  origin?: { x: number; y: number };
   seq: number;
   width: number;
   height: number;
@@ -20,17 +22,23 @@ export interface TestFrame {
 
 // buildFrame は、API 仕様 §5.4 のバイナリフレームを作る。
 export function buildFrame(frame: TestFrame): ArrayBuffer {
-  const size = 14 + frame.tiles.reduce((sum, tile) => sum + 12 + tile.jpeg.length, 0);
+  const originBytes = frame.origin ? 8 : 0;
+  const size = 14 + originBytes + frame.tiles.reduce((sum, tile) => sum + 12 + tile.jpeg.length, 0);
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
   view.setUint8(0, 1);
-  view.setUint8(1, frame.keyframe ? 1 : 0);
-  view.setUint16(2, frame.monitor ?? 0, true);
+  view.setUint8(1, (frame.keyframe ? 1 : 0) | (frame.origin ? 2 : 0));
+  view.setUint16(2, frame.origin ? 0xffff : (frame.monitor ?? 0), true);
   view.setUint32(4, frame.seq, true);
   view.setUint16(8, frame.width, true);
   view.setUint16(10, frame.height, true);
   view.setUint16(12, frame.tiles.length, true);
   let offset = 14;
+  if (frame.origin) {
+    view.setInt32(offset, frame.origin.x, true);
+    view.setInt32(offset + 4, frame.origin.y, true);
+    offset += 8;
+  }
   for (const tile of frame.tiles) {
     view.setUint16(offset, tile.x, true);
     view.setUint16(offset + 2, tile.y, true);

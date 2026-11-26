@@ -36,8 +36,8 @@ func TestOpenCreatesFullSchema(t *testing.T) {
 			t.Errorf("index %s: got %d, want 1", index, n)
 		}
 	}
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 5 {
-		t.Errorf("schema version = %d, want 5", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 6 {
+		t.Errorf("schema version = %d, want 6", v)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestOpenIsIdempotentAndKeepsData(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 5 {
-		t.Errorf("schema_migrations rows = %d, want 5 (reopen must not re-apply)", n)
+	if n := count(t, db, `SELECT COUNT(*) FROM schema_migrations`); n != 6 {
+		t.Errorf("schema_migrations rows = %d, want 6 (reopen must not re-apply)", n)
 	}
 	if v, ok, err := db.Settings().Get(ctx, "server.port"); err != nil || !ok || string(v) != "8765" {
 		t.Errorf("setting after reopen = %q, %v, %v", v, ok, err)
@@ -297,8 +297,8 @@ func TestOpenUpgradesM1Database(t *testing.T) {
 		t.Fatalf("Open M1 database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 5 {
-		t.Errorf("schema version = %d, want 5", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 6 {
+		t.Errorf("schema version = %d, want 6", v)
 	}
 	if got, err := db.Clients().Get(ctx, "c1"); err != nil || got.StableNodeID != "node1" {
 		t.Errorf("existing client after upgrade = %+v, %v", got, err)
@@ -361,8 +361,8 @@ func TestOpenUpgradesV2DatabaseKeepsDecidedConnRequests(t *testing.T) {
 		t.Fatalf("Open v2 database: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 5 {
-		t.Errorf("schema version = %d, want 5", v)
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 6 {
+		t.Errorf("schema version = %d, want 6", v)
 	}
 	got, err := db.ConnRequests().ListHistory(ctx, 10, 0)
 	if err != nil {
@@ -479,5 +479,54 @@ func TestOpenMigratesExistingClientsToAutoApproval(t *testing.T) {
 	defer func() { _ = db2.Close() }()
 	if c, err := db2.Clients().Get(ctx, "new1"); err != nil || c.ApprovalMode != domain.ApprovalAlways {
 		t.Errorf("new client after reopen = %+v, %v; want always", c, err)
+	}
+}
+
+// v5 の DB（agent_tasks に行がある）を Open すると 0006 が適用され、既存の行は対象なし・capture_partial = 0 のまま読める。
+func TestOpenUpgradesV5DatabaseKeepsAgentTasks(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "puppet-remo.db")
+	full, err := fs.Sub(embeddedMigrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, name := range []string{"0001_init.sql", "0002_launchable_apps.sql", "0003_connreq_history_index.sql",
+		"0004_existing_clients_auto_approval.sql", "0005_launch_denylist.sql"} {
+		body, err := fs.ReadFile(full, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = string(body)
+	}
+	conn, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetMaxOpenConns(1)
+	if err := migrate(ctx, conn, migrationsFS(files), newFakeClock().Now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO agent_tasks (id, client_label, prompt, status, model, max_steps, max_duration_sec, created_at)
+		VALUES ('old-task', 'dev', 'p', 'running', 'm', 10, 60, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open v5 database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if v := count(t, db, `SELECT MAX(version) FROM schema_migrations`); v != 6 {
+		t.Errorf("schema version = %d, want 6", v)
+	}
+	got, err := db.Tasks().Get(ctx, "old-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Scoped() || got.TargetProcess != "" || got.TargetPID != 0 || got.CapturePartial {
+		t.Errorf("old task after upgrade = %+v", got)
 	}
 }

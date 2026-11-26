@@ -35,11 +35,6 @@ func ButtonClass(v ButtonVariant, small bool) string {
 	return buttonClass(v, "h-10 px-4 text-base ")
 }
 
-// PagerButtonClass はページ送り（前へ・次へ）のクラス。ガイドのページネーション（P1）は高さ 36・rounded-md で、小ボタン（32）ではない。
-func PagerButtonClass() string {
-	return buttonClass(ButtonSecondary, "h-9 px-3 text-sm ")
-}
-
 func buttonClass(v ButtonVariant, size string) string {
 	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-semibold disabled:opacity-40 " + size
 	switch v {

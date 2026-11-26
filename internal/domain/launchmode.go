@@ -105,6 +105,16 @@ func ExeBaseName(p string) string {
 }
 
 // MatchDenied は、起動しようとする実行ファイルが拒否リストの entries のどれかに当たるかを返す。
+//
+// 大文字小文字の比較に strings.EqualFold を使うのは、Windows のパス・ファイル名が（NTFS・ReFS の既定で）大文字小文字を区別せず、
+// 保存したときの綴りを保つ（case-preserving）ため、綴りの大小だけが違う同じファイルを同じものとして拒否したいから。
+// ASCII の範囲では NTFS の比較と一致する。限界: EqualFold は Unicode の単純な大文字小文字の対応（simple case folding）で比べる一方、
+// NTFS はボリュームごとの $UpCase 表（ボリュームの作成時に固定される、1 文字ずつの大文字化の対応表）で比べる。
+// ASCII 以外の一部の文字では両者の対応がずれうる（この関数が別物と判定する綴りを NTFS が同じファイルとみなす場合、またはその逆）。
+// 前者の場合は拒否の取りこぼしになりうる。実体のパスで照合する（DeniedPath は AppLauncher.Resolve が返す、ディスク上の綴りで比べる）ことと、
+// DeniedName が解決の前後どちらかの名前に当たれば拒否することで小さくしているが、ゼロではない。
+// $UpCase 表を再現する比較は持たない（OS・ボリューム依存の表を持ち込まない。挙動を変えるなら別の判断）。
+//
 // requested は呼び出し側が指定したパス、resolved は platform.AppLauncher.Resolve が返した実体のパス
 // （シンボリックリンク・ジャンクション・8.3 短縮名を解決済み）。
 //

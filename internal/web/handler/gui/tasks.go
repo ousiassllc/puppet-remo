@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -72,7 +73,7 @@ var taskHandoffTexts = map[domain.HandoffReason]string{
 
 // taskErrorTexts は失敗の理由（agent_tasks.error_code。docs/architecture/er.md）の説明。未知のコードはコードだけを出す。
 var taskErrorTexts = map[string]string{
-	"input_blocked":       "入力がブロックされた（管理者権限のウィンドウ・puppet-remo 自身のウィンドウなど）",
+	"input_blocked":       "入力がブロックされた（管理者権限のウィンドウ・Nefos Remote 自身のウィンドウなど）",
 	"judge_denied":        "ルール（Judge）が操作を拒否した",
 	"approval_denied":     "ホストが承認を拒否した（または時間切れ）",
 	"safety_check_denied": "OpenAI の安全チェックをホストが拒否した（または時間切れ）",
@@ -146,6 +147,14 @@ func (h *Handler) taskStatusView(t domain.Task) view.TaskStatus {
 	return v
 }
 
+// taskTargetView はタスクの対象（プロセス名・pid・window_id）。スコープなしはゼロ値。ウィンドウのタイトルは載せない。
+func taskTargetView(t domain.Task) view.TaskTarget {
+	if !t.Scoped() {
+		return view.TaskTarget{}
+	}
+	return view.TaskTarget{Process: t.TargetProcess, PID: int(t.TargetPID), WindowID: t.TargetWindowID}
+}
+
 // runningTasksView はダッシュボードの実行中タスク（実行中・承認待ち。高々 1 件）。取得できなければ空として扱い、ログに残す
 // （ダッシュボードは出す）。
 func (h *Handler) runningTasksView(ctx context.Context) view.RunningTasks {
@@ -157,7 +166,7 @@ func (h *Handler) runningTasksView(ctx context.Context) view.RunningTasks {
 	for _, t := range tasks {
 		v.Items = append(v.Items, view.RunningTask{
 			ShortID: shortTaskID(t.ID), DetailURL: taskDetailURL(t.ID), Client: taskClientLabel(t),
-			PromptExcerpt: promptExcerpt(t.Prompt), Status: h.taskStatusView(t),
+			PromptExcerpt: promptExcerpt(t.Prompt), Target: taskTargetView(t), Status: h.taskStatusView(t),
 		})
 	}
 	v.Rev = revision(v)
@@ -176,24 +185,23 @@ func (h *Handler) taskRows(tasks []domain.Task) []view.TaskRow {
 	return rows
 }
 
-// taskNextURL は「次へ」の URL。次のページが無ければ空。cursor は不透明な文字列なのでクエリとしてエスケープする。
-func taskNextURL(next string) string {
-	if next == "" {
-		return ""
-	}
-	return "/tasks?" + url.Values{"cursor": {next}}.Encode()
-}
-
 // Tasks は GET /tasks?cursor=（新しい順に 50 件。FR-H10）。HX-Request のフラグメントは一覧（#task-list）、HX-Boosted はページの本文、
 // それ以外（履歴の復元を含む）はフルページ。cursor が不正なら 422（サービスが検査する）。読み出しの失敗は 500。
 func (h *Handler) Tasks(c *gin.Context) {
 	ctx := c.Request.Context()
-	page, err := h.d.Tasks.List(ctx, service.TaskListQuery{Cursor: strings.TrimSpace(c.Query("cursor"))})
+	trail, ok := parsePageTrail(c)
+	if !ok {
+		h.pageFail(c, fmt.Errorf("%w: back は cursor と一緒に、%d 件までで指定してください", domain.ErrInvalidArgument, maxPageTrail))
+		return
+	}
+	page, err := h.d.Tasks.List(ctx, service.TaskListQuery{Cursor: trail.Cursor})
 	if err != nil {
 		h.pageFail(c, err)
 		return
 	}
-	list := view.TaskList{Rows: h.taskRows(page.Tasks), NextURL: taskNextURL(page.Next)}
+	// cursor は不透明な文字列なので、URL には pageURLs がクエリとしてエスケープして載せる。
+	prev, next := pageURLs("/tasks", nil, trail, page.Next, page.Next != "")
+	list := view.TaskList{Rows: h.taskRows(page.Tasks), Page: trail.Page(), PrevURL: prev, NextURL: next}
 	switch {
 	case boostedRequest(c):
 		h.render(c, http.StatusOK, pages.TasksBoosted(view.TaskListPage{Chrome: h.chrome(ctx, view.NavTasks), List: list}))
@@ -260,10 +268,12 @@ func (h *Handler) taskDetailView(c *gin.Context, d service.TaskDetail) view.Task
 		Steps: h.taskStepRows(d.Steps), BackURL: "/tasks",
 	}
 	if d.HandoffReason != "" {
-		v.Handoff = string(d.HandoffReason)
-		if text, ok := taskHandoffTexts[d.HandoffReason]; ok {
-			v.Handoff = text + "（" + string(d.HandoffReason) + "）"
-		}
+		v.HandoffReason = string(d.HandoffReason)
+		v.HandoffText = taskHandoffTexts[d.HandoffReason] // 未知の理由コードは説明なし（コードだけ）
+	}
+	v.Target = taskTargetView(d.Task)
+	if d.CapturePartial {
+		v.CapturePartial = "所有関係を確かめられないウィンドウをモデルへ渡す画像から除外した（capture_partial。停止ではない）"
 	}
 	if d.ResultText != "" && d.Status == domain.TaskCompleted {
 		v.ResultNote = taskResultNote

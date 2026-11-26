@@ -4,7 +4,7 @@
 
 ## 1. 概要
 
-puppet-remo は 2 つのルーターで HTTP を提供する。
+Nefos Remote は 2 つのルーターで HTTP を提供する。
 
 | ルーター | 到達性 | 提供するもの |
 |---------|--------|-------------|
@@ -25,7 +25,7 @@ puppet-remo は 2 つのルーターで HTTP を提供する。
 | 状態を変更するリクエスト（リモート） | ヘッダー `X-Puppet-Remo: 1` 必須（NFR-S03）。Web UI のルートは HTMX のフォーム（`Content-Type: application/x-www-form-urlencoded`）のみ受け付ける。`/api/v1` は参照専用（GET のみ）で、状態を変更する JSON リクエストは存在しない。MCP は Bearer 必須のため対象外 |
 | 応答の種類 | **ページルート・アクションルート（Web UI、GUI）は常に HTML**（`HX-Request` の有無で JSON に切り替えない。ページルートは `HX-Request` でフルページとフラグメントを出し分け、アクションルートは常にフラグメント）。JSON を返すのは `/api/v1/*` と MCP のみ。詳細は [フロントエンド設計](../architecture/frontend.md) |
 | サイズ上限 | HTTP ボディ ≤ 1 MiB、WebSocket のクライアント→サーバーのメッセージ ≤ 64 KiB（NFR-S09） |
-| HTML 応答のヘッダー | **両ルーター**のすべての HTML 応答（ページ・フラグメント・エラーページ）に、ミドルウェアが `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を付ける（`<meta>` では出さない。NFR-S19）。インラインのスクリプト・スタイル・イベントハンドラ属性は使わない。`connect-src 'self'` は同一オリジンの WebSocket も含む。詳細は [フロントエンド設計](../architecture/frontend.md) |
+| HTML 応答のヘッダー | **両ルーター**のすべての HTML 応答（ページ・フラグメント・エラーページ）に、ミドルウェアが `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` を付ける（`<meta>` では出さない。NFR-S19）。インラインのスクリプト・スタイル・イベントハンドラ属性は使わない（例外: 待機ページ・エラーページは固定のインライン `<style>` を 1 つ持ち、その SHA-256 ハッシュを `style-src` に置いた CSP を付ける。`/static` が 403 の未登録デバイス向け。frontend.md §7.1）。`connect-src 'self'` は同一オリジンの WebSocket も含む。詳細は [フロントエンド設計](../architecture/frontend.md) |
 | 静的ファイルのキャッシュ | `/static/*`（および GUI の静的アセット）は `Cache-Control: no-cache` + `ETag`（ビルド ID）。`If-None-Match` が一致すれば 304 |
 
 ### リモートルーターのミドルウェア連鎖
@@ -87,7 +87,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
 | `app_not_found` | 404 | `launch_app` | `app_id` が許可リストに無い（読めない行・起動の再検査を満たさない行を含む。FR-M19。M1.5）。どちらの起動の方式でも同じ |
 | `app_denied` | 403 | `launch_app` | 起動の方式がブラックリストで、起動しようとしたアプリがホスト所有者の拒否リストに当たる（`app_id` で起動する許可リストのアプリも、拒否リストに当たれば拒否する。#88）。MCP は同じ `code` のツールエラー。メッセージは `the host owner does not allow this app to be launched` で固定し、**パス・拒否リストの中身は含めない**。監査は `denied` |
-| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に puppet-remo のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
+| `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に Nefos Remote のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
 | `audit_unavailable` | 503 | `launch_app` | 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動できる） |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリ（ブラックリスト方式の `path` 指定を含む）だが OS がプロセスを作成できなかった、または `path` が固定ディスク上の実在する実行ファイルでなかった（FR-M19。M1.5。#88）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。`path` が UNC・ネットワークドライブ・リムーバブルドライブ上なら `access_denied`、存在しなければ `file_missing`。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
@@ -170,7 +170,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 出力: MCP の画像コンテンツ（`image/png` または `image/jpeg`、base64。縮小済み）と、テキストコンテンツの JSON `{ "monitor": 0, "physical": {…}, "scaled": {…}, "scale": 0.6125, "own_windows": [ {"monitor": 0, "rect": {"x": 784, "y": 0, "width": 393, "height": 442}} ] }`。
 
-`own_windows` は、撮影した時点でそのモニター上にある puppet-remo 自身のウィンドウの範囲（無ければ空配列）。これらのウィンドウは画像に**写らず**（キャプチャ除外。NFR-S06）、入力は `input_blocked`（`own_window`）になるため、`rect`（この画像の座標。縮小座標）の範囲を避ける。画像には印を描かない（FR-M20）。範囲を取れなかったときも画像は返し、`own_windows` は空になる。
+`own_windows` は、撮影した時点でそのモニター上にある Nefos Remote 自身のウィンドウの範囲（無ければ空配列）。これらのウィンドウは画像に**写らず**（キャプチャ除外。NFR-S06）、入力は `input_blocked`（`own_window`）になるため、`rect`（この画像の座標。縮小座標）の範囲を避ける。画像には印を描かない（FR-M20）。範囲を取れなかったときも画像は返し、`own_windows` は空になる。
 
 **`cursor_position`**
 
@@ -211,7 +211,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 `id` は HWND の 10 進文字列。`rect` は、そのウィンドウが最も重なるモニターの縮小座標で、モニターの範囲に切り詰める。`elevated` が true のウィンドウには入力できない（`input_blocked`）。
 
-`blocked` は、そのウィンドウへの入力を puppet-remo が拒否するか。true のとき `blocked_reason`（`own_window` / `elevated_window`。false のときは省略）を付ける。puppet-remo 自身のウィンドウ（`own_window`）も一覧に出し、`blocked: true` の印を付ける。これらはスクリーンショットに写らない（NFR-S06）ので、`rect` の範囲への入力を避ける（FR-M20）。自ウィンドウと昇格の両方に当たるときは `own_window`。
+`blocked` は、そのウィンドウへの入力を Nefos Remote が拒否するか。true のとき `blocked_reason`（`own_window` / `elevated_window`。false のときは省略）を付ける。Nefos Remote 自身のウィンドウ（`own_window`）も一覧に出し、`blocked: true` の印を付ける。これらはスクリーンショットに写らない（NFR-S06）ので、`rect` の範囲への入力を避ける（FR-M20）。自ウィンドウと昇格の両方に当たるときは `own_window`。
 
 **`focus_window`**: `id`\*。存在しなければ `window_not_found`。
 
@@ -282,7 +282,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 - エラー: `lease_held_by_other`（他者がリースを保持）、`invalid_argument`（上のとおり）、`app_not_found`、`app_denied`（HTTP 403。ブラックリスト方式のとき）、`launch_failed`、`kill_switch_active`（HTTP 503）、`audit_unavailable`（HTTP 503。起動の「試行」の行を監査ログに書けなかったとき。プロセスは起動していない（暗黙に取得したリースは保持したまま）。下の監査の項）。リースの暗黙取得に失敗したときは `lease_held_by_other` を返し、起動しない
 - 同じアプリが起動中でも、呼ぶたびに新しいプロセスを起動する（冪等ではない。自分からフォーカスを切り替えることはしない。アプリ自身が既存のウィンドウを前に出すことはあり、結果の `reused_existing_window` で分かる）。起動済みのプロセスは、リースの解放・セッションの切断・キルスイッチ・許可リストからの削除・拒否リストへの追加・起動の方式の切り替えでは終了しない
 - 監査は fail-closed の 2 行（#37。NFR-S20）: プロセスを作る**前**に「試行」の行（`tool.launch_app.attempt`。agent は `agent.launch_attempt`）を同期で書き、書けなければ起動せず `audit_unavailable` を返す。起動のあとに「結果」の行（下の `tool.launch_app` / `agent.step`）を書く。結果の行が書けなくても起動は取り消さず、運用ログに Warn を出す。試行の行はキルスイッチ・リース・起動の方式と対象の検査（許可リスト・拒否リスト）を通って起動に進む呼び出しにだけ書く（`invalid_argument`・`app_not_found`・`app_denied`・`launch_failed`（解決の失敗）は試行の行を書く前に拒否するので、結果の行だけが残る）。同期書き込みの遅延は許容し、新しい待ちの上限は足さない（既存の `ToolTimeout` のまま）。
-- `detail` の内容（試行・結果の行で共通。#88）: `app_id`（指定があったとき）、`path`（指定があり、形の検査を通ったものだけ。呼び出し側が渡した綴りのまま、1,024 文字で切る）、`label`（許可リストの行を引けたとき）、`launch_mode`（ブラックリスト方式のときだけ値は `"denylist"`。ホワイトリスト方式は従来どおり記録しない）。引数・作業ディレクトリは受け取らないので記録しない。`app_denied` は結果が `denied`・`error_code = app_denied`。
+- `detail` の内容（試行・結果の行で共通。#88）: `app_id`（指定があったとき）、`path`（指定があり、形の検査を通ったものだけ。呼び出し側が渡した綴りのまま、1,024 文字で切る）、`label`（許可リストの行を引けたとき）、`launch_mode`（ブラックリスト方式のときだけ値は `"denylist"`。ホワイトリスト方式は従来どおり記録しない）、`resolved_path`（ブラックリスト方式の `path` 指定の起動だけ。`AppLauncher.Resolve` が返した実体のパス〔リンク・ジャンクション・8.3 短縮名を解決済み〕。許可・拒否のどちらの行にも付く。1,024 文字までに切り詰める）、`resolve_failed: true`（同じく `path` 指定で、解決できなかったとき。`resolved_path` は付かず、理由は `reason`）（#173）。ホワイトリスト方式・`app_id` 指定の起動の記録は変えない。引数・作業ディレクトリは受け取らないので記録しない。`app_denied` は結果が `denied`・`error_code = app_denied`。
 - すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。入力スキーマに合わない呼び出し（型違い・追加のプロパティ。`app_id` / `path` はどちらも任意なので、欠落はスキーマ違反ではない）は SDK が実行前に拒否するため `Control.Launch` に届かない。この場合は MCP の受信ミドルウェアが `tool.launch_app`（`denied`・`error_code = invalid_argument`、`detail` なし。拒否された値は記録しない）を 1 件追記する。一方、リクエストの形の不備（`app_id` と `path` の同時指定・どちらも無し・ホワイトリスト方式での `path`）はスキーマを通って `Control.Launch` に届き、そこで `tool.launch_app`（agent は `agent.step`）に `denied`・`error_code = invalid_argument` として追記する（試行の行は書かない）。`list_launchable_apps` も `tool.list_launchable_apps` として追記する
 
 #### 内蔵エージェント
@@ -294,10 +294,13 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `prompt` | string | はい | 自然言語の指示（10,000 文字まで） |
 | `max_steps` | integer | いいえ | ステップ上限。設定値（FR-S12）以下のみ指定できる |
 | `max_duration_sec` | integer | いいえ | 実行時間の上限（秒）。設定値以下のみ |
+| `window_id` | string | いいえ | `list_windows` の `window_id`。指定すると、エージェントが見る画像と操作を、その 1 ウィンドウ T と、所有関係を検証できる同一プロセスのダイアログ・メニューに限る（#158。FR-G04・G06・G07。**実機未確認**（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10））。省略すると画面全体（従来どおり） |
 
 出力（即時）: `{ "task_id": "01J…", "status": "pending_approval" | "running" }`。長時間実行になるため、完了は `get_task` で確認する（1 回の MCP 呼び出しは 1 秒以内に返る。NFR-P08）。エージェント無効・選んだ接続方式が使えない状態なら `agent_disabled`（接続方式 `chatgpt` のときは `detail.reason` が §2 の 4 種のいずれか。FR-G01）、他者がリースを保持していれば `lease_held_by_other`、キルスイッチ中は `kill_switch_active`。`prompt` が空・10,000 文字（rune）超、`max_steps` / `max_duration_sec` が 1 未満・設定値超は `invalid_argument`（`prompt` の欠落・型違いは SDK が入力スキーマで拒否する）。**接続方式は呼び出し側が指定できない**（ホスト GUI の設定 `agent.connection` で決まり、タスクの開始時に固定される。FR-G25）。
 
-**高速パス（FR-G16）は `run_task` から透過**: 引数も出力も増えず、呼び出し側は使う・使わないを指定できない。使うかどうかはホストの設定 `agent.fastpath.enabled`（既定 off。GUI のみで変更。FR-S14）だけで決まり、キー未登録・同意なし・無効のときは黙ってスキップして OpenAI のみで実行する。接続方式が `chatgpt` のときも黙ってスキップする（併用は対象外。FR-G25）。タスクの完了は常に OpenAI が確認用スクリーンショットを見て宣言する（FR-G20）。どちらの経路で実行したかは `get_task` の `fast_steps` / `openai_steps` / `handoff_reason` で分かる。
+**`window_id` つきの `run_task`**（#158）: 開始時に、自ウィンドウ・昇格ウィンドウ・最小化・検証前の UWP は `input_blocked`（`detail.reason` = `own_window` / `elevated_window` / `target_minimized` / `target_unsupported`）、一覧にない対象は `window_not_found`（`detail.reason` = `target_closed`）、プロセス名が設定 `agent.deny_processes` に当たる対象は `input_blocked`（`detail.reason` = `denied_process`）でタスクを開始しない（行もリースも作らない）。開始できたタスクは種別 `agent` のリースを T に束縛して動き、実行中に T の移動・リサイズ（`target_moved`）・置き換え（`target_replaced`）・閉鎖（`target_closed`）、前面・フォーカス・座標の最上位が T と関連ウィンドウの外（`target_not_foreground` / `target_obscured` / `outside_target_group` / `related_cross_process` / `related_unverifiable` / `unrelated_same_process`）、T または検証できたメンバーの撮影失敗（`capture_unavailable` / `capture_member_unavailable`。モニター撮影には切り替えない）はタスクを `failed`（`error_code = input_blocked`。理由は監査 `agent.task_end` の `detail.block_reason`）にする。再開は無い（新しいタスクで取り直す）。メニュー・ダイアログの出入りだけは失敗ではなく、残りのアクションを実行せずに新しい画像から計画し直す（監査 `agent.batch_yielded`。FR-G04）。`monitor` を伴う座標は `invalid_argument` で失敗する。クリップボードの規則は FR-L12（エージェントの `computer` ツールにクリップボード操作は無く、直接の `ClipboardRead` は `clipboard_out_of_scope`）。`get_task` には `target`（`{ "window_id", "process", "pid" }`。ウィンドウのタイトルは含めない）が付く（`window_id` なしのタスクでは省略）。
+
+**高速パス（FR-G16）は `run_task` から透過**: 引数も出力も増えず（`window_id` を除く）、呼び出し側は使う・使わないを指定できない。**`window_id` つきのタスクでは高速パスを使わない**（`FastPath` も TypeSafe への送信・UI Automation の読み取りも起きず、`fast_steps = 0`・`handoff_reason` なし。設定で有効・同意済みでも黙ってスキップする。FR-G16・G22）。`window_id` なしでは、使うかどうかはホストの設定 `agent.fastpath.enabled`（既定 off。GUI のみで変更。FR-S14）だけで決まり、キー未登録・同意なし・無効のときは黙ってスキップして OpenAI のみで実行する。接続方式が `chatgpt` のときも黙ってスキップする（併用は対象外。FR-G25）。タスクの完了は常に OpenAI が確認用スクリーンショットを見て宣言する（FR-G20）。どちらの経路で実行したかは `get_task` の `fast_steps` / `openai_steps` / `handoff_reason` で分かる。
 
 **`get_task`**: `task_id`\*。出力:
 
@@ -334,7 +337,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 
 `detail` は、コードによって付く追加情報（無ければ省略）。`input_blocked` の `detail.reason` は `own_window` / `elevated_window`（`detail.window_id` も付く）/ `secure_attention_sequence`、スコープ付きのリース（FR-L09〜L14）では下の表の値。`agent_disabled`（接続方式 `chatgpt`）の `detail.reason` は `chatgpt_not_signed_in` / `chatgpt_signing_in` / `chatgpt_reauth_required` / `chatgpt_usage_limited`（§2。FR-G01）。
 
-**スコープ付きのリースの `input_blocked`**（FR-L09〜L14。#156。`acquire_control`・`run_task` の対象指定の入口は #157・#158 で、本書の対象はサービス層の規則とエラーの形）: `detail.reason` に次の値が入る。原因のウィンドウがあれば `detail.window_id` と `detail.blocked_by`（`{ "window_id", "process", "pid", "reason" }`。**ウィンドウのタイトルは含めない**）が付く。「停止」は、入力を注入せずに `ReleaseAll`（押下中のキー・ボタンの解放）を呼び、リースを `halted` にして監査 `input.target_halted` を記録する。
+**スコープ付きのリースの `input_blocked`**（FR-L09〜L14。#156。入口はビューア〔§4.2 の `POST /viewer/target`・§5.3〕と `run_task` の `window_id`〔§3.3〕。ここは規則とエラーの形）: `detail.reason` に次の値が入る。原因のウィンドウがあれば `detail.window_id` と `detail.blocked_by`（`{ "window_id", "process", "pid", "reason" }`。**ウィンドウのタイトルは含めない**）が付く。「停止」は、入力を注入せずに `ReleaseAll`（押下中のキー・ボタンの解放）を呼び、リースを `halted` にして監査 `input.target_halted` を記録する。
 
 | `reason` | 意味 | 停止 |
 |----------|------|------|
@@ -342,23 +345,25 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `target_replaced` | T と同じ HWND が別の PID・開始時刻・クラスのウィンドウに再利用された。選び直しのみ | する（再開不可） |
 | `target_unsupported` | 検証前の UWP（`ApplicationFrameWindow`）、または同一性を確かめる値が不明。束縛できない・選び直しのみ | する（再開不可） |
 | `target_minimized` | T が最小化されている | する |
-| `own_window` / `elevated_window` | T・前面・座標の最上位が puppet-remo のウィンドウ / 昇格ウィンドウ（既存の理由） | する |
+| `target_moved` | `run_task`（`window_id` つき。#158）で、基準 S（モデルが見た最後の撮影）と比べて T または既存メンバーの矩形が違う（移動・リサイズ。どの k でも）。注入しない | する（タスクは `failed`） |
+| `denied_process` | `run_task` の `window_id` のプロセスが `agent.deny_processes` に当たる。タスクを開始しない | しない（開始前の拒否） |
+| `own_window` / `elevated_window` | T・前面・座標の最上位が Nefos Remote のウィンドウ / 昇格ウィンドウ（既存の理由） | する |
 | `target_not_foreground` | キー・文字の宛先（前面）が G の外の、所有関係のない別プロセスのウィンドウ・前面なし | する |
 | `unrelated_same_process` | PID が T と同じだけで所有関係のないウィンドウが前面（G に入れない） | する |
 | `related_cross_process` | T と所有関係はあるが別プロセスのウィンドウが前面・座標の最上位、または**引き上げ前の葉**（フォーカス先・座標の子ウィンドウ）が別プロセス | する |
 | `related_unverifiable` | 所有関係を確かめられないウィンドウ（無所有のメニュー、循環・8 段超過の鎖、開始時刻の取得失敗、メンバー 16 超）が前面・座標の最上位、または葉の PID・開始時刻を取れない | する |
 | `outside_target_group` | 座標が G のどのメンバーの範囲にも入らない（デスクトップを含む） | する |
 | `target_obscured` | 座標は G のメンバーの範囲内だが、その座標の最上位は非メンバー（`blocked_by` にそのプロセス）。非メンバーが別の場所で T に重なっていても、座標の最上位がメンバーなら通る | する |
-| `capture_unavailable` | T を撮れない（`GrabGroup` の失敗・撮影不可）、または `Capturer` が `GroupCapturer` を持たない（**Windows は未実装のため、実機のスコープ付きリースはこの理由で停止する**） | する |
+| `capture_unavailable` | T を撮れない（`GrabGroup` の失敗・撮影不可）、または `Capturer` が `GroupCapturer` を持たない（Windows の `GrabGroup` は PrintWindow で実装済みだが**実機未確認**。撮れなければこの理由で停止する） | する |
 | `capture_member_unavailable` | T 以外の、検証できたメンバー（メニュー・ダイアログ）を撮れない | する |
 | `target_halted` | リースがすでに停止中。Esc を含む一切の入力・クリップボード書き込みを拒否する。`detail.halt_reason` に停止の理由。新しい停止は記録しない | しない（すでに停止中） |
 | `key_out_of_scope` | スコープ付きで `win` 修飾・Windows キー・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc を送ろうとした | しない（その操作だけの拒否） |
-| `clipboard_out_of_scope` | スコープ付きリースで `ClipboardRead`（クリップボードの読み取り。`clipboard_read`・Web の fetch・エージェント）。書き込みだけ許可。platform の読み取りは呼ばない | しない（その操作だけの拒否） |
+| `clipboard_out_of_scope` | スコープ付きリースで `ClipboardRead`（クリップボードの読み取り。`clipboard_read`・Web の fetch・WebSocket の `clipboard.read`・エージェント）。書き込みだけ許可。platform の読み取りは呼ばない | しない（その操作だけの拒否） |
 | `outside_target_group`（`focus_window`） | `focus_window` の対象が G のメンバーでない（スコープ付きは G のメンバーだけ） | しない（その操作だけの拒否） |
 
 束縛（`LeaseManager.AcquireScoped`）が断る対象は、`window_not_found`（`detail.reason` = `target_closed` / `target_replaced`）と、`input_blocked`（`target_unsupported` / `own_window` / `elevated_window` / `target_minimized`）。再開（`Control.ResumeTarget`）が通らなかったときは、通らなかった条件の `reason` の `input_blocked` で、リースは `halted` のまま。
 
-**`own_window` の `detail.own_windows`**（FR-M20）: AI が避けられるよう、puppet-remo 自身のウィンドウ（スクリーンショットに写らない）の範囲を付ける。`get_ui_tree`・`focus_window` の `own_window` にも付く。
+**`own_window` の `detail.own_windows`**（FR-M20）: AI が避けられるよう、Nefos Remote 自身のウィンドウ（スクリーンショットに写らない）の範囲を付ける。`get_ui_tree`・`focus_window` の `own_window` にも付く。
 
 ```json
 {
@@ -407,6 +412,9 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | POST | `/viewer/lease/release` | 操作権を解放 | 200 リースパネル |
 | GET | `/viewer/lease/revoke/confirm` | 強制剥奪の確認モーダル（`#viewer-root` の `#modal-root` に差し込む。確定のボタンが `POST /viewer/lease/revoke`） | 200 確認モーダル（フラグメント）。剥奪できるとき（他者の保持中）だけ描画し、そうでなければ 409 `conflict` |
 | POST | `/viewer/lease/revoke` | 他者のリースを強制剥奪（保持者が `agent` ならそのタスクを中断。FR-L06） | 200 リースパネル（保持者は `idle` になる。確認モーダルを閉じる OOB を添える）。自身が取得するには改めて `acquire` する |
+| GET | `/viewer/windows` | 「操作するウィンドウ」の一覧のフラグメント（#157。FR-W10。**実機未確認** — 成立性ゲート待ち。docs/operations/smoke-windows.md §3.10） | 200 HTML（`#window-picker`）。選べるウィンドウ（自ウィンドウ・オーバーレイ・メニュー・ダイアログ・タイトルなしを除く最上位）を、タイトル・プロセス名・前面か・最小化かつきで返す。昇格・最小化・検証前の種類（UWP など）は `aria-disabled="true"` の灰色の行（「選ぶ」ボタンなし・理由つき）。操作権が他者のとき・自分が保持しているときは、一覧の代わりに状態（スコープ付きなら対象のプロセス名と「別のウィンドウを選ぶ」）を出す。HTMX が 3 秒ごと・更新ボタン・`remo:lease-changed` で再取得する。ウィンドウのタイトルはこの応答にだけ出る（ログ・監査・承認ダイアログには出さない） |
+| POST | `/viewer/target` | ウィンドウ T を選んでスコープ付きのリースを取得（#157。FR-W10。実機未確認） | フォーム `window_id`・`pid`・`process_start`（一覧の行の値。サーバーが一覧から T を求め直す）。承認が要らなければ 200 リースパネル（`ready` / `config` の源はリースの取得を契機に WebSocket 側でグループへ切り替わる）。承認が要るクライアントは 202（承認ダイアログに「ウィンドウ 1 枚と関連するダイアログ・メニューに限定」とプロセス名）。一致する T が一覧に無ければ 404 `window_not_found`、昇格・最小化・検証前の種類は 409 `input_blocked`（`detail.reason` = `elevated_window` / `target_minimized` / `target_unsupported`）、自分が既に保持していれば 409 `conflict`（先に解放する）、他者が保持していれば 409 `lease_held_by_other` |
+| POST | `/viewer/target/release` | スコープ付きのリースを解放して一覧に戻る（#157。「別のウィンドウを選ぶ」） | 200 リースパネル（空き。`ViewerLeasePanel` と、操作 UI の OOB スワップ）。一覧は `remo:lease-changed` で `GET /viewer/windows` が再取得する。ビューアはモニター表示に戻る（保持していたときは WebSocket の `target` が `none`） |
 | POST | `/viewer/settings` | このビューアのモニター・品質・FPS | フォーム `monitor`, `quality`（1〜100）, `fps`（1〜30）。200 ツールバーのフラグメント。WebSocket の `config` に反映される |
 | POST | `/viewer/clipboard/send` | テキストをホストのクリップボードに設定（FR-W07） | フォーム `text`（1 MiB まで）。要操作権。200 フラグメント |
 | POST | `/viewer/clipboard/fetch` | ホストのクリップボードを取得して表示 | 要操作権。200 フラグメント（`<textarea readonly>`。利用者が手動でコピーする） |
@@ -458,18 +466,21 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 
 | type | 内容 |
 |------|------|
-| `ready` | 接続直後に 1 回（画面フレームより前）。`{ "monitors": [...], "monitor": 0, "width": 2560, "height": 1440, "quality": 70, "fps": 10, "lease": {…} }`。`width` / `height` はストリームの座標空間（選択モニターの物理ピクセル）。`monitors[]` の各要素は `get_screen_info`（§3.3）から縮小に関する項目（`scale`・`scaled`）を除いた `{ "index", "name", "primary", "origin": { "x", "y" }, "physical": { "width", "height" }, "dpi_scale" }`。`lease` は下の `lease` メッセージと同じ形 |
-| `config` | 設定の反映結果。`{ "monitor", "width", "height", "quality", "fps" }`。モニター変更時はキーフレームが続く。WebSocket の `config` だけでなく、`POST /viewer/settings` で変えたときにも届く |
+| `ready` | 接続直後に 1 回（画面フレームより前）。`{ "monitors": [...], "monitor": 0, "source": "monitor", "width": 2560, "height": 1440, "origin"?, "quality": 70, "fps": 10, "lease": {…} }`。`source` は配信の源（`monitor`＝選択モニター、`group`＝スコープ付きのリースの対象グループの合成画像。#157。実機未確認）。`monitor` 源では `width` / `height` はストリームの座標空間（選択モニターの物理ピクセル）、**`group` 源では合成画像の大きさ（最初のコマまでは 0）で、`origin` は合成画像の左上の物理座標**（物理座標 = `origin` + 画像内の座標）。`monitors[]` の各要素は `get_screen_info`（§3.3）から縮小に関する項目（`scale`・`scaled`）を除いた `{ "index", "name", "primary", "origin": { "x", "y" }, "physical": { "width", "height" }, "dpi_scale" }`。`lease` は下の `lease` メッセージと同じ形 |
+| `config` | 設定の反映結果。`{ "monitor", "source", "width", "height", "origin"?, "quality", "fps" }`（`source` と `origin` は `ready` と同じ）。モニター変更時はキーフレームが続く。WebSocket の `config` だけでなく、`POST /viewer/settings` で変えたときにも届く。**グループ源では、メニュー・ダイアログの開閉などで合成画像の大きさか原点が変わったとき、その最初のコマの前に `config` を送る**（クライアントは canvas を作り直してキーフレームを待つ） |
+| `target` | 対象ウィンドウ（スコープ付きのリース。#157。FR-W13。実機未確認）の状態。`{ "state": "none" \| "active" \| "halted", "process"?, "reason"?, "reselect"?, "blocked_by"?: { "window_id", "process", "pid", "reason" }, "members": 1, "notices"?: ["capture_partial"], "excluded"?: [{…}] }`。状態が変わるたび（前回送ったものと同じなら送らない）に配信する。**スコープ付きのリースがない初期状態の `none` は送らない**（接続直後にリースを保持していれば、`ready` の次に現在の状態を送る）。`none` は、保持していたスコープ付きのリースを失った・解放したときに 1 回送り（モニター表示に戻る）、`halted` の `reason` は §3.4 の `detail.reason`（`target_closed` / `target_replaced` / `target_unsupported` / `target_minimized` / `target_not_foreground` / `unrelated_same_process` / `related_cross_process` / `related_unverifiable` / `outside_target_group` / `target_obscured` / `capture_unavailable` / `capture_member_unavailable`）。`reselect: true` は「再開」ができず選び直しのみ（`target_closed` / `target_replaced` / `target_unsupported`）。`notices` の `capture_partial` は**停止ではなく通知**（所有関係を確かめられず表示から除外したウィンドウがある。`excluded` に分類つきで並べる。そのウィンドウが前面・フォーカス先・座標の最上位になったときに停止する）。ウィンドウのタイトルは載せない |
 | `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のときだけ省く（M3: `pending_approval` では承認待ちの要求者の `holder` を付け、`mine` は要求者が自分のビューアかどうか。承認待ちでは入力が許されない）。リースの変化は、承認待ちの開始（`pending_approval`）・許可（`held`）・拒否・タイムアウト・取り下げ（`idle`）のたびに全ビューアへ送る。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
 | `killswitch` | `{ "active": true }`。続けて 4503 で閉じる。以降の接続も 4503 で閉じられる |
-| `error` | `{ "code", "message" }`。入力の拒否と、`POST /viewer/lease/acquire` の承認待ちの失敗。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`、承認待ちの失敗の `approval_denied`（ホストが拒否）/ `approval_timeout`（60 秒の無応答）。承認待ちの失敗の `error` は、要求したビューアの接続だけに送り（他のビューアには送らない）、同時に `lease`（`idle`）が全ビューアへ届く。`internal` の `message` は詳細を含まない固定文。切断はしない |
+| `error` | `{ "code", "message" }`。入力の拒否と、`POST /viewer/lease/acquire` の承認待ちの失敗。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`、承認待ちの失敗の `approval_denied`（ホストが拒否）/ `approval_timeout`（60 秒の無応答）。承認待ちの失敗の `error` は、要求したビューアの接続だけに送り（他のビューアには送らない）、同時に `lease`（`idle`）が全ビューアへ届く。`internal` の `message` は詳細を含まない固定文。切断はしない。**`input_blocked`・`invalid_coordinates` には `reason`（§3.4 の `detail.reason`。`halted` の理由・`key_out_of_scope`・`clipboard_out_of_scope`・`target_halted` など。#157）を付ける** |
 
 **クライアント → サーバー**
 
 | type | 内容 |
 |------|------|
-| `config` | `{ "monitor": 0, "quality": 70, "fps": 10 }`（任意の項目のみ。省いた項目は今の値のまま。範囲外は 4400。`quality` は 1〜100、`fps` は 1〜30、`monitor` は `ready` の `monitors[]` の `index`） |
-| `input.mouse` | `{ "action": "move" \| "down" \| "up" \| "wheel", "x": 100, "y": 200, "button": "left" \| "right" \| "middle", "dx": 0, "dy": 1 }`。`x` / `y` は**ストリームの座標**（モニターの物理ピクセル。MCP の縮小座標ではない）。`wheel` は `dx` / `dy` を使い、**単位はノッチ**（数値。小数可。MCP `scroll` の `amount` と同じ単位。下記） |
+| `config` | `{ "monitor": 0, "source": "monitor" \| "group", "quality": 70, "fps": 10 }`（任意の項目のみ。省いた項目は今の値のまま。範囲外は 4400。`quality` は 1〜100、`fps` は 1〜30、`monitor` は `ready` の `monitors[]` の `index`）。**`source`（#157。実機未確認）**: `monitor` はモニター源（画面全体。スコープ付きのリースは保たれる。D1: モニター表示は権限として残る）、`group` はこのビューア自身が保持しているスコープ付きのリースの対象グループへ戻る。**リースを保持していない・他のビューアが保持しているときの `group` は `error`（`invalid_argument`）で、源は変わらない**。`monitor` を今と違う値にしても monitor 源になる。ビューアのツールバーの「モニター表示」「ウィンドウ表示（選択中の対象に戻る）」が使う |
+| `target.resume` | `{}`。スコープ付きのリースの「再開」（#157。FR-W13）。保持者だけ。サーバーが全条件を再検証し（`Control.ResumeTarget`）、通れば `target` が `active`、通らなければ理由を更新した `halted`（`error` は返さず `target` で返す）。**停止中でもこれだけは受け付ける**（Esc・クリック・文字・クリップボード書き込みなどの入力は受け付けない。自動では再開しない）。リースを保持していなければ `error`（`lease_required` など）、スコープ付きでなければ `error`（`invalid_argument`） |
+| `clipboard.read` | `{}`。**拒否専用**（#157。FR-W14。成功の応答も、クリップボードの内容を返す経路も無い）。そのビューアが**スコープ付きのリースの保持者**のとき（配信の源がモニターでも保持者）、`error`（`code: input_blocked`・`reason: clipboard_out_of_scope`）を返す。接続は閉じず、停止（`halted`）の理由・`blocked_by` も書き換えない（`target` は送らない）。Control も platform のクリップボードも呼ばない。保持者でないセッション（スコープ無し・他のビューアが保持・リース無し）では未知の `type` として扱い、閉じコード 4400（従来どおり）。`clipboard.read` 以外の未知の `type` も 4400 のまま |
+| `input.mouse` | `{ "action": "move" \| "down" \| "up" \| "wheel", "x": 100, "y": 200, "button": "left" \| "right" \| "middle", "dx": 0, "dy": 1 }`。`x` / `y` は**ストリームの座標**（モニターの物理ピクセル。MCP の縮小座標ではない。**グループ源では合成画像内の座標**）。**グループ源では、座標を読んだ画像の `ox` / `oy`（原点）と `w` / `h`（大きさ）を添える**（#157。4 つ揃えて送る。1〜3 個は 4400）。サーバーの今の画像の原点・大きさと違えば（メニュー・ダイアログの開閉の間に届いた古い座標）、**注入せず、停止にもせず**、`error`（`invalid_coordinates`、`reason: "stale_frame"`）を返す。クライアントは次の `config` とキーフレームで読み直す。省いたとき（モニター源・古いクライアント）は検査しない。ビューアは、グループ源ではボタンを押していないあいだの `move`（ホバー）を送らない（対象の外の座標の `move` は停止の理由になるため。`down` / `up` は座標を持つので、クリックは入る。ドラッグ中の `move` は送る）。`wheel` は `dx` / `dy` を使い、**単位はノッチ**（数値。小数可。MCP `scroll` の `amount` と同じ単位。下記） |
 | `input.key` | `{ "action": "down" \| "up", "code": "KeyA", "key": "a", "modifiers": ["ctrl"] }`。`code` はブラウザの `KeyboardEvent.code` で、サーバーがスキャンコードに変換する |
 | `input.text` | `{ "text": "こんにちは" }`。IME で確定した文字列を Unicode で送る |
 | `ping` | `{ "type": "ping" }` → サーバーが `{ "type": "pong" }` を返す |
@@ -491,13 +502,15 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | オフセット | 型 | 内容 |
 |-----------|----|------|
 | 0 | u8 | バージョン（1） |
-| 1 | u8 | フラグ（bit0: キーフレーム = 全面） |
-| 2 | u16 | モニター index |
+| 1 | u8 | フラグ（bit0: キーフレーム = 全面、bit1: グループ源。#157） |
+| 2 | u16 | モニター index（グループ源は `0xFFFF`） |
 | 4 | u32 | 連番（フレームごとに +1） |
 | 8 | u16 | フレームの幅（px） |
 | 10 | u16 | フレームの高さ（px） |
 | 12 | u16 | タイル数 N |
 | 14〜 | N 個 | `u16 x, u16 y, u16 w, u16 h, u32 jpeg_len, jpeg_len バイトの JPEG` |
+
+**グループ源のフレーム**（フラグの bit1。#157。実機未確認）: ヘッダー（14 バイト）の直後に `i32 originX, i32 originY`（合成画像の左上の物理座標。8 バイト）が入り、その後ろに N 個のタイルが続く。フレームの幅・高さは合成画像の大きさ（T と関連ウィンドウの外接矩形。物理ピクセル）で、画素は透明なキャンバスに合成した T と関連ウィンドウだけ（他のウィンドウ・デスクトップの画素を含まない）。クライアントの入力の座標は合成画像内の座標 p で、サーバーが `origin + p` を物理座標にして、含まれるモニターのストリーム座標へ直し、既存の入力経路へ渡す（画像の外の座標は 4400 ではなく `invalid_coordinates` の `error`）。画像の大きさか原点が変わるコマの前には `config`（§5.3）を送る。
 
 - タイルは変化した 64×64 の格子を矩形にまとめたもの。クライアントは `createImageBitmap` で復号し、`canvas` の `(x, y)` に描画する
 - キーフレームは接続直後、モニター変更時、一定間隔（既定 5 秒）に、フレーム全体を覆うタイル群として送る
@@ -533,10 +546,10 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | `/clients` | クライアント一覧。`/clients/{id}`: 詳細（有効化・承認モード・トークン）。FR-H04 | M1 |
 | `/apps` | 起動許可アプリの一覧・追加フォーム（`HX-Request` なら一覧のフラグメント）。`/apps/new`: 追加フォーム、`/apps/{id}/edit`: 編集フォーム（`HX-Request` ならフォームのフラグメント。フルページは一覧の該当行が編集フォーム。対象が無ければ 404）。**起動の方式**のパネル（現在の方式・「ブラックリスト方式に切り替える…」「ホワイトリスト方式に戻す」）と、許可リストの下の**拒否リスト**のセクション（`/apps/denied`: 項目の種別〔パス / 実行ファイル名〕・値・編集・削除・追加フォーム。`HX-Request` ならセクションのフラグメント。`/apps/denied/{id}/edit`: その行が編集フォームのセクション。対象が無ければ 404。#88）。FR-H12 | M1.5 |
 | `/approvals/{id}` | 承認ダイアログ（専用の Wails ウィンドウの中身。サイドバー・ヘッダーの無い簡素なレイアウト）。クライアント名・種別・要求の内容（`lease`: 「操作権（リース）の取得」）・残り時間（60 秒のカウントダウン）・許可 / 拒否のボタンだけを出し、秘密・パス・引数は出さない。`kind` は `lease` / `safety_check`（FR-G08）/ `judge_action`（FR-G12。M4）の 3 つで、見出しと要求の内容が違い（`data-approval-type` に種類）、`safety_check`・`judge_action` は `ApprovalRequest.Detail`（サービスが秘密・入力した文字列の本文・パス・引数を除いて渡す短い文。500 文字で切り、HTML エスケープして表示）と結果の説明も出す: `safety_check` は「クライアントの承認モードが『自動許可』でも省略されない。拒否・60 秒の無応答はタスクの失敗（`safety_check_denied`）」、`judge_action` は「拒否・無応答ならそのアクションは実行されず、タスクが失敗する」。`lease` は M3 のまま（`Detail` を持たず、結果の説明も出さない）。残り時間は HTMX が 1 秒ごとに `GET /approvals/{id}`（`HX-Request`）で再取得して `#approval-remaining` だけを差し替える（ボタンは差し替えない）。`id` が失効・解決済み・存在しない・`kind` が未知なら 410 `approval_timeout`（フルページは終了した旨の表示、HTMX の応答は `data-error-code` 付きのインラインアラート）。応答は `Cache-Control: no-store`。FR-H05 | M3 |
-| `/audit` | 監査ログ一覧（ホスト GUI だけ。リモートのルーターには無い）。日時（`from` / `to`。RFC 3339 のテキスト入力）・クライアント・種別・結果・イベント名で絞り込み、`ts` 降順の表（日時はホストのローカル時刻・クライアント名（スナップショット）・種別・イベント・結果バッジ（`ok` は ok、`denied` は warn、`error` は danger）・所要時間・サムネイルの有無）と「次へ」（`cursor`。前へは無い）。`HX-Request` なら `#audit-list` のフラグメント。`/audit/{id}`: 詳細（日時・種別・イベント・操作主体・クライアント名・セッション・リース・ツール・結果・エラーコード・所要時間・引数のキー・値の表・サムネイルの `<img src="/audit/{id}/thumbnail">`）。サイドバーの「監査ログ」。FR-AU05 | M3（#72） |
+| `/audit` | 監査ログ一覧（ホスト GUI だけ。リモートのルーターには無い）。日時（`from` / `to`。RFC 3339 のテキスト入力）・クライアント・種別・結果・イベント名で絞り込み、`ts` 降順の表（日時はホストのローカル時刻・クライアント名（スナップショット）・種別・イベント・結果バッジ（`ok` は ok、`denied` は warn、`error` は danger）・所要時間・サムネイルの有無）と「前へ／N ページ目／次へ」（`molecules.Pager`。`cursor` は前向きだけなので、前へは `back`（そこまでに通った 2 ページ目以降の先頭の `cursor`。繰り返しのクエリ）をたどって戻る。1 ページに収まる一覧には出さない。#167）。`HX-Request` なら `#audit-list` のフラグメント。`/audit/{id}`: 詳細（日時・種別・イベント・操作主体・クライアント名・セッション・リース・ツール・結果・エラーコード・所要時間・引数のキー・値の表・サムネイルの `<img src="/audit/{id}/thumbnail">`）。サイドバーの「監査ログ」。FR-AU05 | M3（#72） |
 | `/settings` | 設定。FR-S | M1〜 |
 | `/update` | 更新の確認・適用。FR-H09。現在の版・チャネル（正式版 / ナイトリー）・適用方法・最後の確認の時刻（未確認なら「未確認」）・新版（版・公開日時・リリースノートの要約・署名の検証結果）と、「今すぐ確認」（`POST /update/check`）・「更新する」（署名を検証できた新版があるときだけ。確認モーダル `GET /update/apply/confirm` を経て `POST /update/apply`）。サイドバーに「更新」。リリースノートは GitHub の Release 由来の外部文字列なので HTML エスケープして表示する（`<pre>`）。確認に失敗したとき（オフライン・非公開のリポジトリ・不正な応答）は、理由の短い文を出す（URL・応答の本文は出さない）。署名鍵が未設定のときは「署名鍵が未設定」と出し、「更新する」を出さない。`dev` ビルドは確認・適用のボタンを出さない | M3（#74） |
-| `/tasks` | タスク一覧（新しい順に 50 件。クエリ `cursor`（不透明な文字列。不正は 422 `invalid_argument`）で次のページ。HTMX の部分更新は `#task-list`、`hx-boost` は本文、それ以外はフルページ）。依頼元・指示の先頭 80 文字・状態・ステップ数 / 上限・開始・所要時間の表と詳細へのリンク。`/tasks/{id}`: 詳細（指示、状態、モデル、上限、`step_count`（= `fast_steps` + `openai_steps`）と内訳、`handoff_reason`（8 種の説明付き。無ければ出さない）、使用トークン、最終回答（`completed` のときは「モデルの申告であり、成否の確認は呼び出し側の責任」の注意書きを添える。FR-G13）、`error_code`（既知は説明付き）、作成・開始・終了の時刻、ステップの表（`step_no` 昇順の経路 `fast` / `openai`・アクションの要約・結果・引数（監査が伏せたもの）・`/audit/{audit_id}` へのリンク・サムネイルがあれば `/audit/{audit_id}/thumbnail`）。実行中・承認待ちは状態の行に中断ボタン）。無い `id` は 404 `not_found`。指示・最終回答・ステップの文字列は HTML エスケープし、入力した文字列の本文・要素の値は出さない（FR-G23）。FR-H10 | M4 |
+| `/tasks` | タスク一覧（新しい順に 50 件。クエリ `cursor`（不透明な文字列。不正は 422 `invalid_argument`）で次のページ、`back`（そこまでに通った 2 ページ目以降の先頭の `cursor`。繰り返しのクエリ。`cursor` なし・100 件超は 422）で「前へ」（`molecules.Pager` の「前へ／N ページ目／次へ」。#167）。HTMX の部分更新は `#task-list`、`hx-boost` は本文、それ以外はフルページ）。依頼元・指示の先頭 80 文字・状態・ステップ数 / 上限・開始・所要時間の表と詳細へのリンク。`/tasks/{id}`: 詳細（指示、状態、モデル、上限、`step_count`（= `fast_steps` + `openai_steps`）と内訳、`handoff_reason`（8 種の説明付き。無ければ出さない）、使用トークン、最終回答（`completed` のときは「モデルの申告であり、成否の確認は呼び出し側の責任」の注意書きを添える。FR-G13）、`error_code`（既知は説明付き）、作成・開始・終了の時刻、ステップの表（`step_no` 昇順の経路 `fast` / `openai`・アクションの要約・結果・引数（監査が伏せたもの）・`/audit/{audit_id}` へのリンク・サムネイルがあれば `/audit/{audit_id}/thumbnail`）。実行中・承認待ちは状態の行に中断ボタン）。無い `id` は 404 `not_found`。指示・最終回答・ステップの文字列は HTML エスケープし、入力した文字列の本文・要素の値は出さない（FR-G23）。FR-H10 | M4 |
 | `/agent` | エージェント設定（**接続方式の選択**、**ChatGPT のプランのカード**〔`#chatgpt-card`。状態・サインイン / 解除・使用量の上限の表示と対応・モデルの選択〕、有効化と同意、OpenAI API キー、モデル、上限、`keep_screenshots`、Judge のリスト、**高速パス**: 有効化と同意、TypeSafe API キー、モデル、最小確信度、最大ステップ、除外ラベル）。FR-H11 | M4 |
 | `/poll` | ホスト GUI の更新（OOB のフラグメント。§7.4） | M1 |
 | `/events` | SSE（§7.4）。ホスト GUI のレイアウトは購読しない | M1 |
@@ -564,7 +577,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | GET | `/apps/{id}/delete/confirm` | なし | 200 確認モーダル（フラグメント）。対象が無ければ 404 |
 | DELETE | `/apps/{id}` | なし | 200 一覧のフラグメント（モーダルを閉じる OOB とトーストを添える）。対象が無ければ 404。起動済みのプロセスには影響しない |
 | POST | `/apps/pick-file` | `form_id`（入力欄の `id` の元。`app-form-` で始まる値だけ受け付け、それ以外は `app-form-new` にする。HTMX が送る） | ネイティブのファイル選択ダイアログ（`.exe` のフィルター。メインウィンドウに対してモーダル）を開き、**選ばれたパスを入れた `exe_path` の入力欄**のフラグメントを 200 で返す（利用者は手入力と同じように編集できる）。キャンセルは 204（差し替えない）。ダイアログが閉じるまで応答を返さない。選択だけでは何も登録せず、保存は `POST /apps` / `PUT /apps/{id}` |
-| PUT | `/apps/mode` | `mode`\*（`allowlist` / `denylist`。定義外は 422 `invalid_argument`） | 200 「起動の方式」のパネル（`#launch-mode`）のフラグメント（拒否リストのセクションを OOB で、確認モーダルを閉じる OOB とトーストを添える）。変更があれば `settings.launch_mode.update` を監査する。`denylist` へ切り替えるフォームは確認モーダル（下）の確定ボタンだけが送り、`allowlist` へ戻すボタンは確認を挟まない。起動済みのプロセスには影響しない |
+| PUT | `/apps/mode` | `mode`\*（`allowlist` / `denylist`。定義外は 422 `invalid_argument`） | 200 「起動の方式」のパネル（`#launch-mode`）のフラグメント（拒否リストのセクションを OOB で、確認モーダルを閉じる OOB とトーストを添える）。変更があれば `settings.launch_mode.update` を監査する（値が変わらないときは監査しない）。監査の行は設定の書き込みのあとに同期で書き、書けなければ設定を元の方式へ戻して 503 `audit_unavailable`（アラートは「監査ログに書き込めないため、起動の方式は切り替えませんでした」の旨。#174。fail-closed）。戻す書き込みも失敗したときは 503 `audit_unavailable` に「監査ログに書き込めず、方式を元に戻すこともできませんでした。現在の方式を確認してください」のアラートを返し、方式のパネルと拒否リストのセクションを、保存された実際の方式で OOB に差し替える（「切り替えませんでした」とは言わない）。同じ画面からの並行する切り替えは直列に処理する（ロールバックが他の成功した切り替えを取り消さない）。`denylist` へ切り替えるフォームは確認モーダル（下）の確定ボタンだけが送り、`allowlist` へ戻すボタンは確認を挟まない。起動済みのプロセスには影響しない |
 | GET | `/apps/mode/confirm` | クエリ `mode=denylist` | 200 確認モーダル（フラグメント）。ブラックリスト方式にすると、拒否リストに載せたアプリ以外はリモートの AI が `path` を指定して何でも起動できること（`cmd.exe`・`powershell.exe` などのコマンドインタープリタも、拒否リストに載せない限り起動できること）、引数・作業ディレクトリは渡せないこと、いつでもホワイトリスト方式に戻せることを書く。確定ボタンが `PUT /apps/mode`（`mode=denylist`） |
 | GET | `/apps/denied` | なし | 200 拒否リストのセクション（フラグメント。編集のキャンセルが使う。`HX-Request` でなければフルページ） |
 | POST | `/apps/denied` | `value`\*（「パスまたは実行ファイル名」の 1 項目。`\` `/` `:` を含めばパス、含まなければ実行ファイル名として扱う） | 200 拒否リストのセクション（追加した行を含む。トーストを添える）。検証エラー（空・形の不正・重複）は 422（セクションを入力値とメッセージで再描画）。登録が 200 件に達していれば 409 `conflict`。`settings.launch_denylist.create` を監査する |
@@ -574,7 +587,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | DELETE | `/apps/denied/{id}` | なし | 200 拒否リストのセクション（モーダルを閉じる OOB とトーストを添える）。対象が無ければ 404。`settings.launch_denylist.delete` を監査する |
 
 - 一覧・編集の HTML は、ホスト所有者だけが見るため実行ファイルのパス・引数・作業ディレクトリを表示する（リモートには出さない）
-- 追加・変更・削除はすべて `actor_type = host`、`kind = settings` で監査する（`settings.launchable_app.create` / `.update` / `.delete`。FR-AU06）。選択ダイアログの操作は監査しない（登録されたときに記録する）。起動の方式の切り替えと拒否リストも同じ扱い（#88）: `settings.launch_mode.update`（`detail` は `{ "from", "to" }`。**方式が実際に変わったときだけ**記録する）、`settings.launch_denylist.create` / `.update` / `.delete`（`detail` は `{ "id", "kind", "value" }`。`.update` は変更前の `before_kind` / `before_value` も付く）
+- 追加・変更・削除はすべて `actor_type = host`、`kind = settings` で監査する（`settings.launchable_app.create` / `.update` / `.delete`。FR-AU06）。選択ダイアログの操作は監査しない（登録されたときに記録する）。起動の方式の切り替えと拒否リストも同じ扱い（#88）: `settings.launch_mode.update`（`detail` は `{ "from", "to" }`。**方式が実際に変わったときだけ**記録する。他と違い**同期で書き、書けなければ切り替えを戻して失敗を返す**〔fail-closed。#174〕）、`settings.launch_denylist.create` / `.update` / `.delete`（`detail` は `{ "id", "kind", "value" }`。`.update` は変更前の `before_kind` / `before_value` も付く）
 - 許可リストはホスト所有者だけが変えるため、`GET /poll` の対象に追加しない（一覧の更新は操作の応答のフラグメントで行う）
 - キルスイッチ中も登録・編集・削除はできる（止めるのはリモートからの起動。FR-H06）
 - 注意書き: 追加・編集のフォームに、`cmd.exe`・`powershell.exe` などコマンドインタープリタやスクリプトホストを登録すると任意コードの実行を許すことになる旨の注意を常時表示する（FR-H12、NFR-S20）。拒否リストのセクションには、拒否リストはブラックリスト方式のときだけ効くこと、ブラックリスト方式では拒否リストに載せたもの以外の（`cmd.exe`・`powershell.exe` などのインタープリタを含む）プログラムを AI が起動できること、実行ファイルを**名前を変えてコピーしたもの**は実行ファイル名の項目では検出できないことを常時表示する
@@ -596,7 +609,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | POST | `/approvals/{id}/deny` | なし | 同上（拒否。`Approval.Resolve(id, false)`。取得は `approval_denied`） |
 | GET | `/tasks/{id}/cancel/confirm` | なし | 200 中断の確認モーダル（フラグメント。確定のボタンが `POST /tasks/{id}/cancel` を送り、`#task-status-{id}` を `outerHTML` で差し替える）。無いタスクは 404 `not_found`、終了済みは 409 `conflict`（モーダルなし） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクの状態の 1 行（`[data-task-status]`。状態バッジ・ステップ数 / 上限・経過時間。中断できる状態なら中断ボタン）と、完了のトースト（OOB）。ダッシュボードの実行中タスクと詳細の先頭が同じ部品で、中断のボタンは確認モーダル（`GET /tasks/{id}/cancel/confirm`）を開き、確定のボタンが `#task-status-{id}` を `outerHTML` で差し替える（応答は `#modal-root` も OOB で空にする）。操作主体は `host` で、監査は `TaskAdmin.CancelByHost` が記録する。**終了済みなら現在の状態をそのまま返し**（冪等。トーストは「すでに終了しています」）、中断した（`cancelled`）ときは「タスクを中断しました。」、まだ終わっていないときは「タスクの中断を要求しました。」。無い `id` は 404 `not_found`（エラーのインラインアラート。確認モーダルを開いたままにしないよう、応答は `#modal-root` を空にする OOB も添える）。M4 |
-| PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`update.apply_mode`、`update.channel`（`stable` / `nightly`）、`log.level`、`autostart`（OS のスタートアップ登録） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
+| PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`update.apply_mode`、`update.channel`（`stable` / `nightly`）、`autostart`（OS のスタートアップ登録）。ログのレベル（NFR-O01）は設定項目ではなく、環境変数 `PUPPET_REMO_LOG_LEVEL` で指定する（受け付けない） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
 | PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック。文面は接続方式が `chatgpt` のときは ChatGPT のプランの使用量が使われる旨を含む。FR-G14）、`model`（接続方式 `openai_api_key` 用。FR-S11）、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`keep_screenshots`（1〜10。FR-S19）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。選んだ接続方式が使えない状態（`openai_api_key` で API キー未登録、`chatgpt` で未サインイン・認可切れなど）で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
 | PUT | `/agent/api-key` | `api_key`（伏せ字の入力） | 200 「登録済み」のフラグメント。**値は応答・ログ・監査に出さない**。資格情報マネージャーに保存し、保存に失敗したら 500 `internal` |
 | DELETE | `/agent/api-key` | なし | 200（資格情報を削除し、エージェントを無効にする。実行中のタスクは中断） |
@@ -614,7 +627,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | GET | `/agent/chatgpt/models` | なし | 200 モデルの選択肢のフラグメント（同じ Bearer で `GET https://api.openai.com/v1/models` を呼び、`visibility` が `list` のものの `slug`・`display_name`。サーバーの並び順のまま。FR-G26）。更新が必要なら先に更新する（FR-G29）。状態が `connected` でなければ 409 `conflict`。取得に失敗したら現在の値だけの選択肢とエラーのインラインアラート（本文・トークンは出さない） |
 | PUT | `/agent/chatgpt` | `model`（`GET /agent/chatgpt/models` の `slug`） | 200 カード。一覧に無い値は 422 `invalid_argument`（FR-G26）。`agent.chatgpt.model` を保存する（FR-S21） |
 | POST | `/agent/chatgpt/welcome/dismiss` | なし | 200（初回のサインイン後の確認モーダルを閉じる OOB。`agent.chatgpt.welcome_shown` を保存し、以後は出さない。FR-G28 (7)） |
-| GET | `/audit` | クエリ: `from`, `to`（RFC 3339）、`client_id`, `kind`, `result`, `q`（イベント名の部分一致）、`cursor`, `limit`（既定 50、最大 200） | 200 一覧フラグメント（`ts` 降順。`cursor` は最後の `id`）。**M3（#72）の実装**: `HX-Request`（履歴の復元を除く）は `#audit-list` のフラグメント、`HX-Boosted` とそれ以外（履歴の復元を含む）はフルページ。範囲外・結果なしは空の表示（200）。不正な値（RFC 3339 でない `from` / `to`・未知の `kind`（`auth` / `client` / `token` / `lease` / `tool` / `input` / `agent` / `killswitch` / `settings` / `update`）・未知の `result`（`ok` / `denied` / `error`）・数値でない・負の `limit` / `cursor`）は 422（同じフラグメントを項目別のメッセージ（`data-field-error`）付きで描き直し、読み出しはしない）。`limit` は 200 を超えると 200。`from` / `to` は RFC 3339 のテキスト入力で、URL にもそのまま出る（ブラウザの日時入力欄への変換・ホストのタイムゾーンの補完はしない）。「次へ」の URL は今の絞り込みと次の `cursor` を持つ |
+| GET | `/audit` | クエリ: `from`, `to`（RFC 3339）、`client_id`, `kind`, `result`, `q`（イベント名の部分一致）、`cursor`, `limit`（既定 50、最大 200） | 200 一覧フラグメント（`ts` 降順。`cursor` は最後の `id`）。**M3（#72）の実装**: `HX-Request`（履歴の復元を除く）は `#audit-list` のフラグメント、`HX-Boosted` とそれ以外（履歴の復元を含む）はフルページ。範囲外・結果なしは空の表示（200）。不正な値（RFC 3339 でない `from` / `to`・未知の `kind`（`auth` / `client` / `token` / `lease` / `tool` / `input` / `agent` / `killswitch` / `settings` / `update`）・未知の `result`（`ok` / `denied` / `error`）・数値でない・負の `limit` / `cursor`）は 422（同じフラグメントを項目別のメッセージ（`data-field-error`）付きで描き直し、読み出しはしない）。`limit` は 200 を超えると 200。`from` / `to` は RFC 3339 のテキスト入力で、URL にもそのまま出る（ブラウザの日時入力欄への変換・ホストのタイムゾーンの補完はしない）。ページ送りの URL は今の絞り込みと、移る先の `cursor`・`back` を持つ。`back` は `cursor` なしでは受け付けない（422 `invalid_argument`。100 件まで） |
 | GET | `/audit/{id}` | なし | 200 詳細のページ（`HX-Request` は `#main` の中身）。対象が無い・`id` が正の整数でないときは 404（`data-error-code="not_found"`）。引数は `AuditReader` が秘密を伏せた値だけを、キーの昇順で出す（HTML エスケープ。M3・#72） |
 | GET | `/audit/{id}/thumbnail` | なし | 200 `image/jpeg`（`audit_thumbnails.rel_path` を `thumbs/` 配下に限定して配信。パスの走査を拒否）。無ければ 404。**M3（#72）の実装**: `Cache-Control: no-store`・`X-Content-Type-Options: nosniff`。パスはユーザー入力ではなく DB の `rel_path` で、`ThumbStore` が `thumbs/` の外を指すパスを拒否したとき（`ErrInvalidArgument`）も画像は返さず 404（運用ログに警告）。サムネイルの無い行・ファイルの無い行・`id` が正の整数でない場合も 404。読み出しの失敗は 500 |
 | GET | `/update/apply/confirm` | なし | 200 確認モーダル（版を表示。確定のボタンが `POST /update/apply`）。署名を検証できた新版が無いときは 409（`data-error-code="conflict"`、モーダルなし） |
@@ -671,7 +684,7 @@ M1 の実装が本書の他の節と異なる点（段階の前倒しではな�
 |------|------|----------|
 | リモートルーターの提供物（§1） | `/mcp`、`/viewer`、`/ws/screen`、`/api/v1` | **`/mcp`・`GET /ws/screen`（M2。#61）・Web UI（`GET /`・`/viewer*`。M2。#62）・`GET /static/*`（M2。#62）**。それ以外のパスは 404。`/api/v1`（Huma）は M2 以降の別の段階 |
 | GUI ルーターのルート（§7.1〜§7.3） | 表のとおり | M1 にあるのは `GET /`・`/requests`・`/clients`・`/clients/{id}`・`/settings`・`/poll`・`/events`・`/killswitch`、確認モーダル（`/clients/{id}/delete/confirm`・`/clients/{id}/tokens/{token_id}/revoke/confirm`・`/killswitch/release/confirm`・`/lease/revoke/confirm`・`/tasks/{id}/cancel/confirm`）、`POST /requests/{id}/approve`・`/requests/{id}/deny`・`/clients/{id}/tokens`・`/killswitch/trigger`・`/killswitch/release`・`/lease/revoke`（M2）、`PATCH` / `DELETE /clients/{id}`、`DELETE /clients/{id}/tokens/{token_id}`、`PUT /settings`、`/static/*`、M1.5 の起動許可アプリ（`GET /apps`・`/apps/new`・`/apps/{id}/edit`・`/apps/{id}/delete/confirm`、`POST /apps`・`/apps/pick-file`、`PUT` / `DELETE /apps/{id}`）。起動の方式と拒否リスト（#88）: `PUT /apps/mode`・`GET /apps/mode/confirm`・`GET /apps/denied`・`POST /apps/denied`・`GET /apps/denied/{id}/edit`・`PUT /apps/denied/{id}`・`GET /apps/denied/{id}/delete/confirm`・`DELETE /apps/denied/{id}`（ホスト GUI のルーターだけ。リモートルーターには無い）。M3 の監査ログの閲覧（#72）: `GET /audit`・`/audit/{id}`・`/audit/{id}/thumbnail`（読み取りだけ。ホスト GUI のルーターだけ）。M3 の更新（#74）: `GET /update`・`/update/apply/confirm`、`POST /update/check`・`/update/apply`（ホスト GUI のルーターだけ）。M3・M4 で足したルート（`/approvals/*`・`/tasks*`・`/agent*`・`POST /lease/revoke`・`/clients/{id}/approval/reset`）と、強制剥奪・タスク中断の確認モーダル（`GET /lease/revoke/confirm`・`GET /tasks/{id}/cancel/confirm`。ホスト GUI のルーターだけ。リモートの `GET /viewer/lease/revoke/confirm` は §4.2）は、それぞれ表のとおり。確認モーダルの確定（GET 以外）が失敗したときは、応答にモーダルを閉じる OOB を添える（アラートが暗幕の背面に隠れないように。GET の確認モーダルの取得の失敗には添えない。開いている別のモーダルを閉じてしまうため） |
-| `PUT /settings` の項目（§7.3） | 14 項目 | `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目（M1）に、M2 で `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を足した 7 項目。M3 の #73 で `audit.thumbnails_enabled`・`audit.record_text`（チェックボックス。外れていると値が送られず、off として保存する）・`audit.retention_days`（1〜36500）・`audit.thumbs_max_bytes`（1〜2^53。単位はバイトのまま表示する）・`update.apply_mode`（`confirm` / `auto_idle`。#74 で `service.Updater` が読む）を足した 12 項目。#74 で `update.channel`（`stable` / `nightly`。既定 `stable`。未知の値は 422）を 1 項目足した（左の項目数も 1 つ増える）。`log.level` は未実装（未決）。検証エラーは 422 のフラグメントで項目別に出す（`audit.retention_days` と `audit.thumbs_max_bytes` の範囲は `Maintenance` の読み取りと同じ。範囲・単位は所有者の確認待ち）。保存済みの `audit.*` の数値が範囲外のときは、フォームは既定値を表示する（`Maintenance` が実際に使う値）。他は各段階で足す |
+| `PUT /settings` の項目（§7.3） | 13 項目 | `server.port`（1024〜65535）・`killswitch.hotkey`・`screenshot.max_dimension`（256〜4096）・`lease.idle_timeout_sec`（30〜3600）・`autostart` の 5 項目（M1）に、M2 で `viewer.default_quality`（1〜100）・`viewer.default_fps`（1〜30）を足した 7 項目。M3 の #73 で `audit.thumbnails_enabled`・`audit.record_text`（チェックボックス。外れていると値が送られず、off として保存する）・`audit.retention_days`（1〜36500）・`audit.thumbs_max_bytes`（1〜2^53。単位はバイトのまま表示する）・`update.apply_mode`（`confirm` / `auto_idle`。#74 で `service.Updater` が読む）を足した 12 項目。#74 で `update.channel`（`stable` / `nightly`。既定 `stable`。未知の値は 422）を 1 項目足した（左の項目数も 1 つ増える）。ログのレベルは設定項目ではなく環境変数 `PUPPET_REMO_LOG_LEVEL` だけで指定する（`log.level` という設定項目は無い。NFR-O01）。検証エラーは 422 のフラグメントで項目別に出す（`audit.retention_days` と `audit.thumbs_max_bytes` の範囲は `Maintenance` の読み取りと同じ。範囲・単位は所有者の確認待ち）。保存済みの `audit.*` の数値が範囲外のときは、フォームは既定値を表示する（`Maintenance` が実際に使う値）。他は各段階で足す |
 | ホスト GUI の更新（§7.4） | SSE | ホスト GUI は **`GET /poll`**（3 秒ごと。表示中の領域が持つ隠し入力 `rev_*` の版が変わったときだけ OOB で差し替える。`toast` は `Bus` の購読を `gui.Handler` が待ち行列にし、`/poll` が取り出す）で更新する。`GET /events`（SSE）は残しているが、GUI のレイアウトは購読しない。`htmx-ext-sse` は `dist/js` に同梱するが読み込まない（未使用） |
 | GUI のエラー応答（§2） | `/api/v1`・MCP は problem+json / `isError`。HTML の経路は同じ `code` と HTTP ステータスのフラグメント | GUI の対象なし（クライアント・トークン・起動許可アプリ・拒否リスト）は 404、`data-error-code="not_found"`（§2 のコード表に無い、GUI 内のコード）。`invalid_argument`（入力の不備）は 422 のフラグメント（§2 の表の 400 ではなく、フォーム再描画の 422）。想定外は 500 `internal`（詳細はログにだけ出す） |
 | 接続要求の許可（§7.2） | `pending` なら登録して `approved` | 期限切れの `pending` は一覧に出ず、許可もできない（409 `conflict`）。同じ `stable_node_id` の登録済みクライアントがあるとき（ログイン名の変更後の再許可）は、古いクライアントを置き換える（トークンは CASCADE で削除、セッションは切断、リースは解放）。このとき監査に `client.replace` を記録する。古いクライアントの切断（ツール呼び出しの完了待ち）は、他の許可・GUI の操作を止めないよう、許可の直列化のロックの外で行う。同じデバイスの `pending` を 5 秒以内に更新済みなら、DB に書かない |
@@ -785,3 +798,9 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.49 | 2026-11-03 | §7.1 の `/overlay`（操作中オーバーレイの中身のページ）を削除し、§7.5 のオーバーレイの行を、モニターごとの枠 4 本と札のネイティブウィンドウ（真ん中は覆わない）に改めた。§3.3 の `launch_app` の `window` は、起動したアプリのウィンドウだけを返す（前面の別アプリのウィンドウは返さない） | #86・#85 |
 | 1.50 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: §1 のホスト専用の操作、§2 に `app_denied`（403）と `invalid_argument`・`app_not_found`・`launch_failed` の `launch_app` での扱い、§3.1 の `instructions`、§3.3 のツール表・`list_launchable_apps`（`mode`）・`launch_app`（`path`。`app_id` を省いた結果・検査の順序・エラー・監査の `detail`〔`path` / `launch_mode`〕・スキーマ違反と形の不備の扱い）、§3.4、§7.1 の `/apps`（起動の方式のパネルと拒否リスト）、§7.2 の `PUT /apps/mode`・`/apps/denied*`（リモートルーターには無い）と監査（`settings.launch_mode.update`・`settings.launch_denylist.*`）、§7.5 のルート、§8.2 の実機検証事項 | #88 |
 | 1.51 | 2026-11-08 | §2 の `input_blocked` と §3.4 に、スコープ付きのリース（FR-L09〜L14）の `detail.reason`（`target_closed` / `target_replaced` / `target_unsupported` / `target_minimized` / `target_not_foreground` / `unrelated_same_process` / `related_cross_process` / `related_unverifiable` / `outside_target_group` / `target_obscured` / `capture_unavailable` / `capture_member_unavailable` / `target_halted` / `key_out_of_scope` / `clipboard_out_of_scope`）と `detail.blocked_by` の表を追加。入口（HTTP / WebSocket / MCP）の追加は #157・#158 | #156（A-1） |
+| 1.52 | 2026-11-09 | §3.3 の `run_task` に `window_id`（#158。開始時の選択検査・失敗・中断・高速パスのスキップ。実機未確認）、`get_task` に `target` を追加。§3.4 の `reason` に `target_moved`・`denied_process` を追加 | #158 |
+| 1.53 | 2026-11-09 | ビューアのウィンドウ選択（#157）: §4.2 に `GET /viewer/windows`・`POST /viewer/target`・`POST /viewer/target/release`、§5.3 に `ready` / `config` の `source`・`origin`、サーバー → クライアントの `target`、クライアント → サーバーの `target.resume`、`error` の `reason`、`config` の `source`（モニター表示・ウィンドウ表示の切り替え）、`input.mouse` の `ox`・`oy`・`w`・`h`（`stale_frame`）、§5.4 にグループ源のフレーム（フラグ bit1・モニター index `0xFFFF`・原点 `i32` ×2）。実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10） | #157 |
+| 1.54 | 2026-11-09 | §5.3 に WebSocket の `clipboard.read`（拒否専用。スコープ付きのリースの保持者に `input_blocked` / `clipboard_out_of_scope` を返し、接続は維持。保持者でないセッションと他の未知の `type` は 4400 のまま）を追加（#157）。 |
+| 1.55 | 2026-11-14 | `launch_app` の監査の `detail` に `resolved_path` / `resolve_failed`（ブラックリスト方式の `path` 指定の起動。#173）。`PUT /apps/mode` を fail-closed に: 監査の行を書けなければ切り替えを戻して 503 `audit_unavailable`（#174） | #173・#174 |
+| 1.56 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。本文の製品名だけを差し替え、ヘッダー `X-Puppet-Remo`・MCP のサーバー名・サブプロトコル名・エラー型の URN・資格情報のターゲット名は変えない | #188 |
+| 1.57 | 2026-11-23 | §7.3 の `PUT /settings` から `log.level` を外し、ログのレベルは環境変数 `PUPPET_REMO_LOG_LEVEL` だけで指定すると明記（実装に合わせた。§7.5 の項目数も 14 → 13 に直した） | #230 |

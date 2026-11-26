@@ -64,7 +64,7 @@
 | `task package` | NSIS インストーラを作る → `bin/puppet-remo-amd64-installer.exe`（`makensis` が要る。版は `VERSION` ファイル。`RELEASE_VERSION=` / `APP_VERSION=` で上書き） |
 | `task dev` | `wails3 dev`（Windows）。別ターミナルで `task templ:watch` を動かす |
 | `task tidy` | `go mod tidy` |
-| `task ci` | CI と同じ検査を一通り実行する（下の「CI/CD」） |
+| `task ci` | CI の主な検査を一通り実行する（CI と違う点は下の「CI/CD」） |
 
 Linux / macOS では、Windows 専用のコード（`//go:build windows`）を除いてビルド・テストできる。実機でしか確かめられない項目は [Windows 実機スモーク手順](../operations/smoke-windows.md) にまとめている。
 
@@ -101,7 +101,7 @@ GitHub Actions。すべてのジョブは、GitHub のランナー（`ubuntu-lat
 | `go (GOOS=windows build/vet)` | `GOOS=windows GOARCH=amd64` の `go build`・`go vet`・import 規則 |
 | `frontend` | templ（`go.mod` の版）の導入 → `templ generate` の差分チェック → `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p .` → `go build -tags production ./...`（Linux と `GOOS=windows`）→ `go test -tags production ./static/...` |
 | `e2e`（#64） | `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p e2e` → `bunx playwright install --with-deps chromium`（`PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`）→ Lit のテスト（`bun run test`）→ `go build -tags e2e ./...` → `go vet -tags e2e ./...` → `go test -race -tags e2e`（テスト専用サーバーのテスト）→ Playwright の E2E（`bun run e2e`）。templ は再生成しない（コミット済みの `_templ.go` を使う） |
-| `lint` | golangci-lint v2.15.0（ホスト OS と `GOOS=windows`、`-tags e2e`） |
+| `lint` | golangci-lint v2.15.0（ホスト OS・`GOOS=windows`・`-tags e2e` の 3 回） |
 | `release scripts` | 配信スクリプトのテスト（`scripts/ci/test-release-scripts.sh`）と `actionlint` |
 | `installer (build only)` | インストーラをビルドだけして（公開しない）、ランナーでの道具（task・wails3・makensis・gh）の導入を確かめる |
 
@@ -109,9 +109,25 @@ GitHub Actions。すべてのジョブは、GitHub のランナー（`ubuntu-lat
 
 ### CI と同じ検査を手元で走らせる
 
-`task ci` は、次を順に実行する。CI の `go test -race` の代わりに `go test`（`task test`）を走らせる点が CI と違う。
+`task ci` は、次を順に実行する。CI の主な検査を一通り走らせるが、CI と完全に同じではない（下の「`task ci` が実行しない CI の検査」）。
 
 `fmt:check` → `templ:check` → `frontend:build` → `frontend:typecheck` → `frontend:typecheck:e2e` → `build:production` → `test:production` → `build` → `vet` → `build:windows` → `vet:windows` → `check:imports` → `lint` → `test` → `frontend:test` → `test:e2e` → `e2e`
+
+#### `task ci` が実行しない CI の検査
+
+次は CI にあって `task ci` に無い、または CI と手元で内容が違う。手元で足したいときは、右の列の方法で個別に走らせる。
+
+| CI の検査 | `task ci` との違い | 手元で走らせる方法 |
+|-----------|--------------------|--------------------|
+| `go (linux)` ジョブの `go test -race ./...` | `task ci` は `-race` なしの `go test ./...`（`task test`）を走らせる | `task test:race`（cgo が要る） |
+| `frontend` ジョブの `go build -tags production ./...`（`GOOS=windows GOARCH=amd64`） | `task ci` の `build:production` はホスト OS だけ | `GOOS=windows GOARCH=amd64 task build:production` |
+| `go (GOOS=windows build/vet)` ジョブの `scripts/check-imports.sh`（`GOOS=windows`） | `task ci` の `check:imports` はホスト OS だけ | `GOOS=windows GOARCH=amd64 task check:imports` |
+| `e2e` ジョブの `go test -race -tags e2e -run 'E2E\|Loopback' ./internal/app/ ./internal/tailnet/` | `task test:e2e` は `-race` も `-run` も付けず、対象に `./internal/app/...`・`./internal/tailnet/...` のほか `./cmd/...` を含む（範囲は CI より広い。`-race` の検査は無い） | `go test -race -tags e2e -run 'E2E\|Loopback' ./internal/app/ ./internal/tailnet/` |
+| `e2e` ジョブの `bunx playwright install --with-deps chromium` | `task frontend:browsers` は `--with-deps` なし・sudo なし（システムのライブラリは手元に先に入れておく） | — |
+| `release scripts` ジョブ（`scripts/ci/test-release-scripts.sh`・`actionlint`） | 対応するタスクが無い | `./scripts/ci/test-release-scripts.sh`。`actionlint` は `go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12` で入れて、リポジトリのルートで `actionlint` |
+| `installer (build only)` ジョブ | `task ci` は呼ばない（`makensis`・`wails3` が要る） | `task package`（[配信の運用](../operations/release.md)） |
+
+`lint` ジョブの `-tags e2e` の検査は、`task lint`（したがって `task ci`）に含まれる。
 
 ### Lit のテストと Playwright の E2E を手元で走らせる
 
@@ -134,7 +150,7 @@ task e2e                 # Playwright の E2E（static/dist のビルドと Chro
 golangci-lint v2。設定は `.golangci.yml`。
 
 - `default: standard`（errcheck・govet・ineffassign・staticcheck・unused）に、`misspell` と `unconvert` を足している。
-- `task lint` は `golangci-lint run ./...` を、ホスト OS と `GOOS=windows GOARCH=amd64` の両方で実行する。CI の `lint` ジョブも同じ 2 回を実行する。
+- `task lint` は `golangci-lint run ./...` をホスト OS と `GOOS=windows GOARCH=amd64` で、さらに `golangci-lint run --build-tags e2e ./...`（`//go:build e2e` のテスト専用サーバーの検査）を実行する。CI の `lint` ジョブも同じ 3 回を実行する。
 - CI の版は v2.15.0（`ci.yml` の `golangci-lint-action` に固定）。手元の版が違うと結果が食い違うことがあるので、そろえる。
 - Go 以外のフロントエンド（TypeScript）の検査は、型検査（`task frontend:typecheck`）だけで、ESLint・Biome は入れていない。
 
@@ -190,3 +206,5 @@ OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義�
 | 1.1 | 2026-11-01 | フロントエンドの型検査の実行条件に `static/src/*.ts`（`static/src` 直下）を追加 | レビュー指摘（`**/` は直下に一致しない） |
 | 1.2 | 2026-11-02 | Lit のテストと Playwright の E2E の実行手順（`task frontend:test`・`task e2e` など）、`e2e` ジョブ、Chromium の導入（`PLAYWRIGHT_BROWSERS_PATH`・`--with-deps` なし・sudo なし）、`lint` ジョブの `-tags e2e`、`task ci` の項目を追記 | #64（オーナーの決定） |
 | 1.3 | 2026-11-02 | CI/CD の実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。`e2e` ジョブの Chromium は `--with-deps` 付き | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
+| 1.4 | 2026-11-23 | `task lint` に `-tags e2e` の検査を足し、Lint 節を CI の `lint` ジョブと同じ 3 回に直した | #236 |
+| 1.5 | 2026-11-23 | 「CI と同じ検査を手元で走らせる」に、`task ci` が実行しない CI の検査（`-race`・Windows の本番ビルドと import 規則・e2e の Go のテストの範囲・配信スクリプトのテストと `actionlint`・installer）を追記し、`task ci` を「CI と同じ」と書いた表現を改めた | #237 |

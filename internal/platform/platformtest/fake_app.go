@@ -84,6 +84,16 @@ func NewFakeApp(windows *FakeWindows, input *FakeInput, clipboard *FakeClipboard
 	return a
 }
 
+// Reset は偽アプリを初期状態（T だけが前面。メニュー・ダイアログなし。保存・文書・選択を消し、OwnerlessMenu・DialogCrossProcess を false）に戻す。
+// windows の T 以外のウィンドウも消えるので、呼び出し側が必要なら足し直す（E2E のテスト間の初期化）。
+func (a *FakeApp) Reset() {
+	a.OwnerlessMenu, a.DialogCrossProcess = false, false
+	a.mu.Lock()
+	a.menu, a.dialog, a.filename, a.document, a.selected, a.saved = "", false, "", "", false, nil
+	a.mu.Unlock()
+	a.windows.SetWindows(a.MainWindow())
+}
+
 // MainWindow は T の事実。
 func (a *FakeApp) MainWindow() domain.WindowInfo {
 	return domain.WindowInfo{
@@ -168,11 +178,45 @@ func (a *FakeApp) Key(ctx context.Context, k domain.KeyCombo) error {
 	if len(k.Mods) != 0 {
 		return nil
 	}
-	fg, err := a.windows.foreground()
-	if err != nil {
+	a.pressKey(k.Key)
+	return nil
+}
+
+// Button は Web UI の down / up。ボタンを離したとき、カーソルの位置へのクリックとして配る（MCP の Click と同じ効果）。
+func (a *FakeApp) Button(ctx context.Context, b domain.Button, act domain.ButtonAction) error {
+	if err := a.FakeInput.Button(ctx, b, act); err != nil {
+		return err
+	}
+	if act == domain.ButtonActionUp {
+		a.click(b, a.cursorNow())
+	}
+	return nil
+}
+
+// KeyEvent は Web UI の down / up。修飾キーのない Enter・Escape の down を、Key と同じに配る。
+func (a *FakeApp) KeyEvent(ctx context.Context, e domain.KeyEvent) error {
+	if err := a.FakeInput.KeyEvent(ctx, e); err != nil {
+		return err
+	}
+	if e.Action != domain.KeyDown || len(e.Mods) != 0 {
 		return nil
 	}
-	switch k.Key {
+	switch e.Code {
+	case "Enter":
+		a.pressKey("enter")
+	case "Escape":
+		a.pressKey("escape")
+	}
+	return nil
+}
+
+// pressKey は修飾キーのない key（enter・escape）を前面のウィンドウに配る。
+func (a *FakeApp) pressKey(key string) {
+	fg, err := a.windows.foreground()
+	if err != nil {
+		return
+	}
+	switch key {
 	case "enter":
 		if fg.ID == FakeAppDialogID {
 			a.closeDialog(true)
@@ -185,7 +229,6 @@ func (a *FakeApp) Key(ctx context.Context, k domain.KeyCombo) error {
 			a.closeDialog(false)
 		}
 	}
-	return nil
 }
 
 // click は p への b のクリックを、p の最上位のウィンドウに配る。

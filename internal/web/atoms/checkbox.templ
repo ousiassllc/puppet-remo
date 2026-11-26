@@ -1,6 +1,22 @@
 package atoms
 
-// Checkbox はチェックボックス（チェックしたときだけ値 "on" が送られる）。
+// CheckboxProps はチェックボックスの引数。
+type CheckboxProps struct {
+	ID      string
+	Name    string
+	Checked bool
+	Invalid bool
+	Attrs   Attrs
+}
+
+// Checkbox はチェックボックス（チェックしたときだけ値 "on" が送られる）。エラーを持たない欄用。
+// エラー文を結ぶ欄（同意など）は CheckboxWith で Invalid を渡す。
 templ Checkbox(id, name string, checked bool) {
-	<input id={ id } name={ name } type="checkbox" checked?={ checked }/>
+	@CheckboxWith(CheckboxProps{ID: id, Name: name, Checked: checked})
+}
+
+// CheckboxWith はチェックボックス。Invalid のとき aria-invalid を出す。
+// WithDescribedBy で伝えられたエラー文の id を、ID が一致するときだけ aria-describedby で指す。
+templ CheckboxWith(p CheckboxProps) {
+	<input id={ p.ID } name={ p.Name } type="checkbox" checked?={ p.Checked } aria-invalid?={ p.Invalid } { describedAttrs(ctx, p.ID, p.Attrs)... }/>
 }

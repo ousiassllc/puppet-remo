@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/service"
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
 )
 
@@ -16,7 +17,7 @@ func TestAppsPageShowsAllowlistModeByDefault(t *testing.T) {
 	contains(t, res, `id="launch-mode"`, `data-launch-mode="allowlist"`, `data-mode-note="allowlist"`, "ホワイトリスト方式（既定）",
 		"ブラックリスト方式に切り替える", `hx-get="/apps/mode/confirm?mode=denylist"`,
 		// 拒否リストは、ホワイトリストでは使われない旨を添えて常に見える。
-		`id="denied-section"`, `data-denied-active="false"`, "data-denied-inactive", `data-empty="denied"`, "登録 0 / 200 件",
+		`id="denied-section"`, `data-denied-active="false"`, "data-denied-inactive", `data-empty="denied"`, `登録 <span class="font-mono">0 / 200</span> 件`,
 		`id="denied-form-new"`, `hx-post="/apps/denied"`, `name="value"`)
 	lacks(t, res, `data-mode-note="denylist"`, "ホワイトリスト方式に戻す")
 }
@@ -32,7 +33,7 @@ func TestAppsPageShowsDenylistModeAndEntries(t *testing.T) {
 	status(t, res, http.StatusOK)
 	contains(t, res, `data-launch-mode="denylist"`, `data-mode-note="denylist"`, "ホワイトリスト方式に戻す", `hx-put="/apps/mode"`,
 		`data-denied-active="true"`, `data-denied="d1"`, "cmd.exe", "実行ファイル名", `data-denied="d2"`, `C:\Windows\System32\powershell.exe`, "パス",
-		`data-denied-count="2"`, "登録 2 / 200 件", `hx-get="/apps/denied/d1/edit"`, `hx-get="/apps/denied/d2/delete/confirm"`)
+		`data-denied-count="2"`, `登録 <span class="font-mono">2 / 200</span> 件`, `hx-get="/apps/denied/d1/edit"`, `hx-get="/apps/denied/d2/delete/confirm"`)
 	lacks(t, res, "data-denied-inactive", "ブラックリスト方式に切り替える")
 }
 
@@ -73,6 +74,34 @@ func TestSetLaunchModeRejectsUnknownValues(t *testing.T) {
 	if len(r.f.Apps.ModeSets) != 0 {
 		t.Errorf("an unknown mode was applied: %v", r.f.Apps.ModeSets)
 	}
+}
+
+// 監査に書けなくて切り替えが戻された（audit_unavailable）ときは、503 のアラートを返し、方式は変わらない（#174）。
+func TestSetLaunchModeAuditFailureIs503AndKeepsTheMode(t *testing.T) {
+	r := newRig(t, func(f *guitest.Fakes) { f.Apps.WriteErr = domain.ErrAuditUnavailable })
+	res := r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	contains(t, res, `data-error-code="audit_unavailable"`)
+	if got, _ := r.f.Apps.LaunchMode(context.Background()); got != domain.LaunchModeAllowlist {
+		t.Errorf("mode = %q, want allowlist (unchanged)", got)
+	}
+}
+
+// 監査に書けず、元に戻す書き込みも失敗したときは、「切り替えていない」とは言わず、保存された実際の方式のパネルを OOB で添える（#174）。
+func TestSetLaunchModeRollbackFailureShowsTheActualMode(t *testing.T) {
+	failure := domain.ErrAuditUnavailable.WithDetail(service.DetailLaunchModeRestored, false)
+	r := newRig(t, func(f *guitest.Fakes) { f.Apps.ModeSwitchedThenErr = failure })
+	res := r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	contains(t, res, `data-error-code="audit_unavailable"`, "元に戻すこともできませんでした",
+		// 方式のパネルは、実際の方式（denylist のまま）で OOB に差し替える。
+		`id="launch-mode"`, `data-launch-mode="denylist"`, `hx-swap-oob="true"`, `data-denied-active="true"`)
+	lacks(t, res, "切り替えませんでした")
+	// ロールバックできた失敗は、方式のパネルを差し替えない（方式は変わっていない）。
+	r = newRig(t, func(f *guitest.Fakes) { f.Apps.WriteErr = domain.ErrAuditUnavailable })
+	res = r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
+	status(t, res, http.StatusServiceUnavailable)
+	lacks(t, res, `id="launch-mode"`, "元に戻すこともできませんでした")
 }
 
 func TestDeniedCreateUpdateDelete(t *testing.T) {
@@ -136,7 +165,7 @@ func TestDeniedFullIs409AndUnknownIs404(t *testing.T) {
 	})
 	res := r.post("/apps/denied", url.Values{"value": {"one-more.exe"}}, hx...)
 	status(t, res, http.StatusConflict)
-	contains(t, res, "200 件まで")
+	contains(t, res, `data-error-code="conflict"`)
 	for _, target := range []string{"/apps/denied/nope/edit", "/apps/denied/nope/delete/confirm"} {
 		status(t, r.get(target, hx...), http.StatusNotFound)
 	}

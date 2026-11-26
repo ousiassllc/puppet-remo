@@ -19,6 +19,7 @@ import (
 
 // ViewerOps は操作権を持つ間だけ出す、クリップボードとショートカット送信（FR-W06・W07）。
 // 持っていないときは中身を描画しない（状態駆動）。#viewer-ops はリースパネルの応答に OOB で添えて更新する。
+// クリップボード・ショートカットは題付きの Card（部品）なので 24（--gap-grid-lg。space-y-6）。空のときは empty:hidden で、ViewerRoot の gap に枠の分が入らないようにする。
 func ViewerOps(v view.ViewerOps) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -40,7 +41,7 @@ func ViewerOps(v view.ViewerOps) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"viewer-ops\" class=\"space-y-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"viewer-ops\" class=\"space-y-6 empty:hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -78,7 +79,7 @@ func ViewerOpsOOB(v view.ViewerOps) templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div id=\"viewer-ops\" class=\"space-y-4\" hx-swap-oob=\"true\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div id=\"viewer-ops\" class=\"space-y-6 empty:hidden\" hx-swap-oob=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -116,7 +117,7 @@ func viewerOpsBody(v view.ViewerOps) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if v.Enabled {
-			templ_7745c5c3_Err = ClipboardPanel().Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ClipboardPanel(v.Scoped).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -135,7 +136,7 @@ func viewerOpsBody(v view.ViewerOps) templ.Component {
 
 // ClipboardPanel はクリップボードの手動送受信（FR-W07）。HTTP で配信するため navigator.clipboard は使わない。
 // 送信は専用の入力欄（貼り付けは入力欄の標準の貼り付け）から、取得は表示欄に出して利用者が手動でコピーする。
-func ClipboardPanel() templ.Component {
+func ClipboardPanel(scoped bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -172,7 +173,7 @@ func ClipboardPanel() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"space-y-6\"><form class=\"space-y-4\" novalidate hx-post=\"/viewer/clipboard/send\" hx-target=\"#clipboard-status\" hx-swap=\"innerHTML\" hx-disabled-elt=\"find button[type=submit]\"><div class=\"space-y-2\"><label for=\"clipboard-text\" class=\"block text-sm text-ink\">ホストへ送るテキスト</label>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"space-y-6\"><form class=\"space-y-4\" novalidate hx-post=\"/viewer/clipboard/send\" hx-target=\"#clipboard-status\" hx-swap=\"innerHTML\" hx-disabled-elt=\"find button[type=submit]\"><div><label for=\"clipboard-text\" class=\"mb-(--gap-label) block text-sm text-ink\">ホストへ送るテキスト</label>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -188,17 +189,32 @@ func ClipboardPanel() templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</form><div class=\"space-y-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "ホストのクリップボードを取得", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
-				"hx-post": "/viewer/clipboard/fetch", "hx-target": "#clipboard-result", "hx-swap": "innerHTML", "hx-disabled-elt": "this",
-			}}).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
+			if scoped {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"text-xs text-mute\" data-clipboard-write-only>ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"space-y-2\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: "ホストのクリップボードを取得", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+					"hx-post": "/viewer/clipboard/fetch", "hx-target": "#clipboard-result", "hx-swap": "innerHTML", "hx-disabled-elt": "this",
+				}}).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div id=\"clipboard-result\"></div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div id=\"clipboard-result\"></div></div><div id=\"clipboard-status\" role=\"status\" aria-live=\"polite\" class=\"text-sm text-ink\"></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div id=\"clipboard-status\" role=\"status\" aria-live=\"polite\" class=\"text-sm text-ink\"></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -208,7 +224,7 @@ func ClipboardPanel() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -238,20 +254,20 @@ func ClipboardSent(chars int) templ.Component {
 			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<span data-clipboard-sent>ホストのクリップボードへ送信しました（")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<span data-clipboard-sent>ホストのクリップボードへ送信しました（<span class=\"font-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(chars))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_ops.templ`, Line: 68, Col: 105}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_ops.templ`, Line: 73, Col: 129}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " 文字）。</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</span> 文字）。</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -281,7 +297,7 @@ func ClipboardFetched(text string) templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<label for=\"clipboard-fetched\" class=\"mb-2 block text-sm text-ink\">ホストのクリップボード（選択してコピーしてください）</label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<label for=\"clipboard-fetched\" class=\"mb-(--gap-label) block text-sm text-ink\">ホストのクリップボード（選択してコピーしてください）</label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -294,6 +310,9 @@ func ClipboardFetched(text string) templ.Component {
 }
 
 func keyAttrs(k view.KeyMenuItem) atoms.Attrs {
+	if k.Disabled {
+		return atoms.Attrs{"disabled": true, "aria-disabled": "true", "data-key-disabled": true}
+	}
 	vals, err := json.Marshal(map[string]string{"keys": k.Keys})
 	if err != nil { // map[string]string は常に変換できる
 		panic(err)
@@ -325,7 +344,7 @@ func KeyMenu(items []view.KeyMenuItem) templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<section id=\"key-menu\" aria-label=\"ショートカットの送信\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<section id=\"key-menu\" aria-label=\"ショートカットの送信\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -341,17 +360,46 @@ func KeyMenu(items []view.KeyMenuItem) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<p class=\"mb-2 text-xs text-mute\">ブラウザが先に処理するキー操作を、ホストへ送ります。</p><div class=\"flex flex-wrap gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<p class=\"mb-2 text-xs text-mute\">ブラウザが先に処理するキー操作を、ホストへ送ります。</p><div class=\"flex flex-wrap gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, k := range items {
-				templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)}).Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
+			for i, k := range items {
+				if k.Disabled {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " ")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+						if !templ_7745c5c3_IsBuffer {
+							defer func() {
+								templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+								if templ_7745c5c3_Err == nil {
+									templ_7745c5c3_Err = templ_7745c5c3_BufErr
+								}
+							}()
+						}
+						ctx = templ.InitializeContext(ctx)
+						templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)}).Render(ctx, templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						return nil
+					})
+					templ_7745c5c3_Err = atoms.Tooltip("key-tip-"+strconv.Itoa(i), "ウィンドウを選んだ操作中は使えません").Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = atoms.Button(atoms.ButtonProps{Label: k.Label, Small: true, Variant: atoms.ButtonSecondary, Attrs: keyAttrs(k)}).Render(ctx, templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div id=\"keys-status\" role=\"status\" aria-live=\"polite\" class=\"mt-2 text-sm text-ink\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</div><div id=\"keys-status\" role=\"status\" aria-live=\"polite\" class=\"mt-2 text-sm text-ink\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -361,7 +409,7 @@ func KeyMenu(items []view.KeyMenuItem) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -386,25 +434,25 @@ func KeysSent(label string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var12 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var12 == nil {
+			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<span data-keys-sent>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<span data-keys-sent><code>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		var templ_7745c5c3_Var13 string
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_ops.templ`, Line: 104, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_ops.templ`, Line: 119, Col: 35}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " を送信しました。</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</code> を送信しました。</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

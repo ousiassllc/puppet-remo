@@ -12,7 +12,7 @@ import (
 // パス・引数・作業ディレクトリは、ホスト所有者だけが見る GUI に出す（リモートには出さない。FR-H12）。
 templ AppCard(a view.AppRow) {
 	<article id={ appCardID(a) } class="rounded-lg border border-border bg-surface p-4" data-app={ a.ID }>
-		<h3 class="text-xl font-semibold text-ink">{ a.Label }</h3>
+		<h3 class="text-base font-semibold text-ink">{ a.Label }</h3>
 		if a.Unlaunchable {
 			<div class="mt-2">
 				@atoms.Notice(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-app-unlaunchable": true}) {
@@ -22,7 +22,7 @@ templ AppCard(a view.AppRow) {
 		}
 		<dl class="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr] sm:gap-y-2">
 			<dt class="text-mute">実行ファイル</dt>
-			<dd class="mb-1 min-w-0 break-all sm:mb-0"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs" data-app-exe>{ a.ExePath }</code></dd>
+			<dd class="mb-1 min-w-0 break-all sm:mb-0"><code data-app-exe>{ a.ExePath }</code></dd>
 			<dt class="text-mute">引数</dt>
 			<dd class="mb-1 min-w-0 sm:mb-0">
 				if a.Corrupt {
@@ -34,7 +34,7 @@ templ AppCard(a view.AppRow) {
 				} else {
 					<ul class="space-y-2" data-app-args>
 						for _, arg := range a.Args {
-							<li class="break-all"><code class="rounded-sm bg-accent-soft px-2 py-1 text-xs">{ arg }</code></li>
+							<li class="break-all"><code>{ arg }</code></li>
 						}
 					</ul>
 				}
@@ -44,7 +44,7 @@ templ AppCard(a view.AppRow) {
 				if a.WorkingDir == "" {
 					<span class="text-mute">実行ファイルのあるディレクトリ</span>
 				} else {
-					<code class="rounded-sm bg-accent-soft px-2 py-1 text-xs" data-app-dir>{ a.WorkingDir }</code>
+					<code data-app-dir>{ a.WorkingDir }</code>
 				}
 			</dd>
 		</dl>
@@ -63,7 +63,8 @@ templ AppCard(a view.AppRow) {
 // 許可リストはホスト所有者だけが変えるため /poll の対象ではない。一覧の更新は操作の応答のフラグメントで行う。
 templ AppList(v view.AppList) {
 	<div id="app-list" class="space-y-4">
-		<p class="text-xs text-mute" data-app-count={ strconv.Itoa(v.Count) }>登録 { strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) } 件</p>
+		<h2 class="sr-only">アプリ一覧</h2>
+		<p class="text-xs text-mute" data-app-count={ strconv.Itoa(v.Count) }>登録 <span class="font-mono">{ strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) }</span> 件</p>
 		if len(v.Rows) == 0 {
 			@molecules.EmptyState("apps") {
 				起動を許可したアプリはまだありません。下のフォームから追加すると、MCP のクライアントが <code>launch_app</code> で起動できます。

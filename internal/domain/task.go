@@ -72,12 +72,21 @@ type Task struct {
 	HandoffReason  HandoffReason // 引き継ぎなしは空（NULL）
 	InputTokens    int64
 	OutputTokens   int64
+	// 対象ウィンドウ（run_task の window_id。#158）。スコープなしのタスクは空・0。タイトルは持たない。
+	TargetWindowID string
+	TargetProcess  string
+	TargetPID      uint32
+	// CapturePartial は所有関係を確かめられず、モデルへ渡す画像から除外したウィンドウがあった（通知 capture_partial。停止ではない）。
+	CapturePartial bool
 	ResultText     string // 最終回答（10,000 文字で切り詰め）。無ければ空
 	ErrorCode      string // 失敗の理由（input_blocked / judge_denied / approval_denied / safety_check_denied / unsupported_action / openai_error など）。無ければ空
 	CreatedAt      time.Time
 	StartedAt      *time.Time // running になった時刻。denied は nil
 	FinishedAt     *time.Time // 終了状態になった時刻
 }
+
+// Scoped は 1 つのウィンドウに限ったタスク（window_id つき）か。
+func (t Task) Scoped() bool { return t.TargetWindowID != "" }
 
 // TruncateRunes は s を最大 n 文字（rune）にする（超えた分は切り捨てる。末尾の記号は付けない）。
 func TruncateRunes(s string, n int) string {

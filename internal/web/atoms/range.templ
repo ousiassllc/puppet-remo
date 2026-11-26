@@ -20,6 +20,6 @@ templ Range(p RangeProps) {
 		value={ p.Value }
 		class="w-full min-w-0"
 		aria-invalid?={ p.Invalid }
-		{ p.Attrs... }
+		{ describedAttrs(ctx, p.ID, p.Attrs)... }
 	/>
 }

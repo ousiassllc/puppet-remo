@@ -142,7 +142,9 @@ type Client struct {
 	// Modes は承認モードの選択肢（現在の値が Selected）。変更は UpdateURL へ PATCH する（approved_at が NULL に戻る。FR-H04）。
 	Modes     []ApprovalModeOption
 	UpdateURL string
-	// FirstTimeStatus は first_time のときだけ、承認済み（日時）・未承認の表示。それ以外は空。
+	// FirstTimeApprovedAt は first_time で承認済みのときだけ、承認した日時（テンプレートが「承認済み（日時）」にし、日時だけ Mono にする）。
+	FirstTimeApprovedAt string
+	// FirstTimeStatus は first_time で未承認のときだけ、未承認の表示。承認済み・それ以外は空。
 	FirstTimeStatus string
 	// CanResetApproval は first_time で承認済みのときだけ true（承認の取り消しのボタン。確認は要らない）。
 	CanResetApproval bool
@@ -181,8 +183,8 @@ type Token struct {
 	Status     string // 有効 / 失効済み / 期限切れ
 	StatusTone BadgeTone
 	CreatedAt  string
-	ExpiresAt  string // 「無期限」を含む
-	LastUsedAt string
+	ExpiresAt  string // 空は無期限（templ が「無期限」を Mono の外で出す）
+	LastUsedAt string // 空は未使用（同上）
 	// CanRevoke は有効なトークンだけ true。
 	CanRevoke     bool
 	RevokeConfirm string
@@ -369,6 +371,8 @@ type LaunchModePanel struct {
 	// ConfirmURL はブラックリスト方式へ切り替える確認モーダルの URL。ActionURL は切り替えの PUT 先（ホワイトリストへ戻すときに使う）。
 	ConfirmURL string
 	ActionURL  string
+	// OOB は応答に添えて差し替える（切り替えの失敗の応答。方式を DB から読み直して見せる）とき true。
+	OOB bool
 }
 
 // DeniedRow は拒否リストの 1 件。Editing なら行の代わりに編集フォームを出す（EditValue・EditError はその入力）。
@@ -519,10 +523,12 @@ type AuditRow struct {
 	HasThumb   bool
 }
 
-// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・「次へ」）。NextURL が空なら次のページは無い。
+// AuditList は監査ログの一覧の 1 ページ（絞り込み・表・ページ送り）。PrevURL・NextURL が空なら、その向きのページは無い。
 type AuditList struct {
 	Filters AuditFilters
 	Rows    []AuditRow
+	Page    int
+	PrevURL string
 	NextURL string
 }
 
@@ -600,6 +606,8 @@ type ViewerLease struct {
 	CanRelease  bool
 	CanRevoke   bool
 	Task        *ViewerTask
+	// ScopedProcess は自分が保持するリースが対象ウィンドウに束縛されているとき（#157）の、対象のプロセス名。スコープなしは空。
+	ScopedProcess string
 }
 
 // ViewerTask はビューアのリースパネルに出す、実行中のエージェントのタスクの要約（FR-W08）。ビューアはタスクの依頼元とは別の
@@ -617,12 +625,41 @@ type ViewerTask struct {
 type KeyMenuItem struct {
 	Label string
 	Keys  string
+	// Disabled はスコープ付きリース（#157）で送れないキー（Alt+Tab・Win など。サーバーも key_out_of_scope で拒否する）。
+	Disabled bool
 }
 
 // ViewerOps はクリップボードとショートカット送信（操作権が要る操作。FR-W06・W07）。Enabled のときだけ描画する。
 type ViewerOps struct {
 	Enabled bool
-	Keys    []KeyMenuItem
+	// Scoped はスコープ付きリース（#157）。クリップボードは書き込みだけ（読み取りの UI を出さない。サーバーも clipboard_out_of_scope で拒否する）。
+	Scoped bool
+	Keys   []KeyMenuItem
+}
+
+// WindowRow はウィンドウ選択の一覧の 1 件（#157）。選べないとき（Selectable が false）は灰色で、Note が理由。
+type WindowRow struct {
+	ID         string
+	PID        string
+	Start      string // プロセスの開始時刻（同一性を確かめる値。POST /viewer/target に付ける）
+	Title      string
+	Process    string
+	Foreground bool
+	Minimized  bool
+	Selectable bool
+	Note       string
+}
+
+// WindowPicker はウィンドウ選択の領域（#window-picker）。CanSelect は、リースが空いていて選べるとき。
+// ScopedProcess が空でなければ、このビューアがスコープ付きのリースを保持している（一覧は出さず、対象のプロセスを示す）。
+// Message は選べない理由（他者が保持中・承認待ち・解放が先）。
+type WindowPicker struct {
+	CanSelect     bool
+	ScopedProcess string
+	Message       string
+	Rows          []WindowRow
+	// Error は一覧を読めなかったとき（キルスイッチ中・一覧の失敗）の利用者向けの文。
+	Error string
 }
 
 // Viewer はビューアのページ。ViewerID は X-Viewer-Id と ws-url に埋め込む。
@@ -635,6 +672,7 @@ type Viewer struct {
 	Toolbar  ViewerToolbar
 	Lease    ViewerLease
 	Ops      ViewerOps
+	Picker   WindowPicker
 }
 
 // RemoteError はリモートの Web UI のエラーページ。
@@ -677,4 +715,10 @@ type ApprovalDone struct {
 type ApprovalGone struct {
 	Code    string
 	Message string
+}
+
+// Licenses はライセンス表記のページ。Text は同梱する第三者のライセンスの全文（THIRD_PARTY_NOTICES.txt）。
+type Licenses struct {
+	Chrome Chrome
+	Text   string
 }
