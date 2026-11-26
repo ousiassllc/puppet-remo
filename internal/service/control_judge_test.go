@@ -49,7 +49,7 @@ func newJudgeEnv(t *testing.T, mode domain.ApprovalMode, judge *stubJudge) *judg
 			t.Fatal(r.err)
 		}
 	}
-	le.audit.entries = nil
+	le.audit.reset()
 	return je
 }
 
@@ -655,7 +655,7 @@ func TestControlLaunchByAgentDoesNotRunTheJudge(t *testing.T) {
 	je.launcher.AddExecutable(appNotepad)
 	je.launcher.AddDir(appWorkMark)
 	app := registerNotepad(t, je.ctlEnv)
-	je.audit.entries = nil
+	je.audit.reset()
 	if _, err := je.control.Launch(context.Background(), ctlAgent, LaunchRequest{AppID: app.ID}); err != nil {
 		t.Fatal(err)
 	}

@@ -111,7 +111,7 @@ func TestAppRegistryCreateStoresAndAudits(t *testing.T) {
 		t.Fatalf("Get = %+v, %v", got, err)
 	}
 
-	entries := e.audit.Entries()
+	entries := e.audit.SyncEntries()
 	if len(entries) != 1 {
 		t.Fatalf("audit entries = %d, want 1", len(entries))
 	}
@@ -182,7 +182,7 @@ func TestAppRegistryCreateRejectsInvalidInput(t *testing.T) {
 			if apps, _ := e.apps.List(context.Background()); len(apps) != 0 {
 				t.Errorf("an invalid input was stored: %+v", apps)
 			}
-			if n := len(e.audit.Entries()); n != 0 {
+			if n := len(e.audit.SyncEntries()); n != 0 {
 				t.Errorf("%d audit entries for a rejected input", n)
 			}
 		})
@@ -259,7 +259,7 @@ func TestAppRegistryCreateLabelMustBeUnique(t *testing.T) {
 	if got := fieldNames(fe); !slices.Equal(got, []string{"label"}) {
 		t.Errorf("fields = %v, want only label", got)
 	}
-	if n := len(e.audit.Entries()); n != 2 {
+	if n := len(e.audit.SyncEntries()); n != 2 {
 		t.Errorf("audit entries = %d, want the 2 successful creates only", n)
 	}
 }
@@ -280,7 +280,7 @@ func TestAppRegistryCreateStopsAtTheLimit(t *testing.T) {
 	if errors.As(err, &fe) {
 		t.Error("the limit is a conflict, not a form error")
 	}
-	if n := len(e.audit.Entries()); n != domain.MaxLaunchableApps {
+	if n := len(e.audit.SyncEntries()); n != domain.MaxLaunchableApps {
 		t.Errorf("audit entries = %d, want %d", n, domain.MaxLaunchableApps)
 	}
 	// 1 件消せば、また登録できる。
@@ -345,7 +345,7 @@ func TestAppRegistryUpdate(t *testing.T) {
 		t.Errorf("stored = %+v", got)
 	}
 
-	entries := e.audit.Entries()
+	entries := e.audit.SyncEntries()
 	en := entries[len(entries)-1]
 	if en.Event != "settings.launchable_app.update" || en.ActorType != domain.ActorHost || en.Result != "ok" {
 		t.Errorf("entry = %+v", en)
@@ -375,7 +375,7 @@ func TestAppRegistryUpdateChangedListsOnlyWhatChanged(t *testing.T) {
 	if _, err := e.apps.Update(ctx, orig.ID, in); err != nil {
 		t.Fatal(err)
 	}
-	entries := e.audit.Entries()
+	entries := e.audit.SyncEntries()
 	d := auditDetail(t, entries[len(entries)-1])
 	if changed, _ := d["changed"].([]any); fmt.Sprint(changed) != "[args]" {
 		t.Errorf("changed = %v, want [args]", changed)
@@ -384,7 +384,7 @@ func TestAppRegistryUpdateChangedListsOnlyWhatChanged(t *testing.T) {
 	if _, err := e.apps.Update(ctx, orig.ID, in); err != nil {
 		t.Errorf("update with an unchanged label: %v", err)
 	}
-	entries = e.audit.Entries()
+	entries = e.audit.SyncEntries()
 	d = auditDetail(t, entries[len(entries)-1])
 	if changed, ok := d["changed"].([]any); !ok || len(changed) != 0 {
 		t.Errorf("changed = %v, want an empty array", d["changed"])
@@ -402,7 +402,7 @@ func TestAppRegistryUpdateFailuresChangeNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := len(e.audit.Entries())
+	before := len(e.audit.SyncEntries())
 
 	if _, err := e.apps.Update(ctx, "nope", notepadInput()); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown id: err = %v, want ErrNotFound", err)
@@ -423,7 +423,7 @@ func TestAppRegistryUpdateFailuresChangeNothing(t *testing.T) {
 	if other, _ := e.apps.Get(ctx, b.ID); other.Label != "電卓" {
 		t.Errorf("the other row changed: %+v", other)
 	}
-	if n := len(e.audit.Entries()); n != before {
+	if n := len(e.audit.SyncEntries()); n != before {
 		t.Errorf("failed updates were audited: %d new entries", n-before)
 	}
 }
@@ -441,7 +441,7 @@ func TestAppRegistryDelete(t *testing.T) {
 	if _, err := e.apps.Get(ctx, a.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("after delete: err = %v, want ErrNotFound", err)
 	}
-	entries := e.audit.Entries()
+	entries := e.audit.SyncEntries()
 	en := entries[len(entries)-1]
 	if en.Event != "settings.launchable_app.delete" || en.ActorType != domain.ActorHost || en.Result != "ok" {
 		t.Errorf("entry = %+v", en)
@@ -451,11 +451,11 @@ func TestAppRegistryDelete(t *testing.T) {
 		t.Errorf("detail = %v, want only app_id and label", d)
 	}
 
-	n := len(e.audit.Entries())
+	n := len(e.audit.SyncEntries())
 	if err := e.apps.Delete(ctx, a.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second delete: err = %v, want ErrNotFound", err)
 	}
-	if len(e.audit.Entries()) != n {
+	if len(e.audit.SyncEntries()) != n {
 		t.Error("a failed delete was audited")
 	}
 }

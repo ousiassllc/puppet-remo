@@ -17,6 +17,8 @@ type Settings interface {
 	Get(ctx context.Context, key string) (value json.RawMessage, ok bool, err error)
 	// 値は有効な JSON でなければならない（満たさなければ domain.ErrInvalidArgument）。
 	Set(ctx context.Context, key string, value json.RawMessage) error
+	// Delete は key の行を消す（行が無くても成功）。設定の変更を監査に書けずに元へ戻すとき、元々行が無かったキーを未設定へ戻すのに使う。
+	Delete(ctx context.Context, key string) error
 	All(ctx context.Context) (map[string]json.RawMessage, error)
 }
 
@@ -42,6 +44,11 @@ func (s settingStore) Set(ctx context.Context, key string, value json.RawMessage
 		`INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
 		key, string(value), toMS(s.db.clock.Now()))
+	return err
+}
+
+func (s settingStore) Delete(ctx context.Context, key string) error {
+	_, err := s.db.sql.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key)
 	return err
 }
 

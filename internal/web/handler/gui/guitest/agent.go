@@ -23,6 +23,8 @@ type AgentSettings struct {
 
 	// SetKeyErr は SetOpenAIKey / SetTypeSafeKey が返すエラー（保存の失敗を模す）。nil なら成功。
 	SetKeyErr error
+	// DeleteKeyErr は DeleteOpenAIKey / DeleteTypeSafeKey が返すエラー（削除の失敗を模す。何も変えずに返す）。nil なら成功。
+	DeleteKeyErr error
 	// SetKeyCalls は鍵の登録の呼び出し回数（値は残さない）。
 	SetKeyCalls int
 	// Calls は呼び出された操作名の履歴（引数は残さない）。
@@ -159,6 +161,9 @@ func (a *AgentSettings) DeleteOpenAIKey(context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.Calls = append(a.Calls, "DeleteOpenAIKey")
+	if a.DeleteKeyErr != nil {
+		return a.DeleteKeyErr
+	}
 	a.view.OpenAIKeyRegistered, a.view.Enabled, a.view.ConsentAt = false, false, nil
 	return nil
 }
@@ -205,6 +210,9 @@ func (a *AgentSettings) DeleteTypeSafeKey(context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.Calls = append(a.Calls, "DeleteTypeSafeKey")
+	if a.DeleteKeyErr != nil {
+		return a.DeleteKeyErr
+	}
 	a.view.TypeSafeKeyRegistered = false
 	a.view.Fastpath.Enabled, a.view.Fastpath.ConsentAt = false, nil
 	return nil

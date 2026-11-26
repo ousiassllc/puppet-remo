@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
@@ -163,6 +164,8 @@ type HostSettingsService interface {
 	// Load は現在の設定を返す。未設定の項目は既定値。
 	Load(ctx context.Context) (HostSettings, error)
 	// Save は s を検証して保存する。不備は *ValidationError（何も保存しない）。保存した設定を返す。
+	// 変更があれば settings.update を同期で監査し、書けなければ保存した項目（自動起動を含む）を元に戻して domain.ErrAuditUnavailable を返す
+	// （fail-closed。#182。audit_commit.go）。OnChange は監査に書けたあとにだけ呼ぶ。
 	Save(ctx context.Context, s HostSettings) (HostSettings, error)
 	// AutostartAvailable は自動起動の切り替えが使えるか（OS の登録手段があるか）。
 	AutostartAvailable() bool
@@ -171,11 +174,11 @@ type HostSettingsService interface {
 // HostSettingsConfig は NewHostSettings の設定。Settings は必須。
 type HostSettingsConfig struct {
 	Settings  repository.Settings
-	Autostart Autostart     // nil なら自動起動は常に無効として扱い、変更は保存しない
-	Audit     AuditRecorder // nil なら記録しない
-	Clock     domain.Clock  // Audit があるとき必須
-	Logger    *slog.Logger  // nil なら slog.Default()。保存済みの audit.* の数値が不正で既定値を使うときの警告に使う
-	// OnChange は保存に成功し、値が変わったときに old・new を渡して呼ぶ（ポートの再 Listen、ホットキーの再登録など、
+	Autostart Autostart         // nil なら自動起動は常に無効として扱い、変更は保存しない
+	Audit     SyncAuditRecorder // nil なら記録しない。Save は RecordSync で記録し、書けなければ保存を元に戻す
+	Clock     domain.Clock      // Audit があるとき必須
+	Logger    *slog.Logger      // nil なら slog.Default()。保存済みの audit.* の数値が不正で既定値を使うときの警告と、監査に書けなかったときの出力先
+	// OnChange は保存に成功し、値が変わって監査にも書けたときに old・new を渡して呼ぶ（ポートの再 Listen、ホットキーの再登録など、
 	// 影響のあるコンポーネントへの通知）。nil なら何もしない。保存の呼び出しの中で同期に呼ぶ。
 	OnChange func(old, updated HostSettings)
 }
@@ -183,6 +186,8 @@ type HostSettingsConfig struct {
 type hostSettings struct {
 	cfg HostSettingsConfig
 	log *slog.Logger
+	// mu は Save の「読む → 書く → 監査 → 失敗なら戻す」を 1 つの臨界区間にする（並行した保存のロールバックが、別の保存を取り消さないため）。
+	mu sync.Mutex
 }
 
 // NewHostSettings は HostSettingsService を作る。
@@ -333,16 +338,21 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 	if err := s.Validate(); err != nil {
 		return HostSettings{}, err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	old, err := h.Load(ctx)
 	if err != nil {
 		// 保存済みの値が壊れていても、検証済みの入力で上書きして復旧できるようにする。
 		old = HostSettings{}
 	}
 	// 書き込みは項目ごとで、途中で失敗しうる。実際に反映できた分（applied）だけを OnChange・監査へ渡し、
-	// 保存済みの項目と動いているコンポーネントがずれないようにする。
+	// 保存済みの項目と動いているコンポーネントがずれないようにする。反映できた分を監査に書けなければ、その分も元に戻す（undo）。
 	applied := old
+	var undo undoLog
 	fail := func(err error) (HostSettings, error) {
-		h.committed(ctx, old, applied)
+		if auditErr := h.committed(ctx, old, applied, undo); auditErr != nil {
+			return HostSettings{}, auditErr
+		}
 		return HostSettings{}, err
 	}
 	for _, kv := range []struct {
@@ -367,36 +377,52 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		if err != nil {
 			return fail(err)
 		}
-		if err := h.cfg.Settings.Set(ctx, kv.key, raw); err != nil {
+		if err := setSetting(ctx, h.cfg.Settings, &undo, kv.key, raw); err != nil {
 			return fail(fmt.Errorf("save setting %s: %w", kv.key, err))
 		}
 		kv.apply(&applied)
 	}
 	if h.cfg.Autostart != nil {
+		prev, prevErr := h.cfg.Autostart.Enabled(ctx)
 		if err := h.cfg.Autostart.Set(ctx, s.Autostart); err != nil {
 			return fail(fmt.Errorf("save autostart: %w", err))
 		}
+		undo.add(func(ctx context.Context) error {
+			if prevErr != nil {
+				return fmt.Errorf("restore autostart: previous state unknown: %w", prevErr) // 元の状態が分からないので戻せない
+			}
+			return h.cfg.Autostart.Set(ctx, prev)
+		})
 		applied.Autostart = s.Autostart
 	} else {
 		s.Autostart = false
 	}
-	h.committed(ctx, old, s)
+	if err := h.committed(ctx, old, s, undo); err != nil {
+		return HostSettings{}, err
+	}
 	return s, nil
 }
 
-// committed は old から updated へ実際に変わった内容を、監査と OnChange（ポートの再 Listen、ホットキーの再登録など）へ渡す。
-func (h *hostSettings) committed(ctx context.Context, old, updated HostSettings) {
-	h.audit(ctx, old, updated)
+// committed は old から updated へ実際に変わった内容を、監査（同期。書けなければ undo で戻して失敗を返す）と、
+// 書けたあとの OnChange（ポートの再 Listen、ホットキーの再登録など）へ渡す。
+func (h *hostSettings) committed(ctx context.Context, old, updated HostSettings, undo undoLog) error {
+	if entry, ok := h.auditEntry(old, updated); ok {
+		if err := commitAudited(ctx, h.log, h.cfg.Audit, AuditSubjectHostSettings, undo, entry); err != nil {
+			return err
+		}
+	}
 	if h.cfg.OnChange != nil && old != updated {
 		h.cfg.OnChange(old, updated)
 	}
+	return nil
 }
 
-// audit は変更した項目の名前と新しい値を記録する（値は範囲内の数値・真偽値・列挙・ホットキーで、秘密ではない）。
+// auditEntry は変更した項目の名前と新しい値の監査の行を作る（値は範囲内の数値・真偽値・列挙・ホットキーで、秘密ではない）。
 // ただし audit.record_text は、変えたことだけを残して値は入れない（null。本文の記録の設定を監査の経路に流さない）。
-func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
+// 変わった項目が無い（または Audit が nil）なら ok = false。
+func (h *hostSettings) auditEntry(old, updated HostSettings) (entry repository.AuditEntry, ok bool) {
 	if h.cfg.Audit == nil {
-		return
+		return repository.AuditEntry{}, false
 	}
 	changed := map[string]any{}
 	for _, f := range []struct {
@@ -423,14 +449,14 @@ func (h *hostSettings) audit(ctx context.Context, old, updated HostSettings) {
 		}
 	}
 	if len(changed) == 0 {
-		return
+		return repository.AuditEntry{}, false
 	}
 	raw, err := json.Marshal(changed)
 	if err != nil {
 		raw = nil
 	}
-	h.cfg.Audit.Record(ctx, repository.AuditEntry{
+	return repository.AuditEntry{
 		TS: h.cfg.Clock.Now(), Kind: "settings", Event: hostSettingsAuditKey, ActorType: domain.ActorHost,
 		Result: auditOK, DetailJSON: raw,
-	})
+	}, true
 }
