@@ -191,7 +191,7 @@ func TestButtonRowsAndFormFieldsUseInlineAndFieldGaps(t *testing.T) {
 	key := webtest.Render(t, organisms.APIKeyPanel(view.APIKeyPanel{ID: "agent-key", Provider: "OpenAI", Registered: true}))
 	has(t, key, `<div class="flex flex-wrap items-center gap-2" data-secret-saved`)
 	pager := webtest.Render(t, molecules.Pager(molecules.PagerProps{Page: 1}))
-	has(t, pager, `justify-between gap-2" aria-label="ページ送り"`)
+	has(t, pager, `items-center gap-2 sm:flex sm:flex-wrap sm:justify-between" aria-label="ページ送り"`)
 	picker := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{Rows: []view.WindowRow{{ID: "w1", Selectable: true}}}))
 	has(t, picker, `<li class="flex items-center justify-between gap-2 py-2"`)
 	for _, out := range []string{denied, key, pager, picker} {
@@ -225,6 +225,27 @@ func TestTaskIDLinksAreSmall(t *testing.T) {
 		has(t, out, `class="font-mono text-sm link"`)
 		hasNot(t, out, `font-mono text-xs link`)
 	}
+	has(t, list, `class="task-card-link link shrink-0 font-mono text-sm after:absolute after:inset-0"`) // sm 未満のカードの ID のリンク
+}
+
+// #178: 640px 未満は 1 件 1 枚のカードの縦積み（表は sm 以上だけ）。3 段（日時＋状態 / 指示の line-clamp 2 行 / ID・依頼元・ステップ・所要時間）、
+// カード全体が ID のリンクの ::after で押せる。余白はトークン（内側 --pad-card-sm・段の間 8・カード同士 8）。日時・ID・ステップ・所要時間は Mono のまま。
+func TestTaskListRendersCardsBelowSmAndTableFromSm(t *testing.T) {
+	out := webtest.Render(t, organisms.TaskList(view.TaskList{Rows: []view.TaskRow{
+		{DetailURL: "/tasks/t1", ShortID: "00LIST01", Client: "claude", PromptExcerpt: "とても長い指示", Code: "running", Label: "実行中", Tone: view.ToneOK, Steps: "3 / 50", Created: "2026-11-01 08:00", Elapsed: "12 秒"},
+	}}))
+	has(t, out,
+		// カードの束は sm 以上で隠し、表は sm 未満で隠す（640px 以上の表示は表のまま）。
+		`<ul class="space-y-2 sm:hidden" data-task-cards>`, `<div class="hidden overflow-x-auto rounded-lg border border-border bg-surface sm:block">`, `data-task-row="/tasks/t1"`,
+		`data-task-card="/tasks/t1"`, `p-(--pad-card-sm)`, `space-y-2 rounded-lg border border-border bg-surface`,
+		// 1 段目: 日時（Mono）と状態のピル。2 段目: 指示（2 行まで）。3 段目: ミュートの小さい 1 行。
+		`<span class="whitespace-nowrap font-mono text-sm text-ink">2026-11-01 08:00</span>`, "実行中",
+		`<p class="line-clamp-2 break-words text-sm text-ink" data-task-card-prompt>とても長い指示</p>`,
+		`<p class="flex items-baseline gap-x-2 whitespace-nowrap text-xs text-mute group-hover:text-mute-on-soft">`,
+		`href="/tasks/t1"`, `after:absolute after:inset-0`, `>00LIST01</a>`, `<span class="min-w-0 flex-1 truncate">claude</span>`,
+		`ステップ <span class="font-mono">3 / 50</span>`, `<span class="shrink-0 font-mono">12 秒</span>`,
+	)
+	hasNot(t, out, "p-4", "px-4", "py-3")
 }
 
 // 承認ダイアログは種類ごとの見出し・内容を出し、Detail・Note が空なら枠を描画しない。
@@ -776,6 +797,27 @@ func TestPagerButtonsAreSmallSecondary(t *testing.T) {
 	has(t, log, "h-8", "data-pager-next")
 	tasks := webtest.Render(t, organisms.TaskList(view.TaskList{NextURL: "/tasks?page=2", Rows: []view.TaskRow{{DetailURL: "/tasks/t1"}}}))
 	has(t, tasks, "h-8", "data-pager-next")
+}
+
+// #184: 項目カード（クライアント・アプリ・接続要求・拒否リストの行・詳細の枠）の内側の余白は、ガイドの設定画面パーツ 1 の本文と同じ --pad-card（24）。
+// p-4 などの直書きの数値を残さない。
+func TestItemCardsUseThePadCardToken(t *testing.T) {
+	const card = "rounded-lg border border-border bg-surface p-(--pad-card)"
+	clients := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1"}))
+	has(t, clients, card)
+	apps := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a1", Label: "x"}))
+	has(t, apps, card)
+	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Rows: []view.DeniedRow{{ID: "d1"}, {ID: "d2", Editing: true, ActionURL: "/apps/denied/d2"}}}))
+	if n := strings.Count(denied, card); n != 2 {
+		t.Errorf("denied rows (view and edit) must both use the token, got %d:\n%s", n, denied)
+	}
+	// 390 幅で値が 1 文字ずつ縦に折れない（flex-1 の最小幅が 0 なので、折り返しの基準 basis-40 を持つ）。
+	has(t, denied, `<code class="min-w-0 flex-1 basis-40 break-all" data-denied-value>`)
+	request := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", RemoteIP: "100.64.0.9"}}}))
+	has(t, request, card)
+	for _, out := range []string{clients, apps, denied, request} {
+		hasNot(t, out, "bg-surface p-4")
+	}
 }
 
 // 絞り込みの「条件をクリア」は本文のリンク（.link。下線 --mute）で、ほかのリンクと同じ見た目。
