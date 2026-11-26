@@ -30,18 +30,10 @@ const (
 // msgDeniedListFull は拒否リストが上限に達したときの 409 conflict のメッセージ。
 const msgDeniedListFull = "登録できる拒否リストは 200 件までです。不要なものを削除してから追加してください。"
 
-// msgLaunchModeRollbackFailed は、方式の切り替えを監査に書けず、設定を元に戻すこともできなかったときのアラート（503 audit_unavailable）。
-// 方式が切り替わったままの可能性があるので、応答に実際の方式のパネルを添える。
-const msgLaunchModeRollbackFailed = "監査ログに書き込めず、方式を元に戻すこともできませんでした。現在の方式を確認してください。"
-
 // launchModeRollbackFailed は err が、方式の切り替えの監査の失敗で、かつ設定を元に戻せなかった（方式が切り替わったままかもしれない）ものかを返す。
 func launchModeRollbackFailed(err error) bool {
-	var de *domain.Error
-	if !errors.As(err, &de) || de.Code != domain.CodeAuditUnavailable {
-		return false
-	}
-	restored, ok := de.Detail[service.DetailLaunchModeRestored].(bool)
-	return ok && !restored
+	subject, restored, ok := service.AuditChangeFailure(err)
+	return ok && subject == service.AuditSubjectLaunchMode && !restored
 }
 
 func deniedItemURL(id string) string   { return deniedURL + "/" + url.PathEscape(id) }

@@ -159,6 +159,20 @@ func (a *ctlAudit) Record(_ context.Context, e repository.AuditEntry) {
 	a.entries = append(a.entries, e)
 }
 
+// All は Record と RecordSync の両方の行を返す（所有者の設定変更は同期、システム側の操作は非同期で書く。#182）。
+func (a *ctlAudit) All() []repository.AuditEntry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append(append([]repository.AuditEntry(nil), a.sync...), a.entries...)
+}
+
+// reset は記録（Record・RecordSync の両方）を空にする。
+func (a *ctlAudit) reset() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.entries, a.sync = nil, nil
+}
+
 func (a *ctlAudit) Entries() []repository.AuditEntry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -211,6 +225,16 @@ func (s *ctlSettings) Set(_ context.Context, key string, value json.RawMessage) 
 		s.okSets--
 	}
 	s.values[key] = value
+	return nil
+}
+
+func (s *ctlSettings) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.setErr != nil && s.okSets <= 0 {
+		return s.setErr
+	}
+	delete(s.values, key)
 	return nil
 }
 
