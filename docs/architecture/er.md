@@ -332,7 +332,7 @@ erDiagram
 
 インデックス: UNIQUE 制約による `dedup_key` のインデックスのみ（行数は最大 200）。
 
-照合（起動のたび。`domain.MatchDenied`）: 起動しようとする実行ファイルを `platform.AppLauncher.Resolve` で**実体のパス**（シンボリックリンク・ジャンクション・8.3 短縮名を解決した、固定ディスク上のドライブ文字つきの絶対パス）にして比べる。`path` の行は実体のパスと一致（大文字小文字・区切りの違いを無視）すれば当たり、登録の綴りと違っても、解決した実体が同じなら当たる。`name` の行は、実体のファイル名**と**呼び出し側が指定した綴りのファイル名のどちらかと一致（大文字小文字を無視）すれば当たる（どのフォルダーにあっても当たる。fail closed）。当たれば `app_denied`（HTTP 403。監査は `result = denied`。メッセージにパス・拒否リストの中身は含めない）。**既知の限界**: 拒否した実行ファイルの**名前を変えたコピー**は検出しない（`name` は名前だけ、`path` は実体のパスだけを比べるため）。`cmd.exe`・`powershell.exe` などのインタープリターは任意のコードを実行できるので、ブラックリスト方式ではホスト所有者が拒否リストに入れない限り起動できる。
+照合（起動のたび。`domain.MatchDenied`）: 起動しようとする実行ファイルを `platform.AppLauncher.Resolve` で**実体のパス**（シンボリックリンク・ジャンクション・8.3 短縮名を解決した、固定ディスク上のドライブ文字つきの絶対パス）にして比べる。`path` の行は実体のパスと一致（大文字小文字・区切りの違いを無視。大文字小文字は Windows の `OrdinalIgnoreCase` 相当の比較で、`strings.EqualFold` ではない。#183）すれば当たり、登録の綴りと違っても、解決した実体が同じなら当たる。`name` の行は、実体のファイル名**と**呼び出し側が指定した綴りのファイル名のどちらかと一致（大文字小文字を無視）すれば当たる（どのフォルダーにあっても当たる。fail closed）。当たれば `app_denied`（HTTP 403。監査は `result = denied`。メッセージにパス・拒否リストの中身は含めない）。**既知の限界**: 拒否した実行ファイルの**名前を変えたコピー**は検出しない（`name` は名前だけ、`path` は実体のパスだけを比べるため）。`cmd.exe`・`powershell.exe` などのインタープリターは任意のコードを実行できるので、ブラックリスト方式ではホスト所有者が拒否リストに入れない限り起動できる。
 
 ### agent_tasks
 
@@ -646,3 +646,4 @@ erDiagram
 | 1.35 | 2026-11-09 | `agent_tasks` に `target_window_id` / `target_process` / `target_pid` / `capture_partial`（`0006_agent_task_target.sql`。#158）、監査 `agent.batch_yielded`（`step`・`executed`・`not_executed`・`reason`・`added`・`removed`。タイトル・入力文字なし）と、`agent.task_start` / `agent.task_end` の `detail.target`・`block_reason`・`capture_partial` を追加 | #158 |
 | 1.36 | 2026-11-14 | `tool.launch_app` / `.attempt` の `detail` に `resolved_path` / `resolve_failed`（#173）。`settings.launch_mode.update` を同期書き込み・fail-closed に（#174） | #173・#174 |
 | 1.37 | 2026-11-23 | `settings` のキー一覧から `log.level` を削除（実装に無い。ログのレベルは環境変数 `PUPPET_REMO_LOG_LEVEL` だけで指定する。NFR-O01） | #230 |
+| 1.38 | 2026-11-27 | `launch_denylist` の照合（`MatchDenied`）の大文字小文字の比較を Windows の OrdinalIgnoreCase 相当にした旨を追記 | #183 |
