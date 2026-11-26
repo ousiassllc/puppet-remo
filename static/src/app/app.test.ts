@@ -261,6 +261,125 @@ describe("ボタンの押下のリップル", () => {
   });
 });
 
+describe("ツールチップの Esc（#180。WCAG 1.4.13）", () => {
+  const tipMarkup = html`
+    <div>
+      <span class="tip-host" id="host" tabindex="0" aria-describedby="t1">-<span role="tooltip" id="t1" class="tip">補足</span></span>
+      <button id="other">別の操作</button>
+    </div>
+  `;
+  const esc = (target: EventTarget): KeyboardEvent => {
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, composed: true });
+    target.dispatchEvent(event);
+    return event;
+  };
+  const dismissed = (el: Element): boolean => el.hasAttribute("data-tip-dismissed");
+
+  afterEach(() => {
+    document.body.removeAttribute("data-nav-open");
+  });
+
+  it("フォーカスで出ている間の Esc で、そのツールチップだけを閉じる。フォーカスは出す側に残り、戻す先へ動かさない", async () => {
+    const root = await fixture<HTMLElement>(tipMarkup);
+    const host = root.querySelector<HTMLElement>("#host")!;
+    host.focus();
+    expect(host.matches(":focus-visible"), "the host shows its tooltip while keyboard-focused").to.equal(true);
+    esc(host);
+    expect(dismissed(host)).to.equal(true);
+    expect(document.activeElement).to.equal(host);
+  });
+
+  it("出ていないときの Esc は何もしない（印を付けず、イベントも止めない）", async () => {
+    const root = await fixture<HTMLElement>(tipMarkup);
+    const host = root.querySelector<HTMLElement>("#host")!;
+    root.querySelector<HTMLElement>("#other")!.focus();
+    const event = esc(document.activeElement!);
+    expect(dismissed(host)).to.equal(false);
+    // イベントは止めない（ほかの Esc の処理へ届く）。止めたかは、あとから付けた bubble のリスナーが呼ばれるかで見る。
+    let reached = false;
+    const probe = (): void => {
+      reached = true;
+    };
+    document.addEventListener("keydown", probe);
+    esc(document.activeElement!);
+    document.removeEventListener("keydown", probe);
+    expect(event.defaultPrevented).to.equal(false);
+    expect(reached).to.equal(true);
+  });
+
+  it("Esc で閉じたあとは、フォーカスが外れるまで出さない。外れたら印を外し、戻れば出る", async () => {
+    const root = await fixture<HTMLElement>(tipMarkup);
+    const host = root.querySelector<HTMLElement>("#host")!;
+    host.focus();
+    esc(host);
+    expect(dismissed(host)).to.equal(true);
+    root.querySelector<HTMLElement>("#other")!.focus();
+    expect(dismissed(host), "focusout clears the mark").to.equal(false);
+    host.focus();
+    expect(dismissed(host)).to.equal(false);
+    esc(host);
+    expect(dismissed(host), "a second Esc closes it again").to.equal(true);
+  });
+
+  it("ポインターが外れても、フォーカスが残っていれば隠したまま", async () => {
+    const root = await fixture<HTMLElement>(tipMarkup);
+    const host = root.querySelector<HTMLElement>("#host")!;
+    host.focus();
+    esc(host);
+    host.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(dismissed(host)).to.equal(true);
+  });
+
+  it("ドロワーの中のツールチップ: 1 回目の Esc はツールチップだけ（ドロワーは開いたまま）、2 回目でドロワーが閉じる", async () => {
+    const root = await fixture<HTMLElement>(html`
+      <div>
+        <nav id="sidebar-nav" aria-label="メイン">
+          <p id="sidebar-nav-title">メニュー</p>
+          <a href="#a">一覧</a>
+          <span class="tip-host" id="host" tabindex="0">-<span role="tooltip" class="tip">補足</span></span>
+        </nav>
+        <div id="background" data-nav-background><button data-nav-toggle aria-expanded="false">開く</button></div>
+      </div>
+    `);
+    const host = root.querySelector<HTMLElement>("#host")!;
+    root.querySelector<HTMLButtonElement>("[data-nav-toggle]")!.click();
+    host.focus();
+    esc(host);
+    expect(dismissed(host)).to.equal(true);
+    expect(document.body.hasAttribute("data-nav-open"), "the drawer stays open on the first Esc").to.equal(true);
+    expect(document.activeElement).to.equal(host);
+    esc(host);
+    expect(document.body.hasAttribute("data-nav-open"), "the second Esc closes the drawer").to.equal(false);
+  });
+
+  it("確認モーダルの中のツールチップ: 1 回目の Esc はツールチップだけ、2 回目でモーダルが閉じる。ツールチップが無ければ Esc 1 回で閉じる", async () => {
+    const holder = await fixture<HTMLDivElement>(html`
+      <div id="modal-root">
+        <div id="modal" role="dialog" aria-modal="true">
+          <button id="confirm">確定</button>
+          <span class="tip-host" id="host" tabindex="0">?<span role="tooltip" class="tip">補足</span></span>
+        </div>
+      </div>
+    `);
+    const host = holder.querySelector<HTMLElement>("#host")!;
+    host.focus();
+    esc(host);
+    expect(dismissed(host)).to.equal(true);
+    expect(holder.querySelector("#modal")?.hasAttribute("data-leaving"), "the modal stays on the first Esc").to.equal(false);
+    expect(document.activeElement).to.equal(host);
+    esc(host);
+    await until(() => holder.children.length === 0, "the modal is removed by the second Esc");
+  });
+
+  it("確認モーダルは、ツールチップが無ければ Esc 1 回で閉じる。モーダルが無いときの Esc は何もしない", async () => {
+    esc(document);
+    const holder = await fixture<HTMLDivElement>(modalMarkup);
+    expect(holder.querySelector("#modal")?.hasAttribute("data-leaving")).to.equal(false);
+    esc(holder.querySelector("button")!);
+    await until(() => holder.children.length === 0, "the modal is removed");
+  });
+});
+
 describe("モバイルナビのドロワー", () => {
   const markup = html`
     <div>
