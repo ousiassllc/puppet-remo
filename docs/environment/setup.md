@@ -17,7 +17,7 @@
 | Format | gofmt |
 | Linterly | 未導入 |
 | Git フック | Lefthook（`lefthook.yml`。[#41](https://github.com/ousiassllc/puppet-remo/issues/41)） |
-| API ドキュメント | Huma が `/api/v1` の OpenAPI を出す設計（M2 以降。現状は未導入） |
+| API ドキュメント | Huma が `/api/v1` の OpenAPI を出す（`GET /api/v1/openapi.json`） |
 
 ## ディレクトリ構造
 
@@ -194,7 +194,7 @@ task hooks:install    # lefthook install（.git/hooks にフックを入れる�
 
 ## Swagger/OpenAPI
 
-設計では、Huma が `/api/v1` の JSON API の OpenAPI 3.1 を出す（`GET /api/v1/openapi.json`。[API 仕様](../api/endpoints.md) §6、[フロントエンド設計](../architecture/frontend.md)）。ただし現状の実装は Huma を使っておらず（`go.mod` に無い）、`/api/v1` は M2 以降に提供する（[アーキテクチャ設計](../architecture/overview.md) の「M1 実装での差分」）。
+Huma が `/api/v1` の JSON API の OpenAPI 3.1 を出す（`GET /api/v1/openapi.json`。[API 仕様](../api/endpoints.md) §6、[フロントエンド設計](../architecture/frontend.md)）。実装は `internal/web/handler/api`（Huma の `humago` アダプター。Huma の既定の docs・schemas・YAML の経路は公開しない）。
 
 OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義は MCP の `tools/list` が正とする。Stoplight Elements などの UI や、`/swagger` のエンドポイント、`SWAGGER_ENABLED` の切り替え、spec 生成タスクは追加しない（Huma が OpenAPI を実行時に出すので、spec ファイルの生成と CI での差分チェックも要らない）。
 

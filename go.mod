@@ -6,6 +6,7 @@ require (
 	aead.dev/minisign v0.3.0
 	github.com/a-h/templ v0.3.1001
 	github.com/coder/websocket v1.8.15
+	github.com/danielgtaylor/huma/v2 v2.34.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-ole/go-ole v1.3.0
 	github.com/kirides/go-d3d v1.0.1
