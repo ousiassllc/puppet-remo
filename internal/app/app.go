@@ -100,6 +100,12 @@ type Config struct {
 	Static http.Handler
 	// Logs はホスト GUI のログ画面が読むアプリのログ（NewLogReader。FR-H13）。
 	Logs service.AppLog
+	// DataDir はアプリのデータディレクトリ（%LOCALAPPDATA%\puppet-remo）。Codex の経路の専用 CODEX_HOME（codex-home）と空の作業
+	// ディレクトリ（codex-work）をその下に置く（#247）。必須。
+	DataDir string
+	// CodexEngineDir は Codex のエンジン（app-server）の置き場所（`<実行ファイルのディレクトリ>\codex`。#247）。空ならエンジンを取得しない
+	// （Codex の経路は unsupported）。
+	CodexEngineDir string
 
 	Clock   tailnet.Clock // nil なら tailnet.SystemClock
 	IDs     domain.IDGen  // nil なら ULID
@@ -146,6 +152,7 @@ type App struct {
 	tasks    service.TaskAdmin             // ホスト GUI のタスク画面・ダッシュボード（FR-H10）
 	agentCfg *service.AgentSettingsService // エージェント設定（FR-H11）と、Agent・FastPath・RuleJudge が設定を読む窓口
 	chatgpt  *service.ChatGPTAuthService   // 公式の Sign in with ChatGPT の認可と接続の状態（FR-G25〜G30）
+	codex    *service.CodexAuthService     // Codex の app-server の経路のエンジン・ログイン・接続の状態（#247）
 	authz    service.Authz
 	audit    *service.Audit
 	admin    service.HostAdmin
@@ -216,6 +223,8 @@ func (c Config) validate() error {
 		return errors.New("app: Static is required")
 	case c.Logs == nil:
 		return errors.New("app: Logs is required")
+	case c.DataDir == "":
+		return errors.New("app: DataDir is required")
 	}
 	return nil
 }
@@ -288,11 +297,22 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("chatgpt auth: %w", err)
 	}
+	// Codex の app-server の経路（#247）。エンジンの取得・ログインはホスト GUI の操作だけが始める。ログアウトで中断するのは
+	// chatgpt-codex の経路のタスクだけ。アプリは Codex のトークンを読まず保存しない（app-server の専用 CODEX_HOME に任せる）。
+	a.codex, err = service.NewCodexAuth(service.CodexAuthConfig{
+		EngineDir: cfg.CodexEngineDir, DataDir: cfg.DataDir, Browser: p.Browser, Settings: settings, Audit: audit, Bus: a.bus,
+		Clock: cfg.Clock, Logger: a.log, AppVersion: cfg.Version,
+		CancelTasks: func(reason string) string { return a.agent.CancelConnection(domain.ConnectionChatGPTCodex, reason) },
+	})
+	if err != nil {
+		return fmt.Errorf("codex auth: %w", err)
+	}
 	// エージェント設定。Cancel（無効化・OpenAI キーの削除でタスクを中断）は Agent の組み立て後に結ばれる（a.agent は Start の前に必ず入る）。
 	a.agentCfg, err = service.NewAgentSettings(service.AgentSettingsConfig{
 		Settings: settings, Secrets: p.Secrets, Audit: audit, Clock: cfg.Clock, Logger: a.log,
 		Cancel:  func(reason string) { a.agent.CancelAll(reason) },
 		ChatGPT: a.chatgpt,
+		Codex:   a.codex,
 	})
 	if err != nil {
 		return fmt.Errorf("agent settings: %w", err)
@@ -460,6 +480,7 @@ func (a *App) buildRouters(kill service.KillSwitchState) error {
 	h, err := gui.New(gui.Deps{
 		Status: a.tracker, Sessions: a.mcp, Leases: a.leases, KillSwitch: a.kill, Admin: a.admin, Approval: a.approval,
 		Settings: a.settings, Apps: a.apps, Logs: cfg.Logs, Updates: a.updater, Tasks: a.tasks, AgentSettings: a.agentCfg, Audit: service.NewAuditReader(cfg.Repo.Audit(), cfg.Repo.Thumbs()), Events: a.bus, Clock: cfg.Clock, Logger: a.log,
+		ChatGPT: a.chatgpt, Codex: a.codex,
 	})
 	if err != nil {
 		return fmt.Errorf("gui handler: %w", err)
@@ -501,6 +522,7 @@ func (a *App) buildAgent(control service.Control, kill *service.KillSwitchManage
 		Tasks: cfg.Repo.Tasks(), Clients: cfg.Repo.Clients(), Settings: a.agentCfg, Control: control, Leases: a.leases, Kill: kill,
 		Approval: a.approval, Model: model, Windows: cfg.Platform.Windows, Fast: fast, Audit: a.audit, Bus: a.bus, Disabler: a.agentCfg, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
 		ChatGPTModel: chatgptModel, ChatGPT: a.chatgpt,
+		CodexModel: a.codex.Model(), Codex: a.codex,
 	})
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)

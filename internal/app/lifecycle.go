@@ -181,8 +181,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if err := a.agent.Close(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("cancel the agent task: %w", err))
 	}
-	// ChatGPT のサインインの受信口（開いていれば）を閉じる（API §7.6: アプリの終了で閉じる）。
+	// ChatGPT のサインインの受信口（開いていれば）を閉じ、Codex の app-server（動いていれば）を止める（API §7.6。#247）。
 	a.chatgpt.Close()
+	if err := a.codex.Close(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("stop the codex app-server: %w", err))
+	}
 	if err := a.mcp.CloseSessions(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("close mcp sessions: %w", err))
 	}

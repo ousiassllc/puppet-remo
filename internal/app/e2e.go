@@ -128,7 +128,7 @@ func RunE2E(ctx context.Context, opts E2EOptions) error {
 			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(), Browser: platformtest.NewFakeBrowserOpener(),
 		},
 		Watcher: tailnet.NewE2EWatcher(tailnet.E2EStatus()), WhoIs: srv.whois,
-		Static: opts.Static, Logs: NewLogReader(dir, WithFolderOpener(platformtest.NewFakeFolderOpener())),
+		Static: opts.Static, Logs: NewLogReader(dir, WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,
 		Version: "e2e", Logger: logger,
 		// tailnet の IPv4 の代わりに、同じポートの 127.0.0.1 で待ち受ける（本物の Listener の絞り込み・State はそのまま）。
 		ListenFunc: tailnet.LoopbackListenFunc(),
