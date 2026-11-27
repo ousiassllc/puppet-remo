@@ -37,7 +37,7 @@ func licensesBody(v view.Licenses) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-4xl space-y-6\"><h1 class=\"text-3xl font-semibold text-ink\">ライセンス表記</h1><p class=\"text-base text-ink\">このアプリが同梱するフォント・アイコン・ライブラリのライセンスの全文です。同じ内容は、インストール先の <code>THIRD_PARTY_NOTICES.txt</code> にもあります。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-4xl space-y-6\"><h1 class=\"text-page-title font-bold text-ink\">ライセンス表記</h1><p class=\"text-base text-ink\">このアプリが同梱するフォント・アイコン・ライブラリのライセンスの全文です。同じ内容は、インストール先の <code>THIRD_PARTY_NOTICES.txt</code> にもあります。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

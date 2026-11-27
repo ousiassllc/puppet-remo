@@ -121,7 +121,7 @@ func TestAppsPageStacksCardsAtGapGridLg(t *testing.T) {
 func TestDashboardSeparatesCardsByGapGridLg(t *testing.T) {
 	out := webtest.Render(t, pages.Dashboard(view.Dashboard{Chrome: view.Chrome{Active: view.NavDashboard}}))
 	for _, want := range []string{
-		`<div class="space-y-6"><h1 class="text-3xl font-semibold text-ink">ダッシュボード</h1><div class="flex flex-col gap-6" data-dashboard-sections><div id="running-tasks" hidden>`,
+		`<div class="space-y-6"><h1 class="text-page-title font-bold text-ink">ダッシュボード</h1><div class="flex flex-col gap-6" data-dashboard-sections><div id="running-tasks" hidden>`,
 		`<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">`,
 	} {
 		if !strings.Contains(out, want) {

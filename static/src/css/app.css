@@ -1,7 +1,7 @@
 /* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
  * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
  * <style> と style= は使わない（CSP。§7.1）。
- * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide a66e8514）のトークンで、この 1 か所に定義する（§8.4）。
+ * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide d430361）のトークンで、この 1 か所に定義する（§8.4）。
  * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
  * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
@@ -219,7 +219,9 @@
 /* ---- タイポグラフィ（T1〜T4）----
  * フォントは Sora + Noto Sans JP（UI）と JetBrains Mono（コード・桁を揃える数値）。@font-face は scripts/copy-fonts.mjs が生成する。
  * サイズはガイドのスケール（xs 12 / sm 14 / base 16 / lg 18 / xl 24 / 2xl 32 / 3xl 40）と行間。スケール外のサイズは使えない。
- * ウェイトは本文・リンク・ナビ・フォームが Regular（400）、SemiBold（600）は見出しとボタンだけ。 */
+ * アプリ画面のページタイトルだけは、スケールの外の 28px（--text-page-title。ガイド d430361 の「ページタイトル 28 / 700」）。
+ * ウェイトは本文・リンク・ナビ・フォームが Regular（400）、SemiBold（600）は見出しとボタン。Bold（700）はアプリ画面のページタイトル
+ * （28px の h1。`text-page-title font-bold`）だけで、ほかの見出しには使わない。 */
 @theme {
   --font-sans: Sora, "Noto Sans JP", sans-serif;
   /* Mono の和文のフォールバック（承認済みの逸脱。docs §8.4 の T の行）: JetBrains Mono に全角の字がないので、日本語を含む値（パス・ログの値）だけ Noto Sans JP で穴埋めする。 */
@@ -240,6 +242,9 @@
   --text-2xl--line-height: 1.4;
   --text-3xl: 2.5rem;
   --text-3xl--line-height: 1.3;
+  /* アプリ画面のページタイトル（h1）。ガイド d430361: 28 / 700 / --ink。700 は h1 のクラス font-bold が付ける（このトークンはサイズと行間）。 */
+  --text-page-title: 1.75rem;
+  --text-page-title--line-height: 1.4;
   /* 2xs はバッジ数（P1。11px Mono）だけに使う。本文・注記には使わない（T3）。 */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1;

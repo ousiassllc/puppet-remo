@@ -33,7 +33,7 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 // ClientCard はクライアント 1 件（有効・無効の切り替え）。PATCH の応答もこのフラグメントを返す（API 仕様 §7.2）。
 // 切り替えは現在の状態の逆だけを描画する。削除と詳細への導線は、一覧のカードだけに出す。
 // 名前の見出し（項目名）は、一覧のカードだけが h3（sr-only の h2「クライアント一覧」の下。base 16 SemiBold）。詳細ページの名前はページの h1
-// （pages/clients.templ の text-3xl）なので、このカードは名前を出さない。
+// （pages/clients.templ の text-page-title）なので、このカードは名前を出さない。
 func ClientCard(c view.Client) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
