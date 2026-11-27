@@ -42,7 +42,9 @@ type DesktopTool struct {
 	Parameters  map[string]any
 }
 
-func intProp(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+func intProp(desc string) map[string]any {
+	return map[string]any{"type": "integer", "description": desc}
+}
 
 var (
 	modifiersProp = map[string]any{

@@ -65,7 +65,7 @@ type Task struct {
 	Model       string // 開始時の agent.model
 	// Connection はタスクの接続方式（開始時の agent.connection。終了まで変わらない。FR-G25）。#49 より前の行は openai_api_key。
 	Connection AgentConnection
-	MaxSteps    int    // 適用した上限
+	MaxSteps   int // 適用した上限
 	// MaxDurationSec は適用した上限（秒）。
 	MaxDurationSec int
 	StepCount      int // 総数。常に FastSteps + OpenAISteps（ER の CHECK）
