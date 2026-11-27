@@ -367,7 +367,7 @@ func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
 }
 
 // #180・#181: ツールチップは WCAG 1.4.13 を満たす。Esc（app.ts が付ける data-tip-dismissed）で隠れ、本文は pointer-events を切らず（hoverable）、
-// 出す側との隙間は ::before / ::after の橋でふさぐ。位置は出す側の真上で、入りきらなければ真下（アンカー位置指定。横にはずらさない）。
+// 出す側との隙間は ::before / ::after の橋でふさぐ。位置は出す側の真上で、入りきらなければ真下（アンカー位置指定。横にはずらさない）。左右には margin-inline で画面の端から余白を空ける。
 func TestTooltipIsDismissableHoverableAndAnchoredAboveOrBelow(t *testing.T) {
 	css := strings.Join(strings.Fields(readAppCSS(t)), " ")
 	if regexp.MustCompile(`\.tip \{[^}]*pointer-events: none;`).MatchString(css) {
@@ -380,6 +380,8 @@ func TestTooltipIsDismissableHoverableAndAnchoredAboveOrBelow(t *testing.T) {
 		"position-area: top;",
 		"position-try-fallbacks: flip-block;",
 		"justify-self: anchor-center;",
+		// #181: 390 幅で画面の左右の端にぴったり付かない余白（最低でも --s-2）。
+		"margin-inline: var(--s-4);",
 		"anchor-scope: --tip;",
 	} {
 		if !strings.Contains(css, want) {

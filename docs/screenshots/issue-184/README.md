@@ -23,6 +23,8 @@ PUPPET_REMO_STATIC_DIR=<その版の static/dist> /tmp/remotedemo -task-history 
 | ClientCard（`[data-client]`） | 16px | 24px | 24px |
 | AppCard（`[data-app]`） | 16px | 24px | 24px |
 | 接続要求（`[data-request]`） | 16px | 24px | 24px |
-| 拒否リストの行（`[data-denied]`） | 16px | 24px | 24px |
+| 拒否リストの行（`[data-denied]`） | 16px | 16px（見出し付きカードの中の入れ子の行なので `--pad-card-sm`） | 24px |
 
-枠は変更前後とも 1px `--border`・角丸 12px（`--r-lg`）。390 幅は 4 画面とも横スクロールなし。変更前の拒否リストの行は、390 幅で値の `<code>` が 1 文字ずつ縦に折れていた（`after` では `basis-40` で値が行を替えて出る）。
+枠は変更前後とも 1px `--border`・角丸 12px（`--r-lg`）。390 幅は 4 画面とも横スクロールなし。変更前の拒否リストの行は、390 幅で値の `<code>` が 1 文字ずつ縦に折れていた（`after` では値が 1 段目の行の中で折り返して出る）。
+
+拒否リストの行は、見出し付きカードの中に入れ子になった行なので内側の余白を `--pad-card-sm`（16px）にし、390 幅（sm 未満）では「1 段目: 種別のバッジ＋値（14px）、2 段目: 「編集」「削除」（1 つの `flex gap-2 shrink-0` に包んで分かれない）」の 2 段にした（撮り直し後の実測: 行の padding 16px・値の文字 14px・2 つのボタンの上端が同じ・画面の横スクロールなし）。`apps-after-390-*.png` と `apps-after-1280-*.png` の 4 枚は、この変更のあとの版で撮り直した（アプリは `C:\Windows\System32\notepad.exe`・`calc.exe`、拒否リストは `C:\Windows\System32\cmd.exe`・`powershell.exe`）。

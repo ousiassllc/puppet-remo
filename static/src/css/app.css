@@ -711,6 +711,7 @@
       position-area: top;
       justify-self: anchor-center;
       margin-block: var(--s-2);
+      margin-inline: var(--s-4);
       position-try-fallbacks: flip-block;
     }
   }

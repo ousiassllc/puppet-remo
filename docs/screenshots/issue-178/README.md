@@ -15,8 +15,7 @@ PUPPET_REMO_STATIC_DIR=$PWD/static/dist /tmp/remotedemo -task-history 110 -gui-a
 
 | ファイル | 内容 |
 |---|---|
-| `tasks-390-light.png` / `tasks-390-dark.png` | 390 幅。1 件 1 枚のカード（3 段）の縦積み |
+| `tasks-390-light.png` / `tasks-390-dark.png` | 390 幅。1 件 1 枚のカード（3 段）の縦積み。1 件目がすでに長い指示で、2 行で「…」になる例を兼ねる（長い指示だけの撮影は重複なので置かない） |
 | `tasks-1280-light.png` / `tasks-1280-dark.png` | 1280 幅。表のまま（変えていない） |
-| `tasks-long-prompt-390-light.png` / `tasks-long-prompt-390-dark.png` | 390 幅で指示が長い例（2 行で「…」） |
 
 実測（390 幅）: 画面全体・`#task-list` とも横スクロールなし（`scrollWidth` = `clientWidth`）。カードの内側の余白は 16px。キーボードの Tab は ID のリンクに止まり、フォーカスリングはカードの外周（2px・`--focus`）に出る。カードの空いた所を押すと詳細（`/tasks/{id}`）へ移る。

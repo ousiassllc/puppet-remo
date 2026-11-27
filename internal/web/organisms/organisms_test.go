@@ -799,24 +799,38 @@ func TestPagerButtonsAreSmallSecondary(t *testing.T) {
 	has(t, tasks, "h-8", "data-pager-next")
 }
 
-// #184: 項目カード（クライアント・アプリ・接続要求・拒否リストの行・詳細の枠）の内側の余白は、ガイドの設定画面パーツ 1 の本文と同じ --pad-card（24）。
-// p-4 などの直書きの数値を残さない。
+// #184: 項目カード（クライアント・アプリ・接続要求・詳細の枠）の内側の余白は、ガイドの設定画面パーツ 1 の本文と同じ --pad-card（24）。
+// 拒否リストの行は見出し付きカードの中に入れ子になった行なので、--pad-card-sm（16）。p-4 などの直書きの数値を残さない。
 func TestItemCardsUseThePadCardToken(t *testing.T) {
 	const card = "rounded-lg border border-border bg-surface p-(--pad-card)"
+	const nested = "rounded-lg border border-border bg-surface p-(--pad-card-sm)"
 	clients := webtest.Render(t, organisms.ClientCard(view.Client{ID: "c1"}))
 	has(t, clients, card)
 	apps := webtest.Render(t, organisms.AppCard(view.AppRow{ID: "a1", Label: "x"}))
 	has(t, apps, card)
 	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Rows: []view.DeniedRow{{ID: "d1"}, {ID: "d2", Editing: true, ActionURL: "/apps/denied/d2"}}}))
-	if n := strings.Count(denied, card); n != 2 {
-		t.Errorf("denied rows (view and edit) must both use the token, got %d:\n%s", n, denied)
+	if n := strings.Count(denied, nested); n != 2 {
+		t.Errorf("denied rows (view and edit) must both use the nested-row token, got %d:\n%s", n, denied)
 	}
-	// 390 幅で値が 1 文字ずつ縦に折れない（flex-1 の最小幅が 0 なので、折り返しの基準 basis-40 を持つ）。
-	has(t, denied, `<code class="min-w-0 flex-1 basis-40 break-all" data-denied-value>`)
+	hasNot(t, denied, card)
+	// 390 幅で値が 1 文字ずつ縦に折れない（flex-1 の最小幅が 0。1 段目の行の中でバッジの残りの幅に収まって折り返す）。値は AppCard と同じ 14px（<code> は親の text-sm に従う）。
+	has(t, denied, `<div class="flex min-w-0 flex-1 items-center gap-2 text-sm">`, `<code class="min-w-0 flex-1 break-all" data-denied-value>`)
 	request := webtest.Render(t, organisms.ConnectionRequestList(view.RequestList{Rows: []view.RequestRow{{ID: "r1", RemoteIP: "100.64.0.9"}}}))
 	has(t, request, card)
 	for _, out := range []string{clients, apps, denied, request} {
 		hasNot(t, out, "bg-surface p-4")
+	}
+}
+
+// #184: 拒否リストの行は sm 未満で「1 段目: バッジ＋値、2 段目: ボタン」の 2 段、sm 以上で 1 行。
+// 「編集」「削除」は 1 つの flex（gap-2 shrink-0）に包み、折り返しで分かれない。
+func TestDeniedRowKeepsActionsTogether(t *testing.T) {
+	denied := webtest.Render(t, organisms.DeniedSection(view.DeniedSection{Rows: []view.DeniedRow{{ID: "d1", Value: "cmd.exe", EditURL: "/apps/denied/d1/edit", DeleteConfirm: "/apps/denied/d1/delete"}}}))
+	has(t, denied, "flex flex-col gap-2", "sm:flex-row", `<div class="flex shrink-0 gap-2" data-denied-actions>`)
+	actions := denied[strings.Index(denied, "data-denied-actions"):]
+	actions = actions[:strings.Index(actions, "</li>")]
+	if n := strings.Count(actions, "<button"); n != 2 {
+		t.Errorf("the edit and delete buttons must share one wrapper, got %d buttons in it:\n%s", n, actions)
 	}
 }
 
