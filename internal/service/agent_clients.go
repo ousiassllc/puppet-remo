@@ -24,6 +24,12 @@ func NewAgentModel(secrets platform.SecretStore) AgentModel {
 	return openai.New(secretReader(secrets, platform.SecretOpenAI), openai.Config{})
 }
 
+// NewChatGPTAgentModel は公式の ChatGPT のプランの経路の Model を返す（FR-G26）。アクセストークンは呼び出しのたびに
+// auth.AccessToken から読み（残り 5 分以下なら更新される。保持しない。NFR-S14）。組み立てるだけで、通信も goroutine も起動しない。
+func NewChatGPTAgentModel(auth ChatGPTAuth) AgentModel {
+	return openai.NewChatGPT(auth.AccessToken, openai.ChatGPTConfig{})
+}
+
 // NewAgentChooser は本物の TypeSafe クライアントを返す。キーは SecretStore の SecretTypeSafe を呼び出しのたびに読む（保持しない）。
 // 組み立てるだけで、通信も goroutine も起動しない。
 func NewAgentChooser(secrets platform.SecretStore) AgentChooser {

@@ -65,9 +65,12 @@ type Platform struct {
 	Autostart service.Autostart
 	// Installer は署名検証済みの更新のインストーラの起動（FR-H09。#74）。service.Updater が唯一の呼び出し元。
 	Installer platform.Installer
-	// Secrets は API キー（OpenAI・TypeSafe）を置く資格情報マネージャー（NFR-S14。FR-G14）。エージェント（openai.Model）・高速パス
-	// （typesafe.Chooser）は呼び出しのたびにここから読み、ホスト GUI のキー管理（service.AgentSettings）が登録・削除する。
+	// Secrets は API キー（OpenAI・TypeSafe）と ChatGPT の OAuth トークンを置く資格情報マネージャー（NFR-S14。FR-G14）。エージェント
+	// （openai.Model）・高速パス（typesafe.Chooser）は呼び出しのたびにここから読み、ホスト GUI のキー管理（service.AgentSettings）・
+	// ChatGPT のサインイン（service.ChatGPTAuth）が登録・削除する。
 	Secrets platform.SecretStore
+	// Browser は ChatGPT のサインイン・使用量の管理・Codex のログインで、既定のブラウザに固定の https の URL を開く（FR-G28・G30。#247）。
+	Browser platform.BrowserOpener
 }
 
 // UpdateOptions は更新（service.Updater。#74）の設定の上書き。ゼロ値なら本番の既定（埋め込みの公開鍵・GitHub・6 時間ごと）。
@@ -113,8 +116,10 @@ type Config struct {
 	// OpenAIModel と TypeSafeChooser は、エージェントが呼ぶ OpenAI・TypeSafe を差し替える口。**テストとオフラインのデモ専用**で、
 	// 利用者の設定項目ではない（config・GUI には出さない）。nil なら本物のクライアント（service.NewAgentModel・NewAgentChooser。キーは
 	// Platform.Secrets の puppet-remo/openai・puppet-remo/typesafe から呼び出しのたびに読む）を使う。
+	// ChatGPTModel は接続方式 chatgpt の Model の差し替え口（同じくテスト・デモ専用）。nil なら service.NewChatGPTAgentModel。
 	OpenAIModel     service.AgentModel
 	TypeSafeChooser service.AgentChooser
+	ChatGPTModel    service.AgentModel
 
 	// Closers は Shutdown の最後（監査のキューを書き切ったあと）に閉じる。DB・プラットフォームの資源を渡す。
 	Closers []io.Closer
@@ -140,6 +145,7 @@ type App struct {
 	agent    *service.AgentService         // 内蔵エージェント（FR-G。run_task / get_task / cancel_task の実体）
 	tasks    service.TaskAdmin             // ホスト GUI のタスク画面・ダッシュボード（FR-H10）
 	agentCfg *service.AgentSettingsService // エージェント設定（FR-H11）と、Agent・FastPath・RuleJudge が設定を読む窓口
+	chatgpt  *service.ChatGPTAuthService   // 公式の Sign in with ChatGPT の認可と接続の状態（FR-G25〜G30）
 	authz    service.Authz
 	audit    *service.Audit
 	admin    service.HostAdmin
@@ -200,8 +206,8 @@ func (c Config) validate() error {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
-		p.Hotkey == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power, Installer and Secrets")
+		p.Hotkey == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil, p.Browser == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power, Installer, Secrets and Browser")
 	case c.Windows == nil:
 		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
@@ -273,13 +279,27 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("app registry: %w", err)
 	}
+	// ChatGPT のプランの経路（公式の Sign in with ChatGPT。FR-G25〜G30）の認可と接続の状態。起動時はネットワークを使わない。
+	// 解除で中断するのは chatgpt の経路のタスクだけ（a.agent は Start の前に必ず入る）。
+	a.chatgpt, err = service.NewChatGPTAuth(service.ChatGPTAuthConfig{
+		Settings: settings, Secrets: p.Secrets, Browser: p.Browser, Audit: audit, Bus: a.bus, Clock: cfg.Clock, Logger: a.log,
+		CancelTasks: func(reason string) string { return a.agent.CancelConnection(domain.ConnectionChatGPT, reason) },
+	})
+	if err != nil {
+		return fmt.Errorf("chatgpt auth: %w", err)
+	}
 	// エージェント設定。Cancel（無効化・OpenAI キーの削除でタスクを中断）は Agent の組み立て後に結ばれる（a.agent は Start の前に必ず入る）。
 	a.agentCfg, err = service.NewAgentSettings(service.AgentSettingsConfig{
 		Settings: settings, Secrets: p.Secrets, Audit: audit, Clock: cfg.Clock, Logger: a.log,
-		Cancel: func(reason string) { a.agent.CancelAll(reason) },
+		Cancel:  func(reason string) { a.agent.CancelAll(reason) },
+		ChatGPT: a.chatgpt,
 	})
 	if err != nil {
 		return fmt.Errorf("agent settings: %w", err)
+	}
+	// 接続方式の移行（FR-G25）: 未設定のまま起動し、OpenAI API キーが登録済みなら openai_api_key を一度だけ保存する。
+	if err := a.agentCfg.MigrateConnection(ctx); err != nil {
+		return fmt.Errorf("agent connection: %w", err)
 	}
 	// agent のアクションだけが Judge（RuleJudge。失敗・2 秒の超過は承認を求める fail-closed）と承認（judge_action）を通る。
 	control, err := service.NewControl(service.ControlConfig{
@@ -467,6 +487,10 @@ func (a *App) buildAgent(control service.Control, kill *service.KillSwitchManage
 	if chooser == nil {
 		chooser = service.NewAgentChooser(p.Secrets)
 	}
+	chatgptModel := cfg.ChatGPTModel
+	if chatgptModel == nil {
+		chatgptModel = service.NewChatGPTAgentModel(a.chatgpt)
+	}
 	fast, err := service.NewFastPath(service.FastPath{
 		UI: p.UI, Control: control, Chooser: chooser, Settings: a.agentCfg, Disabler: a.agentCfg, Audit: a.audit, Bus: a.bus, Logger: a.log,
 	})
@@ -476,6 +500,7 @@ func (a *App) buildAgent(control service.Control, kill *service.KillSwitchManage
 	a.agent, err = service.NewAgent(service.AgentServiceConfig{
 		Tasks: cfg.Repo.Tasks(), Clients: cfg.Repo.Clients(), Settings: a.agentCfg, Control: control, Leases: a.leases, Kill: kill,
 		Approval: a.approval, Model: model, Windows: cfg.Platform.Windows, Fast: fast, Audit: a.audit, Bus: a.bus, Disabler: a.agentCfg, Clock: cfg.Clock, IDs: cfg.IDs, Logger: a.log,
+		ChatGPTModel: chatgptModel, ChatGPT: a.chatgpt,
 	})
 	if err != nil {
 		return fmt.Errorf("agent: %w", err)
