@@ -41,7 +41,7 @@ graph TD
 | `repository` | SQLite と `thumbs/` へのアクセス、マイグレーション | ER、NFR-A06/O05 |
 | `platform` | OS 依存のインターフェースと Windows 実装（画面・入力・ウィンドウ・UI Automation・クリップボード・資格情報・アプリ起動 `AppLauncher`・ファイル選択 `FilePicker`・フォルダーを開く `FolderOpener`） | FR-M、FR-M19、FR-H12、FR-H13、NFR-S06/S14/S20/O03 |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs、Listener） | FR-A01〜A03、NFR-S05/A03 |
-| `openai` | Responses API の `computer` ツール呼び出し（接続方式 `openai_api_key`）と、ChatGPT のプラン経路（接続方式 `chatgpt`）の関数ツール呼び出し・ストリーム（SSE）の読み取り。どちらも `store: false` 固定のステートレス継続（履歴の再送とスクリーンショットの間引き） | FR-G04〜G06、FR-G24、FR-G26・G27、NFR-S16 |
+| `openai` | Responses API の `computer` ツール呼び出し（接続方式 `openai_api_key`）と、ChatGPT のプラン経路（接続方式 `chatgpt`。`openai.NewChatGPT`）の関数ツール呼び出し・ストリーム（SSE）の読み取り、関数ツール（namespace `desktop`）の定義と呼び出しの検査（`DesktopTools`・`ParseDesktopCall`）。どちらも `store: false` 固定のステートレス継続（履歴の再送とスクリーンショットの間引き）。Codex 経路（接続方式 `chatgpt-codex`）の `Model` は `internal/codex` が `openai.Model` を満たして提供する（§4.3.2） | FR-G04〜G06、FR-G24、FR-G26・G27、FR-G35、NFR-S16 |
 | `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`。高速パスが有効なときだけ呼ばれる | FR-G18、FR-G21、NFR-S18 |
 | `service` | ユースケース（下記 §5）。状態を持つのは主にここ | 全般 |
 | `mcp` / `web` / `ws` / `router` | リモート・GUI の入口。`service` と `domain` だけに依存する | API 仕様 |
@@ -316,7 +316,7 @@ type SecretStore interface { // 資格情報マネージャー（go-keyring）�
 const (
     SecretOpenAI   = "puppet-remo/openai"
     SecretTypeSafe = "puppet-remo/typesafe" // 高速パス。値は登録後に表示しない（FR-G22）
-    SecretChatGPT  = "puppet-remo/chatgpt" // ChatGPT の OAuth トークン（アクセス・リフレッシュ・ID トークン・期限・scope をまとめた 1 件。#49。NFR-S14）
+    SecretChatGPT  = "puppet-remo/chatgpt" // ChatGPT の OAuth トークンの記録（アクセス・リフレッシュ・ID トークン・期限・scope をまとめた JSON）の見出し。1 件 2560 バイトの上限を超えるため分割保存: 値は {"v":1,"parts":N}、本体は 2000 バイト以下ずつ SecretChatGPT+"/1" … "/N"（新しい parts → 見出しの順で書き、余った古い parts を消す。欠け・不整合は「トークンなし」。#49・#247。NFR-S14）
 )
 // アプリ起動（M1.5。FR-M19）。service.Control が唯一の呼び出し元。goroutine を持たず、呼び出し元の goroutine で同期的に動く。
 type AppLauncher interface {
@@ -515,36 +515,92 @@ const OmittedScreenshot = "[screenshot omitted]"
 
 実装は `openai-go/v3` の `responses.ComputerToolParam`（`{type:"computer"}`）を使う。毎回の要求は、指示・これまでの出力アイテム（原文のまま）・`computer_call_output`（`History` が保持する直近 `agent.keep_screenshots` 枚だけ画像つき）で組み立てる。スクリーンショットは PNG・`detail: "original"`（最大辺の既定 1568 px。FR-S03）。`include` に何が要るか（推論の暗号化コンテンツなど）は実 API のスモークで確認する（§12.2）。未知のアクション種別は `ErrUnsupportedAction`。API キーは呼び出しごとに `SecretStore`（ターゲット名 `puppet-remo/openai:puppet-remo`）から読み、**ログ・エラーメッセージに出さない**（`http.RoundTripper` で `Authorization` を伏せる）。**所有する goroutine**: なし（呼び出しは `ctx` で取り消せる）。`History` は `run` の goroutine だけが触る。
 
-### 4.3.1 ChatGPT のプラン経路（接続方式 `chatgpt`。FR-G25〜G30。#49。設計のみ・実装は未着手）
+### 4.3.1 ChatGPT のプラン経路（接続方式 `chatgpt`。FR-G25〜G30。#49・#247。実装済み）
 
-内蔵エージェントのもう 1 つの接続方式。`Model` インターフェースの実装がもう 1 つ増え、モデル呼び出し以外（リース・承認・Judge・InputGuard・監査・上限・中断）は API キー経路と共通である。**名前・型は実装が決める**（ここは責務と契約）。
+内蔵エージェントの接続方式の 1 つ（公式の Sign in with ChatGPT）。`Model` インターフェースの実装がもう 1 つ増え、モデル呼び出し以外（リース・承認・Judge・InputGuard・監査・上限・中断）は API キー経路と共通である。契約ファイルは `internal/domain/agentconn.go`・`internal/openai/{model,planerrors,desktop,history}.go`・`internal/service/agent_plan_types.go`・`internal/platform/browser.go`。
+
+**実装の名前**:
+
+| 名前 | 場所 | 責務 |
+|------|------|------|
+| `domain.AgentConnection` | `internal/domain` | 接続方式（FR-G25）: `ConnectionChatGPT`（`chatgpt`）/ `chatgpt-codex` / `openai_api_key`。`Plan()` でプラン経路かを返す。`agent_disabled` の `detail.reason` の定数（`AgentDisabledChatGPT*`・`AgentDisabledCodex*`）と、`ErrChatGPT*`・`ErrCodex*`、失敗コード（`chatgpt_*`・`codex_*`。`domain/taskerror.go`） |
+| `openai.NewChatGPT` | `internal/openai/chatgpt.go` | 公式の経路の `openai.Model`。呼び出しごとに `token func(ctx) (string, error)`（`ChatGPTAuth.AccessToken`）を読み、`POST https://api.openai.com/v1/responses` を `store: false`・`stream: true`・関数ツール・`input` で呼ぶ。エラーは `openai.ErrUsageLimit` / `ErrPlanUnauthorized` / `ErrPolicyDenied` / `ErrEngineUnavailable`（`planerrors.go`）を包んで返す。`ChatGPTConfig` の `BaseURL`・`Transport` はテスト専用 |
+| `openai.DesktopNamespace`・`DesktopTools`・`ParseDesktopCall`・`FunctionOutputOK`・`FunctionOutputNotExecuted` | `internal/openai/desktop.go` | 関数ツール（namespace `desktop`。FR-G27）の定義、呼び出し（名前・引数）を `domain.Op` に写す検査（MCP の引数検査と共通。未知の名前・型・範囲の不正は `unsupported_action`、縮小画像の外の座標は `invalid_coordinates`）、結果の文字列。**2 つのプラン経路（`chatgpt`・`chatgpt-codex`）が共有する** |
+| `openai.StepInput.Instructions`・`StepOutput.Calls`・`ToolCall{CallID, Name, Op}`・`TaskCloser` | `internal/openai/model.go` | プラン経路の `Step` の入出力（指示を `instructions` に入れる。`function_call` / `item/tool/call` ごとの `CallID` と `Op`。API キー経路は 1 つの `CallID` に `Actions`）。`TaskCloser` はタスクの終了で呼ぶ後片付け（Codex のスレッド） |
+| `openai.History` | `internal/openai/history.go` | 接続方式ごとの出力アイテムの形を持つ。プラン経路用: `AddFunctionOutput`・`AddUserImage(shot, note)`・`InitialRequest()`・`FunctionOutput(callID)`・`LatestUserImage()`。`function_call_output` も `call_id` の対応検査（`ErrCallPairing`）に数える。直近 `keep` 枚を超える古い画像は `OmittedScreenshot` に置き換える（FR-G24）。`previous_response_id` は無い |
+| `service.ChatGPTAuthService` | `internal/service/chatgpt_auth*.go` | 公式の経路の認可と接続の状態の唯一の持ち主。`NewChatGPTAuth(ChatGPTAuthConfig)`。`service.ChatGPTAuth` と `service.PlanGate` を満たす（下） |
+| `service.CodexAuthService` | `internal/service/codex_auth*.go` | Codex の経路のエンジン・サインイン・接続の状態の唯一の持ち主（§4.3.2）。`service.CodexAuth` と `service.PlanGate` を満たす |
+| `service.PlanGate` | `internal/service/agent_plan_types.go` | `Agent`・`AgentSettings` が見るプラン経路の窓口: `Ready() (reason, ok)`（`run_task` を受け付けられるか。ネットワークを使わない）・`MarkUsageLimited()`・`ReportAuthFailure(ctx)`・`MarkPolicyDenied()`。2 つの経路を同じ形で扱う |
+| `service.AgentService`（関数ツールのループ・`CancelConnection`） | `internal/service/agent_plan_run.go`・`agent.go` | `run` の骨組み（§5.6）の上で、`Step` が返す `Calls` を 1 件ずつ `Control.Do` に通し、結果を `AddFunctionOutput`（または Codex の応答）で返し、全件のあとに新しい画面を足す。`CancelConnection(conn, reason)` は接続方式 `conn` の実行中のタスクだけを中断して ID を返す（公式の解除・Codex のサインアウトが使う） |
+| `service.AgentConnectionSettings` | `internal/service/agent_plan_types.go` | `SetConnection(ctx, conn, confirmed, reason)`・`SavePlanModel(ctx, conn, model)`（`AgentSettingsService` が満たす） |
+| `platform.BrowserOpener` | `internal/platform/browser.go` | `OpenURL(ctx, url)`（Windows は `ShellExecute` の `open`。シェル・コマンドラインを経由しない）。開く URL は service が固定の許可（公式の認可 URL・使用量の設定・Codex の `https` の認可 URL）だけにする（NFR-S21・S23） |
 
 ```go
 // 接続方式（FR-G25）。タスクの開始時に決まり、終了まで変わらない（agent_tasks.connection）。
-type Connection string // "chatgpt" | "openai_api_key"
+type AgentConnection string // "chatgpt" | "chatgpt-codex" | "openai_api_key"
 
-// ChatGPT の認可と接続の状態の唯一の持ち主（service）。GUI のハンドラは利用者側のインターフェースとして受け取る。
-// 状態: signed_out / signing_in / connected / reauth_required / usage_limited（FR-G28〜G30。状態図は機能要件）。
+// プランの接続の状態（FR-G28〜G30。Codex も同じ語彙）。
+type PlanState string // signed_out / signing_in / connected / reauth_required / usage_limited
+
+// 公式の経路の認可と接続の状態の唯一の持ち主（service）。GUI のハンドラは利用者側のインターフェースとして受け取る。
 type ChatGPTAuth interface {
-    Status() ChatGPTStatus                                  // { State, AccountEmail, WelcomePending }。メール以外の秘密を持たない
-    StartSignIn(ctx context.Context) error                  // FR-G28。進行中は ErrConflict。ブラウザを開けなければ signed_out のまま失敗
+    PlanGate
+    Status() ChatGPTStatus                                  // { State, AccountEmail, WelcomePending, Problem }。メール以外の秘密を持たない
+    StartSignIn(ctx context.Context) error                  // FR-G28。進行中は CodeConflict。ブラウザを開けなければ signed_out のまま失敗
     CancelSignIn()                                          // 受信口を閉じる。冪等
-    SignOut(ctx context.Context, forgetAccount bool) (SignOutResult, error) // FR-G29 (6)。中断 → 失効 → ローカル削除。失効の失敗でもローカルは消す
-    Resume() error                                          // usage_limited → connected（FR-G30）
-    Models(ctx context.Context) ([]ChatGPTModel, error)     // GET /v1/models（visibility が list のものの slug・display_name）。必要なら更新してから
+    SignOut(ctx context.Context, forgetAccount bool) (ChatGPTSignOutResult, error) // FR-G29 (6)。中断 → 失効 → ローカル削除。失効の失敗でもローカルは消す
+    Resume(ctx context.Context) error                       // usage_limited → connected（FR-G30）
+    DismissWelcome(ctx context.Context) error               // 初回の確認を閉じたことを保存（FR-G28 (7)）
+    OpenUsage(ctx context.Context) error                    // 使用量の設定（固定の URL）を既定のブラウザで開く
+    Models(ctx context.Context) ([]PlanModel, error)        // GET /v1/models（visibility が list のものの slug・display_name）
     AccessToken(ctx context.Context) (string, error)        // 残り 5 分以下なら更新して返す（排他。FR-G29）。openai の ChatGPT 用 Model が呼び出しごとに読む（保持しない）
-    ReportAuthFailure(ctx context.Context) error            // 401 / subscription_sharing_invalid_user。更新を 1 回だけ試し、使えなければ reauth_required
-    MarkUsageLimited()                                      // subscription_sharing_usage_limit_exceeded（メモリだけ。再起動で connected）
 }
-// ブラウザを開く窓口（platform。Windows は ShellExecute の open）。開く URL は service が固定の 2 つだけ許可する（NFR-S21）。
-type BrowserOpener interface{ Open(ctx context.Context, url string) error }
+// PlanGate は ChatGPTAuth・CodexAuth が満たす（上の表）。
 ```
 
-- **コールバック受信口**: サインインの間だけ `127.0.0.1:0` で Listen する 1 つの `http.Server`（NFR-S01 の例外。[API 仕様 §7.6](../api/endpoints.md)）。Listen の関数は注入でき（`ListenFunc`）、テストはループバックの偽を使う。`state` の一致する最初の 1 回の要求を結果として `ChatGPTAuth` へ渡して閉じる。5 分のタイマー・「中止」・アプリの終了で閉じる
-- **`openai` の ChatGPT 用 `Model`**: `Step` ごとに `AccessToken(ctx)` を読み、`POST https://api.openai.com/v1/responses` を `store: false`・`stream: true`・関数ツール（namespace `desktop`。FR-G27 の一覧）・`input` で呼ぶ。ストリームの終端のイベントまで読み（全体 60 秒）、`response.completed` の `function_call` だけを `domain.Op` に写す（FR-M の名前・引数と同じなので検査は MCP の引数検査と共通の関数を使う）。**`StepOutput` は `function_call` ごとの `CallID` と `Op` の組を持つ**（API キー経路は 1 つの `CallID` に `Actions`）。`response.failed`・`response.incomplete`・`error`・終端なしの切断は、`error.code` を保った型付きのエラー（`ErrChatGPTUsageLimit` / `ErrChatGPTUnauthorized` / その他）で返し、部分的な出力は返さない。送れない項目（FR-G26）は構造体に持たせず、要求の組み立てテストで「無いこと」を確かめる
-- **`History`**: 接続方式ごとの出力アイテムの形を持つ。ChatGPT 用は、`function_call` アイテム（原文のまま）・`function_call_output`（`{"ok":true}`）・新しいスクリーンショットの `role: "user"` メッセージの `input_image`。直近 `keep` 枚を超える古い画像は `OmittedScreenshot` に置き換える（FR-G24）。`previous_response_id` は無い
+- **公式の `Problem`**（`PlanProblem`。カードの説明。秘密・本文を含まない）: `access_denied` / `scope_missing` / **`policy_denied`**（ワークスペースのポリシー拒否。コールバックの `error`、または API の 403 `3p_delegated_access_policy_denied` / `subscription_sharing_user_not_eligible`。`PlanGate.MarkPolicyDenied` が立てる。状態は変えず、カードに「Codex 経由で使う」の案内を出す。押したときだけ接続方式を `chatgpt-codex` に変える。FR-G40）/ `not_eligible` / `account_mismatch` / `timeout` / `revoke_failed` / `failed`
+- **コールバック受信口**: サインインの間だけ `127.0.0.1` で Listen する 1 つの `http.Server`（NFR-S01 の例外。[API 仕様 §7.6](../api/endpoints.md)）。**ポートは `1455` → 使えなければ `1457` → 空きポート**（`127.0.0.1:0`）の順に試し、`redirect_uri` は実際に Listen できたポートで組み立てる。Listen の関数（`Listen`）とポートの候補（`Ports`）は `ChatGPTAuthConfig` で注入でき、テストはループバックの偽を使う。`state` の一致する最初の 1 回の要求を結果として `ChatGPTAuth` へ渡して閉じる。5 分のタイマー・「中止」・アプリの終了で閉じる
+- **`openai` の ChatGPT 用 `Model`**: `Step` ごとに `AccessToken(ctx)` を読み、`POST https://api.openai.com/v1/responses` を `store: false`・`stream: true`・関数ツール（namespace `desktop`。FR-G27 の一覧）・`input` で呼ぶ。ストリームの終端のイベントまで読み（全体 60 秒）、`response.completed` の `function_call` だけを `ParseDesktopCall` で `ToolCall` に写す。**`StepOutput.Calls` は `function_call` ごとの `CallID` と `Op` の組を持つ**（API キー経路は 1 つの `CallID` に `Actions`）。`response.failed`・`response.incomplete`・`error`・終端なしの切断は、`error.code` を保った型付きのエラー（`ErrUsageLimit` / `ErrPlanUnauthorized` / `ErrPolicyDenied` / その他）で返し、部分的な出力は返さない。送れない項目（FR-G26）は構造体に持たせず、要求の組み立てテストで「無いこと」を確かめる
+- **トークンの分割保存**: OAuth トークンの記録（1 つの JSON）は資格情報マネージャーの 1 件 2560 バイトを超えるので、`SecretChatGPT`（見出し `{"v":1,"parts":N}`）と `SecretChatGPT+"/1"` … `"/N"`（本体を 2000 バイト以下ずつ）に分けて `SecretStore` に置く。書き込みは新しい parts → 見出しの順で、余った古い parts を消す。読むときに parts の欠け・見出しの不整合は「トークンなし」。更新ではまとめて置き換える（回転するリフレッシュトークンを片方だけ置き換えない。NFR-S14）
 - **キー・トークンの扱い**: アクセストークンは `Step` のたびに `AccessToken(ctx)` から読み、保持せず、エラー・ログに出さない（`safeTransport` と同じ伏せ方。NFR-S13・S14）。環境変数のトークン・ベース URL は読まない。ChatGPT 経路の `Config` の `BaseURL`・`Transport` はテスト専用の差し替え口（実際の OpenAI・ChatGPT を呼ばない。NFR-O06）
-- **`Agent` との関係**: `Agent.Start` は `agent.connection`（§5.6）で `Model` を選び、`ChatGPTAuth.Status()` が `connected` でなければ `ErrAgentDisabled`（`Reason` = `chatgpt_not_signed_in` / `chatgpt_signing_in` / `chatgpt_reauth_required` / `chatgpt_usage_limited`。FR-G01）。`failed` の `error_code` は `chatgpt_usage_limit`（`MarkUsageLimited` を呼ぶ）/ `chatgpt_unauthorized`（`ReportAuthFailure` を呼ぶ）/ `chatgpt_error`。**接続方式の切り替えは `AgentSettings` が持つ唯一の操作**（確認モーダルの確定だけが呼ぶ。自動で呼ぶコードを作らない。NFR-S22）。起動時、`agent.connection` が未設定なら（OpenAI キーが登録済みなら `openai_api_key`、そうでなければ `chatgpt` を）一度だけ保存する（FR-G25）
+- **`Agent` との関係**: `Agent.Start` は `agent.connection`（§5.6）で `Model` と `PlanGate` を選び、`Ready()` が使えない状態を返せば `ErrAgentDisabled`（`Reason` = FR-G01 の値）。`failed` の `error_code` は `chatgpt_usage_limit`（`MarkUsageLimited` を呼ぶ）/ `chatgpt_unauthorized`（`ReportAuthFailure` を呼ぶ）/ `chatgpt_error`（`ErrPolicyDenied` のときは `MarkPolicyDenied` も呼ぶ）。**接続方式の切り替えは `AgentSettings`（`AgentConnectionSettings.SetConnection`）が持つ唯一の操作**（`openai_api_key` への切り替えは確認モーダルの確定だけが `confirmed` を付けて呼ぶ。`chatgpt` ↔ `chatgpt-codex` は確認なしで、どちらも GUI の明示操作だけ。自動で呼ぶコードを作らない。NFR-S22）。起動時、`agent.connection` が未設定なら（OpenAI キーが登録済みなら `openai_api_key`、そうでなければ `chatgpt` を）一度だけ保存する（FR-G25）
+
+### 4.3.2 Codex 経路（接続方式 `chatgpt-codex`。FR-G31〜G40。#247。実装済み・Windows 実機未確認）
+
+公式の Sign in with ChatGPT がワークスペースのアカウントを拒むときの代替。ChatGPT のサインインと推論を、アプリが取得した固定版の Codex の app-server（子プロセス）に任せる。`openai.Model` を満たす実装が `internal/codex` にあり、関数ツール（`openai.DesktopTools`）は app-server の動的ツールとして渡す。画面操作はすべて `AgentService` の関数ツールのループが `Control.Do` に通す（Codex の道具は実行も許可もしない。FR-G34）。
+
+**`internal/codex` のサブパッケージ**（依存の向き: `service` → `codex/*` → `domain`・`openai`。`codex` は `service` を import しない）:
+
+| パッケージ | 責務 |
+|-----------|------|
+| `internal/codex`（`Model`・`tools.go`・`failure.go`） | `openai.Model`・`openai.TaskCloser` を満たす。`Step` が app-server のスレッド・ターンを進め、`item/tool/call`（namespace `desktop`）を `openai.ToolCall` として返す。ターンの失敗を `codex_*` の型付きエラー（`failure.go`）に分ける。コマンド・ファイル変更・MCP・Web 検索のアイテムを始めたターンは中断して `codex_error` |
+| `internal/codex/catalog` | 埋め込みカタログ（`data/catalog.json`）: 固定した版（`rust-v0.164.0`）・URL・アーカイブと展開後の実行ファイルの SHA-256・サイズを `GOOS/GOARCH`（`windows/amd64`・`windows/arm64`）ごとに持つ。他の OS は `unsupported` |
+| `internal/codex/engine` | エンジンの取得・検証・展開・置き換え・削除と置き場所（`<実行ファイルのディレクトリ>\codex\`・`installed.json`）。実行ファイル 1 件だけのアーカイブしか受けない（FR-G32） |
+| `internal/codex/rpc` | 標準入出力の JSON-RPC（要求・応答・通知・サーバー要求） |
+| `internal/codex/protocol` | プロトコルの型（`initialize`・`thread/start`・`turn/start`・`turn/interrupt`・`item/*`・`account/*`・`model/list`）。**トークンの項目を持たない**（テストで強制。FR-G33） |
+| `internal/codex/appserver` | 起動（専用の `CODEX_HOME`・空の `codex-work`・`-c` の道具の無効化・環境の除去）・ハンドシェイクと `codexHome` の検査・異常終了の検知・サーバー要求の拒否（`item/tool/call` の `desktop` 以外はすべて拒否。承認系は `decline`）。Windows はコンソール窓を出さず（`CREATE_NO_WINDOW`）、ジョブオブジェクトでアプリと一緒に終わる（FR-G33・G34・G37）。プロセスは 1 つだけ起動して共有する |
+| `internal/codex/codextest` | 偽の app-server（標準入出力で JSON-RPC を話す。テスト用） |
+
+```go
+// Codex の経路のエンジン・ログイン・接続の状態の唯一の持ち主（service。CodexAuthService）。GUI のハンドラは利用者側のインターフェースとして受け取る。
+type CodexAuth interface {
+    PlanGate
+    Status() CodexStatus                                    // { Engine{State, Version, Progress, Error}, State, AccountEmail, PlanType, Problem }。Codex のトークンはアプリが読まず、ここにも無い
+    Install(ctx context.Context) error                      // 固定した版のエンジンの取得を始める（非同期。SHA-256・サイズの検証）。unsupported・installing は CodeConflict
+    CancelInstall()                                         // 取得を止める（冪等）
+    StartSignIn(ctx context.Context) error                  // account/login/start（chatgpt）→ 返った authUrl を BrowserOpener で開く。エンジンが無ければ CodeConflict
+    CancelSignIn(ctx context.Context)                       // account/login/cancel（冪等）
+    SignOut(ctx context.Context, removeEngine bool) error   // account/logout（実行中の Codex 経路のタスクは中断）。removeEngine ならエンジンと専用の CODEX_HOME も削除
+    Resume(ctx context.Context) error                       // usage_limited → connected
+    Models(ctx context.Context) ([]PlanModel, error)        // model/list（connected でなければ CodeConflict）
+}
+// エンジンの状態（CodexEngineState）: unsupported / missing / installing / installed / outdated / failed。
+```
+
+- **`CodexAuthService`**: エンジンの状態（`catalog` と `installed.json` から求める）と接続の状態を持つ。サインインは `account/login/completed` の通知で完了し、`account/read`（更新は頼まない）でメール・`planType` を得る（表示だけ。設定・ログ・監査に入れない）。変化は `Bus` へ流し、画面は `/poll` の `rev_codex` で更新する。`Ready()` は `agent_disabled` の `detail.reason`（`codex_unsupported` / `codex_engine_missing` / `codex_not_signed_in` / `codex_signing_in` / `codex_reauth_required` / `codex_usage_limited`）を返す（ネットワーク・プロセスを使わない）。`MarkUsageLimited`・`ReportAuthFailure` は公式と同じ作り（FR-G38・G39）
+- **`AgentService` との関係**: `Agent.Start` は `chatgpt-codex` のとき `internal/codex` の `Model` と `CodexAuth`（`PlanGate`）を選ぶ。`Step` のエラーの分類: `ErrUsageLimit` → `failed` / `codex_usage_limit`（`MarkUsageLimited`）、`ErrPlanUnauthorized` → `failed` / `codex_unauthorized`（`ReportAuthFailure`）、`ErrEngineUnavailable` → `failed` / `codex_engine_unavailable`、それ以外 → `failed` / `codex_error`。**他方の経路へ送り直す処理は無い**（NFR-S22）。サインアウトは `CancelConnection(chatgpt-codex, …)` で実行中のタスクを中断してから `account/logout` を頼む
+- **所有する goroutine**: app-server の子プロセスの監視（標準出力の読み取り・異常終了の検知）とエンジンの取得（非同期）。`Step` は呼び出し元（`run`）の goroutine で動き、`ctx` で `turn/interrupt` を送って止まる
+- **検証状況**: テストは偽の app-server・偽のアーカイブ・偽の GitHub サーバーだけ（NFR-O06）。**実際の Codex・Windows 実機・実アカウントでの確認は未**（[非機能要件「Codex 経路: 未確認」](../requirements/non-functional.md)）
 
 ### 4.4 typesafe
 
@@ -859,11 +915,11 @@ type Agent interface {
 - **座標**: 縮小座標 → 物理座標は S の原点・縮小率で、バッチの最後まで同じ（`agentScope.convert`。`monitor` の指定は `invalid_argument`）。`Control.Do` へは `WithPhysicalCoords` で渡す
 - **判定**: 入力の注入の直前ごと（複数回の注入の間を含む）に `Control` が G を求め直し、`agentScope.observe`（`withGroupObserver`。§5.4.2 の 6）が直前の検証の G（k = 1 は S）と比べる。矩形の差 → `target_moved`、同一性の差 → `target_replaced`（`failed`）、メンバーの増減だけ → 中断。差がなければ #156 の検証（前面・座標の最上位・葉が G = S のメンバー）
 - **中断**（`runActions` → `auditYield`（撮影の前に監査を書く。中断の直後のメニューが撮れず失敗しても `agent.batch_yielded` は残る）→ `observeScreen`）: 残りのアクションを実行せず、新しい撮影の `computer_call_output` を同じ `call_id` に 1 件だけ（`AddComputerOutput`）追加し、その直後に `History.AddUserNote`（`role: "user"` の `input_text`。実行済み E 件・残りは未実行。件数は `actions[]` を Op に写した数。操作の途中で中断したときは、その Op を未実行とせず「一部だけ実行済み」と伝える）を足す。監査 `agent.batch_yielded`（`step`・`executed`・`not_executed`・`reason = group_changed`・`added`・`removed`、一部だけ実行した Op があれば `partially_executed = 1`。タイトル・入力文字なし）。中断された Op（実行していない・一部だけ注入した）は `agent.step` の行を残さない（`Control.Do` が agent の `IsGroupChanged` を記録しない。`ok` は「実行して成功」に、`denied` は拒否に読めるため。件数と理由は `agent.batch_yielded` が示す）。中断も 1 回のモデル呼び出しを使うので `max_steps`・`max_duration_sec` が歯止めになる。実行済みの入力は再実行も再送もしない（`Model.Step` は再試行しない）
-- **履歴の対応検査**: `History.input` が、すべての `computer_call` / `function_call` に `call_id` が一致する出力がちょうど 1 件あること（欠落・重複は `openai.ErrCallPairing`）を送る前に確かめる（`function_call_output` の追加は ChatGPT 経路の実装で行う）
+- **履歴の対応検査**: `History.input` が、すべての `computer_call` / `function_call` に `call_id` が一致する出力がちょうど 1 件あること（欠落・重複は `openai.ErrCallPairing`）を送る前に確かめる（`function_call_output` も数える。§4.3.1）
 - **高速パスは使わない**: `r.scope != nil` のとき `loop()` は `FastPath.Enabled` も `Run` も呼ばない（`fast_steps = 0`・`handoff_reason` なし。UIA の読み取り・TypeSafe への送信なし）。ChatGPT 経路はもともと併用しない
 - **クリップボード**: エージェントのツールにクリップボード操作は無く、増やさない。直接の `ClipboardRead` は §5.4.2 の 1 で `clipboard_out_of_scope`
 
-**検証状況**: 上は偽 platform（`FakeApp`・`FakeWindows`・`FakeCapturer`）と台本つきの偽モデル・ループバックのモックの `/v1/responses` で試験した。**Windows 実機の成立性ゲート（S1〜S3）と、実 OpenAI での確認は実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10）**で、完了・合格とは扱わない。ChatGPT のプラン経路（関数ツール）は未実装。
+**検証状況**: 上は偽 platform（`FakeApp`・`FakeWindows`・`FakeCapturer`）と台本つきの偽モデル・ループバックのモックの `/v1/responses` で試験した。**Windows 実機の成立性ゲート（S1〜S3）と、実 OpenAI での確認は実機未確認（成立性ゲート待ち。docs/operations/smoke-windows.md §3.10）**で、完了・合格とは扱わない。ChatGPT のプラン経路（関数ツール）は実装済み（モックのみ。実 API・実機は未確認）。
 
 ループの擬似コード（FR-G04〜G10、G16〜G24 と一致）:
 
@@ -901,7 +957,7 @@ func (r *run) loop(ctx context.Context) {
 - 高速パスで全体の上限（`agent.max_steps`・`agent.max_duration_sec`）に達したときは `limit_reached` で終了する（引き継ぎはしない）
 - 実行時間の上限はモデル呼び出しも縮める（1 回の呼び出しは `min(60 秒, 上限の残り)`）。承認の待ち（安全チェック・Judge の承認。各最大 60 秒）も上限に含まれ、上限の時刻になると待ちを打ち切って `limit_reached` で終了する（実行時間の上限のタイマー。§13.12）
 
-**ChatGPT のプラン経路（FR-G25〜G30）のループ**: `run` の骨組みは上のとおり共通で、違いは (1) 高速パス（`r.fast`）を呼ばない（`Enabled` が接続方式で偽）、(2) `Model.Step` が `function_call` の列（各 `CallID` と `Op`）を返し、`r.control.Do` を 1 件ずつ通して `function_call_output` を足し、全件のあとに新しいスクリーンショットを `input_image` で足す、(3) `askSafety`（API の安全チェック）は無い、(4) `Step` のエラーの分類: `ErrChatGPTUsageLimit` → `failed` / `chatgpt_usage_limit`（`MarkUsageLimited`。部分的な出力は実行しない）、`ErrChatGPTUnauthorized` → `failed` / `chatgpt_unauthorized`（`ReportAuthFailure`）、それ以外 → `failed` / `chatgpt_error`。**他方の経路へ送り直す処理は無い**（NFR-S22）。解除（`SignOut`）は実行中の ChatGPT 経路のタスクを `Cancel` してから進む（理由 `chatgpt_signout`）。
+**ChatGPT のプラン経路（FR-G25〜G30・G35）の関数ツールのループ**: `run` の骨組みは上のとおり共通で、違いは (1) 高速パス（`r.fast`）を呼ばない（`Enabled` が接続方式で偽）、(2) `Model.Step` が `function_call` / `item/tool/call` の列（`StepOutput.Calls` の各 `CallID` と `Op`）を返し、`r.control.Do` を 1 件ずつ通して結果（`function_call_output`、Codex は `contentItems`）を足し、全件のあとに新しいスクリーンショットを足す（`chatgpt` は `role: "user"` の `input_image`、`chatgpt-codex` は応答の `inputImage`）、(3) `askSafety`（API の安全チェック）は無い、(4) `Step` のエラーの分類: `chatgpt` は `ErrUsageLimit` → `failed` / `chatgpt_usage_limit`（`PlanGate.MarkUsageLimited`。部分的な出力は実行しない）、`ErrPlanUnauthorized` → `failed` / `chatgpt_unauthorized`（`ReportAuthFailure`）、それ以外 → `failed` / `chatgpt_error`（`ErrPolicyDenied` は `MarkPolicyDenied` も呼ぶ）。`chatgpt-codex` は `codex_usage_limit` / `codex_unauthorized` / `codex_engine_unavailable` / `codex_error`（§4.3.2）。**他方の経路へ送り直す処理は無い**（NFR-S22）。解除（公式の `SignOut`）・サインアウト（Codex の `SignOut`）は、実行中のその接続方式のタスクを `AgentService.CancelConnection` で中断してから進む（理由は公式が `chatgpt_signout`）。
 
 ### 5.6.1 FastPath（Agent の内部。FR-G16〜G23）
 
@@ -1144,7 +1200,8 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | `Hotkey` / `Overlay` / `Windows` | キルスイッチの手順（`Trigger` を直接呼ぶ）、`Bus` イベント → ウィンドウ操作の呼び出し（偽の `Windows`） | グローバルホットキーの発動、オーバーレイの表示・クリック透過・キャプチャへの非表示（スクリーンショットにも Web のライブにも写らない）、承認ダイアログが AI の入力を受けない |
 | `tailnet.Watcher` / `WhoIs` / `Listener` | キャッシュ TTL、WhoIs 失敗で fail closed、IP 変化での Listen の張り直し（偽の LocalAPI） | 実際の tailscaled（ログアウト・再ログイン・ネットワーク切替で 10 秒以内に復旧） |
 | `openai.Model` / `History` | `computer_call` の連鎖、`pending_safety_checks`、未知アクション、タイムアウト、401、上限（ステップ・時間）、中断（偽の Model）。`History`: すべての要求が `store: false` で `previous_response_id` を持たないこと、出力アイテムが原文のまま返ること、直近 N 枚だけ画像が残り古いものはプレースホルダになること（表駆動） | 実 API での `computer` ツールのループ（小さなタスクで 1 回。費用が発生する）。ステートレス継続の要求形式（`include`、プレースホルダの受理） |
-| `ChatGPTAuth`・ChatGPT 用 `openai.Model` / `History`（#49） | **モックのみ**（実際の OpenAI・ChatGPT を呼ばない。NFR-O06）: `httptest` の認可・トークン・失効・`/v1/models`・`/v1/responses`（SSE）、偽の `BrowserOpener`・`SecretStore`・時計・`ListenFunc`。コールバック（`state` 不一致で待ち続ける・`access_denied`・`client_id` 欠落・タイムアウト・「中止」）、ID トークンの検証（署名・`iss`・`aud`・`exp`・`nonce`・`sub` の不一致）、`scope` に `chatgpt.tokens.use.direct` が無い場合、更新（残り 5 分・成功の置き換え・回転・各失敗コード・同時呼び出しの排他・ネットワーク失敗でトークンを消さない）、401 での更新 1 回、解除（実行中タスクの中断 → 失効の成否 → ローカル削除、`forgetAccount`）、要求に送れない項目・`previous_response_id` が無いこと・`store: false`・`stream: true`、ストリームの途中の `response.failed` で部分的な `function_call` を実行しないこと、**上限のときに API キー経路の `Model` が呼ばれないこと**、トークン・認可コード・`id_token_hint` がログ・エラー・監査・画面に出ないこと | 実際の ChatGPT のサインイン（ブラウザ・同意画面・コールバック）、実 `/v1/responses` での関数ツールの往復、使用量の上限の実挙動（費用・上限に達しうるため、手動で 1 回だけ。手順は実装時に実機スモーク手順へ書く。本書の範囲外） |
+| `ChatGPTAuth`・ChatGPT 用 `openai.Model` / `History`（#49） | **モックのみ**（実際の OpenAI・ChatGPT を呼ばない。NFR-O06）: `httptest` の認可・トークン・失効・`/v1/models`・`/v1/responses`（SSE）、偽の `BrowserOpener`・`SecretStore`・時計・`Listen`（`ChatGPTAuthConfig`）。コールバック（`state` 不一致で待ち続ける・`access_denied`・ポリシー拒否の `error`・`client_id` 欠落・タイムアウト・「中止」・ポート `1455` が使えないときの `1457`・空きポート）、ID トークンの検証（署名・`iss`・`aud`・`exp`・`nonce`・`sub` の不一致）、`scope` に `chatgpt.tokens.use.direct` が無い場合、更新（残り 5 分・成功の置き換え・回転・各失敗コード・同時呼び出しの排他・ネットワーク失敗でトークンを消さない）、トークンの分割保存（parts の欠け・見出しの不整合は「トークンなし」。書き込みの順序・余った parts の削除）、401 での更新 1 回、解除（実行中タスクの中断 → 失効の成否 → ローカル削除、`forgetAccount`）、要求に送れない項目・`previous_response_id` が無いこと・`store: false`・`stream: true`、ストリームの途中の `response.failed` で部分的な `function_call` を実行しないこと、**上限のときに API キー経路の `Model` が呼ばれないこと**、トークン・認可コード・`id_token_hint` がログ・エラー・監査・画面に出ないこと | 実際の ChatGPT のサインイン（ブラウザ・同意画面・コールバック）、実 `/v1/responses` での関数ツールの往復、使用量の上限の実挙動（費用・上限に達しうるため、手動で 1 回だけ。手順は実装時に実機スモーク手順へ書く。本書の範囲外） |
+| `CodexAuth`・`internal/codex`（`catalog`・`engine`・`rpc`・`protocol`・`appserver`・`Model`）（#247） | **モックのみ**（実際の Codex・ChatGPT を呼ばない。NFR-O06）: 偽の app-server（`codextest`。標準入出力の JSON-RPC）、偽のアーカイブ・偽の GitHub サーバー（`httptest`）、偽の `BrowserOpener`・時計。エンジンの取得と検証（SHA-256・サイズの不一致・不正なアーカイブ〔パスの走査・複数エントリ〕・版違いの `outdated`・中止）、起動（環境の除去・`CODEX_HOME` の上書き・`codexHome` の不一致で使わない）、`desktop` 以外のサーバー要求の拒否、道具のアイテムを始めたターンの中断（`codex_error`）、`item/tool/call` が `Control.Do` を 1 件ずつ通ること・拒否で中断すること、使用量の上限（`codex_usage_limit`）・認可切れ、異常終了の検知と再起動、サインアウト（`removeEngine`）、プロトコルの型にトークンの項目が無いこと、トークン・認可 URL・メールがログ・エラー・監査に出ないこと | 実際の Codex のエンジンのダウンロード（約 88 MB）・実 app-server・ブラウザのサインイン・`dynamicTools` の受理・`inputImage` の受理・コンソール窓・ジョブオブジェクト（Windows 実機。[非機能要件「Codex 経路: 未確認」](../requirements/non-functional.md)） |
 | `typesafe.Chooser` | `httptest` のサーバーで、要求の形式（`Authorization`、モデル、Choice / Noul の質問、本文 256 KiB 以下）、要求に値・スクリーンショット・キーが入らないこと、5 秒のタイムアウト、再試行しないこと、401 → `ErrUnauthorized`、5xx / 429 / 超過 → `ErrUnavailable`、不正な応答 → `ErrBadResponse`、キーがログに出ないこと | 実 API で 1 回の問い合わせ（キー登録後。小さな費用が発生する）、応答の形式（`confidence`、Noul の確率） |
 | `domain.CandidateTable` | UIA 要素のフィクスチャ（メモ帳・ダイアログ・メニュー・ブラウザを想定した偽の `UISnapshot`）から表を作る表駆動テスト: 役割クラスの対応、無効・画面外・空ラベル・ウィンドウ枠・名前＝値の除外、`excluded_labels`（日本語・英語・大文字小文字）、24 件の上限と `Dropped`、ID の決定性と添字非依存、ID 衝突の除去、`Validate`（未知・空・重複・古い ID・`reobserve` / `abstain`）。プロパティテスト: 表に無い文字列は受理されない | — |
 | `FastPath`（偽の `Chooser`・偽の `UIAutomation`・偽の `Control`） | 引き継ぎの表駆動テスト: 8 種の理由それぞれが想定どおりの入力で発生し、検証の優先順（`invalid_choice` → `goal_maybe_done` → `abstain` → `low_confidence`）、`reobserve` は連続 3 回目で `abstain`、進捗なし 3 回で `no_progress`、`max_steps` で `fast_step_limit`。縮退: タイムアウト・5xx・429 → `chooser_unavailable` で引き継ぎタスクは失敗しない、401 → 設定が `false` に戻り通知、`Control` の拒否 → タスク終了で `handoff_reason` が NULL、キャンセルで HTTP 中断と `ReleaseAll`。1 ステップ 1 アクション、`type` / `key` / `scroll` を実行しないこと、Jev が返した ID 以外（座標・ツール名）を実行しないこと。完了は OpenAI だけが宣言すること。無効・キー無し・同意無しで `Chooser` が呼ばれないこと。監査に入力文字列・要素の値が出ないこと | 実アプリで固定のタスク集合を測定（M4 の受け入れ: 性能の主張を仕様に書かない）、1 ステップの時間（NFR-P09）、`Hash` による進捗の判定 |
@@ -1162,7 +1219,8 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | FR-M（MCP ツール） | `mcp`、`Control`、`Capturer`、`InputInjector`、`WindowManager`、`UIAutomation`、`Clipboard` |
 | FR-M18・M19・H12・AU06（アプリ起動と許可リスト・拒否リスト） | `mcp`、`Control`（`Launch` / `LaunchableApps`）、`AppRegistry`、`repository.LaunchableApps`、`repository.LaunchDenylist`、`domain.LaunchableApp`・`domain.LaunchMode`・`domain.DeniedApp`、`platform.AppLauncher`、`platform.FilePicker`、`web/handler`（`/apps`）、`Audit` |
 | FR-G（内蔵エージェント・高速パス） | `Agent`、`FastPath`、`openai.Model`、`typesafe.Chooser`、`domain.CandidateTable`、`UIAutomation.Snapshot`、`Judge`、`Control`、`Approval`、`SecretStore` |
-| FR-G25〜G30（ChatGPT のプラン経路。#49） | `ChatGPTAuth`（service）、`openai.Model`（ChatGPT 用）、`BrowserOpener`、コールバック受信口、`Agent`、`AgentSettings`（接続方式）、`Control`、`SecretStore`、`handler/gui`（`/agent` の ChatGPT のカード） |
+| FR-G25〜G30（ChatGPT のプラン経路。#49） | `ChatGPTAuth`・`ChatGPTAuthService`（service）、`openai.NewChatGPT`・`openai.DesktopTools`・`openai.ParseDesktopCall`、`PlanGate`、`platform.BrowserOpener`、コールバック受信口、`Agent`・`AgentService`（関数ツールのループ・`CancelConnection`）、`AgentSettings`（接続方式・`AgentConnectionSettings`）、`Control`、`SecretStore`（分割保存）、`handler/gui`（`/agent` の ChatGPT のカード） |
+| FR-G31〜G40（Codex 経路。#247） | `CodexAuth`・`CodexAuthService`（service）、`internal/codex`（`Model`）・`catalog`・`engine`・`rpc`・`protocol`・`appserver`・`codextest`、`openai.DesktopTools`・`ParseDesktopCall`、`PlanGate`、`platform.BrowserOpener`、`AgentService`、`AgentSettings`、`Control`、`handler/gui`（`/agent` の Codex のカード・`/agent/codex/*`） |
 | FR-W（Web UI） | `web/handler`、`ws`、`Streamer`、`<remo-screen-viewer>` |
 | FR-H（ホスト GUI） | `app`、`web/handler`（GUI ルーター）、`Bus` |
 | FR-AU（監査） | `Audit`、`Control`、`ThumbStore`、`Maintenance` |
@@ -1170,7 +1228,7 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | NFR-S06（自己保護） | `InputGuard`、`WindowManager.Own`、`app`（キャプチャ除外） |
 | NFR-S20（アプリ起動の制約） | `domain.ValidateAppInput` / `CheckLaunchTarget` / `ValidateLaunchPath` / `MatchDenied`、`Control.Launch`（検査の順序・方式別の対象の検査）、`platform.AppLauncher`（`lpApplicationName` の明示・シェル非経由・`Resolve` による固定ディスク上の実体のパス）、`router`（GUI ルーターだけに `/apps`。方式の切り替えと拒否リストの書き込みも GUI だけ）、`mcp`（ホワイトリスト方式〔既定〕の入力は `app_id` のみ。`path` はブラックリスト方式のときだけ受け付ける。出力は `AppSummary` と方式のみ） |
 | NFR-S14（API キー） | `SecretStore`、`openai.Model`、`typesafe.Chooser` |
-| NFR-S21・S22（ChatGPT のサインインの防御・接続方式の固定） | `ChatGPTAuth`、コールバック受信口、`BrowserOpener`（固定の URL だけ）、`Agent`、`AgentSettings` |
+| NFR-S21〜S23（ChatGPT のサインインの防御・接続方式の固定・Codex 経路の防御） | `ChatGPTAuth`、コールバック受信口、`BrowserOpener`（固定の URL だけ）、`Agent`、`AgentSettings`、`CodexAuthService`、`internal/codex`（`catalog`・`engine`・`appserver`） |
 | NFR-S17 / S18（高速パスの防御・TypeSafe 呼び出し） | `domain.CandidateTable`（ID の検証）、`FastPath`、`Control`、`Judge`、`typesafe.Chooser` |
 
 ## 12. 決定事項と実装時の検証事項
@@ -1196,7 +1254,8 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | 意図的に設定しないもの | メモリ・帯域の目標は実装後の測定まで設定しない。日程は設定しない。4K 以上の WebSocket は縮小配信せず物理解像度のまま（`config` に後から `scale` を足せる） |
 | OpenAPI の範囲 | Huma は `/api/v1` の JSON API だけを公開する。MCP ツールは `tools/list` が定義 |
 | 起動許可リストと拒否リスト（M1.5・#88） | 既定のホワイトリスト方式では、起動は許可リストのアプリだけ・入力は `app_id` だけ・応答は `id` と表示名（と方式）だけ。ホスト所有者が GUI で選ぶブラックリスト方式では、`path` で拒否リストに当たらない固定ディスク上の任意の `.exe` も起動できる。**残るリスク**: この方式では AI は拒否リストに無いプログラムを何でも起動でき、`cmd.exe`・`powershell.exe` などのインタープリターは所有者が拒否リストに入れない限り任意のコードを実行できる。拒否した実行ファイルの名前を変えたコピーは検出しない（`name` の行は名前、`path` の行は実体のパスだけを比べる）。方式の切り替え（ブラックリスト方式への切り替えは確認モーダルを経る）と拒否リストの書き込みは、ホスト GUI の `/apps` だけ。`Control.Launch` は `Do` の前段（キルスイッチ → リース）を共有し InputGuard と承認は通らない（M3 で承認を足す）。毎回新しいプロセスで、起動後は管理しない。`Agent`（M4）も同じ `AppRegistry`（同じ方式・拒否リスト）を使う。ファイル選択は `platform.FilePicker`（ホスト GUI の `POST /apps/pick-file` が `AppRegistry.PickExecutable` 経由で呼ぶ） |
-| ChatGPT のプラン経路（#49） | 既定の接続方式は `chatgpt`。**上限・認可切れ・エラーのときに API キー経路へ自動で切り替えない**（切り替えは `AgentSettings` の唯一の操作を、GUI の確認モーダルの確定だけが呼ぶ）。高速パスは併用しない（ChatGPT 経路では動かさない）。ChatGPT のアカウントはホスト 1 台 1 つ。トークンは資格情報マネージャーの 1 件にまとめ、更新は同時に 1 つだけ。サインインの受信口は `127.0.0.1` だけで、サインインの間だけ開く。テストはモックのみ |
+| ChatGPT のプラン経路（#49・#247） | 既定の接続方式は `chatgpt`。**上限・認可切れ・エラー・ポリシー拒否のときに別の経路へ自動で切り替えない**（`openai_api_key` への切り替えは `AgentSettings` の唯一の操作を GUI の確認モーダルの確定だけが呼ぶ。`chatgpt` ↔ `chatgpt-codex` は GUI の明示操作だけで確認なし）。高速パスは併用しない（プラン経路では動かさない）。公式のアカウントはホスト 1 台 1 つ。トークンは資格情報マネージャーに分割保存する 1 件の記録（見出し + 本体を 2000 バイト以下ずつの parts）にまとめ、更新は同時に 1 つだけ。サインインの受信口は `127.0.0.1` だけで、`1455` → `1457` → 空きポートの順、サインインの間だけ開く。ポリシー拒否は Problem `policy_denied` と「Codex 経由で使う」の案内（利用者が押したときだけ接続方式を変える）。テストはモックのみ |
+| Codex 経路（#247） | エンジンは固定版（`rust-v0.164.0`）を SHA-256・サイズを検証して取得し、利用者指定のバイナリは使わない。専用の `CODEX_HOME`・環境の除去・`codexHome` の検査。**アプリは Codex のトークンを読まない・保存しない・型に持たない**。道具は何重にも無効化し、`item/tool/call`（`desktop`）以外のサーバー要求は拒否する。プロセスは 1 つだけ起動して共有し、ジョブオブジェクトでアプリと一緒に終える。デバイスコードは対象外。テストはモックのみ |
 
 ### 12.2 実装時に実機・実 API で検証する事項（設計は確定済み。検証の結果で変えるのは値・実装の詳細だけ）
 
@@ -1208,7 +1267,7 @@ CI は GitHub のランナー（`ubuntu-latest`）で動き、**対話デスク�
 | 高速パス（TypeSafe） | 実 API で、Choice / Noul の応答の形式、`confidence` の意味、1 ステップの時間（NFR-P09 の暫定 2 秒以下）。固定のタスク集合で OpenAI のみの場合と成功率・時間を測定する（M4 の受け入れ。測定前に性能を主張しない） |
 | UI Automation の `Hash` | 進捗の判定に使うハッシュ（トグル・選択状態を含み、テキスト値を含まない）が、実アプリで実際の変化に追従し、揺らぎで偽の進捗を出さないこと |
 | ホイールとクリップボード | 実ブラウザでの `deltaMode` ごとの換算の体感、WebView2 での `navigator.clipboard.writeText`（`*.localhost` を安全なコンテキストとして扱う前提） |
-| ChatGPT のプラン経路（#49） | 実際の ChatGPT のサインインとモデル呼び出しは、仕様の追記の段階では**確認していない**。[非機能要件「ChatGPT プラン経路: 未確認」](../requirements/non-functional.md)の各項目（namespace の関数ツールの JSON の形、画像の返し方、`reasoning`・`include`、`usage`、モデルの一覧、使用量の上限の詳細、`earliest_refresh_at`・`jwks_uri`・初回登録のポート、資格情報マネージャーの大きさの上限）を、実装時に実機・実 API で確かめる |
+| ChatGPT のプラン経路（#49・#247） | 実際の ChatGPT のサインインとモデル呼び出しは、実装・テスト（モックのみ）の段階では**確認していない**。[非機能要件「ChatGPT プラン経路: 未確認」「Codex 経路: 未確認」](../requirements/non-functional.md)の各項目（namespace の関数ツールの JSON の形、画像の返し方、`reasoning`・`include`、`usage`、モデルの一覧、使用量の上限の詳細、`earliest_refresh_at`・`jwks_uri`・初回登録のポート、資格情報マネージャーの分割保存の実機の動作、`dynamicTools` の受理、`inputImage` の data URL、Codex のコールバックのポートの衝突、コンソール窓・ジョブオブジェクト、Business の Codex Local など）を、Windows 実機・実アカウントで確かめる |
 
 ## 13. M1 実装での差分
 
@@ -1490,7 +1549,7 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.56 | 2026-11-02 | §5.4.1 の `Control.Launch` に手順 4b（起動の「試行」の監査を `SyncAuditRecorder.RecordSync` で起動の前に同期で書き、書けなければ `audit_unavailable` で起動しない）を追加し、手順 6 の fail-open の記述を、結果の行が書けなくても起動は取り消さない記述に改めた。`ControlConfig.Audit` は `SyncAuditRecorder`（`*Audit` が満たす） | #37 |
 | 1.57 | 2026-11-02 | §10・§12.1・§13.4 の `e2e` の `Listener`・新設の §13.13（テスト専用サーバー）を、#64 の実装に合わせて更新: Lit のテストと Playwright の E2E は M2 の受け入れ条件ではなく CI の改善として別ジョブ `e2e` で足す、入口は `internal/app/e2e.go` と `cmd/puppet-remo-e2e`、Listener は本物に `LoopbackListenFunc`、制御エンドポイントは e2e ビルドだけで loopback の IP リテラルにだけ bind する | #64（オーナーの決定） |
 | 1.58 | 2026-11-02 | §10 のテストの実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。Chromium は `--with-deps` 付き | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
-| 1.59 | 2026-11-02 | ChatGPT のプラン経路（FR-G25〜G30）の設計を追加: §1 の `openai` の責務、§3 の `SecretChatGPT`、新設の §4.3.1（`ChatGPTAuth`・`BrowserOpener`・コールバック受信口・ChatGPT 用の `Model` / `History`・`Agent` との関係）、§5.6 のループの違い、§10 のテスト（モックのみ）、§11 のトレース、§12 の決定事項と未確認。実装は未着手 | #49 |
+| 1.59 | 2026-11-02 | ChatGPT のプラン経路（FR-G25〜G30）の設計を追加: §1 の `openai` の責務、§3 の `SecretChatGPT`、新設の §4.3.1（`ChatGPTAuth`・`BrowserOpener`・コールバック受信口・ChatGPT 用の `Model` / `History`・`Agent` との関係）、§5.6 のループの違い、§10 のテスト（モックのみ）、§11 のトレース、§12 の決定事項と未確認 | #49 |
 | 1.60 | 2026-11-05 | レビューの指摘の反映（#128）: `Bus` の `toast` の `Level=error`（OpenAI・TypeSafe の 401 など）、`/logs/open-folder` の失敗、ブラウザ側の `remo:error` の説明を、トーストからインラインアラート（`#alert-root`）に直す（`info` の完了の通知はトースト） | #128 |
 | 1.61 | 2026-11-03 | §5.4.1 の `LaunchResult.Window` と手順 5b を、起動したアプリのウィンドウ（pid のウィンドウ、無ければ起動の前に無かったプロセス名が同じ新しいウィンドウ。前面でなければ `Focus`）だけにした（前面の別アプリのウィンドウは返さない）。§7 のオーバーレイを、モニターごとの枠 4 本と札の Win32 ネイティブウィンドウ（WebView2 の全面ウィンドウをやめる）に更新 | #85・#86 |
 | 1.62 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: §2 に `domain.LaunchMode`・`DeniedApp`・`MatchDenied` ほか、§3 の `AppLauncher.Resolve`（固定ディスク上の実体のパス）、§4.1 の `repository.LaunchDenylist`、§5.1 の `AppRegistry` の状態の所有者、§5.4 の `Control.LaunchableApps` が `LaunchableList` を返すことと `Launch` が `LaunchRequest{AppID, Path}` を受けること、§5.4.1 の `AppReader`（`LaunchMode`・`ListDenied`）・`AppRegistry`（`SetLaunchMode`・`CreateDenied`・`UpdateDenied`・`DeleteDenied`）と検査の順序の手順 3（方式別の対象・拒否リストの照合・`app_denied`）・監査の `detail`（`path`・`launch_mode`）、§13 の `mcp`・`app`・テスト・リスクの記述を更新 | #88 |
@@ -1502,3 +1561,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.68 | 2026-11-23 | §4.1 の repository.Tasks の抜粋を実装（domain.Task・TaskQuery/TaskPage・ListActive・PurgeFinishedBefore）に合わせた | #228 |
 | 1.69 | 2026-11-27 | §2 の `MatchDenied` の大文字小文字の比較を `strings.EqualFold` から Windows の OrdinalIgnoreCase 相当に寄せ、`domain.EqualOrdinalIgnoreCase` を追加 | #183 |
 | 1.70 | 2026-11-27 | 設定変更の監査を fail-closed に統一（共通の `commitAudited`）: `AppRegistry` の許可リスト・拒否リスト、`HostSettingsService.Save`、`AgentSettings` の保存・API キーの登録と削除。`repository.Settings` に `Delete` を追加。`audit_unavailable` の Detail は `subject`・`restored`（`launch_mode_restored` を置き換え） | #182 |
+| 1.71 | 2026-11-27 | Codex 経路（`chatgpt-codex`。#247）を追加: §1 の `openai` の責務、新設の §4.3.2（`internal/codex` の `catalog`・`engine`・`rpc`・`protocol`・`appserver`・`codextest`・`Model`、`CodexAuth`・`CodexAuthService`）、§5.6 のループの違い（`CancelConnection`）、§10・§11・§12。公式経路の決定を反映: §4.3.1 を実装の名前（`openai.NewChatGPT`・`ParseDesktopCall`・`ChatGPTAuthService`・`PlanGate`）に改め「設計のみ・実装は未着手」を実装済みに、`SecretChatGPT` の分割保存（見出し `{"v":1,"parts":N}`・2000 バイト以下ずつの parts）、受信口のポート `1455` → `1457` → 空きポート、`Problem` の `policy_denied` | #247 |

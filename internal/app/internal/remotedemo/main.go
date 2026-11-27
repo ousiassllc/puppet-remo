@@ -214,11 +214,11 @@ func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr 
 			Capturer: capturer, Input: injector,
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
 			Launcher: launcher, FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
-			Secrets: secrets,
-			Hotkey:  platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
+			Secrets: secrets, Browser: platformtest.NewFakeBrowserOpener(),
+			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
 		},
 		Watcher: watcher, WhoIs: whois,
-		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())),
+		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,
 		Version: "demo", Logger: logger, OpenAIModel: model,
 		// tailnet の IP の代わりに、-addr の loopback で待ち受ける（1 本だけ）。
 		// 接続の LocalAddr は偽の tailnet アドレスに見せる（MCP の SDK は loopback 宛ての Host 検査をするため。agentdemo.go）。

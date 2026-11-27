@@ -290,6 +290,25 @@ func TestModalConfirmButtonFollowsDestructive(t *testing.T) {
 	hasNot(t, out, "text-danger", "border-danger")
 }
 
+// 確認モーダルのチェックボックス・「キャンセル」なし・hx-vals（解除の「別のアカウントでサインインする」・初回の確認など。#247）。
+func TestModalCheckboxAndNoCancel(t *testing.T) {
+	base := view.ConfirmModal{Title: "解除", Message: "m", Label: "解除する", ConfirmURL: "/x", Method: "delete", Target: "#t", Swap: "outerHTML"}
+	out := webtest.Render(t, molecules.Modal(base))
+	hasNot(t, out, `type="checkbox"`, "hx-include", "hx-vals")
+	withBox := base
+	withBox.Checkbox = &view.ConfirmCheckbox{Name: "forget_account", Label: "別のアカウント"}
+	out = webtest.Render(t, molecules.Modal(withBox))
+	has(t, out, `id="modal-checkbox"`, `name="forget_account"`, `type="checkbox"`, "別のアカウント", `hx-include="#modal-checkbox"`, ">キャンセル<")
+	if strings.Contains(out, "checked") {
+		t.Errorf("the modal checkbox must start unchecked: %s", out)
+	}
+	noCancel := base
+	noCancel.NoCancel, noCancel.Method, noCancel.Vals = true, "put", `{"a":"1"}`
+	out = webtest.Render(t, molecules.Modal(noCancel))
+	hasNot(t, out, ">キャンセル<")
+	has(t, out, `hx-put="/x"`, "hx-vals=", `aria-label="閉じる"`)
+}
+
 // T5: Mono を指定した入力欄だけ font-mono（識別子・トークンの判読用）。既定は Sora のまま。
 func TestInputMonoIsOptIn(t *testing.T) {
 	has(t, webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Mono: true})), "font-mono", "h-10")
@@ -304,4 +323,12 @@ func TestTooltipLinksTheTriggerToTheTooltip(t *testing.T) {
 	out := webtest.Render(t, atoms.Tooltip("tip-1", "ステップ 3 に付く行"))
 	has(t, out, `class="tip-host" tabindex="0" aria-describedby="tip-1"`, `<span role="tooltip" id="tip-1" class="tip">ステップ 3 に付く行</span>`)
 	hasNot(t, out, "title=", "<button", "<a ")
+}
+
+// detail.reason を持つエラー（接続方式の agent_disabled）は data-error-code に加えて data-error-reason を出し、reason が無ければ出さない（API 仕様 §1・§3.4）。
+func TestAlertErrorReason(t *testing.T) {
+	out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: "agent_disabled", Reason: "chatgpt_not_signed_in", Heading: "h", Message: "m"}))
+	has(t, out, `data-error-code="agent_disabled"`, `data-error-reason="chatgpt_not_signed_in"`)
+	out = webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: "conflict", Heading: "h", Message: "m"}))
+	hasNot(t, out, "data-error-reason")
 }

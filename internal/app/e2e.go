@@ -125,10 +125,10 @@ func RunE2E(ctx context.Context, opts E2EOptions) error {
 			Capturer: srv.desktop.capturer, Input: srv.desktop.app, Windows: hostWindows, Clipboard: clip,
 			UI: platformtest.NewFakeUIAutomation(hostWindows), Launcher: platformtest.NewFakeAppLauncher(),
 			FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(), Secrets: secrets,
-			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
+			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(), Browser: platformtest.NewFakeBrowserOpener(),
 		},
 		Watcher: tailnet.NewE2EWatcher(tailnet.E2EStatus()), WhoIs: srv.whois,
-		Static: opts.Static, Logs: NewLogReader(dir, WithFolderOpener(platformtest.NewFakeFolderOpener())),
+		Static: opts.Static, Logs: NewLogReader(dir, WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,
 		Version: "e2e", Logger: logger,
 		// tailnet の IPv4 の代わりに、同じポートの 127.0.0.1 で待ち受ける（本物の Listener の絞り込み・State はそのまま）。
 		ListenFunc: tailnet.LoopbackListenFunc(),

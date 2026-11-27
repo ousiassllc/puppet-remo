@@ -92,9 +92,14 @@ func (h *Handler) fail(c *gin.Context, err error) {
 // #modal-root が空で閉じる意味がなく、開いている別のモーダルを巻き込んで閉じてしまうため。承認ダイアログのウィンドウ（#modal-root が無い）では、
 // OOB の対象が無いので添えても無害。
 func (h *Handler) failMessage(c *gin.Context, status int, code, message string, extra ...templ.Component) {
+	h.failAlert(c, status, errorAlert(code, message), extra...)
+}
+
+// failAlert は組み立て済みのアラート（data-error-reason 付きなど）で failMessage と同じ形に返す。
+func (h *Handler) failAlert(c *gin.Context, status int, alert atoms.AlertProps, extra ...templ.Component) {
 	c.Header("HX-Retarget", "#alert-root")
 	c.Header("HX-Reswap", "innerHTML")
-	comps := []templ.Component{atoms.Alert(errorAlert(code, message))}
+	comps := []templ.Component{atoms.Alert(alert)}
 	if c.Request.Method != http.MethodGet {
 		comps = append(comps, organisms.ModalClear())
 	}

@@ -141,8 +141,10 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(host.MainWindowHandle),
 			// 署名検証済みの更新のインストーラは、NSIS を `/S` で起動する（UAC の確認つき。FR-H09）。
 			Installer: windows.NewInstaller(),
-			// API キー（OpenAI・TypeSafe）は資格情報マネージャーに置く（NFR-S14）。
+			// API キー（OpenAI・TypeSafe）と ChatGPT の OAuth トークンは資格情報マネージャーに置く（NFR-S14）。
 			Secrets: windows.NewSecretStore(),
+			// ChatGPT のサインイン・使用量の管理・Codex のログインは、既定のブラウザで固定の https の URL だけを開く（NFR-S21）。
+			Browser: windows.NewBrowserOpener(),
 		},
 		// 承認ダイアログ（FR-H05）は専用の Wails ウィンドウ（キャプチャ除外）で開く。
 		Windows: host.Windows(),
@@ -150,10 +152,14 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		WhoIs:   tailnet.NewWhoIs(tailnet.WhoIsConfig{API: api}),
 		Static:  staticHandler,
 		// ログ画面の「ログフォルダーを開く」（#54）は、エクスプローラーでログのフォルダーだけを開く（開く場所は LogReader が固定する）。
-		Logs:    app.NewLogReader(dataDir, app.WithFolderOpener(windows.NewFolderOpener())),
-		Version: version,
-		Logger:  log,
-		Closers: closers,
+		Logs: app.NewLogReader(dataDir, app.WithFolderOpener(windows.NewFolderOpener())),
+		// Codex の経路（#247）: 専用の CODEX_HOME はデータディレクトリの下、エンジンは実行ファイルの隣の codex\ に置く
+		// （インストーラー版はアンインストールで一緒に消える）。実行ファイルの場所が分からなければエンジンは取得しない。
+		DataDir:        dataDir,
+		CodexEngineDir: codexEngineDir(log),
+		Version:        version,
+		Logger:         log,
+		Closers:        closers,
 	})
 	if err != nil {
 		return fail(err)
@@ -175,4 +181,15 @@ func showError(title, text string) {
 	const mbOKIconError = 0x10
 	user32 := syscall.NewLazyDLL("user32.dll")
 	_, _, _ = user32.NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), mbOKIconError)
+}
+
+// codexEngineDir は Codex のエンジンの置き場所（`<実行ファイルのディレクトリ>\codex`。#247）。実行ファイルの場所が分からなければ空
+// （Codex の経路は unsupported になる）。
+func codexEngineDir(log *slog.Logger) string {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Warn("the executable path is unknown; the codex engine is not available", "error", err)
+		return ""
+	}
+	return filepath.Join(filepath.Dir(exe), "codex")
 }

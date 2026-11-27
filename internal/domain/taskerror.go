@@ -19,6 +19,16 @@ const (
 	TaskErrorUnsupportedAction  = "unsupported_action"
 	TaskErrorOpenAI             = "openai_error"
 	TaskErrorInternal           = "internal"
+
+	// ChatGPT のプランの経路（接続方式 chatgpt。FR-G29・G30）。
+	TaskErrorChatGPTUsageLimit   = "chatgpt_usage_limit"
+	TaskErrorChatGPTUnauthorized = "chatgpt_unauthorized"
+	TaskErrorChatGPT             = "chatgpt_error"
+	// Codex の app-server の経路（接続方式 chatgpt-codex。#247）。
+	TaskErrorCodexUsageLimit   = "codex_usage_limit"
+	TaskErrorCodexUnauthorized = "codex_unauthorized"
+	TaskErrorCodexEngine       = "codex_engine_unavailable"
+	TaskErrorCodex             = "codex_error"
 )
 
 // ErrOpenAI は OpenAI の呼び出しの失敗（FR-G04）。openai.Model の失敗は単純なエラーで返るので、
@@ -37,6 +47,20 @@ func TaskErrorCode(err error) string {
 		return TaskErrorUnsupportedAction
 	case errors.Is(err, ErrSafetyCheckDenied):
 		return TaskErrorSafetyCheckDenied
+	case errors.Is(err, ErrChatGPTUsageLimit):
+		return TaskErrorChatGPTUsageLimit
+	case errors.Is(err, ErrChatGPTUnauthorized):
+		return TaskErrorChatGPTUnauthorized
+	case errors.Is(err, ErrChatGPT):
+		return TaskErrorChatGPT
+	case errors.Is(err, ErrCodexUsageLimit):
+		return TaskErrorCodexUsageLimit
+	case errors.Is(err, ErrCodexUnauthorized):
+		return TaskErrorCodexUnauthorized
+	case errors.Is(err, ErrCodexEngine):
+		return TaskErrorCodexEngine
+	case errors.Is(err, ErrCodex):
+		return TaskErrorCodex
 	case errors.Is(err, ErrOpenAI):
 		return TaskErrorOpenAI
 	}

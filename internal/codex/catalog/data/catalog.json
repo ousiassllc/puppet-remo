@@ -1,0 +1,30 @@
+{
+ "version": "0.164.0",
+ "tag": "rust-v0.164.0",
+ "source_url": "https://github.com/openai/codex/tree/rust-v0.164.0",
+ "license": {
+  "id": "apache-2.0",
+  "name": "Apache License 2.0",
+  "url": "https://github.com/openai/codex/blob/rust-v0.164.0/LICENSE"
+ },
+ "assets": {
+  "windows/amd64": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-app-server-x86_64-pc-windows-msvc.exe.zip",
+   "format": "zip",
+   "sha256": "35b93235a1d502352c840ebf960be6194aa9f3bec724fee478d2c7c86492fb27",
+   "size": 87880605,
+   "exe": "codex-app-server-x86_64-pc-windows-msvc.exe",
+   "exe_sha256": "82314aa236834a8b7240cc5fe4fdf71d4502822e476105ccbe010ef6689083d7",
+   "exe_size": 273012016
+  },
+  "windows/arm64": {
+   "url": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-app-server-aarch64-pc-windows-msvc.exe.zip",
+   "format": "zip",
+   "sha256": "3054bab7cdb1110d53a6ea79f25e2acb21a56b4d3aecc88f64e4dfe75f3adbb8",
+   "size": 80895268,
+   "exe": "codex-app-server-aarch64-pc-windows-msvc.exe",
+   "exe_sha256": "b9801d0d133178185dfb61a484e883dceb29b7eaa97ee94c6b9db89653acb50c",
+   "exe_size": 230127408
+  }
+ }
+}

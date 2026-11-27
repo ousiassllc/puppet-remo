@@ -233,13 +233,22 @@ type ConfirmModal struct {
 	Message    string
 	ConfirmURL string
 	Method     string // delete | put | post
-	Vals       string // put のとき hx-vals に渡す JSON（空なら付けない）
+	Vals       string // hx-vals に渡す JSON（空なら付けない）
 	Target     string // 結果を差し込む先の CSS セレクタ
 	Swap       string
 	Label      string // 確定ボタンの文言
 	// Destructive は取り返しのつかない操作（削除・失効・剥奪・中断）か。true なら確定ボタンは危険（--danger）、false なら主（O7）。
-	// 既定は主（false）。破壊的な操作だけ true にする。
 	Destructive bool
+	// Checkbox があれば本文の下にチェックボックスを出し、確定のボタンが値を一緒に送る（解除の「別のアカウントでサインインする」など）。
+	Checkbox *ConfirmCheckbox
+	// NoCancel なら「キャンセル」のボタンを出さない（確認の「わかりました」など。右上の × では閉じられる）。
+	NoCancel bool
+}
+
+// ConfirmCheckbox は確認モーダルのチェックボックス（既定は未選択）。送る名前は Name（チェックしたときだけ値 on）。
+type ConfirmCheckbox struct {
+	Name  string
+	Label string
 }
 
 // SettingsValues は設定フォームの入力値（検証エラー時は入力されたままの文字列）。

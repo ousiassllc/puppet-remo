@@ -17,4 +17,7 @@ type SecretStore interface {
 const (
 	SecretOpenAI   = "puppet-remo/openai"
 	SecretTypeSafe = "puppet-remo/typesafe" // 高速パス。値は登録後に表示しない（FR-G22）
+	// SecretChatGPT は ChatGPT の OAuth トークンの記録（NFR-S14）。資格情報マネージャーの 1 件の上限（2560 バイト）を越えるので、
+	// この名前は見出し（{"v":1,"parts":N}）で、本体は SecretChatGPT+"/1" … "/N" に分けて置く（service の chatgpt_tokens.go）。
+	SecretChatGPT = "puppet-remo/chatgpt"
 )

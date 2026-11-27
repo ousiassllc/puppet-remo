@@ -36,11 +36,19 @@ var AuditCatalog = []AuditRequirement{
 	}},
 	{Item: "エージェントの各ステップ・Judge の判定（kind = agent）", Events: []string{agentStepAuditEvent, agentJudgeAuditEvent, agentLaunchAttemptAuditEvent}},
 	{Item: "エージェントの有効化と同意", Events: []string{agentConsentAuditEvent}},
+	{Item: "エージェントの接続方式の切り替え（FR-G25・G30。from・to・reason）", Events: []string{agentConnectionAuditEvent}},
 	{Item: "高速パスの有効化と同意（agent.consent とは別）", Events: []string{fastpathEnableAuditEvent, fastpathDisableAuditEvent}},
 	{Item: "エージェントのタスクのライフサイクル・安全チェック（kind = agent）", Events: []string{
 		agentTaskStartAuditEvent, agentTaskEndAuditEvent, agentSafetyCheckAuditEvent, agentTaskCancelAuditEvent,
 	}},
 	{Item: "エージェントのバッチの中断（対象グループの変化。#158。kind = agent）", Events: []string{agentBatchYieldedAuditEvent}},
+	{Item: "ChatGPT のプラン経路のサインイン・解除・認可切れ・使用量の上限・再開（FR-G28〜G30。kind = agent）", Events: []string{
+		chatgptSignInStartAuditEvent, chatgptSignInAuditEvent, chatgptSignOutAuditEvent, chatgptResumeAuditEvent, chatgptReauthAuditEvent,
+		chatgptUsageLimitAuditEvent,
+	}},
+	{Item: "Codex 経路のエンジン取得・ログイン・ログアウト・再開（#247。kind = agent）", Events: []string{
+		codexInstallAuditEvent, codexSignInStartAuditEvent, codexSignInAuditEvent, codexSignOutAuditEvent, codexResumeAuditEvent,
+	}},
 }
 
 // auditCatalogEvents は AuditCatalog の具体的なイベント名（tool.* の族を除く）の集合。

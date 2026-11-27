@@ -36,11 +36,23 @@ type AgentSettings struct {
 	LoadErr error
 	// SaveErr は SaveAgent / SaveFastpath の検証の後に返す失敗。
 	SaveErr error
+	// LastConnection は直近の SetConnection の引数、SetConnectionErr はその失敗（#247）。
+	LastConnection   ConnectionCall
+	SetConnectionErr error
+	// ChatGPT・Codex は選んだ接続方式がプランのときの、有効化の可否（Ready）を決める窓口。nil なら API キーの有無で決める。
+	ChatGPT planGate
+	Codex   planGate
 }
+
+// planGate は有効化の可否の判定に使う、プランの接続の窓口（service.PlanGate.Ready の部分）。
+type planGate interface{ Ready() (string, bool) }
 
 // NewAgentSettings は既定値（無効・キー未登録）の AgentSettings を返す。
 func NewAgentSettings(clock domain.Clock) *AgentSettings {
+	// 接続方式の既定は openai_api_key: API キー経路の既存の振る舞い（キー未登録での有効化は 409）を前提にするテストのため。
+	// プランの接続方式は SetConnection（SetConnectionDirect）で選ぶ。
 	return &AgentSettings{Clock: clock, view: service.AgentSettingsView{AgentConfig: service.AgentConfig{
+		Connection: domain.ConnectionOpenAIAPIKey, ChatGPTModel: service.DefaultChatGPTModel, CodexModel: service.DefaultCodexModel,
 		Model: "gpt-6.1-sol", MaxSteps: 50, MaxDurationSec: 600, KeepScreenshots: 3,
 		DenyProcesses: []string{"KeePass.exe", "KeePassXC.exe", "1Password.exe", "Bitwarden.exe"},
 		Fastpath: service.FastpathConfig{
@@ -114,8 +126,10 @@ func (a *AgentSettings) SaveAgent(_ context.Context, in service.AgentSettingsInp
 		a.view.Enabled, a.view.ConsentAt = false, nil
 		return nil
 	}
-	if in.Enabled && !a.view.OpenAIKeyRegistered {
-		return domain.ErrAgentDisabled
+	if in.Enabled {
+		if reason, ok := a.readyFor(); !ok {
+			return domain.ErrAgentDisabled.WithDetail("reason", reason)
+		}
 	}
 	if a.SaveErr != nil {
 		return a.SaveErr

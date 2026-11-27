@@ -21,6 +21,7 @@ import (
 //	キルスイッチのパネル                                         → rev_killswitch があり、版が違うとき
 //	ダッシュボードの実行中タスク（#running-tasks）                 → rev_tasks があり、版が違うとき（M4）
 //	接続要求の一覧                                               → rev_requests があり、版が違うとき
+//	ChatGPT のプランのカード（#chatgpt-card・#codex-card）          → rev_chatgpt・rev_codex があり、版が違うとき（#247。サインイン・取得の進み・上限の反映）
 //	トースト                                                     → 前回の呼び出し以降に溜まった分
 //
 // rev_* は、表示中の領域が持つ隠し入力（data-poll-rev）の値で、レイアウトの hx-include が送り返す。表示していない領域の OOB は
@@ -46,6 +47,7 @@ func (h *Handler) Poll(c *gin.Context) {
 			comps = append(comps, organisms.RunningTasksOOB(tasks))
 		}
 	}
+	comps = append(comps, h.planPollComponents(c)...)
 	if rev, shown := c.GetQuery("rev_killswitch"); shown {
 		comps = append(comps,
 			organisms.ServerStatusOOB(h.serverStatusView(ctx)),
