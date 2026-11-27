@@ -127,7 +127,7 @@ func TestChatGPTRefreshDeadTokenDeletesEverythingAndRequiresReauth(t *testing.T)
 				t.Errorf("toast = %+v", tst)
 			}
 			last := e.audit.Entries()[len(e.audit.Entries())-1]
-			if last.Event != "agent.chatgpt.reauth" || last.ErrorCode != code || !strings.Contains(string(last.DetailJSON), `"source":"refresh"`) {
+			if last.Event != "agent.chatgpt.reauth_required" || last.ErrorCode != code || !strings.Contains(string(last.DetailJSON), `"source":"refresh"`) {
 				t.Errorf("audit = %+v", last)
 			}
 			// 削除後は更新を試みない。
@@ -241,7 +241,7 @@ func TestChatGPTReportAuthFailureRefreshesOnce(t *testing.T) {
 		t.Fatal("not reauth_required with the tokens removed")
 	}
 	last := e.audit.Entries()[len(e.audit.Entries())-1]
-	if last.Event != "agent.chatgpt.reauth" || !strings.Contains(string(last.DetailJSON), `"source":"request"`) {
+	if last.Event != "agent.chatgpt.reauth_required" || !strings.Contains(string(last.DetailJSON), `"source":"request"`) {
 		t.Errorf("audit = %+v", last)
 	}
 	e.svc.ReportAuthFailure(context.Background()) // もう無い。何もしない

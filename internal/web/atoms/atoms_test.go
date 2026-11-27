@@ -324,3 +324,11 @@ func TestTooltipLinksTheTriggerToTheTooltip(t *testing.T) {
 	has(t, out, `class="tip-host" tabindex="0" aria-describedby="tip-1"`, `<span role="tooltip" id="tip-1" class="tip">ステップ 3 に付く行</span>`)
 	hasNot(t, out, "title=", "<button", "<a ")
 }
+
+// detail.reason を持つエラー（接続方式の agent_disabled）は data-error-code に加えて data-error-reason を出し、reason が無ければ出さない（API 仕様 §1・§3.4）。
+func TestAlertErrorReason(t *testing.T) {
+	out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: "agent_disabled", Reason: "chatgpt_not_signed_in", Heading: "h", Message: "m"}))
+	has(t, out, `data-error-code="agent_disabled"`, `data-error-reason="chatgpt_not_signed_in"`)
+	out = webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Code: "conflict", Heading: "h", Message: "m"}))
+	hasNot(t, out, "data-error-reason")
+}

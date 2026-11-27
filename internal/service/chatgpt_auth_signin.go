@@ -74,7 +74,7 @@ func (s *ChatGPTAuthService) StartSignIn(ctx context.Context) error {
 	s.wg.Add(1)
 	s.mu.Unlock()
 	go s.runSignIn(sess)
-	s.audit(ctx, domain.ActorHost, chatgptAuditSignInStart, auditOK, "", nil)
+	s.audit(ctx, domain.ActorHost, chatgptSignInStartAuditEvent, auditOK, "", nil)
 	return nil
 }
 
@@ -173,7 +173,7 @@ func (s *ChatGPTAuthService) CancelSignIn() {
 	s.mu.Unlock()
 	sess.cancel()
 	sess.cb.close()
-	s.audit(context.Background(), domain.ActorHost, chatgptAuditSignIn, auditDenied, "", map[string]any{"reason": "cancelled"})
+	s.audit(context.Background(), domain.ActorHost, chatgptSignInAuditEvent, auditDenied, "", map[string]any{"reason": "cancelled"})
 }
 
 // runSignIn は受信口の結果を待ち、サインインを完了させる。
@@ -208,7 +208,7 @@ func (s *ChatGPTAuthService) failSignIn(sess *chatgptSignIn, o chatgptSignInOutc
 	}
 	s.signIn, s.state, s.problem = nil, PlanSignedOut, o.problem
 	s.mu.Unlock()
-	s.audit(context.Background(), domain.ActorHost, chatgptAuditSignIn, o.result, "", map[string]any{"reason": o.reason})
+	s.audit(context.Background(), domain.ActorHost, chatgptSignInAuditEvent, o.result, "", map[string]any{"reason": o.reason})
 	s.toast("error", o.toast)
 }
 
@@ -220,15 +220,15 @@ func signInFailure(problem PlanProblem, reason, toast string) (chatgptSignInOutc
 func (s *ChatGPTAuthService) finishSignIn(sess *chatgptSignIn, res chatgptCallbackResult) (chatgptSignInOutcome, bool) {
 	ctx := sess.ctx
 	switch {
+	case res.PolicyDenied || chatgptIsPolicyDeniedCode(res.ErrCode): // access_denied の説明文にポリシー拒否が書かれていても、こちらを優先する
+		return chatgptSignInOutcome{
+			problem: PlanProblemPolicyDenied, result: auditDenied, reason: "policy_denied",
+			toast: "ワークスペースのポリシーにより、このサインインは許可されていません。",
+		}, false
 	case res.ErrCode == "access_denied":
 		return chatgptSignInOutcome{
 			problem: PlanProblemAccessDenied, result: auditDenied, reason: "access_denied",
 			toast: "ChatGPT のサインインが許可されませんでした。",
-		}, false
-	case chatgptIsPolicyDeniedCode(res.ErrCode):
-		return chatgptSignInOutcome{
-			problem: PlanProblemPolicyDenied, result: auditDenied, reason: "policy_denied",
-			toast: "ワークスペースのポリシーにより、このサインインは許可されていません。",
 		}, false
 	case res.ErrCode != "":
 		return signInFailure(PlanProblemFailed, "authorization_failed", "ChatGPT のサインインに失敗しました。")
@@ -302,7 +302,7 @@ func (s *ChatGPTAuthService) finishSignIn(sess *chatgptSignIn, res chatgptCallba
 		}
 		return signInFailure(PlanProblemFailed, "token_save_failed", "ChatGPT のサインインの結果を保存できませんでした。")
 	}
-	s.audit(ctx, domain.ActorHost, chatgptAuditSignIn, auditOK, "", map[string]any{"new_registration": sess.newReg})
+	s.audit(ctx, domain.ActorHost, chatgptSignInAuditEvent, auditOK, "", map[string]any{"new_registration": sess.newReg})
 	s.toast("info", "ChatGPT にサインインしました。")
 	return chatgptSignInOutcome{}, true
 }

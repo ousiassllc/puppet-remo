@@ -187,8 +187,8 @@ func (h *Handler) SaveAgent(c *gin.Context) {
 			// 数値に読めない入力があるのに、有効のまま保存された（検証が 0 を通した）。保存済みの値を描画し直す。
 			h.log.Error("agent settings saved despite unparsable input")
 		case domain.CodeOf(err) == domain.CodeAgentDisabled:
-			// detail.reason（接続方式ごとの使えない理由）で文言を変える（FR-G01）。
-			h.failMessage(c, http.StatusConflict, string(domain.CodeAgentDisabled), agentDisabledMessage(err))
+			// detail.reason（接続方式ごとの使えない理由）で文言を変え、data-error-reason に出す（FR-G01）。
+			h.failAgentDisabled(c, err)
 			return
 		default:
 			h.fail(c, err)

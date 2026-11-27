@@ -56,11 +56,14 @@ var (
 	auditTokenPattern   = regexp.MustCompile(`prm_[A-Za-z0-9_-]{8,}`)
 	auditHexHashPattern = regexp.MustCompile(`\b[0-9a-fA-F]{64}\b`)
 	auditBearerPattern  = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{20,}`)
+	auditJWTPattern     = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`) // JWT の形（ChatGPT のトークン。NFR-S13）
 )
 
 // auditSensitiveKeyParts は、キー名にこれを含む値を丸ごと伏せる（小文字で比較）。token_id・task_id のような ID は含まない。
+// id_token（id_token_hint を含む）・code_verifier・nonce は ChatGPT のプラン経路の OAuth の秘密（NFR-S13）。oauth_ 接頭辞のキーも伏せる。
 var auditSensitiveKeyParts = []string{
 	"secret", "password", "passwd", "apikey", "api_key", "api-key", "authorization", "plaintext", "hash",
+	"id_token", "code_verifier", "nonce",
 }
 
 // auditBodyKeys は type・クリップボードの本文を指すキー（FR-AU03。完全一致か `_` 付きの接尾辞。文字数の `text_len` は伏せない）。
@@ -68,7 +71,7 @@ var auditBodyKeys = []string{"text", "content", "clipboard", "body"}
 
 func auditSensitiveKey(key string) bool {
 	k := strings.ToLower(key)
-	if k == "token" || strings.HasSuffix(k, "_token") || strings.HasSuffix(k, "-token") {
+	if k == "token" || strings.HasSuffix(k, "_token") || strings.HasSuffix(k, "-token") || strings.HasPrefix(k, "oauth_") {
 		return true
 	}
 	for _, p := range auditSensitiveKeyParts {
@@ -92,6 +95,7 @@ func auditSensitiveKey(key string) bool {
 func auditRedactString(s string) string {
 	s = auditBearerPattern.ReplaceAllString(s, "Bearer "+auditRedacted)
 	s = auditTokenPattern.ReplaceAllString(s, auditRedacted)
+	s = auditJWTPattern.ReplaceAllString(s, auditRedacted)
 	return auditHexHashPattern.ReplaceAllString(s, auditRedacted)
 }
 

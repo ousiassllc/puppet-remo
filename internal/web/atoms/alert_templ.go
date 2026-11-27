@@ -19,10 +19,12 @@ const (
 )
 
 // AlertProps はインラインアラートの引数。Code は API 仕様 §2 のコードで、あれば data-error-code に出す。
+// Reason は detail.reason を持つコード（接続方式の agent_disabled など。API 仕様 §1・§3.4）の理由で、あれば data-error-reason に出す。
 // Dismissible は閉じるボタン（data-clear で #alert-root を空にする）を付けるとき。
 type AlertProps struct {
 	Tone        AlertTone
 	Code        string
+	Reason      string
 	Heading     string
 	Message     string
 	Dismissible bool
@@ -64,6 +66,9 @@ func alertAttrs(p AlertProps) Attrs {
 	}
 	if p.Code != "" {
 		a["data-error-code"] = p.Code
+	}
+	if p.Reason != "" {
+		a["data-error-reason"] = p.Reason
 	}
 	return a
 }
@@ -135,7 +140,7 @@ func Alert(p AlertProps) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(p.Heading)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 72, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 77, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -148,7 +153,7 @@ func Alert(p AlertProps) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(p.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 73, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/alert.templ`, Line: 78, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {

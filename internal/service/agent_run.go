@@ -627,7 +627,7 @@ func (a *AgentService) taskEndEntry(r *run, finished time.Time) repository.Audit
 }
 
 // taskEndResult は agent.task_end の result。拒否・ブロック（FR-G07）とホストの承認の拒否、リースの競合負けは denied、
-// それ以外の失敗は error、完了・中断（キルスイッチ・リースの喪失を含む）・上限は ok（タスクとして正常に終わった）。
+// それ以外の失敗は error（接続方式 chatgpt・chatgpt-codex の使用量の上限は denied）、完了・中断（キルスイッチ・リースの喪失を含む）・上限は ok（タスクとして正常に終わった）。
 func taskEndResult(status domain.TaskStatus, code string) string {
 	switch status {
 	case domain.TaskDenied:
@@ -635,7 +635,8 @@ func taskEndResult(status domain.TaskStatus, code string) string {
 	case domain.TaskFailed:
 		switch code {
 		case domain.TaskErrorInputBlocked, domain.TaskErrorJudgeDenied, domain.TaskErrorApprovalDenied, domain.TaskErrorApprovalTimeout,
-			domain.TaskErrorLeaseHeldByOther, domain.TaskErrorSafetyCheckDenied:
+			domain.TaskErrorLeaseHeldByOther, domain.TaskErrorSafetyCheckDenied,
+			domain.TaskErrorChatGPTUsageLimit, domain.TaskErrorCodexUsageLimit: // 使用量の上限は拒否された扱い（FR-G30・G38）
 			return auditDenied
 		}
 		return auditError

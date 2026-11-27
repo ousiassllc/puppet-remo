@@ -267,6 +267,20 @@ func TestChatGPTSignInFailures(t *testing.T) {
 			wantProb: PlanProblemPolicyDenied, wantResult: auditDenied, wantReason: "policy_denied",
 		},
 		{
+			name: "ポリシー拒否の識別子が error_description に来る（error は access_denied）",
+			query: func(e *chatgptEnv, a chatgptAuthRequest) url.Values {
+				return url.Values{"error": {"access_denied"}, "error_description": {"3p_delegated_access_policy_denied: workspace policy"}, "state": {a.state}}
+			},
+			wantProb: PlanProblemPolicyDenied, wantResult: auditDenied, wantReason: "policy_denied",
+		},
+		{
+			name: "ポリシー拒否の識別子が error_description だけに来る（error なし・code なし）",
+			query: func(e *chatgptEnv, a chatgptAuthRequest) url.Values {
+				return url.Values{"error_description": {"subscription_sharing_user_not_eligible"}, "state": {a.state}}
+			},
+			wantProb: PlanProblemPolicyDenied, wantResult: auditDenied, wantReason: "policy_denied",
+		},
+		{
 			name: "その他の error",
 			query: func(e *chatgptEnv, a chatgptAuthRequest) url.Values {
 				return url.Values{"error": {"server_error"}, "state": {a.state}}

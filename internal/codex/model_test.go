@@ -417,7 +417,7 @@ func TestCloseTaskは保留した呼び出しを失敗で応答しターンを�
 	}
 }
 
-func TestStepはプロセスの異常終了をエラーにして次のタスクで起動し直す(t *testing.T) {
+func TestStepはプロセスの異常終了をErrEngineUnavailableにして次のタスクで起動し直す(t *testing.T) {
 	var r *rig
 	r = newRig(t, true, func(f *codextest.Fake) {
 		if r.procCount() == 0 {
@@ -433,7 +433,7 @@ func TestStepはプロセスの異常終了をエラーにして次のタスク�
 	})
 	h1 := newHistory()
 	_, err := step(t, r, h1)
-	if err == nil || errors.Is(err, openai.ErrEngineUnavailable) || errors.Is(err, openai.ErrUsageLimit) {
+	if !errors.Is(err, openai.ErrEngineUnavailable) || errors.Is(err, openai.ErrUsageLimit) { // FR-G38: 異常終了は codex_engine_unavailable
 		t.Fatalf("err = %v", err)
 	}
 	r.model.CloseTask(h1)

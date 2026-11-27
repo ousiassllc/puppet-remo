@@ -42,6 +42,10 @@ var AuditCatalog = []AuditRequirement{
 		agentTaskStartAuditEvent, agentTaskEndAuditEvent, agentSafetyCheckAuditEvent, agentTaskCancelAuditEvent,
 	}},
 	{Item: "エージェントのバッチの中断（対象グループの変化。#158。kind = agent）", Events: []string{agentBatchYieldedAuditEvent}},
+	{Item: "ChatGPT のプラン経路のサインイン・解除・認可切れ・使用量の上限・再開（FR-G28〜G30。kind = agent）", Events: []string{
+		chatgptSignInStartAuditEvent, chatgptSignInAuditEvent, chatgptSignOutAuditEvent, chatgptResumeAuditEvent, chatgptReauthAuditEvent,
+		chatgptUsageLimitAuditEvent,
+	}},
 	{Item: "Codex 経路のエンジン取得・ログイン・ログアウト・再開（#247。kind = agent）", Events: []string{
 		codexInstallAuditEvent, codexSignInStartAuditEvent, codexSignInAuditEvent, codexSignOutAuditEvent, codexResumeAuditEvent,
 	}},

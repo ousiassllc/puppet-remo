@@ -54,6 +54,11 @@ func chatgptIsPolicyDeniedCode(code string) bool {
 	return code == "3p_delegated_access_policy_denied" || code == "subscription_sharing_user_not_eligible"
 }
 
+// chatgptMentionsPolicyDenied は文（コールバックの error・error_description）がポリシー拒否の識別子を含むか。
+func chatgptMentionsPolicyDenied(s string) bool {
+	return strings.Contains(s, "3p_delegated_access_policy_denied") || strings.Contains(s, "subscription_sharing_user_not_eligible")
+}
+
 // chatgptHTTPError は認可サーバー・API の HTTP エラー。Code は応答の error（検証済みの短い識別子だけ。本文は持たない）。
 type chatgptHTTPError struct {
 	Status int
@@ -146,7 +151,7 @@ func chatgptErrorCode(body []byte) string {
 		return ""
 	}
 	for _, r := range code {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-') {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '.' && r != '-' {
 			return ""
 		}
 	}

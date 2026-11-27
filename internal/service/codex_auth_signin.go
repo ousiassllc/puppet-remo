@@ -14,15 +14,15 @@ import (
 )
 
 // maybeRefresh はエンジンが導入済みでアカウントの状態をまだ読んでいないとき、背景で読み始める（app-server を起動する）。
-// startup のときは、接続方式が chatgpt-codex のときだけ（起動直後に使わない app-server を起こさない）。
-func (s *CodexAuthService) maybeRefresh(startup bool) {
+// onlyIfSelected のときは、接続方式が chatgpt-codex のときだけ（起動直後・画面を開いただけで、使わない app-server を起こさない。FR-G37 (1)）。
+func (s *CodexAuthService) maybeRefresh(onlyIfSelected bool) {
 	s.mu.Lock()
 	if s.known || s.refreshing || s.closed || s.removing || s.eng.state != CodexEngineInstalled {
 		s.mu.Unlock()
 		return
 	}
 	s.mu.Unlock()
-	if startup && !s.connectionIsCodex(s.baseCtx) {
+	if onlyIfSelected && !s.connectionIsCodex(s.baseCtx) {
 		return
 	}
 	s.mu.Lock()
@@ -172,7 +172,7 @@ func (s *CodexAuthService) StartSignIn(ctx context.Context) error {
 
 	tctx, stop := context.WithTimeout(s.baseCtx, s.cfg.SignInTimeout)
 	s.mu.Lock()
-	if s.state != PlanSigningIn { // ブラウザを開いている間に、取り消し・完了があった
+	if s.state != PlanSigningIn || s.closed { // ブラウザを開いている間に、取り消し・完了・アプリの終了があった（Close の待ちの後に wg を増やさない）
 		s.mu.Unlock()
 		stop()
 		return nil

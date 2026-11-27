@@ -797,6 +797,15 @@ func TestCodexAuthは起動時に接続方式がcodexのときだけ状態を読
 	if st := svc.Status(); st.Engine.State != CodexEngineInstalled {
 		t.Fatalf("status = %+v", st)
 	}
+	// 画面を開いただけ（Status・Ready）では、接続方式が別なら app-server の状態の読み取りを始めない（FR-G37 (1)）。
+	// 読み取りを始めると refreshing が立ち、終わると known が立つので、どちらも立たないことで確かめる（待たずに決まる）。
+	svc.Ready()
+	svc.mu.Lock()
+	started := svc.known || svc.refreshing
+	svc.mu.Unlock()
+	if started || e.started.Load() != before {
+		t.Fatal("opening the card or checking Ready started the app-server for another connection")
+	}
 	// 接続方式が chatgpt-codex: 背景で状態を読み、再ログインなしで connected になる。
 	e.settings.mu.Lock()
 	e.settings.values[SettingAgentConnection] = json.RawMessage(`"chatgpt-codex"`)

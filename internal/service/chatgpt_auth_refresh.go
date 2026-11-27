@@ -154,7 +154,7 @@ func (s *ChatGPTAuthService) reauthRequired(gen uint64, source, code string, dro
 			s.log.Warn("the chatgpt client id could not be dropped")
 		}
 	}
-	s.audit(s.baseCtx, domain.ActorSystem, chatgptAuditReauth, auditError, safeAuditCode(code), map[string]any{"source": source})
+	s.audit(s.baseCtx, domain.ActorSystem, chatgptReauthAuditEvent, auditError, safeAuditCode(code), map[string]any{"source": source})
 	s.toast("error", "ChatGPT のサインインが無効になりました。もう一度サインインしてください。")
 }
 

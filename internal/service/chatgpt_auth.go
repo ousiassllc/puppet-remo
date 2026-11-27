@@ -29,11 +29,13 @@ import (
 
 // 監査のイベント名（kind = agent。docs/architecture/er.md のカタログ）。
 const (
-	chatgptAuditSignInStart = "agent.chatgpt.signin_start"
-	chatgptAuditSignIn      = "agent.chatgpt.signin"
-	chatgptAuditSignOut     = "agent.chatgpt.signout"
-	chatgptAuditResume      = "agent.chatgpt.resume"
-	chatgptAuditReauth      = "agent.chatgpt.reauth"
+	chatgptSignInStartAuditEvent    = "agent.chatgpt.signin_start"
+	chatgptSignInAuditEvent         = "agent.chatgpt.signin"
+	chatgptSignOutAuditEvent        = "agent.chatgpt.signout"
+	chatgptResumeAuditEvent         = "agent.chatgpt.resume"
+	chatgptReauthAuditEvent         = "agent.chatgpt.reauth_required"
+	chatgptUsageLimitAuditEvent     = "agent.chatgpt.usage_limit" // AgentService が使用量の上限のタスクごとに記録する（task_id を持つため）
+	chatgptUsageLimitAuditErrorCode = "subscription_sharing_usage_limit_exceeded"
 )
 
 // 既定値。
@@ -226,7 +228,7 @@ func (s *ChatGPTAuthService) Resume(ctx context.Context) error {
 	}
 	s.state, s.problem = PlanConnected, PlanProblemNone
 	s.mu.Unlock()
-	s.audit(ctx, domain.ActorHost, chatgptAuditResume, auditOK, "", nil)
+	s.audit(ctx, domain.ActorHost, chatgptResumeAuditEvent, auditOK, "", nil)
 	return nil
 }
 

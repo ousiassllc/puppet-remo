@@ -24,12 +24,13 @@ const (
 		`<p>この要求は受け付けられません。</p>`
 )
 
-// chatgptCallbackResult は state が一致した 1 回のコールバック。ErrCode が空でなければ、認可の拒否・失敗（error=…）。
+// chatgptCallbackResult は state が一致した 1 回のコールバック。ErrCode が空でない、または PolicyDenied なら、認可の拒否・失敗。
 type chatgptCallbackResult struct {
-	Code     string
-	ClientID string // 新規登録のときに発行された client_id
-	Scope    string // コールバックが報告する scope（確定はトークンの応答）
-	ErrCode  string // error（access_denied・3p_delegated_access_policy_denied など。error_description は読まない）
+	Code         string
+	ClientID     string // 新規登録のときに発行された client_id
+	Scope        string // コールバックが報告する scope（確定はトークンの応答）
+	ErrCode      string // error（access_denied・3p_delegated_access_policy_denied など）。error_description の文は保持しない
+	PolicyDenied bool   // error か error_description がワークスペースのポリシー拒否の識別子を含む（FR-G40）
 }
 
 type chatgptCallback struct {
@@ -108,7 +109,9 @@ func (c *chatgptCallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := chatgptCallbackResult{ErrCode: q.Get("error")}
-	if res.ErrCode == "" {
+	// ポリシー拒否の識別子が error と error_description のどちらに来るかは未確認（FR-G40 (1)）。両方を見て、説明文そのものは保持しない。
+	res.PolicyDenied = chatgptMentionsPolicyDenied(res.ErrCode) || chatgptMentionsPolicyDenied(q.Get("error_description"))
+	if res.ErrCode == "" && !res.PolicyDenied {
 		res.Code, res.ClientID, res.Scope = q.Get("code"), q.Get("client_id"), q.Get("scope")
 		if res.Code == "" {
 			writeChatGPTCallbackPage(w, http.StatusBadRequest, chatgptCallbackBadPage)

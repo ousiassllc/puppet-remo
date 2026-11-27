@@ -42,7 +42,7 @@ func turnError(e *protocol.TurnError) error {
 	return fmt.Errorf("codex: the turn failed: %s", msg)
 }
 
-// callError は要求の失敗: ctx の終わりはそれ自身、接続の終了は分類なしの失敗、app-server のエラー応答は内容を持つ失敗。
+// callError は要求の失敗: ctx の終わりはそれ自身、接続の終了（異常終了）は ErrEngineUnavailable（FR-G38）、app-server のエラー応答は内容を持つ失敗。
 func callError(ctx context.Context, se *appserver.Session, what string, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -52,7 +52,7 @@ func callError(ctx context.Context, se *appserver.Session, what string, err erro
 		return fmt.Errorf("codex: %s: %s", what, sanitize(rerr.Message))
 	}
 	if errors.Is(err, rpc.ErrClosed) {
-		return fmt.Errorf("codex: %s: the app-server ended: %s", what, sanitize(endMessage(se)))
+		return fmt.Errorf("%w: %s: the app-server ended: %s", openai.ErrEngineUnavailable, what, sanitize(endMessage(se)))
 	}
 	return fmt.Errorf("codex: %s: %s", what, sanitize(err.Error()))
 }
