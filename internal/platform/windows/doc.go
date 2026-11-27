@@ -11,6 +11,8 @@
 //     親の HWND は NewFilePicker に関数で渡す（Wails のメインウィンドウの NativeWindow()。関数は internal/app の WailsHost.MainWindowHandle で、cmd/puppet-remo/main.go が渡す）。
 //   - FolderOpener（platform.FolderOpener）: ShellExecute の "open" で、実在するディレクトリ（絶対パス）だけをエクスプローラーで開く（#54。ログ画面のボタン）。
 //     動詞は固定・引数なしで、シェル・コマンドラインを経由しない。ファイルは開かず、エラーにパスを含めない。開くパスは呼び出し元（app.LogReader）が固定する。
+//   - BrowserOpener（platform.BrowserOpener）: ShellExecute の "open" で、https の URL だけを既定のブラウザで開く（#247。ChatGPT のサインイン・使用量の管理）。
+//     動詞は固定・引数なしで、シェルを経由しない。https 以外は拒み、エラーに URL を含めない。
 //   - Power: SetThreadExecutionState によるスリープ・画面オフの抑止（NFR-A05）。スレッドごとの状態なので専用の OS スレッドで設定・解除する。
 //
 // Win32 を呼ぶコードは *_windows.go（//go:build windows）に置く。キー名・修飾キーの変換表、座標の正規化、
