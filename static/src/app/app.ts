@@ -3,7 +3,7 @@
 //   1. ネットワーク障害・想定外の 5xx の汎用エラー（インラインアラート。サーバーの応答が無いので、ページに置いた雛形から作る）
 //   2. トークンのコピー
 //   3. トースト（サーバーが OOB で追加する完了の短い通知）の自動消去（3 秒）と、新しいものが前を置き換える動作。ドロワーが開いている間は、読み上げをドロワーの中の #nav-live へ写す（7）
-//   4. 確認モーダルのキャンセル・×・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。モーダルを閉じたら、開いた要素へフォーカスを戻す。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
+//   4. 確認モーダルのキャンセル・×・外側（スクラム）クリック・トークン表示を閉じる（data-clear）。モーダルを開いたら、フォーカスを中（キャンセル）へ移して Tab を中で循環させ、閉じたら開いた要素へフォーカスを戻す。出現・退出のフェード（退出の取り除き）とボタンの押下のリップル
 //   5. ビューアのツールバーのスライダーを動かしている間、横の数値（<output>）を追従させる（data-range-output）
 //   6. <remo-screen-viewer> の remo:error（入力の拒否など）をインラインアラートにする
 //   7. モバイルナビ（md 未満の左のドロワー）の開閉（ハンバーガー・スクラム・リンク・Esc）と、開いている間だけ role="dialog"・aria-modal・aria-labelledby を付けること
@@ -174,30 +174,43 @@ function setNavOpen(open: boolean): void {
   }
 }
 
-// Tab をドロワーのリンクの中で循環させる（先頭で Shift+Tab → 末尾、末尾で Tab → 先頭。フォーカスがドロワーの外にあるときも中へ戻す）。
-function trapNavFocus(event: KeyboardEvent): void {
-  const links = [...document.querySelectorAll<HTMLElement>("#sidebar-nav a[href]")];
-  const first = links[0];
-  const last = links[links.length - 1];
+// Tab を container の中の items で循環させる（先頭で Shift+Tab → 末尾、末尾で Tab → 先頭。フォーカスが container の外にあるときも中へ戻す）。
+function trapTabFocus(event: KeyboardEvent, container: Element | null, items: HTMLElement[]): void {
+  const first = items[0];
+  const last = items[items.length - 1];
   if (!first || !last) {
     return;
   }
   const active = document.activeElement;
   const edge = event.shiftKey ? first : last;
-  if (active === edge || !document.getElementById("sidebar-nav")?.contains(active)) {
+  if (active === edge || !container?.contains(active)) {
     event.preventDefault();
     (event.shiftKey ? last : first).focus();
   }
 }
 
+// 開いている（退出中でない）確認モーダル。
+function openModalElement(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`#${MODAL_ROOT} > #modal:not([data-leaving])`);
+}
+
+// 確認モーダルの中の操作できる要素（Tab の循環の対象）。
+const MODAL_FOCUSABLE = "button:not([disabled]), input:not([disabled]), a[href], select:not([disabled]), textarea:not([disabled])";
+
 document.addEventListener("keydown", (event) => {
+  const modal = openModalElement();
+  if (event.key === "Tab" && modal) {
+    // 確認モーダルは最前面なので、ドロワーが開いていても、Tab はモーダルの中で循環させる。
+    trapTabFocus(event, modal, [...modal.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE)]);
+    return;
+  }
   if (!document.body.hasAttribute(NAV_OPEN_ATTR)) {
     return;
   }
   if (event.key === "Escape") {
     setNavOpen(false);
   } else if (event.key === "Tab") {
-    trapNavFocus(event);
+    trapTabFocus(event, document.getElementById("sidebar-nav"), [...document.querySelectorAll<HTMLElement>("#sidebar-nav a[href]")]);
   }
 });
 
@@ -516,13 +529,15 @@ document.addEventListener("htmx:oobAfterSwap", (event) => {
 });
 
 // アクションの失敗（HX-Retarget: #alert-root の応答）の差し込み。アラートが見える位置へ寄せる（OOB は上の oobAfterSwap）。
-// 確認モーダル（#modal-root への確認の GET の応答）の差し込みでは、開いた要素（リクエストの要素）を覚える（閉じるときにフォーカスを戻す）。
+// 確認モーダル（#modal-root への確認の GET の応答）の差し込みでは、開いた要素（リクエストの要素）を覚え（閉じるときにフォーカスを戻す）、フォーカスを中へ移す。
 document.addEventListener("htmx:afterSwap", (event) => {
   const detail = (event as CustomEvent<{ target?: Element; requestConfig?: { elt?: Element } }>).detail;
   if (detail?.target?.id === ALERT_ROOT) {
     revealAlerts(detail.target);
   } else if (detail?.target?.id === MODAL_ROOT && detail.target.querySelector("#modal")) {
     modalOpener = detail.requestConfig?.elt ?? null;
+    // aria-modal のダイアログなので、フォーカスを中へ移す。最初は右上の ×（aria-label="閉じる"）ではなく、キャンセル（無ければ確定）。
+    detail.target.querySelector<HTMLElement>("#modal button:not([aria-label='閉じる'])")?.focus();
   }
 });
 
