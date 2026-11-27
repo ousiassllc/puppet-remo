@@ -22,7 +22,7 @@ func registerNotepad(t *testing.T, e *ctlEnv) domain.LaunchableApp {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil // 登録の監査は、起動の監査と混ぜない
+	e.audit.reset() // 登録の監査は、起動の監査と混ぜない
 	return a
 }
 
@@ -137,7 +137,7 @@ func TestControlLaunchKillSwitchIsCheckedFirst(t *testing.T) {
 	if err := e.kill.Trigger("test"); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 
 	for _, id := range []string{app.ID, "unknown"} {
 		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: id})
@@ -163,7 +163,7 @@ func TestControlLaunchLeaseHeldByOtherIsDeniedBeforeTheListIsRead(t *testing.T) 
 	if _, err := e.leases.Acquire(context.Background(), ctlBob); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 
 	// 未登録の ID でも lease_held_by_other（app_not_found で存在を探らせない）。
 	for _, id := range []string{app.ID, "unknown"} {
@@ -476,7 +476,7 @@ func TestControlLaunchCorruptRowIsDeniedButListedAndDeletable(t *testing.T) {
 		t.Fatal(err)
 	}
 	corruptArgsJSON(t, e.appDB, app.ID, `[1]`)
-	e.audit.entries = nil
+	e.audit.reset()
 
 	_, err = e.control.Launch(context.Background(), ctlAlice, LaunchRequest{AppID: app.ID})
 	if !errors.Is(err, domain.ErrAppNotFound) {
@@ -518,7 +518,7 @@ func TestAppRegistryUpdateRepairsACorruptRow(t *testing.T) {
 	if got, err := e.apps.Get(ctx, app.ID); err != nil || !got.Corrupt {
 		t.Fatalf("Get = %+v, %v; want a Corrupt row", got, err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 
 	// 表示名・実行ファイル・作業ディレクトリは変えず、引数だけ入れ直す。
 	in := notepadInput() // Args は appArgMark のまま（壊す前と同じ値を入れ直す）
@@ -545,7 +545,7 @@ func TestAppRegistryUpdateRepairsACorruptRow(t *testing.T) {
 
 	// 監査: 変わったのは args だけ（表示名などは同じ）だが、壊れていた引数の破棄として args を必ず記録する。
 	var en repository.AuditEntry
-	for _, x := range e.audit.Entries() {
+	for _, x := range e.audit.SyncEntries() {
 		if x.Event == "settings.launchable_app.update" {
 			en = x
 		}
@@ -602,7 +602,7 @@ func TestControlLaunchableApps(t *testing.T) {
 		}
 		ids[in.Label] = a.ID
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 
 	got, err := e.control.LaunchableApps(ctx)
 	if err != nil {
@@ -728,7 +728,7 @@ func TestControlLaunchByLeaseHoldingAgentSucceeds(t *testing.T) {
 	app := registerNotepad(t, e)
 	agent := domain.Actor{Kind: domain.ActorAgent, Label: "agent", ClientID: "client-a", SessionID: "task-1"}
 	lease := mustAcquire(t, e, agent)
-	e.audit.entries = nil
+	e.audit.reset()
 	ctx := context.Background()
 
 	res, err := e.control.Launch(WithAgentStep(ctx, AgentStep{No: 2, Route: AgentRouteOpenAI}), agent, LaunchRequest{AppID: app.ID})

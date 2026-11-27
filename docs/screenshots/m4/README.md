@@ -26,7 +26,7 @@ export PATH=$PATH:~/.bun/bin:~/go/bin
 task frontend:build
 # (1) デモのバイナリ。下の「オーバーレイのラベルの取り出し」の 5 行（コミットしていない一時的なパッチ）を main.go に足してビルドし、足した行はビルド後に戻した
 go build -o /tmp/remotedemo-evidence2 ./internal/app/internal/remotedemo
-# (2) デモを起動（-addr のポートは 8765 固定。MCP の Host ヘッダーの検査が設定のポートと比べるため）
+# (2) デモを起動（-addr のポートは変えられる。Host ヘッダーの検査のポートも追従する。以下の curl は既定の 8765 の例）
 PUPPET_REMO_STATIC_DIR=$PWD/static/dist /tmp/remotedemo-evidence2 -addr 127.0.0.1:8765 -gui-addr 127.0.0.1:8897 -agent-demo -agent-safety-check
 # (3) タスクを開始する（remotedemo の doc comment の curl。$1 が指示）
 T=prm_DEMO-dummy-token-not-a-secret-0123456789xxA

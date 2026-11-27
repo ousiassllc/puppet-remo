@@ -379,6 +379,16 @@
     text-decoration-color: var(--ink);
   }
 
+  /* タスクのカード（sm 未満。organisms.taskCard。#178）: カード全体が 1 つのリンク（ID のリンクの ::after がカードを覆う）。
+   * キーボードで止まるのはその ID のリンクだけなので、フォーカスリングはリンクでなくカードの外周に、通常のリンクと同じ 2px・offset 2px の --focus の実線で描く。 */
+  .task-card:has(.task-card-link:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .task-card-link:focus-visible {
+    outline: none;
+  }
+
   /* チェックボックス（18px・外枠 --mute）。選択は --accent 地に --bone のチェック（Iconoir の check を --icon-sm でマスクし、--bone で塗る）。 */
   input[type="checkbox"] {
     appearance: none;
@@ -647,19 +657,24 @@
 
   /* ツールチップ（atoms.Tooltip。ガイドの「ツールチップ」「フィードバック」）: 12px・padding --tip-pad-y/x・--r-sm・地 --ink・字 --bone（テーマ反転）・
    * z-index --z-dropdown。出す側（.tip-host）のホバーとキーボードフォーカスで、本文（.tip。role="tooltip"）を fade-in（--motion-fade-in）で出す。
-   * 表示遅延はホバー 400ms・フォーカスは即時（ガイド）。隠れている間は visibility: hidden（aria-describedby の参照先としては読まれる）。非対話なので
-   * pointer-events なし。ガイドの見本は出す側の中央に出すが、表の overflow-x の枠で左端の列だと切れるので、出す側の左端にそろえる。 */
+   * 表示遅延はホバー 400ms・フォーカスは即時（ガイド）。隠れている間は visibility: hidden（aria-describedby の参照先としては読まれる）。
+   * WCAG 1.4.13: 閉じられる（Esc。app.ts が出す側に data-tip-dismissed を付け、ホバー・フォーカスが外れるまで隠す）・hoverable（本文は pointer-events を受け、
+   * 出す側との間の隙間は ::before / ::after の透明な橋でふさぐ。本文は出す側の子孫なので、本文の上でも出す側の :hover が続く）・persistent（ホバー・フォーカスが外れるか Esc まで出たまま）。
+   * 位置は出す側の真上（画面の上端で入りきらないときは真下）。横にはずらさず、出す側の中央にそろえる（隣の列の表示を覆わない）。
+   * アンカー位置指定（position-area・position-try-fallbacks: flip-block）で、position: fixed の本文を出す側につなぐ。fixed なので、表の overflow-x の枠で切れない。
+   * 非対応のブラウザは、出す側の中央の真上（absolute）に出る。 */
   .tip-host {
     position: relative;
     display: inline-block;
   }
   .tip {
     position: absolute;
-    left: 0;
+    left: 50%;
     bottom: calc(100% + var(--s-2));
+    translate: -50% 0;
     z-index: var(--z-dropdown);
     width: max-content;
-    max-width: 20rem;
+    max-width: min(20rem, calc(100vw - 2 * var(--s-4)));
     padding: var(--tip-pad-y) var(--tip-pad-x);
     border-radius: var(--radius-sm);
     background: var(--ink);
@@ -669,7 +684,36 @@
     line-height: 1.6;
     text-align: left;
     visibility: hidden;
-    pointer-events: none;
+  }
+  .tip::before,
+  .tip::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    height: var(--s-2);
+  }
+  .tip::before {
+    bottom: 100%;
+  }
+  .tip::after {
+    top: 100%;
+  }
+  @supports (position-area: top) {
+    .tip-host {
+      anchor-name: --tip;
+      anchor-scope: --tip;
+    }
+    .tip {
+      position: fixed;
+      inset: auto;
+      translate: none;
+      position-anchor: --tip;
+      position-area: top;
+      justify-self: anchor-center;
+      margin-block: var(--s-2);
+      margin-inline: var(--s-4);
+      position-try-fallbacks: flip-block;
+    }
   }
   .tip-host:hover > .tip {
     visibility: visible;
@@ -678,6 +722,9 @@
   .tip-host:focus-visible > .tip {
     visibility: visible;
     animation: motion-fade-in var(--motion-fade-in) var(--ease-out) both;
+  }
+  .tip-host[data-tip-dismissed] > .tip {
+    visibility: hidden;
   }
   /* forced-colors（ハイコントラスト）では背景色が OS の色に置き換わり、枠の無い本文は表の文字に重なって読めない。枠を足して区切る。 */
   @media (forced-colors: active) {

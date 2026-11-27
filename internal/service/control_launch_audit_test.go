@@ -72,7 +72,7 @@ func TestControlLaunchWritesTheAttemptRowBeforeStartingTheProcess(t *testing.T) 
 			e := newAppEnv(t)
 			app := registerNotepad(t, e)
 			wantLease := tt.setup(t, e)
-			e.audit.entries = nil
+			e.audit.reset()
 			order := &launchOrderRecorder{AppLauncher: e.launcher, audit: e.audit}
 			ctl := e.controlWith(t, order, e.audit)
 
@@ -126,7 +126,7 @@ func TestControlLaunchDoesNotStartWhenTheAttemptCannotBeWritten(t *testing.T) {
 			if who.Kind == domain.ActorAgent {
 				mustAcquire(t, e, who)
 			}
-			e.audit.entries = nil
+			e.audit.reset()
 			e.audit.SetSyncErr(errors.New(`insert audit_logs: database is locked (C:\secret\puppet-remo.db)`))
 
 			_, err := e.control.Launch(context.Background(), who, LaunchRequest{AppID: app.ID})

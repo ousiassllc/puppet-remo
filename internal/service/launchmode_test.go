@@ -42,8 +42,7 @@ func setMode(t *testing.T, e *ctlEnv, m domain.LaunchMode) {
 	if err := e.apps.SetLaunchMode(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
-	e.audit.sync = nil // 方式の切り替えの監査は同期で書く（#174）
+	e.audit.reset()
 }
 
 func launchCount(e *ctlEnv) int { return len(e.launcher.CallsTo("Launch")) }
@@ -158,8 +157,8 @@ func TestSetLaunchModeReportsWhenTheRollbackFailsToo(t *testing.T) {
 	if !errors.As(err, &de) || de.Code != domain.CodeAuditUnavailable {
 		t.Fatalf("SetLaunchMode = %v, want audit_unavailable", err)
 	}
-	if restored, ok := de.Detail[DetailLaunchModeRestored].(bool); !ok || restored {
-		t.Errorf("detail = %v, want %s=false (the rollback failed)", de.Detail, DetailLaunchModeRestored)
+	if subject, restored, ok := AuditChangeFailure(err); !ok || subject != AuditSubjectLaunchMode || restored {
+		t.Errorf("detail = %v, want subject=%s restored=false (the rollback failed)", de.Detail, AuditSubjectLaunchMode)
 	}
 	if m, _ := e.apps.LaunchMode(ctx); m != domain.LaunchModeDenylist {
 		t.Errorf("mode = %q; the failed rollback leaves the switched value in place", m)
@@ -258,7 +257,7 @@ func TestDeniedCRUDStoresResolvedPathsAndAudits(t *testing.T) {
 		t.Errorf("missing path = %+v, %v", missing, err)
 	}
 
-	entries := e.audit.Entries()
+	entries := e.audit.SyncEntries()
 	if len(entries) != 3 || entries[0].Event != "settings.launch_denylist.create" || entries[0].Kind != "settings" || entries[0].ActorType != domain.ActorHost {
 		t.Fatalf("audit = %+v", entries)
 	}
@@ -270,14 +269,14 @@ func TestDeniedCRUDStoresResolvedPathsAndAudits(t *testing.T) {
 	if err != nil || upd.Value != "pwsh.exe" || upd.ID != byName.ID {
 		t.Fatalf("UpdateDenied = %+v, %v", upd, err)
 	}
-	en := e.audit.Entries()[3]
+	en := e.audit.SyncEntries()[3]
 	if d := auditDetail(t, en); en.Event != "settings.launch_denylist.update" || d["before_value"] != "PowerShell.exe" || d["value"] != "pwsh.exe" {
 		t.Errorf("update entry = %+v detail %v", en, d)
 	}
 	if err := e.apps.DeleteDenied(ctx, byName.ID); err != nil {
 		t.Fatal(err)
 	}
-	if en := e.audit.Entries()[4]; en.Event != "settings.launch_denylist.delete" {
+	if en := e.audit.SyncEntries()[4]; en.Event != "settings.launch_denylist.delete" {
 		t.Errorf("delete entry = %+v", en)
 	}
 	list, _ := e.apps.ListDenied(ctx)
@@ -300,7 +299,7 @@ func TestDeniedRejectsBadAndDuplicateInputWithoutEchoingIt(t *testing.T) {
 	if _, err := e.apps.CreateDenied(ctx, pathSys32Cmd); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 	for _, in := range []string{``, `   `, `cmd`, `notepad.bat`, `\\server\share\a.exe`, `..\a.exe`, `C:\x\..\a.exe`, `a/b.exe`, `con.exe`,
 		pathSys32Cmd, strings.ToUpper(pathSys32Cmd), pathLink, `c:/windows//system32/cmd.exe`} {
 		_, err := e.apps.CreateDenied(ctx, in)
@@ -313,7 +312,7 @@ func TestDeniedRejectsBadAndDuplicateInputWithoutEchoingIt(t *testing.T) {
 			t.Errorf("the message for %q echoes the input", in)
 		}
 	}
-	if n := len(e.audit.Entries()); n != 0 {
+	if n := len(e.audit.SyncEntries()); n != 0 {
 		t.Errorf("rejected input was audited (%d entries)", n)
 	}
 	// 名前の重複は大文字小文字を区別しない。
@@ -394,7 +393,7 @@ func TestLaunchDenylistModeStartsUnlistedPathWithoutArgs(t *testing.T) {
 	if _, err := e.apps.CreateDenied(context.Background(), pathSys32Cmd); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 
 	res, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{Path: pathOK})
 	if err != nil || res.PID == 0 || res.AppID != "" {
@@ -444,7 +443,7 @@ func TestLaunchDenylistAuditRecordsTheResolvedPath(t *testing.T) {
 		if _, err := e.apps.CreateDenied(context.Background(), pathSys32Cmd); err != nil {
 			t.Fatal(err)
 		}
-		e.audit.entries = nil
+		e.audit.reset()
 		_, err := e.control.Launch(context.Background(), ctlAlice, LaunchRequest{Path: pathShort})
 		if !errors.Is(err, domain.ErrAppDenied) {
 			t.Fatalf("Launch = %v, want app_denied", err)
@@ -548,7 +547,7 @@ func TestLaunchDenylistModeBlocksEveryWayToTheDeniedExecutable(t *testing.T) {
 			if _, err := e.apps.CreateDenied(ctx, tc.entry); err != nil {
 				t.Fatal(err)
 			}
-			e.audit.entries = nil
+			e.audit.reset()
 
 			_, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{Path: tc.launch})
 			if !errors.Is(err, domain.ErrAppDenied) {
@@ -580,7 +579,7 @@ func TestLaunchDenylistModeAppliesToRegisteredApps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 	setMode(t, e, domain.LaunchModeDenylist)
 	ctx := context.Background()
 	if _, err := e.apps.CreateDenied(ctx, "notepad.exe"); err != nil {
@@ -748,7 +747,7 @@ func TestLaunchDenylistModeReresolvesEntriesRegisteredBeforeTheFileExisted(t *te
 	}
 	e.launcher.AddExecutable(realFile)
 	e.launcher.AddLink(later, realFile) // 登録のあとで、そのパスが実体への経路になった
-	e.audit.entries = nil
+	e.audit.reset()
 
 	if _, err := e.control.Launch(ctx, ctlAlice, LaunchRequest{Path: realFile}); !errors.Is(err, domain.ErrAppDenied) {
 		t.Errorf("Launch(the real file behind a denied path) = %v, want app_denied", err)

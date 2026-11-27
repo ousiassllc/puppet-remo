@@ -32,13 +32,13 @@ type settingsEnv struct {
 	svc     HostSettingsService
 	store   *ctlSettings
 	auto    *memAutostart
-	audit   *recordingAudit
+	audit   *ctlAudit
 	changes [][2]HostSettings
 }
 
 func newSettingsEnv(t *testing.T, withAutostart bool) *settingsEnv {
 	t.Helper()
-	e := &settingsEnv{store: newCtlSettings(), audit: &recordingAudit{}}
+	e := &settingsEnv{store: newCtlSettings(), audit: &ctlAudit{}}
 	cfg := HostSettingsConfig{
 		Settings: e.store, Audit: e.audit, Clock: newFakeClock(),
 		OnChange: func(old, updated HostSettings) { e.changes = append(e.changes, [2]HostSettings{old, updated}) },
@@ -108,7 +108,7 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	if len(e.changes) != 1 || e.changes[0][0] != defaultHostSettings || e.changes[0][1] != want {
 		t.Errorf("changes = %+v", e.changes)
 	}
-	a := e.audit.entries
+	a := e.audit.SyncEntries()
 	if len(a) != 1 || a[0].Event != "settings.update" || a[0].ActorType != domain.ActorHost || a[0].Kind != "settings" {
 		t.Fatalf("audit = %+v", a)
 	}
@@ -135,13 +135,13 @@ func TestHostSettingsAuditListsOnlyChangedKeys(t *testing.T) {
 	if _, err := e.svc.Save(ctx, defaultHostSettings); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.audit.entries) != 2 {
-		t.Fatalf("audit = %+v", e.audit.entries)
+	if len(e.audit.SyncEntries()) != 2 {
+		t.Fatalf("audit = %+v", e.audit.SyncEntries())
 	}
-	if got, want := string(e.audit.entries[0].DetailJSON), `{"audit.record_text":null,"audit.retention_days":90}`; got != want {
+	if got, want := string(e.audit.SyncEntries()[0].DetailJSON), `{"audit.record_text":null,"audit.retention_days":90}`; got != want {
 		t.Errorf("detail = %s, want %s", got, want)
 	}
-	if got, want := string(e.audit.entries[1].DetailJSON), `{"audit.record_text":null,"audit.retention_days":30}`; got != want {
+	if got, want := string(e.audit.SyncEntries()[1].DetailJSON), `{"audit.record_text":null,"audit.retention_days":30}`; got != want {
 		t.Errorf("detail = %s, want %s", got, want)
 	}
 }
@@ -188,8 +188,8 @@ func TestHostSettingsUnchangedSaveIsQuiet(t *testing.T) {
 	if _, err := e.svc.Save(ctx, defaultHostSettings); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.changes) != 0 || len(e.audit.entries) != 0 {
-		t.Errorf("a no-op save must not notify or audit: %+v %+v", e.changes, e.audit.entries)
+	if len(e.changes) != 0 || len(e.audit.SyncEntries()) != 0 {
+		t.Errorf("a no-op save must not notify or audit: %+v %+v", e.changes, e.audit.SyncEntries())
 	}
 }
 
@@ -337,7 +337,7 @@ func TestNewHostSettingsValidatesConfig(t *testing.T) {
 	if _, err := NewHostSettings(HostSettingsConfig{}); err == nil {
 		t.Error("missing Settings must fail")
 	}
-	if _, err := NewHostSettings(HostSettingsConfig{Settings: newCtlSettings(), Audit: &recordingAudit{}}); err == nil {
+	if _, err := NewHostSettings(HostSettingsConfig{Settings: newCtlSettings(), Audit: &ctlAudit{}}); err == nil {
 		t.Error("Audit without Clock must fail")
 	}
 }
@@ -362,7 +362,7 @@ func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
 	ctx := context.Background()
 	boom := errors.New("disk full")
 	store := failKeySettings{ctlSettings: newCtlSettings(), failKey: settingScreenshotMaxDim, err: boom}
-	audit := &recordingAudit{}
+	audit := &ctlAudit{}
 	var changes [][2]HostSettings
 	svc, err := NewHostSettings(HostSettingsConfig{
 		Settings: store, Audit: audit, Clock: newFakeClock(),
@@ -386,12 +386,12 @@ func TestHostSettingsPartialWriteNotifiesOnlyWhatWasApplied(t *testing.T) {
 	if err != nil || got != applied {
 		t.Errorf("Load after the failed save = %+v, %v; want %+v", got, err, applied)
 	}
-	if len(audit.entries) != 1 {
-		t.Fatalf("audit = %+v", audit.entries)
+	if len(audit.SyncEntries()) != 1 {
+		t.Fatalf("audit = %+v", audit.SyncEntries())
 	}
 	var detail map[string]any
-	if err := json.Unmarshal(audit.entries[0].DetailJSON, &detail); err != nil || len(detail) != 2 || detail["server.port"] != float64(9000) {
-		t.Errorf("audit detail = %s (%v)", audit.entries[0].DetailJSON, err)
+	if err := json.Unmarshal(audit.SyncEntries()[0].DetailJSON, &detail); err != nil || len(detail) != 2 || detail["server.port"] != float64(9000) {
+		t.Errorf("audit detail = %s (%v)", audit.SyncEntries()[0].DetailJSON, err)
 	}
 }
 
