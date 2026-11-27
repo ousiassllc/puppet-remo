@@ -317,6 +317,14 @@ func TestGUIServesTheAgentRoutes(t *testing.T) {
 	for _, route := range []struct{ method, path string }{
 		{http.MethodPut, "/agent"}, {http.MethodPut, "/agent/api-key"}, {http.MethodDelete, "/agent/api-key"},
 		{http.MethodPut, "/agent/fastpath"}, {http.MethodPut, "/agent/fastpath/api-key"}, {http.MethodDelete, "/agent/fastpath/api-key"},
+		// ChatGPT のプランの接続方式（#247）
+		{http.MethodPut, "/agent/connection"}, {http.MethodGet, "/agent/connection/api-key/confirm"},
+		{http.MethodPost, "/agent/chatgpt/signin"}, {http.MethodPost, "/agent/chatgpt/signin/cancel"}, {http.MethodGet, "/agent/chatgpt/signout/confirm"},
+		{http.MethodDelete, "/agent/chatgpt"}, {http.MethodPost, "/agent/chatgpt/resume"}, {http.MethodPost, "/agent/chatgpt/open-usage"},
+		{http.MethodGet, "/agent/chatgpt/models"}, {http.MethodPut, "/agent/chatgpt"}, {http.MethodPost, "/agent/chatgpt/welcome/dismiss"},
+		{http.MethodPost, "/agent/codex/install"}, {http.MethodPost, "/agent/codex/install/cancel"}, {http.MethodPost, "/agent/codex/signin"},
+		{http.MethodPost, "/agent/codex/signin/cancel"}, {http.MethodGet, "/agent/codex/signout/confirm"}, {http.MethodDelete, "/agent/codex"},
+		{http.MethodPost, "/agent/codex/resume"}, {http.MethodGet, "/agent/codex/models"}, {http.MethodPut, "/agent/codex"},
 	} {
 		if rec := do(h, route.method, route.path, "HX-Request", "true"); rec.Code == http.StatusNotFound {
 			t.Errorf("%s %s is not registered", route.method, route.path)

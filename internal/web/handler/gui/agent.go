@@ -58,6 +58,9 @@ func (h *Handler) AgentSettings(c *gin.Context) {
 func (h *Handler) agentSettingsPage(ctx context.Context, s service.AgentSettingsView) view.AgentSettings {
 	return view.AgentSettings{
 		Chrome:      h.chrome(ctx, view.NavAgent),
+		Connection:  h.connectionPanel(s),
+		ChatGPT:     h.chatgptCardView(s),
+		Codex:       h.codexCardView(s),
 		Agent:       h.agentFormView(agentValues(s), view.AgentErrors{}, s),
 		AgentKey:    openAIKeyPanel(s.OpenAIKeyRegistered, ""),
 		Fastpath:    h.fastpathFormView(fastpathValues(s), view.FastpathErrors{}, s),
@@ -84,11 +87,11 @@ func typeSafeKeyPanel(registered bool, errMsg string) view.APIKeyPanel {
 
 // agentFormView は入力値とエラーに、同意の日時（保存済みの値）を添えてフォームの表示にする。
 func (h *Handler) agentFormView(v view.AgentValues, errs view.AgentErrors, s service.AgentSettingsView) view.AgentForm {
-	return view.AgentForm{Values: v, Errors: errs, ConsentAt: h.formatTimePtr(s.ConsentAt, "")}
+	return view.AgentForm{Values: v, Errors: errs, ConsentAt: h.formatTimePtr(s.ConsentAt, ""), Connection: string(connectionOf(s))}
 }
 
 func (h *Handler) fastpathFormView(v view.FastpathValues, errs view.FastpathErrors, s service.AgentSettingsView) view.FastpathForm {
-	return view.FastpathForm{Values: v, Errors: errs, ConsentAt: h.formatTimePtr(s.Fastpath.ConsentAt, "")}
+	return view.FastpathForm{Values: v, Errors: errs, ConsentAt: h.formatTimePtr(s.Fastpath.ConsentAt, ""), PlanActive: connectionOf(s).Plan()}
 }
 
 // agentValues は保存済みの設定をフォームの入力値にする。同意済み（consent_at がある）ならチェック済みで描画する。
@@ -184,7 +187,8 @@ func (h *Handler) SaveAgent(c *gin.Context) {
 			// 数値に読めない入力があるのに、有効のまま保存された（検証が 0 を通した）。保存済みの値を描画し直す。
 			h.log.Error("agent settings saved despite unparsable input")
 		case domain.CodeOf(err) == domain.CodeAgentDisabled:
-			h.failMessage(c, http.StatusConflict, string(domain.CodeAgentDisabled), "OpenAI API キーが登録されていないため、エージェントを有効にできません。先に API キーを登録してください。")
+			// detail.reason（接続方式ごとの使えない理由）で文言を変える（FR-G01）。
+			h.failMessage(c, http.StatusConflict, string(domain.CodeAgentDisabled), agentDisabledMessage(err))
 			return
 		default:
 			h.fail(c, err)

@@ -34,6 +34,8 @@ type AgentForm struct {
 	Errors AgentErrors
 	// ConsentAt は同意の日時（表示用。未同意なら空）。
 	ConsentAt string
+	// Connection は現在の接続方式（chatgpt / chatgpt-codex / openai_api_key）。同意の文面（FR-G14）と、モデル欄の説明が変わる。
+	Connection string
 }
 
 // FastpathValues は高速パス設定フォームの入力値。
@@ -62,6 +64,8 @@ type FastpathForm struct {
 	Values    FastpathValues
 	Errors    FastpathErrors
 	ConsentAt string
+	// PlanActive は接続方式が ChatGPT のプラン（chatgpt・chatgpt-codex）のとき真。高速パスは効かない旨を出す（FR-H11）。
+	PlanActive bool
 }
 
 // APIKeyPanel は API キー（OpenAI・TypeSafe）の登録パネル。キーの値は決して持たない（登録の有無と、登録の失敗の理由だけ。NFR-S14）。
@@ -83,6 +87,9 @@ type APIKeyPanel struct {
 // AgentSettings はエージェント設定のページ。
 type AgentSettings struct {
 	Chrome      Chrome
+	Connection  ConnectionPanel
+	ChatGPT     ChatGPTCard
+	Codex       CodexCard
 	Agent       AgentForm
 	AgentKey    APIKeyPanel
 	Fastpath    FastpathForm
