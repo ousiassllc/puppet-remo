@@ -93,8 +93,8 @@ func TestMigrateConnection(t *testing.T) {
 		if err := e.s.MigrateConnection(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if _, found, _ := e.set.Get(ctx, SettingAgentConnection); found || len(e.audit.Entries()) != 0 {
-			t.Errorf("saved = %v, audit = %v", found, e.audit.Entries())
+		if _, found, _ := e.set.Get(ctx, SettingAgentConnection); found || len(e.audit.All()) != 0 {
+			t.Errorf("saved = %v, audit = %v", found, e.audit.All())
 		}
 		if c := e.connection(t); c.Connection != domain.ConnectionChatGPT {
 			t.Errorf("connection = %q, want the default chatgpt", c.Connection)
@@ -178,7 +178,7 @@ func TestSetConnection(t *testing.T) {
 	if len(e.cancels()) != 0 {
 		t.Errorf("cancels = %v", e.cancels())
 	}
-	for _, en := range e.audit.Entries() {
+	for _, en := range e.audit.All() {
 		if strings.Contains(string(en.DetailJSON), "CANARY") {
 			t.Errorf("the key leaked into the audit: %s", en.DetailJSON)
 		}
@@ -271,7 +271,7 @@ func TestSaveAgentEnableDependsOnTheConnection(t *testing.T) {
 		if v, _ := e.s.Load(ctx); v.ConnectionNotReady != domain.AgentDisabledChatGPTNotSignedIn {
 			t.Errorf("view.ConnectionNotReady = %q", v.ConnectionNotReady)
 		}
-		if c := e.connection(t); c.Enabled || c.ConsentAt != nil || len(e.audit.Entries()) != 0 {
+		if c := e.connection(t); c.Enabled || c.ConsentAt != nil || len(e.audit.All()) != 0 {
 			t.Errorf("a rejected enable saved something: %+v", c)
 		}
 		gate.reason = ""
@@ -311,7 +311,7 @@ func TestDeleteOpenAIKeyDependsOnTheConnection(t *testing.T) {
 		if err := e.s.SaveAgent(ctx, in); err != nil {
 			t.Fatal(err)
 		}
-		e.audit.entries = nil
+		e.audit.reset()
 		return e
 	}
 
@@ -332,5 +332,29 @@ func TestDeleteOpenAIKeyDependsOnTheConnection(t *testing.T) {
 	}
 	if c := e.connection(t); c.Enabled || c.ConsentAt != nil || len(e.cancels()) != 1 || len(e.entries(agentConsentAuditEvent)) != 1 {
 		t.Errorf("api key route: config %+v, cancels %v", c, e.cancels())
+	}
+}
+
+// 接続方式とプランのモデルの変更は fail-closed（#182）: 監査に書けなければ元の値に戻し、audit_unavailable（agent_settings）を返す。
+func TestConnectionChangesAreFailClosed(t *testing.T) {
+	ctx := context.Background()
+	e := connectionEnv(t)
+	e.audit.SetSyncErr(errors.New("disk full"))
+
+	err := e.s.SetConnection(ctx, domain.ConnectionChatGPTCodex, false, "")
+	if subject, restored, ok := AuditChangeFailure(err); !ok || subject != AuditSubjectAgentSettings || !restored {
+		t.Fatalf("SetConnection = %v", err)
+	}
+	if c := e.connection(t); c.Connection != domain.ConnectionChatGPT {
+		t.Errorf("connection = %q, want the change undone", c.Connection)
+	}
+
+	before := e.connection(t).CodexModel
+	err = e.s.SavePlanModel(ctx, domain.ConnectionChatGPTCodex, before+"-x")
+	if subject, restored, ok := AuditChangeFailure(err); !ok || subject != AuditSubjectAgentSettings || !restored {
+		t.Fatalf("SavePlanModel = %v", err)
+	}
+	if c := e.connection(t); c.CodexModel != before {
+		t.Errorf("codex model = %q, want %q", c.CodexModel, before)
 	}
 }

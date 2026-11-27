@@ -73,7 +73,7 @@ func (e *agentSettingsEnv) cancels() []string {
 
 func (e *agentSettingsEnv) entries(event string) []repository.AuditEntry {
 	var out []repository.AuditEntry
-	for _, en := range e.audit.Entries() {
+	for _, en := range e.audit.All() {
 		if en.Event == event {
 			out = append(out, en)
 		}
@@ -102,7 +102,7 @@ func (e *agentSettingsEnv) enableAgent(t *testing.T) {
 	if err := e.s.SaveAgent(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 }
 
 func (e *agentSettingsEnv) enableFastpath(t *testing.T) {
@@ -115,7 +115,7 @@ func (e *agentSettingsEnv) enableFastpath(t *testing.T) {
 	if err := e.s.SaveFastpath(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 }
 
 func fieldsOf(t *testing.T, err error) map[string]string {
@@ -303,7 +303,7 @@ func TestAgentSettingsSaveAgentValidation(t *testing.T) {
 			if !errors.Is(err, domain.ErrInvalidArgument) {
 				t.Error("a ValidationError must be invalid_argument")
 			}
-			if len(e.saved()) != 0 || len(e.audit.Entries()) != 0 {
+			if len(e.saved()) != 0 || len(e.audit.All()) != 0 {
 				t.Errorf("an invalid input must save and audit nothing: %v", e.saved())
 			}
 		})
@@ -352,14 +352,14 @@ func TestAgentSettingsEnableRequiresConsentAndKey(t *testing.T) {
 	if !errors.Is(err, domain.ErrAgentDisabled) || domain.CodeOf(err) != domain.CodeAgentDisabled {
 		t.Fatalf("err = %v, want ErrAgentDisabled", err)
 	}
-	if len(e.saved()) != 0 || len(e.audit.Entries()) != 0 {
+	if len(e.saved()) != 0 || len(e.audit.All()) != 0 {
 		t.Errorf("a rejected enable must save and audit nothing: %v", e.saved())
 	}
 	// キー登録後は有効にできる。
 	if err := e.s.SetOpenAIKey(context.Background(), canaryKey); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 	if err := e.s.SaveAgent(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestAgentSettingsEnableRequiresConsentAndKey(t *testing.T) {
 	}
 	consent := e.entries("agent.consent")
 	if len(consent) != 1 {
-		t.Fatalf("audit = %+v", e.audit.Entries())
+		t.Fatalf("audit = %+v", e.audit.All())
 	}
 	if en := consent[0]; en.Kind != "agent" || en.ActorType != domain.ActorHost || en.Result != "ok" || en.ClientLabel != "(host)" ||
 		auditDetail(t, en)["state"] != "granted" {
@@ -406,7 +406,7 @@ func TestAgentSettingsSavingWhileEnabledKeepsConsent(t *testing.T) {
 	}
 	upd := e.entries("settings.update")
 	if len(upd) != 1 {
-		t.Fatalf("audit = %+v", e.audit.Entries())
+		t.Fatalf("audit = %+v", e.audit.All())
 	}
 	d := auditDetail(t, upd[0])
 	if d[SettingAgentMaxSteps] != float64(80) || len(d) != 1 {
@@ -416,12 +416,12 @@ func TestAgentSettingsSavingWhileEnabledKeepsConsent(t *testing.T) {
 		t.Errorf("cancels = %v", e.cancels())
 	}
 	// 変更が無ければ settings.update は記録しない。
-	e.audit.entries = nil
+	e.audit.reset()
 	if err := e.s.SaveAgent(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.audit.Entries()) != 0 {
-		t.Errorf("an unchanged save audited: %+v", e.audit.Entries())
+	if len(e.audit.All()) != 0 {
+		t.Errorf("an unchanged save audited: %+v", e.audit.All())
 	}
 }
 
@@ -441,15 +441,15 @@ func TestAgentSettingsDisableRemovesConsentAndCancelsTasks(t *testing.T) {
 	}
 	consent := e.entries("agent.consent")
 	if len(consent) != 1 || auditDetail(t, consent[0])["state"] != "revoked" || consent[0].ActorType != domain.ActorHost || consent[0].Kind != "agent" {
-		t.Errorf("audit = %+v", e.audit.Entries())
+		t.Errorf("audit = %+v", e.audit.All())
 	}
 	// すでに無効なら、保存してもタスクを中断せず、同意の取り消しも記録しない。
-	e.audit.entries = nil
+	e.audit.reset()
 	if err := e.s.SaveAgent(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
 	if len(e.cancels()) != 1 || len(e.entries("agent.consent")) != 0 {
-		t.Errorf("cancels = %v, audit = %+v", e.cancels(), e.audit.Entries())
+		t.Errorf("cancels = %v, audit = %+v", e.cancels(), e.audit.All())
 	}
 }
 
@@ -486,7 +486,7 @@ func TestAgentSettingsAPIKeyValidation(t *testing.T) {
 			if fieldsOf(t, err)[FieldAPIKey] == "" {
 				t.Fatalf("err = %v, want an api_key field error", err)
 			}
-			if len(e.secrets.CallsTo("Set")) != 0 || len(e.audit.Entries()) != 0 {
+			if len(e.secrets.CallsTo("Set")) != 0 || len(e.audit.All()) != 0 {
 				t.Error("an invalid key must be neither stored nor audited")
 			}
 			if tt.key != "" && strings.TrimSpace(tt.key) != "" && strings.Contains(err.Error(), strings.TrimSpace(tt.key)) {
@@ -505,7 +505,7 @@ func TestAgentSettingsNeverLeaksAPIKeys(t *testing.T) {
 		if strings.Contains(e.logs.String(), canaryKey) {
 			t.Errorf("%s: the key reached the logs: %s", step, e.logs)
 		}
-		for _, en := range e.audit.Entries() {
+		for _, en := range e.audit.All() {
 			if strings.Contains(fmt.Sprintf("%+v %s", en, en.DetailJSON), canaryKey) {
 				t.Errorf("%s: the key reached the audit: %+v", step, en)
 			}
@@ -579,7 +579,9 @@ func TestAgentSettingsKeyRegistrationChecksThePresenceOnly(t *testing.T) {
 	if reg, _ := e.s.OpenAIKeyRegistered(ctx); reg {
 		t.Error("the two keys are independent")
 	}
-	if got := e.secrets.CallsTo("Get"); len(got) != 3 || got[0].Args[0] != platform.SecretOpenAI || got[1].Args[0] != platform.SecretTypeSafe {
+	// Get は、1 回目の有無の確認・SetTypeSafeKey の戻す手順のための事前の読み取り（#182）・2 回目と 3 回目の有無の確認。
+	if got := e.secrets.CallsTo("Get"); len(got) != 4 || got[0].Args[0] != platform.SecretOpenAI || got[1].Args[0] != platform.SecretTypeSafe ||
+		got[2].Args[0] != platform.SecretTypeSafe || got[3].Args[0] != platform.SecretOpenAI {
 		t.Errorf("Get calls = %+v", got)
 	}
 	// 登録の有無を調べられない（NotFound 以外の失敗）ときは、未登録として扱わずエラー。
@@ -614,7 +616,7 @@ func TestAgentSettingsDeleteOpenAIKeyDisablesTheAgent(t *testing.T) {
 		t.Errorf("cancels = %v", got)
 	}
 	if len(e.entries("agent.consent")) != 1 || len(e.entries("settings.update")) != 1 {
-		t.Fatalf("audit = %+v", e.audit.Entries())
+		t.Fatalf("audit = %+v", e.audit.All())
 	}
 	d := auditDetail(t, e.entries("settings.update")[0])
 	if d[auditKeyOpenAIAPIKey] != "deleted" || d[SettingAgentEnabled] != false {
@@ -704,7 +706,7 @@ func TestAgentSettingsFastpathEnableRequiresConsentAndKeyAndRecordsItsOwnConsent
 	if err := e.s.SetTypeSafeKey(ctx, canaryKey); err != nil {
 		t.Fatal(err)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 	e.clock.Advance(5 * time.Second)
 	if err := e.s.SaveFastpath(ctx, in); err != nil {
 		t.Fatal(err)
@@ -718,7 +720,7 @@ func TestAgentSettingsFastpathEnableRequiresConsentAndKeyAndRecordsItsOwnConsent
 	}
 	en := e.entries("agent.fastpath.enable")
 	if len(en) != 1 || en[0].Kind != "agent" || en[0].ActorType != domain.ActorHost || en[0].Result != "ok" {
-		t.Fatalf("audit = %+v", e.audit.Entries())
+		t.Fatalf("audit = %+v", e.audit.All())
 	}
 	if len(e.entries("agent.consent")) != 0 {
 		t.Error("the fast path must not write agent.consent")
@@ -727,7 +729,7 @@ func TestAgentSettingsFastpathEnableRequiresConsentAndKeyAndRecordsItsOwnConsent
 		t.Errorf("cancels = %v", e.cancels())
 	}
 	// 同意済みなら保存のたびにチェックは要らず、consent_at も変わらない。
-	e.audit.entries = nil
+	e.audit.reset()
 	in2 := validFastpathInput()
 	in2.Enabled, in2.MinConfidence = true, 0.9
 	if err := e.s.SaveFastpath(ctx, in2); err != nil {
@@ -740,7 +742,7 @@ func TestAgentSettingsFastpathEnableRequiresConsentAndKeyAndRecordsItsOwnConsent
 		t.Error("no enable event for a plain save")
 	}
 	// 無効化: consent_at が消え、別イベントで記録。実行中のタスクは中断しない。
-	e.audit.entries = nil
+	e.audit.reset()
 	off := validFastpathInput()
 	if err := e.s.SaveFastpath(ctx, off); err != nil {
 		t.Fatal(err)
@@ -750,7 +752,7 @@ func TestAgentSettingsFastpathEnableRequiresConsentAndKeyAndRecordsItsOwnConsent
 		t.Errorf("config = %+v", c3)
 	}
 	if dis := e.entries("agent.fastpath.disable"); len(dis) != 1 || dis[0].ActorType != domain.ActorHost || dis[0].ErrorCode != "" {
-		t.Errorf("audit = %+v", e.audit.Entries())
+		t.Errorf("audit = %+v", e.audit.All())
 	}
 	if len(e.cancels()) != 0 {
 		t.Errorf("disabling the fast path must not cancel tasks: %v", e.cancels())
@@ -778,7 +780,7 @@ func TestAgentSettingsDeleteTypeSafeKeyDisablesTheFastpathOnly(t *testing.T) {
 		t.Errorf("running tasks keep going on OpenAI: cancels = %v", e.cancels())
 	}
 	if len(e.entries("agent.fastpath.disable")) != 1 || len(e.entries("agent.consent")) != 0 {
-		t.Errorf("audit = %+v", e.audit.Entries())
+		t.Errorf("audit = %+v", e.audit.All())
 	}
 	if d := auditDetail(t, e.entries("settings.update")[0]); d[auditKeyTypeSafeAPIKey] != "deleted" {
 		t.Errorf("detail = %v", d)
@@ -812,18 +814,18 @@ func TestAgentSettingsDisableFastpathBySystemAfter401(t *testing.T) {
 	}
 	dis := e.entries("agent.fastpath.disable")
 	if len(dis) != 1 {
-		t.Fatalf("audit = %+v", e.audit.Entries())
+		t.Fatalf("audit = %+v", e.audit.All())
 	}
 	if d := dis[0]; d.Kind != "agent" || d.ActorType != domain.ActorSystem || d.ErrorCode != "typesafe_unauthorized" || d.Result != "error" || d.ClientLabel != "typesafe" {
 		t.Errorf("entry = %+v", d)
 	}
 	// すでに無効なら何もしない。
-	e.audit.entries = nil
+	e.audit.reset()
 	if err := e.s.DisableFastpath(context.Background(), system, FastpathDisableUnauthorized); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.audit.Entries()) != 0 {
-		t.Errorf("audit = %+v", e.audit.Entries())
+	if len(e.audit.All()) != 0 {
+		t.Errorf("audit = %+v", e.audit.All())
 	}
 	// 操作主体を渡さなければ system になる。
 	e.enableFastpath(t)
@@ -831,7 +833,7 @@ func TestAgentSettingsDisableFastpathBySystemAfter401(t *testing.T) {
 		t.Fatal(err)
 	}
 	if d := e.entries("agent.fastpath.disable"); len(d) != 1 || d[0].ActorType != domain.ActorSystem {
-		t.Errorf("audit = %+v", e.audit.Entries())
+		t.Errorf("audit = %+v", e.audit.All())
 	}
 }
 
@@ -889,7 +891,7 @@ func TestAgentSettingsAuditDetailIsValidJSON(t *testing.T) {
 	e := newAgentSettingsEnv(t)
 	e.enableAgent(t)
 	_ = e.s.DeleteOpenAIKey(context.Background())
-	for _, en := range e.audit.Entries() {
+	for _, en := range e.audit.All() {
 		if len(en.DetailJSON) > 0 && !json.Valid(en.DetailJSON) {
 			t.Errorf("%s: invalid detail %s", en.Event, en.DetailJSON)
 		}
@@ -917,10 +919,10 @@ func TestAgentSettingsDisableIsNotBlockedByInvalidUnrelatedFields(t *testing.T) 
 		t.Errorf("cancels = %v", got)
 	}
 	if cs := e.entries("agent.consent"); len(cs) != 1 || auditDetail(t, cs[0])["state"] != "revoked" {
-		t.Errorf("audit = %+v", e.audit.Entries())
+		t.Errorf("audit = %+v", e.audit.All())
 	}
 	// すでに無効で同意も無いなら、不備は通常どおり検査される。
-	e.audit.entries = nil
+	e.audit.reset()
 	if err := e.s.SaveAgent(context.Background(), in); fieldsOf(t, err)[FieldAgentMaxSteps] == "" {
 		t.Fatalf("err = %v, want a max_steps field error", err)
 	}
@@ -949,18 +951,18 @@ func TestAgentSettingsDisableAgentBySystemAfter401(t *testing.T) {
 	}
 	cs := e.entries("agent.consent")
 	if len(cs) != 1 {
-		t.Fatalf("audit = %+v", e.audit.Entries())
+		t.Fatalf("audit = %+v", e.audit.All())
 	}
 	if d := cs[0]; d.Kind != "agent" || d.ActorType != domain.ActorSystem || d.ErrorCode != "openai_unauthorized" || d.Result != "error" || d.ClientLabel != "openai" ||
 		auditDetail(t, d)["state"] != "revoked" {
 		t.Errorf("entry = %+v (%s)", d, d.DetailJSON)
 	}
-	e.audit.entries = nil
+	e.audit.reset()
 	if err := e.s.DisableAgent(context.Background(), system, AgentDisableOpenAIUnauthorized); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.audit.Entries()) != 0 {
-		t.Errorf("a second call must do nothing: %+v", e.audit.Entries())
+	if len(e.audit.All()) != 0 {
+		t.Errorf("a second call must do nothing: %+v", e.audit.All())
 	}
 	// 操作主体を渡さなければ system になる。
 	e.enableAgent(t)
@@ -968,6 +970,6 @@ func TestAgentSettingsDisableAgentBySystemAfter401(t *testing.T) {
 		t.Fatal(err)
 	}
 	if d := e.entries("agent.consent"); len(d) != 1 || d[0].ActorType != domain.ActorSystem {
-		t.Errorf("audit = %+v", e.audit.Entries())
+		t.Errorf("audit = %+v", e.audit.All())
 	}
 }

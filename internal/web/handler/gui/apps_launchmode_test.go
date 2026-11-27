@@ -89,7 +89,8 @@ func TestSetLaunchModeAuditFailureIs503AndKeepsTheMode(t *testing.T) {
 
 // 監査に書けず、元に戻す書き込みも失敗したときは、「切り替えていない」とは言わず、保存された実際の方式のパネルを OOB で添える（#174）。
 func TestSetLaunchModeRollbackFailureShowsTheActualMode(t *testing.T) {
-	failure := domain.ErrAuditUnavailable.WithDetail(service.DetailLaunchModeRestored, false)
+	failure := domain.ErrAuditUnavailable.WithDetail(service.DetailAuditSubject, service.AuditSubjectLaunchMode).
+		WithDetail(service.DetailAuditRestored, false)
 	r := newRig(t, func(f *guitest.Fakes) { f.Apps.ModeSwitchedThenErr = failure })
 	res := r.do(http.MethodPut, "/apps/mode", url.Values{"mode": {"denylist"}}, hx...)
 	status(t, res, http.StatusServiceUnavailable)

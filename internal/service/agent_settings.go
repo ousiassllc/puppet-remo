@@ -97,9 +97,11 @@ var (
 type AgentSettingsConfig struct {
 	Settings repository.Settings
 	Secrets  platform.SecretStore
-	Audit    AuditRecorder // nil なら記録しない
-	Clock    domain.Clock
-	Logger   *slog.Logger // nil なら slog.Default()
+	// Audit は監査の記録先。nil なら記録しない。所有者の設定変更（保存・API キーの登録と削除）は RecordSync で記録し、書けなければ変更を
+	// 元に戻す（fail-closed。#182。audit_commit.go）。システム側の無効化（DisableAgent・DisableFastpath）は Record（非同期。取り消さない）。
+	Audit  SyncAuditRecorder
+	Clock  domain.Clock
+	Logger *slog.Logger // nil なら slog.Default()
 	// Cancel はエージェントの無効化・OpenAI キーの削除で、実行中のタスクを中断する（FR-G10。app が Agent.CancelAll を渡す）。
 	// reason は監査用。nil なら何もしない。高速パスの無効化では呼ばない（実行中のタスクは OpenAI で続行する）。
 	Cancel func(reason string)
@@ -112,7 +114,7 @@ type AgentSettingsConfig struct {
 type AgentSettingsService struct {
 	cfg AgentSettingsConfig
 	log *slog.Logger
-	// mu は読んで直して書く操作（保存・キーの削除・DisableFastpath）を直列化する。
+	// mu は読んで直して書く操作（保存・キーの登録と削除・DisableFastpath）を、書き込みから監査・ロールバックまで直列化する。
 	mu chanMutex
 }
 
@@ -315,8 +317,9 @@ func (s *AgentSettingsService) SaveAgent(ctx context.Context, in AgentSettingsIn
 	note(SettingAgentEnabled, cur.Enabled != in.Enabled, in.Enabled)
 
 	// 無効化は enabled を最初に、有効化は最後に書く（途中で失敗しても、同意なしで有効な状態を残さない）。
+	var undo undoLog
 	if !in.Enabled {
-		if err := s.setValue(ctx, SettingAgentEnabled, false); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingAgentEnabled, false); err != nil {
 			return err
 		}
 	}
@@ -329,32 +332,38 @@ func (s *AgentSettingsService) SaveAgent(ctx context.Context, in AgentSettingsIn
 			{SettingAgentKeepScreenshots, in.KeepScreenshots}, {SettingAgentDenyProcesses, in.DenyProcesses},
 			{SettingAgentApproveProcesses, in.ApproveProcesses},
 		} {
-			if err := s.setValue(ctx, kv.key, kv.val); err != nil {
+			if err := s.setTracked(ctx, &undo, kv.key, kv.val); err != nil {
 				return err
 			}
 		}
 	}
 	now := s.cfg.Clock.Now()
+	var entries []repository.AuditEntry
 	switch {
 	case in.Enabled && (!cur.Enabled || cur.ConsentAt == nil):
-		if err := s.setValue(ctx, SettingAgentConsentAt, now.UnixMilli()); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingAgentConsentAt, now.UnixMilli()); err != nil {
 			return err
 		}
-		if err := s.setValue(ctx, SettingAgentEnabled, true); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingAgentEnabled, true); err != nil {
 			return err
 		}
-		s.recordAgent(ctx, agentConsentAuditEvent, auditOK, "", map[string]any{"state": "granted", "consent_at": now.UnixMilli()})
+		entries = append(entries, s.agentEntry(agentConsentAuditEvent, auditOK, "", map[string]any{"state": "granted", "consent_at": now.UnixMilli()}))
 	case in.Enabled:
-		if err := s.setValue(ctx, SettingAgentEnabled, true); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingAgentEnabled, true); err != nil {
 			return err
 		}
 	case cur.Enabled || cur.ConsentAt != nil:
-		if err := s.setValue(ctx, SettingAgentConsentAt, nil); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingAgentConsentAt, nil); err != nil {
 			return err
 		}
-		s.recordAgent(ctx, agentConsentAuditEvent, auditOK, "", map[string]any{"state": "revoked"})
+		entries = append(entries, s.agentEntry(agentConsentAuditEvent, auditOK, "", map[string]any{"state": "revoked"}))
 	}
-	s.recordSettingsUpdate(ctx, changed)
+	if e, ok := s.settingsUpdateEntry(changed); ok {
+		entries = append(entries, e)
+	}
+	if err := s.commit(ctx, AuditSubjectAgentSettings, undo, entries...); err != nil {
+		return err
+	}
 	if cur.Enabled && !in.Enabled {
 		s.cancelTasks("agent_disabled")
 	}
@@ -431,17 +440,29 @@ func (s *AgentSettingsService) SetTypeSafeKey(ctx context.Context, key string) e
 	return s.setKey(ctx, platform.SecretTypeSafe, auditKeyTypeSafeAPIKey, "TypeSafe", key)
 }
 
-// setKey は API キーの形を検査して SecretStore に保存し、キー名だけを settings.update で監査する。値はどこにも出さない。
+// setKey は API キーの形を検査して SecretStore に保存し、キー名だけを settings.update で監査する（同期。書けなければ元のキーへ戻す）。値はどこにも出さない。
 func (s *AgentSettingsService) setKey(ctx context.Context, secret, auditKey, label, key string) error {
 	key, err := validateAPIKey(key)
 	if err != nil {
 		return err
 	}
+	unlock, err := s.mu.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	var undo undoLog
+	if err := s.snapshotSecret(secret, &undo); err != nil {
+		return err
+	}
 	if err := s.cfg.Secrets.Set(secret, key); err != nil {
 		return fmt.Errorf("save the %s API key: %w", label, err)
 	}
+	entry, _ := s.settingsUpdateEntry(map[string]any{auditKey: "registered"})
+	if err := s.commit(ctx, AuditSubjectAPIKey, undo, entry); err != nil {
+		return err
+	}
 	s.log.Info("api key registered", "provider", label)
-	s.recordSettingsUpdate(ctx, map[string]any{auditKey: "registered"})
 	return nil
 }
 
@@ -476,28 +497,38 @@ func (s *AgentSettingsService) DeleteOpenAIKey(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var undo undoLog
+	if err := s.snapshotSecret(platform.SecretOpenAI, &undo); err != nil {
+		return err
+	}
+	var entries []repository.AuditEntry
 	// 無効にするのは接続方式が openai_api_key のときだけ（プランの経路はキーを使わないので、有効のまま）。
 	if cur.Connection == domain.ConnectionOpenAIAPIKey {
-		if err := s.setValue(ctx, SettingAgentEnabled, false); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingAgentEnabled, false); err != nil {
 			return err
 		}
 		if cur.Enabled || cur.ConsentAt != nil {
-			if err := s.setValue(ctx, SettingAgentConsentAt, nil); err != nil {
+			if err := s.setTracked(ctx, &undo, SettingAgentConsentAt, nil); err != nil {
 				return err
 			}
-			s.recordAgent(ctx, agentConsentAuditEvent, auditOK, "", map[string]any{"state": "revoked", "reason": "api_key_deleted"})
+			entries = append(entries, s.agentEntry(agentConsentAuditEvent, auditOK, "", map[string]any{"state": "revoked", "reason": "api_key_deleted"}))
 		}
+		// 実行中のタスクの中断は取り消せない（監査に書けず変更を戻しても、中断したタスクは戻らない）。
 		s.cancelTasks("api_key_deleted")
 	}
 	if err := s.cfg.Secrets.Delete(platform.SecretOpenAI); err != nil && !errors.Is(err, platform.ErrNotFound) {
 		return fmt.Errorf("delete the OpenAI API key: %w", err)
 	}
-	s.log.Info("api key deleted", "provider", "OpenAI")
 	changed := map[string]any{auditKeyOpenAIAPIKey: "deleted"}
 	if cur.Enabled && cur.Connection == domain.ConnectionOpenAIAPIKey {
 		changed[SettingAgentEnabled] = false
 	}
-	s.recordSettingsUpdate(ctx, changed)
+	e, _ := s.settingsUpdateEntry(changed)
+	entries = append(entries, e)
+	if err := s.commit(ctx, AuditSubjectAPIKey, undo, entries...); err != nil {
+		return err
+	}
+	s.log.Info("api key deleted", "provider", "OpenAI")
 	return nil
 }
 
@@ -540,8 +571,9 @@ func (s *AgentSettingsService) SaveFastpath(ctx context.Context, in FastpathSett
 	note(SettingFastpathExcludedLabels, !slices.Equal(fp.ExcludedLabels, in.ExcludedLabels), in.ExcludedLabels)
 	note(SettingFastpathEnabled, fp.Enabled != in.Enabled, in.Enabled)
 
+	var undo undoLog
 	if !in.Enabled {
-		if err := s.setValue(ctx, SettingFastpathEnabled, false); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingFastpathEnabled, false); err != nil {
 			return err
 		}
 	}
@@ -552,32 +584,35 @@ func (s *AgentSettingsService) SaveFastpath(ctx context.Context, in FastpathSett
 		{SettingFastpathModel, in.Model}, {SettingFastpathMinConfidence, in.MinConfidence},
 		{SettingFastpathMaxSteps, in.MaxSteps}, {SettingFastpathExcludedLabels, in.ExcludedLabels},
 	} {
-		if err := s.setValue(ctx, kv.key, kv.val); err != nil {
+		if err := s.setTracked(ctx, &undo, kv.key, kv.val); err != nil {
 			return err
 		}
 	}
 	now := s.cfg.Clock.Now()
+	var entries []repository.AuditEntry
 	switch {
 	case in.Enabled && (!fp.Enabled || fp.ConsentAt == nil):
-		if err := s.setValue(ctx, SettingFastpathConsentAt, now.UnixMilli()); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingFastpathConsentAt, now.UnixMilli()); err != nil {
 			return err
 		}
-		if err := s.setValue(ctx, SettingFastpathEnabled, true); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingFastpathEnabled, true); err != nil {
 			return err
 		}
-		s.recordAgent(ctx, fastpathEnableAuditEvent, auditOK, "", map[string]any{"consent_at": now.UnixMilli()})
+		entries = append(entries, s.agentEntry(fastpathEnableAuditEvent, auditOK, "", map[string]any{"consent_at": now.UnixMilli()}))
 	case in.Enabled:
-		if err := s.setValue(ctx, SettingFastpathEnabled, true); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingFastpathEnabled, true); err != nil {
 			return err
 		}
 	case fp.Enabled || fp.ConsentAt != nil:
-		if err := s.setValue(ctx, SettingFastpathConsentAt, nil); err != nil {
+		if err := s.setTracked(ctx, &undo, SettingFastpathConsentAt, nil); err != nil {
 			return err
 		}
-		s.recordAgent(ctx, fastpathDisableAuditEvent, auditOK, "", map[string]any{"reason": "settings"})
+		entries = append(entries, s.agentEntry(fastpathDisableAuditEvent, auditOK, "", map[string]any{"reason": "settings"}))
 	}
-	s.recordSettingsUpdate(ctx, changed)
-	return nil
+	if e, ok := s.settingsUpdateEntry(changed); ok {
+		entries = append(entries, e)
+	}
+	return s.commit(ctx, AuditSubjectFastpath, undo, entries...)
 }
 
 func validateFastpathInput(in FastpathSettingsInput, cur FastpathConfig) error {
@@ -612,14 +647,30 @@ func (s *AgentSettingsService) DeleteTypeSafeKey(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.disableFastpathLocked(ctx, cur.Fastpath, domain.Actor{Kind: domain.ActorHost, Label: hostLabel}, "", "api_key_deleted"); err != nil {
+	var undo undoLog
+	if err := s.snapshotSecret(platform.SecretTypeSafe, &undo); err != nil {
 		return err
+	}
+	var entries []repository.AuditEntry
+	disabled, ok, err := s.disableFastpathLocked(ctx, cur.Fastpath, domain.Actor{Kind: domain.ActorHost, Label: hostLabel}, "", "api_key_deleted", &undo)
+	if err != nil {
+		return err
+	}
+	if ok {
+		entries = append(entries, disabled)
 	}
 	if err := s.cfg.Secrets.Delete(platform.SecretTypeSafe); err != nil && !errors.Is(err, platform.ErrNotFound) {
 		return fmt.Errorf("delete the TypeSafe API key: %w", err)
 	}
+	e, _ := s.settingsUpdateEntry(map[string]any{auditKeyTypeSafeAPIKey: "deleted"})
+	entries = append(entries, e)
+	if err := s.commit(ctx, AuditSubjectAPIKey, undo, entries...); err != nil {
+		return err
+	}
+	if ok {
+		s.log.Info("fast path disabled", "reason", "api_key_deleted")
+	}
 	s.log.Info("api key deleted", "provider", "TypeSafe")
-	s.recordSettingsUpdate(ctx, map[string]any{auditKeyTypeSafeAPIKey: "deleted"})
 	return nil
 }
 
@@ -640,20 +691,28 @@ func (s *AgentSettingsService) DisableFastpath(ctx context.Context, by domain.Ac
 	if err != nil {
 		return err
 	}
-	return s.disableFastpathLocked(ctx, cur.Fastpath, by, domain.TruncateRunes(errorCode, 64), errorCode)
+	// システム側の無効化（401 を受けた保護）は、監査に書けなくても取り消さない（fail-open。audit_commit.go）。
+	e, changed, err := s.disableFastpathLocked(ctx, cur.Fastpath, by, domain.TruncateRunes(errorCode, 64), errorCode, &undoLog{})
+	if err != nil || !changed {
+		return err
+	}
+	s.record(ctx, e)
+	s.log.Info("fast path disabled", "reason", errorCode, "error_code", errorCode)
+	return nil
 }
 
-// disableFastpathLocked は fp（現在の設定）が有効か同意を持つなら、無効にして consent_at を消し、agent.fastpath.disable を記録する。
+// disableFastpathLocked は fp（現在の設定）が有効か同意を持つなら、無効にして consent_at を消し（戻す手順は undo に積む）、
+// 記録すべき agent.fastpath.disable の行を返す（記録は呼び出し元。changed = false なら何も変えていない）。
 // errorCode が空なら result = ok、あれば result = error。reason は detail.reason。mu を持って呼ぶ。
-func (s *AgentSettingsService) disableFastpathLocked(ctx context.Context, fp FastpathConfig, by domain.Actor, errorCode, reason string) error {
+func (s *AgentSettingsService) disableFastpathLocked(ctx context.Context, fp FastpathConfig, by domain.Actor, errorCode, reason string, undo *undoLog) (entry repository.AuditEntry, changed bool, err error) {
 	if !fp.Enabled && fp.ConsentAt == nil {
-		return nil
+		return repository.AuditEntry{}, false, nil
 	}
-	if err := s.setValue(ctx, SettingFastpathEnabled, false); err != nil {
-		return err
+	if err := s.setTracked(ctx, undo, SettingFastpathEnabled, false); err != nil {
+		return repository.AuditEntry{}, false, err
 	}
-	if err := s.setValue(ctx, SettingFastpathConsentAt, nil); err != nil {
-		return err
+	if err := s.setTracked(ctx, undo, SettingFastpathConsentAt, nil); err != nil {
+		return repository.AuditEntry{}, false, err
 	}
 	result := auditOK
 	if errorCode != "" {
@@ -661,9 +720,7 @@ func (s *AgentSettingsService) disableFastpathLocked(ctx context.Context, fp Fas
 	}
 	e := s.agentEntry(fastpathDisableAuditEvent, result, errorCode, map[string]any{"reason": reason})
 	setAuditActor(&e, by)
-	s.record(ctx, e)
-	s.log.Info("fast path disabled", "reason", reason, "error_code", errorCode)
-	return nil
+	return e, true, nil
 }
 
 // DisableAgent はエージェントをシステム側で無効にする（NFR-S16。Agent が OpenAI の HTTP 401 を受けたときに呼ぶ）。
@@ -727,6 +784,18 @@ func (s *AgentSettingsService) setValue(ctx context.Context, key string, val any
 	return nil
 }
 
+// setTracked は setValue と同じ書き込みを行い、書き込む前の値へ戻す手順を undo に積む（setSetting）。
+func (s *AgentSettingsService) setTracked(ctx context.Context, undo *undoLog, key string, val any) error {
+	raw, err := json.Marshal(val)
+	if err != nil {
+		return fmt.Errorf("encode setting %s: %w", key, err)
+	}
+	if err := setSetting(ctx, s.cfg.Settings, undo, key, raw); err != nil {
+		return fmt.Errorf("save setting %s: %w", key, err)
+	}
+	return nil
+}
+
 func (s *AgentSettingsService) cancelTasks(reason string) {
 	if s.cfg.Cancel != nil {
 		s.cfg.Cancel(reason)
@@ -740,19 +809,40 @@ func (s *AgentSettingsService) agentEntry(event, result, errorCode string, detai
 	}
 }
 
-// recordAgent は kind = agent の host の操作を記録する。
-func (s *AgentSettingsService) recordAgent(ctx context.Context, event, result, errorCode string, detail map[string]any) {
-	s.record(ctx, s.agentEntry(event, result, errorCode, detail))
-}
-
-// recordSettingsUpdate は変えた項目（キー名 → 新しい値。API キーは registered / deleted だけ）を settings.update で記録する。
-func (s *AgentSettingsService) recordSettingsUpdate(ctx context.Context, changed map[string]any) {
+// settingsUpdateEntry は変えた項目（キー名 → 新しい値。API キーは registered / deleted だけ）の settings.update の行を返す。
+// 変えた項目が無ければ ok = false。
+func (s *AgentSettingsService) settingsUpdateEntry(changed map[string]any) (entry repository.AuditEntry, ok bool) {
 	if len(changed) == 0 {
-		return
+		return repository.AuditEntry{}, false
 	}
 	e := s.agentEntry(hostSettingsAuditKey, auditOK, "", changed)
 	e.Kind = "settings"
-	s.record(ctx, e)
+	return e, true
+}
+
+// commit は書き終えた変更を監査の行で確定する（commitAudited）。書けなければ undo で元に戻して audit_unavailable を返す。Audit が nil なら何もしない。
+func (s *AgentSettingsService) commit(ctx context.Context, subject string, undo undoLog, entries ...repository.AuditEntry) error {
+	return commitAudited(ctx, s.log, s.cfg.Audit, subject, undo, entries...)
+}
+
+// snapshotSecret は name の API キーの現在の値を読み、変更を戻す手順を undo に積む（未登録だったなら、戻すときは削除する）。
+// 読めなければ（未登録以外のエラー）、戻せないので変更しない。値はこの手順の中にだけ保持し、ログ・エラーに出さない。
+func (s *AgentSettingsService) snapshotSecret(name string, undo *undoLog) error {
+	prev, err := s.cfg.Secrets.Get(name)
+	switch {
+	case err == nil:
+		undo.add(func(context.Context) error { return s.cfg.Secrets.Set(name, prev) })
+	case errors.Is(err, platform.ErrNotFound):
+		undo.add(func(context.Context) error {
+			if err := s.cfg.Secrets.Delete(name); err != nil && !errors.Is(err, platform.ErrNotFound) {
+				return err
+			}
+			return nil
+		})
+	default:
+		return fmt.Errorf("check the credential %s: %w", name, err)
+	}
+	return nil
 }
 
 func (s *AgentSettingsService) record(ctx context.Context, e repository.AuditEntry) {

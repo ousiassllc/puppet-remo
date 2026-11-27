@@ -61,6 +61,7 @@ func (s *AgentSettingsService) MigrateConnection(ctx context.Context) error {
 // 定義外の接続方式・reason は domain.ErrInvalidArgument。openai_api_key にするときは confirmed が真（確認モーダルの確定）でなければ
 // ErrInvalidArgument、OpenAI キー未登録なら CodeConflict（NFR-S22）。chatgpt と chatgpt-codex の間の切り替えは確認なし。
 // すでにその値なら何も変えず、監査も残さない。エージェントの有効・同意・トークン・実行中のタスクは変えない。
+// 所有者の設定変更なので fail-closed（#182）: 監査に書けなければ元に戻して audit_unavailable（subject agent_settings）。
 func (s *AgentSettingsService) SetConnection(ctx context.Context, conn domain.AgentConnection, confirmed bool, reason string) error {
 	if reason == "" {
 		reason = connectionReasonManual
@@ -94,18 +95,23 @@ func (s *AgentSettingsService) SetConnection(ctx context.Context, conn domain.Ag
 	if cur.Connection == conn {
 		return nil
 	}
-	if err := s.setValue(ctx, SettingAgentConnection, string(conn)); err != nil {
+	var undo undoLog
+	if err := s.setTracked(ctx, &undo, SettingAgentConnection, string(conn)); err != nil {
 		return err
 	}
-	s.recordAgent(ctx, agentConnectionAuditEvent, auditOK, "", map[string]any{
+	e := s.agentEntry(agentConnectionAuditEvent, auditOK, "", map[string]any{
 		"from": string(cur.Connection), "to": string(conn), "reason": reason,
 	})
+	if err := s.commit(ctx, AuditSubjectAgentSettings, undo, e); err != nil {
+		return err
+	}
 	s.log.Info("agent connection changed", "from", string(cur.Connection), "to", string(conn), "reason", reason)
 	return nil
 }
 
 // SavePlanModel は agent.chatgpt.model（chatgpt）か agent.codex.model（chatgpt-codex）を保存する。名前の形の不備は *ValidationError
-// （項目 model）、プランでない接続方式は ErrInvalidArgument。
+// （項目 model）、プランでない接続方式は ErrInvalidArgument。値が変わらなければ何も書かない。変えたときは settings.update を
+// fail-closed で監査する（#182。書けなければ元に戻して audit_unavailable）。
 func (s *AgentSettingsService) SavePlanModel(ctx context.Context, conn domain.AgentConnection, model string) error {
 	var key string
 	switch conn {
@@ -133,13 +139,15 @@ func (s *AgentSettingsService) SavePlanModel(ctx context.Context, conn domain.Ag
 	if conn == domain.ConnectionChatGPTCodex {
 		old = cur.CodexModel
 	}
-	if err := s.setValue(ctx, key, model); err != nil {
+	if old == model {
+		return nil
+	}
+	var undo undoLog
+	if err := s.setTracked(ctx, &undo, key, model); err != nil {
 		return err
 	}
-	if old != model {
-		s.recordSettingsUpdate(ctx, map[string]any{key: model})
-	}
-	return nil
+	e, _ := s.settingsUpdateEntry(map[string]any{key: model})
+	return s.commit(ctx, AuditSubjectAgentSettings, undo, e)
 }
 
 // connectionNotReady は接続方式 conn でエージェントを有効にできない理由（agent_disabled の detail.reason）。空なら有効にできる。

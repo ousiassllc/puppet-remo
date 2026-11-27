@@ -20,7 +20,7 @@ func auditSelectOptions(opts []view.AuditFilterOption) []atoms.SelectOption {
 // 日時は RFC 3339 の文字列で入力する（API 仕様 §7.3 の from / to と同じ）。
 templ AuditFilters(f view.AuditFilters) {
 	<form
-		class="space-y-4 rounded-lg border border-border bg-surface p-4"
+		class="space-y-4 rounded-lg border border-border bg-surface p-(--pad-card-sm)"
 		method="get"
 		action="/audit"
 		novalidate
@@ -140,7 +140,7 @@ templ AuditList(v view.AuditList) {
 // AuditDetail は監査ログ 1 件の詳細（FR-AU05）。引数はキー・値の表、サムネイルは <img>（同一オリジンの画像。CSP の img-src 'self'）。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 templ AuditDetail(v view.AuditDetail) {
 	<div class="space-y-6" data-audit-detail={ v.Event }>
-		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2">
+		<dl class="grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-(--pad-card) text-sm sm:grid-cols-2">
 			@auditField("日時", v.Time, "time", true)
 			@auditField("種別", v.Kind, "kind", false)
 			@auditField("イベント", v.Event, "event", true)

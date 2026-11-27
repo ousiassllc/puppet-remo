@@ -3,6 +3,7 @@ package domain
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // 起動の方式（launch.mode）と拒否リスト（M1.5。FR-M18・M19・H12、NFR-S20）。外部 I/O を持たない値と判定だけ。
@@ -55,7 +56,7 @@ func DeniedKey(kind DeniedKind, value string) string {
 }
 
 // NormalizePathForMatch は "/" を "\" にし、連続する区切りを 1 つにする（Windows は同じ場所として扱う）。
-// 大文字小文字は畳まない（比較側が EqualFold を使う）。
+// 大文字小文字は畳まない（比較側が EqualOrdinalIgnoreCase 相当で比べる）。
 func NormalizePathForMatch(p string) string {
 	var b strings.Builder
 	b.Grow(len(p))
@@ -106,15 +107,15 @@ func ExeBaseName(p string) string {
 
 // MatchDenied は、起動しようとする実行ファイルが拒否リストの entries のどれかに当たるかを返す。
 //
-// 大文字小文字の比較に strings.EqualFold を使うのは、Windows のパス・ファイル名が（NTFS・ReFS の既定で）大文字小文字を区別せず、
-// 保存したときの綴りを保つ（case-preserving）ため、綴りの大小だけが違う同じファイルを同じものとして拒否したいから。
-// ASCII の範囲では NTFS の比較と一致する。限界: EqualFold は Unicode の単純な大文字小文字の対応（simple case folding）で比べる一方、
-// NTFS はボリュームごとの $UpCase 表（ボリュームの作成時に固定される、1 文字ずつの大文字化の対応表）で比べる。
-// ASCII 以外の一部の文字では両者の対応がずれうる（この関数が別物と判定する綴りを NTFS が同じファイルとみなす場合、またはその逆）。
-// 前者の場合は拒否の取りこぼしになりうる。実体のパスで照合する（DeniedPath は AppLauncher.Resolve が返す、ディスク上の綴りで比べる）ことと、
-// DeniedName が解決の前後どちらかの名前に当たれば拒否することで小さくしているが、ゼロではない。
-// $UpCase 表を再現する比較は持たない（OS・ボリューム依存の表を持ち込まない。挙動を変えるなら別の判断）。
-//
+// 大文字小文字の比較は、Windows の OrdinalIgnoreCase 相当（1 文字ずつの単純な大文字化にそろえてから比べる。ordinalcase.go）で行う。
+// Windows のパス・ファイル名は（NTFS・ReFS の既定で）大文字小文字を区別せず、保存したときの綴りを保つ（case-preserving）ため、
+// 綴りの大小だけが違う同じファイルを同じものとして拒否したいから。strings.EqualFold（Unicode の等価類）は、ß/ẞ・K（U+212A KELVIN SIGN）・
+// ı などで NTFS の $UpCase 表の比べ方とずれ、拒否を取りこぼしうるため使わない（#175 の注記の限界を、#183 で比較側を寄せて解消した）。
+// 残る限界: $UpCase 表はボリュームの作成時の Unicode の版で固定されるので、新しい版で足された文字の対応は古いボリュームとずれうる
+// （実体のパスで照合する〔DeniedPath は AppLauncher.Resolve が返す、ディスク上の綴りで比べる〕ことと、DeniedName が解決の前後どちらかの
+// 名前に当たれば拒否することで小さくしているが、ゼロではない）。OS・ボリューム依存の表そのものは持ち込まない。
+// 比べる文字が決まらないとき（requested・resolved・拒否リストの値が不正な UTF-8）は、当たったものとして拒否する（fail closed）。
+// ただし拒否リストが空なら、何も拒否しない。
 // requested は呼び出し側が指定したパス、resolved は platform.AppLauncher.Resolve が返した実体のパス
 // （シンボリックリンク・ジャンクション・8.3 短縮名を解決済み）。
 //
@@ -122,16 +123,25 @@ func ExeBaseName(p string) string {
 //   - DeniedName: resolved の末尾の名前と一致（大文字小文字を区別しない）。指定の綴りの末尾（requested）にも当たる
 //     （解決の前後どちらかの名前が一致すれば拒否する。fail closed）
 func MatchDenied(entries []DeniedApp, requested, resolved string) bool {
+	if len(entries) == 0 {
+		return false
+	}
+	if !utf8.ValidString(requested) || !utf8.ValidString(resolved) {
+		return true
+	}
 	resolvedNorm := NormalizePathForMatch(resolved)
 	resolvedName, requestedName := ExeBaseName(resolved), ExeBaseName(requested)
 	for _, e := range entries {
 		switch e.Kind {
 		case DeniedPath:
-			if strings.EqualFold(NormalizePathForMatch(e.Value), resolvedNorm) {
+			if equal, decided := compareOrdinalIgnoreCase(NormalizePathForMatch(e.Value), resolvedNorm); equal || !decided {
 				return true
 			}
 		case DeniedName:
-			if strings.EqualFold(e.Value, resolvedName) || strings.EqualFold(e.Value, requestedName) {
+			if equal, decided := compareOrdinalIgnoreCase(e.Value, resolvedName); equal || !decided {
+				return true
+			}
+			if equal, _ := compareOrdinalIgnoreCase(e.Value, requestedName); equal {
 				return true
 			}
 		}

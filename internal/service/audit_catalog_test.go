@@ -66,7 +66,7 @@ func emittedAuditEvents(t *testing.T) map[string]bool {
 				case *ast.SelectorExpr:
 					name = fn.Sel.Name
 				}
-				if name == "audit" || name == "recordAudit" || name == "bearerAudit" {
+				if name == "audit" || name == "auditEntry" || name == "recordAudit" || name == "bearerAudit" {
 					for _, a := range x.Args {
 						add(a)
 					}

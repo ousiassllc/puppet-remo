@@ -334,7 +334,7 @@ func TestDrawerScrimAndIndicatorUseEnterAndExitTokens(t *testing.T) {
 }
 
 // #169: ツールチップ（atoms.Tooltip）はホバーでもキーボードのフォーカスでも出る（ガイド「ツールチップ」）。padding は --tip-pad-*、角丸は --r-sm、
-// 表示の遅延はホバーだけ 400ms（フォーカスは即時）。隠れている間は visibility: hidden で、非対話（pointer-events: none）。
+// 表示の遅延はホバーだけ 400ms（フォーカスは即時）。隠れている間は visibility: hidden。
 func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
 	css := readAppCSS(t)
 	rule := func(selector string) string {
@@ -346,7 +346,7 @@ func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
 		return m[1]
 	}
 	base := rule(".tip")
-	for _, want := range []string{"visibility: hidden;", "pointer-events: none;", "padding: var(--tip-pad-y) var(--tip-pad-x);", "border-radius: var(--radius-sm);", "background: var(--ink);", "color: var(--bone);", "font-size: var(--text-xs);", "z-index: var(--z-dropdown);"} {
+	for _, want := range []string{"visibility: hidden;", "padding: var(--tip-pad-y) var(--tip-pad-x);", "border-radius: var(--radius-sm);", "background: var(--ink);", "color: var(--bone);", "font-size: var(--text-xs);", "z-index: var(--z-dropdown);"} {
 		if !strings.Contains(base, want) {
 			t.Errorf(".tip lacks %q:\n%s", want, base)
 		}
@@ -363,6 +363,34 @@ func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
 	}
 	if !strings.Contains(hover, "400ms") || strings.Contains(focus, "400ms") {
 		t.Errorf("the 400ms show delay applies to hover only (focus is immediate):\nhover: %s\nfocus: %s", hover, focus)
+	}
+}
+
+// #180・#181: ツールチップは WCAG 1.4.13 を満たす。Esc（app.ts が付ける data-tip-dismissed）で隠れ、本文は pointer-events を切らず（hoverable）、
+// 出す側との隙間は ::before / ::after の橋でふさぐ。位置は出す側の真上で、入りきらなければ真下（アンカー位置指定。横にはずらさない）。左右には margin-inline で画面の端から余白を空ける。
+func TestTooltipIsDismissableHoverableAndAnchoredAboveOrBelow(t *testing.T) {
+	css := strings.Join(strings.Fields(readAppCSS(t)), " ")
+	if regexp.MustCompile(`\.tip \{[^}]*pointer-events: none;`).MatchString(css) {
+		t.Error(".tip must not set pointer-events: none (the tooltip has to stay when the pointer moves onto it: hoverable)")
+	}
+	for _, want := range []string{
+		".tip-host[data-tip-dismissed] > .tip { visibility: hidden; }",
+		".tip::before, .tip::after {",
+		"@supports (position-area: top) {",
+		"position-area: top;",
+		"position-try-fallbacks: flip-block;",
+		"justify-self: anchor-center;",
+		// #181: 390 幅で画面の左右の端にぴったり付かない余白（最低でも --s-2）。
+		"margin-inline: var(--s-4);",
+		"anchor-scope: --tip;",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("app.css lacks %q", want)
+		}
+	}
+	// 解除の rule は表示の rule（hover・focus-visible）より後ろに置く（同じ詳細度で、後ろが勝つ）。
+	if strings.Index(css, ".tip-host[data-tip-dismissed] > .tip") < strings.Index(css, ".tip-host:focus-visible > .tip") {
+		t.Error("the data-tip-dismissed rule must come after the hover / focus-visible rules")
 	}
 }
 

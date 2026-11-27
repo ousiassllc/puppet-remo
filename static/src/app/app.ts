@@ -12,6 +12,8 @@
 //  10. ウィンドウの一覧（#window-picker）の自動更新が、フォーカス・ポインターの操作を奪わないようにする（picker-guard.ts）
 //  11. 秘密の入力欄（API キー）の「変更」（登録済みのバッジを空の入力欄に入れ替える）と、入力中の値の表示切り替え（data-secret-change・data-secret-toggle）
 //  12. 前へ／次へだけのページ送りの差し替えのあと、フォーカスを使えるボタンへ移す（押した側が端で disabled になったら反対側。data-pager）
+//  13. ツールチップ（.tip-host。atoms.Tooltip）が出ている間の Esc で、フォーカスもポインターも動かさずにそのツールチップだけを閉じる（WCAG 1.4.13）。
+//      ドロワー・確認モーダルの Esc より先に受けて止めるので、1 回目はツールチップだけ、2 回目でドロワー・モーダルが閉じる。確認モーダルは Esc でも閉じる（キャンセルと同じ）
 // インラインのスクリプト・イベント属性は使わず、イベントはここで付ける。
 
 import { installPickerRefreshGuard } from "./picker-guard";
@@ -196,6 +198,54 @@ document.addEventListener("keydown", (event) => {
     setNavOpen(false);
   } else if (event.key === "Tab") {
     trapNavFocus(event);
+  }
+});
+
+// 13. ツールチップの Esc。出ている（ホバーかキーボードフォーカス中の）出す側に data-tip-dismissed を付けると、app.css が本文を隠す。
+// キャプチャ段階で受けて止める（stopPropagation）ので、ドロワー・確認モーダルの Esc（下の document のリスナー）には届かない。
+// 隠したあとは、ホバーとフォーカスの両方が外れるまで出さない（外れたら印を外して、次のホバー・フォーカスで通常どおり出す）。
+const TIP_DISMISSED_ATTR = "data-tip-dismissed";
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+    const shown = document.querySelectorAll<HTMLElement>(`.tip-host:is(:hover, :focus-visible):not([${TIP_DISMISSED_ATTR}])`);
+    if (shown.length === 0) {
+      return;
+    }
+    for (const host of shown) {
+      host.setAttribute(TIP_DISMISSED_ATTR, "");
+    }
+    event.stopPropagation();
+  },
+  true,
+);
+// mouseleave は bubble しないので、キャプチャで受ける。本文は出す側の子孫なので、出す側から本文へ動いても mouseleave にならない（hoverable）。
+document.addEventListener(
+  "mouseleave",
+  (event) => {
+    if (event.target instanceof Element && event.target.matches(`.tip-host[${TIP_DISMISSED_ATTR}]:not(:focus-visible)`)) {
+      event.target.removeAttribute(TIP_DISMISSED_ATTR);
+    }
+  },
+  true,
+);
+document.addEventListener("focusout", (event) => {
+  if (event.target instanceof Element && event.target.matches(`.tip-host[${TIP_DISMISSED_ATTR}]:not(:hover)`)) {
+    event.target.removeAttribute(TIP_DISMISSED_ATTR);
+  }
+});
+
+// 確認モーダルは Esc でも閉じる（キャンセルと同じ。開いた要素へフォーカスを戻す）。ツールチップの Esc は上で止めているので、ここへは来ない。
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") {
+    return;
+  }
+  const root = document.getElementById(MODAL_ROOT);
+  if (root?.querySelector("#modal:not([data-leaving])")) {
+    clearWithFade(root);
   }
 });
 
