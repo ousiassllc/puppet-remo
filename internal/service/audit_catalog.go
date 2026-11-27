@@ -42,6 +42,9 @@ var AuditCatalog = []AuditRequirement{
 		agentTaskStartAuditEvent, agentTaskEndAuditEvent, agentSafetyCheckAuditEvent, agentTaskCancelAuditEvent,
 	}},
 	{Item: "エージェントのバッチの中断（対象グループの変化。#158。kind = agent）", Events: []string{agentBatchYieldedAuditEvent}},
+	{Item: "Codex 経路のエンジン取得・ログイン・ログアウト・再開（#247。kind = agent）", Events: []string{
+		codexInstallAuditEvent, codexSignInStartAuditEvent, codexSignInAuditEvent, codexSignOutAuditEvent, codexResumeAuditEvent,
+	}},
 }
 
 // auditCatalogEvents は AuditCatalog の具体的なイベント名（tool.* の族を除く）の集合。
