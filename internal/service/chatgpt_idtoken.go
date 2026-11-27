@@ -161,8 +161,29 @@ func (s *ChatGPTAuthService) signingKey(ctx context.Context, kid string) (*rsa.P
 	return nil, errChatGPTIDToken
 }
 
+// jwksURL は ID トークンの検証鍵の取得先。探索文書（openid-configuration）の jwks_uri を使う。jwks_uri が発行者の配下で
+// なければ鍵を取りに行かず、ID トークンの検証の失敗にする。探索に失敗したか jwks_uri が無いときは、発行者の既定の
+// /.well-known/jwks.json を使う。
+func (s *ChatGPTAuthService) jwksURL(ctx context.Context) (string, error) {
+	doc, err := s.doHTTP(ctx, http.MethodGet, s.authURL(chatgptDiscoveryPath), nil, "", chatgptJWKSTimeout)
+	var d struct {
+		JWKS string `json:"jwks_uri"`
+	}
+	if err != nil || json.Unmarshal(doc, &d) != nil || d.JWKS == "" {
+		return s.authURL("/.well-known/jwks.json"), nil
+	}
+	if !strings.HasPrefix(d.JWKS, s.issuer()+"/") {
+		return "", errChatGPTIDToken
+	}
+	return d.JWKS, nil
+}
+
 func (s *ChatGPTAuthService) fetchJWKS(ctx context.Context) (map[string]*rsa.PublicKey, error) {
-	body, err := s.doHTTP(ctx, http.MethodGet, s.authURL("/.well-known/jwks.json"), nil, "", chatgptJWKSTimeout)
+	src, err := s.jwksURL(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body, err := s.doHTTP(ctx, http.MethodGet, src, nil, "", chatgptJWKSTimeout)
 	if err != nil {
 		return nil, err
 	}

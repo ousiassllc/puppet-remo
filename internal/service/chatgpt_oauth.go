@@ -265,7 +265,7 @@ func (s *ChatGPTAuthService) refreshTokens(ctx context.Context, clientID, refres
 // revokeOnce は失効を 1 回試す（探索 → revocation_endpoint へのフォーム）。成功（2xx）は nil。
 // 探索の revocation_endpoint が発行者の配下でなければ、リフレッシュトークンを送らずに失敗にする（permanent = true）。
 func (s *ChatGPTAuthService) revokeOnce(ctx context.Context, clientID, refreshToken string) (permanent bool, err error) {
-	doc, err := s.doHTTP(ctx, http.MethodGet, s.authURL("/.well-known/openid-configuration"), nil, "", chatgptRevokeTimeout)
+	doc, err := s.doHTTP(ctx, http.MethodGet, s.authURL(chatgptDiscoveryPath), nil, "", chatgptRevokeTimeout)
 	if err != nil {
 		return false, err
 	}
@@ -287,3 +287,6 @@ func (s *ChatGPTAuthService) revokeOnce(ctx context.Context, clientID, refreshTo
 	}
 	return false, err
 }
+
+// chatgptDiscoveryPath は発行者の探索文書（revocation_endpoint・jwks_uri を引く）。
+const chatgptDiscoveryPath = "/.well-known/openid-configuration"

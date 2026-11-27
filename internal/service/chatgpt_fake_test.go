@@ -72,6 +72,9 @@ type fakeChatGPTServer struct {
 	apiBody    string
 	jwksKid    string
 	headerKid  string // 空でなければ ID トークンのヘッダーの kid
+	jwksURI    string // 探索が返す jwks_uri（空は自分の /.well-known/jwks.json）
+	jwksMoved  bool   // /.well-known/jwks.json を 404 にする（鍵は /oauth/jwks だけで出す）
+	discDown   bool   // 探索を 500 にする
 
 	exchangeForms []url.Values
 	refreshForms  []url.Values
@@ -87,7 +90,17 @@ func newFakeChatGPTServer(t *testing.T, now func() time.Time) *fakeChatGPTServer
 		jwksKid: "k1", refreshSeen: make(chan struct{}, 16),
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /.well-known/jwks.json", f.handleJWKS)
+	mux.HandleFunc("GET /.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		moved := f.jwksMoved
+		f.mu.Unlock()
+		if moved {
+			http.NotFound(w, r)
+			return
+		}
+		f.handleJWKS(w, r)
+	})
+	mux.HandleFunc("GET /oauth/jwks", f.handleJWKS)
 	mux.HandleFunc("GET /.well-known/openid-configuration", f.handleDiscovery)
 	mux.HandleFunc("POST /api/accounts/oauth/token", f.handleToken)
 	mux.HandleFunc("POST /api/accounts/oauth/revoke", f.handleRevoke)
@@ -120,12 +133,19 @@ func (f *fakeChatGPTServer) handleJWKS(w http.ResponseWriter, _ *http.Request) {
 
 func (f *fakeChatGPTServer) handleDiscovery(w http.ResponseWriter, _ *http.Request) {
 	f.mu.Lock()
-	base := f.revokeHost
+	base, jwks, down := f.revokeHost, f.jwksURI, f.discDown
 	f.mu.Unlock()
+	if down {
+		http.Error(w, "unavailable", http.StatusInternalServerError)
+		return
+	}
 	if base == "" {
 		base = f.srv.URL
 	}
-	_ = json.NewEncoder(w).Encode(map[string]string{"revocation_endpoint": base + "/api/accounts/oauth/revoke"})
+	if jwks == "" {
+		jwks = f.srv.URL + "/.well-known/jwks.json"
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"revocation_endpoint": base + "/api/accounts/oauth/revoke", "jwks_uri": jwks})
 }
 
 func (f *fakeChatGPTServer) newToken(prefix string) string {

@@ -332,6 +332,14 @@ func TestChatGPTSignInFailures(t *testing.T) {
 			wantProb: PlanProblemFailed, wantResult: auditError, wantReason: "id_token_invalid", exchanged: true,
 		},
 		{
+			name: "探索の jwks_uri が発行者の外",
+			// 発行者の外の鍵では検証しない（既定のパスにも戻らない）。
+			prep: func(e *chatgptEnv) {
+				e.fake.set(func(f *fakeChatGPTServer) { f.jwksURI = "https://evil.example/.well-known/jwks.json" })
+			},
+			wantProb: PlanProblemFailed, wantResult: auditError, wantReason: "id_token_invalid", exchanged: true,
+		},
+		{
 			name: "ID トークンの aud が違う",
 			prep: func(e *chatgptEnv) {
 				e.fake.set(func(f *fakeChatGPTServer) { f.claimsMod = func(c map[string]any) { c["aud"] = "client-other" } })
@@ -429,6 +437,30 @@ func TestChatGPTSignInFailures(t *testing.T) {
 			}
 			requireClosedPort(t, a.port)
 			e.requireNoSecrets(a.state, a.nonce)
+		})
+	}
+}
+
+// ID トークンの検証鍵は探索の jwks_uri から取る。探索が使えないときだけ既定の /.well-known/jwks.json に戻る。
+func TestChatGPTSignInTakesJWKSFromDiscovery(t *testing.T) {
+	tests := []struct {
+		name string
+		prep func(f *fakeChatGPTServer, base string)
+	}{
+		{"jwks_uri が既定と違うパス", func(f *fakeChatGPTServer, base string) {
+			f.jwksURI, f.jwksMoved = base+"/oauth/jwks", true
+		}},
+		{"探索が失敗すると既定のパス", func(f *fakeChatGPTServer, _ string) { f.discDown = true }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newChatGPTEnv(t, chatgptEnvOpts{})
+			base := e.fake.url()
+			e.fake.set(func(f *fakeChatGPTServer) { tc.prep(f, base) })
+			e.signInOK()
+			if st := e.svc.Status(); st.State != PlanConnected {
+				t.Fatalf("Status = %+v, want connected", st)
+			}
 		})
 	}
 }
