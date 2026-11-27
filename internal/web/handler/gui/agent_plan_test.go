@@ -50,7 +50,7 @@ func TestAgentPageShowsConnectionChoice(t *testing.T) {
 	j := strings.Index(res.Body, `id="chatgpt-card"`)
 	k := strings.Index(res.Body, `id="codex-card"`)
 	l := strings.Index(res.Body, `id="agent-form"`)
-	if !(0 < i && i < j && j < k && k < l) {
+	if i <= 0 || i >= j || j >= k || k >= l {
 		t.Errorf("order: connection=%d chatgpt=%d codex=%d form=%d", i, j, k, l)
 	}
 	// 高速パスは接続方式がプランのあいだは効かない旨。

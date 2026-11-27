@@ -67,7 +67,7 @@ func (f *FakeBrowserOpener) OpenURL(ctx context.Context, rawURL string) error {
 	allowHTTP := f.http
 	f.mu.Unlock()
 	u, err := url.Parse(rawURL)
-	if err != nil || u.Hostname() == "" || !(strings.EqualFold(u.Scheme, "https") || (allowHTTP && strings.EqualFold(u.Scheme, "http"))) {
+	if err != nil || u.Hostname() == "" || !allowedScheme(u.Scheme, allowHTTP) {
 		return domain.ErrInvalidArgument.WithMsg("browser url must be an https url")
 	}
 	f.mu.Lock()
@@ -78,4 +78,9 @@ func (f *FakeBrowserOpener) OpenURL(ctx context.Context, rawURL string) error {
 	default: // 受け取られないまま 64 件を超えた分は Next に流さない（Opened には残る）
 	}
 	return nil
+}
+
+// allowedScheme は開いてよい URL のスキームか（https。テストのループバックの受信口だけ http も）。
+func allowedScheme(scheme string, allowHTTP bool) bool {
+	return strings.EqualFold(scheme, "https") || allowHTTP && strings.EqualFold(scheme, "http")
 }

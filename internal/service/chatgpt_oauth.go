@@ -146,7 +146,8 @@ func chatgptErrorCode(body []byte) string {
 		return ""
 	}
 	for _, r := range code {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-') {
+		allowed := r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-'
+		if !allowed {
 			return ""
 		}
 	}

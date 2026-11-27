@@ -81,7 +81,7 @@ func ListChatGPTModels(ctx context.Context, token string, cfg ChatGPTConfig) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxModelsBody))
 	if err != nil {
 		return nil, newRequestError(err, token)
@@ -174,7 +174,7 @@ func (h *chatgptHTTP) do(ctx context.Context, token, method, path string, body [
 		return nil, newRequestError(err, token)
 	}
 	if res.StatusCode != http.StatusOK {
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		return nil, classifyPlan(newAPIError(res, token))
 	}
 	return res, nil
@@ -218,7 +218,7 @@ func (c *chatgptClient) Step(ctx context.Context, in StepInput) (StepOutput, err
 	if err != nil {
 		return StepOutput{}, err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	return readChatGPTStream(res.Body, token)
 }
 
