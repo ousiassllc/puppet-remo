@@ -146,6 +146,7 @@ graph TD
     P["platform<br/>(interface + windows 実装)"]
     TN["tailnet<br/>(LocalAPI クライアント)"]
     OA["openai<br/>(Responses API クライアント)"]
+    CX["codex<br/>(app-server 経由の Model・エンジン)"]
     TY["typesafe<br/>(Chooser: Jev クライアント)"]
     D["domain<br/>(純粋なモデル・ルール)"]
     H --> S
@@ -159,6 +160,9 @@ graph TD
     TN --> D
     S --> OA
     OA --> D
+    S --> CX
+    CX --> OA
+    CX --> D
     S --> TY
     TY --> D
 ```
@@ -170,8 +174,9 @@ graph TD
 | `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree` と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助・アプリ起動（`AppLauncher`。M1.5）・ファイル選択（`FilePicker`。M1.5）のインターフェースと Windows 実装 | `domain` |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs + 10 秒キャッシュ、Listener 管理） | `domain` |
 | `openai` | OpenAI Responses API のクライアント（API キー経路の `computer` ツールの要求・応答、ChatGPT のプラン経路の関数ツールとストリーム（SSE）の読み取り、`store: false` 固定、タイムアウト、キー・アクセストークンの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)）。ChatGPT のサインイン・更新・失効・接続の状態（#49）は `service` が持つ部品とし、ブラウザの起動・コールバック受信口・資格情報は `platform` / `service` の背後に置く（[API 仕様 §7.5・§7.6](../api/endpoints.md)） | `domain` |
+| `codex` | Codex の app-server 経由の ChatGPT のプラン経路（接続方式 `chatgpt-codex`。#247）: 固定した版のカタログ（`catalog`）、エンジンの取得・検証・展開・削除（`engine`）、JSON-RPC（`rpc`）、app-server の子プロセスの起動・ハンドシェイク・サーバー要求の拒否・異常終了の検知（`appserver`。Windows はコンソール窓なし・アプリと一緒に終わるジョブ）、`openai.Model` の実装（desktop の関数ツールを dynamicTools で渡す）。Codex のトークンは読まず・保存しない。`Model` インターフェースの背後に置き、テストでは偽の app-server（`codextest`）を使う（[NFR-O06](../requirements/non-functional.md)）。エンジンの状態・ログイン・接続の状態（`CodexAuthService`）は `service` が持つ | `domain`、`openai` |
 | `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`（`Choose(ctx, ChoiceRequest) (ChoiceResult, error)`）の背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
-| `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、高速パス（`FastPath`。Agent の内部）、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai`、`typesafe` |
+| `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、高速パス（`FastPath`。Agent の内部）、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai`、`codex`、`typesafe` |
 | `web/handler`、`mcp`、`ws` | HTTP / MCP / WebSocket の入口。`repository` と `platform` を直接使わない | `service`、`domain` |
 | `web` テンプレート | Templ（Atomic Design） | `domain`（表示用データ） |
 
