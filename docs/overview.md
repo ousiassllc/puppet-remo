@@ -24,7 +24,7 @@ AI による操作（内蔵エージェント、MCP 直接）は、ホスト側�
 
 - Wails アプリ（Go バックエンド + Web フロントエンド）のホスト常駐。トレイ常駐とホスト用 GUI（承認、設定、監査ログ、クライアント管理、起動許可アプリの登録・起動の方式の切り替え・拒否リストの登録、API キー設定、ChatGPT のサインイン・解除、実行中タスクの確認・中断。段階: M1 はダッシュボード・接続要求・クライアント管理まで、M1.5 は起動許可アプリの登録・編集・削除と起動の方式・拒否リスト、承認・設定・監査ログの閲覧は M3、API キー設定・ChatGPT のサインイン・解除・実行中タスクの確認・中断は M4）
 - MCP サーバー（Streamable HTTP）。低レベルツール（screenshot / mouse / keyboard / ウィンドウ / クリップボード / UI ツリー / 操作リース。M1）と、アプリを起動する `launch_app` / `list_launchable_apps`（M1.5。既定のホワイトリスト方式ではホスト GUI で登録した許可リストのアプリだけ。ホスト所有者が GUI で選んだブラックリスト方式では、拒否リスト以外の実行ファイルも `path` で起動できる）と、高レベルの `run_task`（非同期のタスク実行・状態取得・中断。M4）
-- ホスト内蔵エージェント: OpenAI Responses API で画面を見て操作する（`store: false`、履歴は毎回再送）。接続先（接続方式）は 2 つ。**ChatGPT のプラン（Sign in with ChatGPT。既定）**は、OAuth のアクセストークンを Bearer にして `POST https://api.openai.com/v1/responses` を呼び（API キーは不要）、ネイティブの `computer` ツールが使えないため、MCP の低レベルツールと同じ名前・引数・座標の**関数ツール**とスクリーンショットの画像入力で操作する。**OpenAI API キー**は明示的に選ぶ別の接続方式で、`computer` ツールを使う。ChatGPT の使用量の上限に達したときは、**API キーへ自動で切り替えず**タスクを止め、切り替えはホスト GUI での所有者の明示的な承認だけ。すべての入力は、どちらの経路でも MCP 直接・Web UI と同じ入力層（InputGuard・リース・Judge・監査）を通す
+- ホスト内蔵エージェント: OpenAI Responses API で画面を見て操作する（`store: false`、履歴は毎回再送）。接続先（接続方式）は 3 つ。**ChatGPT のプラン（Sign in with ChatGPT。既定）**は、OAuth のアクセストークンを Bearer にして `POST https://api.openai.com/v1/responses` を呼び（API キーは不要）、ネイティブの `computer` ツールが使えないため、MCP の低レベルツールと同じ名前・引数・座標の**関数ツール**とスクリーンショットの画像入力で操作する。**ChatGPT のプラン（Codex 経由。`chatgpt-codex`）**は、公式のサインインが ChatGPT のワークスペースのアカウント（Business / Enterprise / Edu）で拒否されるときの代替で、アプリが公式のリリースから取得した固定版の Codex の app-server（子プロセス）にサインインと推論を任せ、同じ関数ツールを動的ツールとして渡して操作する（Windows の amd64 / arm64 だけ）。**OpenAI API キー**は明示的に選ぶ別の接続方式で、`computer` ツールを使う。ChatGPT のプランの使用量の上限に達したときは、**別の経路へ自動で切り替えず**タスクを止め、切り替えはホスト GUI での所有者の明示的な操作だけ（API キーへの切り替えは確認モーダルを経る承認）。すべての入力は、どの経路でも MCP 直接・Web UI と同じ入力層（InputGuard・リース・Judge・監査）を通す
 - 高速パス（既定は無効・別途同意）: UI Automation から作った候補表（最大 24 件）から TypeSafe の Jev が 1 手ずつ ID を選んで進め、迷ったときだけ OpenAI へエスカレーションする。完了の宣言は必ず OpenAI がスクリーンショット 1 枚で確認して行う。Jev にスクリーンショットは送らない
 - Web UI（HTTP + WebSocket）。ライブ画面（JPEG 差分フレーム）と手動操作
 - 認証・認可: tailnet ACL（第 1 層）、WhoIs 許可リスト、MCP 用 Bearer トークン、クライアント単位のエージェント利用許可（`agent_enabled`。M1 から GUI・API で保存・編集できるが、効果は `run_task` が入る M4 から）
@@ -40,7 +40,7 @@ AI による操作（内蔵エージェント、MCP 直接）は、ホスト側�
 - Wails アプリを「操作する側のクライアント」として使う機能（操作側は MCP クライアントとブラウザのみ。Web UI からタスクを入力する画面も初版では作らない）
 - tailnet 外（インターネット公開、Tailscale Funnel）からのアクセス
 - tsnet 埋め込み（ホストの tailscaled を利用する）
-- OpenAI 以外の AI プロバイダへの切り替え（内蔵エージェントの接続先は OpenAI Responses API のみ。接続方式は ChatGPT のプランと OpenAI API キーの 2 つ）。Jev は高速パスの候補選択だけに使い、実行前の判定（Judge）には使わない（Judge は決定論的なルールベース）。ChatGPT のプラン経路では高速パスを併用しない（対象外。高速パスの挙動は変えない）。ホスト 1 台で同時に保存できる ChatGPT のアカウントは 1 つ（複数アカウントの切り替えは対象外）。経路の自動切り替え（使用量の上限・認可切れ・エラーのときに API キー経路へ送ること）は行わない
+- OpenAI 以外の AI プロバイダへの切り替え（内蔵エージェントの接続先は OpenAI のみ。接続方式は ChatGPT のプラン〔公式〕・ChatGPT のプラン〔Codex 経由〕・OpenAI API キーの 3 つ）。Jev は高速パスの候補選択だけに使い、実行前の判定（Judge）には使わない（Judge は決定論的なルールベース）。ChatGPT のプラン経路（公式・Codex 経由）では高速パスを併用しない（対象外。高速パスの挙動は変えない）。ホスト 1 台で同時に保存できる ChatGPT のアカウントは公式の経路で 1 つ（複数アカウントの切り替えは対象外）。経路の自動切り替え（使用量の上限・認可切れ・エラー・公式経路のポリシー拒否のときに別の経路へ送ること）は行わない。Codex 経路では利用者指定の Codex のバイナリ・デバイスコードによるログインも対象外
 - WebRTC / 動画エンコード配信
 - 複数ユーザー向けのロール管理（owner / operator / viewer の分離）
 - 音声、ファイル転送、双方向の自動クリップボード同期（テキストの手動送受信と MCP ツールは含む。[機能要件](requirements/functional.md) FR-W07 / FR-M13）
@@ -52,7 +52,7 @@ AI による操作（内蔵エージェント、MCP 直接）は、ホスト側�
 
 | 区分 | 役割 | 備考 |
 |------|------|------|
-| ホスト所有者（兼操作者） | ホスト PC にアプリを導入・承認・設定し、ChatGPT にサインイン（または OpenAI API キーを登録）し、手元の別端末からブラウザまたは MCP クライアントで指示・操作する | 個人。複数 PC を所有 |
+| ホスト所有者（兼操作者） | ホスト PC にアプリを導入・承認・設定し、ChatGPT にサインイン（公式または Codex 経由。または OpenAI API キーを登録）し、手元の別端末からブラウザまたは MCP クライアントで指示・操作する | 個人。複数 PC を所有 |
 | MCP クライアント（Claude 等） | `run_task` で指示を送る、または低レベルツールで直接操作する。所有者の別端末で動く | tailnet 上のデバイスから接続。AI と通信するのはクライアント側の AI（Claude 等）であり、`run_task` の実行中だけホストが OpenAI と通信する（ChatGPT のプランまたは API キー。接続方式は呼び出し側が選べない） |
 | ホスト上の在席ユーザー | 画面とオーバーレイで AI 操作を監視し、必要ならキルスイッチで止める | 所有者本人であることが多い |
 
@@ -78,6 +78,7 @@ graph TD
     end
     OAI["OpenAI API (Responses)"]
     OAUTH["auth.openai.com<br/>(Sign in with ChatGPT: 更新・失効)"]
+    CODEX["Codex app-server (子プロセス)<br/>(chatgpt-codex のときだけ。ChatGPT へのサインインと推論)"]
     MCPC -- "MCP (Streamable HTTP)<br/>run_task / 低レベルツール" --> SRV
     BR -- "HTTP / WebSocket" --> SRV
     SRV -- "WhoIs" --> TS
@@ -85,6 +86,7 @@ graph TD
     CORE --> AGENT
     AGENT -- "HTTPS (スクリーンショット送信)" --> OAI
     AGENT -. "ChatGPT 接続のときだけ<br/>(サインイン・更新・失効)" .-> OAUTH
+    AGENT -. "Codex 経由のときだけ<br/>(JSON-RPC)" .-> CODEX
     AGENT --> CORE
     CORE --> OS
     CORE --> DB
@@ -117,8 +119,8 @@ graph TD
 - M1.5: 起動の許可（ホワイトリスト方式〔既定〕の許可リスト、ブラックリスト方式の拒否リスト。起動の方式はホスト GUI で切り替える）と MCP の `launch_app` / `list_launchable_apps`（FR-M18・M19）、ホスト GUI の起動許可アプリの登録・編集・削除、起動の方式の切り替え、拒否リストの登録・編集・削除（FR-H12）。起動は操作リース必須（未保持なら暗黙に取得）・キルスイッチ・監査の下に置き、承認は無い（M3 で承認モードの対象に加える）。OS の起動は `platform` の背後の `CreateProcess`
 - M2: Web UI（ライブ画面・手動操作）、リースの強制剥奪（保持者種別 `web` の追加）
 - M3: 承認モード（リースの `pending_approval`、承認ダイアログ）、操作中オーバーレイ、監査ログの閲覧 UI と縮小スクリーンショット
-- M4: ホスト内蔵エージェント（`run_task`、接続方式 2 つ〔ChatGPT のプラン（Sign in with ChatGPT。既定）の関数ツール、OpenAI API キーの `computer` ツール〕、ChatGPT のサインイン・解除・使用量の上限の扱い、API キー管理、タスク上限・中断。リースの保持者種別 `agent` の追加）と、高速パス（TypeSafe Jev による候補選択。UI Automation の候補表、エスカレーション。API キーの接続方式のときだけ）。承認・オーバーレイ・監査（M3）を前提にするため M3 の後に置く。高速パスの品質は、固定のタスク集合で実測して確認する
-  - ChatGPT のプラン経路（#49）は、現時点では仕様の追記までで、実装は未着手。原資料（OpenAI の Sign in with ChatGPT の文書）に無い点は推測で決めず、[非機能要件「ChatGPT プラン経路: 未確認」](requirements/non-functional.md)に列挙して実機・実 API で確認する。テストはモックのみで、実際の OpenAI・ChatGPT を呼ばない
+- M4: ホスト内蔵エージェント（`run_task`、接続方式 3 つ〔ChatGPT のプラン（Sign in with ChatGPT。既定）の関数ツール、ChatGPT のプラン（Codex 経由）の関数ツール、OpenAI API キーの `computer` ツール〕、ChatGPT のサインイン・解除・使用量の上限の扱い、Codex のエンジンの取得とサインイン、API キー管理、タスク上限・中断。リースの保持者種別 `agent` の追加）と、高速パス（TypeSafe Jev による候補選択。UI Automation の候補表、エスカレーション。API キーの接続方式のときだけ）。承認・オーバーレイ・監査（M3）を前提にするため M3 の後に置く。高速パスの品質は、固定のタスク集合で実測して確認する
+  - ChatGPT のプラン経路（公式 #49・Codex 経由 #247）は実装済み（テストはモックのみ。Windows 実機・実アカウントでの確認は未）。原資料（OpenAI の Sign in with ChatGPT の文書）に無い点は推測で決めず、[非機能要件「ChatGPT プラン経路: 未確認」「Codex 経路: 未確認」](requirements/non-functional.md)に列挙して実機・実 API で確認する。実際の OpenAI・ChatGPT・Codex のエンジンを呼ぶテストは持たない
   - リスクと前提: (1) ネイティブの `computer` ツールが使えないため、関数ツールでの操作の精度は API キー経路と同じとは限らない（実測で確かめる。仕様に性能の主張は書かない）。(2) この経路は OpenAI の「プレビュー」の制限（送れない項目、ツールの制限など）に依存し、原資料の変更で仕様が変わりうる。(3) 使用量の上限（Plus は 5 時間の上限が全アプリで共有される）に当たるとタスクが止まり、再開はホスト所有者の操作（再開・使用量の管理・API キーへの切り替えの承認）による。(4) 原資料の対象は、オープンソースまたはローカルでホストされるアプリ（本アプリが当たることは Issue #49 でオーナーが確認済み。ライセンスは GNU AGPL-3.0 で、リポジトリ直下の `LICENSE` に全文を置く。リポジトリの公開の操作は本書の範囲外）
 - 将来: macOS / Linux 対応（スコープ外。別途検討）
 
@@ -138,11 +140,12 @@ graph TD
 | キルスイッチ | ホスト側で全クライアント接続・操作を即時遮断する機構 |
 | 承認モード | 操作を許可する条件（常時承認 / 初回のみ承認 / 自動許可）をクライアント単位で設定する仕組み |
 | オーバーレイ | AI 操作中であることをホスト画面に明示する表示 |
-| 内蔵エージェント | ホスト内で動き、OpenAI Responses API で画面を見ながら入力を実行するループ。接続方式が OpenAI API キーなら `computer` ツール、ChatGPT のプランなら関数ツール（MCP の低レベルツールと同じ名前・引数）で操作する。`run_task` で起動する |
-| 接続方式 | 内蔵エージェントの OpenAI への接続の仕方。`chatgpt`（ChatGPT のプラン。Sign in with ChatGPT。**既定**）と `openai_api_key`（OpenAI API キー）。ホスト GUI だけで選び、タスクの開始時に固定される。アプリは自動では切り替えない |
+| 内蔵エージェント | ホスト内で動き、OpenAI Responses API で画面を見ながら入力を実行するループ。接続方式が OpenAI API キーなら `computer` ツール、ChatGPT のプラン（公式・Codex 経由）なら関数ツール（MCP の低レベルツールと同じ名前・引数）で操作する。`run_task` で起動する |
+| 接続方式 | 内蔵エージェントの OpenAI への接続の仕方。`chatgpt`（ChatGPT のプラン。Sign in with ChatGPT。**既定**）・`chatgpt-codex`（ChatGPT のプラン。Codex の app-server 経由。公式の経路がワークスペースのアカウントを拒むときの代替）・`openai_api_key`（OpenAI API キー）。ホスト GUI だけで選び、タスクの開始時に固定される。アプリは自動では切り替えない（`openai_api_key` への切り替えだけ確認モーダル） |
 | Sign in with ChatGPT | OpenAI の、ChatGPT のアカウントでサインインして ChatGPT のプランの使用量を外のアプリから使う仕組み（OAuth）。アクセストークンを Bearer にして Responses API を呼ぶ。API キー・クライアントシークレットは要らない |
+| Codex の app-server | OpenAI 公式の Codex が持つ、標準入出力の JSON-RPC で ChatGPT へのサインイン・モデル一覧・推論を受け付ける実行ファイル。接続方式 `chatgpt-codex` で、アプリが固定版（`rust-v0.164.0`）を取得・検証して子プロセスとして起動する。トークンは Codex が保管し、アプリは持たない |
 | `ext_agent_host_id` | ChatGPT のサインインで OpenAI に渡す、ホスト 1 台ごとに変わらない不透明な識別子（`urn:uuid:…`）。最初のサインインの前に作って設定に保存する。認証の資格情報ではない |
-| 関数ツール | ChatGPT のプラン経路で、ネイティブの `computer` ツールの代わりにモデルへ渡す、namespace `desktop` の関数群（`screenshot`・`left_click`・`type`・`key`・`scroll` など。MCP の低レベルツールと同じ名前・引数・座標・上限。[FR-G27](requirements/functional.md)） |
+| 関数ツール | ChatGPT のプラン経路（公式・Codex 経由）で、ネイティブの `computer` ツールの代わりにモデルへ渡す、namespace `desktop` の関数群（`screenshot`・`left_click`・`type`・`key`・`scroll` など。MCP の低レベルツールと同じ名前・引数・座標・上限。[FR-G27](requirements/functional.md)）。Codex 経由では app-server の動的ツールとして渡す |
 | 高速パス | 内蔵エージェントの 1 手ごとの処理方式の 1 つ。アプリが UI Automation から作る候補表から、Jev が ID を 1 つ選んで進める。迷ったときは OpenAI へエスカレーションし、完了は必ず OpenAI が確認する |
 | 候補表 | 高速パスで Jev に選ばせる、アプリが作る不変のアクション一覧（最大 24 件 + `reobserve` + `abstain`）。Jev は表にない操作・座標・引数を作れない |
 | エスカレーション | 高速パスから OpenAI の `computer` ツールのループへ引き継ぐこと。理由は `abstain` / `low_confidence` / `no_candidates` / `invalid_choice` / `no_progress` / `goal_maybe_done` / `fast_step_limit` / `chooser_unavailable` |
@@ -175,3 +178,4 @@ graph TD
 | 1.16 | 2026-11-02 | 「リスクと前提」(4) のライセンスの記述を、GNU AGPL-3.0（`LICENSE`）に合わせた | #49 |
 | 1.17 | 2026-11-03 | 起動の方式（`launch.mode`）を追加: ホワイトリスト方式（既定）とブラックリスト方式（拒否リスト `launch_denylist`。`launch_app` が `path` を受け付ける）をホスト GUI だけで切り替える。スコープ（含む・含まない）・M1.5・用語集（拒否リスト・起動の方式）・ドキュメントマップの ER の表に反映し、任意のパスを起動できないとする記述をホワイトリスト方式（既定）に限定 | #88 |
 | 1.18 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。構成図の表記だけを差し替え | #188 |
+| 1.19 | 2026-11-27 | 内蔵エージェントの接続方式に `chatgpt-codex`（Codex の app-server 経由の ChatGPT のプラン。公式の経路がワークスペースのアカウントを拒むときの代替。#247）を追加し、「含むもの」「含まないもの」・構成図・M4・用語集（接続方式・Codex の app-server・関数ツール）に反映。ChatGPT のプラン経路の「仕様のみ・実装は未着手」を実装済み（モックのみ・実機未確認）に直した | #247 |
