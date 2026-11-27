@@ -69,6 +69,9 @@ type AgentSettingsView struct {
 	AgentConfig
 	OpenAIKeyRegistered   bool
 	TypeSafeKeyRegistered bool
+	// ConnectionNotReady は選んだ接続方式（Connection）でエージェントを有効にできない理由（agent_disabled の detail.reason と同じ値。
+	// 例: openai_key_missing・chatgpt_not_signed_in）。空なら有効にできる（GUI の有効化の表示用）。
+	ConnectionNotReady string
 }
 
 // AgentSettingsInput は PUT /agent のフォーム入力（FR-H11）。改行区切りのリストは呼び出し側（GUI）が分割して渡す。
@@ -99,6 +102,10 @@ type FastpathSettingsInput struct {
 // API キーの値はログ・エラー・監査・戻り値のどこにも出さない（NFR-S14）。
 // SaveAgent で enabled = false にする保存は、有効または同意済みの状態からなら、他の欄の不備に妨げられない（他の欄は保存しない）。
 type AgentSettings interface {
+	AgentConnectionSettings // 接続方式の切り替え・プランのモデルの保存（SetConnection・SavePlanModel。FR-H11・S20・S21）
+	// MigrateConnection は agent.connection が未設定で OpenAI キーが登録済みなら openai_api_key を保存する（起動時に 1 回。FR-G25）。
+	// 設定済みなら何もしない（一度だけ）。
+	MigrateConnection(ctx context.Context) error
 	Load(ctx context.Context) (AgentSettingsView, error)
 	SaveAgent(ctx context.Context, in AgentSettingsInput) error
 	SetOpenAIKey(ctx context.Context, key string) error

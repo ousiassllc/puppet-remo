@@ -15,7 +15,7 @@ import (
 func taskAt(id string, created time.Time) domain.Task {
 	return domain.Task{
 		ID: id, ClientLabel: "dev1", Prompt: "メモ帳を開いて", Status: domain.TaskRunning, Model: "m",
-		MaxSteps: 50, MaxDurationSec: 600, CreatedAt: created,
+		MaxSteps: 50, MaxDurationSec: 600, CreatedAt: created, Connection: domain.ConnectionOpenAIAPIKey,
 	}
 }
 
@@ -40,7 +40,7 @@ func TestTasksCreateGetRoundTrip(t *testing.T) {
 
 	want := domain.Task{
 		ID: "01T1", ClientID: "c1", ClientLabel: "dev1", Prompt: "p", Status: domain.TaskRunning, Model: "gpt",
-		MaxSteps: 30, MaxDurationSec: 300, StepCount: 3, FastSteps: 2, OpenAISteps: 1,
+		MaxSteps: 30, MaxDurationSec: 300, StepCount: 3, FastSteps: 2, OpenAISteps: 1, Connection: domain.ConnectionChatGPTCodex,
 		HandoffReason: domain.HandoffLowConfidence, InputTokens: 10, OutputTokens: 20,
 		CreatedAt: clock.Now(), StartedAt: &started,
 	}
@@ -87,6 +87,7 @@ func TestTasksCreateRejects(t *testing.T) {
 		"negative tokens":    func(k *domain.Task) { k.InputTokens = -1 },
 		"total != breakdown": func(k *domain.Task) { k.StepCount, k.FastSteps, k.OpenAISteps = 3, 1, 1 },
 		"bad handoff":        func(k *domain.Task) { k.HandoffReason = "whatever" },
+		"bad connection":     func(k *domain.Task) { k.Connection = "whatever" },
 		"active finished_at": func(k *domain.Task) { k.FinishedAt = &fin },
 	}
 	for name, mutate := range tests {
@@ -116,6 +117,38 @@ func TestTasksHandoffReasonMatchesTableCheck(t *testing.T) {
 	if _, err := db.sql.ExecContext(context.Background(),
 		`UPDATE agent_tasks SET handoff_reason = 'bogus' WHERE id = 'h0'`); err == nil {
 		t.Error("table accepted an unknown handoff_reason")
+	}
+}
+
+// agent_tasks.connection は 3 値で往復し、指定のない作成は openai_api_key（#49 より前と同じ）になる。Update は変えない。
+func TestTasksConnectionRoundTrip(t *testing.T) {
+	db, clock := openTestDB(t)
+	ctx := context.Background()
+	for i, c := range []domain.AgentConnection{domain.ConnectionChatGPT, domain.ConnectionChatGPTCodex, domain.ConnectionOpenAIAPIKey} {
+		k := taskAt(fmt.Sprintf("c%d", i), clock.Now())
+		k.Connection = c
+		mustCreateTask(t, db, k)
+		got, err := db.Tasks().Get(ctx, k.ID)
+		if err != nil || got.Connection != c {
+			t.Errorf("Get %s = %+v, %v; want connection %q", k.ID, got, err, c)
+		}
+	}
+	unset := taskAt("unset", clock.Now())
+	unset.Connection = ""
+	mustCreateTask(t, db, unset)
+	if got, _ := db.Tasks().Get(ctx, "unset"); got.Connection != domain.ConnectionOpenAIAPIKey {
+		t.Errorf("unset connection = %q, want openai_api_key", got.Connection)
+	}
+	upd, _ := db.Tasks().Get(ctx, "c0")
+	upd.Connection, upd.StepCount, upd.OpenAISteps = domain.ConnectionOpenAIAPIKey, 1, 1
+	if err := db.Tasks().Update(ctx, upd); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.Tasks().Get(ctx, "c0"); got.Connection != domain.ConnectionChatGPT || got.StepCount != 1 {
+		t.Errorf("Update changed the connection or lost the counters: %+v", got)
+	}
+	if _, err := db.sql.ExecContext(ctx, `UPDATE agent_tasks SET connection = 'bogus' WHERE id = 'c0'`); err == nil {
+		t.Error("table accepted an unknown connection")
 	}
 }
 

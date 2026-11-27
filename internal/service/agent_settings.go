@@ -103,6 +103,9 @@ type AgentSettingsConfig struct {
 	// Cancel はエージェントの無効化・OpenAI キーの削除で、実行中のタスクを中断する（FR-G10。app が Agent.CancelAll を渡す）。
 	// reason は監査用。nil なら何もしない。高速パスの無効化では呼ばない（実行中のタスクは OpenAI で続行する）。
 	Cancel func(reason string)
+	// ChatGPT・Codex は接続方式 chatgpt・chatgpt-codex でエージェントを有効にできるか（Ready）の判定に使う。nil の接続方式では有効にできない。
+	ChatGPT PlanGate
+	Codex   PlanGate
 }
 
 // AgentSettingsService は AgentSettings と AgentConfigReader の実装。DisableFastpath（FR-G21）も持つ。
@@ -157,6 +160,9 @@ func (s *AgentSettingsService) Config(ctx context.Context) (AgentConfig, error) 
 		DenyProcesses:    slices.Clone(readSetting(r, SettingAgentDenyProcesses, defaultAgentDenyProcesses, list)),
 		ApproveProcesses: slices.Clone(readSetting(r, SettingAgentApproveProcesses, defaultAgentApproveProcesses, list)),
 		KeepScreenshots:  readSetting(r, SettingAgentKeepScreenshots, defaultAgentKeepShots, inRange(agentMinKeepShots, agentMaxKeepShots)),
+		Connection:       readSetting(r, SettingAgentConnection, domain.DefaultAgentConnection, domain.AgentConnection.Valid),
+		ChatGPTModel:     readSetting(r, SettingChatGPTModel, DefaultChatGPTModel, validModelName),
+		CodexModel:       readSetting(r, SettingCodexModel, DefaultCodexModel, validModelName),
 		Fastpath: FastpathConfig{
 			Enabled:        readSetting(r, SettingFastpathEnabled, false, nil),
 			Model:          readSetting(r, SettingFastpathModel, defaultFastpathModel, validModelName),
@@ -258,7 +264,9 @@ func (s *AgentSettingsService) Load(ctx context.Context) (AgentSettingsView, err
 	if err != nil {
 		return AgentSettingsView{}, err
 	}
-	return AgentSettingsView{AgentConfig: cfg, OpenAIKeyRegistered: openai, TypeSafeKeyRegistered: typesafe}, nil
+	view := AgentSettingsView{AgentConfig: cfg, OpenAIKeyRegistered: openai, TypeSafeKeyRegistered: typesafe}
+	view.ConnectionNotReady = s.connectionNotReady(cfg.Connection, openai)
+	return view, nil
 }
 
 // ---- エージェントの保存 ----
@@ -286,12 +294,8 @@ func (s *AgentSettingsService) SaveAgent(ctx context.Context, in AgentSettingsIn
 		saveFields = false
 	}
 	if in.Enabled {
-		registered, err := s.OpenAIKeyRegistered(ctx)
-		if err != nil {
+		if err := s.checkConnectionReady(ctx, cur.Connection); err != nil {
 			return err
-		}
-		if !registered {
-			return domain.ErrAgentDisabled.WithMsg("register the OpenAI API key before enabling the agent")
 		}
 	}
 	changed := map[string]any{}
@@ -472,22 +476,25 @@ func (s *AgentSettingsService) DeleteOpenAIKey(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.setValue(ctx, SettingAgentEnabled, false); err != nil {
-		return err
-	}
-	if cur.Enabled || cur.ConsentAt != nil {
-		if err := s.setValue(ctx, SettingAgentConsentAt, nil); err != nil {
+	// 無効にするのは接続方式が openai_api_key のときだけ（プランの経路はキーを使わないので、有効のまま）。
+	if cur.Connection == domain.ConnectionOpenAIAPIKey {
+		if err := s.setValue(ctx, SettingAgentEnabled, false); err != nil {
 			return err
 		}
-		s.recordAgent(ctx, agentConsentAuditEvent, auditOK, "", map[string]any{"state": "revoked", "reason": "api_key_deleted"})
+		if cur.Enabled || cur.ConsentAt != nil {
+			if err := s.setValue(ctx, SettingAgentConsentAt, nil); err != nil {
+				return err
+			}
+			s.recordAgent(ctx, agentConsentAuditEvent, auditOK, "", map[string]any{"state": "revoked", "reason": "api_key_deleted"})
+		}
+		s.cancelTasks("api_key_deleted")
 	}
-	s.cancelTasks("api_key_deleted")
 	if err := s.cfg.Secrets.Delete(platform.SecretOpenAI); err != nil && !errors.Is(err, platform.ErrNotFound) {
 		return fmt.Errorf("delete the OpenAI API key: %w", err)
 	}
 	s.log.Info("api key deleted", "provider", "OpenAI")
 	changed := map[string]any{auditKeyOpenAIAPIKey: "deleted"}
-	if cur.Enabled {
+	if cur.Enabled && cur.Connection == domain.ConnectionOpenAIAPIKey {
 		changed[SettingAgentEnabled] = false
 	}
 	s.recordSettingsUpdate(ctx, changed)

@@ -211,6 +211,11 @@ type agentOpts struct {
 	noWatch bool
 	// app は入力の宛先を偽アプリ（platformtest.FakeApp。T はメインウィンドウ。agentWindows は使わない）にする（window_id つきのタスクの試験。#158）。
 	app bool
+	// プランの接続方式（chatgpt・chatgpt-codex。agent_plan_test.go）の偽のモデルと窓口。接続方式は settings の agent.connection で選ぶ。
+	chatgptModel, codexModel openai.Model
+	chatgptGate, codexGate   PlanGate
+	// noKey は OpenAI API キーを登録しない（プランの経路はキーが要らない）。
+	noKey bool
 	// wrapInput は Control の入力（app なら FakeApp）を包む（注入のあとにウィンドウを変えるなど）。
 	wrapInput func(platform.InputInjector) platform.InputInjector
 }
@@ -257,9 +262,12 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 		leaseApprovalEnv: le, db: db, secrets: platformtest.NewFakeSecretStore(), judge: &stubJudge{v: domain.VerdictAllow},
 		app: app, logs: &syncBuffer{}, by: domain.Actor{Kind: domain.ActorMCP, ClientID: "client-a", Label: "alice", SessionID: "sess-a"},
 	}
-	if err := ae.secrets.Set(platform.SecretOpenAI, "sk-test-placeholder"); err != nil {
-		t.Fatal(err)
+	if !o.noKey {
+		if err := ae.secrets.Set(platform.SecretOpenAI, "sk-test-placeholder"); err != nil {
+			t.Fatal(err)
+		}
 	}
+	e.settings.put(SettingAgentConnection, `"openai_api_key"`) // 既存の試験は API キーの経路（プランの経路は agent_plan_test.go）
 	e.settings.put(SettingAgentEnabled, "true")
 	e.settings.put(SettingAgentConsentAt, "1790000000000")
 	e.settings.put(SettingAgentKeepScreenshots, "2")
@@ -310,7 +318,7 @@ func newAgentEnv(t *testing.T, o agentOpts) *agentEnv {
 	ae.agent, err = NewAgent(AgentServiceConfig{
 		AfterFunc: ae.limit.AfterFunc,
 		Tasks:     tasks, Clients: db.Clients(), Settings: ae.cfg, Control: e.control, Leases: e.leases, Kill: e.kill,
-		Approval: le.approval, Model: model, Windows: e.windows, Fast: ae.fast, Audit: e.audit, Bus: bus, Disabler: ae.cfg, Clock: e.clock, IDs: &taskIDs{}, Logger: logger,
+		Approval: le.approval, Model: model, ChatGPTModel: o.chatgptModel, CodexModel: o.codexModel, ChatGPT: o.chatgptGate, Codex: o.codexGate, Windows: e.windows, Fast: ae.fast, Audit: e.audit, Bus: bus, Disabler: ae.cfg, Clock: e.clock, IDs: &taskIDs{}, Logger: logger,
 		ModelTimeout: o.modelTimeout, CancelSettleWait: o.cancelWait,
 	})
 	if err != nil {
