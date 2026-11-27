@@ -20,6 +20,7 @@ type APIError struct {
 	Status  int    // HTTP ステータス
 	Type    string // error.type（例: invalid_request_error）
 	Code    string // error.code（無ければ空）
+	Param   string // error.param（無ければ空。ChatGPT 経路が保持する）
 	Message string // error.message（キーの断片が入りうる 401 では空。長いものは切り詰める）
 }
 
@@ -30,12 +31,19 @@ func (e *APIError) Is(target error) bool {
 
 func (e *APIError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "openai: HTTP %d", e.Status)
+	if e.Status == 0 {
+		b.WriteString("openai: response error") // ストリームの中で届いたエラー（HTTP の状態を持たない）
+	} else {
+		fmt.Fprintf(&b, "openai: HTTP %d", e.Status)
+	}
 	if e.Type != "" {
 		b.WriteString(" type=" + e.Type)
 	}
 	if e.Code != "" {
 		b.WriteString(" code=" + e.Code)
+	}
+	if e.Param != "" {
+		b.WriteString(" param=" + e.Param)
 	}
 	if e.Message != "" {
 		b.WriteString(": " + e.Message)
@@ -60,6 +68,7 @@ func newAPIError(res *http.Response, key string) *APIError {
 		Error struct {
 			Type    string          `json:"type"`
 			Code    json.RawMessage `json:"code"`
+			Param   json.RawMessage `json:"param"`
 			Message string          `json:"message"`
 		} `json:"error"`
 	}
@@ -67,19 +76,26 @@ func newAPIError(res *http.Response, key string) *APIError {
 		return e
 	}
 	e.Type = redact(env.Error.Type, key)
-	var code string
-	if json.Unmarshal(env.Error.Code, &code) != nil {
-		code = strings.Trim(string(env.Error.Code), `"`)
-		if code == "null" {
-			code = ""
-		}
-	}
-	e.Code = redact(code, key)
+	e.Code = redact(jsonString(env.Error.Code), key)
+	e.Param = redact(jsonString(env.Error.Param), key)
 	// 401 のメッセージは「Incorrect API key provided: sk-…」のようにキーの一部を含む。
 	if res.StatusCode != http.StatusUnauthorized {
 		e.Message = truncate(redact(env.Error.Message, key), maxMessageRunes)
 	}
 	return e
+}
+
+// jsonString は JSON の値を文字列として読む（文字列以外は JSON の文字列表現。null・欠落は空）。
+func jsonString(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	s = strings.Trim(string(raw), `"`)
+	if s == "null" {
+		return ""
+	}
+	return s
 }
 
 // redact は s に含まれる key を伏せる。
