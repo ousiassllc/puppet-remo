@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -51,7 +52,17 @@ func newAgentSettingsEnv(t *testing.T) *agentSettingsEnv {
 		t.Fatal(err)
 	}
 	e.s = s
+	e.set.put(SettingAgentConnection, `"openai_api_key"`) // 既存の試験は API キーの経路（プランの経路は agent_connection_test.go）
 	return e
+}
+
+// saved は試験の前提（agent.connection = openai_api_key）を除いた、保存された設定。
+func (e *agentSettingsEnv) saved() map[string]json.RawMessage {
+	out := maps.Clone(e.set.values)
+	if string(out[SettingAgentConnection]) == `"openai_api_key"` {
+		delete(out, SettingAgentConnection)
+	}
+	return out
 }
 
 func (e *agentSettingsEnv) cancels() []string {
@@ -292,8 +303,8 @@ func TestAgentSettingsSaveAgentValidation(t *testing.T) {
 			if !errors.Is(err, domain.ErrInvalidArgument) {
 				t.Error("a ValidationError must be invalid_argument")
 			}
-			if len(e.set.values) != 0 || len(e.audit.Entries()) != 0 {
-				t.Errorf("an invalid input must save and audit nothing: %v", e.set.values)
+			if len(e.saved()) != 0 || len(e.audit.Entries()) != 0 {
+				t.Errorf("an invalid input must save and audit nothing: %v", e.saved())
 			}
 		})
 	}
@@ -341,8 +352,8 @@ func TestAgentSettingsEnableRequiresConsentAndKey(t *testing.T) {
 	if !errors.Is(err, domain.ErrAgentDisabled) || domain.CodeOf(err) != domain.CodeAgentDisabled {
 		t.Fatalf("err = %v, want ErrAgentDisabled", err)
 	}
-	if len(e.set.values) != 0 || len(e.audit.Entries()) != 0 {
-		t.Errorf("a rejected enable must save and audit nothing: %v", e.set.values)
+	if len(e.saved()) != 0 || len(e.audit.Entries()) != 0 {
+		t.Errorf("a rejected enable must save and audit nothing: %v", e.saved())
 	}
 	// キー登録後は有効にできる。
 	if err := e.s.SetOpenAIKey(context.Background(), canaryKey); err != nil {
@@ -666,8 +677,8 @@ func TestAgentSettingsFastpathValidation(t *testing.T) {
 					t.Errorf("missing field error %s", f)
 				}
 			}
-			if len(e.set.values) != 0 {
-				t.Errorf("saved %v", e.set.values)
+			if len(e.saved()) != 0 {
+				t.Errorf("saved %v", e.saved())
 			}
 		})
 	}

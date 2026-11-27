@@ -36,6 +36,7 @@ var AuditCatalog = []AuditRequirement{
 	}},
 	{Item: "エージェントの各ステップ・Judge の判定（kind = agent）", Events: []string{agentStepAuditEvent, agentJudgeAuditEvent, agentLaunchAttemptAuditEvent}},
 	{Item: "エージェントの有効化と同意", Events: []string{agentConsentAuditEvent}},
+	{Item: "エージェントの接続方式の切り替え（FR-G25・G30。from・to・reason）", Events: []string{agentConnectionAuditEvent}},
 	{Item: "高速パスの有効化と同意（agent.consent とは別）", Events: []string{fastpathEnableAuditEvent, fastpathDisableAuditEvent}},
 	{Item: "エージェントのタスクのライフサイクル・安全チェック（kind = agent）", Events: []string{
 		agentTaskStartAuditEvent, agentTaskEndAuditEvent, agentSafetyCheckAuditEvent, agentTaskCancelAuditEvent,

@@ -69,7 +69,14 @@ type AgentServiceConfig struct {
 	Kill     KillSwitchState
 	// Approval は OpenAI の安全チェック（FR-G08）の承認。Control の Judge の承認と同じものを渡す。nil なら安全チェックは常に拒否（fail-closed）。
 	Approval Approval
-	Model    openai.Model
+	// Model は接続方式 openai_api_key のモデル（ネイティブの computer ツール）。
+	Model openai.Model
+	// ChatGPTModel・CodexModel は接続方式 chatgpt・chatgpt-codex のモデル（関数ツール。FR-G26・G27）、ChatGPT・Codex はその接続の
+	// 窓口（Ready・MarkUsageLimited など）。どちらかが nil の接続方式は、タスクを受け付けない（agent_disabled）。
+	ChatGPTModel openai.Model
+	CodexModel   openai.Model
+	ChatGPT      PlanGate
+	Codex        PlanGate
 	// Windows は window_id つきの run_task の対象の検査（ウィンドウ一覧）に使う。nil なら window_id つきの開始は ErrInvalidArgument。
 	Windows platform.WindowManager
 	// Fast は高速パス（FR-G16）。nil なら常に OpenAI のみで実行する。
@@ -154,11 +161,11 @@ func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput
 	id := a.cfg.IDs.NewID()
 	runCtx, cancel := context.WithCancelCause(context.Background())
 	r := &run{
-		a: a, id: id, cfg: cfg, ctx: runCtx, cancel: cancel, done: make(chan struct{}),
+		a: a, id: id, conn: cfg.Connection, cfg: cfg, ctx: runCtx, cancel: cancel, done: make(chan struct{}),
 		actor: domain.Actor{Kind: domain.ActorAgent, ClientID: by.ClientID, Label: by.Label, SessionID: id},
 		task: domain.Task{
 			ID: id, ClientID: by.ClientID, ClientLabel: by.Label, Prompt: in.Prompt, Status: domain.TaskPendingApproval,
-			Model: cfg.Model, MaxSteps: maxSteps, MaxDurationSec: maxDur, CreatedAt: a.cfg.Clock.Now(),
+			Model: cfg.modelFor(), Connection: cfg.Connection, MaxSteps: maxSteps, MaxDurationSec: maxDur, CreatedAt: a.cfg.Clock.Now(),
 		},
 	}
 	if target != nil {
@@ -173,7 +180,11 @@ func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput
 	// 条件の検査（checkConditions）と登録の間に、エージェントの無効化・agent_enabled の取り消し・クライアントの削除・キルスイッチが
 	// 入ると、CancelAll・CancelClient はまだ登録されていない run を見つけられない。登録できたあとにもう一度検査して、
 	// 満たさなければリースを作らずに断る（タスクの行も作らない）。
-	if _, err := a.checkConditions(ctx, by); err != nil {
+	again, err := a.checkConditions(ctx, by)
+	if err == nil && again.Connection != cfg.Connection {
+		err = domain.ErrAgentDisabled.WithMsg("the connection was changed while the task was being accepted")
+	}
+	if err != nil {
 		a.clear(r)
 		cancel(nil)
 		return domain.Task{}, err
@@ -184,7 +195,7 @@ func (a *AgentService) Start(ctx context.Context, by domain.Actor, in StartInput
 		return domain.Task{}, fmt.Errorf("create the task: %w", err)
 	}
 	a.record(ctx, a.taskStartEntry(r))
-	a.log.Info("agent task accepted", "task_id", id, "client_id", by.ClientID, "model", cfg.Model,
+	a.log.Info("agent task accepted", "task_id", id, "client_id", by.ClientID, "connection", string(cfg.Connection), "model", r.task.Model,
 		"max_steps", maxSteps, "max_duration_sec", maxDur, "prompt_len", utf8.RuneCountInString(in.Prompt))
 	accepted := r.task // goroutine が r.task を更新する前の写しを返す
 	go r.execute()
@@ -241,8 +252,10 @@ func validateStartInput(in StartInput) error {
 	return nil
 }
 
-// checkConditions は FR-G01 の利用条件（設定で有効・同意済み・OpenAI キー登録済み・依頼元の agent_enabled）とキルスイッチを検査し、
-// タスクの開始時の設定を返す。条件を満たさなければ ErrAgentDisabled、キルスイッチ中は ErrKillSwitchActive。
+// checkConditions は FR-G01 の利用条件（設定で有効・同意済み・接続方式が使える状態・依頼元の agent_enabled）とキルスイッチを検査し、
+// タスクの開始時の設定を返す。接続方式が使える状態とは、openai_api_key では OpenAI キーの登録、プランの 2 経路ではモデルと PlanGate が
+// あり Ready なこと（プランの経路では OpenAI キーは要らない）。条件を満たさなければ ErrAgentDisabled（接続方式が理由のときは
+// detail.reason）、キルスイッチ中は ErrKillSwitchActive。
 func (a *AgentService) checkConditions(ctx context.Context, by domain.Actor) (AgentConfig, error) {
 	a.mu.Lock()
 	closed := a.closed
@@ -260,12 +273,8 @@ func (a *AgentService) checkConditions(ctx context.Context, by domain.Actor) (Ag
 	if !cfg.Enabled || cfg.ConsentAt == nil {
 		return AgentConfig{}, domain.ErrAgentDisabled
 	}
-	registered, err := a.cfg.Settings.OpenAIKeyRegistered(ctx)
-	if err != nil {
-		return AgentConfig{}, fmt.Errorf("check the OpenAI API key: %w", err)
-	}
-	if !registered {
-		return AgentConfig{}, domain.ErrAgentDisabled
+	if err := a.checkConnection(ctx, cfg.Connection); err != nil {
+		return AgentConfig{}, err
 	}
 	client, err := a.cfg.Clients.Get(ctx, by.ClientID)
 	switch {
@@ -280,6 +289,63 @@ func (a *AgentService) checkConditions(ctx context.Context, by domain.Actor) (Ag
 		return AgentConfig{}, domain.ErrKillSwitchActive
 	}
 	return cfg, nil
+}
+
+// modelFor はタスクに記録するモデル名（接続方式ごとの設定）。
+func (c AgentConfig) modelFor() string {
+	switch c.Connection {
+	case domain.ConnectionChatGPT:
+		return c.ChatGPTModel
+	case domain.ConnectionChatGPTCodex:
+		return c.CodexModel
+	}
+	return c.Model
+}
+
+// planModelAndGate は接続方式 conn の関数ツールのモデルと窓口（プランの接続方式だけ。どちらかが無ければ nil）。
+func (a *AgentService) planModelAndGate(conn domain.AgentConnection) (openai.Model, PlanGate) {
+	switch conn {
+	case domain.ConnectionChatGPT:
+		return a.cfg.ChatGPTModel, a.cfg.ChatGPT
+	case domain.ConnectionChatGPTCodex:
+		return a.cfg.CodexModel, a.cfg.Codex
+	}
+	return nil, nil
+}
+
+// checkConnection は接続方式 conn が使える状態かを検査する（FR-G01）。使えなければ ErrAgentDisabled（detail.reason に理由）。
+func (a *AgentService) checkConnection(ctx context.Context, conn domain.AgentConnection) error {
+	if !conn.Plan() {
+		registered, err := a.cfg.Settings.OpenAIKeyRegistered(ctx)
+		if err != nil {
+			return fmt.Errorf("check the OpenAI API key: %w", err)
+		}
+		if !registered {
+			return domain.ErrAgentDisabled.WithDetail("reason", domain.AgentDisabledOpenAIKeyMissing)
+		}
+		return nil
+	}
+	model, gate := a.planModelAndGate(conn)
+	if model == nil || gate == nil {
+		return domain.ErrAgentDisabled.WithMsg("the connection is not available in this build")
+	}
+	if reason, ok := gate.Ready(); !ok {
+		return domain.ErrAgentDisabled.WithDetail("reason", reason)
+	}
+	return nil
+}
+
+// CancelConnection は接続方式 conn の実行中のタスクを中断し、その ID を返す（無ければ空）。サインアウト・Codex の解除が使う。
+// すぐ戻る（終了状態の保存はループの goroutine が行う）。reason は監査（agent.task_end の detail）に残る。
+func (a *AgentService) CancelConnection(conn domain.AgentConnection, reason string) string {
+	a.mu.Lock()
+	r := a.run
+	a.mu.Unlock()
+	if r == nil || r.conn != conn {
+		return ""
+	}
+	r.cancel(cancelCause{reason: reason})
+	return r.id
 }
 
 // appliedLimits はタスクに適用する上限を返す。指定は設定値を下げる方向にだけ使え、上回る指定は丸めずに ErrInvalidArgument（FR-G02）。
