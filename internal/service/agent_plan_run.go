@@ -143,6 +143,9 @@ func (r *run) planError(ctx context.Context, err error, gate PlanGate) error {
 		return err
 	case errors.Is(err, openai.ErrUsageLimit):
 		gate.MarkUsageLimited()
+		if !codex {
+			r.recordChatGPTUsageLimit(ctx)
+		}
 		base = pick(domain.ErrChatGPTUsageLimit, domain.ErrCodexUsageLimit)
 	case errors.Is(err, openai.ErrPlanUnauthorized):
 		gate.ReportAuthFailure(ctx)
@@ -156,4 +159,13 @@ func (r *run) planError(ctx context.Context, err error, gate PlanGate) error {
 		base = pick(domain.ErrChatGPT, domain.ErrCodex)
 	}
 	return fmt.Errorf("%w: %w", base, err)
+}
+
+// recordChatGPTUsageLimit は公式の経路の使用量の上限を agent.chatgpt.usage_limit（system・denied・task_id つき）として記録する（FR-AU01）。
+// 原資料のコードそのものを error_code に入れる。トークン・メールは入れない。
+func (r *run) recordChatGPTUsageLimit(ctx context.Context) {
+	e := agentAuditBase(ctx, domain.Actor{Kind: domain.ActorSystem, Label: systemLabel, SessionID: r.id}, chatgptUsageLimitAuditEvent, "")
+	e.TS = r.a.cfg.Clock.Now()
+	e.Result, e.ErrorCode = auditDenied, chatgptUsageLimitAuditErrorCode
+	r.a.record(ctx, e)
 }

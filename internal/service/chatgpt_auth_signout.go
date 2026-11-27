@@ -67,7 +67,7 @@ func (s *ChatGPTAuthService) SignOut(ctx context.Context, forgetAccount bool) (C
 			}
 		}
 	}
-	s.audit(ctx, domain.ActorHost, chatgptAuditSignOut, auditOK, "", map[string]any{
+	s.audit(ctx, domain.ActorHost, chatgptSignOutAuditEvent, auditOK, "", map[string]any{
 		"revoked": result.Revoked, "forget_account": forgetAccount, "cancelled_task": result.CancelledTask,
 	})
 	return result, delErr

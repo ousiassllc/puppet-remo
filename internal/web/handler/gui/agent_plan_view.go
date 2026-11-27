@@ -177,14 +177,19 @@ var agentDisabledMessages = map[string]string{
 
 const agentDisabledFallback = "選んだ接続方式が使える状態ではないため、エージェントを有効にできません。接続方式のカードの状態を確認してください。"
 
+// agentDisabledReason は agent_disabled のエラーの detail.reason（無ければ空）。
+func agentDisabledReason(err error) string {
+	if de, ok := asDomainError(err); ok {
+		reason, _ := de.Detail["reason"].(string)
+		return reason
+	}
+	return ""
+}
+
 // agentDisabledMessage は agent_disabled のエラーの detail.reason から文言を選ぶ（reason が無い・未知なら接続方式の汎用の文言）。
 func agentDisabledMessage(err error) string {
-	if de, ok := asDomainError(err); ok {
-		if reason, _ := de.Detail["reason"].(string); reason != "" {
-			if msg, ok := agentDisabledMessages[reason]; ok {
-				return msg
-			}
-		}
+	if msg, ok := agentDisabledMessages[agentDisabledReason(err)]; ok {
+		return msg
 	}
 	return agentDisabledFallback
 }

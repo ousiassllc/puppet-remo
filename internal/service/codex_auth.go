@@ -226,9 +226,10 @@ func (s *CodexAuthService) startProcess() (appserver.Process, error) {
 	return l.Start()
 }
 
-// Status は Codex のカードの表示。app-server を起動しない（エンジンが導入済みで状態が未取得なら、背景で読み始める）。
+// Status は Codex のカードの表示。画面（/agent）を開いただけでは app-server を起動しない（FR-G37 (1)）: 接続方式が chatgpt-codex で、
+// エンジンが導入済みなのに状態が未取得のときだけ、背景で読み始める。
 func (s *CodexAuthService) Status() CodexStatus {
-	s.maybeRefresh(false)
+	s.maybeRefresh(true)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return CodexStatus{
@@ -239,7 +240,7 @@ func (s *CodexAuthService) Status() CodexStatus {
 
 // Ready は run_task を受け付けられるか。受け付けられなければ agent_disabled の detail.reason。ネットワークを使わない。
 func (s *CodexAuthService) Ready() (string, bool) {
-	s.maybeRefresh(false)
+	s.maybeRefresh(true)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch {

@@ -249,3 +249,26 @@ func TestAuditReaderShowsRecordedTextButRedactsTokensInIt(t *testing.T) {
 		t.Fatalf("args = %v", got)
 	}
 }
+
+// ChatGPT のプラン経路の OAuth の秘密（NFR-S13）: id_token・code_verifier・nonce・oauth_ のキーの値と、JWT の形の文字列は、読み出しで伏せる。
+func TestAuditReaderRedactsOAuthSecrets(t *testing.T) {
+	e := newReaderEnv(t)
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJlLWZvci10ZXN0"
+	id := e.add(t, `{
+		"id_token":"idt-value", "id_token_hint":"hint-value", "code_verifier":"verifier-value", "nonce":"nonce-value", "oauth_code":"oauth-code-value",
+		"refresh_token":"rt-value", "note":"got `+jwt+` back", "error_code":"invalid_grant", "reason":"id_token_invalid"
+	}`, nil)
+	d, err := e.reader.Get(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := argMap(d.Args)
+	for _, k := range []string{"id_token", "id_token_hint", "code_verifier", "nonce", "oauth_code", "refresh_token"} {
+		if got[k] != "[REDACTED]" {
+			t.Errorf("%s = %q, want [REDACTED]", k, got[k])
+		}
+	}
+	if got["note"] != "got [REDACTED] back" || got["error_code"] != "invalid_grant" || got["reason"] != "id_token_invalid" {
+		t.Errorf("note = %q, error_code = %q, reason = %q", got["note"], got["error_code"], got["reason"])
+	}
+}

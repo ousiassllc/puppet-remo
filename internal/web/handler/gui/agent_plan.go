@@ -117,6 +117,13 @@ func (h *Handler) renderCodexCard(c *gin.Context, extra ...templ.Component) {
 	h.render(c, http.StatusOK, append([]templ.Component{organisms.CodexCard(h.codexCardView(s))}, extra...)...)
 }
 
+// failAgentDisabled は 409 agent_disabled を、data-error-code に加えて detail.reason の data-error-reason を付けて返す（API 仕様 §1・§3.4）。
+func (h *Handler) failAgentDisabled(c *gin.Context, err error) {
+	alert := errorAlert(string(domain.CodeAgentDisabled), agentDisabledMessage(err))
+	alert.Reason = agentDisabledReason(err)
+	h.failAlert(c, http.StatusConflict, alert)
+}
+
 // ---- 接続方式 ----
 
 // ConfirmAPIKeyConnection は GET /agent/connection/api-key/confirm（FR-G30 (4)）。OpenAI API キーへの切り替えの確認モーダル。

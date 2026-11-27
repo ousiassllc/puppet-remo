@@ -237,7 +237,7 @@ func (m *Model) await(ctx context.Context, t *task) (openai.StepOutput, error) {
 				m.interrupt(t)
 				return openai.StepOutput{}, ctx.Err()
 			}
-			return openai.StepOutput{}, fmt.Errorf("codex: the app-server ended during the turn: %s", sanitize(endMessage(t.se)))
+			return openai.StepOutput{}, fmt.Errorf("%w: the app-server ended during the turn: %s", openai.ErrEngineUnavailable, sanitize(endMessage(t.se)))
 		}
 		if err := m.handle(t, ev); err != nil {
 			return openai.StepOutput{}, err

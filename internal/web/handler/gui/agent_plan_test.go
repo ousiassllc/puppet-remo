@@ -405,28 +405,29 @@ func TestConfirmAPIKeyConnectionConflicts(t *testing.T) {
 // PUT /agent の 409 agent_disabled は detail.reason で文言を変える。
 func TestSaveAgentConflictMessageFollowsTheReason(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func(*guitest.Fakes)
-		want  string
+		name   string
+		setup  func(*guitest.Fakes)
+		want   string
+		reason string // data-error-reason（API 仕様 §1・§3.4）
 	}{
-		{"openai key missing", func(f *guitest.Fakes) {}, "OpenAI API キーが登録されていない"},
-		{"chatgpt not signed in", chatgptState(service.ChatGPTStatus{State: service.PlanSignedOut}), "ChatGPT にサインインしていない"},
-		{"chatgpt signing in", chatgptState(service.ChatGPTStatus{State: service.PlanSigningIn}), "サインインが進行中"},
-		{"chatgpt reauth", chatgptState(service.ChatGPTStatus{State: service.PlanReauthRequired}), "再サインインが必要"},
-		{"chatgpt usage limited", chatgptState(service.ChatGPTStatus{State: service.PlanUsageLimited}), "使用量の上限に達している"},
-		{"codex unsupported", codexState(service.CodexStatus{Engine: service.CodexEngineStatus{State: service.CodexEngineUnsupported}}, domain.ConnectionChatGPTCodex), "使えない"},
-		{"codex engine missing", codexState(service.CodexStatus{Engine: service.CodexEngineStatus{State: service.CodexEngineMissing}}, domain.ConnectionChatGPTCodex), "エンジンを取得していない"},
-		{"codex not signed in", codexState(service.CodexStatus{Engine: installed(), State: service.PlanSignedOut}, domain.ConnectionChatGPTCodex), "Codex にログインしていない"},
-		{"codex signing in", codexState(service.CodexStatus{Engine: installed(), State: service.PlanSigningIn}, domain.ConnectionChatGPTCodex), "ログインが進行中"},
-		{"codex reauth", codexState(service.CodexStatus{Engine: installed(), State: service.PlanReauthRequired}, domain.ConnectionChatGPTCodex), "再ログインが必要"},
-		{"codex usage limited", codexState(service.CodexStatus{Engine: installed(), State: service.PlanUsageLimited}, domain.ConnectionChatGPTCodex), "使用量の上限に達している"},
+		{"openai key missing", func(f *guitest.Fakes) {}, "OpenAI API キーが登録されていない", domain.AgentDisabledOpenAIKeyMissing},
+		{"chatgpt not signed in", chatgptState(service.ChatGPTStatus{State: service.PlanSignedOut}), "ChatGPT にサインインしていない", domain.AgentDisabledChatGPTNotSignedIn},
+		{"chatgpt signing in", chatgptState(service.ChatGPTStatus{State: service.PlanSigningIn}), "サインインが進行中", domain.AgentDisabledChatGPTSigningIn},
+		{"chatgpt reauth", chatgptState(service.ChatGPTStatus{State: service.PlanReauthRequired}), "再サインインが必要", domain.AgentDisabledChatGPTReauthRequired},
+		{"chatgpt usage limited", chatgptState(service.ChatGPTStatus{State: service.PlanUsageLimited}), "使用量の上限に達している", domain.AgentDisabledChatGPTUsageLimited},
+		{"codex unsupported", codexState(service.CodexStatus{Engine: service.CodexEngineStatus{State: service.CodexEngineUnsupported}}, domain.ConnectionChatGPTCodex), "使えない", domain.AgentDisabledCodexUnsupported},
+		{"codex engine missing", codexState(service.CodexStatus{Engine: service.CodexEngineStatus{State: service.CodexEngineMissing}}, domain.ConnectionChatGPTCodex), "エンジンを取得していない", domain.AgentDisabledCodexEngineMissing},
+		{"codex not signed in", codexState(service.CodexStatus{Engine: installed(), State: service.PlanSignedOut}, domain.ConnectionChatGPTCodex), "Codex にログインしていない", domain.AgentDisabledCodexNotSignedIn},
+		{"codex signing in", codexState(service.CodexStatus{Engine: installed(), State: service.PlanSigningIn}, domain.ConnectionChatGPTCodex), "ログインが進行中", domain.AgentDisabledCodexSigningIn},
+		{"codex reauth", codexState(service.CodexStatus{Engine: installed(), State: service.PlanReauthRequired}, domain.ConnectionChatGPTCodex), "再ログインが必要", domain.AgentDisabledCodexReauthRequired},
+		{"codex usage limited", codexState(service.CodexStatus{Engine: installed(), State: service.PlanUsageLimited}, domain.ConnectionChatGPTCodex), "使用量の上限に達している", domain.AgentDisabledCodexUsageLimited},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := newRig(t, tt.setup)
 			res := r.do(http.MethodPut, "/agent", validAgentForm(), hx...)
 			status(t, res, http.StatusConflict)
-			contains(t, res, `data-error-code="agent_disabled"`, tt.want)
+			contains(t, res, `data-error-code="agent_disabled"`, `data-error-reason="`+tt.reason+`"`, tt.want)
 			if r.f.AgentSettings.State().Enabled {
 				t.Error("the agent was enabled")
 			}

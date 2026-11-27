@@ -255,6 +255,33 @@ func TestAgentPlanModelFailureMapping(t *testing.T) {
 				if got.Status != domain.TaskFailed || got.ErrorCode != tt.code {
 					t.Fatalf("task = %s / %s, want failed / %s", got.Status, got.ErrorCode, tt.code)
 				}
+				// FR-G30・G38: task_end の result は使用量の上限が denied、ほかの失敗は error。公式の上限は agent.chatgpt.usage_limit（system・denied・task_id つき）も残す。
+				wantResult := auditError
+				if tt.usage == 1 {
+					wantResult = auditDenied
+				}
+				var ended, usageEvents int
+				for _, en := range ae.auditOf(got.ID) {
+					switch en.Event {
+					case agentTaskEndAuditEvent:
+						ended++
+						if en.Result != wantResult {
+							t.Errorf("task_end result = %q, want %q", en.Result, wantResult)
+						}
+					case chatgptUsageLimitAuditEvent:
+						usageEvents++
+						if en.ActorType != domain.ActorSystem || en.Result != auditDenied || en.ErrorCode != chatgptUsageLimitAuditErrorCode {
+							t.Errorf("usage_limit audit = %+v", en)
+						}
+					}
+				}
+				wantUsageEvents := 0
+				if tt.usage == 1 && !codex {
+					wantUsageEvents = 1
+				}
+				if ended != 1 || usageEvents != wantUsageEvents {
+					t.Errorf("task_end rows = %d, usage_limit rows = %d; want 1 and %d", ended, usageEvents, wantUsageEvents)
+				}
 				if u, a, p := gate.counts(); u != tt.usage || a != tt.auth || p != tt.policy {
 					t.Errorf("gate marks = usage %d auth %d policy %d, want %d %d %d", u, a, p, tt.usage, tt.auth, tt.policy)
 				}
