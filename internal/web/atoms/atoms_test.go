@@ -255,6 +255,8 @@ func TestIconIsAnIconoirSVG(t *testing.T) {
 func TestSpinnerHasTheCircleAndTheText(t *testing.T) {
 	out := webtest.Render(t, atoms.Spinner("sp"))
 	has(t, out, `id="sp"`, `role="status"`, "htmx-indicator", `class="spinner"`, "処理中…")
+	// 待機していない間は支援技術からも隠す（#255）。htmx は .htmx-request を indicator 自身か祖先に付けるので、両方で visible に戻す。
+	has(t, out, " invisible ", "in-[.htmx-request]:visible", "[&.htmx-request]:visible", "[transition-property:opacity,visibility]")
 }
 
 // 空状態: 破線・rounded-lg・padding 48/24・アイコン + 文言。data-empty に名前を持つ。
