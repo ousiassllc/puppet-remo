@@ -99,7 +99,7 @@ GitHub Actions。すべてのジョブは、GitHub のランナー（`ubuntu-lat
 |--------|------|
 | `go (linux)` | gofmt の差分チェック、`go build ./...`、`go vet ./...`、`scripts/check-imports.sh`、`go test -race ./...` |
 | `go (GOOS=windows build/vet)` | `GOOS=windows GOARCH=amd64` の `go build`・`go vet`・import 規則 |
-| `frontend` | templ（`go.mod` の版）の導入 → `templ generate` の差分チェック → `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p .` → `go build -tags production ./...`（Linux と `GOOS=windows`）→ `go test -tags production ./static/...` |
+| `frontend` | templ（`go.mod` の版）の導入 → `templ generate` の差分チェック → `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p .` → `go build -tags production ./...`（Linux と `GOOS=windows`）→ `go test -tags production ./static/...` → 第三者のライセンス表記が最新か（`static/` で `bun scripts/third-party-notices.mjs --check`。`licenses/THIRD_PARTY_NOTICES.txt`） |
 | `e2e`（#64） | `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p e2e` → `bunx playwright install --with-deps chromium`（`PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`）→ Lit のテスト（`bun run test`）→ `go build -tags e2e ./...` → `go vet -tags e2e ./...` → `go test -race -tags e2e`（テスト専用サーバーのテスト）→ Playwright の E2E（`bun run e2e`）。templ は再生成しない（コミット済みの `_templ.go` を使う） |
 | `lint` | golangci-lint v2.15.0（ホスト OS・`GOOS=windows`・`-tags e2e` の 3 回） |
 | `release scripts` | 配信スクリプトのテスト（`scripts/ci/test-release-scripts.sh`）と `actionlint` |
@@ -124,6 +124,7 @@ GitHub Actions。すべてのジョブは、GitHub のランナー（`ubuntu-lat
 | `go (GOOS=windows build/vet)` ジョブの `scripts/check-imports.sh`（`GOOS=windows`） | `task ci` の `check:imports` はホスト OS だけ | `GOOS=windows GOARCH=amd64 task check:imports` |
 | `e2e` ジョブの `go test -race -tags e2e -run 'E2E\|Loopback' ./internal/app/ ./internal/tailnet/` | `task test:e2e` は `-race` も `-run` も付けず、対象に `./internal/app/...`・`./internal/tailnet/...` のほか `./cmd/...` を含む（範囲は CI より広い。`-race` の検査は無い） | `go test -race -tags e2e -run 'E2E\|Loopback' ./internal/app/ ./internal/tailnet/` |
 | `e2e` ジョブの `bunx playwright install --with-deps chromium` | `task frontend:browsers` は `--with-deps` なし・sudo なし（システムのライブラリは手元に先に入れておく） | — |
+| `frontend` ジョブの第三者のライセンス表記の検査（`static/` で `bun scripts/third-party-notices.mjs --check`） | 対応するタスクが無い（依存を足したら `licenses/THIRD_PARTY_NOTICES.txt` を作り直す） | `cd static && bun scripts/third-party-notices.mjs --check` |
 | `release scripts` ジョブ（`scripts/ci/test-release-scripts.sh`・`actionlint`） | 対応するタスクが無い | `./scripts/ci/test-release-scripts.sh`。`actionlint` は `go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12` で入れて、リポジトリのルートで `actionlint` |
 | `installer (build only)` ジョブ | `task ci` は呼ばない（`makensis`・`wails3` が要る） | `task package`（[配信の運用](../operations/release.md)） |
 
@@ -222,3 +223,4 @@ OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義�
 | 1.5 | 2026-11-23 | 「CI と同じ検査を手元で走らせる」に、`task ci` が実行しない CI の検査（`-race`・Windows の本番ビルドと import 規則・e2e の Go のテストの範囲・配信スクリプトのテストと `actionlint`・installer）を追記し、`task ci` を「CI と同じ」と書いた表現を改めた | #237 |
 | 1.6 | 2026-11-27 | 「デモサーバー（remotedemo）の待ち受けポート」を追記（`-addr` でポートを変えられる。Host ヘッダーの検査のポートも追従） | #185 |
 | 1.7 | 2026-11-28 | Git フック節の「CI の残りは `task ci` で確認する」を、`-race` は `task test:race`、Windows の本番ビルドは `GOOS=windows GOARCH=amd64 task build:production`、それ以外は `task ci` と書き分けた（README・`lefthook.yml` も同じ） | #253 |
+| 1.8 | 2026-11-28 | `frontend` ジョブの行と「`task ci` が実行しない CI の検査」の表に、第三者のライセンス表記の検査（`bun scripts/third-party-notices.mjs --check`）を追記 | #254 |
