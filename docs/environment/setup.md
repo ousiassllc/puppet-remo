@@ -201,7 +201,7 @@ task hooks:install    # lefthook install（.git/hooks にフックを入れる�
 
 - フックを入れずに手元で実行するには `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使う。どちらも `lefthook run ... --no-auto-install` を呼ぶので、`.git/hooks` は書き換えない。
 - pre-commit・pre-push のツール（golangci-lint・templ・bun）は PATH に要る。
-- CI の残り（`go test -race`、`GOOS=windows` の build・vet・lint、本番ビルド）は pre-push では走らせない。`task ci` で確認する。
+- CI の `go test -race` と Windows の本番ビルドは pre-push では走らせない。`-race` は `task test:race`、Windows の本番ビルドは `GOOS=windows GOARCH=amd64 task build:production` で確認する。それ以外の CI の主な検査は `task ci` で確認する（CI と完全に同じではない。上の「`task ci` が実行しない CI の検査」）。
 - フックは CI の代わりではない。push 前の早期検知で、CI は常に走る。
 
 ## Swagger/OpenAPI
@@ -221,3 +221,4 @@ OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義�
 | 1.4 | 2026-11-23 | `task lint` に `-tags e2e` の検査を足し、Lint 節を CI の `lint` ジョブと同じ 3 回に直した | #236 |
 | 1.5 | 2026-11-23 | 「CI と同じ検査を手元で走らせる」に、`task ci` が実行しない CI の検査（`-race`・Windows の本番ビルドと import 規則・e2e の Go のテストの範囲・配信スクリプトのテストと `actionlint`・installer）を追記し、`task ci` を「CI と同じ」と書いた表現を改めた | #237 |
 | 1.6 | 2026-11-27 | 「デモサーバー（remotedemo）の待ち受けポート」を追記（`-addr` でポートを変えられる。Host ヘッダーの検査のポートも追従） | #185 |
+| 1.7 | 2026-11-28 | Git フック節の「CI の残りは `task ci` で確認する」を、`-race` は `task test:race`、Windows の本番ビルドは `GOOS=windows GOARCH=amd64 task build:production`、それ以外は `task ci` と書き分けた（README・`lefthook.yml` も同じ） | #253 |

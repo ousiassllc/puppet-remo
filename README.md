@@ -147,7 +147,7 @@ task hooks:install    # Git フックを入れる（lefthook install と同じ�
   - フロントエンドの型検査（`static/` の変更時。`bun install --frozen-lockfile` のあと `bunx tsc -p .`）
 - pre-push: `go test ./...`。
 
-フックを入れずに手元で実行する（`.git/hooks` には触れません）には `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使います。CI の残り（`go test -race`、`GOOS=windows` の build・vet・lint、本番ビルド）は `task ci` で確認します。
+フックを入れずに手元で実行する（`.git/hooks` には触れません）には `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使います。`go test -race` は `task test:race`、Windows の本番ビルドは `GOOS=windows GOARCH=amd64 task build:production` で確認します。それ以外の CI の主な検査（`GOOS=windows` の build・vet・lint を含む）は `task ci` で確認します（CI と完全に同じではありません。[環境構築](docs/environment/setup.md)）。
 
 ## ライセンス
 
