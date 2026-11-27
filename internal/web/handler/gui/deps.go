@@ -133,6 +133,38 @@ type AgentSettings interface {
 	SaveFastpath(ctx context.Context, in service.FastpathSettingsInput) error
 	SetTypeSafeKey(ctx context.Context, key string) error
 	DeleteTypeSafeKey(ctx context.Context) error
+	// SetConnection は接続方式（agent.connection）の切り替え（FR-G25・S20）。openai_api_key にするときは confirmed（確認モーダルの確定）が
+	// 真でなければ domain.ErrInvalidArgument、OpenAI キー未登録なら domain.CodeConflict。reason は usage_limit / manual（空は manual）。
+	SetConnection(ctx context.Context, conn domain.AgentConnection, confirmed bool, reason string) error
+	// SavePlanModel はプランの経路のモデル（agent.chatgpt.model / agent.codex.model。FR-S21）の保存。
+	SavePlanModel(ctx context.Context, conn domain.AgentConnection, model string) error
+}
+
+// ChatGPT は公式の Sign in with ChatGPT の接続（FR-G28〜G30。カードは #chatgpt-card）のうち GUI が使う操作。実体は service.ChatGPTAuth。
+// 監査（agent.chatgpt.*）は実体が記録するため、ハンドラは記録しない。トークン・認可コードは、どの戻り値にも無い（メールは表示用だけ。NFR-S13）。
+// 状態に合わない操作は domain.CodeConflict。
+type ChatGPT interface {
+	Status() service.ChatGPTStatus
+	StartSignIn(ctx context.Context) error
+	CancelSignIn()
+	SignOut(ctx context.Context, forgetAccount bool) (service.ChatGPTSignOutResult, error)
+	Resume(ctx context.Context) error
+	DismissWelcome(ctx context.Context) error
+	OpenUsage(ctx context.Context) error
+	Models(ctx context.Context) ([]service.PlanModel, error)
+}
+
+// Codex は Codex の app-server の接続（#247。カードは #codex-card）のうち GUI が使う操作。実体は service.CodexAuth。
+// アプリは Codex のトークンを読まない。状態に合わない操作は domain.CodeConflict。
+type Codex interface {
+	Status() service.CodexStatus
+	Install(ctx context.Context) error
+	CancelInstall()
+	StartSignIn(ctx context.Context) error
+	CancelSignIn(ctx context.Context)
+	SignOut(ctx context.Context, removeEngine bool) error
+	Resume(ctx context.Context) error
+	Models(ctx context.Context) ([]service.PlanModel, error)
 }
 
 // Tasks はエージェントのタスクの一覧・詳細・実行中のタスクの読み取りと、ホスト所有者による中断（FR-H02・H10。M4）。
@@ -169,8 +201,10 @@ type Deps struct {
 	Events     Events
 	Clock      domain.Clock
 
-	// AgentSettings はエージェント設定（M4。FR-H11）。
+	// AgentSettings はエージェント設定（M4。FR-H11）。ChatGPT・Codex はプランの接続方式（#247。FR-G25〜G30）。
 	AgentSettings AgentSettings
+	ChatGPT       ChatGPT
+	Codex         Codex
 
 	// Location は表示する時刻のタイムゾーン。nil なら time.Local。
 	Location *time.Location
@@ -198,7 +232,7 @@ type Handler struct {
 func New(d Deps) (*Handler, error) {
 	switch {
 	case d.Status == nil, d.Sessions == nil, d.Leases == nil, d.KillSwitch == nil,
-		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.AgentSettings == nil, d.Tasks == nil, d.Events == nil, d.Clock == nil:
+		d.Admin == nil, d.Approval == nil, d.Settings == nil, d.Apps == nil, d.Logs == nil, d.Audit == nil, d.Updates == nil, d.AgentSettings == nil, d.ChatGPT == nil, d.Codex == nil, d.Tasks == nil, d.Events == nil, d.Clock == nil:
 		return nil, errors.New("gui: all dependencies except Location, Logger and Heartbeat are required")
 	}
 	h := &Handler{d: d, log: d.Logger, loc: d.Location, hb: d.Heartbeat}

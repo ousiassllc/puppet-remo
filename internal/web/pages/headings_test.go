@@ -36,7 +36,7 @@ func TestEveryPageHasAConsistentHeadingOutline(t *testing.T) {
 		{"apps", pages.Apps(view.Apps{Chrome: chrome, NewForm: appForm,
 			List:   view.AppList{Rows: []view.AppRow{{ID: "a1", Label: "x"}, {ID: "a2", Label: "y", Form: &editForm}}},
 			Denied: view.DeniedSection{}}), "1 2 2 3 2 2 2 2"},
-		{"agent", pages.AgentSettings(view.AgentSettings{Chrome: chrome}), "1 2 2"},
+		{"agent", pages.AgentSettings(view.AgentSettings{Chrome: chrome}), "1 2 2 2 2 2"},
 		{"update", pages.Update(view.Update{Chrome: chrome}), "1 2"},
 		{"audit", pages.Audit(view.AuditListPage{Chrome: chrome}), "1"},
 		{"audit detail", pages.AuditDetail(view.AuditDetail{Chrome: chrome, ID: 1, BackURL: "/audit", ThumbURL: "/audit/1/thumbnail", Args: []view.AuditArg{{Key: "k", Value: "v"}}}), "1 2 2"},
