@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
@@ -20,6 +21,8 @@ const (
 	kindOutput                         // モデルの出力アイテム（原文）
 	kindComputerOutput                 // computer_call_output
 	kindUserNote                       // role: user の input_text だけのメッセージ（AddUserNote。画像なし）
+	kindFunctionOutput                 // function_call_output（AddFunctionOutput。関数ツールの経路）
+	kindUserImage                      // role: user の新しいスクリーンショット（AddUserImage。関数ツールの経路）
 )
 
 // ErrCallPairing は履歴の computer_call / function_call と、その call_id の出力が 1 対 1 になっていない（出力の欠落・重複）。
@@ -32,12 +35,13 @@ type historyItem struct {
 
 	raw json.RawMessage // kindOutput
 
-	texts []string // kindUser: 指示、高速パスの要約（あれば）。kindUserNote: 本文
+	texts []string // kindUser: 指示、高速パスの要約（あれば）。kindUserNote: 本文。kindUserImage: 画像の前の文（あれば）
 
-	callID string        // kindComputerOutput
+	callID string        // kindComputerOutput・kindFunctionOutput
 	ack    []SafetyCheck // kindComputerOutput
+	output string        // kindFunctionOutput（JSON の文字列。FunctionOutputOK など）
 
-	shot []byte // kindUser・kindComputerOutput の PNG。保持枚数を超えると nil になる
+	shot []byte // kindUser・kindComputerOutput・kindUserImage の PNG。保持枚数を超えると nil になる
 }
 
 // History はステートレス継続の履歴（FR-G24）。run が 1 タスクにつき 1 つ持ち、run の goroutine だけが触る（並行利用は不可）。
@@ -74,6 +78,29 @@ func (h *History) AddOutput(items []OutputItem) {
 // shot は PNG。呼び出し後は変更しないこと（コピーしない）。
 func (h *History) AddComputerOutput(callID string, shot []byte, ack []SafetyCheck) {
 	h.items = append(h.items, historyItem{kind: kindComputerOutput, callID: callID, ack: ack, shot: nonEmpty(shot)})
+	h.trimScreenshots()
+}
+
+// AddFunctionOutput は関数ツールの経路の function_call_output を追加する（FR-G27 (4)。output は FunctionOutputOK・
+// FunctionOutputNotExecuted）。画像は載せない（新しい画面は AddUserImage で続ける）。
+func (h *History) AddFunctionOutput(callID, output string) {
+	h.items = append(h.items, historyItem{kind: kindFunctionOutput, callID: callID, output: output})
+}
+
+// AddUserImage は関数ツールの経路で、呼び出しの出力のあとに新しいスクリーンショットを role: user の input_image で足す（FR-G27 (4)）。
+// note は画像の前に置く input_text（中断の文面など。無ければ空）。直近 keep 枚を超える古い画像はプレースホルダに置き換える。
+// shot は PNG。呼び出し後は変更しないこと（コピーしない）。
+func (h *History) AddUserImage(shot []byte, note string) {
+	var texts []string
+	if note != "" {
+		texts = []string{note}
+	}
+	h.items = append(h.items, historyItem{kind: kindUserImage, texts: texts, shot: nonEmpty(shot)})
+	h.trimScreenshots()
+}
+
+// trimScreenshots は直近 keep 枚を超える古いスクリーンショットを捨てる（送るときは OmittedScreenshot に置き換わる。FR-G24）。
+func (h *History) trimScreenshots() {
 	kept := 0
 	for i := len(h.items) - 1; i >= 0; i-- {
 		if h.items[i].shot == nil {
@@ -99,11 +126,11 @@ type callEnvelope struct {
 }
 
 // validate は、すべての computer_call・function_call に、call_id が一致する出力がちょうど 1 件あることを確かめる
-// （欠落・重複は ErrCallPairing）。出力は computer_call_output だけを数える（function_call_output は ChatGPT の経路の実装で足す）。
+// （欠落・重複は ErrCallPairing）。出力は computer_call_output と function_call_output を数える。
 func (h *History) validate() error {
 	outputs := map[string]int{}
 	for i := range h.items {
-		if h.items[i].kind == kindComputerOutput {
+		if k := h.items[i].kind; k == kindComputerOutput || k == kindFunctionOutput {
 			outputs[h.items[i].callID]++
 		}
 	}
@@ -148,6 +175,35 @@ func (h *History) LatestScreenshot() []byte {
 	return nil
 }
 
+// InitialRequest は最初のユーザーメッセージの文（改行 2 つでつなぐ）と画像（保持枚数を超えて捨てていれば nil）。
+// app-server に会話を持たせる Model（Codex）が最初のターンを組み立てるのに使う。
+func (h *History) InitialRequest() (text string, shot []byte) {
+	if len(h.items) == 0 || h.items[0].kind != kindUser {
+		return "", nil
+	}
+	return strings.Join(h.items[0].texts, "\n\n"), h.items[0].shot
+}
+
+// FunctionOutput は callID の function_call_output（AddFunctionOutput の値）。無ければ false。
+func (h *History) FunctionOutput(callID string) (string, bool) {
+	for i := len(h.items) - 1; i >= 0; i-- {
+		if it := &h.items[i]; it.kind == kindFunctionOutput && it.callID == callID {
+			return it.output, true
+		}
+	}
+	return "", false
+}
+
+// LatestUserImage は最後の AddUserImage の画像と文（無ければ nil と空）。
+func (h *History) LatestUserImage() (shot []byte, note string) {
+	for i := len(h.items) - 1; i >= 0; i-- {
+		if it := &h.items[i]; it.kind == kindUserImage {
+			return it.shot, strings.Join(it.texts, "\n\n")
+		}
+	}
+	return nil, ""
+}
+
 func nonEmpty(b []byte) []byte {
 	if len(b) == 0 {
 		return nil
@@ -165,7 +221,7 @@ func (h *History) input() (responses.ResponseInputParam, error) {
 	for i := range h.items {
 		it := &h.items[i]
 		switch it.kind {
-		case kindUser:
+		case kindUser, kindUserImage:
 			in = append(in, userMessage(it))
 		case kindOutput:
 			in = append(in, param.Override[responses.ResponseInputItemUnionParam](it.raw))
@@ -173,6 +229,10 @@ func (h *History) input() (responses.ResponseInputParam, error) {
 			in = append(in, computerOutput(it))
 		case kindUserNote:
 			in = append(in, userNote(it))
+		case kindFunctionOutput:
+			out := responses.ResponseInputItemParamOfFunctionCallOutput(it.output)
+			out.OfFunctionCallOutput.CallID = param.NewOpt(it.callID)
+			in = append(in, out)
 		}
 	}
 	return in, nil

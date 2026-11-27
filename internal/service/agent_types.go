@@ -47,6 +47,11 @@ type AgentConfig struct {
 	ApproveProcesses []string
 	KeepScreenshots  int // 既定 3
 	Fastpath         FastpathConfig
+	// Connection は接続方式（agent.connection。FR-G25・S20。既定 chatgpt）。
+	Connection domain.AgentConnection
+	// ChatGPTModel は公式の ChatGPT の経路のモデル（agent.chatgpt.model。FR-S21）、CodexModel は Codex の経路のモデル（agent.codex.model。#247）。
+	ChatGPTModel string
+	CodexModel   string
 }
 
 // FastpathConfig は高速パスの設定（FR-S14〜S18）。
