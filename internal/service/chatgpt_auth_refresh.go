@@ -15,7 +15,7 @@ import (
 // このファイルは ChatGPT のアクセストークンの維持（FR-G29 (2)〜(5)）: 残りが 5 分以下なら更新（排他・10 秒・自動再試行なし）、
 // 回転するトークンはまとめて置き換える。使えないと確認できたらトークンを全削除して reauth_required。通信の失敗・5xx では消さない。
 
-// chatgptUnauthorized は、使えないトークンの失敗（ openai.ErrPlanUnauthorized を包む。エージェントが chatgpt_unauthorized にする）。
+// chatgptUnauthorized は、使えないトークンの失敗（openai.ErrPlanUnauthorized を包む。エージェントが chatgpt_unauthorized にする）。
 func chatgptUnauthorized() error {
 	return fmt.Errorf("service: chatgpt authorization is not usable: %w", openai.ErrPlanUnauthorized)
 }
