@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -36,7 +37,7 @@ func TestTemplsDoNotUseOffScaleSpacing(t *testing.T) {
 // S2: ページの見出し（h1）の下は 24px（`--gap-h1`）。ページの外枠は `space-y-6`（24）で、h1 の直前の行で開く
 // （docs/architecture/frontend.md §8.4）。外枠が `space-y-4`（16）や `space-y-2`（8）だと、ページごとに h1 の下の間隔が違ってしまう。
 func TestPageH1HasGapH1BelowIt(t *testing.T) {
-	const h1 = `<h1 class="text-3xl`
+	const h1 = `<h1 class="text-page-title`
 	found := 0
 	err := filepath.WalkDir("pages", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
@@ -66,8 +67,55 @@ func TestPageH1HasGapH1BelowIt(t *testing.T) {
 	}
 }
 
+// T3: アプリ画面のページタイトルは 22px / 600 / --ink（`text-page-title font-semibold text-ink`）、行高 1.35。サイズと行高は app.css の
+// --text-page-title（1.375rem・1.35）で 1 か所に持ち、テンプレートに 22px を直書きしない。Bold（700）はどのテンプレートにも使わない。
+// 据え置く h1: 承認ダイアログの題（lg 18 SemiBold。モーダルの題と同じ段）・ビューアの sr-only・待機ページの `.pg-t`（承認済みの逸脱）。
+func TestPageTitleIsTwentyTwoSemibold(t *testing.T) {
+	css := readAppCSS(t)
+	if !regexp.MustCompile(`(?m)^\s*--text-page-title:\s*1\.375rem;`).MatchString(css) {
+		t.Error("app.css must define --text-page-title as 1.375rem (22px)")
+	}
+	if !regexp.MustCompile(`(?m)^\s*--text-page-title--line-height:\s*1\.35;`).MatchString(css) {
+		t.Error("app.css must define --text-page-title--line-height as 1.35")
+	}
+	const pageTitle = `class="text-page-title font-semibold text-ink"`
+	h1 := regexp.MustCompile(`<h1\b[^>]*>`)
+	kept := []string{`class="text-lg font-semibold text-ink"`, `class="sr-only"`, `class="pg-t"`}
+	pageH1 := 0
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if strings.Contains(line, "font-bold") {
+				t.Errorf("%s:%d: font-bold (700) must not be used; the page title is font-semibold (600): %s", path, i+1, strings.TrimSpace(line))
+			}
+			for _, tag := range h1.FindAllString(line, -1) {
+				switch {
+				case strings.Contains(tag, pageTitle):
+					pageH1++
+				case slices.ContainsFunc(kept, func(k string) bool { return strings.Contains(tag, k) }):
+				default:
+					t.Errorf("%s:%d: h1 must be the page title (%s) or one of the kept h1s: %s", path, i+1, pageTitle, tag)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pageH1 != 16 {
+		t.Errorf("found %d page-title h1s, want 16 (clients, audit and tasks have a list and a detail page)", pageH1)
+	}
+}
+
 // T3・#166: カード状の枠の見出しは molecules.Card の題（lg 18 SemiBold）にそろえる。見出し（h1〜h4）に直書きの `text-2xl`・`text-xl` を
-// 残さない（ページの題は h1 の `text-3xl`、項目名の見出しは h3 の `text-base`）。32px・24px の見出しがカードの題 18px と並んで見える不揃いを防ぐ。
+// 残さない（ページの題は h1 の `text-page-title`、項目名の見出しは h3 の `text-base`）。32px・24px の見出しがカードの題 18px と並んで見える不揃いを防ぐ。
 func TestNoHardcodedLargeHeadingsInTemplates(t *testing.T) {
 	heading := regexp.MustCompile(`<h[1-6]\b[^>]*class="[^"]*\btext-(2xl|xl)\b`)
 	found := 0

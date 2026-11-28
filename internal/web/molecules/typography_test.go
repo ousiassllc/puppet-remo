@@ -21,7 +21,7 @@ func TestHeadingsFollowTheGuideLadder(t *testing.T) {
 		var r rung
 		for _, c := range strings.Fields(class) {
 			switch c {
-			case "text-xs", "text-sm", "text-base", "text-lg", "text-xl", "text-2xl", "text-3xl":
+			case "text-xs", "text-sm", "text-base", "text-lg", "text-xl", "text-2xl", "text-3xl", "text-page-title":
 				r.size = strings.TrimPrefix(c, "text-")
 			case "font-normal", "font-medium", "font-semibold", "font-bold":
 				r.weight = strings.TrimPrefix(c, "font-")

@@ -11,7 +11,7 @@ const dashboardTitle = "ダッシュボード"
 
 templ dashboardBody(v view.Dashboard) {
 	<div class="space-y-6">
-		<h1 class="text-3xl font-semibold text-ink">ダッシュボード</h1>
+		<h1 class="text-page-title font-semibold text-ink">ダッシュボード</h1>
 		<div class="flex flex-col gap-6" data-dashboard-sections>
 			@organisms.RunningTasksPanel(v.Tasks)
 			<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">

@@ -472,7 +472,7 @@ func TestInlineCodeHasOneStyleFromAppCSS(t *testing.T) {
 
 	codeOpen := regexp.MustCompile(`<code\b[^>]*>`)
 	classAttr := regexp.MustCompile(`class="([^"]*)"`)
-	styled := regexp.MustCompile(`^(text-(xs|sm|base|lg|xl|2xl|3xl|2xs|ink|mute)|px-|py-|p-|bg-|rounded|font-|border)`)
+	styled := regexp.MustCompile(`^(text-(xs|sm|base|lg|xl|2xl|3xl|2xs|page-title|ink|mute)|px-|py-|p-|bg-|rounded|font-|border)`)
 	found := 0
 	err := filepath.WalkDir(filepath.Join("..", "web"), func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
