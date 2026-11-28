@@ -157,6 +157,9 @@ type errorMessage struct {
 	Message string      `json:"message"`
 	// Reason は input_blocked の detail.reason（own_window・target_halted・clipboard_out_of_scope など）。無ければ省く。
 	Reason string `json:"reason,omitempty"`
+	// ResumesAt・RetryAfterMs は input_paused（ホストの実入力による一時停止。#270）の再開の目安。無ければ省く。
+	ResumesAt    string `json:"resumes_at,omitempty"`
+	RetryAfterMs *int64 `json:"retry_after_ms,omitempty"`
 }
 
 type typeOnly struct {
@@ -178,6 +181,15 @@ func errorFor(err error) errorMessage {
 	m := errorMessage{Type: typeError, Code: code, Message: msg}
 	if code == domain.CodeInputBlocked || code == domain.CodeInvalidCoordinates {
 		m.Reason = detailString(err, "reason")
+	}
+	if code == domain.CodeInputPaused {
+		m.ResumesAt = detailString(err, "resumes_at")
+		var de *domain.Error
+		if errors.As(err, &de) {
+			if ms, ok := de.Detail["retry_after_ms"].(int64); ok {
+				m.RetryAfterMs = &ms
+			}
+		}
 	}
 	return m
 }

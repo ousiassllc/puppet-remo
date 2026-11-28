@@ -144,7 +144,7 @@ stateDiagram-v2
 | ID | ツール | 引数 | 戻り値 | リース | 優先度 |
 |----|-------|------|--------|-------|--------|
 | FR-M01 | `get_screen_info` | なし | モニター一覧（index、名称、プライマリか、物理サイズ、原点、DPI スケール、スクリーンショット縮小率） | 不要 | M1 |
-| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター、`own_windows`＝Nefos Remote 自身のウィンドウの範囲。FR-M20） | 不要 | M1 |
+| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`）、`window_id?`（`list_windows` の id。指定するとそのウィンドウだけを撮る。`monitor` とは同時に指定できない。FR-M26）、`include_owned?`（`window_id` のときだけ。既定 false） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター、`own_windows`＝Nefos Remote 自身のウィンドウの範囲。FR-M20。`window_id` つきは加えて `window_id`・`rect`・`windows`・`omitted`。FR-M26） | 不要 | M1 |
 | FR-M03 | `cursor_position` | なし | カーソル座標（縮小座標系）とモニター | 不要 | M1 |
 | FR-M04 | `mouse_move` | `x`, `y`, `monitor?` | OK | 必要 | M1 |
 | FR-M05 | `left_click` / `right_click` / `middle_click` / `double_click` / `triple_click` | `x?`, `y?`（省略時は現在位置）, `modifiers?`（`ctrl` / `shift` / `alt` / `win` の配列）, `monitor?` | OK | 必要 | M1 |
@@ -156,10 +156,12 @@ stateDiagram-v2
 | FR-M11 | `list_windows` | なし | ウィンドウ一覧（id、タイトル、プロセス名、PID、矩形、モニター、前面か、最小化か、管理者権限か、入力を拒否するか `blocked` とその理由 `blocked_reason`。FR-M20） | 不要 | M1 |
 | FR-M12 | `focus_window` | `id` | OK | 必要 | M1 |
 | FR-M13 | `clipboard_read` / `clipboard_write` | `text`（書き込み時） | テキスト（読み取り時） | 必要 | M1 |
-| FR-M14 | `get_ui_tree` | `window_id?`, `max_depth?`（既定 5、最大 20）, `max_nodes?`（既定 500、最大 5000）。上限を超える指定は `invalid_argument` | UI Automation ツリー（role、name、value、矩形、有効状態、ノード id）。パスワード欄の値は含めない | 必要 | M1 |
+| FR-M14 | `get_ui_tree` | `window_id?`, `max_depth?`（既定 5、最大 20）, `max_nodes?`（既定 500、最大 5000）。上限を超える指定は `invalid_argument` | UI Automation ツリー（role、name、value、矩形、有効状態、ノード id）。パスワード欄の値は含めない。#267 から各ノードに `control_type`（role と同じ名前）・`automation_id`・`class_name`・`patterns`（対応パターン）・`offscreen` も出し、`id` は `find_ui_element` と同じ**要素 ID**（FR-M28。UIA の RuntimeId を取れない要素は空） | 必要 | M1 |
 | FR-M15 | `acquire_control` / `release_control` / `get_control_status` | なし | リース状態（保持者、残りアイドル時間など） | 不要（取得自体が対象） | M1 |
 | FR-M18 | `list_launchable_apps` | なし | 起動の方式と起動許可リストのアプリ一覧 `{ "mode": "allowlist" \| "denylist", "apps": [ { "id", "label" } ] }`（`mode` は起動の方式（FR-S22）。方式によらず `apps` は許可リストに登録済みのアプリで、表示名の昇順。0 件は空配列）。**実行ファイルのパス・引数・作業ディレクトリ・拒否リストの中身は返さない**。起動できない行（読めない行を含め、起動のたびの再検査を満たさない行）は返さない | 不要 | M1.5 |
 | FR-M19 | `launch_app` | `app_id`（`list_launchable_apps` の `id`）か `path`（ブラックリスト方式のときだけ。固定ディスク上の `.exe` の絶対パス）の**どちらか一方**（同時指定・どちらも無しは `invalid_argument`。ホワイトリスト方式で `path` を渡しても `invalid_argument`）。引数・作業ディレクトリは受け取らない | `{ "ok": true, "app_id", "pid", "window"?: { "id", "title", "pid", "process_name" }, "reused_existing_window" }`（`app_id` は `app_id` 指定の起動だけ。起動したアプリのウィンドウと、既存のウィンドウが前に出ただけかの印。下の「アプリ起動の規約」） | 必要（未保持なら暗黙に取得。FR-L04） | M1.5 |
+| FR-M28 | `find_ui_element` | ウィンドウの探し方 `window_id?` / `title?` / `process_name?`（すべて省略なら前面のウィンドウ）、要素の探し方 `name?` / `automation_id?` / `control_type?`（**1 つ以上が必須**。指定した項目はすべて満たす）、`match?`（`exact` 既定 / `contains`。`title` と `name` に効く）、`max_results?`（既定 20、最大 100）。形は「UI 要素の探し方（#266・#267）」の節 | `{ "window": {…}, "truncated": false, "elements": [ { "id", "control_type", "name", "automation_id", "class_name", "rect", "enabled", "offscreen", "visible", "patterns" } ] }`。読み取りだけで入力しない。`id` は要素 ID（古くなれば `stale_element`） | 必要（`get_ui_tree` と同じ検査） | M1 |
+| FR-M29 | `wait_for` | ウィンドウの探し方（`window_id?` / `title?` / `process_name?`）、要素の探し方（`name?` / `automation_id?` / `control_type?`。1 つでも指定すると、その窓の中の要素を待つ）、`match?`、`state`（`appear` / `disappear`。必須）、`timeout_ms`（**必須**、1〜60,000）、`interval_ms?`（既定 500、100〜5,000） | `{ "state", "target": "window" \| "element", "matched", "timed_out", "waited_ms", "window"?, "elements"?, "candidates"?: { "windows", "elements" }, "truncated"? }`。成功は `matched: true` で、次の操作に使う窓（id・タイトル・プロセス・矩形）か要素（id・矩形・patterns）を返す。**タイムアウトはエラーにせず** `matched: false`・`timed_out: true` と、そのとき見えていた候補（各最大 20 件）を返す。読み取りだけで入力しない | 必要（`get_ui_tree` と同じ検査） | M1 |
 | FR-M27 | `put_file` / `get_file` / `list_files` / `delete_file`（ファイル転送。#264） | `put_file`: `path`\*（置き場所からの相対パス）、`content_base64`\*（1 回 512 KiB まで。base64 にする前）、`offset`（既定 0。0 は新規作成〔同名は置き換え〕、0 より大きい値は、ちょうどその大きさのファイルへの追記。大きなファイルを分けて送る）。`get_file`: `path`\*、`offset`、`length`（1 回 512 KiB まで）。`list_files`: `path`（フォルダ。省略は置き場所）。`delete_file`: `path`\*（ファイルまたは空のフォルダ） | `put_file`: `{ "ok": true, "path", "size", "sha256" }`（`size`・`sha256`〔16 進の小文字〕は書いたあとのファイル全体のもの）。`get_file`: `{ "path", "offset", "length", "size", "sha256", "eof", "content_base64" }`（`size`・`sha256` はファイル全体）。`list_files`: `{ "path", "entries": [ { "path", "type": "file" \| "dir", "size", "modified" } ], "truncated" }`（名前の昇順・最大 1000 件・非再帰・リンクは出さない）。`delete_file`: `{ "ok": true, "path", "size" }`。扱えるのは、**ホスト所有者がホスト GUI で決めた置き場所（FR-S24）の中だけ**。パスは相対パスだけで、`..`・絶対パス・ドライブ指定（`C:foo` を含む）・UNC・デバイスパス（`\\?\`・`\\.\`）・代替データストリーム（`:`）・予約デバイス名（CON・NUL など）・末尾のドット／空白は `invalid_argument`。置き場所の途中・末尾にシンボリックリンク・ジャンクション・リパースポイントがあれば、実体が中でも外でも拒否する（Lstat で 1 要素ずつ確かめ、開いたあとにもう一度確かめる）。1 ファイルと置き場所全体の上限（FR-S24）を超える書き込みは何も書かずに `file_too_large` / `file_store_full`。キルスイッチ中は `kill_switch_active`、操作リースが要る（暗黙に取得。承認・他者の保持中の扱いは入力系ツールと同じ。ウィンドウに束縛されたリースでは使えない）。監査は `tool.<ツール名>`（パス・大きさ・SHA-256・結果。**ファイルの中身は記録しない**）。置き場所・上限・置き場所の絶対パスを MCP から知る・変える経路は無い | 必要 | M5 |
 
 FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 に含める。M1 のツールは上表の全件（FR-M18・M19 を除く）で、`get_ui_tree`・`clipboard_*`・`list_windows`・`focus_window` を含む。FR-M18・M19 は M1.5。
@@ -180,7 +182,9 @@ FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 �
 | `approval_denied` / `approval_timeout` | ホストが拒否した / 60 秒で応答が無かった |
 | `kill_switch_active` | キルスイッチで受付停止中 |
 | `invalid_coordinates` / `invalid_argument` | 引数が不正（`launch_app` では、`app_id` と `path` の同時指定・どちらも無し・ホワイトリスト方式での `path`・ブラックリスト方式の `path` が絶対パスのローカルの `.exe` の形でない） |
-| `window_not_found` | `focus_window` / `get_ui_tree` の対象が存在しない |
+| `window_not_found` | `focus_window` / `get_ui_tree` / `find_ui_element` / `wait_for` の対象が存在しない（`title`・`process_name` で探して合うウィンドウが無い場合を含む） |
+| `stale_element` | 要素 ID の指す要素（そのウィンドウ・プロセスを含む）がもう無い。古い ID が別の要素に当たることはない（FR-M28。HTTP 409。#267。要素 ID を受け取る道具が使う） |
+| `input_paused` | ホストの人が実際のマウス・キーボードを使っている間の一時停止（FR-M30。`detail.resumes_at`・`detail.retry_after_ms`） |
 | `input_blocked` | 管理者権限ウィンドウなど OS 制約で入力できない（UIPI）、または Nefos Remote 自身のウィンドウが対象（NFR-S06。`detail.reason` は `own_window`・`elevated_window`・`secure_attention_sequence`）。`own_window` には `detail.own_windows` を付ける（FR-M20） |
 | `desktop_unavailable` | ロック画面・UAC セキュアデスクトップ等でキャプチャ・入力できない |
 | `agent_disabled` | エージェントが無効、API キー未登録、またはクライアントに利用許可が無い状態で `run_task` を呼んだ |
@@ -434,6 +438,7 @@ stateDiagram-v2
 | FR-S20 | エージェントの接続方式（`agent.connection`。`chatgpt` / `chatgpt-codex` / `openai_api_key`。ホスト GUI のみで変更。FR-G25。`openai_api_key` への変更だけ確認モーダルを経る。`chatgpt` ↔ `chatgpt-codex` は確認なし） | `chatgpt`（ただし起動時に未設定で OpenAI API キーが登録済みなら `openai_api_key` を保存する。FR-G25） | M4 |
 | FR-S21 | ChatGPT のプラン経路のモデル（`agent.chatgpt.model`。FR-G26。アカウントごとの `GET /v1/models` の一覧から選ぶ） | `gpt-6.1-terra`（候補。一覧に無ければ GUI で選び直す） | M4 |
 | FR-S22 | 起動の方式（`launch.mode`。`allowlist`〔ホワイトリスト方式〕/ `denylist`〔ブラックリスト方式〕。ホスト GUI の `/apps` だけで変更でき、MCP・Web UI からは変えられない。FR-H12。`denylist` への変更は確認モーダルを経る。読めない値・不正な値は `allowlist` として扱う） | `allowlist`（既存のインストールも更新後は `allowlist`。設定の行は書かない） | M1.5 |
+| FR-M30 | ホストの実入力による一時停止の有効 / 無効（`hostinput.pause_enabled`）と再開までの待ち時間（`hostinput.pause_idle_sec`。1〜600 秒）。ホスト GUI のみで変更 | 有効 / 5 秒 | M4 |
 | FR-S23 | Codex 経由（`chatgpt-codex`）のモデル（`agent.codex.model`。FR-G35・G36。app-server の `model/list` の一覧から選ぶ） | `gpt-6.1-terra`（候補。一覧に無ければ GUI で選び直す） | M4 |
 | FR-S24 | ファイル転送（FR-M27。#264）の置き場所（`file_transfer.root`。ローカルの絶対パス。UNC・ドライブの直下・`..` は不可）と上限（`file_transfer.max_file_bytes`・`file_transfer.max_total_bytes`。1〜2^53 バイト）。ホスト GUI の設定画面だけで変更でき、MCP・Web UI には経路が無い。置き場所の設定が壊れている・アプリのデータフォルダ（`%LOCALAPPDATA%\puppet-remo`）と重なるときは、既定の場所へ切り替えずにファイル転送を使えなくする（fail closed）。変更は `settings.update` で監査する | 置き場所: `%LOCALAPPDATA%\PuppetRemo\inbox`（設定が空のとき。なければ作る）。1 ファイル: 104857600（100 MiB）。全体: 1073741824（1 GiB） | M5 |
 
@@ -447,6 +452,20 @@ stateDiagram-v2
 | ブラウザが先取りするショートカット | 専用の送信メニューで補う（FR-W06） |
 | 管理者権限を要求するアプリの起動（マニフェストが `requireAdministrator`） | `CreateProcess` は昇格できないため `launch_failed`（UAC のダイアログは出さない。NFR-S08）。管理者として動いているウィンドウへの入力は `input_blocked` |
 
+**ホストの実入力による一時停止（FR-M30。#270）**
+
+ホスト PC の前にいる人が実際のマウス・キーボードを動かしている間は、リモートの入力が実際のカーソルと取り合いにならないよう、リモートからの入力を一時停止する。
+
+- **検知**: Windows の低レベルフック（`WH_MOUSE_LL` / `WH_KEYBOARD_LL`）が、注入されたもの（`LLMHF_INJECTED` / `LLKHF_INJECTED`。Nefos Remote 自身の `SendInput` も、他のソフトウェアが注入した入力も）と、Nefos Remote が `SendInput` で付ける印（`dwExtraInfo`）の付いたものを除き、**物理デバイスの入力だけ**を「ホストの実入力」として数える。押されたキー・文字・座標は読まない（「入力があった」ことだけ）。フックは設定が有効の間だけ置く。リモートデスクトップなど、物理入力として届く別経路の入力は実入力に数える
+- **状態**: 実入力があると停止し、**最後の実入力から待ち時間（既定 5 秒）の間、実入力がなければ自動で再開**する。実入力が続けば再開は延びる。停止に入るとき、押下中のキー・ボタンを離す（`ReleaseAll`。以後の入力は断られ、離す操作も届かないため）
+- **対象**: 実際のカーソル・フォーカス・キー入力を動かす操作 — `mouse_move`・`left_click` など各クリック・`left_click_drag`・`scroll`・`key`・`type`・`focus_window` と、Web ビューアの `input.*`（移動・ボタン・ホイール・キー）、内蔵エージェント（`run_task`）の同じ操作。**すべて `Control.Do` の 1 か所**で断るので、経路による抜けはない（`domain.OpPausedByHostInput`）。リースの取得・承認より前に断る（暗黙のリース取得を起こさない）。承認の待ちのあとの実行の直前にも確かめ直す
+- **対象外**: 読み取り（`screenshot`・`cursor_position`・`list_windows`・`get_ui_tree`・`clipboard_read` など）、`wait`、`clipboard_write`（カーソル・フォーカスを動かさない）、`launch_app`。UI Automation のパターン操作（#268。カーソルを動かさない）は、**既定では止めない**。その操作の `domain.Op` が `HostInputGated.PausedByHostInput() == true` を返せば止められる
+- **拒否**: 409 `input_paused`。`detail.resumes_at`（RFC 3339。ホストの入力が続かなければ再開する時刻）・`detail.retry_after_ms`。MCP はツールエラー、WebSocket は `error`（`code`・`resumes_at`・`retry_after_ms`）。通常の入力の拒否と同じ監査の行（`result = denied`、`error_code = input_paused`）が残る。内蔵エージェントのタスクは `input_paused` で失敗する（リースは解放）
+- **状態の公開**: `get_control_status` に `paused`（真偽値）と、停止中だけ `paused_reason`（`host_input`）・`paused_since`・`resumes_at`・`resumes_in_ms` を出す
+- **設定（ホスト GUI の設定画面だけ。MCP・リモートからは変えられない）**: `hostinput.pause_enabled`（既定 `true`）・`hostinput.pause_idle_sec`（1〜600。既定 `5`）。無効にすると停止中ならすぐ再開し、フックも外す
+- **監査**: `input.host_paused`（最初の実入力。`detail` は `source`（`mouse` / `keyboard`）・`idle_sec`）・`input.host_resumed`（`detail` は `paused_ms`・`reason`（`idle` / `disabled`））。`kind = input`、`actor_type = host`
+- **弱めないもの**: リース・承認・キルスイッチ・入力スコープ・InputGuard・自ウィンドウの保護は変えない。キルスイッチのホットキーの押下も実入力として数えるが、キルスイッチは停止と独立に効く（先に判定される）
+
 **自ウィンドウの手がかり（FR-M20。#47）**
 
 Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。クリック透過のオーバーレイを除く）は、NFR-S06 によりキャプチャから外れてスクリーンショットに写らず、入力は `input_blocked`（`reason: own_window`）で拒否される。オーバーレイ（FR-H07）もキャプチャから外れるが、入力を下のウィンドウへ通すので拒否の対象にならず、避ける場所としても伝えない（`own_windows`・`blocked` に含めない）。AI から見るとスクリーンショットでは別のアプリが見えている場所で入力が止まるため、避ける場所を事前と事後の両方で伝える。写らないこと自体は変えない。
@@ -456,6 +475,36 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 - **事前（一覧）**: `list_windows` に Nefos Remote 自身のウィンドウを `blocked: true`・`blocked_reason: "own_window"` 付きで出す（昇格ウィンドウは `blocked: true`・`blocked_reason: "elevated_window"`、入力できるものは `blocked: false`）。`blocked` は InputGuard の規則（`domain.InputBlockReason`）と同じ判定
 - **事前（説明）**: MCP の `instructions` と、`screenshot`・`list_windows`・座標を取る入力ツール・`key`・`type` のツールの説明に、「puppet-remo のウィンドウはスクリーンショットに写らず、入力は `input_blocked`（`own_window`）になる。範囲は `own_windows` と `blocked` で分かる」旨を書く
 - **採らなかった案**: スクリーンショットの該当範囲への塗りつぶし・枠の描画は、(1) キャプチャの経路（`Capturer.Grab` → 縮小 → 符号化）に、ウィンドウの一覧との同時性（撮影の直後にウィンドウが動く）を前提にした描画を足すことになり、ずれた印が誤った安全の手がかりになる、(2) 印が画像上の他のアプリの内容を隠し、AI が背後を読めなくなる、(3) 同じ情報は `own_windows`（機械可読）で足りる、ため行わない。NFR-S06 のキャプチャ除外（`WDA_EXCLUDEFROMCAPTURE`）は変更しない
+
+**ウィンドウ単位のスクリーンショット（FR-M26。#269）**
+
+`screenshot` に `window_id` を渡すと、そのウィンドウ 1 枚の画像だけを返す。`window_id` を省略したときの動作・出力は従来（FR-M02。モニター全体）と変わらない（`window_id`・`rect`・`windows`・`omitted` は出力に出ない）。
+
+- **撮り方**: ウィンドウ自身の内容を PrintWindow（`PW_RENDERFULLCONTENT`）でメモリ DC へ撮る。**前面にしない**（フォーカスを奪わない）・画面の DC やモニター撮影・デスクトップの切り抜きは使わない・**対象の上に別のウィンドウが重なっていても、写るのは対象自身の内容だけ**（他のウィンドウの画素が混ざらない）。#156 の `GroupCapturer.GrabGroup`（FR-L09〜L14 の対象グループの撮影）をそのまま使う（同一性の確認・タイムアウト・応答なしのアプリを撮らない・sentinel による「何も描かれなかった」の検出・合成も共通）。撮れないときに**モニター撮影へ切り替えない**
+- **検査の順序**: キルスイッチ（`kill_switch_active`）→ 引数（`format` が不正・`window_id` が空・`monitor` との同時指定・`window_id` なしの `include_owned` は `invalid_argument`）→ ウィンドウの特定（可視で cloaked でないトップレベルウィンドウにない〔閉じた・cloaked・形式が不正〕は `window_not_found`）→ 撮らないウィンドウの拒否 → 撮影。リースは不要（閲覧系。FR-M02 と同じ）。承認・Judge・スコープ付きリースの検査は通らない（モニター全体の `screenshot` と同じ扱い。ウィンドウ単位は**見える範囲を狭める**だけで、モニター全体より多くは見せない）
+- **撮らないウィンドウ（`input_blocked`。`detail.reason` と `detail.window_id`）**: **Nefos Remote 自身のウィンドウ**は決して撮らない（`own_window`。NFR-S06。`detail.own_windows` も付く。設定値・API キーの入力欄を AI に見せないため。`include_owned` でも自ウィンドウは画像に入らない）、昇格ウィンドウ（`elevated_window`。UIPI のため PrintWindow が届かない）、最小化（`target_minimized`。内容を撮れない）、同一性を確かめる値（PID・開始時刻・クラス）が不明なウィンドウと検証前の UWP（`target_unsupported`）。撮影の失敗（PrintWindow が失敗・何も描かれなかった・撮影が 3 秒で終わらない・応答しないアプリ・ホストに `GroupCapturer` がない）も `input_blocked`（`detail.reason` = `capture_unavailable`）。撮る直前にウィンドウが閉じた・別のウィンドウに置き換わった（HWND の再利用）は `window_not_found`。GPU 描画のアプリが黒く写る範囲は実機で確かめる（docs/operations/smoke-windows.md §3.10.5）
+- **座標（FR-M16 との対応）**: 画像は、対象のウィンドウが**最も重なるモニター**（`rect` の基準。`monitor` で返す）の縮小率（`scale`。`get_screen_info` の値）で縮小する。`rect` は画像の左上と大きさを**そのモニターの縮小スクリーンショットの座標**で表す（`window_id` なしの `screenshot`・`list_windows` の `rect` と同じ座標系・同じ丸め）。画像の点 `(px, py)` は縮小座標 `(rect.x + px, rect.y + py)` で、そのまま `left_click` などの `x`・`y`（`monitor` は `rect` の `monitor`）に使える（往復で ±1 px）。ウィンドウがモニターからはみ出しているときは、はみ出した部分が負の座標かモニターの縮小スクリーンショットの外の座標になり、そこへの入力は `invalid_coordinates` になる。ウィンドウがモニターより大きいと、画像の長辺が `screenshot.max_dimension` を超えることがある（縮小率はモニターのものに揃える。縮小座標との対応を崩さないため）
+- **`include_owned`（既定 false）**: true にすると、対象と**同一プロセスで所有関係を検証できる**関連ウィンドウ（所有されたダイアログ・メニュー・子ウィンドウ。#156 の対象グループ G のメンバー。`domain.ResolveGroup`）を Z オーダーで 1 枚の透明のキャンバスに重ねる。画像はメンバーの見た目の枠の外接矩形で、`rect` はその外接矩形。`windows` に写っているウィンドウ（`id`・`relation`〔`target` / `owned` / `child` / `menu`〕・画像と同じ座標系の `rect`。前面が先）を、`omitted` に写さなかった関連ウィンドウ（`id`・`reason`）を返す。**別プロセスのウィンドウ（`related_cross_process`。共通ダイアログなど）・所有関係を確かめられないウィンドウ（`related_unverifiable`）は自動では入れず**、`omitted` に出す（別アプリの内容を、対象の一部として黙って見せない）。メンバーが撮れなかったとき（`capture_member_unavailable`）も撮影は失敗にせず `omitted` に出す。最小化されたメンバー・自ウィンドウは入れない。false のときは、対象 1 枚だけ（`windows` は対象 1 件）
+- **監査**: `screenshot` の呼び出しとして `kind = tool` で監査する（引数の要約に `window_id`・`include_owned`。結果・失敗のコード。ウィンドウのタイトル・画像は含めない）
+- **未確認**: Windows 実機での成立性（PrintWindow の描画・GPU 描画アプリ・DPI・複数モニター・メニュー・ダイアログ）は実機未確認。docs/operations/smoke-windows.md §3.10.5
+
+**UI 要素の探し方（#266・#267。FR-M28・M29）**
+
+`find_ui_element`・`wait_for`（と、要素を操作する今後の道具）は、同じ探し方と要素 ID を使う。入力は注入せず、`get_ui_tree` と同じ検査を通る。
+
+- **ウィンドウの探し方**: `window_id`（`list_windows` の `id`。HWND の 10 進。優先）・`title`・`process_name`（例 `notepad.exe`。大文字小文字を区別しない完全一致）。指定した項目はすべて満たす必要がある。項目が 1 つも無ければ前面のウィンドウ（`wait_for` のウィンドウ待ちは項目が必須）。複数に合えば Z オーダーの最上位。`window_id` なしの探索（`title`・`process_name`）は**自ウィンドウを候補から外す**（合うものが無ければ `window_not_found`。自ウィンドウの存在を明かさない）。`window_id` で自ウィンドウを指す、または省略して前面が自ウィンドウのときは、`get_ui_tree` と同じ `input_blocked`（`own_window`）。
+- **要素の探し方**: `name`・`automation_id`・`control_type`（UIA の ControlType の名前。`Button`・`Edit`・`CheckBox` など。大文字小文字を区別しない。知らない名前は `invalid_argument`）。**1 項目以上が必須**で、指定した項目はすべて満たす（AND）。`automation_id` は常に完全一致（序数比較）。
+- **`match`**（`exact` 既定 / `contains`）: `title` と要素の `name` の比較。`exact` は序数比較（大文字小文字を区別する完全一致）、`contains` は大文字小文字を区別しない部分一致。それ以外の値は `invalid_argument`。
+- **要素 ID**: 不透明な文字列 `uie:<HWND>:<PID>:<RuntimeId>`（例 `uie:197382:4812:2a.1f4.3`。HWND と PID は 10 進、RuntimeId は各値の 16 進を `.` でつなぐ）。`get_ui_tree` の `id` と `find_ui_element` の `id` は同じ形式。UIA が RuntimeId を返さない要素は ID が空（引き直せないので渡さない）。ID を受け取る道具は、必ず生きた木で**引き直し**（`platform.UIAutomation.Resolve`）、ウィンドウが無い・同じ HWND を別のプロセスが使っている（PID が違う）・その木に同じ RuntimeId の要素が無い、のいずれでも `stale_element` を返す。古い ID が別の要素に当たることは無い。形が違う文字列は `invalid_argument`。
+- **探索の上限**: 1 回の探索は UI の 20,000 節点まで走査し（浅い階層から）、結果も浅いものから最大 `max_results` 件（既定 20、最大 100）。一致がまだある・走査を打ち切ったときは `truncated: true`。
+- **`find_ui_element` の要素**: `id`・`control_type`・`name`・`automation_id`・`class_name`・`rect`（縮小座標。`get_ui_tree` と同じ変換で、ウィンドウが最も重なるモニターを基準にする）・`enabled`・`offscreen`・`visible`（画面外でなく、矩形がモニター上にある）・`patterns`（対応パターン。`Invoke`・`Value`・`Toggle`・`SelectionItem`・`ExpandCollapse`・`Scroll`・`RangeValue`・`Window`・`Text`・`Selection` のうち対応するもの。無ければ空配列）。値・テキスト本文・パスワード欄の値は返さない。
+- **`wait_for`**: `state` が `appear` なら現れるまで、`disappear` なら消えるまで、`interval_ms`（既定 500 ms。100〜5,000）ごとに確かめる（最初の確認は待たずに行う）。`timeout_ms` は**必須**で 1〜60,000。経過は注入できる Clock で測り、待ちは `Sleep`（キャンセルで中断）。要素の項目が 1 つでもあれば、その窓の中の要素を待つ（窓がまだ無いときは窓が現れるのも待つ。`disappear` では窓が無ければ成立。`window_id` で指した窓が無いまま `appear` を待つのは現れないので、待たずに `window_not_found`）。
+  - 成功（`matched: true`）: `appear` は、ウィンドウを待つなら見つかった窓（`window`）、要素を待つなら窓（`window`）と一致した要素（`elements`、最大 20）。`disappear` は `window` も `elements` も無い。
+  - タイムアウトは**エラーではなく結果**（`matched: false`・`timed_out: true`・`waited_ms`）。`candidates`（`windows`・`elements`。各最大 20 件。欠けたら `truncated: true`）に、`appear` なら近い候補（指定した項目のどれか 1 つに当たるものを先に。ウィンドウ待ちは、無ければ見えているウィンドウ。要素待ちは、窓があればその窓の近い要素、窓が無ければ見えているウィンドウ）、`disappear` なら消えずに残っている対象を入れる。自ウィンドウは候補に出さない。
+  - キルスイッチは確認のたびに見て、発動したらすぐ `kill_switch_active`。ツール呼び出しのタイムアウトは、リースを取得しうるツールの 90 秒に `timeout_ms` の上限 60 秒を足す（承認待ちのあとに最大の待ち時間が残る）。
+- **検査と監査**: `Control.Do` を通る（`get_ui_tree` と同じ）。キルスイッチ → リース（未保持なら暗黙に取得。承認が要るクライアントは承認待ち）→ 引数 → InputGuard の観測の規則（自ウィンドウは拒否。昇格ウィンドウは読み取りのみなので許可）。スコープ付きのリースの保持者も、`get_ui_tree` と同じく読める（入力ではない）。1 回の呼び出しを 1 行（`tool.find_ui_element` / `tool.wait_for`）で監査する（引数は探し方・`state`・`timeout_ms`、結果は件数・`matched`・`waited_ms`。要素の値・本文は記録しない。`wait_for` は確認のたびには監査しない）。内蔵エージェント（Judge を通る経路）はこの 2 つの道具を持たない。
+- **決めたこと（#266・#267）**: 読み取りの 2 つの道具も `get_ui_tree` と同じくリースを要求する（弱めない。「リース不要」の `list_windows` とは違い、他アプリの UI の中身を読むため）。設定項目は足さない（ホストの設定にしないので、MCP から変えられるものも無い）。
+- **実機未確認**: COM の対応パターンの取得・RuntimeId での引き直し・応答しないアプリでの打ち切りは、Windows の実機で確かめる（docs/operations/smoke-windows.md §3.5 U6〜U12）。
 
 ## 改訂履歴
 
@@ -511,4 +560,7 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 | 1.47 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。本文の製品名だけを差し替え、`agent_name_hint` の値・MCP の説明文・識別子は変えない | #188 |
 | 1.48 | 2026-11-27 | FR-H12・FR-AU06: 設定変更（許可リスト・拒否リスト・設定画面・エージェント設定・API キー）も、監査の行を書けなければ変更を戻して `audit_unavailable` にする fail-closed に統一（#182） | #182 |
 | 1.49 | 2026-11-27 | 内蔵エージェントの接続方式に `chatgpt-codex`（Codex の app-server 経由の ChatGPT のプラン。公式の経路がワークスペースのアカウントを拒むときの代替）を追加: FR-G25（3 経路・切り替えの承認の要否）・G01（利用条件と `agent_disabled` の理由）・G14・H10・H11・AU01・S20、新設の FR-G31〜G40（目的と利用条件・エンジンの取得と検証・隔離と秘密・道具の無効化・推論の呼び方・サインインとサインアウト・プロセスの寿命・失敗コード・使用量の上限・公式経路のポリシー拒否からの案内）と FR-S23、3 経路の違いの表。公式経路の決定を反映: コールバックのポートは `1455` → `1457` → 空きポート（FR-G28 (4)）、トークンの分割保存（FR-G28 (7)）。Windows 実機・実アカウントでの確認は未（非機能要件「Codex 経路: 未確認」） | #247 |
-| 1.51 | 2026-11-28 | ファイル転送を追加（#264）: FR-M27（`put_file` / `get_file` / `list_files` / `delete_file`。ホストが決めた置き場所の中だけ・相対パスだけ・リンク経由と上限超過は拒否・SHA-256 と大きさを返す・操作リース必須・監査） と FR-S24（置き場所 `file_transfer.root` と上限。ホスト GUI の設定画面だけで変更）。優先度 M5 を追加 | #264 |
+| 1.50 | 2026-11-28 | `screenshot` に `window_id`（ウィンドウ単位の撮影。PrintWindow・前面にしない・モニター撮影へ切り替えない）と `include_owned`（同一プロセスのダイアログ・メニュー・子ウィンドウの合成）を追加: FR-M26（座標は対象が最も重なるモニターの縮小座標の `rect`、自ウィンドウ・昇格・最小化の拒否、`window_not_found` / `input_blocked` / `capture_unavailable`、`windows` / `omitted`）、FR-M02 の引数と出力。`window_id` を省略したときの動作は変更なし。Windows 実機未確認 | #269 |
+| 1.51 | 2026-11-28 | UI 要素を探す `find_ui_element`（FR-M28）と、ウィンドウ・UI 要素が現れる・消えるまで待つ `wait_for`（FR-M29）を追加し、`get_ui_tree` の各ノードに `control_type`・`automation_id`・`class_name`・`patterns`・`offscreen` と要素 ID を出すようにした。エラーに `stale_element` を追加。探し方（ウィンドウ・要素）と要素 ID の共通の形を「UI 要素の探し方（#266・#267）」にまとめた | #266・#267（QA 用の道具。実入力を使わずに画面の状態を確かめる） |
+| 1.52 | 2026-11-28 | ホストの実入力による一時停止（FR-M30。#270）を追加: 検知（低レベルフックの injected フラグ・自分の印）・対象と対象外・`input_paused`・`get_control_status` の `paused`・設定 `hostinput.*`・監査。エラーコード表に `input_paused` | ホストで作業している人の操作とリモートの操作の取り合いを避けるため |
+| 1.53 | 2026-11-28 | ファイル転送を追加（#264）: FR-M27（`put_file` / `get_file` / `list_files` / `delete_file`。ホストが決めた置き場所の中だけ・相対パスだけ・リンク経由と上限超過は拒否・SHA-256 と大きさを返す・操作リース必須・監査） と FR-S24（置き場所 `file_transfer.root` と上限。ホスト GUI の設定画面だけで変更）。優先度 M5 を追加 | #264 |

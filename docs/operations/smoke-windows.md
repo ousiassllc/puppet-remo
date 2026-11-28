@@ -102,7 +102,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | B5 | `ctx` の取り消し | 待ちの途中でも `context.Canceled` を返す |
 | B6 | サイズ上限（1 MiB。NFR-S09） | platform は上限を持たない。上限は `service` / `mcp` の責務なので、ここでは確認しない |
 
-### 3.5 UI Automation（`get_ui_tree`。FR-M14）
+### 3.5 UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`。FR-M14・M28・M29）
 
 契約テスト（§2 の `TestSmokeUIAutomation`）は、前面にメモ帳など 3 ノード以上のウィンドウがあることを前提にする。
 
@@ -113,6 +113,13 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | U3 | パスワード入力欄を含む画面（ブラウザのログインフォーム） | パスワード欄の `Value` が空（値を読まない） |
 | U4 | UIA を呼んでいる最中に対象アプリが固まっている | 呼び出しがタイムアウトして戻る（`get_ui_tree` が 30 秒で打ち切られる。アプリ全体が固まらない） |
 | U5 | 管理者権限のウィンドウが前面 | 失敗が `input_blocked` ではなく読み取りの失敗として返る（ツリーを返せない場合は原因つきのエラー） |
+| U6 | メモ帳を前面にして `get_ui_tree`（#267） | 各ノードに `control_type`・`automation_id`・`class_name`・`patterns`（編集欄に `Value`・`Text`、メニュー項目に `Invoke` など、実際に対応するもの）が出る。`id` は `uie:<HWND>:<PID>:<RuntimeId>` の形で、`list_windows` の `id`・`pid` と HWND・PID が一致する |
+| U7 | `find_ui_element`（`window_id` = メモ帳）を `control_type: "Edit"`、`name`（`match: contains`）、`automation_id` で試す | 編集欄・メニュー項目が見つかり、`id`・`rect`（縮小座標。`get_ui_tree` の同じ要素と同じ値）・`enabled`・`offscreen`・`visible`・`patterns` が実際の状態と合う。`max_results` の上限で `truncated` が立つ。`title` / `process_name` だけの指定（`window_id` なし）でも、最上位の該当ウィンドウが選ばれる |
+| U8 | U7 で得た要素 ID を、メモ帳のタブを閉じる・ダイアログを閉じるなどで要素を消したあとの道具で使う（`Resolve` を使う道具ができるまでは、`go test` の契約テストの `Find and Resolve`〔`TestSmokeUIAutomation`〕で代える） | 要素が消えたあと・メモ帳を終了したあとの ID は `stale_element`。別のアプリが同じ HWND を再利用した場合も `stale_element`（別の要素に当たらない） |
+| U9 | `wait_for`（ウィンドウ）: メモ帳を終了した状態で `title: "メモ帳"`・`state: "appear"`・`timeout_ms: 20000` を呼んでから、メモ帳を起動する | 起動後、待ちが終わり `matched: true`・`window`（id・タイトル・プロセス・矩形）が返る。`waited_ms` が実際の待ち時間に近い |
+| U10 | `wait_for` の `disappear`: メモ帳のウィンドウを閉じる直前に呼ぶ | 閉じると `matched: true`。閉じないまま `timeout_ms` が過ぎると `timed_out: true` と、残っているウィンドウが `candidates.windows` に入る |
+| U11 | `wait_for`（要素）: 名前を付けて保存のダイアログの `automation_id`（例 `FileNameControlHost`）を `appear` で待ち、Ctrl+Shift+S を押す | ダイアログが出ると `matched: true`・`elements`（id・rect・patterns）が返る。存在しない名前でタイムアウトさせると `timed_out: true` と、近い要素（`control_type` や名前の一部が合うもの）が `candidates.elements` に入る |
+| U12 | `find_ui_element`・`wait_for` の検査（#266・#267） | Nefos Remote 自身のウィンドウは `window_id` 指定で `input_blocked`（`own_window`）、`title`・`process_name` では見つからない（`window_not_found`）。キルスイッチを発動すると、`wait_for` の待ちの最中でも次の確認で `kill_switch_active` になり止まる。リースを他者が持っていると `lease_held_by_other`。どちらも監査に 1 行（`tool.find_ui_element` / `tool.wait_for`）だけ残り、入力は一切起きない（カーソルもキー入力も動かない） |
 
 ### 3.6 グローバルホットキー（FR-H06・FR-S02）
 
@@ -251,6 +258,26 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | E7 | 高速パスを有効にしたまま `window_id` つきの `run_task` | 高速パスは走らず（タスク詳細で `fast_steps = 0`・`handoff_reason` なし。TypeSafe へ何も送られない）、E1〜E3 が成立する。`window_id` なしでは従来どおり使われる |
 | E8 | 監査・タスク画面 | 対象（プロセス名・pid・window_id）が出て、ウィンドウのタイトル・入力した文字が出ない |
 | E9 | 実機のスクリーンショット（タスク詳細・監査）を、個人情報を伏せて Issue に貼る | — |
+
+#### 3.10.5 `screenshot` の `window_id`（ウィンドウ単位の撮影。#269。FR-M26。**未確認**）
+
+**状態: 実機未確認。** 偽 platform（`FakeApp`・`FakeWindows`・`FakeCapturer`）での試験だけが済んでいる。撮影は #156 の `Capturer.GrabGroup`（PrintWindow `PW_RENDERFULLCONTENT`）と共通なので、§3.10.1 の `a2probe`（M1〜M6）が合格している前提で行う。MCP クライアント（tailnet 上の別端末）から `screenshot` を呼ぶ。**偽 platform の成功では満たしたことにならない**。
+
+| # | 手順 | 期待（実機の結果を Issue に貼る。**確認できるまで「完了」と書かない**） |
+|---|---|---|
+| W1 | メモ帳（代表アプリ。存在・版を記録）の `list_windows` の `id` を `window_id` に渡して `screenshot`。ほかのウィンドウを前面にした状態で | メモ帳だけの画像が返る（デスクトップ・ほかのウィンドウの画素がない）。**メモ帳が前面に出ない**（フォーカスが動かない。`list_windows` の `foreground` が変わらない）。`rect` が、`window_id` なしの `screenshot` と `list_windows` の `rect`（メモ帳の位置）と一致する |
+| W2 | 別のウィンドウでメモ帳を半分覆い、W1 を繰り返す | 覆っているウィンドウの画素が写らない。メモ帳全体が写る |
+| W3 | 返った画像の点 `(px, py)` に `rect.x`・`rect.y` を足した縮小座標を `left_click` で押す（メモ帳の中のボタン・メニューバー） | 画像で見た位置が押される（±1 px）。表示スケール 100% / 150% / 200%、モニターごとに倍率が違う構成、副モニター（原点が負）のメモ帳で繰り返し、`monitor`・`scale` と合うことを記録する |
+| W4 | 画面の外へ半分はみ出させたウィンドウ・モニターをまたぐウィンドウ | `rect` がモニターの外へはみ出した座標になる（負の座標を含む）。画像は欠けずウィンドウ全体が写る |
+| W5 | メモ帳の「ファイル」メニューを開いた状態で `include_owned: false` と `true` | `false` はメモ帳本体だけ。`true` はメニューが重なり（`windows` に `relation: menu`、前面が先）、`rect` が外接矩形。メニューの背後・外側の他のアプリの画素が混ざらない |
+| W6 | 「名前を付けて保存」のダイアログ（同一プロセス・別プロセスの両方になりうる。プロセス構成を記録）で `include_owned: true` | 同一プロセスなら `windows` に入る。別プロセス（共通ダイアログ）なら `omitted` に `related_cross_process` が出て、画像に写らない |
+| W7 | Nefos Remote 自身のウィンドウの `id`（`list_windows` で `blocked_reason: own_window`）を `window_id` に指定（`include_owned` も） | `input_blocked`（`own_window`）。画像は返らない。ホストの設定画面・API キー入力欄が写る経路がない |
+| W8 | 管理者のメモ帳・最小化したメモ帳・存在しない id・`monitor` との同時指定 | 昇格は `input_blocked`（`elevated_window`）、最小化は `target_minimized`、存在しない id は `window_not_found`、`monitor` との同時指定は `invalid_argument`。いずれもモニター全体の画像へ切り替わらない |
+| W9 | GPU 描画のアプリ（ブラウザー・Windows Terminal・UWP の電卓・ゲーム）に `window_id` | 内容が写るか、全面が黒い・何も描かれないかを記録する（黒は撮れたものとして返る。何も描かれなければ `capture_unavailable`）。UWP の電卓（`ApplicationFrameWindow`）は `target_unsupported` |
+| W10 | 応答しないアプリ（`IsHungAppWindow` が真）・撮影が重いウィンドウ | `capture_unavailable`（3 秒で打ち切る）。呼び出しが止まらず、ほかの `screenshot` が続けて動く |
+| W11 | キルスイッチ中に `window_id` つきの `screenshot` | `kill_switch_active` |
+| W12 | 監査ログ（`/audit`） | `screenshot` の行に `window_id`・`include_owned` が出て、ウィンドウのタイトルが出ない（拒否・失敗も行が残る） |
+| W13 | 実機のスクリーンショット（W1〜W6・W9 の画像と `rect`）を、個人情報を伏せて Issue に貼る | — |
 
 ## 4. Wails のシェルと結線（S11。実機のみ）
 
@@ -508,7 +535,23 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | D20 | `/apps` の見た目の確認（スクリーンショットを残す）: 「起動の方式」のパネル（ホワイトリスト方式・ブラックリスト方式の両方）、確認モーダル、「拒否リスト」の欄（項目の種別の表示・追加フォーム・編集・削除の確認・上限 200 の注意・ブラックリスト方式でだけ効く旨・`cmd.exe` / `powershell.exe` などのインタープリタの注意） | 文言が欠けず、レイアウトが崩れない（WebView2 の表示。§4.3 と同じ観点）。長い値の行がパネルの外へ溢れない。画像は Issue #88 に添付する |
 | D21 | 後始末 | 起動したペイント・メモ帳（`renamed-np.exe` など）をすべて閉じる（`tasklist` で残りが無い）。`rmdir C:\SmokeJunction`、`del C:\SmokeDeny\link.exe`、`rmdir /s /q C:\SmokeDeny`。`/apps` の拒否リストのテスト用の行を削除し、方式をホワイトリスト方式に戻す |
 
-### 4.18 ファイル転送（`put_file` / `get_file` / `list_files` / `delete_file`。#264。FR-M27・FR-S24）
+### 4.18 ホストの実入力による一時停止（#270。FR-M30。未確認）
+
+ホスト GUI の設定画面の「ホストの操作との取り合い」（既定: 有効・5 秒）。tailnet 上の別端末の MCP クライアントで `mouse_move` などを繰り返し送りながら、ホストの実機の物理マウス・キーボードを操作する。低レベルフック（`WH_MOUSE_LL` / `WH_KEYBOARD_LL`）の injected フラグの扱いは実機でしか確かめられない。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| H1 | 既定の設定（有効・5 秒）で、MCP クライアントから 1 秒おきに `mouse_move` を送り続け、ホストの**物理マウス**を動かす | 動かした直後から `mouse_move` が `input_paused`（`detail.resumes_at`・`retry_after_ms` 付き）で断られ、カーソルは物理マウスの動きだけに従う。`get_control_status` が `paused: true`・`paused_reason: host_input` |
+| H2 | H1 のあと、マウスから手を離して 5 秒待つ | 自動で再開し、`mouse_move` が通る。`get_control_status` が `paused: false`。操作を続けている間は再開しない（最後の操作から 5 秒） |
+| H3 | **物理キーボード**のキーを 1 つ押す | H1 と同じく停止し、`key` / `type` も断られる。H2 と同様に再開する |
+| H4 | MCP の `mouse_move`・`left_click`・`type`・`key`・`scroll`（Web ビューアの操作・`run_task` も）を、ホストが何も触れていないときに送る | **停止しない**（自分の `SendInput` はフックの injected フラグと `dwExtraInfo` の印で実入力から外れる）。`mouse_move` の位置補正（`SetCursorPos`）でも停止しない。**停止する場合は、injected フラグの扱いの不備として報告する** |
+| H5 | 停止中に `screenshot`・`cursor_position`・`list_windows`・`get_ui_tree`・`clipboard_write` を呼ぶ | すべて通る（読み取りとクリップボードの書き込みは止めない） |
+| H6 | Web ビューアでマウスボタンを押したまま（`input.mouse` の down）、ホストの物理マウスを動かす | 停止に入った時点で押下中のボタンが離され（ReleaseAll）、ボタンが押しっぱなしにならない。以後のビューアの入力は `error`（`input_paused`）で断られ、インラインアラートが出る |
+| H7 | 停止中にキルスイッチ（`Ctrl+Alt+Shift+K`） | 通常どおり 1 秒以内に発動する（停止とは独立）。ホットキーの押下で停止しても無害 |
+| H8 | 設定画面で一時停止を無効にして保存し、物理マウスを動かしながら `mouse_move` を送る | 停止しない。停止中に無効にすると、すぐ再開する。有効に戻して保存すると H1 の動作に戻る。待ち時間を 10 に変えて H2 を繰り返すと、再開が 10 秒後になる |
+| H9 | 別のソフト（AutoHotkey など）が `SendInput` で入力を注入しているとき | 実入力に数えず、停止しない |
+| H10 | 監査ログ（DB の `audit_logs`） | H1 で `input.host_paused`（`detail` は `source: mouse`）、H2 で `input.host_resumed`（`reason: idle`、`paused_ms`）が 1 件ずつ。停止中に断られた入力は `tool.mouse_move` の `result = denied`・`error_code = input_paused`。押したキーや入力した文字は記録されない |
+### 4.19 ファイル転送（`put_file` / `get_file` / `list_files` / `delete_file`。#264。FR-M27・FR-S24）
 
 実装（`internal/platform/localfs`）は OS を問わない標準ライブラリのコードで、Linux では本物のシンボリックリンクでテスト済み。Windows 固有の部分（`FILE_ATTRIBUTE_REPARSE_POINT` の判定・`FILE_FLAG_OPEN_REPARSE_POINT` でのリンクを開かない open）は実機でしか確かめられないので、次を NTFS で確認する。自動の確認（ジャンクションの作成まで行う）: `go test -v -count=1 -run 'Junction|Symlink' ./internal/platform/localfs/`（シンボリックリンクは管理者または開発者モードが要る。作れなければ飛ばす）。
 
@@ -536,7 +579,7 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | GDI（`BitBlt`）のキャプチャ: マルチモニター・DPI・スクリーンショットの縮小座標 | §3.1 C1〜C7（C2・C4: DPI、C3: マルチモニター）、§3.2 I1（縮小 → 物理の座標の往復）、§4.10 S2（DPI 混在の縮小） | 継続キャプチャ `Watch` は §3.9（M2） |
 | `SendInput`: マウス・クリック・ドラッグ・ホイール、キー・修飾キー、`KEYEVENTF_UNICODE` による日本語の `type`、UIPI | §3.2 I3〜I7（マウス・キー）、I10（日本語・絵文字の `Text`）、I12（管理者権限のウィンドウ。UIPI） | 契約テスト `TestSmokeInput*`（§2） |
 | ウィンドウ列挙・`focus_window`（前面化）、クリップボードのテキスト読み書き | §3.3 WM1〜WM10（WM8: `Focus`）、§3.4 B1〜B5 | |
-| UI Automation（`get_ui_tree`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト | §3.5 U1〜U5（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
+| UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト、対応パターンの取得・RuntimeId での引き直し | §3.5 U1〜U12（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト、U6〜U8: パターン・要素 ID・`stale_element`、U9〜U11: `wait_for`） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
 | グローバルホットキー（既定 `Ctrl+Alt+Shift+K`）によるキルスイッチ（1 秒以内の効果） | §3.6 K1〜K4、§4.5 | |
 | `SetThreadExecutionState`（リース保持中のスリープ・画面オフ抑止。`powercfg /requests`） | §4.6 SL1〜SL7 | |
 | 実 tailscaled: LocalAPI の `WhoIs`、IP 変化の監視、tailscaled 再起動後の 10 秒以内の復旧、tailnet の IPv4・IPv6 のみへの Listen | §4.4 R1（Listen）、R4（再起動後 10 秒以内の復旧）、**R7（WhoIs）**、**R8（IP 変化の監視）** | R7・R8 は #15 の項目に手順がなかったため足した |
@@ -581,4 +624,6 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-11 | §3.8 に起動場所の検査の実機確認 L10〜L19（通常の System32・大文字小文字・`/` 区切り・8.3 短縮名・ジャンクション・シンボリックリンク・`subst`・マップドドライブ・UNC。`TestSmokeAppLauncherLocation`。未確認）を追加し、§2 に `PUPPET_REMO_SMOKE_LAUNCH_MAPPED` / `PUPPET_REMO_SMOKE_LAUNCH_UNC` を追加 | #36 |
 | — | 2026-11-11 | §4.17（#15 の項目と手順の対応表）を追加し、§4.4 に R7（WhoIs の確認）・R8（IP 変化の監視）を足した。実機の確認は未確認 | #15 |
 | — | 2026-11-18 | §4.7 の P2 を表示名（Nefos Remote）に合わせ、旧名の版からの更新 P3 とアンインストール P4 を追加（未確認）。製品名の prose を Nefos Remote に改めた | #188 |
-| — | 2026-11-28 | §4.18（ファイル転送。#264。FR-M27・FR-S24）を追加 |
+| — | 2026-11-28 | §3.10.5（`screenshot` の `window_id`・`include_owned`。W1〜W13。#269。未確認）を追加 | #269 |
+| — | 2026-11-28 | §4.18 にホストの実入力による一時停止の実機確認 H1〜H10 を追加（未確認） | #270 |
+| — | 2026-11-28 | §4.19（ファイル転送。#264。FR-M27・FR-S24）を追加 |

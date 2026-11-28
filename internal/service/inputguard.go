@@ -57,10 +57,29 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 			return g.checkForeground(domain.CheckObserveTarget)
 		}
 		return g.checkWindowByID(ctx, o.WindowID, domain.CheckObserveTarget)
+	case domain.FindUIElement:
+		return g.checkLocator(ctx, o.Window)
+	case domain.WaitFor:
+		if o.Element == nil && o.Window.WindowID == "" {
+			return nil // 窓の有無を待つだけ。窓の情報（一覧と同じ範囲）だけを返し、自ウィンドウは候補から外す
+		}
+		return g.checkLocator(ctx, o.Window)
 	case domain.ClipboardRead, domain.ClipboardWrite, domain.Wait:
 		return nil
 	}
 	return domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("unsupported operation %T", op))
+}
+
+// checkLocator は UI 要素を読むウィンドウ（GetUITree と同じ観測の規則）を検査する。window_id があればそのウィンドウ、
+// 項目が無ければ前面のウィンドウ。title・process_name だけの探索は自ウィンドウを候補から外すので、ここでは検査しない。
+func (g InputGuard) checkLocator(ctx context.Context, loc domain.WindowLocator) error {
+	switch {
+	case loc.WindowID != "":
+		return g.checkWindowByID(ctx, loc.WindowID, domain.CheckObserveTarget)
+	case loc.IsZero():
+		return g.checkForeground(domain.CheckObserveTarget)
+	}
+	return nil
 }
 
 func (g InputGuard) checkPoints(mon []domain.Monitor, points ...domain.Point) error {

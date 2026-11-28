@@ -281,6 +281,7 @@ type ctlEnv struct {
 	power     *platformtest.FakePower
 	leases    LeaseManager
 	control   Control
+	hostPause *HostInputPauser // 既定は有効・5 秒。実入力（NoteHostInput）がなければ何も止めない
 	slept     []time.Duration
 	// onSleep は Sleep のたびに（slept に足したあとで）呼ばれる。待ちの間のウィンドウの出現などを再現する。
 	// sleepErr が非 nil なら、Sleep はそれを返す（待ちの中断）。
@@ -338,10 +339,16 @@ func newCtlEnv(t *testing.T) *ctlEnv {
 		t.Fatal(err)
 	}
 	kill.BindLeases(e.leases)
+	e.hostPause, err = NewHostInputPauser(HostInputPauserConfig{
+		Clock: e.clock, Audit: e.audit, Policy: HostInputPolicy{Enabled: true, Idle: 5 * time.Second},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	e.control, err = NewControl(ControlConfig{
 		Capturer: e.capturer, Input: e.input, Windows: e.windows, Clipboard: e.clipboard, UI: e.ui,
 		Launcher: e.launcher, Apps: e.apps,
-		Leases: e.leases, Kill: kill, Settings: e.settings, Audit: e.audit, Clock: e.clock,
+		Leases: e.leases, Kill: kill, HostPause: e.hostPause, Settings: e.settings, Audit: e.audit, Clock: e.clock,
 		Sleep: func(_ context.Context, d time.Duration) error {
 			e.slept = append(e.slept, d)
 			if e.onSleep != nil {

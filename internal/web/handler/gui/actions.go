@@ -341,13 +341,15 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 		current = service.HostSettings{}
 	}
 	in := view.SettingsValues{
-		Port:             strings.TrimSpace(c.PostForm(service.FieldPort)),
-		Hotkey:           strings.TrimSpace(c.PostForm(service.FieldKillSwitchHotkey)),
-		ScreenshotMaxDim: strings.TrimSpace(c.PostForm(service.FieldScreenshotMaxDimension)),
-		LeaseIdleSec:     strings.TrimSpace(c.PostForm(service.FieldLeaseIdleTimeoutSec)),
-		ViewerQuality:    strings.TrimSpace(c.PostForm(service.FieldViewerDefaultQuality)),
-		ViewerFPS:        strings.TrimSpace(c.PostForm(service.FieldViewerDefaultFPS)),
+		Port:                  strings.TrimSpace(c.PostForm(service.FieldPort)),
+		Hotkey:                strings.TrimSpace(c.PostForm(service.FieldKillSwitchHotkey)),
+		ScreenshotMaxDim:      strings.TrimSpace(c.PostForm(service.FieldScreenshotMaxDimension)),
+		LeaseIdleSec:          strings.TrimSpace(c.PostForm(service.FieldLeaseIdleTimeoutSec)),
+		ViewerQuality:         strings.TrimSpace(c.PostForm(service.FieldViewerDefaultQuality)),
+		ViewerFPS:             strings.TrimSpace(c.PostForm(service.FieldViewerDefaultFPS)),
+		HostInputPauseIdleSec: strings.TrimSpace(c.PostForm(service.FieldHostInputPauseIdleSec)),
 		// チェックボックスは、外れていると値が送られない。
+		HostInputPause:            checked(c, service.FieldHostInputPauseEnabled),
 		AuditThumbnails:           checked(c, service.FieldAuditThumbnails),
 		AuditRecordText:           checked(c, service.FieldAuditRecordText),
 		AuditRetentionDays:        strings.TrimSpace(c.PostForm(service.FieldAuditRetentionDays)),
@@ -366,6 +368,7 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 	var errs view.SettingsErrors
 	s := service.HostSettings{
 		KillSwitchHotkey: in.Hotkey, Autostart: in.Autostart,
+		HostInputPauseEnabled:  in.HostInputPause,
 		AuditThumbnailsEnabled: in.AuditThumbnails, AuditRecordText: in.AuditRecordText, UpdateApplyMode: in.UpdateApplyMode, UpdateChannel: in.UpdateChannel,
 		FileTransferRoot: in.FileTransferRoot,
 	}
@@ -374,6 +377,7 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 	s.LeaseIdleTimeoutSec, errs.LeaseIdleSec = parseInt(in.LeaseIdleSec)
 	s.ViewerDefaultQuality, errs.ViewerQuality = parseInt(in.ViewerQuality)
 	s.ViewerDefaultFPS, errs.ViewerFPS = parseInt(in.ViewerFPS)
+	s.HostInputPauseIdleSec, errs.HostInputPauseIdleSec = parseInt(in.HostInputPauseIdleSec)
 	s.AuditRetentionDays, errs.AuditRetentionDays = parseInt(in.AuditRetentionDays)
 	s.AuditThumbsMaxBytes, errs.AuditThumbsMaxBytes = parseInt64(in.AuditThumbsMaxBytes)
 	s.FileTransferMaxFileBytes, errs.FileTransferMaxFileBytes = parseInt64(in.FileTransferMaxFileBytes)
@@ -416,6 +420,7 @@ func mergeFieldErrors(errs view.SettingsErrors, verr *service.ValidationError) v
 	fill(&errs.LeaseIdleSec, service.FieldLeaseIdleTimeoutSec)
 	fill(&errs.ViewerQuality, service.FieldViewerDefaultQuality)
 	fill(&errs.ViewerFPS, service.FieldViewerDefaultFPS)
+	fill(&errs.HostInputPauseIdleSec, service.FieldHostInputPauseIdleSec)
 	fill(&errs.AuditRetentionDays, service.FieldAuditRetentionDays)
 	fill(&errs.AuditThumbsMaxBytes, service.FieldAuditThumbsMaxBytes)
 	fill(&errs.FileTransferRoot, service.FieldFileTransferRoot)

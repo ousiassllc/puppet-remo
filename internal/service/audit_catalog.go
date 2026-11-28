@@ -24,6 +24,7 @@ var AuditCatalog = []AuditRequirement{
 	{Item: "リースの取得要求・承認・拒否（承認モード）", Events: []string{
 		"approval.requested", "approval.granted", "approval.denied", "approval.timeout", "approval.withdrawn", "approval.reset",
 	}},
+	{Item: "ホストの実入力によるリモート入力の一時停止・再開（#270。kind = input）", Events: []string{hostInputPausedAuditEvent, hostInputResumedAuditEvent}},
 	{Item: "MCP ツール呼び出し・Web UI からの入力操作", Events: []string{AuditToolEventPrefix + "*"}},
 	{Item: "キルスイッチ発動・解除", Events: []string{"killswitch.trigger", "killswitch.release"}},
 	{Item: "設定変更", Events: []string{

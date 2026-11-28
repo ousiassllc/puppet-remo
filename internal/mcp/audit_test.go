@@ -14,7 +14,7 @@ import (
 var controlAudited = []string{
 	"mouse_move", "left_click", "right_click", "middle_click", "double_click", "triple_click",
 	"left_click_drag", "scroll", "key", "type", "wait", "focus_window", "clipboard_read", "clipboard_write", "get_ui_tree",
-	"launch_app",
+	"find_ui_element", "wait_for", "launch_app",
 	// ファイル転送は service.FileTransfer が自分で監査する（#264。パス・大きさ・SHA-256 を持つので、mcp 層の引数の要約では足りない）。
 	"put_file", "get_file", "list_files", "delete_file",
 }
@@ -35,6 +35,8 @@ var toolCallArgs = map[string]map[string]any{
 	"focus_window":    {"id": "w1"},
 	"clipboard_write": {"text": "hunter2"},
 	"get_ui_tree":     {"window_id": "w1"},
+	"find_ui_element": {"name": "hunter2", "window_id": "w1"},
+	"wait_for":        {"window_id": "w1", "state": "appear", "timeout_ms": 1000},
 	"screenshot":      {"monitor": 0, "format": "png"},
 	"launch_app":      {"app_id": "app-1"},
 	"put_file":        {"path": "a.txt", "content_base64": "aHVudGVyMg=="},
@@ -109,6 +111,27 @@ func TestMCPLayerAuditRecordsFailuresAndArgsSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if detail["monitor"] != float64(1) || detail["format"] != "jpeg" || len(detail) != 2 {
+		t.Errorf("detail = %v", detail)
+	}
+}
+
+// window_id つきの screenshot は、拒否されても監査に残り、引数の要約に window_id・include_owned が入る（タイトルなどウィンドウの中身は入らない）。
+func TestMCPLayerAuditRecordsWindowScreenshot(t *testing.T) {
+	a := &auditLog{}
+	e := newEnv(t, func(c *Config) { c.Audit = a })
+	e.ctl.err = domain.ErrWindowNotFound
+	cs := e.connect("c1")
+
+	callTool(t, cs, "screenshot", map[string]any{"window_id": "1001", "include_owned": true})
+	got := a.all()
+	if len(got) != 1 || got[0].Result != "error" || got[0].ErrorCode != string(domain.CodeWindowNotFound) {
+		t.Fatalf("entries = %+v", got)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(got[0].DetailJSON, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail["window_id"] != "1001" || detail["include_owned"] != true || len(detail) != 2 {
 		t.Errorf("detail = %v", detail)
 	}
 }

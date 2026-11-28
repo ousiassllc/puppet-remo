@@ -303,6 +303,10 @@ type UIAutomation interface {
     // 高速パスの候補表の入力。windowID が空なら前面ウィンドウ。1 回の呼び出しで 1 つの整合したスナップショットを返す。
     // 要素の値・テキスト本文は返さない（名前と値が同一かの真偽だけ）。maxNodes を超えたら Truncated。
     Snapshot(ctx context.Context, windowID string, maxNodes int) (domain.UISnapshot, error)
+    // #267: 浅い階層から走査し、match が true の要素を最大 maxResults 件返す（match には ID を空にした要素を渡す。結果に要素 ID を付ける）。
+    Find(ctx context.Context, windowID string, match func(domain.UIElementInfo) bool, maxResults, maxNodes int) (domain.UIFindResult, error)
+    // #267: 要素 ID（domain.ElementRef = HWND・PID・RuntimeId）を生きた要素へ引き直す。ウィンドウが無い・PID が違う・要素が無い、は domain.ErrStaleElement。
+    Resolve(ctx context.Context, ref domain.ElementRef) (domain.UIElementInfo, error)
 }
 type Clipboard interface {
     ReadText(ctx context.Context) (string, error)
@@ -345,6 +349,10 @@ type FilePicker interface {
 type Hotkey interface { // グローバルホットキー
     Register(spec string, fn func()) (unregister func(), err error)
 }
+type HostInputWatcher interface { // ホストの人の実際のマウス・キーボードの検知（#270。FR-M30）
+    // 実入力のたびに fn を呼ぶ（メッセージループのスレッドから。速やかに戻ること）。自分の SendInput・他のソフトが注入した入力は検知しない。押したキー・座標は読まない
+    Watch(fn func(kind HostInputKind)) (stop func(), err error) // 同時に 1 つ。Windows は WH_MOUSE_LL / WH_KEYBOARD_LL を専用スレッドに置く（injected フラグと dwExtraInfo の印で自分の入力を除く）
+}
 type Power interface { // スリープ抑止
     KeepAwake(on bool)
 }
@@ -373,7 +381,7 @@ type FileStore interface {
 
 **所有する goroutine**: `Capturer.Watch` が 1 モニターにつき 1 本のキャプチャ goroutine を持つ（`ctx` で停止。呼び出し側が閲覧者ゼロで取り消す）。`Hotkey.Register` が Win32 のメッセージループ用に 1 本の専用 OS スレッド（`runtime.LockOSThread`）を持つ。`FilePicker.PickExecutable` は、ダイアログを開いている間だけ `ctx` の取り消しを監視する goroutine を 1 本持つ（ダイアログ自体は呼び出し元の goroutine を OS スレッドに固定して開き、閉じるまで戻らない。同時に開くのは 1 つ）。それ以外のインターフェースは goroutine を内部に持たず、呼び出し元のそれで同期的に動く。
 
-**スレッドの制約**: Win32 の入力注入・UI Automation（COM）は、スレッドアフィニティを持つ。`InputInjector` と `UIAutomation`（`Tree` / `Snapshot`）の実装は、専用の goroutine（OS スレッドに固定）へ呼び出しを直列化して渡す（呼び出し側から見るとスレッドセーフな同期呼び出し）。UI Automation のワーカーへの呼び出しは `ctx` を受け、`ctx` が取り消されたら、専用スレッドの処理の終了を待たずに `ctx.Err()` を返す（ワーカーに積まれた処理が長引いても、呼び出し側の待ちが縛られない。§13.3）。`Snapshot` はこのスレッドで 1 回のキャッシュ要求（`CacheRequest`）にまとめ、COM の往復を減らす。`InputInjector` のホイールの端数の持ち越しも、この専用スレッドが所有する（排他不要。`ReleaseAll` で破棄）。
+**スレッドの制約**: Win32 の入力注入・UI Automation（COM）は、スレッドアフィニティを持つ。`InputInjector` と `UIAutomation`（`Tree` / `Snapshot` / `Find` / `Resolve`）の実装は、専用の goroutine（OS スレッドに固定）へ呼び出しを直列化して渡す（呼び出し側から見るとスレッドセーフな同期呼び出し）。UI Automation のワーカーへの呼び出しは `ctx` を受け、`ctx` が取り消されたら、専用スレッドの処理の終了を待たずに `ctx.Err()` を返す（ワーカーに積まれた処理が長引いても、呼び出し側の待ちが縛られない。§13.3）。`Snapshot` はこのスレッドで 1 回のキャッシュ要求（`CacheRequest`）にまとめ、COM の往復を減らす。`InputInjector` のホイールの端数の持ち越しも、この専用スレッドが所有する（排他不要。`ReleaseAll` で破棄）。
 
 ### InputGuard は platform ではなく service にある
 
@@ -745,6 +753,9 @@ type Control interface {
     Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
     // 閲覧系（リース不要）。
     Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
+    // ウィンドウ単位の閲覧（リース不要。FR-M26。#269）。screenshot の window_id。GroupCapturer.GrabGroup（PrintWindow。前面にしない・モニター撮影に切り替えない）で
+    // 撮り、自ウィンドウ・昇格・最小化は ErrInputBlocked、存在しない id は ErrWindowNotFound。座標は WindowShot.Rect（対象が最も重なるモニターの縮小座標）。
+    WindowScreenshot(ctx context.Context, req WindowShotRequest) (WindowShot, error)
     Monitors(ctx context.Context) ([]domain.Monitor, error)
     Windows(ctx context.Context) ([]domain.WindowInfo, error)
     // M1 で mcp が使う読み取り（リース不要）。CursorPosition は縮小座標とモニター、MaxDimension は設定 `screenshot.max_dimension`（縮小率の算出に使う）。
@@ -785,6 +796,8 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 ```
 
 座標を持つ `op` は、物理座標へ変換した位置の `WindowManager.At` を、座標を持たない `op`（`key` / `type`）は `Foreground()` を調べる。`Own` なら拒否、`Elevated` なら拒否。ただしクリック透過の操作中オーバーレイ（`WindowInfo.Overlay`。#69）は `Own` でも拒否しない（`domain.InputBlockReason` が空を返す。入力は下のウィンドウへ通るため）。オーバーレイは全モニターを覆うので、`At` が最上位として返すと下のダイアログの `own_window` 判定が漏れる。そのため `At` の実装（`platform/windows`・`platformtest.FakeWindows`）は Overlay を飛ばして下の実ウィンドウを返す。**判定ルール自体は `domain` に置き、表形式のテストで網羅する**。
+
+**ホストの実入力による一時停止（#270。FR-M30）**: `service.HostInputPauser`（`HostInputPause`）が状態を持つ。`app` が `HostInputWatcher.Watch` の通知を `NoteHostInput` へ渡す（設定 `hostinput.pause_enabled` が有効の間だけ Watch する）。最初の実入力で停止（監査 `input.host_paused`・`ReleaseInput`）、最後の実入力から `hostinput.pause_idle_sec`（既定 5 秒）経つと再開（`input.host_resumed`。判定は時刻（`domain.Clock`）で、`Check`・`Status` が遅延評価する。`Run` が 1 秒ごとの `Poll` で再開の監査を遅れずに書く）。`Control.Do` は検査 1（キルスイッチ）の直後（リースの前）と、Judge・承認のあとの実行の直前に `domain.OpPausedByHostInput(op)` の操作だけ `HostInputPause.Check`（`ErrInputPaused`）を通す。読み取り・`Wait`・クリップボード書き込みは通す。UI Automation のパターン操作（#268）は既定で通し、`domain.HostInputGated` を実装した `Op` が選べる。`mcp` は `Config.HostInput` から `get_control_status` の `paused` などを出す（`HostSettings` の `hostinput.*` は GUI だけが書く）。
 
 ### 5.4.1 AppRegistry と Launch（M1.5。FR-M18・M19・H12）
 
@@ -1585,4 +1598,5 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.70 | 2026-11-27 | 設定変更の監査を fail-closed に統一（共通の `commitAudited`）: `AppRegistry` の許可リスト・拒否リスト、`HostSettingsService.Save`、`AgentSettings` の保存・API キーの登録と削除。`repository.Settings` に `Delete` を追加。`audit_unavailable` の Detail は `subject`・`restored`（`launch_mode_restored` を置き換え） | #182 |
 | 1.71 | 2026-11-27 | Codex 経路（`chatgpt-codex`。#247）を追加: §1 の `openai` の責務、新設の §4.3.2（`internal/codex` の `catalog`・`engine`・`rpc`・`protocol`・`appserver`・`codextest`・`Model`、`CodexAuth`・`CodexAuthService`）、§5.6 のループの違い（`CancelConnection`）、§10・§11・§12。公式経路の決定を反映: §4.3.1 を実装の名前（`openai.NewChatGPT`・`ParseDesktopCall`・`ChatGPTAuthService`・`PlanGate`）に改め「設計のみ・実装は未着手」を実装済みに、`SecretChatGPT` の分割保存（見出し `{"v":1,"parts":N}`・2000 バイト以下ずつの parts）、受信口のポート `1455` → `1457` → 空きポート、`Problem` の `policy_denied` | #247 |
 | 1.72 | 2026-11-28 | §13.6 の `web/middleware` の一覧に `bodylimit` を足した | #258 |
-| 1.73 | 2026-11-28 | ファイル転送（#264）: §3 に `platform.FileStore`（実装 `platform/localfs`）、§5.4.3 に `service.FileTransfer`（設定・検査の順序・直列化・監査・`ResolveInRoot`） | #264 |
+| 1.73 | 2026-11-28 | ホストの実入力による一時停止（#270。FR-M30）を追加: §3 の `HostInputWatcher`、§5.4 の `HostInputPauser` と `Control.Do` の検査 | ホストの人の操作とリモートの入力の取り合いを避けるため |
+| 1.74 | 2026-11-28 | ファイル転送（#264）: §3 に `platform.FileStore`（実装 `platform/localfs`）、§5.4.3 に `service.FileTransfer`（設定・検査の順序・直列化・監査・`ResolveInRoot`） | #264 |

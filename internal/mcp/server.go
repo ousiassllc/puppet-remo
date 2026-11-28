@@ -62,6 +62,9 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"Only one session holds the lease at a time (it is also unavailable while another session waits for the host's approval); others get lease_held_by_other. " +
 	"When the host requires approval for this client, acquiring the lease waits for the host's answer and fails with " +
 	"approval_denied (the host denied) or approval_timeout (no answer in time). " +
+	"While the host person is physically using the mouse or keyboard, input that moves the real cursor, presses keys or changes the foreground window " +
+	"(click, type, key, scroll, drag, mouse_move, focus_window, and run_task's actions) is rejected with input_paused (detail.resumes_at, detail.retry_after_ms) " +
+	"and resumes by itself once the host has been idle for a while; get_control_status reports paused. Viewing tools are not paused. " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
 	"you pass an app_id, never arguments or a working directory, and it needs the lease like input tools. " +
 	"put_file, get_file, list_files and delete_file move files in and out of one transfer folder chosen by the host owner " +
@@ -77,6 +80,8 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"foreground window is one of them. screenshot lists them as own_windows, and the error carries detail.own_windows, " +
 	"as {monitor, rect} in the scaled coordinates of that monitor's screenshot, so you can avoid those areas; " +
 	"list_windows marks them with blocked: true and blocked_reason own_window. " +
+	"screenshot with window_id (from list_windows) captures only that window without bringing it forward (include_owned adds its dialogs and menus of the same process); " +
+	"its rect gives the image's position in the scaled coordinates of its monitor. " +
 	"run_task starts a task for the host's built-in agent, which operates the screen by itself from your prompt; " +
 	"it works only when the host has enabled the agent for this client (otherwise agent_disabled). " +
 	"run_task returns a task_id at once and the task runs asynchronously: poll get_task for the status and result, and cancel_task to stop it. " +
@@ -104,6 +109,9 @@ type Config struct {
 	// Files はファイル転送（put_file / get_file / list_files / delete_file。FR-M27）の窓口。必須。検査（キルスイッチ・リース・パス・上限）と
 	// 監査は FileTransfer が行うので、mcp はここで記録しない。置き場所・上限を変える経路は mcp に無い。
 	Files service.FileTransfer
+	// HostInput は get_control_status に出す、ホストの実入力による一時停止の状態（#270）。nil なら常に paused = false。
+	// 入力の拒否そのものは Control が行う（ここは状態を見せるだけ）。
+	HostInput service.HostInputPause
 	// Version は initialize で返すアプリの版。
 	Version string
 	Logger  *slog.Logger // nil なら slog.Default()
@@ -135,6 +143,7 @@ type Server struct {
 	audit      service.AuditRecorder
 	agent      service.Agent
 	files      service.FileTransfer
+	hostInput  service.HostInputPause // nil なら停止の状態を見せない
 
 	toolTimeout      time.Duration
 	leaseToolTimeout time.Duration
@@ -170,6 +179,7 @@ func New(cfg Config) (*Server, error) {
 		control:          cfg.Control,
 		agent:            cfg.Agent,
 		files:            cfg.Files,
+		hostInput:        cfg.HostInput,
 		leases:           cfg.Leases,
 		principal:        cfg.Principal,
 		onSessions:       cfg.OnSessionsChange,
@@ -267,6 +277,9 @@ func (s *Server) toolContext(ctx context.Context, tool string) (context.Context,
 	timeout := s.toolTimeout
 	if leaseAcquiringTools[tool] {
 		timeout = s.leaseToolTimeout
+	}
+	if tool == "wait_for" {
+		timeout += service.MaxWaitForTimeout // 承認待ちのあとに、最大の待ち時間が残るようにする
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	stop := context.AfterFunc(aborted, cancel)

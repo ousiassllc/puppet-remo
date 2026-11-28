@@ -132,7 +132,7 @@ func RunE2E(ctx context.Context, opts E2EOptions) error {
 			Capturer: srv.desktop.capturer, Input: srv.desktop.app, Windows: hostWindows, Clipboard: clip,
 			UI: platformtest.NewFakeUIAutomation(hostWindows), Launcher: platformtest.NewFakeAppLauncher(),
 			FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(), Secrets: secrets,
-			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(), Browser: platformtest.NewFakeBrowserOpener(),
+			Hotkey: platformtest.NewFakeHotkey(), HostInput: platformtest.NewFakeHostInput(), Power: platformtest.NewFakePower(), Browser: platformtest.NewFakeBrowserOpener(),
 			Files: localfs.New(),
 		},
 		Watcher: tailnet.NewE2EWatcher(tailnet.E2EStatus()), WhoIs: srv.whois,

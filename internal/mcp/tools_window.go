@@ -46,9 +46,16 @@ type uiTreeIn struct {
 }
 
 type uiNodeBody struct {
-	ID            string       `json:"id"`
-	Role          string       `json:"role"`
+	// ID は要素 ID（find_ui_element の id と同じ形式）。UI Automation の RuntimeId を取れない要素は空。
+	ID   string `json:"id"`
+	Role string `json:"role"`
+	// ControlType は role と同じ値（find_ui_element の control_type と同じ名前）。
+	ControlType   string       `json:"control_type"`
 	Name          string       `json:"name"`
+	AutomationID  string       `json:"automation_id"`
+	ClassName     string       `json:"class_name"`
+	Patterns      []string     `json:"patterns"`
+	Offscreen     bool         `json:"offscreen"`
 	Value         string       `json:"value,omitempty"`
 	ValueRedacted bool         `json:"value_redacted,omitempty"`
 	Rect          rectBody     `json:"rect"`
@@ -80,21 +87,7 @@ func (s *Server) addWindowTools() {
 			}
 			out := windowsBody{Windows: make([]windowBody, 0, len(wins))}
 			for _, w := range wins {
-				blockReason := domain.InputBlockReason(w)
-				out.Windows = append(out.Windows, windowBody{
-					ID:         w.ID,
-					Title:      w.Title,
-					Process:    w.Process,
-					PID:        w.PID,
-					Rect:       conv.rect(w.Monitor, w.Rect),
-					Monitor:    w.Monitor,
-					Foreground: w.Foreground,
-					Minimized:  w.Minimized,
-					Elevated:   w.Elevated,
-
-					Blocked:       blockReason != "",
-					BlockedReason: blockReason,
-				})
+				out.Windows = append(out.Windows, windowBodyOf(conv, w))
 			}
 			return toolResult{Structured: out}, nil
 		})
@@ -121,6 +114,7 @@ func (s *Server) addWindowTools() {
 
 	addTool(s, "get_ui_tree",
 		"Read the UI Automation tree of a window. rect is in scaled coordinates; password fields have value_redacted instead of value. "+
+			"Each node has id (an element id, the same format find_ui_element returns), control_type, automation_id, class_name and patterns (supported UI Automation patterns). "+
 			"Needs the control lease (acquired implicitly).",
 		true, func(ctx context.Context, who domain.Actor, in uiTreeIn) (toolResult, error) {
 			res, err := s.control.Do(ctx, who, domain.GetUITree{WindowID: in.WindowID, MaxDepth: in.MaxDepth, MaxNodes: in.MaxNodes})
@@ -227,10 +221,19 @@ func (c converter) rect(monitor int, r domain.Rect) rectBody {
 
 // node は UI ツリーを縮小座標にし、どこかの節点が打ち切られていたかを返す。
 func (c converter) node(monitor int, n domain.UINode) (uiNodeBody, bool) {
+	patterns := n.Patterns
+	if patterns == nil {
+		patterns = []string{}
+	}
 	out := uiNodeBody{
 		ID:            n.ID,
 		Role:          n.Role,
+		ControlType:   n.Role,
 		Name:          n.Name,
+		AutomationID:  n.AutomationID,
+		ClassName:     n.ClassName,
+		Patterns:      patterns,
+		Offscreen:     n.Offscreen,
 		ValueRedacted: n.ValueRedacted,
 		Rect:          c.rect(monitor, n.Rect),
 		Enabled:       n.Enabled,

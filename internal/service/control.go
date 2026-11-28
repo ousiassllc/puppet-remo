@@ -18,6 +18,9 @@ type Control interface {
 	// Do は入力系の操作を実行する。検査の順序は固定で、1 つでも失敗したら実行しない:
 	//
 	//  1. KillSwitch → ErrKillSwitchActive
+	//  1b. ホストの実入力による一時停止（HostInputPause。#270。FR-M30）→ ErrInputPaused。対象は domain.OpPausedByHostInput の操作だけ
+	//     （実際のカーソル・フォーカス・キー入力を動かす操作。読み取り・Wait・クリップボード書き込みは止めない）。リースの取得・承認より前に断る。
+	//     Judge・承認を待ったあとの、実行の直前（キルスイッチの再確認と同じ位置）にも確かめ直す
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
 	//  3. 引数の検査と縮小座標 → 物理座標の変換（FR-M16。範囲外は ErrInvalidCoordinates）
 	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI。own_window には puppet-remo のウィンドウの範囲を DetailOwnWindows で付ける）。
@@ -48,9 +51,15 @@ type Control interface {
 	// キー・文字入力・クリップボードは前面のウィンドウ。agent のアクションは 1 件ごとに agent.step（kind = agent）で監査し
 	// （WithAgentStep の step_no・route。type の本文は記録しない）、Judge が allow 以外なら agent.judge も記録する（control_judge.go）。
 	// Wait はリース不要（KillSwitch の後に待つだけ）。
+	// FindUIElement・WaitFor は UI を読むだけの操作で、GetUITree と同じ検査（リース・InputGuard の観測の規則。自ウィンドウは input_blocked）を通る
+	// （control_uia.go。WaitFor は待ちの間も確認のたびにキルスイッチを見る。1 回の呼び出しが 1 行の監査）。
 	Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
 	// Screenshot は閲覧系（リース不要）。monitor は Index か domain.MonitorPrimary。format は "png"（既定）か "jpeg"。
 	Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
+	// WindowScreenshot は req.WindowID のウィンドウだけのスクリーンショット（screenshot の window_id。FR-M26。リース不要。キルスイッチ中は拒否）。
+	// PrintWindow（GroupCapturer.GrabGroup）で撮り、前面にしない・モニター撮影には切り替えない。自ウィンドウ・昇格・最小化は ErrInputBlocked（detail.reason）、
+	// 存在しない id は ErrWindowNotFound。画像の座標と縮小は WindowShot の説明（control_window_shot.go）に従う。
+	WindowScreenshot(ctx context.Context, req WindowShotRequest) (WindowShot, error)
 	Monitors(ctx context.Context) ([]domain.Monitor, error)
 	// Windows は物理座標のウィンドウ一覧。縮小座標への変換は呼び出し側（mcp）が行う。
 	Windows(ctx context.Context) ([]domain.WindowInfo, error)
@@ -126,6 +135,10 @@ type LaunchResult struct {
 type Result struct {
 	Text string         // ClipboardRead: クリップボードのテキスト（1 MiB まで）
 	Tree *domain.UINode // GetUITree: 物理座標のツリー。縮小座標への変換は呼び出し側が行う
+	// Found は FindUIElement の結果（物理座標。縮小座標への変換は呼び出し側が行う）。
+	Found *domain.UIFindResult
+	// Waited は WaitFor の結果（物理座標）。タイムアウトはエラーではなく Satisfied が false の結果。
+	Waited *WaitOutcome
 }
 
 // Shot は縮小済みのスクリーンショット。
@@ -167,6 +180,8 @@ type ControlConfig struct {
 
 	Leases LeaseManager
 	Kill   ControlKillSwitch
+	// HostPause は、ホストの人が実際のマウス・キーボードを使っている間の一時停止（#270）。nil なら停止しない（テスト用。本番の結線は渡す）。
+	HostPause HostInputPause
 
 	Settings repository.Settings // nil なら screenshot.max_dimension は既定値
 	// Audit は監査の記録先。nil なら記録しない（テスト用。本番の結線は必ず渡す）。launch_app の起動の前の「試行」の行は
@@ -208,6 +223,7 @@ type control struct {
 	apps      AppReader
 	leases    LeaseManager
 	kill      KillSwitchState
+	hostPause HostInputPause // nil なら停止しない
 	guard     InputGuard
 	settings  repository.Settings
 	audit     SyncAuditRecorder
@@ -237,6 +253,7 @@ func NewControl(cfg ControlConfig) (Control, error) {
 		apps:      cfg.Apps,
 		leases:    cfg.Leases,
 		kill:      cfg.Kill,
+		hostPause: cfg.HostPause,
 		guard:     InputGuard{Windows: cfg.Windows},
 		settings:  cfg.Settings,
 		audit:     cfg.Audit,
@@ -321,6 +338,9 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if w, ok := op.(domain.Wait); ok {
 		return Result{}, "", nil, c.wait(ctx, w)
 	}
+	if err := c.checkHostInput(op); err != nil {
+		return Result{}, "", nil, err
+	}
 	leaseID, scope, err := c.ensureLease(ctx, who)
 	if err != nil {
 		return Result{}, "", nil, err
@@ -343,8 +363,20 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if c.kill.Active() {
 		return Result{}, leaseID, nil, domain.ErrKillSwitchActive
 	}
+	// 承認の待ちなどの間に、ホストの人が入力を始めたときも断る。
+	if err := c.checkHostInput(op); err != nil {
+		return Result{}, leaseID, nil, err
+	}
 	res, err := c.execute(ctx, p, sr)
 	return res, leaseID, p.op, err
+}
+
+// checkHostInput は検査 1b。一時停止中に、対象の操作（domain.OpPausedByHostInput）なら ErrInputPaused。
+func (c *control) checkHostInput(op domain.Op) error {
+	if c.hostPause == nil || !domain.OpPausedByHostInput(op) {
+		return nil
+	}
+	return c.hostPause.Check()
 }
 
 // guardOrScope は検査 4。スコープなしのリースは InputGuard.Check（NFR-S06）で、検証の文脈は nil。スコープ付きのリースは、実行前の拒否

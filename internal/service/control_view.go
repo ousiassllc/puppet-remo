@@ -26,12 +26,9 @@ func (c *control) Screenshot(ctx context.Context, monitor int, format string) (S
 	if c.kill.Active() {
 		return Shot{}, domain.ErrKillSwitchActive
 	}
-	switch format {
-	case "":
-		format = formatPNG
-	case formatPNG, formatJPEG:
-	default:
-		return Shot{}, domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("unknown image format %q", format))
+	format, err := normalizeFormat(format)
+	if err != nil {
+		return Shot{}, err
 	}
 	mons, err := c.capture.Monitors(ctx)
 	if err != nil {
@@ -65,6 +62,17 @@ func (c *control) Screenshot(ctx context.Context, monitor int, format string) (S
 		Scale:      mon.Scale(maxDim),
 		OwnWindows: regionsOnMonitor(own, mon.Index),
 	}, nil
+}
+
+// normalizeFormat は画像形式の指定を検査し、空を既定（png）にして返す。
+func normalizeFormat(format string) (string, error) {
+	switch format {
+	case "":
+		return formatPNG, nil
+	case formatPNG, formatJPEG:
+		return format, nil
+	}
+	return "", domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("unknown image format %q", format))
 }
 
 // regionsOnMonitor は regions のうち monitor 上のものだけを返す。

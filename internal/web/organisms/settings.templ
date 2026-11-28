@@ -66,6 +66,20 @@ templ SettingsForm(f view.SettingsForm) {
 				ログオン時に自動で起動する
 			</label>
 		}
+		@molecules.FieldGroup("ホストの操作との取り合い", "", atoms.Attrs{"data-settings-group": "hostinput"}) {
+			<div class="space-y-1">
+				<label class="flex items-center gap-2 text-sm text-ink">
+					@atoms.Checkbox("set-hostinput-pause", "hostinput.pause_enabled", f.Values.HostInputPause)
+					このPCの実際のマウス・キーボード操作を検知したら、リモートの入力を一時停止する
+				</label>
+				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-notice": "hostinput-pause"}) {
+					マウスとキーボードのどちらかを実際に動かすと、MCP・ビューア・内蔵エージェントからの入力（カーソルの移動・クリック・キー入力・ウィンドウの前面化）を断ります。画面の取得など読み取りは止めません。検知するのは「操作があった」ことだけで、押したキーや入力した内容は読みません。他のソフトウェアが送った入力と、このアプリ自身の入力では止まりません。
+				}
+			</div>
+			@molecules.FormField("set-hostinput-idle", "再開までの待ち時間（秒）", "1〜600。最後の操作からこの間、操作がなければ自動で再開します。", f.Errors.HostInputPauseIdleSec) {
+				@atoms.Input(atoms.InputProps{ID: "set-hostinput-idle", Name: "hostinput.pause_idle_sec", Type: "number", Value: f.Values.HostInputPauseIdleSec, Required: true, Invalid: f.Errors.HostInputPauseIdleSec != "", Attrs: numberAttrs("1", "600")})
+			}
+		}
 		@molecules.FieldGroup("監査ログ", "", atoms.Attrs{"data-settings-group": "audit"}) {
 			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "note", "data-notice": "audit-plaintext"}) {
 				サムネイル（スクリーンショットの縮小画像）と、有効にした場合の入力・クリップボードの本文は、暗号化されず<strong>平文</strong>でこのPCのディスクに保存されます。ディスクの紛失・盗難に備えて BitLocker でドライブ全体を暗号化してください。画面の内容を残したくないときは、サムネイルの保存を無効にできます。

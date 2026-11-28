@@ -63,6 +63,35 @@ type GetUITree struct {
 	MaxDepth, MaxNodes int
 }
 
+// FindUIElement はウィンドウの中の UI 要素を探す（#267。読み取りだけで入力しない）。Window が空なら前面ウィンドウ。
+// MaxResults が 0 なら既定値（20。上限 100）。
+type FindUIElement struct {
+	Window     WindowLocator
+	Element    ElementLocator
+	MaxResults int
+}
+
+// WaitState は WaitFor の待ち方。
+type WaitState string
+
+const (
+	WaitAppear    WaitState = "appear"    // 対象が現れるまで
+	WaitDisappear WaitState = "disappear" // 対象が消えるまで
+)
+
+// Valid は s が既知の待ち方かを返す。
+func (s WaitState) Valid() bool { return s == WaitAppear || s == WaitDisappear }
+
+// WaitFor はウィンドウ（Element が nil のとき。Window で探す）または UI 要素（Window のウィンドウの中の Element）が
+// 現れる・消えるまで、Timeout を上限に待つ（#266。読み取りだけで入力しない）。Interval が 0 なら既定の間隔。
+type WaitFor struct {
+	Window   WindowLocator
+	Element  *ElementLocator
+	State    WaitState
+	Timeout  time.Duration
+	Interval time.Duration
+}
+
 // Wait は Duration だけ待つ（FR-M10。上限 10 秒）。
 type Wait struct{ Duration time.Duration }
 
@@ -103,8 +132,32 @@ func (FocusWindow) isOp()    {}
 func (ClipboardRead) isOp()  {}
 func (ClipboardWrite) isOp() {}
 func (GetUITree) isOp()      {}
+func (FindUIElement) isOp()  {}
+func (WaitFor) isOp()        {}
 func (Wait) isOp()           {}
 func (PointerMove) isOp()    {}
 func (MouseButton) isOp()    {}
 func (Wheel) isOp()          {}
 func (KeyEvent) isOp()       {}
+
+// HostInputGated は、ホストの人が実際のマウス・キーボードを使っている間の一時停止（#270）の対象になるかを、Op 自身が答えるための任意の窓口。
+// 組み込みの Op の判定は OpPausedByHostInput が持つ。新しい Op（UI Automation のパターン操作など）は、カーソル・フォーカス・キー入力を
+// 動かすなら実装して true を返す。実装しない Op は一時停止の対象にならない。
+type HostInputGated interface {
+	Op
+	PausedByHostInput() bool
+}
+
+// OpPausedByHostInput は op が、ホストの実入力による一時停止（service.HostInputPause）で拒否される操作かを返す。
+// 対象は、実際のカーソルを動かす・キーを押す・前面を奪う操作: MouseMove・Click・Drag・Scroll・KeyPress・TypeText・FocusWindow と、
+// Web UI の PointerMove・MouseButton・Wheel・KeyEvent（いずれも SendInput か前面の切り替え）。
+// 対象外は、読み取り（ClipboardRead・GetUITree・スクリーンショットなど）、待ち（Wait）、クリップボードへの書き込み（カーソル・フォーカスを動かさない）。
+// HostInputGated を実装した Op は、その答えに従う。
+func OpPausedByHostInput(op Op) bool {
+	switch op.(type) {
+	case MouseMove, Click, Drag, Scroll, KeyPress, TypeText, FocusWindow, PointerMove, MouseButton, Wheel, KeyEvent:
+		return true
+	}
+	g, ok := op.(HostInputGated)
+	return ok && g.PausedByHostInput()
+}

@@ -259,6 +259,9 @@ type SettingsValues struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
+	// ホストの実入力による一時停止（#270。FR-M30）。待ち時間は秒。
+	HostInputPause        bool
+	HostInputPauseIdleSec string
 	// 監査ログ（FR-S07）。保持期間は日、容量の上限はバイト（単位は未決のため、保存値のまま表示する）。
 	AuditThumbnails     bool
 	AuditRecordText     bool
@@ -281,9 +284,10 @@ type SettingsErrors struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
-	// 監査ログ・更新の項目別のエラー（チェックボックスは検証エラーにならない）。
-	AuditRetentionDays  string
-	AuditThumbsMaxBytes string
+	// ホストの実入力による一時停止・監査ログ・更新の項目別のエラー（チェックボックスは検証エラーにならない）。
+	HostInputPauseIdleSec string
+	AuditRetentionDays    string
+	AuditThumbsMaxBytes   string
 	// ファイル転送（#264）の項目別のエラー。
 	FileTransferRoot          string
 	FileTransferMaxFileBytes  string

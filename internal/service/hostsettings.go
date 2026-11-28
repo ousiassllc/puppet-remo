@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
@@ -64,6 +65,9 @@ type HostSettings struct {
 	FileTransferRoot          string // file_transfer.root（絶対パス。空なら既定の %LOCALAPPDATA%\PuppetRemo\inbox）
 	FileTransferMaxFileBytes  int64  // file_transfer.max_file_bytes（1〜2^53。既定 100 MiB）
 	FileTransferMaxTotalBytes int64  // file_transfer.max_total_bytes（1〜2^53。既定 1 GiB）
+	// ホストの実入力による一時停止（#270。FR-M30）。
+	HostInputPauseEnabled bool // hostinput.pause_enabled（既定 true）
+	HostInputPauseIdleSec int  // hostinput.pause_idle_sec（1〜600。既定 5）
 	// UpdateApplyMode は update.apply_mode（UpdateApplyConfirm / UpdateApplyAutoIdle。既定 confirm。FR-S09）。
 	UpdateApplyMode string
 	// UpdateChannel は update.channel（domain.ChannelStable / domain.ChannelNightly の文字列。既定 stable。FR-S09）。
@@ -86,6 +90,8 @@ const (
 	FieldFileTransferRoot       = settingFileTransferRoot
 	FieldFileTransferMaxFile    = settingFileTransferMaxFile
 	FieldFileTransferMaxTotal   = settingFileTransferMaxTotal
+	FieldHostInputPauseEnabled  = settingHostInputPauseEnabled
+	FieldHostInputPauseIdleSec  = settingHostInputPauseIdleSec
 	FieldUpdateApplyMode        = "update.apply_mode"
 	FieldUpdateChannel          = "update.channel"
 	fieldAutostart              = "autostart"
@@ -130,6 +136,9 @@ func (s HostSettings) Validate() error {
 	}
 	if s.AuditThumbsMaxBytes < 1 || s.AuditThumbsMaxBytes > maxJSONInteger {
 		bad[FieldAuditThumbsMaxBytes] = fmt.Sprintf("1〜%d バイトの整数を指定してください。", maxJSONInteger)
+	}
+	if s.HostInputPauseIdleSec < minHostInputPauseIdleSec || s.HostInputPauseIdleSec > maxHostInputPauseIdleSec {
+		bad[FieldHostInputPauseIdleSec] = fmt.Sprintf("%d〜%d 秒の整数を指定してください。", minHostInputPauseIdleSec, maxHostInputPauseIdleSec)
 	}
 	if s.FileTransferRoot != "" {
 		if err := domain.ValidateTransferRoot(s.FileTransferRoot); err != nil {
@@ -262,6 +271,10 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 	if err != nil {
 		return HostSettings{}, err
 	}
+	pause, err := LoadHostInputPolicy(ctx, h.cfg.Settings)
+	if err != nil {
+		return HostSettings{}, err
+	}
 	fileRoot, err := h.loadFileTransferRoot(ctx)
 	if err != nil {
 		return HostSettings{}, err
@@ -302,7 +315,8 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 		Port: port, KillSwitchHotkey: hotkey, ScreenshotMaxDimension: dim,
 		LeaseIdleTimeoutSec: idle, ViewerDefaultQuality: quality, ViewerDefaultFPS: fps,
 		AuditThumbnailsEnabled: thumbsOn, AuditRecordText: recordText, AuditRetentionDays: int(retention),
-		AuditThumbsMaxBytes: thumbsMax, FileTransferRoot: fileRoot, FileTransferMaxFileBytes: fileMax, FileTransferMaxTotalBytes: fileTotal,
+		AuditThumbsMaxBytes: thumbsMax, HostInputPauseEnabled: pause.Enabled, HostInputPauseIdleSec: int(pause.Idle / time.Second),
+		FileTransferRoot: fileRoot, FileTransferMaxFileBytes: fileMax, FileTransferMaxTotalBytes: fileTotal,
 		UpdateApplyMode: applyMode, UpdateChannel: string(channel), Autostart: autostart,
 	}, nil
 }
@@ -432,6 +446,8 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		{settingFileTransferRoot, s.FileTransferRoot, func(a *HostSettings) { a.FileTransferRoot = s.FileTransferRoot }},
 		{settingFileTransferMaxFile, s.FileTransferMaxFileBytes, func(a *HostSettings) { a.FileTransferMaxFileBytes = s.FileTransferMaxFileBytes }},
 		{settingFileTransferMaxTotal, s.FileTransferMaxTotalBytes, func(a *HostSettings) { a.FileTransferMaxTotalBytes = s.FileTransferMaxTotalBytes }},
+		{settingHostInputPauseEnabled, s.HostInputPauseEnabled, func(a *HostSettings) { a.HostInputPauseEnabled = s.HostInputPauseEnabled }},
+		{settingHostInputPauseIdleSec, s.HostInputPauseIdleSec, func(a *HostSettings) { a.HostInputPauseIdleSec = s.HostInputPauseIdleSec }},
 		{settingUpdateApplyMode, s.UpdateApplyMode, func(a *HostSettings) { a.UpdateApplyMode = s.UpdateApplyMode }},
 		{settingUpdateChannel, s.UpdateChannel, func(a *HostSettings) { a.UpdateChannel = s.UpdateChannel }},
 	} {
@@ -505,6 +521,8 @@ func (h *hostSettings) auditEntry(old, updated HostSettings) (entry repository.A
 		{FieldFileTransferRoot, old.FileTransferRoot != updated.FileTransferRoot, updated.FileTransferRoot},
 		{FieldFileTransferMaxFile, old.FileTransferMaxFileBytes != updated.FileTransferMaxFileBytes, updated.FileTransferMaxFileBytes},
 		{FieldFileTransferMaxTotal, old.FileTransferMaxTotalBytes != updated.FileTransferMaxTotalBytes, updated.FileTransferMaxTotalBytes},
+		{FieldHostInputPauseEnabled, old.HostInputPauseEnabled != updated.HostInputPauseEnabled, updated.HostInputPauseEnabled},
+		{FieldHostInputPauseIdleSec, old.HostInputPauseIdleSec != updated.HostInputPauseIdleSec, updated.HostInputPauseIdleSec},
 		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode, updated.UpdateApplyMode},
 		{FieldUpdateChannel, old.UpdateChannel != updated.UpdateChannel, updated.UpdateChannel},
 		{fieldAutostart, old.Autostart != updated.Autostart, updated.Autostart},

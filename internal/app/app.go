@@ -59,6 +59,9 @@ type Platform struct {
 	Launcher   platform.AppLauncher
 	FilePicker platform.FilePicker
 	Hotkey     platform.Hotkey
+	// HostInput はホストの人の実際のマウス・キーボード操作の検知（#270。FR-M30）。設定 hostinput.pause_enabled が有効の間だけ監視し、
+	// 検知した間はリモートの入力を一時停止する（service.HostInputPauser）。
+	HostInput platform.HostInputWatcher
 	// Power はリース保持中のスリープ・画面オフの抑止（NFR-A05）。
 	Power platform.Power
 	// Autostart はログオン時の自動起動の登録（FR-S08）。nil なら設定画面に項目を出さない。
@@ -173,6 +176,8 @@ type App struct {
 	maint      *service.Maintenance
 	listen     *listenSupervisor
 	hotkey     *KillSwitchHotkey
+	hostPause  *service.HostInputPauser // ホストの実入力による一時停止（#270）
+	hostInput  *hostInputMonitor
 	settings   service.HostSettingsService
 	updater    service.Updater        // 更新の確認・適用（FR-H09）
 	quit       atomic.Pointer[func()] // アプリを終える関数（Wails の起動後に SetQuit で入る）
@@ -218,8 +223,8 @@ func (c Config) validate() error {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
-		p.Hotkey == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil, p.Browser == nil, p.Files == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power, Installer, Secrets, Browser and Files")
+		p.Hotkey == nil, p.HostInput == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil, p.Browser == nil, p.Files == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, HostInput, Power, Installer, Secrets, Browser and Files")
 	case c.Windows == nil:
 		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
@@ -328,11 +333,21 @@ func (a *App) build(ctx context.Context) error {
 	if err := a.agentCfg.MigrateConnection(ctx); err != nil {
 		return fmt.Errorf("agent connection: %w", err)
 	}
+	// ホストの実入力による一時停止（#270）。検知（hostInput）は Start が、設定が有効なら動かす。
+	pausePolicy, err := service.LoadHostInputPolicy(ctx, settings)
+	if err != nil {
+		return fmt.Errorf("host input pause settings: %w", err)
+	}
+	a.hostPause, err = service.NewHostInputPauser(service.HostInputPauserConfig{Clock: cfg.Clock, Audit: audit, Logger: a.log, Policy: pausePolicy})
+	if err != nil {
+		return fmt.Errorf("host input pause: %w", err)
+	}
+	a.hostInput = newHostInputMonitor(p.HostInput, a.hostPause.NoteHostInput)
 	// agent のアクションだけが Judge（RuleJudge。失敗・2 秒の超過は承認を求める fail-closed）と承認（judge_action）を通る。
 	control, err := service.NewControl(service.ControlConfig{
 		Capturer: p.Capturer, Input: p.Input, Windows: p.Windows, Clipboard: p.Clipboard, UI: p.UI,
 		Launcher: p.Launcher, Apps: a.apps,
-		Leases: a.leases, Kill: killMgr, Settings: settings, Audit: audit, Clock: cfg.Clock, Logger: a.log,
+		Leases: a.leases, Kill: killMgr, HostPause: a.hostPause, Settings: settings, Audit: audit, Clock: cfg.Clock, Logger: a.log,
 		Judge:    service.FailClosed(service.Chain(service.NewRuleJudge(a.agentCfg)), judgeTimeout),
 		Approval: a.approval,
 	})
@@ -347,6 +362,14 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("file transfer: %w", err)
 	}
+	// 停止に入ったら、押下中のキー・ボタンを離す（以後の入力は断られ、離す操作も届かないため）。実入力のフックのスレッドを待たせない。
+	a.hostPause.SetOnPause(func() {
+		go func() {
+			if err := control.ReleaseInput(); err != nil {
+				a.log.Warn("releasing held input after the host took over failed", "err", err)
+			}
+		}()
+	})
 	if err := a.buildAgent(control, killMgr); err != nil {
 		return err
 	}
@@ -362,7 +385,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.mcp, err = mcp.New(mcp.Config{
-		Control: control, Leases: a.leases, Audit: audit, Agent: a.agent, Files: files, Version: cfg.Version, Logger: a.log,
+		Control: control, Leases: a.leases, Audit: audit, Agent: a.agent, Files: files, HostInput: a.hostPause, Version: cfg.Version, Logger: a.log,
 		// 連鎖（web/middleware）が認証した主体を MCP サーバーへ渡す。mcp は web を import できない。
 		Principal:        func(r *http.Request) (service.Principal, bool) { return middleware.PrincipalFrom(r.Context()) },
 		OnSessionsChange: func() { a.bus.Publish(service.Event{Topic: service.TopicSessions}) },

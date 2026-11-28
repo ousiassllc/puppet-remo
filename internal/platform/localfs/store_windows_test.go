@@ -15,7 +15,7 @@ import (
 )
 
 // TestJunctionEscapeIsRejected はジャンクション（管理者権限が要らない。Go の Lstat は ModeSymlink を立てない種類のリパースポイント）で
-// 置き場所の外に出られないこと（NTFS の実機でだけ確かめられる。docs/operations/smoke-windows.md §4.18）。
+// 置き場所の外に出られないこと（NTFS の実機でだけ確かめられる。docs/operations/smoke-windows.md §4.19）。
 func TestJunctionEscapeIsRejected(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.put("keep.txt", 0, "k"); err != nil {

@@ -365,6 +365,7 @@ func settingsValues(s service.HostSettings) view.SettingsValues {
 		Port: strconv.Itoa(s.Port), Hotkey: s.KillSwitchHotkey, ScreenshotMaxDim: strconv.Itoa(s.ScreenshotMaxDimension),
 		LeaseIdleSec: strconv.Itoa(s.LeaseIdleTimeoutSec), ViewerQuality: strconv.Itoa(s.ViewerDefaultQuality),
 		ViewerFPS: strconv.Itoa(s.ViewerDefaultFPS), Autostart: s.Autostart,
+		HostInputPause: s.HostInputPauseEnabled, HostInputPauseIdleSec: strconv.Itoa(s.HostInputPauseIdleSec),
 		AuditThumbnails: s.AuditThumbnailsEnabled, AuditRecordText: s.AuditRecordText,
 		AuditRetentionDays: strconv.Itoa(s.AuditRetentionDays), AuditThumbsMaxBytes: strconv.FormatInt(s.AuditThumbsMaxBytes, 10),
 		FileTransferRoot: s.FileTransferRoot, FileTransferMaxFileBytes: strconv.FormatInt(s.FileTransferMaxFileBytes, 10),
