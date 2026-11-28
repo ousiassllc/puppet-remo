@@ -1123,7 +1123,7 @@ Bearer トークンは `prm_` + base64url（パディングなし）の 32 バ�
 | パッケージ | 責務 | 依存してよい先 |
 |-----------|------|---------------|
 | `router` | GUI ルーターとリモートルーターの組み立て、ミドルウェア連鎖（API 仕様 §1） | `service`、`domain` |
-| `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`killswitch`、`whois`、`allowlist`、`bearer`（API 仕様 §1 の連鎖の順） | `service`（`Authenticator`・`Identity`・`ResolveIdentity`）、`domain`。`tailnet` は import しない（§13.1） |
+| `web/middleware` | `csp`（全 HTML 応答に CSP ヘッダー。NFR-S19）、`hostcheck`、`csrfheader`、`killswitch`、`whois`、`allowlist`、`bearer`（API 仕様 §1 の連鎖の順）、`bodylimit`（状態変更リクエストの本文の上限。超過は 413。NFR-S09。`LimitBody`） | `service`（`Authenticator`・`Identity`・`ResolveIdentity`）、`domain`。`tailnet` は import しない（§13.1） |
 | `web/handler` | 機能別の HTTP ハンドラ（viewer、clients、apps（M1.5）、tasks、settings、audit …）。Templ で描画 | `service`、`domain` |
 | `mcp` | ツール定義（引数スキーマ、`readOnlyHint`）。引数を `domain.Op` に変換して `Control` / `Agent` を呼ぶ。エラーを `isError` + `structuredContent` に変換。M1.5: `list_launchable_apps`（`Control.LaunchableApps` の結果を `{mode, apps}` で返す。`apps` は `AppSummary` だけで、拒否リストの中身は返さない）と `launch_app`（引数は `app_id` と `path` で、どちらも任意だがちょうど一方が必要。`path` は起動の方式がブラックリストのときだけ受け付ける。`Control.Launch`）。`mcp` は `AppRegistry` を持たない（許可リスト・拒否リスト・起動の方式を書く経路が無い）。`list_launchable_apps` の監査は `addAuditedTool` が `tool.list_launchable_apps` で記録し、`launch_app` は `Control.Launch` が記録する | `service`、`domain` |
 | `ws` | WebSocket のプロトコル（JSON とバイナリフレームの符号化・復号）。入力メッセージを `domain.Op` に変換して `Control` へ。接続の認可（`viewer_id`）・keepalive・閉じコード・`Streamer` の配信の中継（`ws.New(Config{Sessions, Control, Leases, Events, ClientFrom})`。M2・#61） | `service`、`domain` |
@@ -1562,3 +1562,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.69 | 2026-11-27 | §2 の `MatchDenied` の大文字小文字の比較を `strings.EqualFold` から Windows の OrdinalIgnoreCase 相当に寄せ、`domain.EqualOrdinalIgnoreCase` を追加 | #183 |
 | 1.70 | 2026-11-27 | 設定変更の監査を fail-closed に統一（共通の `commitAudited`）: `AppRegistry` の許可リスト・拒否リスト、`HostSettingsService.Save`、`AgentSettings` の保存・API キーの登録と削除。`repository.Settings` に `Delete` を追加。`audit_unavailable` の Detail は `subject`・`restored`（`launch_mode_restored` を置き換え） | #182 |
 | 1.71 | 2026-11-27 | Codex 経路（`chatgpt-codex`。#247）を追加: §1 の `openai` の責務、新設の §4.3.2（`internal/codex` の `catalog`・`engine`・`rpc`・`protocol`・`appserver`・`codextest`・`Model`、`CodexAuth`・`CodexAuthService`）、§5.6 のループの違い（`CancelConnection`）、§10・§11・§12。公式経路の決定を反映: §4.3.1 を実装の名前（`openai.NewChatGPT`・`ParseDesktopCall`・`ChatGPTAuthService`・`PlanGate`）に改め「設計のみ・実装は未着手」を実装済みに、`SecretChatGPT` の分割保存（見出し `{"v":1,"parts":N}`・2000 バイト以下ずつの parts）、受信口のポート `1455` → `1457` → 空きポート、`Problem` の `policy_denied` | #247 |
+| 1.72 | 2026-11-28 | §13.6 の `web/middleware` の一覧に `bodylimit` を足した | #258 |

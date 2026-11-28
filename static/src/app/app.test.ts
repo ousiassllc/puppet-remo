@@ -93,6 +93,64 @@ describe("確認モーダルを閉じたときのフォーカス", () => {
     };
   }
 
+  function pressTab(shiftKey: boolean): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+    return event;
+  }
+
+  it("開くと、フォーカスは右上の × ではなくキャンセルへ入る", async () => {
+    const m = await openModal();
+    expect(document.activeElement).to.equal(m.cancel);
+  });
+
+  it("キャンセルが無い確認（NoCancel）では、確定へ入る", async () => {
+    const page = await fixture<HTMLElement>(html`
+      <div>
+        <button id="opener">開く</button>
+        <div id="modal-root"><div id="modal"><button id="close" aria-label="閉じる">×</button><button id="confirm">わかりました</button></div></div>
+      </div>
+    `);
+    const holder = page.querySelector<HTMLElement>("#modal-root")!;
+    holder.dispatchEvent(new CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target: holder, requestConfig: { elt: page.querySelector("#opener") } } }));
+    expect(document.activeElement).to.equal(page.querySelector("#confirm"));
+  });
+
+  it("末尾（確定）で Tab を押すと先頭（×）へ循環する", async () => {
+    const m = await openModal();
+    m.confirm.focus();
+    expect(pressTab(false).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(m.close);
+  });
+
+  it("先頭（×）で Shift+Tab を押すと末尾（確定）へ循環する", async () => {
+    const m = await openModal();
+    m.close.focus();
+    expect(pressTab(true).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(m.confirm);
+  });
+
+  it("途中の要素での Tab は、ブラウザの既定の移動に任せる", async () => {
+    const m = await openModal();
+    m.close.focus();
+    expect(pressTab(false).defaultPrevented).to.equal(false);
+  });
+
+  it("フォーカスがモーダルの外にあるときの Tab は、中へ戻す", async () => {
+    const m = await openModal();
+    m.opener.focus();
+    expect(pressTab(false).defaultPrevented).to.equal(true);
+    expect(document.activeElement).to.equal(m.close);
+  });
+
+  it("閉じたあと（退出中）の Tab は、循環させない", async () => {
+    const m = await openModal();
+    m.cancel.click();
+    m.opener.focus();
+    expect(pressTab(false).defaultPrevented).to.equal(false);
+    await until(() => m.holder.children.length === 0, "the modal is removed");
+  });
+
   for (const pick of ["close", "cancel"] as const) {
     it(`${pick === "close" ? "×" : "キャンセル"}を押すと閉じて、フォーカスを開いた要素へ戻す`, async () => {
       const m = await openModal();

@@ -1,6 +1,6 @@
 # Git フック（Lefthook）。導入は README.md「ビルドと開発」、Taskfile.yml の hooks:* を参照。
 # pre-commit は CI（.github/workflows/ci.yml）で落ちる検査のうち軽いものを、触ったファイルに関係するものだけ手元で先に走らせる。
-# pre-push で go test ./... を走らせる（CI の -race、GOOS=windows の build・vet・lint、本番ビルドは task ci で確認する）。
+# pre-push で go test ./... を走らせる（CI の -race は task test:race、Windows の本番ビルドは GOOS=windows GOARCH=amd64 task build:production で確認する。それ以外の主な検査は task ci）。
 # ジョブは順に実行し（piped: true）、1 つ落ちたら残りは飛ばす。ツール（golangci-lint・templ・bun）は PATH に要る。
 
 pre-commit:

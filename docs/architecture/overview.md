@@ -607,6 +607,7 @@ puppet-remo/
 │   │   └── windows/              # capture(DXGI/GDI), input, window, uia, clipboard, secret(資格情報), launcher(CreateProcess), filepicker
 │   ├── tailnet/                  # LocalAPI クライアント、Watcher、Listener 管理
 │   ├── openai/                   # Responses API クライアント (Model インターフェース + 実装、モック)
+│   ├── codex/                    # Codex 経路 (chatgpt-codex) の app-server クライアント (catalog, engine, rpc, protocol, appserver)
 │   ├── typesafe/                 # TypeSafe (Jev) HTTP クライアント (Chooser インターフェース + 実装、モック)
 │   ├── service/                  # authz, lease, approval, control, agent (fastpath を含む), judge, streamer, audit, updater
 │   ├── mcp/                      # MCP サーバー (ツール定義と service 呼び出し)
@@ -735,3 +736,4 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.31 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。「ビルドと配布」に表示名の方針（変えるもの・変えないもの）を追記 | #188 |
 | 1.32 | 2026-11-23 | M1 実装での差分のディレクトリ構成の表を現状に合わせた: `internal/openai`・`internal/typesafe`・`internal/ws` の行（実装済みのため）と `windows/` の `secret` は無い、の記述を削除、`internal/router` のデモサーバーのパスを `internal/router/internal/guidemo` に訂正、`middleware/` の一覧に `bodylimit` を追加 | #235 |
 | 1.33 | 2026-11-27 | 内蔵エージェントに Codex 経路（`chatgpt-codex`。#247）を追加: 設計方針（外部通信に Codex のエンジンの取得・子プロセスの通信）、技術選定（OpenAI クライアントの実装名、資格情報の分割保存）、構成図（Codex の子プロセス）、エージェントのタスク実行に Codex 経路のフローを追記。公式経路のトークンの分割保存を反映し、「実装は未着手」の記述を実装済みに直した。レイヤー表の `codex` の行は実装のスライスが足す | #247 |
+| 1.34 | 2026-11-28 | ディレクトリ構成のツリーに `internal/codex/`（Codex 経路。#247 で追加済み）を足した | #257 |
