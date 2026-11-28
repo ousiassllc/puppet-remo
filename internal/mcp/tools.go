@@ -135,7 +135,7 @@ var leaseAcquiringTools = map[string]bool{
 	"mouse_move":      true, "left_click": true, "right_click": true, "middle_click": true, "double_click": true, "triple_click": true,
 	"left_click_drag": true, "scroll": true, "key": true, "type": true,
 	"focus_window": true, "clipboard_read": true, "clipboard_write": true, "get_ui_tree": true,
-	"find_ui_element": true, "wait_for": true,
+	"find_ui_element": true, "wait_for": true, "ui_action": true,
 	"launch_app": true,
 	// ファイル転送（#264）。承認が要るクライアントでは暗黙のリース取得が承認待ちでブロックする。
 	"put_file": true, "get_file": true, "list_files": true, "delete_file": true,

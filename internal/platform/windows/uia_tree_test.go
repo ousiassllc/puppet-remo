@@ -18,6 +18,48 @@ type fakeUIANode struct {
 	// childrenCalls は Children が呼ばれた回数。
 	childrenCalls int
 	childrenErr   error
+
+	// パターン操作（uiaActor）の偽。呼ばれたメソッドを acts に記録する。
+	acts     []string
+	actErr   error // 状態を変える呼び出しが返すエラー
+	toggle   int
+	expand   int
+	selected bool
+	readOnly bool
+	value    string
+}
+
+func (n *fakeUIANode) act(name string) error {
+	n.acts = append(n.acts, name)
+	return n.actErr
+}
+
+func (n *fakeUIANode) Invoke() error { return n.act("Invoke") }
+func (n *fakeUIANode) ValueIsReadOnly() (bool, error) {
+	return n.readOnly, nil
+}
+func (n *fakeUIANode) SetValue(text string) error {
+	n.value = text
+	return n.act("SetValue")
+}
+func (n *fakeUIANode) ToggleState() (int, error) { return n.toggle, nil }
+func (n *fakeUIANode) Toggle() error {
+	n.toggle = (n.toggle + 1) % 3
+	return n.act("Toggle")
+}
+func (n *fakeUIANode) Select() error {
+	n.selected = true
+	return n.act("Select")
+}
+func (n *fakeUIANode) IsSelected() (bool, error) { return n.selected, nil }
+func (n *fakeUIANode) ExpandState() (int, error) { return n.expand, nil }
+func (n *fakeUIANode) Expand() error {
+	n.expand = uiaExpandExpanded
+	return n.act("Expand")
+}
+func (n *fakeUIANode) Collapse() error {
+	n.expand = uiaExpandCollapsed
+	return n.act("Collapse")
 }
 
 func (n *fakeUIANode) Props() uiaProps { return n.props }

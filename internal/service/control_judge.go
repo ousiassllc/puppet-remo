@@ -121,6 +121,10 @@ func (c *control) judgeTargets(ctx context.Context, op domain.Op) ([]domain.Wind
 		return c.windowsAt(o.At)
 	case domain.Wheel:
 		return c.windowsAt(o.At)
+	case domain.UIAction:
+		if ref, err := domain.ParseElementRef(o.ElementID); err == nil {
+			return c.windowByID(ctx, ref.WindowID())
+		}
 	case domain.FocusWindow:
 		return c.windowByID(ctx, o.ID)
 	case domain.GetUITree:

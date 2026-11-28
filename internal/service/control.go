@@ -50,6 +50,11 @@ type Control interface {
 	// Judge が見るウィンドウは、座標のある操作はその座標のウィンドウ（Drag は始点と終点）、FocusWindow・GetUITree は id のウィンドウ、
 	// キー・文字入力・クリップボードは前面のウィンドウ。agent のアクションは 1 件ごとに agent.step（kind = agent）で監査し
 	// （WithAgentStep の step_no・route。type の本文は記録しない）、Judge が allow 以外なら agent.judge も記録する（control_judge.go）。
+	// UIAction（ui_action。#268）は UI Automation のパターンで要素を操作する入力系の操作で、カーソルもキーボードフォーカスも動かさず、SendInput にも切り替えない。
+	// 検査はキー・クリックと同じ経路を通る（キルスイッチ → リース → 引数 → InputGuard〔要素のウィンドウが自ウィンドウ・昇格なら input_blocked〕→ Judge → 実行）。
+	// スコープ付きのリースは、要素のウィンドウが対象グループ G のメンバーであることを検証する（メンバーでなければ outside_target_group でその操作だけ拒否。FocusWindow と同じ）。
+	// 監査は tool.ui_action の 1 行（action・element_id・要素の control_type・automation_id・結果。set_value の本文は text_len だけで、audit.record_text が true のときだけ
+	// text に残す〔パスワード欄は残さない〕）。成功すれば画面を変える操作として、サムネイルの対象になる。
 	// Wait はリース不要（KillSwitch の後に待つだけ）。
 	// FindUIElement・WaitFor は UI を読むだけの操作で、GetUITree と同じ検査（リース・InputGuard の観測の規則。自ウィンドウは input_blocked）を通る
 	// （control_uia.go。WaitFor は待ちの間も確認のたびにキルスイッチを見る。1 回の呼び出しが 1 行の監査）。
@@ -135,6 +140,8 @@ type LaunchResult struct {
 type Result struct {
 	Text string         // ClipboardRead: クリップボードのテキスト（1 MiB まで）
 	Tree *domain.UINode // GetUITree: 物理座標のツリー。縮小座標への変換は呼び出し側が行う
+	// Acted は UIAction の結果（物理座標。縮小座標への変換は呼び出し側が行う）。要素を特定したあとで失敗したときも、Do のエラーと一緒に入る（監査用。呼び出し側は使わない）。
+	Acted *domain.UIActionResult
 	// Found は FindUIElement の結果（物理座標。縮小座標への変換は呼び出し側が行う）。
 	Found *domain.UIFindResult
 	// Waited は WaitFor の結果（物理座標）。タイムアウトはエラーではなく Satisfied が false の結果。

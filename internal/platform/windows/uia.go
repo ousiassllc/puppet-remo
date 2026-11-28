@@ -191,6 +191,49 @@ func (u *UIAutomation) Resolve(ctx context.Context, ref domain.ElementRef) (doma
 	return domain.UIElementInfo{}, domain.ErrStaleElement
 }
 
+// Act は platform.UIAutomation.Act（#268）。Resolve と同じく、ウィンドウが一覧にあり、PID が ID のものと同じで、その木に RuntimeId の同じ要素が
+// あるときだけ操作する（それ以外は ErrStaleElement）。専用スレッドの上で、要素を生きたまま引き当て、パターンを呼ぶ。
+func (u *UIAutomation) Act(ctx context.Context, ref domain.ElementRef, act domain.UIAction) (domain.UIActionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.UIActionResult{}, err
+	}
+	if len(ref.RuntimeID) == 0 {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	win, err := uiaResolveWindow(ctx, u.windows, ref.WindowID())
+	if errors.Is(err, domain.ErrWindowNotFound) || err == nil && win.PID != ref.PID {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	if err != nil {
+		return domain.UIActionResult{}, err
+	}
+	hwnd, err := uiaWindowHandle(win)
+	if err != nil {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	var res domain.UIActionResult
+	err = u.worker.Do(ctx, func() error {
+		root, err := u.backend.Root(uintptr(hwnd))
+		if err != nil {
+			return err
+		}
+		node, err := uiaFindLive(ctx, root, ref.RuntimeID, uiaResolveMaxNodes)
+		if err != nil {
+			return err
+		}
+		defer node.Release()
+		res, err = uiaPerform(node, node.Props(), ref, act)
+		return err
+	})
+	if errors.Is(err, domain.ErrWindowNotFound) { // 一覧に出たあとに閉じた
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	if res.Element.ID != "" {
+		res.Window = win
+	}
+	return res, err
+}
+
 // uiaUnlimitedDepth は Snapshot の深さの上限（深さは制限せず、maxNodes だけで打ち切る）。
 const uiaUnlimitedDepth = 1 << 30
 

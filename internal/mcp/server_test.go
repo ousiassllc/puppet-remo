@@ -42,6 +42,7 @@ var wantTools = map[string]bool{ // 値は readOnlyHint
 	"get_ui_tree":        true,
 	"find_ui_element":    true,
 	"wait_for":           true,
+	"ui_action":          false,
 	"acquire_control":    false,
 	"release_control":    false,
 	"get_control_status": true,

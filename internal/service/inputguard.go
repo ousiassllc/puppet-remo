@@ -52,6 +52,14 @@ func (g InputGuard) Check(ctx context.Context, op domain.Op, mon []domain.Monito
 		return g.checkForeground(domain.CheckInputTarget)
 	case domain.FocusWindow:
 		return g.checkWindowByID(ctx, o.ID, domain.CheckObserveTarget)
+	case domain.UIAction:
+		// 要素のあるウィンドウ（要素 ID の HWND）を検査する。自ウィンドウ（オーバーレイを含む）・昇格ウィンドウは input_blocked。
+		// ウィンドウが無ければここでは許可し、実行側（platform）が stale_element にする。
+		ref, err := o.Validate()
+		if err != nil {
+			return err
+		}
+		return g.checkWindowByID(ctx, ref.WindowID(), domain.CheckUIActionTarget)
 	case domain.GetUITree:
 		if o.WindowID == "" {
 			return g.checkForeground(domain.CheckObserveTarget)
