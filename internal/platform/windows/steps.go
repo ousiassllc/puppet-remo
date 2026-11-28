@@ -216,15 +216,15 @@ type winInput struct {
 	mi  mouseInput
 }
 
-// encodeInputs は steps を INPUT の配列にする。scanCode は仮想キーのスキャンコード（Windows では MapVirtualKey。nil なら 0）。
+// encodeInputs は steps を INPUT の配列にする。どの INPUT にも dwExtraInfo に ownInputTag を付ける（ホストの実入力の検知が自分の注入を見分ける。hostinput.go）。scanCode は仮想キーのスキャンコード（Windows では MapVirtualKey。nil なら 0）。
 func encodeInputs(steps []inputStep, scanCode func(vk uint16) uint16) []winInput {
 	out := make([]winInput, len(steps))
 	for i, s := range steps {
 		switch s.kind {
 		case stepMouse:
-			out[i] = winInput{typ: inputMouse, mi: mouseInput{dx: s.dx, dy: s.dy, mouseData: s.data, flags: s.flags}}
+			out[i] = winInput{typ: inputMouse, mi: mouseInput{dx: s.dx, dy: s.dy, mouseData: s.data, flags: s.flags, dwExtraInfo: ownInputTag}}
 		case stepKey:
-			ki := keybdInput{vk: s.vk}
+			ki := keybdInput{vk: s.vk, dwExtraInfo: ownInputTag}
 			if scanCode != nil {
 				ki.scan = scanCode(s.vk)
 			}
@@ -237,7 +237,7 @@ func encodeInputs(steps []inputStep, scanCode func(vk uint16) uint16) []winInput
 			out[i].typ = inputKeyboard
 			*(*keybdInput)(unsafe.Pointer(&out[i].mi)) = ki
 		case stepRune:
-			ki := keybdInput{scan: s.unit, flags: keyeventfUnicode}
+			ki := keybdInput{scan: s.unit, flags: keyeventfUnicode, dwExtraInfo: ownInputTag}
 			if s.up {
 				ki.flags |= keyeventfKeyUp
 			}

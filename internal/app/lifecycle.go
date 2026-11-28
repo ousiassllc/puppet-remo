@@ -85,6 +85,15 @@ func (a *App) onSettingsChange(old, updated service.HostSettings) {
 			a.toast("error", "ホットキーを登録できませんでした。これまでのホットキーを使い続けます。（"+updated.KillSwitchHotkey+"）")
 		}
 	}
+	if old.HostInputPauseEnabled != updated.HostInputPauseEnabled || old.HostInputPauseIdleSec != updated.HostInputPauseIdleSec {
+		policy := service.HostInputPolicy{Enabled: updated.HostInputPauseEnabled, Idle: time.Duration(updated.HostInputPauseIdleSec) * time.Second}
+		if err := a.hostPause.SetPolicy(policy); err != nil {
+			a.log.Error("host input pause settings were not changed", "err", err)
+		} else if err := a.hostInput.Apply(policy.Enabled); err != nil {
+			a.log.Error("host input watcher was not changed", "err", err)
+			a.toast("error", "ホストの操作の検知を開始できませんでした。リモートの入力は一時停止されません。")
+		}
+	}
 	if old.LeaseIdleTimeoutSec != updated.LeaseIdleTimeoutSec {
 		if err := a.leases.SetIdleTimeout(time.Duration(updated.LeaseIdleTimeoutSec) * time.Second); err != nil {
 			a.log.Error("lease idle timeout was not changed", "err", err)
@@ -131,6 +140,13 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	})
 	a.spawn(func() { a.maint.Run(runCtx) })
+	// ホストの実入力による一時停止（#270）。検知は設定が有効の間だけ動かす。止まる停止の再開の監査は Run が遅れずに書く。
+	// 検知を始められなくてもアプリは動かす（一時停止が効かないだけ）。
+	if err := a.hostInput.Apply(a.hostPause.Policy().Enabled); err != nil {
+		a.log.Error("host input watcher is not active; remote input will not pause for host input", "err", err)
+		a.toast("error", "ホストの操作の検知を開始できませんでした。リモートの入力は一時停止されません。")
+	}
+	a.spawn(func() { a.hostPause.Run(runCtx) })
 	// 起動の 1 分後と 6 時間ごとに新版を確認する（dev ビルドは何もしない）。止めるのは Shutdown。
 	a.updater.Start()
 	a.spawn(func() { _ = a.listen.Run(runCtx) }) // 異常終了は supervisor がログに残す
@@ -170,6 +186,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	var errs []error
 	a.hotkey.Close()
+	a.hostInput.Close()
 	if cancel != nil {
 		cancel()
 	}

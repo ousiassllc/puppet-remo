@@ -58,7 +58,7 @@ graph TD
 
 ## 機能一覧
 
-優先度: M1 = Windows + MCP 低レベルツール（FR-M01〜M17）・認証・排他リース（保持者は `mcp` のみ）・キルスイッチ・ホスト GUI の基本（ダッシュボード、接続要求、クライアント管理）、M1.5 = 起動許可リストと `launch_app` / `list_launchable_apps`（FR-M18・M19）とホスト GUI の起動許可アプリの登録（FR-H12）と起動の方式（ホワイトリスト〔既定〕/ ブラックリスト。拒否リスト。FR-S22。#88）、M2 = Web UI と強制剥奪（FR-L06）、M3 = 承認・オーバーレイ・監査の強化、M4 = ホスト内蔵エージェント（[マイルストーン](../overview.md#マイルストーン--リリース計画)）。
+優先度: M1 = Windows + MCP 低レベルツール（FR-M01〜M17）・認証・排他リース（保持者は `mcp` のみ）・キルスイッチ・ホスト GUI の基本（ダッシュボード、接続要求、クライアント管理）、M1.5 = 起動許可リストと `launch_app` / `list_launchable_apps`（FR-M18・M19）とホスト GUI の起動許可アプリの登録（FR-H12）と起動の方式（ホワイトリスト〔既定〕/ ブラックリスト。拒否リスト。FR-S22。#88）、M2 = Web UI と強制剥奪（FR-L06）、M3 = 承認・オーバーレイ・監査の強化、M4 = ホスト内蔵エージェント（[マイルストーン](../overview.md#マイルストーン--リリース計画)）、M5 = QA 用の道具の追加（ホストが決めたフォルダへのファイル転送 FR-M27・FR-S24。#264）。
 
 **M1 の範囲の確定事項**（M1 の実装者が迷わないための定義。各 FR の行にも優先度を付けている）:
 
@@ -162,6 +162,7 @@ stateDiagram-v2
 | FR-M19 | `launch_app` | `app_id`（`list_launchable_apps` の `id`）か `path`（ブラックリスト方式のときだけ。固定ディスク上の `.exe` の絶対パス）の**どちらか一方**（同時指定・どちらも無しは `invalid_argument`。ホワイトリスト方式で `path` を渡しても `invalid_argument`）。引数・作業ディレクトリは受け取らない | `{ "ok": true, "app_id", "pid", "window"?: { "id", "title", "pid", "process_name" }, "reused_existing_window" }`（`app_id` は `app_id` 指定の起動だけ。起動したアプリのウィンドウと、既存のウィンドウが前に出ただけかの印。下の「アプリ起動の規約」） | 必要（未保持なら暗黙に取得。FR-L04） | M1.5 |
 | FR-M28 | `find_ui_element` | ウィンドウの探し方 `window_id?` / `title?` / `process_name?`（すべて省略なら前面のウィンドウ）、要素の探し方 `name?` / `automation_id?` / `control_type?`（**1 つ以上が必須**。指定した項目はすべて満たす）、`match?`（`exact` 既定 / `contains`。`title` と `name` に効く）、`max_results?`（既定 20、最大 100）。形は「UI 要素の探し方（#266・#267）」の節 | `{ "window": {…}, "truncated": false, "elements": [ { "id", "control_type", "name", "automation_id", "class_name", "rect", "enabled", "offscreen", "visible", "patterns" } ] }`。読み取りだけで入力しない。`id` は要素 ID（古くなれば `stale_element`） | 必要（`get_ui_tree` と同じ検査） | M1 |
 | FR-M29 | `wait_for` | ウィンドウの探し方（`window_id?` / `title?` / `process_name?`）、要素の探し方（`name?` / `automation_id?` / `control_type?`。1 つでも指定すると、その窓の中の要素を待つ）、`match?`、`state`（`appear` / `disappear`。必須）、`timeout_ms`（**必須**、1〜60,000）、`interval_ms?`（既定 500、100〜5,000） | `{ "state", "target": "window" \| "element", "matched", "timed_out", "waited_ms", "window"?, "elements"?, "candidates"?: { "windows", "elements" }, "truncated"? }`。成功は `matched: true` で、次の操作に使う窓（id・タイトル・プロセス・矩形）か要素（id・矩形・patterns）を返す。**タイムアウトはエラーにせず** `matched: false`・`timed_out: true` と、そのとき見えていた候補（各最大 20 件）を返す。読み取りだけで入力しない | 必要（`get_ui_tree` と同じ検査） | M1 |
+| FR-M27 | `put_file` / `get_file` / `list_files` / `delete_file`（ファイル転送。#264） | `put_file`: `path`\*（置き場所からの相対パス）、`content_base64`\*（1 回 512 KiB まで。base64 にする前）、`offset`（既定 0。0 は新規作成〔同名は置き換え〕、0 より大きい値は、ちょうどその大きさのファイルへの追記。大きなファイルを分けて送る）。`get_file`: `path`\*、`offset`、`length`（1 回 512 KiB まで）。`list_files`: `path`（フォルダ。省略は置き場所）。`delete_file`: `path`\*（ファイルまたは空のフォルダ） | `put_file`: `{ "ok": true, "path", "size", "sha256" }`（`size`・`sha256`〔16 進の小文字〕は書いたあとのファイル全体のもの）。`get_file`: `{ "path", "offset", "length", "size", "sha256", "eof", "content_base64" }`（`size`・`sha256` はファイル全体）。`list_files`: `{ "path", "entries": [ { "path", "type": "file" \| "dir", "size", "modified" } ], "truncated" }`（名前の昇順・最大 1000 件・非再帰・リンクは出さない）。`delete_file`: `{ "ok": true, "path", "size" }`。扱えるのは、**ホスト所有者がホスト GUI で決めた置き場所（FR-S24）の中だけ**。パスは相対パスだけで、`..`・絶対パス・ドライブ指定（`C:foo` を含む）・UNC・デバイスパス（`\\?\`・`\\.\`）・代替データストリーム（`:`）・予約デバイス名（CON・NUL など）・末尾のドット／空白は `invalid_argument`。置き場所の途中・末尾にシンボリックリンク・ジャンクション・リパースポイントがあれば、実体が中でも外でも拒否する（Lstat で 1 要素ずつ確かめ、開いたあとにもう一度確かめる）。1 ファイルと置き場所全体の上限（FR-S24）を超える書き込みは何も書かずに `file_too_large` / `file_store_full`。キルスイッチ中は `kill_switch_active`、操作リースが要る（暗黙に取得。承認・他者の保持中の扱いは入力系ツールと同じ。ウィンドウに束縛されたリースでは使えない）。監査は `tool.<ツール名>`（パス・大きさ・SHA-256・結果。**ファイルの中身は記録しない**）。置き場所・上限・置き場所の絶対パスを MCP から知る・変える経路は無い | 必要 | M5 |
 
 FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 に含める。M1 のツールは上表の全件（FR-M18・M19 を除く）で、`get_ui_tree`・`clipboard_*`・`list_windows`・`focus_window` を含む。FR-M18・M19 は M1.5。
 
@@ -183,6 +184,7 @@ FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 �
 | `invalid_coordinates` / `invalid_argument` | 引数が不正（`launch_app` では、`app_id` と `path` の同時指定・どちらも無し・ホワイトリスト方式での `path`・ブラックリスト方式の `path` が絶対パスのローカルの `.exe` の形でない） |
 | `window_not_found` | `focus_window` / `get_ui_tree` / `find_ui_element` / `wait_for` の対象が存在しない（`title`・`process_name` で探して合うウィンドウが無い場合を含む） |
 | `stale_element` | 要素 ID の指す要素（そのウィンドウ・プロセスを含む）がもう無い。古い ID が別の要素に当たることはない（FR-M28。HTTP 409。#267。要素 ID を受け取る道具が使う） |
+| `input_paused` | ホストの人が実際のマウス・キーボードを使っている間の一時停止（FR-M30。`detail.resumes_at`・`detail.retry_after_ms`） |
 | `input_blocked` | 管理者権限ウィンドウなど OS 制約で入力できない（UIPI）、または Nefos Remote 自身のウィンドウが対象（NFR-S06。`detail.reason` は `own_window`・`elevated_window`・`secure_attention_sequence`）。`own_window` には `detail.own_windows` を付ける（FR-M20） |
 | `desktop_unavailable` | ロック画面・UAC セキュアデスクトップ等でキャプチャ・入力できない |
 | `agent_disabled` | エージェントが無効、API キー未登録、またはクライアントに利用許可が無い状態で `run_task` を呼んだ |
@@ -436,7 +438,9 @@ stateDiagram-v2
 | FR-S20 | エージェントの接続方式（`agent.connection`。`chatgpt` / `chatgpt-codex` / `openai_api_key`。ホスト GUI のみで変更。FR-G25。`openai_api_key` への変更だけ確認モーダルを経る。`chatgpt` ↔ `chatgpt-codex` は確認なし） | `chatgpt`（ただし起動時に未設定で OpenAI API キーが登録済みなら `openai_api_key` を保存する。FR-G25） | M4 |
 | FR-S21 | ChatGPT のプラン経路のモデル（`agent.chatgpt.model`。FR-G26。アカウントごとの `GET /v1/models` の一覧から選ぶ） | `gpt-6.1-terra`（候補。一覧に無ければ GUI で選び直す） | M4 |
 | FR-S22 | 起動の方式（`launch.mode`。`allowlist`〔ホワイトリスト方式〕/ `denylist`〔ブラックリスト方式〕。ホスト GUI の `/apps` だけで変更でき、MCP・Web UI からは変えられない。FR-H12。`denylist` への変更は確認モーダルを経る。読めない値・不正な値は `allowlist` として扱う） | `allowlist`（既存のインストールも更新後は `allowlist`。設定の行は書かない） | M1.5 |
+| FR-M30 | ホストの実入力による一時停止の有効 / 無効（`hostinput.pause_enabled`）と再開までの待ち時間（`hostinput.pause_idle_sec`。1〜600 秒）。ホスト GUI のみで変更 | 有効 / 5 秒 | M4 |
 | FR-S23 | Codex 経由（`chatgpt-codex`）のモデル（`agent.codex.model`。FR-G35・G36。app-server の `model/list` の一覧から選ぶ） | `gpt-6.1-terra`（候補。一覧に無ければ GUI で選び直す） | M4 |
+| FR-S24 | ファイル転送（FR-M27。#264）の置き場所（`file_transfer.root`。ローカルの絶対パス。UNC・ドライブの直下・`..` は不可）と上限（`file_transfer.max_file_bytes`・`file_transfer.max_total_bytes`。1〜2^53 バイト）。ホスト GUI の設定画面だけで変更でき、MCP・Web UI には経路が無い。置き場所の設定が壊れている・アプリのデータフォルダ（`%LOCALAPPDATA%\puppet-remo`）と重なるときは、既定の場所へ切り替えずにファイル転送を使えなくする（fail closed）。変更は `settings.update` で監査する | 置き場所: `%LOCALAPPDATA%\PuppetRemo\inbox`（設定が空のとき。なければ作る）。1 ファイル: 104857600（100 MiB）。全体: 1073741824（1 GiB） | M5 |
 
 ## Windows 固有の制約（仕様上の扱い）
 
@@ -447,6 +451,20 @@ stateDiagram-v2
 | Ctrl+Alt+Del（SAS）は SendInput で送れない | Web UI でも送信不可と表示する |
 | ブラウザが先取りするショートカット | 専用の送信メニューで補う（FR-W06） |
 | 管理者権限を要求するアプリの起動（マニフェストが `requireAdministrator`） | `CreateProcess` は昇格できないため `launch_failed`（UAC のダイアログは出さない。NFR-S08）。管理者として動いているウィンドウへの入力は `input_blocked` |
+
+**ホストの実入力による一時停止（FR-M30。#270）**
+
+ホスト PC の前にいる人が実際のマウス・キーボードを動かしている間は、リモートの入力が実際のカーソルと取り合いにならないよう、リモートからの入力を一時停止する。
+
+- **検知**: Windows の低レベルフック（`WH_MOUSE_LL` / `WH_KEYBOARD_LL`）が、注入されたもの（`LLMHF_INJECTED` / `LLKHF_INJECTED`。Nefos Remote 自身の `SendInput` も、他のソフトウェアが注入した入力も）と、Nefos Remote が `SendInput` で付ける印（`dwExtraInfo`）の付いたものを除き、**物理デバイスの入力だけ**を「ホストの実入力」として数える。押されたキー・文字・座標は読まない（「入力があった」ことだけ）。フックは設定が有効の間だけ置く。リモートデスクトップなど、物理入力として届く別経路の入力は実入力に数える
+- **状態**: 実入力があると停止し、**最後の実入力から待ち時間（既定 5 秒）の間、実入力がなければ自動で再開**する。実入力が続けば再開は延びる。停止に入るとき、押下中のキー・ボタンを離す（`ReleaseAll`。以後の入力は断られ、離す操作も届かないため）
+- **対象**: 実際のカーソル・フォーカス・キー入力を動かす操作 — `mouse_move`・`left_click` など各クリック・`left_click_drag`・`scroll`・`key`・`type`・`focus_window` と、Web ビューアの `input.*`（移動・ボタン・ホイール・キー）、内蔵エージェント（`run_task`）の同じ操作。**すべて `Control.Do` の 1 か所**で断るので、経路による抜けはない（`domain.OpPausedByHostInput`）。リースの取得・承認より前に断る（暗黙のリース取得を起こさない）。承認の待ちのあとの実行の直前にも確かめ直す
+- **対象外**: 読み取り（`screenshot`・`cursor_position`・`list_windows`・`get_ui_tree`・`clipboard_read` など）、`wait`、`clipboard_write`（カーソル・フォーカスを動かさない）、`launch_app`。UI Automation のパターン操作（#268。カーソルを動かさない）は、**既定では止めない**。その操作の `domain.Op` が `HostInputGated.PausedByHostInput() == true` を返せば止められる
+- **拒否**: 409 `input_paused`。`detail.resumes_at`（RFC 3339。ホストの入力が続かなければ再開する時刻）・`detail.retry_after_ms`。MCP はツールエラー、WebSocket は `error`（`code`・`resumes_at`・`retry_after_ms`）。通常の入力の拒否と同じ監査の行（`result = denied`、`error_code = input_paused`）が残る。内蔵エージェントのタスクは `input_paused` で失敗する（リースは解放）
+- **状態の公開**: `get_control_status` に `paused`（真偽値）と、停止中だけ `paused_reason`（`host_input`）・`paused_since`・`resumes_at`・`resumes_in_ms` を出す
+- **設定（ホスト GUI の設定画面だけ。MCP・リモートからは変えられない）**: `hostinput.pause_enabled`（既定 `true`）・`hostinput.pause_idle_sec`（1〜600。既定 `5`）。無効にすると停止中ならすぐ再開し、フックも外す
+- **監査**: `input.host_paused`（最初の実入力。`detail` は `source`（`mouse` / `keyboard`）・`idle_sec`）・`input.host_resumed`（`detail` は `paused_ms`・`reason`（`idle` / `disabled`））。`kind = input`、`actor_type = host`
+- **弱めないもの**: リース・承認・キルスイッチ・入力スコープ・InputGuard・自ウィンドウの保護は変えない。キルスイッチのホットキーの押下も実入力として数えるが、キルスイッチは停止と独立に効く（先に判定される）
 
 **自ウィンドウの手がかり（FR-M20。#47）**
 
@@ -544,3 +562,5 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 | 1.49 | 2026-11-27 | 内蔵エージェントの接続方式に `chatgpt-codex`（Codex の app-server 経由の ChatGPT のプラン。公式の経路がワークスペースのアカウントを拒むときの代替）を追加: FR-G25（3 経路・切り替えの承認の要否）・G01（利用条件と `agent_disabled` の理由）・G14・H10・H11・AU01・S20、新設の FR-G31〜G40（目的と利用条件・エンジンの取得と検証・隔離と秘密・道具の無効化・推論の呼び方・サインインとサインアウト・プロセスの寿命・失敗コード・使用量の上限・公式経路のポリシー拒否からの案内）と FR-S23、3 経路の違いの表。公式経路の決定を反映: コールバックのポートは `1455` → `1457` → 空きポート（FR-G28 (4)）、トークンの分割保存（FR-G28 (7)）。Windows 実機・実アカウントでの確認は未（非機能要件「Codex 経路: 未確認」） | #247 |
 | 1.50 | 2026-11-28 | `screenshot` に `window_id`（ウィンドウ単位の撮影。PrintWindow・前面にしない・モニター撮影へ切り替えない）と `include_owned`（同一プロセスのダイアログ・メニュー・子ウィンドウの合成）を追加: FR-M26（座標は対象が最も重なるモニターの縮小座標の `rect`、自ウィンドウ・昇格・最小化の拒否、`window_not_found` / `input_blocked` / `capture_unavailable`、`windows` / `omitted`）、FR-M02 の引数と出力。`window_id` を省略したときの動作は変更なし。Windows 実機未確認 | #269 |
 | 1.51 | 2026-11-28 | UI 要素を探す `find_ui_element`（FR-M28）と、ウィンドウ・UI 要素が現れる・消えるまで待つ `wait_for`（FR-M29）を追加し、`get_ui_tree` の各ノードに `control_type`・`automation_id`・`class_name`・`patterns`・`offscreen` と要素 ID を出すようにした。エラーに `stale_element` を追加。探し方（ウィンドウ・要素）と要素 ID の共通の形を「UI 要素の探し方（#266・#267）」にまとめた | #266・#267（QA 用の道具。実入力を使わずに画面の状態を確かめる） |
+| 1.52 | 2026-11-28 | ホストの実入力による一時停止（FR-M30。#270）を追加: 検知（低レベルフックの injected フラグ・自分の印）・対象と対象外・`input_paused`・`get_control_status` の `paused`・設定 `hostinput.*`・監査。エラーコード表に `input_paused` | ホストで作業している人の操作とリモートの操作の取り合いを避けるため |
+| 1.53 | 2026-11-28 | ファイル転送を追加（#264）: FR-M27（`put_file` / `get_file` / `list_files` / `delete_file`。ホストが決めた置き場所の中だけ・相対パスだけ・リンク経由と上限超過は拒否・SHA-256 と大きさを返す・操作リース必須・監査） と FR-S24（置き場所 `file_transfer.root` と上限。ホスト GUI の設定画面だけで変更）。優先度 M5 を追加 | #264 |

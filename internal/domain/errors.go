@@ -34,6 +34,7 @@ const (
 	CodeElementReadOnly     Code = "element_read_only"
 	CodeUIActionFailed      Code = "ui_action_failed"
 	CodeInputBlocked        Code = "input_blocked"
+	CodeInputPaused         Code = "input_paused"
 	CodeDesktopUnavailable  Code = "desktop_unavailable"
 	CodeAgentDisabled       Code = "agent_disabled"
 	CodeTaskNotFound        Code = "task_not_found"
@@ -42,6 +43,10 @@ const (
 	CodeLaunchFailed        Code = "launch_failed"
 	CodeAuditUnavailable    Code = "audit_unavailable"
 	CodeInternal            Code = "internal"
+	// ファイル転送（#264。put_file / get_file / list_files / delete_file）。
+	CodeFileNotFound  Code = "file_not_found"
+	CodeFileTooLarge  Code = "file_too_large"
+	CodeFileStoreFull Code = "file_store_full"
 )
 
 // codeStatus は Code → HTTP ステータス（API 仕様 §2 の表）。
@@ -70,6 +75,7 @@ var codeStatus = map[Code]int{
 	CodeElementReadOnly:     409,
 	CodeUIActionFailed:      409,
 	CodeInputBlocked:        409,
+	CodeInputPaused:         409,
 	CodeDesktopUnavailable:  503,
 	CodeAgentDisabled:       409,
 	CodeTaskNotFound:        404,
@@ -78,6 +84,9 @@ var codeStatus = map[Code]int{
 	CodeLaunchFailed:        409,
 	CodeAuditUnavailable:    503,
 	CodeInternal:            500,
+	CodeFileNotFound:        404,
+	CodeFileTooLarge:        413,
+	CodeFileStoreFull:       507,
 }
 
 // Valid は c が API 仕様のエラーコード表にあるコードかを返す。
@@ -168,8 +177,11 @@ var (
 	// ErrElementReadOnly は、set_value の対象が読み取り専用なこと。
 	ErrElementReadOnly = NewError(CodeElementReadOnly, "the element is read-only", nil)
 	// ErrUIActionFailed は、UI Automation が操作を受け付けなかったこと（detail.reason。要素の状態では実行できない・応答しないなど）。
-	ErrUIActionFailed     = NewError(CodeUIActionFailed, "the UI Automation action failed", nil)
-	ErrInputBlocked       = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	ErrUIActionFailed = NewError(CodeUIActionFailed, "the UI Automation action failed", nil)
+	ErrInputBlocked   = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	// ErrInputPaused は、ホストの人が実際のマウス・キーボードを使っているために、リモートの入力を一時停止している間の拒否（#270）。
+	// Detail は resumes_at（RFC 3339。入力がなければ再開する時刻）と retry_after_ms（再開までの目安のミリ秒）。
+	ErrInputPaused        = NewError(CodeInputPaused, "input is paused while the host is using the mouse or keyboard", nil)
 	ErrDesktopUnavailable = NewError(CodeDesktopUnavailable, "the desktop is unavailable", nil)
 	ErrAgentDisabled      = NewError(CodeAgentDisabled, "the agent is disabled", nil)
 	ErrTaskNotFound       = NewError(CodeTaskNotFound, "task not found", nil)
@@ -181,4 +193,8 @@ var (
 	// ErrAuditUnavailable は、起動の試行を監査に書けないために起動しなかったこと（fail-closed。NFR-S20）。
 	// 書き込みの失敗の原因（DB のパス・SQL など）は載せない。原因は運用ログにだけ残す。
 	ErrAuditUnavailable = NewError(CodeAuditUnavailable, "the audit log is unavailable, so the app was not launched", nil)
+	// ファイル転送（#264）。メッセージにパスは入れない。
+	ErrFileNotFound  = NewError(CodeFileNotFound, "file not found", nil)
+	ErrFileTooLarge  = NewError(CodeFileTooLarge, "the file exceeds the per-file size limit set by the host", nil)
+	ErrFileStoreFull = NewError(CodeFileStoreFull, "the transfer folder would exceed the total size limit set by the host", nil)
 )

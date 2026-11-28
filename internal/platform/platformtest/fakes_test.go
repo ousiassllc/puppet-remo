@@ -80,6 +80,29 @@ func TestFakeHotkeyContract(t *testing.T) {
 	platformtest.RunHotkeyContract(t, func(*testing.T) platform.Hotkey { return platformtest.NewFakeHotkey() })
 }
 
+func TestFakeHostInputContract(t *testing.T) {
+	platformtest.RunHostInputContract(t, func(*testing.T) platform.HostInputWatcher { return platformtest.NewFakeHostInput() })
+}
+
+func TestFakeHostInputEmit(t *testing.T) {
+	h := platformtest.NewFakeHostInput()
+	if h.Emit(platform.HostInputMouse) {
+		t.Error("Emit without a watch reported a delivery")
+	}
+	var got []platform.HostInputKind
+	stop, err := h.Watch(func(k platform.HostInputKind) { got = append(got, k) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.Emit(platform.HostInputKeyboard) || len(got) != 1 || got[0] != platform.HostInputKeyboard {
+		t.Errorf("Emit delivered %v, want [keyboard]", got)
+	}
+	stop()
+	if h.Emit(platform.HostInputMouse) || len(got) != 1 || h.Watching() {
+		t.Errorf("Emit after stop delivered (%v, watching=%v)", got, h.Watching())
+	}
+}
+
 func TestRecorderRecordsCallsAndInjectsErrors(t *testing.T) {
 	in := platformtest.NewFakeInput()
 	ctx := context.Background()

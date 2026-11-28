@@ -7,6 +7,7 @@ import "errors"
 // HTTP のエラーにならず、タスクの失敗理由としてだけ現れる（API 仕様 §2）。
 const (
 	TaskErrorInputBlocked       = "input_blocked"
+	TaskErrorInputPaused        = "input_paused"
 	TaskErrorJudgeDenied        = "judge_denied"
 	TaskErrorApprovalDenied     = "approval_denied"
 	TaskErrorApprovalTimeout    = "approval_timeout"
@@ -65,7 +66,7 @@ func TaskErrorCode(err error) string {
 		return TaskErrorOpenAI
 	}
 	switch code := CodeOf(err); code {
-	case CodeInputBlocked, CodeApprovalDenied, CodeApprovalTimeout, CodeKillSwitchActive,
+	case CodeInputBlocked, CodeInputPaused, CodeApprovalDenied, CodeApprovalTimeout, CodeKillSwitchActive,
 		CodeLeaseRequired, CodeLeaseHeldByOther, CodeLeaseRevoked, CodeInvalidCoordinates:
 		return string(code)
 	}

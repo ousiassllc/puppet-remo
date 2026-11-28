@@ -59,6 +59,7 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/app"
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
+	"github.com/ousiassllc/puppet-remo/internal/platform/localfs"
 	"github.com/ousiassllc/puppet-remo/internal/platform/platformtest"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -137,6 +138,11 @@ func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr 
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	inboxDir, err := os.MkdirTemp("", "remotedemo-inbox-") // ファイル転送の置き場所（データのフォルダとは別）
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(inboxDir) }()
 	db, err := repository.Open(ctx, filepath.Join(dir, "puppet-remo.db"))
 	if err != nil {
 		return err
@@ -215,11 +221,12 @@ func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr 
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
 			Launcher: launcher, FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
 			Secrets: secrets, Browser: platformtest.NewFakeBrowserOpener(),
-			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
+			Hotkey: platformtest.NewFakeHotkey(), HostInput: platformtest.NewFakeHostInput(), Power: platformtest.NewFakePower(),
+			Files: localfs.New(),
 		},
 		Watcher: watcher, WhoIs: whois,
 		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,
-		Version: "demo", Logger: logger, OpenAIModel: model,
+		InboxDir: inboxDir, Version: "demo", Logger: logger, OpenAIModel: model,
 		// tailnet の IP の代わりに、-addr の loopback で待ち受ける（1 本だけ）。
 		// 接続の LocalAddr は偽の tailnet アドレスに見せる（MCP の SDK は loopback 宛ての Host 検査をするため。agentdemo.go）。
 		ListenFunc: func(_ context.Context, _, addr string) (net.Listener, error) {
