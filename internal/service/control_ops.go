@@ -533,7 +533,7 @@ func keyPressArgs(k domain.KeyCombo) map[string]any {
 }
 
 // addRecordedText は、設定 audit.record_text（既定 false）が true のとき、type の本文とクリップボードの内容（clipboard_read の結果を含む）
-// と、key の表示できる 1 文字（keyPressArgs が伏せたもの）を args["text"] に足す（FR-AU03、FR-S07）。トークン（prm_…）・Bearer の形の文字列は、本文の中にあっても先に伏せる（トークンはどの設定でも記録しない。NFR-S13）。
+// と、key の表示できる 1 文字（keyPressArgs が伏せたもの）を args["text"] に足す（FR-AU03、FR-S07）。ui_action の set_range_value の数は、同じ設定のときだけ args["number"] に足す（text ではなく数のまま）。トークン（prm_…）・Bearer の形の文字列は、本文の中にあっても先に伏せる（トークンはどの設定でも記録しない。NFR-S13）。
 // 伏せたあとの文字列が recordedTextMaxRunes を超えるときは切り詰めて args["text_truncated"] = true を付ける（text_len は元の長さ）。
 // 設定が読めない・真偽値でないときは記録しない側に倒す。
 func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result, args map[string]any) {
@@ -544,6 +544,13 @@ func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result,
 	case domain.ClipboardWrite:
 		text = o.Text
 	case domain.UIAction:
+		// set_range_value の数。set_value の本文と同じく、audit.record_text が true のときだけ残す（既定は残さない）。パスワード欄と、要素を特定できなかったときは残さない。
+		if o.Kind == domain.UIActionSetRangeValue && o.Number != nil && res.Acted != nil && !res.Acted.Password {
+			if on, err := loadBool(ctx, c.settings, settingAuditRecordText, false); err == nil && on {
+				args["number"] = *o.Number
+			}
+			return
+		}
 		// set_value の本文。パスワード欄と、要素を特定できなかったとき（res.Acted が nil）は残さない。
 		if o.Kind != domain.UIActionSetValue || o.Value == nil || res.Acted == nil || res.Acted.Password {
 			return

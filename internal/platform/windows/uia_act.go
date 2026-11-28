@@ -41,6 +41,16 @@ type uiaActor interface {
 	ExpandState() (int, error)
 	Expand() error
 	Collapse() error
+	ScrollIntoView() error
+	// RangeValueInfo は RangeValue パターンの IsReadOnly・Minimum・Maximum。
+	RangeValueInfo() (info uiaRangeInfo, err error)
+	SetRangeValue(v float64) error
+}
+
+// uiaRangeInfo は RangeValue パターンの現在の読み取り専用か・最小値・最大値。
+type uiaRangeInfo struct {
+	ReadOnly         bool
+	Minimum, Maximum float64
 }
 
 // uiaPerform は props の要素（actor）に act を行う。検査の順序は platform.UIAutomation.Act の契約どおり: 無効 → パターン無し → 読み取り専用 → 操作。
@@ -82,6 +92,11 @@ func uiaPerform(actor uiaActor, props uiaProps, ref domain.ElementRef, act domai
 		err = uiaExpandCollapse(actor, true, &res)
 	case domain.UIActionCollapse:
 		err = uiaExpandCollapse(actor, false, &res)
+	case domain.UIActionScrollIntoView:
+		err = actor.ScrollIntoView()
+		res.Changed = err == nil
+	case domain.UIActionSetRangeValue:
+		err = uiaSetRangeValue(actor, *act.Number, &res)
 	}
 	return res, err
 }
@@ -95,6 +110,26 @@ func uiaSetValue(actor uiaActor, text string, res *domain.UIActionResult) error 
 		return domain.ErrElementReadOnly
 	}
 	if err := actor.SetValue(text); err != nil {
+		return err
+	}
+	res.Changed = true
+	return nil
+}
+
+// uiaSetRangeValue は RangeValue の値を v にする。読み取り専用（element_read_only）と、要素の Minimum・Maximum の外の値（invalid_argument。丸めない）は、SetValue を呼ばずに拒否する。
+func uiaSetRangeValue(actor uiaActor, v float64, res *domain.UIActionResult) error {
+	info, err := actor.RangeValueInfo()
+	if err != nil {
+		return err
+	}
+	if info.ReadOnly {
+		return domain.ErrElementReadOnly
+	}
+	if v < info.Minimum || v > info.Maximum {
+		return domain.ErrInvalidArgument.WithMsg("number is outside the range the element accepts").
+			WithDetail("minimum", info.Minimum).WithDetail("maximum", info.Maximum)
+	}
+	if err := actor.SetRangeValue(v); err != nil {
 		return err
 	}
 	res.Changed = true

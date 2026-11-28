@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -25,10 +26,17 @@ const (
 	UIActionExpand UIActionKind = "expand"
 	// UIActionCollapse は ExpandCollapse パターンの Collapse。
 	UIActionCollapse UIActionKind = "collapse"
+	// UIActionScrollIntoView は ScrollItem パターンの ScrollIntoView（画面外にある要素を、スクロールできる親の中で見える位置へ動かす。引数なし）。
+	UIActionScrollIntoView UIActionKind = "scroll_into_view"
+	// UIActionSetRangeValue は RangeValue パターンの SetValue（スライダー・スピナーの値を Number にする。Value パターンの set_value は文字列用）。
+	UIActionSetRangeValue UIActionKind = "set_range_value"
 )
 
 // UIActionKinds は指定できる操作の種類（ツール説明・エラーメッセージの並び順）。
-var UIActionKinds = []UIActionKind{UIActionInvoke, UIActionSetValue, UIActionToggle, UIActionSelect, UIActionExpand, UIActionCollapse}
+var UIActionKinds = []UIActionKind{
+	UIActionInvoke, UIActionSetValue, UIActionToggle, UIActionSelect, UIActionExpand, UIActionCollapse,
+	UIActionScrollIntoView, UIActionSetRangeValue,
+}
 
 // Valid は k が既知の操作かを返す。
 func (k UIActionKind) Valid() bool {
@@ -53,6 +61,10 @@ func (k UIActionKind) Pattern() string {
 		return PatternSelectionItem
 	case UIActionExpand, UIActionCollapse:
 		return PatternExpandCollapse
+	case UIActionScrollIntoView:
+		return PatternScrollItem
+	case UIActionSetRangeValue:
+		return PatternRangeValue
 	}
 	return ""
 }
@@ -62,11 +74,13 @@ func (k UIActionKind) Pattern() string {
 //
 //   - ElementID: find_ui_element・get_ui_tree が返す要素 ID（ElementRef の文字列）
 //   - Value: set_value のときだけ必須（空文字列も有効で、内容を空にする）。ほかの操作では nil
+//   - Number: set_range_value のときだけ必須（有限の数。範囲の検査は platform が要素の Minimum・Maximum で行う）。ほかの操作では nil
 //   - State: toggle のときだけ任意（"on" / "off"。空なら今の状態から 1 つ進める）。ほかの操作では空
 type UIAction struct {
 	ElementID string
 	Kind      UIActionKind
 	Value     *string
+	Number    *float64
 	State     string
 }
 
@@ -98,7 +112,7 @@ const (
 )
 
 // Validate は a の引数が操作と合っていることを確かめる（ErrInvalidArgument）。要素 ID の形も確かめ、ElementRef を返す。
-// 余計な項目（set_value 以外の value、toggle 以外の state）は黙って捨てずに拒否する。
+// 余計な項目（set_value 以外の value、set_range_value 以外の number、toggle 以外の state）は黙って捨てずに拒否する。
 func (a UIAction) Validate() (ElementRef, error) {
 	ref, err := ParseElementRef(a.ElementID)
 	if err != nil {
@@ -116,6 +130,15 @@ func (a UIAction) Validate() (ElementRef, error) {
 	}
 	if a.Kind != UIActionSetValue && a.Value != nil {
 		return ElementRef{}, ErrInvalidArgument.WithMsg("value is only used by set_value")
+	}
+	if a.Kind == UIActionSetRangeValue && a.Number == nil {
+		return ElementRef{}, ErrInvalidArgument.WithMsg("number is required for set_range_value")
+	}
+	if a.Kind != UIActionSetRangeValue && a.Number != nil {
+		return ElementRef{}, ErrInvalidArgument.WithMsg("number is only used by set_range_value")
+	}
+	if a.Number != nil && (math.IsNaN(*a.Number) || math.IsInf(*a.Number, 0)) {
+		return ElementRef{}, ErrInvalidArgument.WithMsg("number must be a finite number")
 	}
 	switch {
 	case a.Kind != UIActionToggle && a.State != "":
@@ -136,6 +159,6 @@ type UIActionResult struct {
 	Password bool
 	// Changed は、パターンの操作を実際に呼んだか。false は、すでにその状態だった（toggle の state 指定・expand・collapse）。
 	Changed bool
-	// State は操作後の状態。toggle は ToggleState*、expand・collapse は ExpandState*、select は SelectState*。invoke・set_value は空。
+	// State は操作後の状態。toggle は ToggleState*、expand・collapse は ExpandState*、select は SelectState*。invoke・set_value・scroll_into_view・set_range_value は空。
 	State string
 }

@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -32,6 +33,21 @@ func TestUIActionValidate(t *testing.T) {
 		{"value with invoke", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionInvoke, Value: new("x")}, false},
 		{"state with select", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSelect, State: "on"}, false},
 		{"bad toggle state", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionToggle, State: "indeterminate"}, false},
+		{"scroll_into_view", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionScrollIntoView}, true},
+		{"set_range_value", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(12.5)}, true},
+		{"set_range_value zero", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(0.0)}, true},
+		{"set_range_value negative", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(-3.0)}, true},
+		{"set_range_value without number", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue}, false},
+		{"set_range_value NaN", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(math.NaN())}, false},
+		{"set_range_value +Inf", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(math.Inf(1))}, false},
+		{"set_range_value -Inf", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(math.Inf(-1))}, false},
+		{"set_range_value with value", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(1.0), Value: new("1")}, false},
+		{"set_range_value with state", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetRangeValue, Number: new(1.0), State: "on"}, false},
+		{"number with invoke", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionInvoke, Number: new(1.0)}, false},
+		{"number with set_value", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionSetValue, Value: new("x"), Number: new(1.0)}, false},
+		{"value with scroll_into_view", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionScrollIntoView, Value: new("x")}, false},
+		{"number with scroll_into_view", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionScrollIntoView, Number: new(1.0)}, false},
+		{"state with scroll_into_view", domain.UIAction{ElementID: actionTestID, Kind: domain.UIActionScrollIntoView, State: "on"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -53,6 +69,7 @@ func TestUIActionKindPatterns(t *testing.T) {
 	want := map[domain.UIActionKind]string{
 		domain.UIActionInvoke: domain.PatternInvoke, domain.UIActionSetValue: domain.PatternValue, domain.UIActionToggle: domain.PatternToggle,
 		domain.UIActionSelect: domain.PatternSelectionItem, domain.UIActionExpand: domain.PatternExpandCollapse, domain.UIActionCollapse: domain.PatternExpandCollapse,
+		domain.UIActionScrollIntoView: domain.PatternScrollItem, domain.UIActionSetRangeValue: domain.PatternRangeValue,
 	}
 	if len(want) != len(domain.UIActionKinds) {
 		t.Fatalf("UIActionKinds has %d kinds, the test knows %d", len(domain.UIActionKinds), len(want))
