@@ -160,8 +160,8 @@ var (
 	ErrInvalidArgument    = NewError(CodeInvalidArgument, "invalid argument", nil)
 	ErrWindowNotFound     = NewError(CodeWindowNotFound, "window not found", nil)
 	// ErrStaleElement は、UI 要素 ID の指す要素（ウィンドウ・プロセスを含む）がもう無いこと。古い ID は別の要素に当たらず、必ずこれになる。
-	ErrStaleElement       = NewError(CodeStaleElement, "the element no longer exists (find it again)", nil)
-	ErrInputBlocked       = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	ErrStaleElement = NewError(CodeStaleElement, "the element no longer exists (find it again)", nil)
+	ErrInputBlocked = NewError(CodeInputBlocked, "input is blocked for this target", nil)
 	// ErrInputPaused は、ホストの人が実際のマウス・キーボードを使っているために、リモートの入力を一時停止している間の拒否（#270）。
 	// Detail は resumes_at（RFC 3339。入力がなければ再開する時刻）と retry_after_ms（再開までの目安のミリ秒）。
 	ErrInputPaused        = NewError(CodeInputPaused, "input is paused while the host is using the mouse or keyboard", nil)
