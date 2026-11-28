@@ -569,6 +569,31 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | F8 | リースを別のクライアントが保持している間に 4 つのツールを呼ぶ。キルスイッチを発動して呼ぶ | `lease_held_by_other` / `kill_switch_active`。ファイルは変わらない |
 | F9 | 監査ログ（`/audit`）を見る | `tool.put_file` などに相対パス・大きさ・SHA-256・結果が残り、ファイルの中身は残らない |
 
+### 4.20 コマンド実行（`run_command` / `list_commands`。#265。FR-M32・FR-S25。未確認）
+
+実装（`internal/platform/localexec`）の起動・タイムアウト・出力の上限は OS を問わない標準ライブラリのコードで、Linux ではテストバイナリ自身を再実行して実プロセスでテスト済み（シェルを通さない引数の受け渡し・子孫プロセスごとの終了・上限の切り詰め・環境変数の絞り込み）。Windows 固有の部分（ジョブオブジェクトによる子孫ごとの終了・`CREATE_NO_WINDOW`・`msiexec` など実在の OS ツールの実行）は実機で確かめる。**実機の確認は未確認**。
+
+準備（使い捨ての環境）: [docs/operations/command-allowlist.example.json](command-allowlist.example.json) を `%LOCALAPPDATA%\puppet-remo\commands.json` にコピーし、実在するパスに直して、使う項目の `enabled` を `true` にする。設定画面の「コマンド実行」はまだオフのまま。tailnet 上の別端末の MCP クライアントを用意する。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| X1 | 設定画面の「コマンド実行」がオフ（既定）のまま `list_commands`・`run_command` を呼ぶ | どちらも `command_disabled`。操作リースは取得されない（ダッシュボードの保持者が空のまま・承認ダイアログが出ない）。監査ログに `denied` の `tool.run_command` が残る |
+| X2 | 設定画面でオンにして保存し、`list_commands` | `enabled` の項目だけが名前の昇順で出る。実行ファイルのパス・固定の引数は出ない。設定の変更が監査（`settings.update`）に残る |
+| X3 | `run_command`（`process-list`）、`process-find`（`image`: `explorer.exe`）、`listening-ports` | `exit_code` 0 と、`tasklist` / `netstat` の出力。日本語環境でも `stdout_encoding` が分かり、`binary` のときは `stdout_base64` を CP932 などで復号すると元の出力になる |
+| X4 | `http-check`（`host`: `localhost`、`port`: ホストの MCP のポート）と、閉じたポート | `stdout` に HTTP ステータス（接続できなければ `000`）。`curl.exe` が無い環境では `command_start_failed` |
+| X5 | `process-find` の `image` に `a & calc`・`$(x)`・`| more`・`-h`・空文字、`ping-host` の `host` に `-f`・`/?` を渡す。`args` に項目が定義していないキー、`name` と一緒に `command`・`shell` を渡す | すべて `invalid_argument`（`command` などは入力スキーマの拒否）。電卓などは起動しない。監査ログに残る |
+| X6 | 許可リストに無い名前、`enabled` が `false` の項目 | `command_not_found` |
+| X7 | 許可リストに、`.bat` の実行ファイル・`cmd.exe` で `string` の差し込み・相対パス・UNC のパスの項目を 1 つ足して `list_commands` | `command_allowlist_invalid`（全項目が使えない）。運用ログに項目名と理由が出て、パスは MCP に返らない。直すと再起動なしで使える |
+| X8 | 許可リストのファイル（または `commands.json` のコピー）をファイル転送の置き場所（`%LOCALAPPDATA%\PuppetRemo\inbox`）の中に移し、設定画面でそのパスを指定して呼ぶ。実行ファイルを置き場所の中にした項目も試す | `command_allowlist_invalid`（リモートが書き換えられる場所は使えない） |
+| X9 | 長く動く項目（例: `ping -n 100` 相当の項目、`timeout_sec` を 3 にする）を呼ぶ | 約 3 秒で `timed_out: true`・`exit_code: -1`。タスクマネージャーで、起こしたプロセスと子孫（子プロセスを持つ項目なら子も）が残っていない |
+| X10 | 大量に出力する項目（`max_output_bytes` を 1000 にして `netstat -ano`）を呼ぶ | `stdout` が 1000 バイト以内で `stdout_truncated: true`。`exit_code` は本来の値 |
+| X11 | `put_file` で `.msi` を置き、`install-msi`（`file`: `builds/app.msi`）。`..\x.msi`・`C:\x.msi`・`\\host\s\x.msi`・`a.bat`・無いファイル・置き場所の中のシンボリックリンクを渡す | 最初は `msiexec` が静かにインストールし、`exit_code` 0（再起動が要るときは 3010）。残りは `invalid_argument` / `file_not_found` で、インストールされない |
+| X12 | `install-msi` の実行中に画面を見る | UAC・インストーラーの画面が出ることがある（実行ファイルがホストの画面に UI を出す。ホストの実入力による一時停止の対象外）。UAC のセキュアデスクトップが出ると進まず、タイムアウトで終わる |
+| X13 | 実行中にキルスイッチを発動する | `kill_switch_active` で返り、起こしたプロセスが終了する。解除するまで `run_command` は `kill_switch_active` |
+| X14 | リースを別のクライアントが保持している間に `run_command`。ウィンドウを選んだ操作権（`acquire_control` にウィンドウを指定）で `run_command` | `lease_held_by_other` / `input_blocked`（`command_out_of_scope`）。何も起動しない |
+| X15 | 監査ログ（`/audit`）を見る | `tool.run_command` に項目名・引数の値・終了コード・`timed_out`・出力の大きさ・切り詰め・所要時間が残る。stdout / stderr の中身と実行ファイルのパスは残らない |
+
+
 
 ### 4.17 M1 の実機確認（Issue #15）の項目と手順の対応
 
@@ -627,3 +652,4 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-28 | §3.10.5（`screenshot` の `window_id`・`include_owned`。W1〜W13。#269。未確認）を追加 | #269 |
 | — | 2026-11-28 | §4.18 にホストの実入力による一時停止の実機確認 H1〜H10 を追加（未確認） | #270 |
 | — | 2026-11-28 | §4.19（ファイル転送。#264。FR-M27・FR-S24）を追加 |
+| — | 2026-11-28 | §4.20（コマンド実行。#265。FR-M32・FR-S25。X1〜X15。未確認）を追加 |
