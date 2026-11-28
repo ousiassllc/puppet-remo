@@ -106,6 +106,27 @@ func TestMCPLayerAuditRecordsFailuresAndArgsSummary(t *testing.T) {
 	}
 }
 
+// window_id つきの screenshot は、拒否されても監査に残り、引数の要約に window_id・include_owned が入る（タイトルなどウィンドウの中身は入らない）。
+func TestMCPLayerAuditRecordsWindowScreenshot(t *testing.T) {
+	a := &auditLog{}
+	e := newEnv(t, func(c *Config) { c.Audit = a })
+	e.ctl.err = domain.ErrWindowNotFound
+	cs := e.connect("c1")
+
+	callTool(t, cs, "screenshot", map[string]any{"window_id": "1001", "include_owned": true})
+	got := a.all()
+	if len(got) != 1 || got[0].Result != "error" || got[0].ErrorCode != string(domain.CodeWindowNotFound) {
+		t.Fatalf("entries = %+v", got)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(got[0].DetailJSON, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail["window_id"] != "1001" || detail["include_owned"] != true || len(detail) != 2 {
+		t.Errorf("detail = %v", detail)
+	}
+}
+
 func TestMCPLayerAuditRecordsKillSwitchDenial(t *testing.T) {
 	a := &auditLog{}
 	e := newEnv(t, func(c *Config) { c.Audit = a })

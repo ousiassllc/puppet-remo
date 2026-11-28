@@ -74,6 +74,8 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"foreground window is one of them. screenshot lists them as own_windows, and the error carries detail.own_windows, " +
 	"as {monitor, rect} in the scaled coordinates of that monitor's screenshot, so you can avoid those areas; " +
 	"list_windows marks them with blocked: true and blocked_reason own_window. " +
+	"screenshot with window_id (from list_windows) captures only that window without bringing it forward (include_owned adds its dialogs and menus of the same process); " +
+	"its rect gives the image's position in the scaled coordinates of its monitor. " +
 	"run_task starts a task for the host's built-in agent, which operates the screen by itself from your prompt; " +
 	"it works only when the host has enabled the agent for this client (otherwise agent_disabled). " +
 	"run_task returns a task_id at once and the task runs asynchronously: poll get_task for the status and result, and cancel_task to stop it. " +
