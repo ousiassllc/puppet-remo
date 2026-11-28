@@ -223,3 +223,85 @@ func TestUIAToolsPassInvalidArgumentsThrough(t *testing.T) {
 		}
 	}
 }
+
+func TestUIActionPassesTheArgumentsAndReturnsTheElement(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.windows = []domain.WindowInfo{uiaWindow}
+	e.ctl.acted = &domain.UIActionResult{
+		Window:  uiaWindow,
+		Element: sampleElement("uie:132456:4120:2a.1", "保存", domain.Rect{X: 100, Y: 100, W: 200, H: 100}),
+		Changed: true,
+		State:   domain.ToggleStateOn,
+	}
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "ui_action", map[string]any{"element_id": "uie:132456:4120:2a.1", "action": "Toggle", "state": "ON"})
+	if res.IsError {
+		t.Fatal(res.text())
+	}
+	wantOp := domain.UIAction{ElementID: "uie:132456:4120:2a.1", Kind: domain.UIActionToggle, State: domain.ToggleStateOn}
+	if got := e.ctl.lastCall(t).Op; !reflect.DeepEqual(got, wantOp) {
+		t.Errorf("op = %#v, want %#v", got, wantOp)
+	}
+	var got uiActionBody
+	res.decode(t, &got)
+	if !got.OK || got.Action != "toggle" || !got.Changed || got.State != "on" || got.Element.ID != "uie:132456:4120:2a.1" ||
+		got.Element.ControlType != "Button" || got.Element.Name != "保存" {
+		t.Errorf("body = %+v", got)
+	}
+	if want := (rectBody{X: 61, Y: 61, Width: 123, Height: 62}); got.Element.Rect != want {
+		t.Errorf("rect = %+v, want %+v (scaled like find_ui_element)", got.Element.Rect, want)
+	}
+}
+
+// value の省略と空文字列は区別する（set_value "" は内容を空にする）。
+func TestUIActionDistinguishesAMissingValueFromAnEmptyOne(t *testing.T) {
+	e := newEnv(t)
+	cs := e.connect("c1")
+	for name, tt := range map[string]struct {
+		args map[string]any
+		want *string
+	}{
+		"empty":   {map[string]any{"element_id": "uie:1:2:3", "action": "set_value", "value": ""}, new("")},
+		"text":    {map[string]any{"element_id": "uie:1:2:3", "action": "set_value", "value": "日本語"}, new("日本語")},
+		"missing": {map[string]any{"element_id": "uie:1:2:3", "action": "set_value"}, nil},
+	} {
+		if res := callTool(t, cs, "ui_action", tt.args); res.IsError {
+			t.Fatalf("%s: %s", name, res.text())
+		}
+		op, ok := e.ctl.lastCall(t).Op.(domain.UIAction)
+		if !ok || !reflect.DeepEqual(op.Value, tt.want) {
+			t.Errorf("%s: value = %v, want %v", name, op.Value, tt.want)
+		}
+	}
+}
+
+func TestUIActionErrorsAreStructured(t *testing.T) {
+	e := newEnv(t)
+	cs := e.connect("c1")
+	e.ctl.err = domain.ErrPatternUnsupported.WithDetail("supported", []string{"Value"}).WithDetail("pattern", "Invoke")
+	res := callTool(t, cs, "ui_action", map[string]any{"element_id": "uie:1:2:3", "action": "invoke"})
+	if got := res.errCode(t); got != domain.CodePatternUnsupported {
+		t.Fatalf("code = %s", got)
+	}
+	var body errorBody
+	res.decode(t, &body)
+	if got, _ := body.Detail["supported"].([]any); len(got) != 1 || got[0] != "Value" || body.Detail["pattern"] != "Invoke" {
+		t.Errorf("detail = %v, want supported [Value] and pattern Invoke", body.Detail)
+	}
+	for code, err := range map[domain.Code]error{
+		domain.CodeStaleElement:     domain.ErrStaleElement,
+		domain.CodeInvalidArgument:  domain.ErrInvalidArgument,
+		domain.CodeElementDisabled:  domain.ErrElementDisabled,
+		domain.CodeElementReadOnly:  domain.ErrElementReadOnly,
+		domain.CodeUIActionFailed:   domain.ErrUIActionFailed,
+		domain.CodeInputBlocked:     domain.ErrInputBlocked,
+		domain.CodeKillSwitchActive: domain.ErrKillSwitchActive,
+		domain.CodeLeaseHeldByOther: domain.ErrLeaseHeldByOther,
+	} {
+		e.ctl.err = err
+		if got := callTool(t, cs, "ui_action", map[string]any{"element_id": "uie:1:2:3", "action": "invoke"}).errCode(t); got != code {
+			t.Errorf("code = %s, want %s", got, code)
+		}
+	}
+}

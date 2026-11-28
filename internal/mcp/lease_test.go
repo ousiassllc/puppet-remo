@@ -102,6 +102,7 @@ func TestImplicitAcquisition(t *testing.T) {
 		{"get_ui_tree", nil},
 		{"find_ui_element", map[string]any{"name": "OK"}},
 		{"wait_for", map[string]any{"title": "x", "state": "appear", "timeout_ms": 1000}},
+		{"ui_action", map[string]any{"element_id": "uie:1:2:3", "action": "invoke"}},
 	}
 	for _, tt := range needLease {
 		t.Run("acquires/"+tt.tool, func(t *testing.T) {
@@ -290,6 +291,7 @@ func TestKillSwitchActive(t *testing.T) {
 		{"get_ui_tree", nil},
 		{"find_ui_element", map[string]any{"name": "OK"}},
 		{"wait_for", map[string]any{"title": "x", "state": "appear", "timeout_ms": 1000}},
+		{"ui_action", map[string]any{"element_id": "uie:1:2:3", "action": "invoke"}},
 		{"acquire_control", nil},
 	}
 	for _, tt := range tests {

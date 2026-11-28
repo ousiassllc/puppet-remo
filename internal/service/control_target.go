@@ -82,7 +82,7 @@ func (sr *scopeRun) markInjected() {
 type scopeCheck struct {
 	focus   bool           // キー・文字: 前面とフォーカスの葉
 	points  []domain.Point // 座標（物理座標）: 最上位の At と葉・Rect
-	focusID string         // FocusWindow の宛先の ID（G のメンバーだけ。メンバーでなければ停止にはせず拒否する）
+	focusID string         // FocusWindow・UIAction の宛先ウィンドウの ID（G のメンバーだけ。メンバーでなければ停止にはせず拒否する）
 }
 
 // scopeGoverned は op がスコープの検証を受ける入力かを返す。クリップボード・UI ツリー・待ちは含まない
@@ -90,7 +90,7 @@ type scopeCheck struct {
 func scopeGoverned(op domain.Op) bool {
 	switch op.(type) {
 	case domain.MouseMove, domain.Click, domain.Drag, domain.Scroll, domain.PointerMove, domain.MouseButton, domain.Wheel,
-		domain.KeyEvent, domain.KeyPress, domain.TypeText, domain.FocusWindow:
+		domain.KeyEvent, domain.KeyPress, domain.TypeText, domain.FocusWindow, domain.UIAction:
 		return true
 	}
 	return false

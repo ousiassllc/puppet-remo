@@ -14,7 +14,7 @@ import (
 var controlAudited = []string{
 	"mouse_move", "left_click", "right_click", "middle_click", "double_click", "triple_click",
 	"left_click_drag", "scroll", "key", "type", "wait", "focus_window", "clipboard_read", "clipboard_write", "get_ui_tree",
-	"find_ui_element", "wait_for", "launch_app",
+	"find_ui_element", "wait_for", "ui_action", "launch_app",
 	// ファイル転送は service.FileTransfer が自分で監査する（#264。パス・大きさ・SHA-256 を持つので、mcp 層の引数の要約では足りない）。
 	"put_file", "get_file", "list_files", "delete_file",
 }
@@ -37,6 +37,7 @@ var toolCallArgs = map[string]map[string]any{
 	"get_ui_tree":     {"window_id": "w1"},
 	"find_ui_element": {"name": "hunter2", "window_id": "w1"},
 	"wait_for":        {"window_id": "w1", "state": "appear", "timeout_ms": 1000},
+	"ui_action":       {"element_id": "uie:1:2:3", "action": "set_value", "value": "hunter2"},
 	"screenshot":      {"monitor": 0, "format": "png"},
 	"launch_app":      {"app_id": "app-1"},
 	"put_file":        {"path": "a.txt", "content_base64": "aHVudGVyMg=="},

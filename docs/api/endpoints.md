@@ -86,9 +86,13 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `conflict` | 409 | GUI | 現在の状態では実行できない（要求が `pending` でない、更新を適用できない状態など） |
 | `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない（`find_ui_element` / `wait_for` では、`title`・`process_name` で探して合うウィンドウが無い場合を含む） |
 | `stale_element` | 409 | UI 要素 | 要素 ID の指す要素（そのウィンドウ・プロセスを含む）がもう無い。古い ID が別の要素に当たることはない（FR-M28。#267。`get_ui_tree` / `find_ui_element` の `id` を受け取る道具が返す） |
+| `pattern_unsupported` | 409 | UI 要素 | `ui_action` の操作に必要な UI Automation のパターンを要素が持たない（FR-M31。#268）。`detail.action`・`detail.pattern`・`detail.supported`（要素の対応パターン）。キー入力・クリックには切り替えない |
+| `element_disabled` | 409 | UI 要素 | `ui_action` の対象の要素が無効（`enabled: false`。FR-M31。#268） |
+| `element_read_only` | 409 | UI 要素 | `ui_action` の `set_value` の対象が読み取り専用（FR-M31。#268） |
+| `ui_action_failed` | 409 | UI 要素 | UI Automation が `ui_action` の操作を受け付けなかった（FR-M31。#268）。`detail.reason`: `invalid_operation`（今の状態では実行できない）・`timeout`（アプリが応答しない）・`leaf_node`（開閉できない葉）・`state_not_reached`（`toggle` の `state` にならない）・`failed`。`detail.hresult` |
 | `app_not_found` | 404 | `launch_app` | `app_id` が許可リストに無い（読めない行・起動の再検査を満たさない行を含む。FR-M19。M1.5）。どちらの起動の方式でも同じ |
 | `app_denied` | 403 | `launch_app` | 起動の方式がブラックリストで、起動しようとしたアプリがホスト所有者の拒否リストに当たる（`app_id` で起動する許可リストのアプリも、拒否リストに当たれば拒否する。#88）。MCP は同じ `code` のツールエラー。メッセージは `the host owner does not allow this app to be launched` で固定し、**パス・拒否リストの中身は含めない**。監査は `denied` |
-| `input_paused` | 409 | 操作系 | ホストの人が実際のマウス・キーボードを使っている間の一時停止（FR-M30。#270）。実際のカーソル・フォーカス・キー入力を動かす操作（クリック・移動・ドラッグ・スクロール・`key`・`type`・`focus_window`、Web ビューアの `input.*`、`run_task` の操作）が対象で、読み取り・`wait`・クリップボードの書き込みは通る。`detail.resumes_at`（RFC 3339）・`detail.retry_after_ms` は再開の目安で、ホストの入力が続けば延びる。待ち時間（既定 5 秒）の間ホストの入力がなければ自動で再開する。`get_control_status` の `paused` で見える |
+| `input_paused` | 409 | 操作系 | ホストの人が実際のマウス・キーボードを使っている間の一時停止（FR-M30。#270）。実際のカーソル・フォーカス・キー入力を動かす操作（クリック・移動・ドラッグ・スクロール・`key`・`type`・`focus_window`、Web ビューアの `input.*`、`run_task` の操作）が対象で、読み取り・`wait`・クリップボードの書き込みは通る。`ui_action`（UI Automation のパターン操作。カーソル・フォーカスを動かさない）も通る。`detail.resumes_at`（RFC 3339）・`detail.retry_after_ms` は再開の目安で、ホストの入力が続けば延びる。待ち時間（既定 5 秒）の間ホストの入力がなければ自動で再開する。`get_control_status` の `paused` で見える |
 | `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に Nefos Remote のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
 | `audit_unavailable` | 503 | `launch_app`、GUI の設定変更 | `launch_app`: 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。GUI の設定変更（§7.2・§7.3 の `PUT /settings`・`/agent*`・`/apps*` の書き込み）: 変更の監査の行を書けなかったため、変更を元に戻した（#174・#182。下の §7.3 の冒頭）。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動・変更できる） |
 | `file_not_found` | 404 | `get_file` / `list_files` / `delete_file` | 置き場所の中に、そのファイル・フォルダが無い（FR-M27。#264）。置き場所の絶対パスは載せない |
@@ -147,6 +151,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `get_ui_tree` | FR-M14 | 必要 | ro |
 | `find_ui_element` | FR-M28 | 必要 | ro。UI 要素を名前・AutomationId・ControlType で探す（#267） |
 | `wait_for` | FR-M29 | 必要 | ro。ウィンドウ・UI 要素が現れる・消えるまで待つ（#266） |
+| `ui_action` | FR-M31 | 必要 | UI 要素を UI Automation のパターン（Invoke・Value・Toggle・SelectionItem・ExpandCollapse）で操作する。カーソル・フォーカスを動かさない（#268） |
 | `acquire_control` / `release_control` / `get_control_status` | FR-M15 | 不要 | `get_control_status` は ro |
 | `list_launchable_apps` | FR-M18 | 不要 | ro。起動の方式 `mode` と登録済みのアプリを返す |
 | `launch_app` | FR-M19 | 必要 | `app_id` か `path`（`path` はブラックリスト方式のときだけ） |
@@ -290,6 +295,24 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 出力（成功とタイムアウトのどちらも**ツールの成功**。`isError` は付かない）: `{ "state": "appear", "target": "window" \| "element", "matched": true, "timed_out": false, "waited_ms": 1500, "window": { …list_windows の 1 件と同じ… }, "elements": [ …find_ui_element の要素と同じ… ] }`。成功時、`appear` は `window`（要素を待つときはその要素を含む窓）と、要素を待つときの `elements`（一致した要素。最大 20）を次の操作用に返す。`disappear` の成功は `window`・`elements` を含まない。タイムアウトは `matched: false`・`timed_out: true` で、`candidates: { "windows": […], "elements": […] }`（各最大 20 件。欠けたら `truncated: true`）を付ける: `appear` は近い候補（指定した項目のどれか 1 つに当たるものが先。ウィンドウ待ちは無ければ見えているウィンドウ、要素待ちは窓があればその窓の近い要素・窓が無ければ見えているウィンドウ）、`disappear` は消えずに残っている対象。要素を待つときの `window` は探した窓（無ければ省略）。自ウィンドウは候補に出さない。
 
 エラー: `find_ui_element` と同じ。加えて、`window_id` で指した窓が無いまま `appear` を待つのは現れないので、待たずに `window_not_found`（`disappear` は窓が無ければ成立）。読み取りだけで入力しない。
+
+**`ui_action`**（FR-M31。#268）
+
+| 引数 | 型 | 説明 |
+|------|----|------|
+| `element_id` | string | 必須。`find_ui_element`・`get_ui_tree`・`wait_for` が返した要素 ID（`uie:<HWND>:<PID>:<RuntimeId>`） |
+| `action` | string | 必須。`invoke`（Invoke）・`set_value`（Value の SetValue）・`toggle`（Toggle）・`select`（SelectionItem の Select）・`expand` / `collapse`（ExpandCollapse）。大文字小文字は区別しない |
+| `value` | string | `set_value` だけ必須（空文字列も有効で、内容を空にする）。ほかの操作では指定すると `invalid_argument`。10,000 文字まで |
+| `state` | string | `toggle` だけ任意: `on` / `off`（その状態にする。すでにそうなら何もしない）。省略は今の状態から 1 つ進める。ほかの操作では `invalid_argument` |
+
+出力: `{ "ok": true, "action": "toggle", "element": { …find_ui_element の要素 1 件と同じ（`id`・`control_type`・`name`・`automation_id`・`rect`〔縮小座標〕・`enabled`・`patterns` など。値は含めない）… }, "changed": true, "state": "on" }`。`changed` は UI Automation の操作を実際に呼んだか（`false` はすでにその状態）。`state` は `toggle`（`on` / `off` / `indeterminate`）・`expand` / `collapse`（`expanded` / `collapsed` / `partially_expanded` / `leaf`）・`select`（`selected` / `not_selected`）だけに付く。
+
+- **カーソルもキーボードフォーカスも動かさず、`SendInput`（キー入力・クリック）にも切り替えない。** 要素がそのパターンを持たなければ `pattern_unsupported`（`detail.supported` に対応パターン。`click`・`type` を選び直す）。
+- **入力と同じ検査**: キルスイッチ → リース（未保持は暗黙に取得。承認が要るクライアントは承認待ち。ツールのタイムアウトは他のリース取得ツールと同じ 90 秒）→ 引数 → InputGuard（要素のウィンドウが自ウィンドウ〔クリックスルーのオーバーレイを含む〕・昇格ウィンドウなら `input_blocked`。`detail.reason` は `own_window` / `elevated_window`。昇格したアプリへ UI Automation が届かないときは `access_denied`）。スコープ付きのリースは、要素のウィンドウが対象グループの外なら `input_blocked`（`outside_target_group`。その操作だけの拒否）。
+- **エラー**: `pattern_unsupported`・`stale_element`・`element_disabled`・`element_read_only`・`ui_action_failed`・`input_blocked`・`invalid_argument`・`window_not_found`・`kill_switch_active`・`lease_held_by_other`・`lease_required`・`lease_revoked`・`approval_denied`・`approval_timeout`。
+- **監査**: `tool.ui_action` を 1 行（Control が記録）。`detail` は `action`・`element_id`・`text_len`（`set_value`）・`control_type`・`automation_id`・`changed`・`result_state`。要素の名前・値は記録しない。`set_value` の本文は設定 `audit.record_text` が `true` のときだけ `text` に残し、パスワード欄の値はどの設定でも残さない（FR-AU03）。
+- ホストの実入力による一時停止（FR-M30。`input_paused`）の対象ではない: カーソル・フォーカスを動かさないので、ホストの人が操作している間も（キルスイッチ・リース・InputGuard の検査どおりに）動く。
+- **WebView2（Vue の画面）・ブラウザ**: ボタン・リンクの `invoke` は通常動く。`set_value` は Chromium のアクセシビリティ経由の `SetValue` で、ページの `input` イベントを起こさず、`v-model` などが変更に気づかないことがある（実機で確認する）。効かなければ `left_click` で欄を選んで `type` を使う。Web コンテンツの UI Automation への公開は、`--force-renderer-accessibility` などの起動引数が要る場合がある。名前は `aria-label` などから付く。
 
 #### リース
 
@@ -912,3 +935,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.62 | 2026-11-28 | §3.3 に `find_ui_element`（UI 要素を名前・AutomationId・ControlType で探す。FR-M28。#267）と `wait_for`（ウィンドウ・UI 要素が現れる・消えるまで待つ。タイムアウトは結果で候補を返す。FR-M29。#266）を追加し、`get_ui_tree` の各ノードに `control_type`・`automation_id`・`class_name`・`patterns`・`offscreen` と要素 ID を出すようにした。§2 に `stale_element`（409）を追加 | #266・#267 |
 | 1.63 | 2026-11-28 | ホストの実入力による一時停止（FR-M30。#270）: §2 に `input_paused`（409）、§3 の `get_control_status` に `paused`・`resumes_at` など、WebSocket の `error` に `input_paused`、§7.3 の設定項目に `hostinput.pause_enabled`・`hostinput.pause_idle_sec` | ホストの人の操作とリモートの入力の取り合いを避けるため |
 | 1.64 | 2026-11-28 | ファイル転送の MCP ツール `put_file` / `get_file` / `list_files` / `delete_file`（FR-M27。#264）を追加: §2 に `file_not_found`（404）・`file_too_large`（413）・`file_store_full`（507）、§3.1 の `instructions`、§3.3 のツール表と「ファイル転送」節（パスの規則・リンクの拒否・1 回 512 KiB と `offset` での分割・SHA-256 と大きさ・検査の順序・監査）、§7.3 の `PUT /settings` に `file_transfer.*` | #264 |
+| 1.65 | 2026-11-28 | §3.3 に `ui_action`（UI 要素を UI Automation のパターンで操作する。カーソル・フォーカスを動かさない。FR-M31。#268）を追加。§2 に `pattern_unsupported`・`element_disabled`・`element_read_only`・`ui_action_failed`（いずれも 409）を追加 | #268 |

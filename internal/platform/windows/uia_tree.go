@@ -34,6 +34,8 @@ type uiaProps struct {
 
 // uiaNode は走査できる UIA 要素。走査は専用スレッド 1 本の上で行う。
 type uiaNode interface {
+	// uiaActor はパターン操作（Act。#268）。
+	uiaActor
 	// Props は要素のプロパティを返す。
 	Props() uiaProps
 	// Children は直接の子（コントロールビュー）を返す。呼び出し側が各子の Release を呼ぶ。

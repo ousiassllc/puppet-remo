@@ -29,6 +29,10 @@ const (
 	CodeConflict            Code = "conflict"
 	CodeWindowNotFound      Code = "window_not_found"
 	CodeStaleElement        Code = "stale_element"
+	CodePatternUnsupported  Code = "pattern_unsupported"
+	CodeElementDisabled     Code = "element_disabled"
+	CodeElementReadOnly     Code = "element_read_only"
+	CodeUIActionFailed      Code = "ui_action_failed"
 	CodeInputBlocked        Code = "input_blocked"
 	CodeInputPaused         Code = "input_paused"
 	CodeDesktopUnavailable  Code = "desktop_unavailable"
@@ -66,6 +70,10 @@ var codeStatus = map[Code]int{
 	CodeConflict:            409,
 	CodeWindowNotFound:      404,
 	CodeStaleElement:        409,
+	CodePatternUnsupported:  409,
+	CodeElementDisabled:     409,
+	CodeElementReadOnly:     409,
+	CodeUIActionFailed:      409,
 	CodeInputBlocked:        409,
 	CodeInputPaused:         409,
 	CodeDesktopUnavailable:  503,
@@ -161,7 +169,16 @@ var (
 	ErrWindowNotFound     = NewError(CodeWindowNotFound, "window not found", nil)
 	// ErrStaleElement は、UI 要素 ID の指す要素（ウィンドウ・プロセスを含む）がもう無いこと。古い ID は別の要素に当たらず、必ずこれになる。
 	ErrStaleElement = NewError(CodeStaleElement, "the element no longer exists (find it again)", nil)
-	ErrInputBlocked = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	// ErrPatternUnsupported は、ui_action の操作に必要な UI Automation のパターンを要素が持たないこと（detail: action・pattern・supported）。
+	// キー入力・クリックには切り替えない。
+	ErrPatternUnsupported = NewError(CodePatternUnsupported, "the element does not support the pattern the action needs", nil)
+	// ErrElementDisabled は、操作する要素が無効（IsEnabled が false）なこと。
+	ErrElementDisabled = NewError(CodeElementDisabled, "the element is disabled", nil)
+	// ErrElementReadOnly は、set_value の対象が読み取り専用なこと。
+	ErrElementReadOnly = NewError(CodeElementReadOnly, "the element is read-only", nil)
+	// ErrUIActionFailed は、UI Automation が操作を受け付けなかったこと（detail.reason。要素の状態では実行できない・応答しないなど）。
+	ErrUIActionFailed = NewError(CodeUIActionFailed, "the UI Automation action failed", nil)
+	ErrInputBlocked   = NewError(CodeInputBlocked, "input is blocked for this target", nil)
 	// ErrInputPaused は、ホストの人が実際のマウス・キーボードを使っているために、リモートの入力を一時停止している間の拒否（#270）。
 	// Detail は resumes_at（RFC 3339。入力がなければ再開する時刻）と retry_after_ms（再開までの目安のミリ秒）。
 	ErrInputPaused        = NewError(CodeInputPaused, "input is paused while the host is using the mouse or keyboard", nil)

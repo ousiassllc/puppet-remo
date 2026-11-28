@@ -21,6 +21,17 @@ type FakeUIAutomation struct {
 	mu        sync.Mutex
 	trees     map[string]domain.UINode
 	snapshots map[string]domain.UISnapshot
+	states    map[string]*fakeElementState // 要素 ID → Act が変える状態
+}
+
+// fakeElementState は Act が変える要素の状態。未設定の要素は、トグルがオフ・未選択・折りたたみ・読み取り専用でない。
+type fakeElementState struct {
+	toggle   string // domain.ToggleState*
+	selected bool
+	expand   string // domain.ExpandState*
+	value    string
+	readOnly bool
+	hasValue bool // SetValue で値が入った（Value が返す）
 }
 
 func NewFakeUIAutomation(windows *FakeWindows) *FakeUIAutomation {
@@ -28,6 +39,7 @@ func NewFakeUIAutomation(windows *FakeWindows) *FakeUIAutomation {
 		windows:   windows,
 		trees:     make(map[string]domain.UINode),
 		snapshots: make(map[string]domain.UISnapshot),
+		states:    make(map[string]*fakeElementState),
 	}
 }
 
@@ -203,4 +215,138 @@ func (f *FakeUIAutomation) Snapshot(ctx context.Context, windowID string, maxNod
 		snap.Truncated = true
 	}
 	return snap, nil
+}
+
+// state は id の状態（無ければ作る）。f.mu を持って呼ぶ。
+func (f *FakeUIAutomation) state(id string) *fakeElementState {
+	st, ok := f.states[id]
+	if !ok {
+		st = &fakeElementState{toggle: domain.ToggleStateOff, expand: domain.ExpandStateCollapsed}
+		f.states[id] = st
+	}
+	return st
+}
+
+// SetToggleState は id の要素のトグルの状態（domain.ToggleState*）を設定する。
+func (f *FakeUIAutomation) SetToggleState(id, state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.state(id).toggle = state
+}
+
+// SetExpandState は id の要素の展開の状態（domain.ExpandState*）を設定する。
+func (f *FakeUIAutomation) SetExpandState(id, state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.state(id).expand = state
+}
+
+// SetReadOnly は id の要素を set_value できない（読み取り専用）にする。
+func (f *FakeUIAutomation) SetReadOnly(id string, readOnly bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.state(id).readOnly = readOnly
+}
+
+// ToggleState は id の要素のトグルの今の状態。
+func (f *FakeUIAutomation) ToggleState(id string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.state(id).toggle
+}
+
+// ExpandState は id の要素の展開の今の状態。
+func (f *FakeUIAutomation) ExpandState(id string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.state(id).expand
+}
+
+// Selected は id の要素が Select で選ばれたか。
+func (f *FakeUIAutomation) Selected(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.state(id).selected
+}
+
+// Value は id の要素に set_value で入れた値。入れていなければ ok が false。
+func (f *FakeUIAutomation) Value(id string) (value string, ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	st := f.state(id)
+	return st.value, st.hasValue
+}
+
+// Act は platform.UIAutomation.Act。要素の状態だけを変え、カーソル・フォーカス・入力には触れない（FakeInput・FakeWindows の記録は変わらない）。
+// 検査の順序は契約（platform.UIAutomation.Act）どおり: 要素の特定（stale_element）→ 無効 → パターン無し → 読み取り専用。
+func (f *FakeUIAutomation) Act(ctx context.Context, ref domain.ElementRef, act domain.UIAction) (domain.UIActionResult, error) {
+	if err := f.enter(ctx, "Act", ref.String(), string(act.Kind)); err != nil {
+		return domain.UIActionResult{}, err
+	}
+	w, ok := f.windows.find(ref.WindowID())
+	if !ok || w.PID != ref.PID {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	id := ref.String()
+	var node domain.UINode
+	found := false
+	for _, n := range bfs(f.treeOf(w)) {
+		if id != "" && n.ID == id {
+			node, found = n, true
+			break
+		}
+	}
+	if !found {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	res := domain.UIActionResult{Window: w, Element: elementInfoOf(node), Password: node.ValueRedacted}
+	if !node.Enabled {
+		return res, domain.ErrElementDisabled
+	}
+	need := act.Kind.Pattern()
+	if !slices.Contains(node.Patterns, need) {
+		return res, domain.ErrPatternUnsupported.
+			WithMsg("the element does not support the "+need+" pattern").
+			WithDetail("action", string(act.Kind)).
+			WithDetail("pattern", need).
+			WithDetail("supported", slices.Clone(node.Patterns))
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	st := f.state(id)
+	switch act.Kind {
+	case domain.UIActionInvoke:
+		res.Changed = true
+	case domain.UIActionSetValue:
+		if st.readOnly {
+			return res, domain.ErrElementReadOnly
+		}
+		st.value, st.hasValue, res.Changed = *act.Value, true, true
+	case domain.UIActionToggle:
+		want := act.State
+		if want == "" {
+			want = domain.ToggleStateOn
+			if st.toggle == domain.ToggleStateOn {
+				want = domain.ToggleStateOff
+			}
+		}
+		if st.toggle != want {
+			st.toggle, res.Changed = want, true
+		}
+		res.State = st.toggle
+	case domain.UIActionSelect:
+		st.selected, res.Changed = true, true
+		res.State = domain.SelectStateSelected
+	case domain.UIActionExpand:
+		if st.expand != domain.ExpandStateExpanded {
+			st.expand, res.Changed = domain.ExpandStateExpanded, true
+		}
+		res.State = st.expand
+	case domain.UIActionCollapse:
+		if st.expand != domain.ExpandStateCollapsed {
+			st.expand, res.Changed = domain.ExpandStateCollapsed, true
+		}
+		res.State = st.expand
+	}
+	return res, nil
 }

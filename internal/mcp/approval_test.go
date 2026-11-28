@@ -215,7 +215,7 @@ func TestLeaseAcquiringToolsHaveALongerTimeout(t *testing.T) {
 		}
 		return time.Until(d)
 	}
-	for _, tool := range []string{"acquire_control", "left_click", "type", "launch_app", "find_ui_element"} {
+	for _, tool := range []string{"acquire_control", "left_click", "type", "launch_app", "find_ui_element", "ui_action"} {
 		if got := deadlineOf(tool); got <= DefaultToolTimeout || got > DefaultLeaseToolTimeout {
 			t.Errorf("%s timeout = %v, want about %v", tool, got, DefaultLeaseToolTimeout)
 		}

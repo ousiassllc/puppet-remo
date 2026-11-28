@@ -141,6 +141,9 @@ func (c *control) plan(ctx context.Context, op domain.Op) (plan, error) {
 	case domain.WaitFor:
 		o, err := planWaitFor(o)
 		return plan{op: o}, err
+	case domain.UIAction:
+		o, err := planUIAction(o)
+		return plan{op: o}, err
 	default:
 		return plan{}, domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("unsupported operation %T", op))
 	}
@@ -276,6 +279,14 @@ func (c *control) execute(ctx context.Context, p plan, sr *scopeRun) (Result, er
 			}
 			defer unlock()
 		}
+	case domain.UIAction:
+		if sr != nil {
+			unlock, err := c.lockInput(ctx)
+			if err != nil {
+				return Result{}, err
+			}
+			defer unlock()
+		}
 	}
 	atPoints := scopeCheck{points: opPoints(p.op)}
 	verify := func(chk scopeCheck) error { return c.verifyInput(ctx, sr, chk) }
@@ -377,6 +388,8 @@ func (c *control) execute(ctx context.Context, p plan, sr *scopeRun) (Result, er
 		return c.findElement(ctx, o)
 	case domain.WaitFor:
 		return c.waitFor(ctx, o)
+	case domain.UIAction:
+		return c.actUI(ctx, o, sr)
 	}
 	return Result{}, domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("unsupported operation %T", p.op))
 }
@@ -458,6 +471,8 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 			args["waited_ms"] = res.Waited.Elapsed.Milliseconds()
 		}
 		return "wait_for", args
+	case domain.UIAction:
+		return "ui_action", uiActionArgs(o, res)
 	case domain.Wait:
 		return "wait", map[string]any{"ms": o.Duration.Milliseconds()}
 	}
@@ -528,6 +543,12 @@ func (c *control) addRecordedText(ctx context.Context, op domain.Op, res Result,
 		text = o.Text
 	case domain.ClipboardWrite:
 		text = o.Text
+	case domain.UIAction:
+		// set_value の本文。パスワード欄と、要素を特定できなかったとき（res.Acted が nil）は残さない。
+		if o.Kind != domain.UIActionSetValue || o.Value == nil || res.Acted == nil || res.Acted.Password {
+			return
+		}
+		text = *o.Value
 	case domain.ClipboardRead:
 		text = res.Text
 	case domain.KeyPress:
