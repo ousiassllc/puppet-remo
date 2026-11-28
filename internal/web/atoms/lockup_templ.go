@@ -10,7 +10,8 @@ import templruntime "github.com/a-h/templ/runtime"
 
 // Lockup はヘッダーの製品ロゴ（「Nefos Remote」のロックアップ。素材は static/src/brand の lockup-light.svg・lockup-dark.svg を加工せずに配信する）。
 //
-// ロックアップは 2000×560 で、自前の下地（ライトは --bone、ダークは --bone のダーク値）を持つ。高さ 55px（ヘッダー h-14 の 56px から下の枠線 1px を引いた中身の高さ）で幅 196px。
+// ロックアップは 2000×560 で、自前の下地（ライトは --bone、ダークは --bone のダーク値）を持つ。sm（640px）以上は高さ 55px（ヘッダー h-14 の 56px から下の枠線 1px を引いた中身の高さ）で幅 196px。
+// sm 未満（390 幅など）は高さ 40px（幅 140px）に下げ、それでも足りないときは幅を縮める（min-w-0 shrink・object-contain。下地はヘッダーと同じ色なので余白は見えない）。
 // ロゴの下地とヘッダーの地を同じ --bone にそろえるため、ロゴを置くヘッダーは bg-bone にする。
 // ライト用・ダーク用の 2 枚を出し、見えるほうを app.css（.brand-lockup-*）がテーマ（data-theme・prefers-color-scheme）で切り替える。
 // 隠れているほうは display: none なので、読み上げには 1 つだけ出る。
@@ -35,7 +36,7 @@ func Lockup() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<img class=\"brand-lockup brand-lockup-light h-[55px] w-auto\" src=\"/static/brand/lockup-light.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\"> <img class=\"brand-lockup brand-lockup-dark h-[55px] w-auto\" src=\"/static/brand/lockup-dark.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<img class=\"brand-lockup brand-lockup-light h-10 w-auto min-w-0 shrink object-contain object-left sm:h-[55px]\" src=\"/static/brand/lockup-light.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\"> <img class=\"brand-lockup brand-lockup-dark h-10 w-auto min-w-0 shrink object-contain object-left sm:h-[55px]\" src=\"/static/brand/lockup-dark.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

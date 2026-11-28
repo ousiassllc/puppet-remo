@@ -27,9 +27,9 @@ const (
 // badgeClass はステータスピル。状態色の細枠 + 薄い地 + 文言（色だけで意味を伝えない）。
 func badgeClass(t BadgeTone) string {
 	if t == BadgeSoft {
-		return "inline-flex h-5.5 items-center whitespace-nowrap rounded-full bg-accent-soft px-2 text-xs leading-none text-mute-on-soft"
+		return "inline-flex h-5.5 items-center whitespace-nowrap rounded-full bg-accent-soft px-2 text-desc leading-none text-mute-on-soft"
 	}
-	base := "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs "
+	base := "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-desc "
 	switch t {
 	case BadgeOK:
 		return base + "border-success-line bg-success-wash text-success"

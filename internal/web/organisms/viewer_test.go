@@ -81,12 +81,12 @@ func TestViewerToolbarRendersFieldsAndErrors(t *testing.T) {
 		Quality:  "70", FPS: "10",
 	}
 	out := webtest.Render(t, organisms.ViewerToolbar(v))
-	has(t, out, "rounded-lg border border-border bg-surface p-(--pad-card-sm)") // S2: 小さいカードの padding は 16（--pad-card-sm）
+	has(t, out, "rounded-card card-edge bg-surface p-(--pad-card-sm)") // S2: 小さいカードの padding は 16（--pad-card-sm）
 	has(t, out, `id="viewer-toolbar"`, `hx-post="/viewer/settings"`, `hx-target-422="this"`, `<option value="1" selected>`, `name="quality"`, `min="1"`, `max="100"`,
 		`name="fps"`, `max="30"`, `value="70"`, `value="10"`, " novalidate")
 	hasNot(t, out, "data-field-error", "data-error-code")
 	// スライダーの値（<output>）は補助の --mute。スライダー自体は入力欄の枠を持たない（P1）。
-	has(t, out, `<output id="viewer-quality-out" for="viewer-quality" class="w-8 text-sm font-mono text-mute">`, `type="range" value="70" class="w-full min-w-0"`)
+	has(t, out, `<output id="viewer-quality-out" for="viewer-quality" class="w-8 text-desc font-mono text-mute">`, `type="range" value="70" class="w-full min-w-0"`)
 	hasNot(t, out, `text-sm font-mono text-ink`)
 	webtest.AssertCSPCompliantHTML(t, out)
 
@@ -109,11 +109,11 @@ func TestViewerRootPlacesTheViewerOutsideHTMXTargets(t *testing.T) {
 	hasNot(t, out, " readonly")
 }
 
-// #166: 「操作するウィンドウ」も molecules.Card の題（h2・lg 18）。htmx が差し替える #window-picker は Card を包む div で、
-// 更新ボタンは本文（Card の p-6）の中にある。直書きの枠・題（rounded-lg border ... p-4・text-base の h2）を残さない。
+// #166: 「操作するウィンドウ」も molecules.Card の題（h2・section 16）。htmx が差し替える #window-picker は Card を包む div で、
+// 更新ボタンは本文（Card の --pad-card）の中にある。直書きの枠・題（rounded-lg border ... p-4・text-base の h2）を残さない。
 func TestWindowPickerIsACard(t *testing.T) {
 	out := webtest.Render(t, organisms.WindowPicker(view.WindowPicker{CanSelect: true}))
-	const title = `<h2 class="border-b border-border px-6 py-4 text-lg font-semibold leading-[1.4] text-ink">操作するウィンドウ</h2><div class="p-6">`
+	const title = `<h2 class="px-(--pad-card) pt-(--pad-card) text-section font-semibold text-ink">操作するウィンドウ</h2><div class="px-(--pad-card) pb-(--pad-card) pt-4">`
 	for _, want := range []string{`<div id="window-picker" hx-get="/viewer/windows"`, title, "data-window-refresh"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("window picker lacks %q:\n%s", want, out)

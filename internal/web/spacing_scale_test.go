@@ -114,8 +114,37 @@ func TestPageTitleIsTwentyTwoSemibold(t *testing.T) {
 	}
 }
 
-// T3・#166: カード状の枠の見出しは molecules.Card の題（lg 18 SemiBold）にそろえる。見出し（h1〜h4）に直書きの `text-2xl`・`text-xl` を
-// 残さない（ページの題は h1 の `text-page-title`、項目名の見出しは h3 の `text-base`）。32px・24px の見出しがカードの題 18px と並んで見える不揃いを防ぐ。
+// T3: アプリ画面の文字の段は app.css の 5 段（text-page-title・text-section・text-item・text-sm・text-desc）と、ツールチップ（text-tip）・バッジ数（text-2xs）。
+// `text-xs`・`text-xl` 以上は @theme から外してあるので書かない（書いても効かない）。`text-base`・`text-lg` はダイアログ（確認モーダル・承認ダイアログ）だけに残す。
+func TestTemplsUseOnlyTheAppTypeScale(t *testing.T) {
+	gone := regexp.MustCompile(`\btext-(?:xs|xl|2xl|3xl)\b`)
+	dialogOnly := regexp.MustCompile(`\btext-(?:base|lg)\b`)
+	dialogs := map[string]bool{"molecules/modal.templ": true, "organisms/approval.templ": true}
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if m := gone.FindString(line); m != "" {
+				t.Errorf("%s:%d: %s は文字の段から外した（text-desc / text-sm / text-item / text-section を使う）: %s", path, i+1, m, strings.TrimSpace(line))
+			}
+			if m := dialogOnly.FindString(line); m != "" && !dialogs[filepath.ToSlash(path)] {
+				t.Errorf("%s:%d: %s はダイアログだけの段（本文は text-sm、項目名は text-item）: %s", path, i+1, m, strings.TrimSpace(line))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// T3・#166: カード状の枠の見出しは molecules.Card の題（section 16 SemiBold）にそろえる。見出し（h1〜h4）に直書きの `text-2xl`・`text-xl` を
+// 残さない（ページの題は h1 の `text-page-title`、項目名の見出しは h3 の `text-item`）。32px・24px の見出しがカードの題と並んで見える不揃いを防ぐ。
 func TestNoHardcodedLargeHeadingsInTemplates(t *testing.T) {
 	heading := regexp.MustCompile(`<h[1-6]\b[^>]*class="[^"]*\btext-(2xl|xl)\b`)
 	found := 0
@@ -130,7 +159,7 @@ func TestNoHardcodedLargeHeadingsInTemplates(t *testing.T) {
 		found++
 		for i, line := range strings.Split(string(src), "\n") {
 			if heading.MatchString(line) {
-				t.Errorf("%s:%d: a heading must not use text-2xl / text-xl; use molecules.Card (card title) or h3 text-base (item name): %s", path, i+1, strings.TrimSpace(line))
+				t.Errorf("%s:%d: a heading must not use text-2xl / text-xl; use molecules.Card (card title) or h3 text-item (item name): %s", path, i+1, strings.TrimSpace(line))
 			}
 		}
 		return nil

@@ -15,11 +15,11 @@ templ ConnectionPanel(v view.ConnectionPanel) {
 		@molecules.Card("接続方式") {
 			<div class="space-y-4">
 				<p class="text-sm text-ink">エージェントが OpenAI のモデルを呼び出す方法を選びます。タスクの開始時の方式でそのタスクが終わるまで動き、別の方式へ自動では切り替えません。</p>
-				<ul class="divide-y divide-border rounded-md border border-border" aria-label="接続方式">
+				<ul class="divide-y divide-line-soft rounded-md bg-surface-sel" aria-label="接続方式">
 					for _, o := range v.Options {
 						<li class="flex flex-wrap items-center justify-between gap-4 p-4" data-connection-option={ o.Value } data-current?={ o.Current }>
 							<div class="min-w-0 flex-1">
-								<p class="text-base font-semibold text-ink">{ o.Label }</p>
+								<p class="text-item font-semibold text-ink">{ o.Label }</p>
 								<p class="mt-1 text-sm text-ink">{ o.Description }</p>
 							</div>
 							if o.Current {

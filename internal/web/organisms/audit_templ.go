@@ -47,7 +47,7 @@ func AuditFilters(f view.AuditFilters) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form class=\"space-y-4 rounded-lg border border-border bg-surface p-(--pad-card-sm)\" method=\"get\" action=\"/audit\" novalidate aria-label=\"絞り込み\" data-audit-filters hx-get=\"/audit\" hx-target=\"#audit-list\" hx-target-422=\"#audit-list\" hx-swap=\"outerHTML\" hx-push-url=\"true\" hx-disabled-elt=\"find button[type=submit]\"><div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form class=\"space-y-4 rounded-card card-edge bg-surface p-(--pad-card-sm)\" method=\"get\" action=\"/audit\" novalidate aria-label=\"絞り込み\" data-audit-filters hx-get=\"/audit\" hx-target=\"#audit-list\" hx-target-422=\"#audit-list\" hx-swap=\"outerHTML\" hx-push-url=\"true\" hx-disabled-elt=\"find button[type=submit]\"><div class=\"grid gap-4 sm:grid-cols-2 lg:grid-cols-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -327,7 +327,7 @@ func AuditList(v view.AuditList) templ.Component {
 				}
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"overflow-x-auto rounded-lg border border-border bg-surface\"><table class=\"min-w-full divide-y divide-border text-sm\"><thead class=\"text-left text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">日時</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">クライアント</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">種別</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">イベント</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">結果</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y) text-right\">所要時間</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">画像</th></tr></thead> <tbody class=\"divide-y divide-border\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"overflow-x-auto rounded-card card-edge bg-surface\"><table class=\"min-w-full divide-y divide-line-soft text-sm\"><thead class=\"text-left text-desc text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">日時</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">クライアント</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">種別</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">イベント</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">結果</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y) text-right\">所要時間</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">画像</th></tr></thead> <tbody class=\"divide-y divide-line-soft\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -511,7 +511,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"><dl class=\"grid gap-x-6 gap-y-2 rounded-lg border border-border bg-surface p-(--pad-card) text-sm sm:grid-cols-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"><dl class=\"grid gap-x-6 gap-y-2 rounded-card card-edge bg-surface p-(--pad-card) text-sm sm:grid-cols-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -615,7 +615,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "><table class=\"min-w-full divide-y divide-border text-sm\" data-audit-args><thead class=\"text-left text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">キー</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">値</th></tr></thead> <tbody class=\"divide-y divide-border\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "><table class=\"min-w-full divide-y divide-line-soft text-sm\" data-audit-args><thead class=\"text-left text-desc text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">キー</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">値</th></tr></thead> <tbody class=\"divide-y divide-line-soft\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -714,7 +714,7 @@ func AuditDetail(v view.AuditDetail) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" class=\"max-w-full rounded-lg border border-border bg-surface\" data-audit-thumb>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" class=\"max-w-full rounded-lg border border-line-soft bg-surface\" data-audit-thumb>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

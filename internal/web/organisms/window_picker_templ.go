@@ -168,7 +168,7 @@ func WindowPicker(v view.WindowPicker) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<ul class=\"divide-y divide-border\" data-window-list>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<ul class=\"divide-y divide-line-soft\" data-window-list>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -286,7 +286,7 @@ func windowRow(r view.WindowRow) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</p><p class=\"flex flex-wrap items-center gap-2 text-xs\"><span class=\"font-mono\" data-window-process>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</p><p class=\"flex flex-wrap items-center gap-2 text-desc text-mute\"><span class=\"font-mono\" data-window-process>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

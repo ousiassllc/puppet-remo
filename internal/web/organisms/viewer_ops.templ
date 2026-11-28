@@ -53,7 +53,7 @@ templ ClipboardPanel(scoped bool) {
 					@atoms.Button(atoms.ButtonProps{Label: "ホストのクリップボードへ送信", Variant: atoms.ButtonPrimary, Type: "submit"})
 				</form>
 				if scoped {
-					<p class="text-xs text-mute" data-clipboard-write-only>ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。</p>
+					<p class="text-desc text-mute" data-clipboard-write-only>ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。</p>
 				} else {
 					<div class="space-y-2">
 						@atoms.Button(atoms.ButtonProps{Label: "ホストのクリップボードを取得", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
@@ -96,7 +96,7 @@ func keyAttrs(k view.KeyMenuItem) atoms.Attrs {
 templ KeyMenu(items []view.KeyMenuItem) {
 	<section id="key-menu" aria-label="ショートカットの送信">
 		@molecules.Card("ショートカットを送信") {
-			<p class="mb-2 text-xs text-mute">ブラウザが先に処理するキー操作を、ホストへ送ります。</p>
+			<p class="mb-2 text-desc text-mute">ブラウザが先に処理するキー操作を、ホストへ送ります。</p>
 			<div class="flex flex-wrap gap-2">
 				for i, k := range items {
 					if k.Disabled {

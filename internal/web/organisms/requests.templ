@@ -39,12 +39,12 @@ templ connectionRequestList(v view.RequestList, oob bool) {
 			}
 		}
 		for _, r := range v.Rows {
-			<article class="rounded-lg border border-border bg-surface p-(--pad-card)" data-request={ r.ID }>
+			<article class="rounded-card card-edge bg-surface p-(--pad-card)" data-request={ r.ID }>
 				<div class="flex flex-wrap items-baseline justify-between gap-2">
-					<h3 class="text-base font-semibold text-ink">{ r.DisplayName }</h3>
-					<span class="text-xs text-mute"><span class="font-mono">{ strconv.Itoa(r.Count) }</span> 回の要求 ・ 初回 <span class="font-mono">{ r.FirstSeen }</span> ・ 最終 <span class="font-mono">{ r.LastSeen }</span></span>
+					<h3 class="text-item font-semibold text-ink">{ r.DisplayName }</h3>
+					<span class="text-desc text-mute"><span class="font-mono">{ strconv.Itoa(r.Count) }</span> 回の要求 ・ 初回 <span class="font-mono">{ r.FirstSeen }</span> ・ 最終 <span class="font-mono">{ r.LastSeen }</span></span>
 				</div>
-				<p class="mt-2 text-xs text-mute">
+				<p class="mt-2 text-desc text-mute">
 					ユーザー { r.LoginName } ・ 接続元 <code>{ r.RemoteIP }</code> ・ <span class="font-mono">{ r.ExpiresAt }</span> まで有効
 				</p>
 				<form

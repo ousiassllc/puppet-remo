@@ -13,15 +13,15 @@ import (
 )
 
 // T3: 見出しの「段」（ガイド「アプリ内の見出しの段」・設定画面のパーツ）。見た目はタグではなくクラスで決める:
-// モーダルの題・カードの題 = lg 18 SemiBold、項目の見出し（h3）= base 16 SemiBold（クライアント名・アプリ名もこの段。#166。
-// organisms_test の TestItemNameHeadingsAreH3Base16）、インラインアラートの題 = sm 14 SemiBold。本文と同じ text-base の SemiBold を題にしない（アラートの題を 16 にしない）。
+// カードの題 = section 16 SemiBold、モーダルの題 = lg 18 SemiBold（ダイアログだけ）、項目の見出し（h3）= item 15 SemiBold（クライアント名・アプリ名もこの段。#166。
+// organisms_test の TestItemNameHeadingsAreH3Item）、インラインアラートの題 = sm 14 SemiBold。本文と同じ段の SemiBold を題にしない（アラートの題を 15・16 にしない）。
 func TestHeadingsFollowTheGuideLadder(t *testing.T) {
 	type rung struct{ size, weight string }
 	ladder := func(class string) rung {
 		var r rung
 		for _, c := range strings.Fields(class) {
 			switch c {
-			case "text-xs", "text-sm", "text-base", "text-lg", "text-xl", "text-2xl", "text-3xl", "text-page-title":
+			case "text-sm", "text-desc", "text-item", "text-section", "text-tip", "text-base", "text-lg", "text-page-title", "text-2xs":
 				r.size = strings.TrimPrefix(c, "text-")
 			case "font-normal", "font-medium", "font-semibold", "font-bold":
 				r.weight = strings.TrimPrefix(c, "font-")
@@ -39,7 +39,7 @@ func TestHeadingsFollowTheGuideLadder(t *testing.T) {
 		title string
 		want  rung
 	}{
-		"card title":   {card, []string{"h2"}, "見出し", rung{"lg", "semibold"}},
+		"card title":   {card, []string{"h2"}, "見出し", rung{"section", "semibold"}},
 		"modal title":  {modal, []string{"h2"}, "確認", rung{"lg", "semibold"}},
 		"alert title":  {alert, []string{"strong"}, "失敗", rung{"sm", "semibold"}},
 		"token reveal": {reveal, []string{"h3"}, "「ci」のトークンを発行しました", rung{"sm", "semibold"}},
@@ -61,25 +61,33 @@ func TestHeadingsFollowTheGuideLadder(t *testing.T) {
 	}
 }
 
-// 見出し付きカード（ガイド「設定画面のパーツ」1）: 題の下に --border の線、本文 padding --s-6、影なし、地 --surface・角丸 --r-lg。
+// 見出し付きカード（ガイド「設定画面のパーツ」1）: 題は text-section font-semibold で題の下に線を引かない。余白は --pad-card、影なし、地 --surface・角丸 --r-card・枠は .card-edge。
 func TestCardFollowsTheGuide(t *testing.T) {
 	card := webtest.Render(t, molecules.Card("見出し"))
 	title := webtest.Elements(t, card, "h2")[0]
-	for _, want := range []string{"border-b", "border-border", "px-6", "py-4", "leading-[1.4]"} {
+	// 題は text-section font-semibold（16・600）。題の下に線は引かない（border-b なし）。
+	for _, want := range []string{"text-section", "font-semibold", "text-ink", "px-(--pad-card)", "pt-(--pad-card)"} {
 		if !slices.Contains(strings.Fields(title.Class), want) {
 			t.Errorf("card title lacks %q: %q", want, title.Class)
 		}
 	}
-	for _, want := range []string{"rounded-lg", "bg-surface", `class="p-6"`} {
+	if strings.Contains(title.Class, "border") {
+		t.Errorf("card title must have no separator line: %q", title.Class)
+	}
+	for _, want := range []string{`class="rounded-card card-edge bg-surface"`, `class="px-(--pad-card) pb-(--pad-card) pt-4"`} {
 		if !strings.Contains(card, want) {
 			t.Errorf("card lacks %q:\n%s", want, card)
 		}
 	}
-	if strings.Contains(card, "shadow") {
-		t.Errorf("card must have no shadow:\n%s", card)
+	if strings.Contains(card, "shadow") || strings.Contains(card, "border-border") || strings.Contains(card, "rounded-lg") {
+		t.Errorf("card must have no shadow, border-border or rounded-lg (the edge is .card-edge):\n%s", card)
 	}
-	if untitled := webtest.Render(t, molecules.Card("")); strings.Contains(untitled, "<h2") {
+	untitled := webtest.Render(t, molecules.Card(""))
+	if strings.Contains(untitled, "<h2") {
 		t.Errorf("an untitled card must not render a heading:\n%s", untitled)
+	}
+	if !strings.Contains(untitled, `class="p-(--pad-card)"`) {
+		t.Errorf("an untitled card body must use p-(--pad-card):\n%s", untitled)
 	}
 }
 

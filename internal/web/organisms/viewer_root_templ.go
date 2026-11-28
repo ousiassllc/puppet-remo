@@ -82,7 +82,7 @@ func ViewerRoot(v view.Viewer) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div><remo-screen-viewer class=\"block overflow-hidden rounded-lg border border-border bg-bone\" ws-url=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div><remo-screen-viewer class=\"block overflow-hidden rounded-card card-edge bg-bone\" ws-url=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

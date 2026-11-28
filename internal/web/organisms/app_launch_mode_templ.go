@@ -255,19 +255,19 @@ func DeniedSection(v view.DeniedSection) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if !v.Active {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<p class=\"text-xs text-mute\" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<p class=\"text-desc text-mute\" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<p class=\"mt-2 text-xs text-mute\" data-denied-count=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<p class=\"mt-2 text-desc text-mute\" data-denied-count=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 95, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 95, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -280,7 +280,7 @@ func DeniedSection(v view.DeniedSection) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 95, Col: 137}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 95, Col: 139}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -293,7 +293,7 @@ func DeniedSection(v view.DeniedSection) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Max))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 95, Col: 163}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 95, Col: 165}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -333,14 +333,14 @@ func DeniedSection(v view.DeniedSection) templ.Component {
 			}
 			for _, row := range v.Rows {
 				if row.Editing {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<li class=\"rounded-lg border border-border bg-surface p-(--pad-card-sm)\" data-denied=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<li class=\"rounded-lg bg-surface-sel p-(--pad-card-sm)\" data-denied=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var12 string
 					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(row.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 105, Col: 100}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 105, Col: 83}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {
@@ -359,14 +359,14 @@ func DeniedSection(v view.DeniedSection) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<li class=\"flex flex-col gap-2 rounded-lg border border-border bg-surface p-(--pad-card-sm) sm:flex-row sm:items-center\" data-denied=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<li class=\"flex flex-col gap-2 rounded-lg bg-surface-sel p-(--pad-card-sm) sm:flex-row sm:items-center\" data-denied=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var13 string
 					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(row.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 109, Col: 148}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_launch_mode.templ`, Line: 109, Col: 131}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 					if templ_7745c5c3_Err != nil {

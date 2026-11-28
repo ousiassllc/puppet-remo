@@ -44,7 +44,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 					}
 				}
 				if v.Updatable && v.Latest == nil && v.Error == "" && v.LastChecked != "" {
-					<p class="text-base text-ink" data-update="up-to-date">新しい版はありません。</p>
+					<p class="text-sm text-ink" data-update="up-to-date">新しい版はありません。</p>
 				}
 				if v.Latest != nil {
 					<div class="space-y-2 rounded-md bg-bone p-4" data-update="latest">
@@ -56,7 +56,7 @@ templ UpdatePanel(v view.UpdatePanel) {
 								@atoms.Badge(atoms.BadgeWarn, "適用できません")
 							}
 							if v.Latest.PublishedAt != "" {
-								<span class="text-xs text-mute"><span class="font-mono">{ v.Latest.PublishedAt }</span> 公開</span>
+								<span class="text-desc text-mute"><span class="font-mono">{ v.Latest.PublishedAt }</span> 公開</span>
 							}
 						</div>
 						if !v.Latest.Verified && v.Latest.Reject != "" {

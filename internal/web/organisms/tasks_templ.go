@@ -189,7 +189,7 @@ func runningTasks(v view.RunningTasks, oob bool) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<ul class=\"divide-y divide-border\" data-running-tasks>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<ul class=\"divide-y divide-line-soft\" data-running-tasks>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -419,7 +419,7 @@ func TaskList(v view.TaskList) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</ul><div class=\"hidden overflow-x-auto rounded-lg border border-border bg-surface sm:block\"><table class=\"min-w-full divide-y divide-border text-sm\"><thead class=\"text-left text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">開始</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">タスク</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">依頼元</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">指示</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">状態</th><th scope=\"col\" class=\"whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right\">ステップ</th><th scope=\"col\" class=\"whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right\">所要時間</th></tr></thead> <tbody class=\"divide-y divide-border\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</ul><div class=\"hidden overflow-x-auto rounded-card card-edge bg-surface sm:block\"><table class=\"min-w-full divide-y divide-line-soft text-sm\"><thead class=\"text-left text-desc text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">開始</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">タスク</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">依頼元</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">指示</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">状態</th><th scope=\"col\" class=\"whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right\">ステップ</th><th scope=\"col\" class=\"whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right\">所要時間</th></tr></thead> <tbody class=\"divide-y divide-line-soft\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -599,14 +599,14 @@ func taskCard(r view.TaskRow) templ.Component {
 			templ_7745c5c3_Var26 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<li class=\"task-card group relative cursor-pointer space-y-2 rounded-lg border border-border bg-surface p-(--pad-card-sm) hover:bg-accent-soft\" data-task-card=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<li class=\"task-card group relative cursor-pointer space-y-2 rounded-card card-edge bg-surface p-(--pad-card-sm) hover:bg-accent-soft\" data-task-card=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(r.DetailURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 142, Col: 173}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 142, Col: 164}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -619,7 +619,7 @@ func taskCard(r view.TaskRow) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(r.Code)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 142, Col: 196}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 142, Col: 187}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -659,7 +659,7 @@ func taskCard(r view.TaskRow) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</p><p class=\"flex items-baseline gap-x-2 whitespace-nowrap text-xs text-mute group-hover:text-mute-on-soft\"><a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</p><p class=\"flex items-baseline gap-x-2 whitespace-nowrap text-desc text-mute group-hover:text-mute-on-soft\"><a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1074,7 +1074,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\"><div class=\"space-y-4 rounded-lg border border-border bg-surface p-(--pad-card)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\"><div class=\"space-y-4 rounded-card card-edge bg-surface p-(--pad-card)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1517,7 +1517,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "><table class=\"min-w-full divide-y divide-border text-sm\" data-task-steps-table><thead class=\"text-left text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y) text-right\">#</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">経路</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">アクション</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">結果</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">日時</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">画像</th></tr></thead> <tbody class=\"divide-y divide-border\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "><table class=\"min-w-full divide-y divide-line-soft text-sm\" data-task-steps-table><thead class=\"text-left text-desc text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y) text-right\">#</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">経路</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">アクション</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">結果</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">日時</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">画像</th></tr></thead> <tbody class=\"divide-y divide-line-soft\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1612,14 +1612,14 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					if s.KindLabel != "" {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "<span class=\"mr-1 text-xs text-ink\" data-step-kind-label>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "<span class=\"mr-1 text-desc text-mute group-hover:text-mute-on-soft\" data-step-kind-label>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var80 string
 						templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(s.KindLabel)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 306, Col: 81}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 306, Col: 114}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 						if templ_7745c5c3_Err != nil {
@@ -1643,14 +1643,14 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</span> <span class=\"ml-1 font-mono text-xs text-mute group-hover:text-mute-on-soft\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</span> <span class=\"ml-1 font-mono text-desc text-mute group-hover:text-mute-on-soft\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var82 string
 					templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(s.Event)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 309, Col: 96}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/tasks.templ`, Line: 309, Col: 98}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 					if templ_7745c5c3_Err != nil {
@@ -1735,7 +1735,7 @@ func TaskDetail(v view.TaskDetail) templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" loading=\"lazy\" class=\"h-16 w-auto rounded-sm border border-border\" data-step-thumb>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" loading=\"lazy\" class=\"h-16 w-auto rounded-sm border border-line-soft\" data-step-thumb>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}

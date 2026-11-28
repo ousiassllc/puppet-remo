@@ -11,7 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 import "github.com/ousiassllc/puppet-remo/internal/web/atoms"
 
 // FieldGroup はフォームのグループ（fieldset + legend。ガイドの「フォームのグループ見出し」）。legend は h4 の段（sm14 SemiBold・行の高さ 1.4）で、
-// グループの上に --border 1px の線、中の項目の間隔は --gap-field（16 = gap-4）。タグは見出しにしない（legend のまま）。
+// グループの上に線は引かない（余白だけで分ける）、中の項目の間隔は --gap-field（16 = gap-4）。タグは見出しにしない（legend のまま）。
 // class は配置の追加（グリッドの span など）、attrs は data-* などの追加の属性。
 func FieldGroup(legend, class string, attrs atoms.Attrs) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -34,7 +34,7 @@ func FieldGroup(legend, class string, attrs atoms.Attrs) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{"flex min-w-0 flex-col gap-4 border-t border-border pt-4", class}
+		var templ_7745c5c3_Var2 = []any{"flex min-w-0 flex-col gap-4 pt-2", class}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err

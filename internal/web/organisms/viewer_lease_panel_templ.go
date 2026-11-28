@@ -103,14 +103,14 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 				}
 			}
 			if v.ScopedProcess != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<span class=\"text-sm text-mute\" data-lease-scope>対象: <span class=\"font-mono\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<span class=\"text-desc text-mute\" data-lease-scope>対象: <span class=\"font-mono\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(v.ScopedProcess)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 38, Col: 103}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 38, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -160,40 +160,40 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<h3 class=\"text-sm font-semibold\">AI エージェントのタスク実行中</h3><dl class=\"space-y-2 text-sm\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">状態</dt><dd data-task-status>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<h3 class=\"text-sm font-semibold\">AI エージェントのタスク実行中</h3><dl class=\"space-y-2 text-sm\"><div class=\"flex gap-2\"><dt class=\"w-16 text-mute-on-soft\">状態</dt><dd data-task-status>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Status)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 55, Col: 105}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 55, Col: 113}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</dd></div><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">ステップ</dt><dd data-task-steps><span class=\"font-mono\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</dd></div><div class=\"flex gap-2\"><dt class=\"w-16 text-mute-on-soft\">ステップ</dt><dd data-task-steps><span class=\"font-mono\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Steps)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 56, Col: 133}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 56, Col: 141}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</span></dd></div><div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">経過</dt><dd data-task-elapsed><span class=\"font-mono\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</span></dd></div><div class=\"flex gap-2\"><dt class=\"w-16 text-mute-on-soft\">経過</dt><dd data-task-elapsed><span class=\"font-mono\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Elapsed)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 57, Col: 131}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 57, Col: 139}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -206,7 +206,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.MaxTime)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 57, Col: 190}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 57, Col: 198}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -217,14 +217,14 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					if v.Task.StartedAt != "" {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">開始</dt><dd data-task-started><span class=\"font-mono\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"flex gap-2\"><dt class=\"w-16 text-mute-on-soft\">開始</dt><dd data-task-started><span class=\"font-mono\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var10 string
 						templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.StartedAt)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 59, Col: 134}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 59, Col: 142}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 						if templ_7745c5c3_Err != nil {
@@ -235,14 +235,14 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"flex gap-2\"><dt class=\"w-16 text-mute\">依頼元</dt><dd data-task-requester>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"flex gap-2\"><dt class=\"w-16 text-mute-on-soft\">依頼元</dt><dd data-task-requester>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(v.Task.Requester)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 61, Col: 114}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/viewer_lease_panel.templ`, Line: 61, Col: 122}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -299,7 +299,7 @@ func ViewerLeasePanel(v view.ViewerLease) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, " <p class=\"mt-2 text-xs text-mute\">この画面から Ctrl+Alt+Del は送れません。</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, " <p class=\"mt-2 text-desc text-mute\">この画面から Ctrl+Alt+Del は送れません。</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

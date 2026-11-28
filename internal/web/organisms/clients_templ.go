@@ -32,7 +32,7 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 
 // ClientCard はクライアント 1 件（有効・無効の切り替え）。PATCH の応答もこのフラグメントを返す（API 仕様 §7.2）。
 // 切り替えは現在の状態の逆だけを描画する。削除と詳細への導線は、一覧のカードだけに出す。
-// 名前の見出し（項目名）は、一覧のカードだけが h3（sr-only の h2「クライアント一覧」の下。base 16 SemiBold）。詳細ページの名前はページの h1
+// 名前の見出し（項目名）は、一覧のカードだけが h3（sr-only の h2「クライアント一覧」の下。item 15 SemiBold）。詳細ページの名前はページの h1
 // （pages/clients.templ の text-page-title）なので、このカードは名前を出さない。
 func ClientCard(c view.Client) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -68,14 +68,14 @@ func ClientCard(c view.Client) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"rounded-lg border border-border bg-surface p-(--pad-card)\" data-client=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"rounded-card card-edge bg-surface p-(--pad-card)\" data-client=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(c.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 30, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 30, Col: 102}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -86,7 +86,7 @@ func ClientCard(c view.Client) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if c.CanOpenDetail {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<h3 class=\"text-base font-semibold text-ink\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<h3 class=\"text-item font-semibold text-ink\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -104,20 +104,20 @@ func ClientCard(c view.Client) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span class=\"text-xs text-mute\" data-approval-mode>承認モード: ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span class=\"text-desc text-mute\" data-approval-mode>承認モード: ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(c.Approved)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 35, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 35, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</span></div><p class=\"mt-2 text-xs text-mute\">ユーザー ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</span></div><p class=\"mt-2 text-desc text-mute\">ユーザー ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -243,14 +243,14 @@ func ClientCard(c view.Client) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if c.FirstTimeApprovedAt != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<span class=\"text-xs text-ink\" data-first-time-status>承認済み（<span class=\"font-mono\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<span class=\"text-desc text-mute\" data-first-time-status>承認済み（<span class=\"font-mono\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(c.FirstTimeApprovedAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 62, Col: 120}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 62, Col: 123}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -261,14 +261,14 @@ func ClientCard(c view.Client) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if c.FirstTimeStatus != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<span class=\"text-xs text-ink\" data-first-time-status>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<span class=\"text-desc text-mute\" data-first-time-status>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(c.FirstTimeStatus)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 64, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 64, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -518,7 +518,7 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<table class=\"min-w-full text-left text-sm\"><thead class=\"border-b border-border text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">ラベル</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">接頭辞</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">状態</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">発行</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">有効期限</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">最終使用</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\"><span class=\"sr-only\">操作</span></th></tr></thead> <tbody class=\"divide-y divide-border\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<table class=\"min-w-full text-left text-sm\"><thead class=\"border-b border-line-soft text-desc text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">ラベル</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">接頭辞</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">状態</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">発行</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">有効期限</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\">最終使用</th><th scope=\"col\" class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact)\"><span class=\"sr-only\">操作</span></th></tr></thead> <tbody class=\"divide-y divide-line-soft\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

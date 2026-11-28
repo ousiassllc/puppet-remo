@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import "github.com/ousiassllc/puppet-remo/internal/web/atoms"
 
-// EmptyState は空状態（データがないとき）の表示。破線の枠・角丸 lg・padding 48/24 に、案内の文言を出す。
+// EmptyState は空状態（データがないとき）の表示。破線の枠・角丸 --r-card・padding 48/24 に、案内の文言を出す。
 // name は data-empty の値（テストと画面の判別に使う）。
 func EmptyState(name string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -33,7 +33,7 @@ func EmptyState(name string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-surface px-6 py-12 text-center text-base text-ink\" data-empty=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex flex-col items-center gap-3 rounded-card border border-dashed border-border bg-surface px-6 py-12 text-center text-sm text-ink\" data-empty=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

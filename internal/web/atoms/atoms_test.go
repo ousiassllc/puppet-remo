@@ -65,7 +65,7 @@ func TestBadgeShowsAStateIconExceptNeutral(t *testing.T) {
 	for tone, c := range map[atoms.BadgeTone]string{atoms.BadgeNeutral: "text-mute-on-soft", atoms.BadgeLabel: "text-ink"} {
 		out := webtest.Render(t, atoms.Badge(tone, "MCP"))
 		hasNot(t, out, "<svg")
-		has(t, out, "MCP", c, "border-border", "bg-accent-soft")
+		has(t, out, "MCP", c, "border-border", "bg-accent-soft", "text-desc")
 	}
 }
 
@@ -78,15 +78,21 @@ func TestNeutralBadgeSeparatesStateFromLabel(t *testing.T) {
 	hasNot(t, label, "text-mute")
 }
 
-// インラインアラート: 4 種（お知らせ・成功・注意・エラー）の状態色・アイコン・見出し・本文。閉じるボタンは Dismissible のときだけ。
+// インラインアラート: 4 種（お知らせ・成功・注意・エラー）の見出し・本文・アイコン。地は --surface-sel・枠なし（エラーだけ --danger-line の 1px）。
+// 状態色は先頭のアイコンだけに使う（地・枠・文字は状態色にしない）。閉じるボタンは Dismissible のときだけ。
 func TestAlertTonesIconsAndDismiss(t *testing.T) {
 	for tone, color := range map[atoms.AlertTone]string{atoms.AlertInfo: "info", atoms.AlertSuccess: "success", atoms.AlertWarning: "warning", atoms.AlertDanger: "danger"} {
 		out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: tone, Code: "conflict", Heading: "見出し", Message: "本文"}))
-		has(t, out, `role="alert"`, `data-error-code="conflict"`, `data-alert-tone="`+string(tone)+`"`, "border-"+color+"-line", "<svg", "見出し", "本文", `<p class="mt-2 text-ink" data-alert-message>`)
-		hasNot(t, out, "data-clear")
-		// 通知の帯は --r-md（8）。--r-lg（12）はカードで、同じ部品群の Notice と角を揃える（S1）。
-		has(t, out, "rounded-md")
-		hasNot(t, out, "rounded-lg")
+		has(t, out, `role="alert"`, `data-error-code="conflict"`, `data-alert-tone="`+string(tone)+`"`, "bg-surface-sel", "text-ink", `<span class="flex h-6 shrink-0 items-center text-`+color+`">`, "<svg", "見出し", "本文", `<p class="mt-2 text-ink" data-alert-message>`)
+		hasNot(t, out, "data-clear", "bg-"+color+"-wash", "border-"+color+"-line-strong")
+		if tone == atoms.AlertDanger {
+			has(t, out, "border border-danger-line")
+		} else {
+			hasNot(t, out, "border")
+		}
+		// 通知の帯は --r-card（16）。Notice と角を揃える（S1）。
+		has(t, out, "rounded-card")
+		hasNot(t, out, "rounded-lg", "rounded-md")
 	}
 	out := webtest.Render(t, atoms.Alert(atoms.AlertProps{Tone: atoms.AlertDanger, Heading: "h", Message: "m", Dismissible: true}))
 	has(t, out, `data-clear="#alert-root"`, `aria-label="閉じる"`, "data-ripple")
@@ -99,7 +105,7 @@ func TestAlertTonesIconsAndDismiss(t *testing.T) {
 	hasNot(t, tmpl, `role="alert"`)
 }
 
-// 題なしのインラインアラート: 状態色は左の線（3px）だけ。ほかの 3 辺は --border 1px・地は --surface。アイコンは状態色・本文は ink。
+// 題なしのインラインアラート: Alert と同形（--surface-sel 地・--r-card・枠なし。エラーだけ --danger-line の 1px）。左の線は持たない。アイコンは状態色・本文は ink。
 // 見出しと閉じるボタンは持たず、role などは attrs で渡す。
 func TestNoticeTonesIconsAndBody(t *testing.T) {
 	for tone, color := range map[atoms.AlertTone]string{atoms.AlertInfo: "info", atoms.AlertSuccess: "success", atoms.AlertWarning: "warning", atoms.AlertDanger: "danger"} {
@@ -112,8 +118,13 @@ func TestNoticeTonesIconsAndBody(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := sb.String()
-		has(t, out, `role="note"`, `data-notice="n"`, "border border-border", "border-l-3", "border-l-"+color, "bg-surface", "rounded-md", "px-4 py-3", "text-"+color, "<svg", "text-sm text-ink", `class="min-w-0 flex-1 space-y-2"`, ">本文</div>")
-		hasNot(t, out, "<h3", "<button", "text-xs", "bg-"+color+"-wash", "border-"+color+"-line")
+		has(t, out, `role="note"`, `data-notice="n"`, "bg-surface-sel", "rounded-card", "px-4 py-3", "text-"+color, "<svg", "text-sm text-ink", `class="min-w-0 flex-1 space-y-2"`, ">本文</div>")
+		hasNot(t, out, "<h3", "<button", "text-xs", "border-l-", "border-border", "bg-surface ", "bg-"+color+"-wash")
+		if tone == atoms.AlertDanger {
+			has(t, out, "border border-danger-line")
+		} else {
+			hasNot(t, out, "border")
+		}
 		webtest.AssertCSPCompliantHTML(t, out)
 	}
 }
@@ -133,7 +144,8 @@ func TestNoticeAnimatedRisesInOnlyWhenAsked(t *testing.T) {
 	}
 	attrs := atoms.Attrs{"role": "alert", "data-notice": "n"}
 	animated := render(atoms.NoticeAnimated(atoms.AlertDanger, attrs))
-	has(t, animated, `class="motion-rise-in flex items-start gap-3`, `role="alert"`, `data-notice="n"`, "border-l-danger", "<svg", ">本文</div>")
+	has(t, animated, `class="motion-rise-in flex items-start gap-3`, `role="alert"`, `data-notice="n"`, "border-danger-line", "text-danger", "<svg", ">本文</div>")
+	hasNot(t, animated, "border-l-")
 	hasNot(t, render(atoms.Notice(atoms.AlertDanger, attrs)), "motion-")
 }
 
@@ -145,7 +157,7 @@ func TestToastIsAShortInkPill(t *testing.T) {
 	hasNot(t, out, "data-toast-dismiss", "data-toast-level", "data-error-code", "<button", "min-h-10", "py-2")
 }
 
-// ボタン: 4 種（主・サブ・ゴースト・危険）。SemiBold・disabled は opacity .4・高さ 40（小は 32）。押下のリップルの対象。
+// ボタン: 4 種（主・サブ・ゴースト・危険）。ピル（rounded-full）・SemiBold・disabled は opacity .4・高さ 40・item 15（小は 32・sm 14）。押下のリップルの対象。
 // 危険は塗りでなく、透明地・--danger の文字・--danger 45% の枠（in srgb の --color-danger-line-strong。O7。主より弱い見た目）。
 func TestButtonVariantsAndSizes(t *testing.T) {
 	for v, want := range map[atoms.ButtonVariant]string{
@@ -153,19 +165,21 @@ func TestButtonVariantsAndSizes(t *testing.T) {
 		atoms.ButtonSecondary: "border border-border", atoms.ButtonGhost: "bg-transparent text-ink",
 	} {
 		out := webtest.Render(t, atoms.Button(atoms.ButtonProps{Label: "操作", Variant: v}))
-		has(t, out, want, "font-semibold", "disabled:opacity-40", "rounded-md", "h-10", "data-ripple", "motion-hover")
+		has(t, out, want, "font-semibold", "disabled:opacity-40", "rounded-full", "h-10", "text-item", "data-ripple", "motion-hover")
+		hasNot(t, out, "rounded-md", "text-base")
 		hasNot(t, out, "font-medium", "disabled:opacity-50")
 		hasNot(t, out, "bg-danger text-bone", "danger/45", "danger/10")
 	}
 	small := webtest.Render(t, atoms.Button(atoms.ButtonProps{Label: "操作", Small: true}))
-	has(t, small, "h-8", "text-sm")
+	has(t, small, "h-8", "text-sm", "rounded-full")
 	hasNot(t, small, "h-10")
 }
 
-// フォームの入力: 高さ 40・--r-md・1px の --border・--surface 地・影なし。不正なときは --danger の枠。
+// フォームの入力: 高さ 40・--r-md・1px の --border・--surface 地・影なし・本文と同じ sm 14。不正なときは --danger の枠。
 func TestFieldsFollowTheFormSpec(t *testing.T) {
 	ok := webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n"}))
-	has(t, ok, "h-10", "rounded-md", "border-border", "bg-surface", "text-base")
+	has(t, ok, "h-10", "rounded-md", "border-border", "bg-surface", "text-sm")
+	hasNot(t, ok, "text-base")
 	hasNot(t, ok, "shadow", "border-danger")
 	bad := webtest.Render(t, atoms.Input(atoms.InputProps{ID: "i", Name: "n", Invalid: true}))
 	has(t, bad, "border-danger", `aria-invalid`)
@@ -259,16 +273,18 @@ func TestSpinnerHasTheCircleAndTheText(t *testing.T) {
 	has(t, out, " invisible ", "in-[.htmx-request]:visible", "[&.htmx-request]:visible", "[transition-property:opacity,visibility]")
 }
 
-// 空状態: 破線・rounded-lg・padding 48/24・アイコン + 文言。data-empty に名前を持つ。
+// 空状態: 破線・rounded-card・padding 48/24・アイコン + 文言（本文 text-sm）。data-empty に名前を持つ。
 func TestEmptyState(t *testing.T) {
 	out := webtest.Render(t, molecules.EmptyState("clients"))
-	has(t, out, `data-empty="clients"`, "border-dashed", "rounded-lg", "px-6 py-12", "<svg")
+	has(t, out, `data-empty="clients"`, "border-dashed", "rounded-card", "px-6 py-12", "text-sm text-ink", "<svg")
+	hasNot(t, out, "text-base", "rounded-lg")
 }
 
 // 確認モーダル: --z-modal・rounded-xl・影はモーダルだけ。外側（スクラム）のクリックは app.ts が閉じる（#modal の id が目印）。
 func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	out := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "削除しますか？", Message: "元に戻せません。", Label: "削除する", ConfirmURL: "/x", Method: "delete", Target: "#t", Swap: "outerHTML"}))
-	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "shadow-modal", "motion-modal-in", "motion-modal-rise-in")
+	has(t, out, `id="modal"`, `role="dialog"`, `aria-modal="true"`, "z-(--z-modal)", "bg-scrim", "rounded-xl", "border border-line-soft", "shadow-modal", "motion-modal-in", "motion-modal-rise-in")
+	hasNot(t, out, "border-border")
 	// 右上の × はキャンセルと同じ data-clear（app.ts が #modal-root を空にして、開いた要素へフォーカスを戻す）。見出しと同じ行・パネルの中にある。
 	has(t, out, `aria-label="閉じる" data-clear="#modal-root"`)
 	if strings.Count(out, `data-clear="#modal-root"`) != 2 {

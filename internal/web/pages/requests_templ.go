@@ -45,7 +45,7 @@ func requestsBody(v view.Requests) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p class=\"text-base text-ink\">未登録のデバイスからの接続要求です。許可するとクライアントとして登録され、拒否すると 24 時間は同じデバイスからの要求を受け付けません。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p class=\"text-sm text-ink\">未登録のデバイスからの接続要求です。許可するとクライアントとして登録され、拒否すると 24 時間は同じデバイスからの要求を受け付けません。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -25,17 +25,11 @@ type AlertProps struct {
 }
 
 func alertClass(t AlertTone) string {
-	base := "motion-rise-in flex items-start gap-3 rounded-md border px-4 py-3 text-sm "
-	switch t {
-	case AlertSuccess:
-		return base + "border-success-line bg-success-wash text-success"
-	case AlertWarning:
-		return base + "border-warning-line bg-warning-wash text-warning"
-	case AlertDanger:
-		return base + "border-danger-line bg-danger-wash text-danger"
-	default:
-		return base + "border-info-line bg-info-wash text-info"
+	base := "motion-rise-in flex items-start gap-3 rounded-card bg-surface-sel px-4 py-3 text-sm text-ink"
+	if t == AlertDanger {
+		return base + " border border-danger-line"
 	}
+	return base
 }
 
 func alertIcon(t AlertTone) IconName {
@@ -67,12 +61,15 @@ func alertAttrs(p AlertProps) Attrs {
 
 // Alert はインラインアラート。状態は色だけでなく題と本文でも伝える。ミドルウェアが拒否した状態変更のリクエスト
 // （アクションルート）に返すエラーのフラグメントと、アクションの失敗の表示先（#alert-root）に使う。
+// 形は --surface-sel 地・角丸 --r-card・枠なし（エラーだけ --danger-line の 1px）。状態色は先頭のアイコンだけに使い、題と本文は --ink。
 // 題はガイドの「インラインアラートの題」（sm 14・SemiBold）。#alert-root はどの見出しの下にも出るので、題は見出しにせず強調テキストにする
 // （h3 にすると h1 → h3 の飛びになる。role="alert" が読み上げを担う）。<strong> には app.css の base が本文中の強調の下線を引くので、
 // 題は見出し役でリンクに見えないよう no-underline で外す。
 templ Alert(p AlertProps) {
 	<div class={ alertClass(p.Tone) } { alertAttrs(p)... }>
-		@Icon(alertIcon(p.Tone), IconMD)
+		<span class={ noticeIconClass(p.Tone) }>
+			@Icon(alertIcon(p.Tone), IconMD)
+		</span>
 		<div class="min-w-0 flex-1">
 			<strong class="block text-sm font-semibold no-underline">{ p.Heading }</strong>
 			<p class="mt-2 text-ink" data-alert-message>{ p.Message }</p>
@@ -85,27 +82,21 @@ templ Alert(p AlertProps) {
 	</div>
 }
 
-// noticeClass は題なしインラインアラートの形（ガイド「設定画面のパーツ」3）。Alert と同形（角丸 --r-md・padding 12×16）で、
-// 地は --surface・枠は --border 1px。状態色は左の線（3px）だけに使う。
+// noticeClass は題なしインラインアラートの形（ガイド「設定画面のパーツ」3）。Alert と同形（角丸 --r-card・padding 12×16）で、
+// 地は --surface-sel・枠なし（エラーだけ --danger-line の 1px）。状態色は左の線ではなく、先頭のアイコン（noticeIconClass）だけに使う。
 func noticeClass(t AlertTone, animated bool) string {
-	base := "flex items-start gap-3 rounded-md border border-border border-l-3 bg-surface px-4 py-3 text-sm text-ink "
+	base := "flex items-start gap-3 rounded-card bg-surface-sel px-4 py-3 text-sm text-ink"
 	if animated {
 		base = "motion-rise-in " + base
 	}
-	switch t {
-	case AlertSuccess:
-		return base + "border-l-success"
-	case AlertWarning:
-		return base + "border-l-warning"
-	case AlertDanger:
-		return base + "border-l-danger"
-	default:
-		return base + "border-l-info"
+	if t == AlertDanger {
+		return base + " border border-danger-line"
 	}
+	return base
 }
 
 func noticeIconClass(t AlertTone) string {
-	// アイコンを 1 行目（text-sm・行間 1.7 ≒ 24px）の中央に合わせる（スケール外の 2px の余白で寄せず、行と同じ高さの箱の中央に置く）。
+	// アイコンを 1 行目（text-sm・行間 1.7 ≒ 24px）の中央に合わせる（スケール外の 2px の余白で寄せず、行と同じ高さの箱の中央に置く）。Alert・Notice 共通。
 	base := "flex h-6 shrink-0 items-center "
 	switch t {
 	case AlertSuccess:
@@ -120,7 +111,7 @@ func noticeIconClass(t AlertTone) string {
 }
 
 // Notice は画面に常設する注意書き・同意の枠（題なしのインラインアラート）。題と閉じるボタンは持たず、
-// アイコン（状態色）+ 文言（children。本文色 ink）+ 左の線（状態色）で伝える（色だけにしない）。
+// アイコン（状態色）+ 文言（children。本文色 ink）で伝える（色だけにしない。左の線は持たない）。
 // 色の使い分けはガイドの 2 値: AlertWarning = データの扱い・取り消せないことなど、ずっと出しておく注意書き。
 // AlertInfo = 同意のチェックを入れる枠・ただの補足。AlertDanger はエラーの表示（フォームのエラー・読めない設定）に限る。
 // ページを開いたときから在るものなので、出現は静かに（アニメーションなし）。操作の結果として現れるものは NoticeAnimated。
