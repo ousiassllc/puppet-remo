@@ -252,6 +252,26 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | E8 | 監査・タスク画面 | 対象（プロセス名・pid・window_id）が出て、ウィンドウのタイトル・入力した文字が出ない |
 | E9 | 実機のスクリーンショット（タスク詳細・監査）を、個人情報を伏せて Issue に貼る | — |
 
+#### 3.10.5 `screenshot` の `window_id`（ウィンドウ単位の撮影。#269。FR-M26。**未確認**）
+
+**状態: 実機未確認。** 偽 platform（`FakeApp`・`FakeWindows`・`FakeCapturer`）での試験だけが済んでいる。撮影は #156 の `Capturer.GrabGroup`（PrintWindow `PW_RENDERFULLCONTENT`）と共通なので、§3.10.1 の `a2probe`（M1〜M6）が合格している前提で行う。MCP クライアント（tailnet 上の別端末）から `screenshot` を呼ぶ。**偽 platform の成功では満たしたことにならない**。
+
+| # | 手順 | 期待（実機の結果を Issue に貼る。**確認できるまで「完了」と書かない**） |
+|---|---|---|
+| W1 | メモ帳（代表アプリ。存在・版を記録）の `list_windows` の `id` を `window_id` に渡して `screenshot`。ほかのウィンドウを前面にした状態で | メモ帳だけの画像が返る（デスクトップ・ほかのウィンドウの画素がない）。**メモ帳が前面に出ない**（フォーカスが動かない。`list_windows` の `foreground` が変わらない）。`rect` が、`window_id` なしの `screenshot` と `list_windows` の `rect`（メモ帳の位置）と一致する |
+| W2 | 別のウィンドウでメモ帳を半分覆い、W1 を繰り返す | 覆っているウィンドウの画素が写らない。メモ帳全体が写る |
+| W3 | 返った画像の点 `(px, py)` に `rect.x`・`rect.y` を足した縮小座標を `left_click` で押す（メモ帳の中のボタン・メニューバー） | 画像で見た位置が押される（±1 px）。表示スケール 100% / 150% / 200%、モニターごとに倍率が違う構成、副モニター（原点が負）のメモ帳で繰り返し、`monitor`・`scale` と合うことを記録する |
+| W4 | 画面の外へ半分はみ出させたウィンドウ・モニターをまたぐウィンドウ | `rect` がモニターの外へはみ出した座標になる（負の座標を含む）。画像は欠けずウィンドウ全体が写る |
+| W5 | メモ帳の「ファイル」メニューを開いた状態で `include_owned: false` と `true` | `false` はメモ帳本体だけ。`true` はメニューが重なり（`windows` に `relation: menu`、前面が先）、`rect` が外接矩形。メニューの背後・外側の他のアプリの画素が混ざらない |
+| W6 | 「名前を付けて保存」のダイアログ（同一プロセス・別プロセスの両方になりうる。プロセス構成を記録）で `include_owned: true` | 同一プロセスなら `windows` に入る。別プロセス（共通ダイアログ）なら `omitted` に `related_cross_process` が出て、画像に写らない |
+| W7 | Nefos Remote 自身のウィンドウの `id`（`list_windows` で `blocked_reason: own_window`）を `window_id` に指定（`include_owned` も） | `input_blocked`（`own_window`）。画像は返らない。ホストの設定画面・API キー入力欄が写る経路がない |
+| W8 | 管理者のメモ帳・最小化したメモ帳・存在しない id・`monitor` との同時指定 | 昇格は `input_blocked`（`elevated_window`）、最小化は `target_minimized`、存在しない id は `window_not_found`、`monitor` との同時指定は `invalid_argument`。いずれもモニター全体の画像へ切り替わらない |
+| W9 | GPU 描画のアプリ（ブラウザー・Windows Terminal・UWP の電卓・ゲーム）に `window_id` | 内容が写るか、全面が黒い・何も描かれないかを記録する（黒は撮れたものとして返る。何も描かれなければ `capture_unavailable`）。UWP の電卓（`ApplicationFrameWindow`）は `target_unsupported` |
+| W10 | 応答しないアプリ（`IsHungAppWindow` が真）・撮影が重いウィンドウ | `capture_unavailable`（3 秒で打ち切る）。呼び出しが止まらず、ほかの `screenshot` が続けて動く |
+| W11 | キルスイッチ中に `window_id` つきの `screenshot` | `kill_switch_active` |
+| W12 | 監査ログ（`/audit`） | `screenshot` の行に `window_id`・`include_owned` が出て、ウィンドウのタイトルが出ない（拒否・失敗も行が残る） |
+| W13 | 実機のスクリーンショット（W1〜W6・W9 の画像と `rect`）を、個人情報を伏せて Issue に貼る | — |
+
 ## 4. Wails のシェルと結線（S11。実機のみ）
 
 `task windows:build`（または Windows で `go build -tags production -ldflags "-H windowsgui" ./cmd/puppet-remo`）で作った `puppet-remo.exe` を、**tailscaled が動いていて tailnet にログイン済み**の対話デスクトップで実行する。WebView2 ランタイムが要る（インストーラが導入する）。通信相手になる tailnet 上の別端末（MCP クライアント）を 1 台用意する。
@@ -562,3 +582,4 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-11 | §3.8 に起動場所の検査の実機確認 L10〜L19（通常の System32・大文字小文字・`/` 区切り・8.3 短縮名・ジャンクション・シンボリックリンク・`subst`・マップドドライブ・UNC。`TestSmokeAppLauncherLocation`。未確認）を追加し、§2 に `PUPPET_REMO_SMOKE_LAUNCH_MAPPED` / `PUPPET_REMO_SMOKE_LAUNCH_UNC` を追加 | #36 |
 | — | 2026-11-11 | §4.17（#15 の項目と手順の対応表）を追加し、§4.4 に R7（WhoIs の確認）・R8（IP 変化の監視）を足した。実機の確認は未確認 | #15 |
 | — | 2026-11-18 | §4.7 の P2 を表示名（Nefos Remote）に合わせ、旧名の版からの更新 P3 とアンインストール P4 を追加（未確認）。製品名の prose を Nefos Remote に改めた | #188 |
+| — | 2026-11-28 | §3.10.5（`screenshot` の `window_id`・`include_owned`。W1〜W13。#269。未確認）を追加 | #269 |
