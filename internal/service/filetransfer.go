@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -167,7 +171,7 @@ func (f *fileTransfer) settings(ctx context.Context) (string, fileTransferSettin
 		root = f.cfg.DefaultRoot
 	}
 	for _, p := range f.cfg.ProtectedDirs {
-		if overlaps(root, p) {
+		if overlaps(root, p) || resolvedOverlaps(root, p) {
 			return "", fileTransferSettings{}, domain.ErrInvalidArgument.WithMsg("the host's transfer folder overlaps the app's data folder, so file transfer is disabled")
 		}
 	}
@@ -176,6 +180,56 @@ func (f *fileTransfer) settings(ctx context.Context) (string, fileTransferSettin
 
 // overlaps は a と b の一方が他方と同じか、その中にあるか（文字列の比較。大文字・小文字は区別しない。リンクは見ない）。
 func overlaps(a, b string) bool { return within(a, b) || within(b, a) }
+
+// resolvedOverlaps は a と b の実体のパス（リンクを解決したもの）が重なるか。解決できなければ重なるとみなす（fail closed）。
+func resolvedOverlaps(a, b string) bool {
+	ra, errA := resolveLoose(a)
+	rb, errB := resolveLoose(b)
+	return errA != nil || errB != nil || overlaps(ra, rb)
+}
+
+// resolveLoose は p のシンボリックリンク・ジャンクションを解決した絶対パスを返す。存在しない末尾の要素は、存在する最も近い親を解決して付け直す
+// （まだ作られていない置き場所でも比べられる）。リンク先が無いリンクなど、解決できないものは error。
+func resolveLoose(p string) (string, error) {
+	cur := filepath.Clean(p)
+	var tail []string
+	for {
+		real, err := filepath.EvalSymlinks(cur)
+		if err == nil {
+			slices.Reverse(tail)
+			return filepath.Join(append([]string{real}, tail...)...), nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		if _, lerr := os.Lstat(cur); lerr == nil {
+			return "", err // リンク先が無いリンク
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", err
+		}
+		tail = append(tail, filepath.Base(cur))
+		cur = parent
+	}
+}
+
+// inboxScope はファイル転送の置き場所（リモートが書ける場所）。lexical は設定の文字列のまま、resolved はリンクを解決した実体のパス。
+type inboxScope struct{ lexical, resolved string }
+
+func newInboxScope(root string) (inboxScope, error) {
+	resolved, err := resolveLoose(root)
+	return inboxScope{lexical: root, resolved: resolved}, err
+}
+
+// contains は p が置き場所の中（または置き場所そのもの）か。文字列の上でも、実体のパスの上でも調べる。p が解決できなければ（無い場合を除く）中とみなす。
+func (s inboxScope) contains(p string) bool {
+	if within(s.lexical, p) {
+		return true
+	}
+	real, err := resolveLoose(p)
+	return err != nil || within(s.resolved, real)
+}
 
 func within(parent, child string) bool {
 	p, c := strings.ToLower(filepath.Clean(parent)), strings.ToLower(filepath.Clean(child))

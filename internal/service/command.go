@@ -143,20 +143,25 @@ func (c *commandExec) gate(ctx context.Context) (commandSettings, error) {
 }
 
 // allowlist は許可リストのファイルを読み込み、検査する（呼ぶたびに読み直す）。許可リストのファイルがファイル転送の置き場所の中にあれば拒否する。
-// root はその置き場所を返す（実行ファイル・作業フォルダの確認にも使う）。
-func (c *commandExec) allowlist(ctx context.Context, set commandSettings) (list domain.CommandAllowlist, root string, err error) {
-	root, err = loadFileTransferRoot(ctx, c.cfg.Settings)
+// root はその置き場所を返す（実行ファイル・作業フォルダの確認にも使う）。パスの比較は、シンボリックリンク・ジャンクションを解決した
+// 実体のパスでも行う（置き場所の中へのリンクを経由して、リモートが書けるファイルを許可リスト・実行ファイルにされないため）。解決できなければ fail closed。
+func (c *commandExec) allowlist(ctx context.Context, set commandSettings) (list domain.CommandAllowlist, root inboxScope, err error) {
+	rootPath, err := loadFileTransferRoot(ctx, c.cfg.Settings)
 	if err != nil {
-		return list, "", err
+		return list, root, err
 	}
-	if root == "" {
-		root = c.cfg.DefaultInboxRoot
+	if rootPath == "" {
+		rootPath = c.cfg.DefaultInboxRoot
+	}
+	if root, err = newInboxScope(rootPath); err != nil {
+		c.log.Warn("cannot resolve the file transfer folder, so commands are disabled", "error", err)
+		return list, root, domain.ErrCommandAllowlistInvalid
 	}
 	path := set.AllowlistPath
 	if path == "" {
 		path = c.cfg.DefaultAllowlistPath
 	}
-	if within(root, path) {
+	if root.contains(path) {
 		c.log.Warn("the command allowlist file is inside the file transfer folder, so commands are disabled (remote clients can write there)")
 		return list, root, domain.ErrCommandAllowlistInvalid
 	}
@@ -221,8 +226,8 @@ func (c *commandExec) List(ctx context.Context, who domain.Actor) (infos []Comma
 
 // entryOutsideRoot は実行ファイル・作業フォルダが、リモートが書けるファイル転送の置き場所の中にないこと
 // （置き場所の外のフォルダの中に置き場所があるのは構わない）。
-func entryOutsideRoot(e domain.CommandEntry, root string) bool {
-	return !within(root, e.Executable) && (e.WorkingDir == "" || !within(root, e.WorkingDir))
+func entryOutsideRoot(e domain.CommandEntry, root inboxScope) bool {
+	return !root.contains(e.Executable) && (e.WorkingDir == "" || !root.contains(e.WorkingDir))
 }
 
 func (c *commandExec) Run(ctx context.Context, who domain.Actor, req CommandRunRequest) (res CommandRunResult, err error) {

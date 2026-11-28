@@ -95,6 +95,7 @@ func TestParseCommandAllowlistRejects(t *testing.T) {
 		"batch file":             func(e map[string]any) { e["executable"] = cmdAbs("opt", "run.bat") },
 		"cmd script":             func(e map[string]any) { e["executable"] = cmdAbs("opt", "RUN.CMD") },
 		"powershell script":      func(e map[string]any) { e["executable"] = cmdAbs("opt", "x.ps1") },
+		"no extension":           func(e map[string]any) { e["executable"] = cmdAbs("opt", "run") },
 		"trailing dot hides ext": func(e map[string]any) { e["executable"] = cmdAbs("opt", "run.bat.") },
 		"relative working dir":   func(e map[string]any) { e["working_dir"] = "work" },
 		"UNC working dir":        func(e map[string]any) { e["working_dir"] = `\\host\share` },

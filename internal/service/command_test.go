@@ -708,3 +708,74 @@ func TestCommandSettingsLoad(t *testing.T) {
 	}
 	var _ repository.Settings = s
 }
+
+// symlinkTo は dir の下に target を指すシンボリックリンク name を作り、そのパスを返す（作れない環境では飛ばす）。
+func symlinkTo(t *testing.T, target, name string) string {
+	t.Helper()
+	link := filepath.Join(filepath.Dir(target), name)
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+	return link
+}
+
+// 許可リストが置き場所の中にあるとき、置き場所へのリンクを経由して指しても拒否し、コマンドは起動しない。
+func TestCommandExecAllowlistInsideInboxThroughLinkIsRefused(t *testing.T) {
+	e := newCmdEnv(t)
+	e.enable()
+	if err := os.MkdirAll(e.root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := symlinkTo(t, e.root, "inbox-link")
+
+	// 許可リストの実体は置き場所の中。設定にはリンクを経由したパスで書く。
+	e.list = filepath.Join(e.root, "commands.json")
+	e.writeList(map[string]any{"name": "version", "enabled": true})
+	e.settings.put(settingCommandAllowlistPath, mustJSON(t, filepath.Join(link, "commands.json")))
+	if _, err := e.run(ctlAlice, "version", nil); !errors.Is(err, domain.ErrCommandAllowlistInvalid) {
+		t.Errorf("allowlist reached through a link into the transfer folder: %v", err)
+	}
+	if _, err := e.cx.List(context.Background(), ctlAlice); !errors.Is(err, domain.ErrCommandAllowlistInvalid) {
+		t.Errorf("List through a link: %v", err)
+	}
+
+	// 置き場所の設定がリンク、許可リストは実体のパス。
+	e.settings.put(settingCommandAllowlistPath, mustJSON(t, e.list))
+	e.settings.put(settingFileTransferRoot, mustJSON(t, link))
+	if _, err := e.run(ctlAlice, "version", nil); !errors.Is(err, domain.ErrCommandAllowlistInvalid) {
+		t.Errorf("transfer folder configured as a link: %v", err)
+	}
+	if n := len(e.runner.Specs()); n != 0 {
+		t.Errorf("%d commands were started", n)
+	}
+}
+
+// 実行ファイル・作業フォルダが置き場所へのリンクを経由して置き場所の中にあっても、使えず、起動しない。
+func TestCommandExecExecutableAndWorkingDirInsideInboxThroughLinkAreRefused(t *testing.T) {
+	e := newCmdEnv(t)
+	e.enable()
+	if err := os.MkdirAll(filepath.Join(e.root, "work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := symlinkTo(t, e.root, "inbox-link")
+	e.writeList(
+		map[string]any{"name": "exe-inside", "executable": filepath.Join(link, "evil.exe"), "enabled": true},
+		map[string]any{"name": "dir-inside", "working_dir": filepath.Join(link, "work"), "enabled": true},
+		map[string]any{"name": "fine", "enabled": true},
+	)
+	for _, name := range []string{"exe-inside", "dir-inside"} {
+		if _, err := e.run(ctlAlice, name, nil); !errors.Is(err, domain.ErrCommandAllowlistInvalid) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if n := len(e.runner.Specs()); n != 0 {
+		t.Errorf("%d commands were started", n)
+	}
+	infos, err := e.cx.List(context.Background(), ctlAlice)
+	if err != nil || len(infos) != 1 || infos[0].Name != "fine" {
+		t.Errorf("List = %+v, %v", infos, err)
+	}
+	if _, err := e.run(ctlAlice, "fine", nil); err != nil {
+		t.Errorf("fine: %v", err)
+	}
+}

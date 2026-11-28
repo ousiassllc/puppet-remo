@@ -191,7 +191,7 @@ func commandBaseName(exe string) (name, ext string) {
 }
 
 // ValidateCommandExecutable は許可リストの実行ファイル exe を検査する: ValidateHostFilePath に加え、末尾がドット・空白の名前（Windows は取り除く）、
-// スクリプト・ショートカットの拡張子（scriptExtensions。.bat・.cmd を含む）を拒否する。
+// スクリプト・ショートカットの拡張子（scriptExtensions。.bat・.cmd を含む）と、.exe 以外を拒否する。
 func ValidateCommandExecutable(exe string) error {
 	if err := ValidateHostFilePath(exe); err != nil {
 		return err
@@ -199,8 +199,13 @@ func ValidateCommandExecutable(exe string) error {
 	if base := exe[strings.LastIndexAny(exe, `/\`)+1:]; base == "" || strings.TrimRight(base, ". ") != base {
 		return ErrInvalidArgument.WithMsg("the executable name must not end with a dot or a space")
 	}
-	if _, ext := commandBaseName(exe); scriptExtensions[ext] {
+	_, ext := commandBaseName(exe)
+	if scriptExtensions[ext] {
 		return ErrInvalidArgument.WithMsg("scripts and shortcuts (" + ext + ") cannot be run: use a real executable (.bat and .cmd are re-parsed by cmd.exe, so argument checks do not hold)")
+	}
+	// 拡張子の無い名前は、Windows の起動時に PATHEXT で補われ、同じ場所の .bat・.cmd が選ばれうる。実体の名前を .exe で固定する。
+	if ext != ".exe" {
+		return ErrInvalidArgument.WithMsg("the executable must be a .exe file (a name without an extension could resolve to a script)")
 	}
 	return nil
 }
