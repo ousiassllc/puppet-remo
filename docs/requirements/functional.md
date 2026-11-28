@@ -162,6 +162,7 @@ stateDiagram-v2
 | FR-M19 | `launch_app` | `app_id`（`list_launchable_apps` の `id`）か `path`（ブラックリスト方式のときだけ。固定ディスク上の `.exe` の絶対パス）の**どちらか一方**（同時指定・どちらも無しは `invalid_argument`。ホワイトリスト方式で `path` を渡しても `invalid_argument`）。引数・作業ディレクトリは受け取らない | `{ "ok": true, "app_id", "pid", "window"?: { "id", "title", "pid", "process_name" }, "reused_existing_window" }`（`app_id` は `app_id` 指定の起動だけ。起動したアプリのウィンドウと、既存のウィンドウが前に出ただけかの印。下の「アプリ起動の規約」） | 必要（未保持なら暗黙に取得。FR-L04） | M1.5 |
 | FR-M28 | `find_ui_element` | ウィンドウの探し方 `window_id?` / `title?` / `process_name?`（すべて省略なら前面のウィンドウ）、要素の探し方 `name?` / `automation_id?` / `control_type?`（**1 つ以上が必須**。指定した項目はすべて満たす）、`match?`（`exact` 既定 / `contains`。`title` と `name` に効く）、`max_results?`（既定 20、最大 100）。形は「UI 要素の探し方（#266・#267）」の節 | `{ "window": {…}, "truncated": false, "elements": [ { "id", "control_type", "name", "automation_id", "class_name", "rect", "enabled", "offscreen", "visible", "patterns" } ] }`。読み取りだけで入力しない。`id` は要素 ID（古くなれば `stale_element`） | 必要（`get_ui_tree` と同じ検査） | M1 |
 | FR-M29 | `wait_for` | ウィンドウの探し方（`window_id?` / `title?` / `process_name?`）、要素の探し方（`name?` / `automation_id?` / `control_type?`。1 つでも指定すると、その窓の中の要素を待つ）、`match?`、`state`（`appear` / `disappear`。必須）、`timeout_ms`（**必須**、1〜60,000）、`interval_ms?`（既定 500、100〜5,000） | `{ "state", "target": "window" \| "element", "matched", "timed_out", "waited_ms", "window"?, "elements"?, "candidates"?: { "windows", "elements" }, "truncated"? }`。成功は `matched: true` で、次の操作に使う窓（id・タイトル・プロセス・矩形）か要素（id・矩形・patterns）を返す。**タイムアウトはエラーにせず** `matched: false`・`timed_out: true` と、そのとき見えていた候補（各最大 20 件）を返す。読み取りだけで入力しない | 必要（`get_ui_tree` と同じ検査） | M1 |
+| FR-M31 | `ui_action` | `element_id`（`find_ui_element`・`get_ui_tree`・`wait_for` の要素 ID。必須）、`action`（`invoke` / `set_value` / `toggle` / `select` / `expand` / `collapse`。必須）、`value`（`set_value` だけ必須。空文字列も有効で内容を空にする。ほかの操作では指定不可。10,000 文字まで）、`state`（`toggle` だけ任意: `on` / `off`。省略は今の状態から 1 つ進める）。形は「UI 要素の操作（#268）」の節 | `{ "ok": true, "action", "element": { …find_ui_element の要素 1 件と同じ（値は含めない）… }, "changed", "state"? }`。UI Automation のパターン（`invoke`=Invoke、`set_value`=Value の SetValue、`toggle`=Toggle、`select`=SelectionItem、`expand` / `collapse`=ExpandCollapse）で要素を操作する。**カーソルもキーボードフォーカスも動かさず、キー入力・クリックには切り替えない**。要素がパターンを持たなければ `pattern_unsupported`（`detail.supported`）、無効なら `element_disabled`、読み取り専用の `set_value` は `element_read_only`、要素が無ければ `stale_element`、自ウィンドウ・昇格ウィンドウは `input_blocked` | 必要（入力と同じ。暗黙に取得） | M1 |
 | FR-M27 | `put_file` / `get_file` / `list_files` / `delete_file`（ファイル転送。#264） | `put_file`: `path`\*（置き場所からの相対パス）、`content_base64`\*（1 回 512 KiB まで。base64 にする前）、`offset`（既定 0。0 は新規作成〔同名は置き換え〕、0 より大きい値は、ちょうどその大きさのファイルへの追記。大きなファイルを分けて送る）。`get_file`: `path`\*、`offset`、`length`（1 回 512 KiB まで）。`list_files`: `path`（フォルダ。省略は置き場所）。`delete_file`: `path`\*（ファイルまたは空のフォルダ） | `put_file`: `{ "ok": true, "path", "size", "sha256" }`（`size`・`sha256`〔16 進の小文字〕は書いたあとのファイル全体のもの）。`get_file`: `{ "path", "offset", "length", "size", "sha256", "eof", "content_base64" }`（`size`・`sha256` はファイル全体）。`list_files`: `{ "path", "entries": [ { "path", "type": "file" \| "dir", "size", "modified" } ], "truncated" }`（名前の昇順・最大 1000 件・非再帰・リンクは出さない）。`delete_file`: `{ "ok": true, "path", "size" }`。扱えるのは、**ホスト所有者がホスト GUI で決めた置き場所（FR-S24）の中だけ**。パスは相対パスだけで、`..`・絶対パス・ドライブ指定（`C:foo` を含む）・UNC・デバイスパス（`\\?\`・`\\.\`）・代替データストリーム（`:`）・予約デバイス名（CON・NUL など）・末尾のドット／空白は `invalid_argument`。置き場所の途中・末尾にシンボリックリンク・ジャンクション・リパースポイントがあれば、実体が中でも外でも拒否する（Lstat で 1 要素ずつ確かめ、開いたあとにもう一度確かめる）。1 ファイルと置き場所全体の上限（FR-S24）を超える書き込みは何も書かずに `file_too_large` / `file_store_full`。キルスイッチ中は `kill_switch_active`、操作リースが要る（暗黙に取得。承認・他者の保持中の扱いは入力系ツールと同じ。ウィンドウに束縛されたリースでは使えない）。監査は `tool.<ツール名>`（パス・大きさ・SHA-256・結果。**ファイルの中身は記録しない**）。置き場所・上限・置き場所の絶対パスを MCP から知る・変える経路は無い | 必要 | M5 |
 
 FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 に含める。M1 のツールは上表の全件（FR-M18・M19 を除く）で、`get_ui_tree`・`clipboard_*`・`list_windows`・`focus_window` を含む。FR-M18・M19 は M1.5。
@@ -184,6 +185,10 @@ FR-M01〜M17（下の座標系の規約とエラーを含む）はすべて M1 �
 | `invalid_coordinates` / `invalid_argument` | 引数が不正（`launch_app` では、`app_id` と `path` の同時指定・どちらも無し・ホワイトリスト方式での `path`・ブラックリスト方式の `path` が絶対パスのローカルの `.exe` の形でない） |
 | `window_not_found` | `focus_window` / `get_ui_tree` / `find_ui_element` / `wait_for` の対象が存在しない（`title`・`process_name` で探して合うウィンドウが無い場合を含む） |
 | `stale_element` | 要素 ID の指す要素（そのウィンドウ・プロセスを含む）がもう無い。古い ID が別の要素に当たることはない（FR-M28。HTTP 409。#267。要素 ID を受け取る道具が使う） |
+| `pattern_unsupported` | `ui_action` の操作に必要な UI Automation のパターンを要素が持たない（FR-M31。HTTP 409。#268。`detail.action`・`detail.pattern`・`detail.supported`〔要素の対応パターン〕。キー入力・クリックには切り替えない） |
+| `element_disabled` | `ui_action` の対象の要素が無効（`enabled: false`。FR-M31。HTTP 409。#268） |
+| `element_read_only` | `ui_action` の `set_value` の対象が読み取り専用（FR-M31。HTTP 409。#268） |
+| `ui_action_failed` | UI Automation が `ui_action` の操作を受け付けなかった（FR-M31。HTTP 409。#268。`detail.reason`: `invalid_operation`〔今の状態では実行できない〕・`timeout`〔アプリが応答しない〕・`leaf_node`〔展開できない葉〕・`state_not_reached`〔`toggle` の `state` にならない〕・`failed`。`detail.hresult`） |
 | `input_paused` | ホストの人が実際のマウス・キーボードを使っている間の一時停止（FR-M30。`detail.resumes_at`・`detail.retry_after_ms`） |
 | `input_blocked` | 管理者権限ウィンドウなど OS 制約で入力できない（UIPI）、または Nefos Remote 自身のウィンドウが対象（NFR-S06。`detail.reason` は `own_window`・`elevated_window`・`secure_attention_sequence`）。`own_window` には `detail.own_windows` を付ける（FR-M20） |
 | `desktop_unavailable` | ロック画面・UAC セキュアデスクトップ等でキャプチャ・入力できない |
@@ -490,7 +495,7 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 
 **UI 要素の探し方（#266・#267。FR-M28・M29）**
 
-`find_ui_element`・`wait_for`（と、要素を操作する今後の道具）は、同じ探し方と要素 ID を使う。入力は注入せず、`get_ui_tree` と同じ検査を通る。
+`find_ui_element`・`wait_for`・`ui_action` は、同じ探し方と要素 ID を使う（`ui_action` は要素 ID を受け取る）。`find_ui_element`・`wait_for` は入力を注入せず、`get_ui_tree` と同じ検査を通る。
 
 - **ウィンドウの探し方**: `window_id`（`list_windows` の `id`。HWND の 10 進。優先）・`title`・`process_name`（例 `notepad.exe`。大文字小文字を区別しない完全一致）。指定した項目はすべて満たす必要がある。項目が 1 つも無ければ前面のウィンドウ（`wait_for` のウィンドウ待ちは項目が必須）。複数に合えば Z オーダーの最上位。`window_id` なしの探索（`title`・`process_name`）は**自ウィンドウを候補から外す**（合うものが無ければ `window_not_found`。自ウィンドウの存在を明かさない）。`window_id` で自ウィンドウを指す、または省略して前面が自ウィンドウのときは、`get_ui_tree` と同じ `input_blocked`（`own_window`）。
 - **要素の探し方**: `name`・`automation_id`・`control_type`（UIA の ControlType の名前。`Button`・`Edit`・`CheckBox` など。大文字小文字を区別しない。知らない名前は `invalid_argument`）。**1 項目以上が必須**で、指定した項目はすべて満たす（AND）。`automation_id` は常に完全一致（序数比較）。
@@ -505,6 +510,30 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 - **検査と監査**: `Control.Do` を通る（`get_ui_tree` と同じ）。キルスイッチ → リース（未保持なら暗黙に取得。承認が要るクライアントは承認待ち）→ 引数 → InputGuard の観測の規則（自ウィンドウは拒否。昇格ウィンドウは読み取りのみなので許可）。スコープ付きのリースの保持者も、`get_ui_tree` と同じく読める（入力ではない）。1 回の呼び出しを 1 行（`tool.find_ui_element` / `tool.wait_for`）で監査する（引数は探し方・`state`・`timeout_ms`、結果は件数・`matched`・`waited_ms`。要素の値・本文は記録しない。`wait_for` は確認のたびには監査しない）。内蔵エージェント（Judge を通る経路）はこの 2 つの道具を持たない。
 - **決めたこと（#266・#267）**: 読み取りの 2 つの道具も `get_ui_tree` と同じくリースを要求する（弱めない。「リース不要」の `list_windows` とは違い、他アプリの UI の中身を読むため）。設定項目は足さない（ホストの設定にしないので、MCP から変えられるものも無い）。
 - **実機未確認**: COM の対応パターンの取得・RuntimeId での引き直し・応答しないアプリでの打ち切りは、Windows の実機で確かめる（docs/operations/smoke-windows.md §3.5 U6〜U12）。
+
+**UI 要素の操作（#268。FR-M31）**
+
+`ui_action` は、`find_ui_element`・`get_ui_tree`・`wait_for` が返した要素 ID の要素を、UI Automation のパターンで操作する。ボタンを押す・入力欄へ値を入れる・チェックを切り替える・項目を選ぶ・開閉する、を**カーソルもキーボードフォーカスも動かさず**に行う（ホストの人の作業を邪魔せず、座標のずれ・前面の奪い合いが起きない）。
+
+- **道具は 1 つ**（`ui_action`、`action` で選ぶ）: 検査（リース・InputGuard・入力スコープ・監査）と引数の形を 1 か所にそろえるため。操作ごとの道具に分けると、クライアントの許可設定が道具ごとに割れるだけで、検査は同じになる。
+- **操作とパターン**:
+
+| `action` | パターン | 動き |
+|---|---|---|
+| `invoke` | Invoke | ボタン・メニュー項目・リンクを押す |
+| `set_value` | Value（`SetValue`） | 編集欄の内容を `value` に**置き換える**。キー入力ではない（IME・フォーカス・キーボードレイアウトを通らない）。空文字列は内容を空にする。パスワード欄にも設定できるが、値は結果にも監査にも出さない |
+| `toggle` | Toggle | チェックボックス・トグルボタン。`state` が `on` / `off` ならその状態に（すでにそうなら何もしない。`changed: false`）、省略なら今の状態から 1 つ進める。3 状態（不定）のものは、目的の状態になるまで最大 3 回進める（ならなければ `ui_action_failed`・`state_not_reached`） |
+| `select` | SelectionItem | リスト項目・タブ・ラジオボタンを選ぶ（ほかの選択を外す `Select`。複数選択への追加はしない） |
+| `expand` / `collapse` | ExpandCollapse | 開く・閉じる。すでにその状態なら何もしない（`changed: false`）。葉（開閉できない）は `ui_action_failed`（`leaf_node`） |
+
+- **結果**: `element`（`find_ui_element` の要素と同じ形。縮小座標。値は含めない）・`changed`（UI Automation の操作を実際に呼んだか）・`state`（`toggle`: `on` / `off` / `indeterminate`、`expand` / `collapse`: `expanded` / `collapsed` / `partially_expanded` / `leaf`、`select`: `selected` / `not_selected`）。
+- **要素の特定**: 要素 ID は操作の直前に生きた木から引き直す（`find_ui_element` と同じ。ウィンドウが無い・PID が違う・要素が無い・操作の途中で消えた、は `stale_element`）。形が違う文字列は `invalid_argument`。
+- **拒否の順序**（platform の `Act`）: 無効（`element_disabled`）→ パターン無し（`pattern_unsupported`。`detail.supported` に要素の対応パターンを入れる）→ 読み取り専用の `set_value`（`element_read_only`）→ UI Automation の拒否（アクセス拒否〔UIPI・昇格したアプリ〕は `input_blocked`・`detail.reason = access_denied`、要素が消えたのは `stale_element`、それ以外は `ui_action_failed`）。**パターンが無いときにキー入力・クリックへ切り替えることは決してしない**（呼び出し側が `click`・`type` を選び直す）。
+- **検査**: `Control.Do` の入力系の操作として、キー・クリックと同じ順序で通る: キルスイッチ → リース（未保持の MCP は暗黙に取得。承認が要るクライアントは承認待ち。Web は取らない）→ 引数 → InputGuard → Judge（エージェント）→ 実行。InputGuard は**要素のウィンドウ**（要素 ID の HWND）を検査し、自ウィンドウ（クリックスルーのオーバーレイを含む。座標を通らないので、下へ抜ける理屈が無い）・昇格ウィンドウは `input_blocked`（`own_window` / `elevated_window`）。**入力スコープ**（FR-L09〜L14。#156）のリースでは、要素のウィンドウが対象グループ G のメンバーでなければ、`focus_window` と同じく**その操作だけ**を `outside_target_group` で拒否する（停止にはしない）。停止中（`halted`）は `target_halted`。T の同一性・状態の検証は入力と同じ。キー・文字入力ではないので、`key_out_of_scope` などのキーの規則は関係しない。
+- **ホストの実入力による一時停止（FR-M30。#270）の対象外**: カーソルもフォーカスも動かさないので止めない（`domain.UIAction` の `PausedByHostInput` は `false`）。
+- **監査**: `tool.ui_action` を 1 行（`kind = tool`）。`detail` は `action`・`element_id`・`state`（指定したとき）・`text_len`（`set_value` の文字数）、要素を特定できたときは `control_type`・`automation_id`・`changed`・`result_state`。要素の名前・値は記録しない。`set_value` の本文は、既定では記録せず、設定 `audit.record_text` が `true` のときだけ `text`（4,096 文字まで）に残す（`type` と同じ。FR-AU03）が、**パスワード欄の値はどの設定でも記録しない**。成功した操作は、画面を変える操作としてサムネイルの対象になる（FR-AU02。スコープ付きのリースは撮らない）。
+- **決めたこと（#268）**: パターンの実装は専用の UI Automation スレッドの上で行い（#267 と同じ）、ほかの要素・結果の COM 参照は使い終えたらすべて解放する。Value パターンへの `SetValue` はアプリの実装次第で、WebView2（Vue の画面）では、Chromium のアクセシビリティ経由の入力欄への `SetValue` が `input` イベントを起こさず、`v-model` が更新されないことがある（実機で確かめる。smoke U15）。起きるなら `click` で欄を選んで `type` を使う。Web コンテンツの UI Automation への公開は Chromium の設定による（`--force-renderer-accessibility` を付けたときだけ完全な木が出る場合がある。名前は `aria-label` などから付く）。**提案（実装しない）**: `ScrollItem.ScrollIntoView`（画面外の要素を見える位置へ）・`RangeValue.SetValue`（スライダー・スピナーの数値）・`Value` の読み取り（`get_ui_tree` の `value` で足りる）。
+- **実機未確認**: COM の vtable スロット・パターンの取得・`SetValue` の BSTR・昇格アプリへのアクセス拒否・WebView2 での動作は、Windows の実機で確かめる（docs/operations/smoke-windows.md §3.5 U13〜U18）。
 
 ## 改訂履歴
 
@@ -564,3 +593,4 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 | 1.51 | 2026-11-28 | UI 要素を探す `find_ui_element`（FR-M28）と、ウィンドウ・UI 要素が現れる・消えるまで待つ `wait_for`（FR-M29）を追加し、`get_ui_tree` の各ノードに `control_type`・`automation_id`・`class_name`・`patterns`・`offscreen` と要素 ID を出すようにした。エラーに `stale_element` を追加。探し方（ウィンドウ・要素）と要素 ID の共通の形を「UI 要素の探し方（#266・#267）」にまとめた | #266・#267（QA 用の道具。実入力を使わずに画面の状態を確かめる） |
 | 1.52 | 2026-11-28 | ホストの実入力による一時停止（FR-M30。#270）を追加: 検知（低レベルフックの injected フラグ・自分の印）・対象と対象外・`input_paused`・`get_control_status` の `paused`・設定 `hostinput.*`・監査。エラーコード表に `input_paused` | ホストで作業している人の操作とリモートの操作の取り合いを避けるため |
 | 1.53 | 2026-11-28 | ファイル転送を追加（#264）: FR-M27（`put_file` / `get_file` / `list_files` / `delete_file`。ホストが決めた置き場所の中だけ・相対パスだけ・リンク経由と上限超過は拒否・SHA-256 と大きさを返す・操作リース必須・監査） と FR-S24（置き場所 `file_transfer.root` と上限。ホスト GUI の設定画面だけで変更）。優先度 M5 を追加 | #264 |
+| 1.54 | 2026-11-28 | UI 要素を UI Automation のパターンで操作する `ui_action`（FR-M31。#268）を追加: Invoke・SetValue・Toggle・Select・Expand / Collapse。カーソル・フォーカスを動かさず、キー入力へ切り替えない。入力と同じ検査（リース・InputGuard・入力スコープ・監査）。エラーコード表に `pattern_unsupported`・`element_disabled`・`element_read_only`・`ui_action_failed`。ホストの実入力による一時停止の対象外 | AI がホストの人の作業を邪魔せずに UI を操作できるようにするため |

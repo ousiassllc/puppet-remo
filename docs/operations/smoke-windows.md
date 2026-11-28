@@ -102,7 +102,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | B5 | `ctx` の取り消し | 待ちの途中でも `context.Canceled` を返す |
 | B6 | サイズ上限（1 MiB。NFR-S09） | platform は上限を持たない。上限は `service` / `mcp` の責務なので、ここでは確認しない |
 
-### 3.5 UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`。FR-M14・M28・M29）
+### 3.5 UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`・`ui_action`。FR-M14・M28・M29・M31）
 
 契約テスト（§2 の `TestSmokeUIAutomation`）は、前面にメモ帳など 3 ノード以上のウィンドウがあることを前提にする。
 
@@ -120,6 +120,12 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | U10 | `wait_for` の `disappear`: メモ帳のウィンドウを閉じる直前に呼ぶ | 閉じると `matched: true`。閉じないまま `timeout_ms` が過ぎると `timed_out: true` と、残っているウィンドウが `candidates.windows` に入る |
 | U11 | `wait_for`（要素）: 名前を付けて保存のダイアログの `automation_id`（例 `FileNameControlHost`）を `appear` で待ち、Ctrl+Shift+S を押す | ダイアログが出ると `matched: true`・`elements`（id・rect・patterns）が返る。存在しない名前でタイムアウトさせると `timed_out: true` と、近い要素（`control_type` や名前の一部が合うもの）が `candidates.elements` に入る |
 | U12 | `find_ui_element`・`wait_for` の検査（#266・#267） | Nefos Remote 自身のウィンドウは `window_id` 指定で `input_blocked`（`own_window`）、`title`・`process_name` では見つからない（`window_not_found`）。キルスイッチを発動すると、`wait_for` の待ちの最中でも次の確認で `kill_switch_active` になり止まる。リースを他者が持っていると `lease_held_by_other`。どちらも監査に 1 行（`tool.find_ui_element` / `tool.wait_for`）だけ残り、入力は一切起きない（カーソルもキー入力も動かない） |
+| U13 | `ui_action`（#268）: メモ帳の「ファイル」メニュー（`find_ui_element` の `control_type: "MenuItem"`）を `invoke`、続けて `expand` / `collapse`。呼ぶ前にホストのカーソルを画面の端に置き、別のアプリを前面にしておく | メニューが開閉する。**カーソルの位置も前面のウィンドウも呼ぶ前と同じ**（`cursor_position`・`list_windows` の `foreground` を呼ぶ前後で比べる）。`expand` をすでに開いている要素に呼ぶと `changed: false`。メモ帳が前面でなくても動く。監査に `tool.ui_action` が 1 行（`action`・`control_type`・`automation_id`。名前は無い） |
+| U14 | `ui_action` の `toggle` / `select`: 電卓・設定アプリ・ペイントなどのチェックボックス（`CheckBox`）・リスト項目（`ListItem`）・タブ（`TabItem`）・ラジオボタン | `toggle` は状態が反転し、`state: "on"`／`"off"` が実際と合う。`state: "on"` を指定してすでにオンなら `changed: false`。`select` で選択が変わり `state: "selected"`。いずれもカーソル・前面は不変。3 状態のチェックボックスがあれば、`state: "on"`／`"off"` で目的の状態に届く |
+| U15 | `ui_action` の `set_value`: ① メモ帳の編集欄（Windows 11 の新しいメモ帳は RichEdit。`Value` を持たなければ `pattern_unsupported`）② 名前を付けて保存のダイアログの「ファイル名」（`ComboBox` / `Edit`）③ **WebView2（Vue の画面。Nefos Remote 自身ではなく、別の WebView2 アプリか、ブラウザの `<input>`）**の入力欄 | ②は値が入る（日本語・絵文字も。IME に影響しない）。`value: ""` で空になる。①で `pattern_unsupported` なら `detail.supported` にそのコントロールの対応パターンが並び、キー入力は起きていない。**③は Value が見えるか（`patterns` に `Value`）と、値を入れたあと画面・`v-model`（フォームの送信・バリデーション）が更新されるかを確かめて記録する**（`input` イベントが起きないことがある。起きなければ `click` + `type` で代える運用をドキュメントどおりにする）。WebView2 の木が薄いときは、アプリを `--force-renderer-accessibility` 付きで起動して比べる |
+| U16 | `ui_action` の拒否: 無効なボタン（`enabled: false`）・読み取り専用の欄（`set_value`）・`Value` を持たないボタンへの `set_value`・消えた要素の ID | `element_disabled`・`element_read_only`・`pattern_unsupported`（`detail.supported`）・`stale_element`。いずれもカーソル・キー入力は起きず、アプリの状態も変わらない。応答しないアプリ（`SuspendThread` したプロセスなど）への操作は、`ui_action_failed`（`timeout`）か ctx のタイムアウトで返り、ワーカーが詰まらない |
+| U17 | `ui_action` の検査: 管理者として起動したメモ帳の要素、Nefos Remote 自身のウィンドウの要素 | 昇格ウィンドウは `input_blocked`（`elevated_window`。ウィンドウ情報から。または UI Automation の拒否で `access_denied`）。自ウィンドウは `input_blocked`（`own_window`）で、操作は起きない。キルスイッチを発動すると `kill_switch_active`。他者がリースを持っていると `lease_held_by_other`。ウィンドウ指定のリース（スコープ付き）で、対象のウィンドウの外の要素は `outside_target_group`（その操作だけの拒否。リースは停止しない） |
+| U18 | `ui_action` とホストの実入力の一時停止（#270。§4.18） | ホストの物理マウスを動かして一時停止中でも、`ui_action` は通る（`mouse_move` などは `input_paused`）。`audit.record_text` を有効にして `set_value` すると監査の `detail.text` に本文が入り、パスワード欄（`IsPassword`）への `set_value` は本文が入らない（`text_len` のみ） |
 
 ### 3.6 グローバルホットキー（FR-H06・FR-S02）
 
@@ -579,7 +585,7 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | GDI（`BitBlt`）のキャプチャ: マルチモニター・DPI・スクリーンショットの縮小座標 | §3.1 C1〜C7（C2・C4: DPI、C3: マルチモニター）、§3.2 I1（縮小 → 物理の座標の往復）、§4.10 S2（DPI 混在の縮小） | 継続キャプチャ `Watch` は §3.9（M2） |
 | `SendInput`: マウス・クリック・ドラッグ・ホイール、キー・修飾キー、`KEYEVENTF_UNICODE` による日本語の `type`、UIPI | §3.2 I3〜I7（マウス・キー）、I10（日本語・絵文字の `Text`）、I12（管理者権限のウィンドウ。UIPI） | 契約テスト `TestSmokeInput*`（§2） |
 | ウィンドウ列挙・`focus_window`（前面化）、クリップボードのテキスト読み書き | §3.3 WM1〜WM10（WM8: `Focus`）、§3.4 B1〜B5 | |
-| UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト、対応パターンの取得・RuntimeId での引き直し | §3.5 U1〜U12（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト、U6〜U8: パターン・要素 ID・`stale_element`、U9〜U11: `wait_for`） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
+| UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`・`ui_action`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト、対応パターンの取得・RuntimeId での引き直し | §3.5 U1〜U18（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト、U6〜U8: パターン・要素 ID・`stale_element`、U9〜U11: `wait_for`） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
 | グローバルホットキー（既定 `Ctrl+Alt+Shift+K`）によるキルスイッチ（1 秒以内の効果） | §3.6 K1〜K4、§4.5 | |
 | `SetThreadExecutionState`（リース保持中のスリープ・画面オフ抑止。`powercfg /requests`） | §4.6 SL1〜SL7 | |
 | 実 tailscaled: LocalAPI の `WhoIs`、IP 変化の監視、tailscaled 再起動後の 10 秒以内の復旧、tailnet の IPv4・IPv6 のみへの Listen | §4.4 R1（Listen）、R4（再起動後 10 秒以内の復旧）、**R7（WhoIs）**、**R8（IP 変化の監視）** | R7・R8 は #15 の項目に手順がなかったため足した |
@@ -627,3 +633,4 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-28 | §3.10.5（`screenshot` の `window_id`・`include_owned`。W1〜W13。#269。未確認）を追加 | #269 |
 | — | 2026-11-28 | §4.18 にホストの実入力による一時停止の実機確認 H1〜H10 を追加（未確認） | #270 |
 | — | 2026-11-28 | §4.19（ファイル転送。#264。FR-M27・FR-S24）を追加 |
+| — | 2026-11-28 | §3.5 に `ui_action` の実機確認 U13〜U18（Invoke・Value・Toggle・SelectionItem・ExpandCollapse・拒否・検査・カーソル / 前面の不変・WebView2 の `SetValue` と `v-model`。未確認）を追加 | #268 |
