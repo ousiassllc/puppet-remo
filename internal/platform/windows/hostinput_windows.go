@@ -36,7 +36,7 @@ var (
 // msllHookStruct は MSLLHOOKSTRUCT。
 type msllHookStruct struct {
 	pt          w32Point
-	_           uint32   // mouseData
+	_           uint32 // mouseData
 	flags       uint32
 	_           uint32 // time
 	dwExtraInfo uintptr
