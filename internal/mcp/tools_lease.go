@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -38,6 +39,13 @@ type statusBody struct {
 	Holder           *holderBody `json:"holder,omitempty"`
 	Mine             bool        `json:"mine"`
 	IdleRemainingSec *int        `json:"idle_remaining_sec,omitempty"`
+	// Paused は、ホストの人が実際のマウス・キーボードを使っているため、入力系のツールを一時停止している間 true（#270）。
+	// 停止中は PausedReason・PausedSince・ResumesAt・ResumesInMs も出る。ResumesAt はホストの入力が続かなければ再開する時刻（RFC 3339）。
+	Paused       bool   `json:"paused"`
+	PausedReason string `json:"paused_reason,omitempty"`
+	PausedSince  string `json:"paused_since,omitempty"`
+	ResumesAt    string `json:"resumes_at,omitempty"`
+	ResumesInMs  *int64 `json:"resumes_in_ms,omitempty"`
 }
 
 // addLeaseTools はリースのツールを登録する: FR-M15。いずれもリースは不要。
@@ -60,14 +68,29 @@ func (s *Server) addLeaseTools() {
 		})
 
 	addAuditedTool(s, "get_control_status",
-		"Get the control lease state: idle, pending_approval (waiting for the host's approval) or held, who holds it, whether this session holds it, and the idle time left.",
+		"Get the control lease state: idle, pending_approval (waiting for the host's approval) or held, who holds it, whether this session holds it, and the idle time left. "+
+			"Also reports paused: true (with paused_reason, paused_since, resumes_at, resumes_in_ms) while input is paused because the host person is using the mouse or keyboard.",
 		true, noArgsSummary, func(_ context.Context, who domain.Actor, _ noArgs) (toolResult, error) {
 			return toolResult{Structured: s.status(who)}, nil
 		})
 }
 
-// status は現在のリース状態を who の視点で返す。
+// status は現在のリース状態を who の視点で返す。ホストの実入力による一時停止の状態を添える。
 func (s *Server) status(who domain.Actor) statusBody {
+	b := s.leaseStatus(who)
+	if s.hostInput == nil {
+		return b
+	}
+	if st := s.hostInput.Status(); st.Paused {
+		ms := st.ResumesIn.Milliseconds()
+		b.Paused, b.PausedReason = true, service.HostInputReasonHostInput
+		b.PausedSince, b.ResumesAt = st.Since.UTC().Format(time.RFC3339Nano), st.ResumesAt.UTC().Format(time.RFC3339Nano)
+		b.ResumesInMs = &ms
+	}
+	return b
+}
+
+func (s *Server) leaseStatus(who domain.Actor) statusBody {
 	h, ok := s.leases.Holder()
 	if !ok {
 		if p, pending := s.leases.Pending(); pending {

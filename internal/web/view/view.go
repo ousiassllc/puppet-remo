@@ -259,14 +259,24 @@ type SettingsValues struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
+	// ホストの実入力による一時停止（#270。FR-M30）。待ち時間は秒。
+	HostInputPause        bool
+	HostInputPauseIdleSec string
 	// 監査ログ（FR-S07）。保持期間は日、容量の上限はバイト（単位は未決のため、保存値のまま表示する）。
 	AuditThumbnails     bool
 	AuditRecordText     bool
 	AuditRetentionDays  string
 	AuditThumbsMaxBytes string
-	UpdateApplyMode     string // confirm | auto_idle（FR-S09）
-	UpdateChannel       string // stable | nightly（FR-S09）
-	Autostart           bool
+	// ファイル転送（#264。FR-S24）。置き場所は空なら既定の場所。上限はバイト。
+	FileTransferRoot          string
+	FileTransferMaxFileBytes  string
+	FileTransferMaxTotalBytes string
+	// コマンド実行（#265。FR-S25）。許可リストのファイルは空なら既定の場所。
+	CommandEnabled       bool
+	CommandAllowlistPath string
+	UpdateApplyMode      string // confirm | auto_idle（FR-S09）
+	UpdateChannel        string // stable | nightly（FR-S09）
+	Autostart            bool
 }
 
 // SettingsField は設定の項目別のエラー。
@@ -277,11 +287,18 @@ type SettingsErrors struct {
 	LeaseIdleSec     string
 	ViewerQuality    string
 	ViewerFPS        string
-	// 監査ログ・更新の項目別のエラー（チェックボックスは検証エラーにならない）。
-	AuditRetentionDays  string
-	AuditThumbsMaxBytes string
-	UpdateApplyMode     string
-	UpdateChannel       string
+	// ホストの実入力による一時停止・監査ログ・更新の項目別のエラー（チェックボックスは検証エラーにならない）。
+	HostInputPauseIdleSec string
+	AuditRetentionDays    string
+	AuditThumbsMaxBytes   string
+	// ファイル転送（#264）の項目別のエラー。
+	FileTransferRoot          string
+	FileTransferMaxFileBytes  string
+	FileTransferMaxTotalBytes string
+	// コマンド実行（#265）の項目別のエラー。
+	CommandAllowlistPath string
+	UpdateApplyMode      string
+	UpdateChannel        string
 }
 
 // SettingsForm は設定フォーム。
@@ -373,7 +390,7 @@ type Apps struct {
 	Denied  DeniedSection
 }
 
-// LaunchModePanel は起動の方式（launch.mode）の表示と切り替え。方式の切り替えはホスト GUI だけにある（NFR-S20）。
+// LaunchModePanel は起動の方式（launch.mode）の表示と切り替え。方式の切り替えはホスト GUI だけにある（NFR-S24）。
 // Denylist が false なら ホワイトリスト方式（既定）。切り替えの操作は、ブラックリストへは確認モーダル、ホワイトリストへは直接。
 type LaunchModePanel struct {
 	Denylist bool

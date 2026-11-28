@@ -2,6 +2,8 @@ package windows
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strconv"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -64,6 +66,15 @@ func uiaResolveWindow(ctx context.Context, windows platform.WindowManager, windo
 	return domain.WindowInfo{}, domain.ErrWindowNotFound.WithMsg("no window " + windowID)
 }
 
+// uiaWindowHandle は win の HWND。ID が HWND の 10 進文字列でなければ ErrWindowNotFound。
+func uiaWindowHandle(win domain.WindowInfo) (uint64, error) {
+	hwnd, err := strconv.ParseUint(win.ID, 10, 64)
+	if err != nil {
+		return 0, domain.ErrWindowNotFound.WithMsg("window id is not a handle: " + win.ID)
+	}
+	return hwnd, nil
+}
+
 // walk はウィンドウを解決し、専用スレッドの上で走査する。
 func (u *UIAutomation) walk(ctx context.Context, windowID string, maxDepth, maxNodes int) (domain.WindowInfo, []uiaWalked, error) {
 	if err := ctx.Err(); err != nil {
@@ -76,9 +87,18 @@ func (u *UIAutomation) walk(ctx context.Context, windowID string, maxDepth, maxN
 	if err != nil {
 		return domain.WindowInfo{}, nil, err
 	}
-	hwnd, err := strconv.ParseUint(win.ID, 10, 64)
+	walked, err := u.walkWindow(ctx, win, maxDepth, maxNodes)
 	if err != nil {
-		return domain.WindowInfo{}, nil, domain.ErrWindowNotFound.WithMsg("window id is not a handle: " + win.ID)
+		return domain.WindowInfo{}, nil, err
+	}
+	return win, walked, nil
+}
+
+// walkWindow は解決済みの win を専用スレッドの上で走査する。
+func (u *UIAutomation) walkWindow(ctx context.Context, win domain.WindowInfo, maxDepth, maxNodes int) ([]uiaWalked, error) {
+	hwnd, err := uiaWindowHandle(win)
+	if err != nil {
+		return nil, err
 	}
 	var walked []uiaWalked
 	err = u.worker.Do(ctx, func() error {
@@ -89,19 +109,129 @@ func (u *UIAutomation) walk(ctx context.Context, windowID string, maxDepth, maxN
 		walked, err = walkUIA(ctx, root, maxDepth, maxNodes)
 		return err
 	})
-	if err != nil {
-		return domain.WindowInfo{}, nil, err
-	}
-	return win, walked, nil
+	return walked, err
 }
 
 // Tree は platform.UIAutomation.Tree。maxDepth・maxNodes が 1 未満なら ErrInvalidArgument。
 func (u *UIAutomation) Tree(ctx context.Context, windowID string, maxDepth, maxNodes int) (domain.UINode, error) {
-	_, walked, err := u.walk(ctx, windowID, maxDepth, maxNodes)
+	win, walked, err := u.walk(ctx, windowID, maxDepth, maxNodes)
 	if err != nil {
 		return domain.UINode{}, err
 	}
-	return uiaTreeFromWalked(walked), nil
+	hwnd, err := uiaWindowHandle(win)
+	if err != nil {
+		return domain.UINode{}, err
+	}
+	return uiaTreeFromWalked(walked, uiaIDMaker{hwnd: hwnd, pid: win.PID}), nil
+}
+
+// Find は platform.UIAutomation.Find。走査は浅い階層から（walkUIA の幅優先）で、結果もその順。
+func (u *UIAutomation) Find(ctx context.Context, windowID string, match func(domain.UIElementInfo) bool, maxResults, maxNodes int) (domain.UIFindResult, error) {
+	if maxResults < 1 {
+		return domain.UIFindResult{}, domain.ErrInvalidArgument.WithMsg("limits must be at least 1")
+	}
+	win, walked, err := u.walk(ctx, windowID, uiaUnlimitedDepth, maxNodes)
+	if err != nil {
+		return domain.UIFindResult{}, err
+	}
+	hwnd, err := uiaWindowHandle(win)
+	if err != nil {
+		return domain.UIFindResult{}, err
+	}
+	ids := uiaIDMaker{hwnd: hwnd, pid: win.PID}
+	res := domain.UIFindResult{Window: win, Truncated: uiaAnyTruncated(walked)}
+	for _, w := range walked {
+		info := uiaElementInfo(w.props)
+		if !match(info) {
+			continue
+		}
+		if len(res.Elements) == maxResults {
+			res.Truncated = true
+			break
+		}
+		info.ID = ids.id(w.props.RuntimeID)
+		res.Elements = append(res.Elements, info)
+	}
+	return res, nil
+}
+
+// uiaResolveMaxNodes は Resolve が要素を探して走査する節点の上限。
+const uiaResolveMaxNodes = 50_000
+
+// Resolve は platform.UIAutomation.Resolve。HWND のウィンドウが一覧にあり、PID が ID のものと同じで、
+// その木に RuntimeId の同じ要素があるときだけ返す。それ以外は ErrStaleElement。
+func (u *UIAutomation) Resolve(ctx context.Context, ref domain.ElementRef) (domain.UIElementInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.UIElementInfo{}, err
+	}
+	if len(ref.RuntimeID) == 0 {
+		return domain.UIElementInfo{}, domain.ErrStaleElement
+	}
+	win, err := uiaResolveWindow(ctx, u.windows, ref.WindowID())
+	if errors.Is(err, domain.ErrWindowNotFound) || err == nil && win.PID != ref.PID {
+		return domain.UIElementInfo{}, domain.ErrStaleElement
+	}
+	if err != nil {
+		return domain.UIElementInfo{}, err
+	}
+	walked, err := u.walkWindow(ctx, win, uiaUnlimitedDepth, uiaResolveMaxNodes)
+	if errors.Is(err, domain.ErrWindowNotFound) {
+		return domain.UIElementInfo{}, domain.ErrStaleElement
+	}
+	if err != nil {
+		return domain.UIElementInfo{}, err
+	}
+	for _, w := range walked {
+		if slices.Equal(w.props.RuntimeID, ref.RuntimeID) {
+			info := uiaElementInfo(w.props)
+			info.ID = ref.String()
+			return info, nil
+		}
+	}
+	return domain.UIElementInfo{}, domain.ErrStaleElement
+}
+
+// Act は platform.UIAutomation.Act（#268）。Resolve と同じく、ウィンドウが一覧にあり、PID が ID のものと同じで、その木に RuntimeId の同じ要素が
+// あるときだけ操作する（それ以外は ErrStaleElement）。専用スレッドの上で、要素を生きたまま引き当て、パターンを呼ぶ。
+func (u *UIAutomation) Act(ctx context.Context, ref domain.ElementRef, act domain.UIAction) (domain.UIActionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.UIActionResult{}, err
+	}
+	if len(ref.RuntimeID) == 0 {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	win, err := uiaResolveWindow(ctx, u.windows, ref.WindowID())
+	if errors.Is(err, domain.ErrWindowNotFound) || err == nil && win.PID != ref.PID {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	if err != nil {
+		return domain.UIActionResult{}, err
+	}
+	hwnd, err := uiaWindowHandle(win)
+	if err != nil {
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	var res domain.UIActionResult
+	err = u.worker.Do(ctx, func() error {
+		root, err := u.backend.Root(uintptr(hwnd))
+		if err != nil {
+			return err
+		}
+		node, err := uiaFindLive(ctx, root, ref.RuntimeID, uiaResolveMaxNodes)
+		if err != nil {
+			return err
+		}
+		defer node.Release()
+		res, err = uiaPerform(node, node.Props(), ref, act)
+		return err
+	})
+	if errors.Is(err, domain.ErrWindowNotFound) { // 一覧に出たあとに閉じた
+		return domain.UIActionResult{}, domain.ErrStaleElement
+	}
+	if res.Element.ID != "" {
+		res.Window = win
+	}
+	return res, err
 }
 
 // uiaUnlimitedDepth は Snapshot の深さの上限（深さは制限せず、maxNodes だけで打ち切る）。

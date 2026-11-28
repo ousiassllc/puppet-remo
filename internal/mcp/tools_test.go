@@ -130,6 +130,132 @@ func TestScreenshotRejectsNegativeMonitor(t *testing.T) {
 	}
 }
 
+// window_id なしの screenshot は、ウィンドウ単位の撮影を呼ばず、出力にウィンドウ単位の項目（window_id・rect・windows・omitted）を出さない（従来どおり）。
+func TestScreenshotWithoutWindowIDKeepsTheMonitorOutput(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.shot = service.Shot{
+		Data: []byte("image-bytes"), MIME: "image/png", Monitor: 0,
+		Physical: domain.Size{W: 2560, H: 1440}, Scaled: domain.Size{W: 1568, H: 882}, Scale: 0.6125,
+	}
+	cs := e.connect("c1")
+	res := callTool(t, cs, "screenshot", nil)
+	if res.IsError {
+		t.Fatal(res.text())
+	}
+	if e.ctl.windowShotCalls != 0 {
+		t.Error("WindowScreenshot was called without window_id")
+	}
+	var raw map[string]any
+	res.decode(t, &raw)
+	for _, k := range []string{"window_id", "rect", "windows", "omitted"} {
+		if _, ok := raw[k]; ok {
+			t.Errorf("output has %q without window_id: %v", k, raw)
+		}
+	}
+	for _, k := range []string{"monitor", "physical", "scaled", "scale", "own_windows"} {
+		if _, ok := raw[k]; !ok {
+			t.Errorf("output lacks %q: %v", k, raw)
+		}
+	}
+}
+
+func TestScreenshotWithWindowID(t *testing.T) {
+	e := newEnv(t)
+	e.ctl.windowShot = service.WindowShot{
+		Data: []byte("window-bytes"), MIME: "image/png", WindowID: "1001", Monitor: 0,
+		Rect: domain.Rect{X: 49, Y: 39, W: 270, H: 157}, Physical: domain.Size{W: 550, H: 320}, Scaled: domain.Size{W: 270, H: 157}, Scale: 0.49,
+		Members: []service.WindowShotMember{
+			{WindowID: "1003", Relation: domain.RelationOwned, Rect: domain.Rect{X: 220, Y: 39, W: 98, H: 59}},
+			{WindowID: "1001", Relation: domain.RelationTarget, Rect: domain.Rect{X: 49, Y: 49, W: 196, H: 147}},
+		},
+		Omitted:    []service.WindowShotOmitted{{WindowID: "1004", Reason: domain.ReasonRelatedCrossProcess}},
+		OwnWindows: []domain.OwnRegion{{Monitor: 0, Rect: domain.Rect{X: 10, Y: 20, W: 30, H: 40}}},
+	}
+	cs := e.connect("c1")
+
+	res := callTool(t, cs, "screenshot", map[string]any{"window_id": "1001", "include_owned": true, "format": "jpeg"})
+	if res.IsError {
+		t.Fatal(res.text())
+	}
+	if want := (service.WindowShotRequest{WindowID: "1001", Format: "jpeg", IncludeOwned: true}); e.ctl.windowShotReq != want {
+		t.Errorf("WindowScreenshot(%+v), want %+v", e.ctl.windowShotReq, want)
+	}
+	if e.ctl.screenshotFormat != "" || e.ctl.screenshotMonitor != 0 {
+		t.Error("Screenshot (whole monitor) was called with window_id")
+	}
+	img, ok := res.Content[0].(*mcpsdk.ImageContent)
+	if !ok || string(img.Data) != "window-bytes" {
+		t.Errorf("image content = %#v", res.Content[0])
+	}
+	var meta screenshotBody
+	res.decode(t, &meta)
+	rect := rectBody{X: 49, Y: 39, Width: 270, Height: 157}
+	want := screenshotBody{
+		Monitor: 0, Physical: sizeBody{550, 320}, Scaled: sizeBody{270, 157}, Scale: 0.49,
+		OwnWindows: []ownWindowBody{{Monitor: 0, Rect: rectBody{X: 10, Y: 20, Width: 30, Height: 40}}},
+		WindowID:   "1001", Rect: &rect,
+		Windows: []shotWindowBody{
+			{ID: "1003", Relation: "owned", Rect: rectBody{X: 220, Y: 39, Width: 98, Height: 59}},
+			{ID: "1001", Relation: "target", Rect: rectBody{X: 49, Y: 49, Width: 196, Height: 147}},
+		},
+		Omitted: []shotOmittedBody{{ID: "1004", Reason: "related_cross_process"}},
+	}
+	if !reflect.DeepEqual(meta, want) {
+		t.Errorf("meta =\n %+v\nwant\n %+v", meta, want)
+	}
+	if _, held := e.leases.Holder(); held {
+		t.Error("screenshot acquired the lease")
+	}
+}
+
+func TestScreenshotWithWindowIDRejectsBadCombinations(t *testing.T) {
+	tests := []struct {
+		name string
+		args map[string]any
+	}{
+		{"monitor と window_id", map[string]any{"window_id": "1001", "monitor": 0}},
+		{"window_id なしの include_owned", map[string]any{"include_owned": true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			cs := e.connect("c1")
+			res := callTool(t, cs, "screenshot", tt.args)
+			if got := res.errCode(t); got != domain.CodeInvalidArgument {
+				t.Errorf("code = %s, want invalid_argument", got)
+			}
+			if e.ctl.windowShotCalls != 0 {
+				t.Error("WindowScreenshot was called")
+			}
+		})
+	}
+}
+
+// Control の拒否（window_not_found・input_blocked own_window・capture_unavailable）は、そのままのコードでツールの失敗になる。
+func TestScreenshotWithWindowIDPropagatesControlErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want domain.Code
+	}{
+		{"存在しない id", domain.ErrWindowNotFound, domain.CodeWindowNotFound},
+		{"自ウィンドウ", domain.ErrInputBlocked.WithDetail("reason", domain.ReasonOwnWindow), domain.CodeInputBlocked},
+		{"撮れない", domain.ErrInputBlocked.WithDetail("reason", string(domain.ReasonCaptureUnavailable)), domain.CodeInputBlocked},
+		{"キルスイッチ", domain.ErrKillSwitchActive, domain.CodeKillSwitchActive},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.ctl.err = tt.err
+			cs := e.connect("c1")
+			res := callTool(t, cs, "screenshot", map[string]any{"window_id": "9"})
+			if got := res.errCode(t); got != tt.want {
+				t.Errorf("code = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCursorPosition(t *testing.T) {
 	e := newEnv(t)
 	e.ctl.cursor = service.Cursor{Point: domain.Point{X: 640, Y: 360}, Monitor: 1}

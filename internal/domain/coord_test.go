@@ -296,6 +296,29 @@ func TestScaledRect(t *testing.T) {
 	}
 }
 
+func TestScaledExtent(t *testing.T) {
+	tests := []struct {
+		name string
+		m    domain.Monitor
+		r    domain.Rect
+		want domain.Rect
+	}{
+		{"縮小あり（ScaledRect と同じ）", fhd, domain.Rect{X: 960, Y: 540, W: 960, H: 540}, domain.Rect{X: 784, Y: 441, W: 784, H: 441}},
+		{"縮小なしの 2 台目はモニターの原点を引く", hd, domain.Rect{X: 1920 + 100, Y: 50, W: 200, H: 100}, domain.Rect{X: 100, Y: 50, W: 200, H: 100}},
+		{"右下へはみ出す部分も切り詰めない", fhd, domain.Rect{X: 1800, Y: 1000, W: 500, H: 500}, domain.Rect{X: 1470, Y: 817, W: 408, H: 408}},
+		{"左上へはみ出すと負の座標になる", fhd, domain.Rect{X: -100, Y: -50, W: 300, H: 200}, domain.Rect{X: -82, Y: -41, W: 245, H: 164}},
+		{"小さい矩形も 1 以上", fhd, domain.Rect{X: 100, Y: 100, W: 1, H: 1}, domain.Rect{X: 82, Y: 82, W: 1, H: 1}},
+		{"空の矩形は空", fhd, domain.Rect{X: 10, Y: 10}, domain.Rect{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.m.ScaledExtent(tt.r, defaultMaxDim); got != tt.want {
+				t.Errorf("ScaledExtent(%v) = %v, want %v", tt.r, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStreamToPhysical(t *testing.T) {
 	m := domain.Monitor{Index: 1, Origin: domain.Point{X: -1920, Y: 100}, Size: domain.Size{W: 1920, H: 1080}}
 	tests := []struct {

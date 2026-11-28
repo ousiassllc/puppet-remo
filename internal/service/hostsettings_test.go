@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -56,7 +57,9 @@ func newSettingsEnv(t *testing.T, withAutostart bool) *settingsEnv {
 
 var defaultHostSettings = HostSettings{
 	Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
+	HostInputPauseEnabled: true, HostInputPauseIdleSec: 5,
 	AuditThumbnailsEnabled: true, AuditRecordText: false, AuditRetentionDays: 30, AuditThumbsMaxBytes: 1 << 30, UpdateApplyMode: UpdateApplyConfirm, UpdateChannel: "stable",
+	FileTransferMaxFileBytes: 100 << 20, FileTransferMaxTotalBytes: 1 << 30,
 }
 
 func TestHostSettingsDefaults(t *testing.T) {
@@ -75,8 +78,11 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 	e := newSettingsEnv(t, true)
 	want := HostSettings{
 		Port: 9000, KillSwitchHotkey: "Ctrl+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24,
+		HostInputPauseEnabled: false, HostInputPauseIdleSec: 12,
 		AuditThumbnailsEnabled: false, AuditRecordText: true, AuditRetentionDays: 7, AuditThumbsMaxBytes: 536870912, UpdateApplyMode: UpdateApplyAutoIdle,
 		UpdateChannel: "nightly", Autostart: true,
+		FileTransferRoot: filepath.Join(t.TempDir(), "inbox"), FileTransferMaxFileBytes: 5 << 20, FileTransferMaxTotalBytes: 64 << 20,
+		CommandEnabled: true, CommandAllowlistPath: filepath.Join(t.TempDir(), "commands.json"),
 	}
 
 	saved, err := e.svc.Save(ctx, want)
@@ -92,7 +98,10 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 		t.Errorf("LeaseIdleTimeout = %v, %v", d, err)
 	}
 	for key, raw := range map[string]string{"server.port": "9000", "killswitch.hotkey": `"Ctrl+Shift+Q"`, "screenshot.max_dimension": "2048", "lease.idle_timeout_sec": "120", "viewer.default_quality": "85", "viewer.default_fps": "24",
-		"audit.thumbnails_enabled": "false", "audit.record_text": "true", "audit.retention_days": "7", "audit.thumbs_max_bytes": "536870912", "update.apply_mode": `"auto_idle"`, "update.channel": `"nightly"`} {
+		"audit.thumbnails_enabled": "false", "audit.record_text": "true", "audit.retention_days": "7", "audit.thumbs_max_bytes": "536870912", "update.apply_mode": `"auto_idle"`, "update.channel": `"nightly"`,
+		"hostinput.pause_enabled": "false", "hostinput.pause_idle_sec": "12",
+		"file_transfer.root": mustJSON(t, want.FileTransferRoot), "file_transfer.max_file_bytes": "5242880", "file_transfer.max_total_bytes": "67108864",
+		"command.enabled": "true", "command.allowlist_path": mustJSON(t, want.CommandAllowlistPath)} {
 		if got := string(e.store.values[key]); got != raw {
 			t.Errorf("%s = %s, want %s", key, got, raw)
 		}
@@ -113,7 +122,7 @@ func TestHostSettingsSaveAndLoadRoundTrip(t *testing.T) {
 		t.Fatalf("audit = %+v", a)
 	}
 	var detail map[string]any
-	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 13 || detail["server.port"] != float64(9000) || detail["autostart"] != true ||
+	if err := json.Unmarshal(a[0].DetailJSON, &detail); err != nil || len(detail) != 20 || detail["command.enabled"] != true || detail["command.allowlist_path"] != want.CommandAllowlistPath || detail["file_transfer.max_file_bytes"] != float64(5<<20) || detail["server.port"] != float64(9000) || detail["autostart"] != true ||
 		!hasKey(detail, "audit.record_text") || detail["audit.record_text"] != nil || detail["audit.thumbnails_enabled"] != false || detail["audit.retention_days"] != float64(7) ||
 		detail["audit.thumbs_max_bytes"] != float64(536870912) || detail["update.apply_mode"] != "auto_idle" || detail["update.channel"] != "nightly" {
 		t.Errorf("detail = %s (%v)", a[0].DetailJSON, err)
@@ -152,7 +161,9 @@ func TestHostSettingsAuditDefaultsWhenRowsAreMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.AuditThumbnailsEnabled || got.AuditRecordText || got.AuditRetentionDays != 30 || got.AuditThumbsMaxBytes != 1<<30 || got.UpdateApplyMode != "confirm" || got.UpdateChannel != "stable" {
+	if !got.AuditThumbnailsEnabled || got.AuditRecordText || got.AuditRetentionDays != 30 || got.AuditThumbsMaxBytes != 1<<30 || got.UpdateApplyMode != "confirm" || got.UpdateChannel != "stable" ||
+		got.FileTransferRoot != "" || got.FileTransferMaxFileBytes != 100<<20 || got.FileTransferMaxTotalBytes != 1<<30 ||
+		got.CommandEnabled || got.CommandAllowlistPath != "" {
 		t.Errorf("defaults = %+v", got)
 	}
 }
@@ -219,11 +230,27 @@ func TestHostSettingsValidation(t *testing.T) {
 		{"fps bounds", func(s *HostSettings) { s.ViewerDefaultFPS = 1 }, nil},
 		{"fps upper bound", func(s *HostSettings) { s.ViewerDefaultFPS = 30 }, nil},
 		{"retention below", func(s *HostSettings) { s.AuditRetentionDays = 0 }, []string{FieldAuditRetentionDays}},
+		{"host input idle below", func(s *HostSettings) { s.HostInputPauseIdleSec = 0 }, []string{FieldHostInputPauseIdleSec}},
+		{"host input idle above", func(s *HostSettings) { s.HostInputPauseIdleSec = 601 }, []string{FieldHostInputPauseIdleSec}},
+		{"host input idle lower bound", func(s *HostSettings) { s.HostInputPauseIdleSec = 1 }, nil},
+		{"host input idle upper bound", func(s *HostSettings) { s.HostInputPauseIdleSec = 600 }, nil},
+		{"host input pause off", func(s *HostSettings) { s.HostInputPauseEnabled = false }, nil},
 		{"retention above", func(s *HostSettings) { s.AuditRetentionDays = 36501 }, []string{FieldAuditRetentionDays}},
 		{"retention lower bound", func(s *HostSettings) { s.AuditRetentionDays = 1 }, nil},
 		{"retention upper bound", func(s *HostSettings) { s.AuditRetentionDays = 36500 }, nil},
 		{"thumbs cap below", func(s *HostSettings) { s.AuditThumbsMaxBytes = 0 }, []string{FieldAuditThumbsMaxBytes}},
 		{"thumbs cap above", func(s *HostSettings) { s.AuditThumbsMaxBytes = 1<<53 + 1 }, []string{FieldAuditThumbsMaxBytes}},
+		{"file root relative", func(s *HostSettings) { s.FileTransferRoot = "inbox" }, []string{FieldFileTransferRoot}},
+		{"file root unc", func(s *HostSettings) { s.FileTransferRoot = `\\host\share\x` }, []string{FieldFileTransferRoot}},
+		{"file root dotdot", func(s *HostSettings) { s.FileTransferRoot = "/srv/../inbox" }, nil}, // Save が Clean するので通る
+		{"command allowlist relative", func(s *HostSettings) { s.CommandAllowlistPath = "commands.json" }, []string{FieldCommandAllowlistPath}},
+		{"command allowlist unc", func(s *HostSettings) { s.CommandAllowlistPath = `\\host\share\c.json` }, []string{FieldCommandAllowlistPath}},
+		{"command allowlist dotdot", func(s *HostSettings) { s.CommandAllowlistPath = "/a/../b/c.json" }, nil}, // Save が Clean するので通る
+		{"command on", func(s *HostSettings) { s.CommandEnabled = true }, nil},
+		{"file max below", func(s *HostSettings) { s.FileTransferMaxFileBytes = 0 }, []string{FieldFileTransferMaxFile}},
+		{"file max above", func(s *HostSettings) { s.FileTransferMaxFileBytes = 1<<53 + 1 }, []string{FieldFileTransferMaxFile}},
+		{"file total below", func(s *HostSettings) { s.FileTransferMaxTotalBytes = 0 }, []string{FieldFileTransferMaxTotal}},
+		{"file total above", func(s *HostSettings) { s.FileTransferMaxTotalBytes = 1<<53 + 1 }, []string{FieldFileTransferMaxTotal}},
 		{"thumbs cap lower bound", func(s *HostSettings) { s.AuditThumbsMaxBytes = 1 }, nil},
 		{"thumbs cap upper bound", func(s *HostSettings) { s.AuditThumbsMaxBytes = 1 << 53 }, nil},
 		{"apply mode auto_idle", func(s *HostSettings) { s.UpdateApplyMode = "auto_idle" }, nil},
@@ -238,7 +265,7 @@ func TestHostSettingsValidation(t *testing.T) {
 		{"hotkey unknown modifier", func(s *HostSettings) { s.KillSwitchHotkey = "Hyper+K" }, []string{FieldKillSwitchHotkey}},
 		{"hotkey too long", func(s *HostSettings) { s.KillSwitchHotkey = "Ctrl+" + string(make([]byte, 100)) }, []string{FieldKillSwitchHotkey}},
 		{"hotkey case-insensitive", func(s *HostSettings) { s.KillSwitchHotkey = "ctrl+alt+k" }, nil},
-		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldViewerDefaultQuality, FieldViewerDefaultFPS, FieldKillSwitchHotkey, FieldAuditRetentionDays, FieldAuditThumbsMaxBytes, FieldUpdateApplyMode, FieldUpdateChannel}},
+		{"all invalid", func(s *HostSettings) { *s = HostSettings{} }, []string{FieldPort, FieldScreenshotMaxDimension, FieldLeaseIdleTimeoutSec, FieldViewerDefaultQuality, FieldViewerDefaultFPS, FieldKillSwitchHotkey, FieldHostInputPauseIdleSec, FieldAuditRetentionDays, FieldAuditThumbsMaxBytes, FieldFileTransferMaxFile, FieldFileTransferMaxTotal, FieldUpdateApplyMode, FieldUpdateChannel}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -424,4 +451,31 @@ func TestViewerDefaults(t *testing.T) {
 			}
 		}
 	})
+}
+
+// コマンド実行（#265）は既定 OFF。壊れた保存値は、設定画面では OFF・空に見せ（保存し直して直せる）、読み取り側（CommandExec）は fail closed で使えない。
+func TestHostSettingsCommandExecDefaultsOffAndMalformedValuesLoadSafely(t *testing.T) {
+	ctx := context.Background()
+	e := newSettingsEnv(t, false)
+	if got, err := e.svc.Load(ctx); err != nil || got.CommandEnabled || got.CommandAllowlistPath != "" {
+		t.Fatalf("defaults = %+v, %v", got, err)
+	}
+	e.store.values["command.enabled"] = []byte(`"yes"`)
+	e.store.values["command.allowlist_path"] = []byte(`42`)
+	got, err := e.svc.Load(ctx)
+	if err != nil || got.CommandEnabled || got.CommandAllowlistPath != "" {
+		t.Errorf("malformed values load as %+v, %v; want off and empty", got, err)
+	}
+	if _, err := loadCommandSettings(ctx, e.store); err == nil {
+		t.Error("the reader accepted malformed command settings")
+	}
+	// 保存し直すと直る。
+	saved := got
+	saved.CommandEnabled = true
+	if _, err := e.svc.Save(ctx, saved); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := loadCommandSettings(ctx, e.store); err != nil || !s.Enabled {
+		t.Errorf("after Save: %+v, %v", s, err)
+	}
 }

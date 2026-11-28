@@ -84,11 +84,24 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `invalid_coordinates` | 400 | 操作系 | 座標がモニターの範囲外 |
 | `invalid_argument` | 400 | 共通 | 引数が不正（`viewer_id` が別のクライアントに束縛されている場合を含む）。`launch_app` では、`app_id` と `path` の同時指定・どちらも無い・ホワイトリスト方式での `path` の指定・`path` の形の不正（絶対パスでない・UNC・`..` を含む・`.exe` でない・使えない文字）もこれ（§3.3） |
 | `conflict` | 409 | GUI | 現在の状態では実行できない（要求が `pending` でない、更新を適用できない状態など） |
-| `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
+| `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない（`find_ui_element` / `wait_for` では、`title`・`process_name` で探して合うウィンドウが無い場合を含む） |
+| `stale_element` | 409 | UI 要素 | 要素 ID の指す要素（そのウィンドウ・プロセスを含む）がもう無い。古い ID が別の要素に当たることはない（FR-M28。#267。`get_ui_tree` / `find_ui_element` の `id` を受け取る道具が返す） |
+| `pattern_unsupported` | 409 | UI 要素 | `ui_action` の操作に必要な UI Automation のパターンを要素が持たない（FR-M31。#268）。`detail.action`・`detail.pattern`・`detail.supported`（要素の対応パターン）。キー入力・クリックには切り替えない |
+| `element_disabled` | 409 | UI 要素 | `ui_action` の対象の要素が無効（`enabled: false`。FR-M31。#268） |
+| `element_read_only` | 409 | UI 要素 | `ui_action` の `set_value` の対象が読み取り専用（FR-M31。#268） |
+| `ui_action_failed` | 409 | UI 要素 | UI Automation が `ui_action` の操作を受け付けなかった（FR-M31。#268）。`detail.reason`: `invalid_operation`（今の状態では実行できない）・`timeout`（アプリが応答しない）・`leaf_node`（開閉できない葉）・`state_not_reached`（`toggle` の `state` にならない）・`failed`。`detail.hresult` |
 | `app_not_found` | 404 | `launch_app` | `app_id` が許可リストに無い（読めない行・起動の再検査を満たさない行を含む。FR-M19。M1.5）。どちらの起動の方式でも同じ |
 | `app_denied` | 403 | `launch_app` | 起動の方式がブラックリストで、起動しようとしたアプリがホスト所有者の拒否リストに当たる（`app_id` で起動する許可リストのアプリも、拒否リストに当たれば拒否する。#88）。MCP は同じ `code` のツールエラー。メッセージは `the host owner does not allow this app to be launched` で固定し、**パス・拒否リストの中身は含めない**。監査は `denied` |
+| `input_paused` | 409 | 操作系 | ホストの人が実際のマウス・キーボードを使っている間の一時停止（FR-M30。#270）。実際のカーソル・フォーカス・キー入力を動かす操作（クリック・移動・ドラッグ・スクロール・`key`・`type`・`focus_window`、Web ビューアの `input.*`、`run_task` の操作）が対象で、読み取り・`wait`・クリップボードの書き込みは通る。`ui_action`（UI Automation のパターン操作。カーソル・フォーカスを動かさない）も通る。`detail.resumes_at`（RFC 3339）・`detail.retry_after_ms` は再開の目安で、ホストの入力が続けば延びる。待ち時間（既定 5 秒）の間ホストの入力がなければ自動で再開する。`get_control_status` の `paused` で見える |
 | `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に Nefos Remote のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
 | `audit_unavailable` | 503 | `launch_app`、GUI の設定変更 | `launch_app`: 起動の「試行」を監査ログに書けなかったため、起動しなかった（fail-closed。NFR-S20。#37）。MCP は同じ `code` のツールエラー。GUI の設定変更（§7.2・§7.3 の `PUT /settings`・`/agent*`・`/apps*` の書き込み）: 変更の監査の行を書けなかったため、変更を元に戻した（#174・#182。下の §7.3 の冒頭）。DB のエラーの中身は載せない。再試行できる（書けるようになれば起動・変更できる） |
+| `file_not_found` | 404 | `get_file` / `list_files` / `delete_file` | 置き場所の中に、そのファイル・フォルダが無い（FR-M27。#264）。置き場所の絶対パスは載せない |
+| `file_too_large` | 413 | `put_file` | 書いたあとのファイルの大きさが、ホスト所有者が決めた 1 ファイルの上限（既定 100 MiB。FR-S24）を超える。何も書かない。1 回の呼び出しの上限（512 KiB）を超える本文は `invalid_argument` |
+| `file_store_full` | 507 | `put_file` | 書いたあとの置き場所全体の大きさが、ホスト所有者が決めた全体の上限（既定 1 GiB。FR-S24）を超える（同名のファイルを置き換えるときは、置き換える分を数えない）。何も書かない |
+| `command_disabled` | 403 | `run_command` / `list_commands` | ホスト所有者がコマンド実行をオフにしている（既定。FR-M32・FR-S25。#265）。操作リースは取りに行かない。MCP は同じ `code` のツールエラー |
+| `command_not_found` | 404 | `run_command` | `name` が許可リストに無い、または項目が無効（FR-M32）。許可リストの中身は載せない |
+| `command_allowlist_invalid` | 503 | `run_command` / `list_commands` | 許可リストのファイルが無い・読めない・不備がある、またはファイル・実行ファイル・作業フォルダがリモートの書けるファイル転送の置き場所の中にある（FR-M32。全項目を使えなくする〔fail closed〕。理由は運用ログにだけ書き、パス・中身は載せない） |
+| `command_start_failed` | 502 | `run_command` | 許可リストの項目だが、プロセスを起動できなかった（実行ファイルが無い・実行できない）（FR-M32）。OS のエラー・パスは載せない |
 | `launch_failed` | 409 | `launch_app` | 許可リストのアプリ（ブラックリスト方式の `path` 指定を含む）だが OS がプロセスを作成できなかった、または `path` が固定ディスク上の実在する実行ファイルでなかった（FR-M19。M1.5。#88）。`structuredContent` に `reason`（`file_missing` / `access_denied` / `elevation_required` / `other`）を付ける。`path` が UNC・ネットワークドライブ・リムーバブルドライブ上なら `access_denied`、存在しなければ `file_missing`。**パス・引数は含めない** |
 | `desktop_unavailable` | 503 | 取得・操作 | ロック画面・UAC 等でキャプチャ・入力できない |
 | `agent_disabled` | 409 | `run_task` / `PUT /agent`（GUI） | エージェント無効、選んだ接続方式（FR-G25）が使えない状態、またはクライアントに利用許可が無い。接続方式が使えない状態のときは `structuredContent.detail.reason`（HTML のエラーフラグメントは、`data-error-code="agent_disabled"` に加えて `data-error-reason="<reason>"` を付ける。§1・§3.4）に理由を付ける: 接続方式 `openai_api_key` は `openai_key_missing`（API キー未登録）、接続方式 `chatgpt` は `chatgpt_not_signed_in`（未サインイン）/ `chatgpt_signing_in`（サインイン中）/ `chatgpt_reauth_required`（認可切れ。再サインインが必要）/ `chatgpt_usage_limited`（使用量の上限による一時停止）、接続方式 `chatgpt-codex` は `codex_unsupported`（この OS・CPU に公式のエンジンが無い）/ `codex_engine_missing`（エンジンが未取得、または固定した版と違う・取得や起動に失敗した状態）/ `codex_not_signed_in`（Codex に未サインイン）/ `codex_signing_in`（サインイン中）/ `codex_reauth_required`（認可切れ。再サインインが必要）/ `codex_usage_limited`（使用量の上限による一時停止）のいずれか（FR-G01・G29・G30・G38・G39）。エージェントの無効・クライアントの利用許可なしは `reason` を付けない |
@@ -108,7 +121,7 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | 認証 | `Authorization: Bearer <token>`（§1 の連鎖。トークンは GUI で発行し、一度だけ表示される。FR-A08） |
 | セッション | `Mcp-Session-Id` ヘッダーで識別する。**リースは MCP セッションに紐づく**。セッションの切断・終了でリースを解放する。SDK の keepalive の ping は standalone の GET SSE ストリームにしか流れず、GET を張らない（POST だけの）クライアントは応答できずセッションとリースを失う（3 回連続の失敗、15 秒間隔で 45 秒）ため、**MCP の keepalive は既定で無効**にする（NFR-A04。WebSocket の 15 秒 / 45 秒の keepalive は §5.1）。MCP の切断は、セッションの明示的な終了（`DELETE`）・トランスポートの切断、アイドル 30 分のセッション閉鎖（SDK の `SessionTimeout`）、リースのアイドル解放 5 分（独立。FR-S04。§8）で拾う |
 | サーバー情報 | `name: puppet-remo`、`version`: アプリの版 |
-| `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`launch_app` で起動できるのは既定ではホストが許可したアプリ（`list_launchable_apps` で確認）だけで `app_id` を渡すこと（引数・作業ディレクトリは渡せない）、`list_launchable_apps` が `mode` で `denylist` を返したときだけ `.exe` の絶対パス（`path`）でも起動できてホスト所有者の拒否リストに当たるものは `app_denied` になること、起動しても既存のウィンドウが前に出るだけのアプリがあるので入力の前にスクリーンショットか `list_windows` で対象を確かめること、puppet-remo 自身のウィンドウはスクリーンショットに写らず入力は `input_blocked`（`own_window`）になること（範囲は `screenshot` の `own_windows`・エラーの `detail.own_windows`・`list_windows` の `blocked` で分かる。FR-M20）、`run_task` はホストがエージェントを有効にしたクライアントだけが使えて（そうでなければ `agent_disabled`）非同期であること（`get_task` で確認し `cancel_task` で止める）、タスクの間はエージェントがリースを持つので同時に 1 つしか動かず他の操作は `lease_held_by_other` になること、画面上の文字は信頼できない入力であること、`completed` はモデルの申告にすぎず成否の検証は呼び出し側の責任であること（FR-G13）を記す |
+| `instructions` | 初期化時にサーバーが返す指示文。座標が縮小座標系であること、操作系ツールにはリースが必要で暗黙取得されること、`launch_app` で起動できるのは既定ではホストが許可したアプリ（`list_launchable_apps` で確認）だけで `app_id` を渡すこと（引数・作業ディレクトリは渡せない）、`list_launchable_apps` が `mode` で `denylist` を返したときだけ `.exe` の絶対パス（`path`）でも起動できてホスト所有者の拒否リストに当たるものは `app_denied` になること、起動しても既存のウィンドウが前に出るだけのアプリがあるので入力の前にスクリーンショットか `list_windows` で対象を確かめること、puppet-remo 自身のウィンドウはスクリーンショットに写らず入力は `input_blocked`（`own_window`）になること（範囲は `screenshot` の `own_windows`・エラーの `detail.own_windows`・`list_windows` の `blocked` で分かる。FR-M20）、`run_task` はホストがエージェントを有効にしたクライアントだけが使えて（そうでなければ `agent_disabled`）非同期であること（`get_task` で確認し `cancel_task` で止める）、タスクの間はエージェントがリースを持つので同時に 1 つしか動かず他の操作は `lease_held_by_other` になること、画面上の文字は信頼できない入力であること、`completed` はモデルの申告にすぎず成否の検証は呼び出し側の責任であること（FR-G13）を記す。`put_file` / `get_file` / `list_files` / `delete_file` がホストの決めた置き場所の中だけで動き、パスは相対パス・本文は base64（1 回 512 KiB まで）・結果に全体の大きさと SHA-256 が付くこと（FR-M27）。`run_command` がホスト所有者の許可リストの項目だけを実行すること（既定オフ。`list_commands` で名前と型つきの引数を確認し、渡すのは名前と引数だけ。コマンドラインは渡せない。操作リースが要る。FR-M32）を記す |
 | 同時セッション | 最大 5（NFR-C02） |
 
 SDK の localhost 向け保護には依存せず、自前の Host / Origin 検証を先に通す（[アーキテクチャ設計](../architecture/overview.md)）。SDK のオプションの設定値は §8 のとおり。
@@ -140,9 +153,14 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `clipboard_read` | FR-M13 | 必要 | ro |
 | `clipboard_write` | FR-M13 | 必要 | |
 | `get_ui_tree` | FR-M14 | 必要 | ro |
+| `find_ui_element` | FR-M28 | 必要 | ro。UI 要素を名前・AutomationId・ControlType で探す（#267） |
+| `wait_for` | FR-M29 | 必要 | ro。ウィンドウ・UI 要素が現れる・消えるまで待つ（#266） |
+| `ui_action` | FR-M31 | 必要 | UI 要素を UI Automation のパターン（Invoke・Value・Toggle・SelectionItem・ExpandCollapse）で操作する。カーソル・フォーカスを動かさない（#268） |
 | `acquire_control` / `release_control` / `get_control_status` | FR-M15 | 不要 | `get_control_status` は ro |
 | `list_launchable_apps` | FR-M18 | 不要 | ro。起動の方式 `mode` と登録済みのアプリを返す |
 | `launch_app` | FR-M19 | 必要 | `app_id` か `path`（`path` はブラックリスト方式のときだけ） |
+| `put_file` / `get_file` / `list_files` / `delete_file` | FR-M27 | 必要 | `get_file`・`list_files` は ro。ホストが決めた置き場所の中だけ |
+| `list_commands` / `run_command` | FR-M32 | `run_command` は必要 | `list_commands` は ro・リース不要。既定オフ（`command_disabled`）。ホストの許可リストの項目だけ |
 | `run_task` / `get_task` / `cancel_task` | FR-G02 | 不要（`run_task` が内部でリースを取る） | `get_task` は ro |
 
 #### 画面情報
@@ -167,10 +185,30 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |------|----|------|------|
 | `monitor` | integer | いいえ | モニター index（既定: プライマリ） |
 | `format` | `"png"` \| `"jpeg"` | いいえ | 既定 `png` |
+| `window_id` | string | いいえ | `list_windows` の `id`。指定するとそのウィンドウだけを撮る（FR-M26。下の「ウィンドウ単位」）。`monitor` とは同時に指定できない（`invalid_argument`）。省略するとモニター全体で、従来と出力は変わらない |
+| `include_owned` | boolean | いいえ | `window_id` のときだけ（`window_id` なしは `invalid_argument`）。既定 `false`。`true` で、同一プロセスで所有関係を検証できるダイアログ・メニュー・子ウィンドウも 1 枚に重ねる |
 
 出力: MCP の画像コンテンツ（`image/png` または `image/jpeg`、base64。縮小済み）と、テキストコンテンツの JSON `{ "monitor": 0, "physical": {…}, "scaled": {…}, "scale": 0.6125, "own_windows": [ {"monitor": 0, "rect": {"x": 784, "y": 0, "width": 393, "height": 442}} ] }`。
 
 `own_windows` は、撮影した時点でそのモニター上にある Nefos Remote 自身のウィンドウの範囲（無ければ空配列）。これらのウィンドウは画像に**写らず**（キャプチャ除外。NFR-S06）、入力は `input_blocked`（`own_window`）になるため、`rect`（この画像の座標。縮小座標）の範囲を避ける。画像には印を描かない（FR-M20）。範囲を取れなかったときも画像は返し、`own_windows` は空になる。
+
+**ウィンドウ単位（`window_id` つき。FR-M26。#269）**: そのウィンドウ 1 枚の画像だけを返す。ウィンドウ自身の内容を PrintWindow（`PW_RENDERFULLCONTENT`）で撮るので、**前面にならず**、**上に別のウィンドウが重なっていても対象自身の内容だけが写る**（#156 の `GroupCapturer.GrabGroup` と共通。画面の DC・モニター撮影・デスクトップの切り抜きは使わず、撮れないときもモニター撮影へ切り替えない）。リースは不要（モニター全体の `screenshot` と同じ閲覧系）。出力のテキストは次の項目が加わる（`window_id` なしでは出ない）:
+
+```json
+{ "monitor": 0, "physical": {"width": 550, "height": 320}, "scaled": {"width": 270, "height": 157}, "scale": 0.49,
+  "own_windows": [],
+  "window_id": "1001",
+  "rect": {"x": 49, "y": 39, "width": 270, "height": 157},
+  "windows": [ {"id": "1003", "relation": "owned", "rect": {"x": 220, "y": 39, "width": 98, "height": 59}},
+               {"id": "1001", "relation": "target", "rect": {"x": 49, "y": 49, "width": 196, "height": 147}} ],
+  "omitted": [ {"id": "1004", "reason": "related_cross_process"} ] }
+```
+
+- 座標: `monitor` は対象のウィンドウが最も重なるモニター（座標系の基準）、`scale` はそのモニターの縮小率、`physical` は撮れた画像の元の大きさ（物理ピクセル）、`scaled` は画像の大きさ。**`rect` は画像の左上と大きさを、そのモニターの縮小スクリーンショットの座標で表す**（`list_windows` の `rect` と同じ座標系。ただしモニターの範囲へは切り詰めない）。画像の点 `(px, py)` は縮小座標 `(rect.x + px, rect.y + py)` で、そのまま `left_click` などの `x`・`y` に使える（`monitor` を同じ値で渡す。±1 px の丸め）。ウィンドウがモニターからはみ出しているときは、はみ出した部分が負の座標かモニターの外の座標になり、そこへの入力は `invalid_coordinates`
+- `windows`: 画像に写っているウィンドウ（前面が先。`include_owned` なしでは対象 1 件）。`relation` は `target` / `owned`（所有されたダイアログ）/ `child` / `menu`。`rect` は同じ座標系
+- `include_owned: true`: 対象と**同一プロセス**で所有関係を検証できるウィンドウだけを重ねる（画像と `rect` はその外接矩形）。別プロセスのウィンドウ（`related_cross_process`。共通ダイアログなど）・所有関係を確かめられないウィンドウ（`related_unverifiable`）は自動では入れず `omitted`（`id`・`reason`）に出す。メンバーが撮れなかったとき（`capture_member_unavailable`）も撮影は失敗にせず `omitted`。`omitted` は空なら出ない
+- 拒否・失敗（ツールエラー）: キルスイッチ中は `kill_switch_active`。`window_id` が空・`monitor` との同時指定・`include_owned` だけの指定・不明な `format` は `invalid_argument`。**存在しない・閉じた・cloaked・形式が不正な `window_id`、撮る直前に閉じた・別のウィンドウに置き換わったウィンドウは `window_not_found`**。**Nefos Remote 自身のウィンドウは決して撮らず**（`input_blocked`・`detail.reason` = `own_window`。`detail.own_windows` 付き。NFR-S06）、昇格（`elevated_window`）・最小化（`target_minimized`）・同一性を確かめる値が不明、または検証前の UWP（`target_unsupported`）は `input_blocked`、PrintWindow の失敗・何も描かれなかった・撮影が 3 秒で終わらない・応答しないアプリ・ホストに `GroupCapturer` がないは `input_blocked`（`detail.reason` = `capture_unavailable`）。いずれも `detail.window_id` が付く
+- 監査: ほかの `screenshot` と同じく `kind = tool` で記録する。引数の要約に `window_id`・`include_owned`（ウィンドウのタイトル・画像は含めない）
 
 **`cursor_position`**
 
@@ -225,7 +263,61 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `max_depth` | integer | 既定 5、最大 20（超えると `invalid_argument`） |
 | `max_nodes` | integer | 既定 500、最大 5000（超えると `invalid_argument`） |
 
-出力: `{ "window_id": "…", "truncated": false, "root": { "id": "…", "role": "Window", "name": "…", "value": "…", "rect": {…}, "enabled": true, "children": [ … ] } }`。`rect` は縮小座標。パスワード欄は `value` を含めず `"value_redacted": true` にする。`id` は UI Automation の RuntimeId から作る参照用の文字列で、他のツールの引数には使わない。
+出力: `{ "window_id": "…", "truncated": false, "root": { "id": "uie:…", "role": "Window", "control_type": "Window", "name": "…", "automation_id": "…", "class_name": "…", "patterns": ["Window"], "value": "…", "rect": {…}, "enabled": true, "offscreen": false, "children": [ … ] } }`。`rect` は縮小座標。パスワード欄は `value` を含めず `"value_redacted": true` にする。`id` は**要素 ID**（`find_ui_element` の `id` と同じ形式 `uie:<HWND>:<PID>:<RuntimeId>`。UI Automation が RuntimeId を返さない要素は空文字列）で、`stale_element` の検査つきで要素を引き直す道具の引数に使う。`control_type` は `role` と同じ値、`patterns` は対応パターン（無ければ `[]`）。
+
+**`find_ui_element`**（FR-M28。#267）
+
+| 引数 | 型 | 説明 |
+|------|----|------|
+| `window_id` | string | 対象ウィンドウ（`list_windows` の `id`。`title`・`process_name` より優先） |
+| `title` | string | ウィンドウのタイトル（`match` に従う） |
+| `process_name` | string | ウィンドウのプロセス名（例 `notepad.exe`。大文字小文字を区別しない完全一致） |
+| `name` | string | 要素の名前（`match` に従う） |
+| `automation_id` | string | 要素の AutomationId（完全一致） |
+| `control_type` | string | 要素の ControlType の名前（`Button`・`Edit`・`CheckBox` など。大文字小文字を区別しない。不明な名前は `invalid_argument`） |
+| `match` | `"exact"` \| `"contains"` | `title` と `name` の比較。既定 `exact`（大文字小文字を区別する完全一致）。`contains` は大文字小文字を区別しない部分一致 |
+| `max_results` | integer | 既定 20、最大 100（超えると `invalid_argument`） |
+
+ウィンドウの項目が無ければ前面のウィンドウ。複数のウィンドウに合えば Z オーダーの最上位（自ウィンドウは `title`・`process_name` では選ばれない）。`name`・`automation_id`・`control_type` の**どれか 1 つは必須**（無ければ `invalid_argument`）で、指定した項目はすべて満たす要素が合う。
+
+出力: `{ "window": { …list_windows の 1 件と同じ… }, "truncated": false, "elements": [ { "id": "uie:197382:4812:2a.1f4.3", "control_type": "Button", "name": "保存", "automation_id": "SaveButton", "class_name": "Button", "rect": {…}, "enabled": true, "offscreen": false, "visible": true, "patterns": ["Invoke"] } ] }`。`rect` は縮小座標（`get_ui_tree` と同じ変換）。`elements` は浅い階層から最大 `max_results` 件で、一致がまだある・走査（20,000 節点）を打ち切ったときは `truncated: true`。`visible` は、`offscreen` でなく、矩形がモニター上にあること。`patterns` は `Invoke`・`Value`・`Toggle`・`SelectionItem`・`ExpandCollapse`・`Scroll`・`RangeValue`・`Window`・`Text`・`Selection` のうち対応するもの。`id` は `get_ui_tree` の `id` と同じ形式の要素 ID で、要素・ウィンドウが消える、または同じ HWND を別のプロセスが使うと無効になる（受け取る道具は `stale_element`）。読み取りだけで入力しない。値・テキスト本文は返さない。
+
+エラー: `kill_switch_active`・リースのエラー（`get_ui_tree` と同じ。暗黙の取得を試みる）、`invalid_argument`（要素の項目が無い・`control_type`・`match`・`max_results` が不正）、`window_not_found`（合うウィンドウが無い）、`input_blocked`（`own_window`。`window_id` が自ウィンドウ、または前面が自ウィンドウ。`detail.own_windows` つき）。
+
+**`wait_for`**（FR-M29。#266）
+
+| 引数 | 型 | 説明 |
+|------|----|------|
+| `window_id` / `title` / `process_name` | string | ウィンドウの探し方（`find_ui_element` と同じ）。要素を待たないときは、どれか 1 つが必須 |
+| `name` / `automation_id` / `control_type` | string | 要素の探し方（`find_ui_element` と同じ）。1 つでも指定すると、その窓の中の要素を待つ。窓の項目が無ければ前面のウィンドウ |
+| `match` | `"exact"` \| `"contains"` | `title` と `name` の比較（既定 `exact`） |
+| `state`\* | `"appear"` \| `"disappear"` | 現れるまで / 消えるまで |
+| `timeout_ms`\* | integer | 待つ上限。1〜60,000（範囲外は `invalid_argument`） |
+| `interval_ms` | integer | 確認の間隔。既定 500、100〜5,000 |
+
+最初の確認は待たずに行い、以後 `interval_ms` ごとに確かめる。キルスイッチが発動したら `kill_switch_active` ですぐ止まり、ツール呼び出しの取り消し・タイムアウトでも止まる（ツールのタイムアウトは `timeout_ms` の分だけ長い）。
+
+出力（成功とタイムアウトのどちらも**ツールの成功**。`isError` は付かない）: `{ "state": "appear", "target": "window" \| "element", "matched": true, "timed_out": false, "waited_ms": 1500, "window": { …list_windows の 1 件と同じ… }, "elements": [ …find_ui_element の要素と同じ… ] }`。成功時、`appear` は `window`（要素を待つときはその要素を含む窓）と、要素を待つときの `elements`（一致した要素。最大 20）を次の操作用に返す。`disappear` の成功は `window`・`elements` を含まない。タイムアウトは `matched: false`・`timed_out: true` で、`candidates: { "windows": […], "elements": […] }`（各最大 20 件。欠けたら `truncated: true`）を付ける: `appear` は近い候補（指定した項目のどれか 1 つに当たるものが先。ウィンドウ待ちは無ければ見えているウィンドウ、要素待ちは窓があればその窓の近い要素・窓が無ければ見えているウィンドウ）、`disappear` は消えずに残っている対象。要素を待つときの `window` は探した窓（無ければ省略）。自ウィンドウは候補に出さない。
+
+エラー: `find_ui_element` と同じ。加えて、`window_id` で指した窓が無いまま `appear` を待つのは現れないので、待たずに `window_not_found`（`disappear` は窓が無ければ成立）。読み取りだけで入力しない。
+
+**`ui_action`**（FR-M31。#268）
+
+| 引数 | 型 | 説明 |
+|------|----|------|
+| `element_id` | string | 必須。`find_ui_element`・`get_ui_tree`・`wait_for` が返した要素 ID（`uie:<HWND>:<PID>:<RuntimeId>`） |
+| `action` | string | 必須。`invoke`（Invoke）・`set_value`（Value の SetValue）・`toggle`（Toggle）・`select`（SelectionItem の Select）・`expand` / `collapse`（ExpandCollapse）。大文字小文字は区別しない |
+| `value` | string | `set_value` だけ必須（空文字列も有効で、内容を空にする）。ほかの操作では指定すると `invalid_argument`。10,000 文字まで |
+| `state` | string | `toggle` だけ任意: `on` / `off`（その状態にする。すでにそうなら何もしない）。省略は今の状態から 1 つ進める。ほかの操作では `invalid_argument` |
+
+出力: `{ "ok": true, "action": "toggle", "element": { …find_ui_element の要素 1 件と同じ（`id`・`control_type`・`name`・`automation_id`・`rect`〔縮小座標〕・`enabled`・`patterns` など。値は含めない）… }, "changed": true, "state": "on" }`。`changed` は UI Automation の操作を実際に呼んだか（`false` はすでにその状態）。`state` は `toggle`（`on` / `off` / `indeterminate`）・`expand` / `collapse`（`expanded` / `collapsed` / `partially_expanded` / `leaf`）・`select`（`selected` / `not_selected`）だけに付く。
+
+- **カーソルもキーボードフォーカスも動かさず、`SendInput`（キー入力・クリック）にも切り替えない。** 要素がそのパターンを持たなければ `pattern_unsupported`（`detail.supported` に対応パターン。`click`・`type` を選び直す）。
+- **入力と同じ検査**: キルスイッチ → リース（未保持は暗黙に取得。承認が要るクライアントは承認待ち。ツールのタイムアウトは他のリース取得ツールと同じ 90 秒）→ 引数 → InputGuard（要素のウィンドウが自ウィンドウ〔クリックスルーのオーバーレイを含む〕・昇格ウィンドウなら `input_blocked`。`detail.reason` は `own_window` / `elevated_window`。昇格したアプリへ UI Automation が届かないときは `access_denied`）。スコープ付きのリースは、要素のウィンドウが対象グループの外なら `input_blocked`（`outside_target_group`。その操作だけの拒否）。
+- **エラー**: `pattern_unsupported`・`stale_element`・`element_disabled`・`element_read_only`・`ui_action_failed`・`input_blocked`・`invalid_argument`・`window_not_found`・`kill_switch_active`・`lease_held_by_other`・`lease_required`・`lease_revoked`・`approval_denied`・`approval_timeout`。
+- **監査**: `tool.ui_action` を 1 行（Control が記録）。`detail` は `action`・`element_id`・`text_len`（`set_value`）・`control_type`・`automation_id`・`changed`・`result_state`。要素の名前・値は記録しない。`set_value` の本文は設定 `audit.record_text` が `true` のときだけ `text` に残し、パスワード欄の値はどの設定でも残さない（FR-AU03）。
+- ホストの実入力による一時停止（FR-M30。`input_paused`）の対象ではない: カーソル・フォーカスを動かさないので、ホストの人が操作している間も（キルスイッチ・リース・InputGuard の検査どおりに）動く。
+- **WebView2（Vue の画面）・ブラウザ**: ボタン・リンクの `invoke` は通常動く。`set_value` は Chromium のアクセシビリティ経由の `SetValue` で、ページの `input` イベントを起こさず、`v-model` などが変更に気づかないことがある（実機で確認する）。効かなければ `left_click` で欄を選んで `type` を使う。Web コンテンツの UI Automation への公開は、`--force-renderer-accessibility` などの起動引数が要る場合がある。名前は `aria-label` などから付く。
 
 #### リース
 
@@ -233,7 +325,7 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |--------|------|
 | `acquire_control` | `get_control_status` と同じ（成功すると `held`）。承認が必要でなければ `idle → held`。承認が必要な場合（承認モード。M3 から）は `idle → pending_approval` にして、ホストの結果を待つ（最大 60 秒）。拒否は 403 `approval_denied`、60 秒の無応答は 408 `approval_timeout`（§2。ツールエラー。どちらも `idle` に戻る）。拒否・タイムアウトの直後 30 秒は、同じクライアントの取得を承認なしで `approval_denied` にする（クールダウン）。他者が保持中、または他者が承認待ちなら `lease_held_by_other`。暗黙の取得（入力系のツール・`launch_app`）も同じに承認を待ち、同じコードで失敗する（承認を待てるよう、リースを取得しうるツールのタイムアウトは 90 秒で、それ以外の 30 秒より長い）。`launch_app` に呼び出しごとの承認は無く、承認はリース取得時の 1 回だけ |
 | `release_control` | `{ "ok": true }`。保持者でなければ何もしない |
-| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` と `idle_remaining_sec` は `held` のときだけ）。`pending_approval`（M3）は承認待ちで、`holder` は出さず、`mine` は承認待ちの要求者が自分のセッションかどうか。`state` が `held` のとき `mine` は保持者が自分かどうか。`holder.kind` は `mcp` / `web`（M2 から）/ `agent`（M4 から。`run_task` のタスクの実行中。依頼した本人にも保持者は `agent` なので `mine` は `false`）。`task_id` は `agent` のときだけ出る（`lease_held_by_other` の `holder` には出さない）。強制剥奪された直後は `idle` |
+| `get_control_status` | `{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind": "mcp" \| "web" \| "agent", "label": "…", "task_id": "…" }, "mine": true, "idle_remaining_sec": 240 }`（`holder` と `idle_remaining_sec` は `held` のときだけ）。`pending_approval`（M3）は承認待ちで、`holder` は出さず、`mine` は承認待ちの要求者が自分のセッションかどうか。`state` が `held` のとき `mine` は保持者が自分かどうか。`holder.kind` は `mcp` / `web`（M2 から）/ `agent`（M4 から。`run_task` のタスクの実行中。依頼した本人にも保持者は `agent` なので `mine` は `false`）。`task_id` は `agent` のときだけ出る（`lease_held_by_other` の `holder` には出さない）。強制剥奪された直後は `idle`。ホストの実入力による一時停止中（FR-M30。#270）は、これらに加えて `"paused": true`・`"paused_reason": "host_input"`・`"paused_since"`・`"resumes_at"`（RFC 3339。ホストの入力が続かなければ再開する時刻）・`"resumes_in_ms"` が付く。停止していなければ `"paused": false` だけ。リースの状態（`state` など）は変わらない |
 
 #### アプリ起動（M1.5）
 
@@ -284,6 +376,52 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 - 監査は fail-closed の 2 行（#37。NFR-S20）: プロセスを作る**前**に「試行」の行（`tool.launch_app.attempt`。agent は `agent.launch_attempt`）を同期で書き、書けなければ起動せず `audit_unavailable` を返す。起動のあとに「結果」の行（下の `tool.launch_app` / `agent.step`）を書く。結果の行が書けなくても起動は取り消さず、運用ログに Warn を出す。試行の行はキルスイッチ・リース・起動の方式と対象の検査（許可リスト・拒否リスト）を通って起動に進む呼び出しにだけ書く（`invalid_argument`・`app_not_found`・`app_denied`・`launch_failed`（解決の失敗）は試行の行を書く前に拒否するので、結果の行だけが残る）。同期書き込みの遅延は許容し、新しい待ちの上限は足さない（既存の `ToolTimeout` のまま）。
 - `detail` の内容（試行・結果の行で共通。#88）: `app_id`（指定があったとき）、`path`（指定があり、形の検査を通ったものだけ。呼び出し側が渡した綴りのまま、1,024 文字で切る）、`label`（許可リストの行を引けたとき）、`launch_mode`（ブラックリスト方式のときだけ値は `"denylist"`。ホワイトリスト方式は従来どおり記録しない）、`resolved_path`（ブラックリスト方式の `path` 指定の起動だけ。`AppLauncher.Resolve` が返した実体のパス〔リンク・ジャンクション・8.3 短縮名を解決済み〕。許可・拒否のどちらの行にも付く。1,024 文字までに切り詰める）、`resolve_failed: true`（同じく `path` 指定で、解決できなかったとき。`resolved_path` は付かず、理由は `reason`）（#173）。ホワイトリスト方式・`app_id` 指定の起動の記録は変えない。引数・作業ディレクトリは受け取らないので記録しない。`app_denied` は結果が `denied`・`error_code = app_denied`。
 - すべての結果（成功・拒否・失敗）を監査に追記する（FR-AU06）。入力スキーマに合わない呼び出し（型違い・追加のプロパティ。`app_id` / `path` はどちらも任意なので、欠落はスキーマ違反ではない）は SDK が実行前に拒否するため `Control.Launch` に届かない。この場合は MCP の受信ミドルウェアが `tool.launch_app`（`denied`・`error_code = invalid_argument`、`detail` なし。拒否された値は記録しない）を 1 件追記する。一方、リクエストの形の不備（`app_id` と `path` の同時指定・どちらも無し・ホワイトリスト方式での `path`）はスキーマを通って `Control.Launch` に届き、そこで `tool.launch_app`（agent は `agent.step`）に `denied`・`error_code = invalid_argument` として追記する（試行の行は書かない）。`list_launchable_apps` も `tool.list_launchable_apps` として追記する
+
+#### ファイル転送（FR-M27。#264）
+
+ビルド成果物を Windows に置く・ログや設定ファイルを取り出すための道具。**扱えるのは、ホスト所有者がホスト GUI の設定画面で決めた置き場所（既定 `%LOCALAPPDATA%\PuppetRemo\inbox`。なければ作る）の中だけ**で、置き場所と上限（1 ファイル・全体）を MCP から知る・変える経路は無い（入出力・エラー・`instructions` にホストの絶対パスは出ない）。設定は §7.3 の `PUT /settings`（`file_transfer.root`・`file_transfer.max_file_bytes`・`file_transfer.max_total_bytes`）。
+
+**パス**（4 つのツールで共通）: 置き場所からの相対パスだけ。区切りは `/` でも `\` でもよい。次は `invalid_argument` で拒否する: 空・200 文字（UTF-16）超・制御文字、`..` と `.` の要素・空の要素（`a//b`・末尾の区切り）、絶対パス（先頭の区切り）・UNC・デバイスパス（`\\?\`・`\\.\`）、`:` を含むもの（`C:\x`・`C:x`・代替データストリーム `a.txt:s`）、末尾がドットか空白の要素、`<>"|?*` を含む要素、予約デバイス名（CON・PRN・AUX・NUL・COM1〜9・LPT1〜9 など。拡張子付き・フォルダの要素も）、1 要素 255 文字超。**さらに実体で確かめる**: 置き場所の途中・末尾のどこかにシンボリックリンク・ジャンクション・リパースポイント（`FILE_ATTRIBUTE_REPARSE_POINT`）があれば、先が中でも外でも `invalid_argument`（1 要素ずつ `Lstat` し、リンクをたどらずに開き〔Windows は `FILE_FLAG_OPEN_REPARSE_POINT`、それ以外は `O_NOFOLLOW`〕、開いたあとにもう一度確かめて、検査と使用の間のすり替えを狭める）。デバイス・ソケットなどの特殊なファイルも拒否する。リンクは `list_files` にも出さない。
+
+**1 回の呼び出しの大きさ**: 本文は MCP の要求の上限（1 MiB）に収まるよう、**1 回 524288 バイト（base64 にする前）まで**。それより大きいファイルは、`put_file` の `offset` で分けて送り、`get_file` の `offset` で分けて取る。
+
+**`put_file`**: 入力 `{ "path", "content_base64", "offset"? }`（`content_base64` は標準の base64〔パディングあり〕。空でもよい）。`offset` が 0（既定）なら新規作成（同名の通常ファイルは置き換える。途中のフォルダは作る）。0 より大きい値は、**すでにあるファイルの大きさがちょうど `offset` のときだけ**、その末尾への追記（違えば `conflict`。新規のファイルに 0 以外は `conflict`）。出力 `{ "ok": true, "path", "size", "sha256" }`: `size` と `sha256`（SHA-256。16 進の小文字）は**書いたあとのファイル全体**のもの（分割して送ったときは、ここまでの全体）。クライアントは自分で計算した値と照らして検証できる。書き込みは直列化され、上限（`file_too_large`・`file_store_full`）を超えるときは何も書かず、新規に作りかけたファイルも残さない。分割の転送の途中のファイルは、置き場所の中に（途中の大きさのまま）見える。
+
+**`get_file`**（ro）: 入力 `{ "path", "offset"?, "length"? }`（`length` の既定・上限は 524288）。出力 `{ "path", "offset", "length", "size", "sha256", "eof", "content_base64" }`: `length` は返したバイト数、`size`・`sha256` は**ファイル全体**のもの（読んだ範囲ではない）、`eof` は返した範囲の末尾がファイルの末尾であること。`offset` がファイルの大きさを超えれば `invalid_argument`（ちょうど大きさなら空）。フォルダは `invalid_argument`、無ければ `file_not_found`。
+
+**`list_files`**（ro）: 入力 `{ "path"? }`（フォルダ。省略は置き場所そのもの）。出力 `{ "path", "entries": [ { "path", "type": "file" | "dir", "size", "modified" } ], "truncated" }`: 直下だけ（再帰しない）、名前の昇順、最大 1000 件（超えた分は切り捨てて `truncated: true`）。`path` は置き場所からの相対パス（`/` 区切り）、`modified` は RFC 3339（UTC）、フォルダの `size` は 0。置き場所がまだ無ければ空の一覧。
+
+**`delete_file`**: 入力 `{ "path" }`。ファイルまたは**空の**フォルダを消す（中身のあるフォルダは `conflict`）。出力 `{ "ok": true, "path", "size" }`（`size` は消したファイルの大きさ。フォルダは 0）。無ければ `file_not_found`。
+
+- 検査の順序は固定で、1 つでも失敗したら何もしない: キルスイッチ（`kill_switch_active`。ミドルウェア連鎖の 3 に加えて、書き込み・削除の直前にも再確認する）→ 操作リース（未保持の `mcp` は暗黙に取得する〔承認が必要なクライアントは承認を待つ。`approval_denied`・`approval_timeout`〕。他者が保持中・承認待ちは `lease_held_by_other`。ウィンドウに束縛されたリース〔#156〕では `input_blocked`〔`detail.reason` = `file_out_of_scope`〕。**4 つとも**リースが要る）→ 設定（置き場所・上限）の読み取り → 引数の検査 → 実行。リースを取りうるツールなので、タイムアウトは `LeaseToolTimeout`（`launch_app` などと同じ）。
+- 置き場所の設定が壊れている（文字列でない・形が不正）、またはアプリのデータフォルダ（`%LOCALAPPDATA%\puppet-remo`。DB・ログ）と重なるときは、既定の場所へ切り替えず `invalid_argument` で使えない（fail closed）。上限の設定が不正な値のときは既定値（100 MiB・1 GiB）を使い、運用ログに警告を出す。
+- エラー: `invalid_argument`（パス・本文・offset の不備、1 回の上限超え）、`conflict`、`file_not_found`、`file_too_large`、`file_store_full`、`lease_held_by_other`、`approval_denied`、`approval_timeout`、`kill_switch_active`、`input_blocked`。ホストの絶対パス・OS のエラーの中身はエラーに載せない（想定外の失敗は `internal`）。
+- 監査（FR-AU01）: 4 つとも `service.FileTransfer` が `tool.put_file` / `tool.get_file` / `tool.list_files` / `tool.delete_file`（`kind` = `tool`）を 1 行ずつ記録する（mcp 層は記録しない）。`detail` は `path`（置き場所からの相対パス。拒否した呼び出しは渡された綴りを 256 文字まで）・`put_file`: `offset`・`length`・成功時は `size`・`sha256`、`get_file`: `offset`・成功時は `length`・`size`・`sha256`、`list_files`: 成功時は `count`・`truncated`、`delete_file`: 成功時は `size`。**ファイルの中身は記録しない**（`audit.record_text` の設定にも依らない）。`result` は成功が `ok`、`invalid_argument`・キルスイッチ・リース・承認の拒否が `denied`、それ以外の失敗が `error`。
+- ホストの実入力による一時停止（FR-M30。`input_paused`）の対象ではない: 4 つのツールは画面の入力ではないので、ホストがマウス・キーボードを使っている間も（キルスイッチ・リースの検査どおりに）動く。
+- 置き場所の中のファイルをホスト上の他の機能が参照するための窓口として、`service.FileTransfer.ResolveInRoot(rel)`（同じパス規則・リンクの拒否で実体の絶対パスを返す。リースは見ない）を持つ。
+
+
+#### コマンド実行（FR-M32。#265）
+
+QA で、バージョン・ファイルの有無・プロセス・通信の確認や、ファイル転送で置いたインストーラーの実行を、画面操作なしでするための道具。**ホスト所有者の許可リスト（ホストの JSON ファイル。MCP からは変えられない）にある項目だけ**を実行し、終了コード・stdout・stderr を返す。**既定はオフ**（ホスト GUI の設定画面。`command.enabled`）で、オフのときは `command_disabled`。ON/OFF・許可リストの場所・許可リストの中身（実行ファイルのパス・固定の引数）を MCP から知る・変える経路は無い。許可リストの書き方・例は [docs/operations/command-allowlist.md](../operations/command-allowlist.md)。
+
+**`list_commands`**（ro・リース不要）: 入力なし。出力 `{ "commands": [ { "name", "description", "params": [ { "name", "type", "min"?, "max"?, "values"?, "pattern"?, "max_length"?, "extensions"? } ], "timeout_sec", "max_output_bytes" } ] }`。**有効な項目だけ**を名前の昇順で返す（`params` は項目が受け取る引数の定義で、無ければ `[]`）。実行ファイルのパス・固定の引数・作業フォルダは返さない。キルスイッチ・オフ・許可リストの不備は `run_command` と同じ。
+
+**`run_command`**: 入力 `{ "name", "args"? }`。`name` は許可リストの項目の名前（完全一致）、`args` は項目が定義した引数（`params`）の値の対応表で、**すべて必須・余計なものは不可**（数値は JSON の数値〔数字だけの文字列も可〕、ほかは文字列）。**コマンドライン・シェル・実行ファイルを渡す入力は無い**: 入力スキーマは `name` と `args` だけで、追加のプロパティは SDK が実行前に拒否し（`tool.run_command` の `denied`・`invalid_argument` として監査に残す。値は残さない）、コマンドを起こさない。
+
+出力 `{ "ok": true, "name", "exit_code", "timed_out", "duration_ms", "stdout", "stdout_encoding", "stdout_base64"?, "stdout_truncated", "stderr", "stderr_encoding", "stderr_base64"?, "stderr_truncated" }`。
+
+- 非 0 の終了コードはエラーではなく結果（`ok: true`）。タイムアウト（項目の `timeout_sec`。既定 30 秒・上限 600 秒）はエラーではなく結果で、プロセスを（Windows ではジョブオブジェクトで子孫ごと）終了させ、`timed_out: true`・`exit_code: -1`。
+- 出力は stdout・stderr それぞれ項目の `max_output_bytes`（既定 64 KiB・上限 512 KiB）まで保持し、超えた分は捨てて `*_truncated: true`（途中で切れた文字は落とす）。
+- 文字列は UTF-8。`*_encoding` は `utf-8`、BOM つき UTF-16 を直したときの `utf-16le`、どちらでもない（日本語環境の CP932 など）ときの `binary`。`binary` のときだけ、文字列は不正なバイトを U+FFFD にしたもの（欠ける）で、**元のバイト列を `*_base64` で返す**。
+- 起動は**シェルを使わず**、実行ファイルを引数の配列で直接起こす（`cmd /c`・`powershell -Command` の自由文・パイプ・リダイレクトは無い。`&`・`$(...)`・`|` などは渡してもただの文字）。差し込みの値は 1 つの引数の中に入るだけで、分割・再解釈されない。標準入力は空・ウィンドウなし・環境変数は最小限。
+- 引数の型: `int`（`min`〜`max`）・`enum`（`values` のどれか）・`string`（`pattern` に全体一致・`max_length` 以下。先頭に置く差し込みは `-`・`/` で始まれない）・`inbox_path`（ファイル転送の置き場所の中の実在する通常ファイルの相対パス。`extensions` のどれかの拡張子。`FileTransfer.ResolveInRoot` で、`put_file` と同じ規則〔`..`・絶対パス・UNC・ドライブ指定・`:`・予約名・リンク経由・置き場所の外を拒否〕のまま実体の絶対パスにして渡す）。合わない値・足りない引数・余計な引数は `invalid_argument`（メッセージに値は載せない）。
+- 許可リストの読み込み（呼び出しのたびに読み直す）は、1 項目でも不備があれば全体を `command_allowlist_invalid` で使えなくする（fail closed）。拒否する不備: 実行ファイルが相対パス・UNC・デバイスパス・`.bat` `.cmd` などのスクリプト・ショートカット、`cmd.exe`・`powershell.exe`・`pwsh.exe`・`wscript.exe`・`cscript.exe`・`mshta.exe` などのシェル・スクリプトホストを実行ファイルにしつつ `string`・`inbox_path` の差し込みを使う項目、未定義・未使用の差し込み、パターンのない `string`、範囲のない `int`、未知のキー、重複した名前、範囲外のタイムアウト・上限。許可リストのファイル・実行ファイル・作業フォルダがファイル転送の置き場所の中にあるものも使えない（`put_file` で差し替えられるため）。
+- 検査の順序は固定で、1 つでも失敗したら何も起動しない: キルスイッチ（`kill_switch_active`。起動の直前にも再確認）→ ON/OFF（`command_disabled`。操作リースは取りに行かない）→ 操作リース（未保持の `mcp` は暗黙に取得する〔承認が必要なクライアントは承認を待つ。`approval_denied`・`approval_timeout`〕。他者が保持中は `lease_held_by_other`。ウィンドウに束縛されたリース〔FR-L09〜L14〕では `input_blocked`・`detail.reason` = `command_out_of_scope`）→ 許可リスト（`command_allowlist_invalid`）→ 名前（無い・無効な項目は `command_not_found`）→ 引数（`invalid_argument`・`file_not_found`）→ 実行（同時に 4 つまで。超えると `conflict`。起動できなければ `command_start_failed`）。実行中のコマンドは、キルスイッチの発動で終了させる。ホストの実入力による一時停止（FR-M30）の対象外（入力を注入しないため）。
+- ツール呼び出しのタイムアウトは、リースを取得しうるツールの 90 秒に、項目のタイムアウトの上限 600 秒を足す（承認待ちのあとに最大の実行時間が残る）。
+- 監査（FR-AU01）: `service.CommandExec` が `tool.run_command` / `tool.list_commands`（`kind` = `tool`）を 1 行ずつ記録する（mcp 層は記録しない。スキーマ違反の拒否だけ mcp 層が記録する）。`run_command` の `detail`: `name`・`args`（呼び出し側が渡した値。検査の前の値で、1 つ 128 文字・16 個で切る。文字列・数値以外は型名だけ）・成功時は `exit_code`・`timed_out`・`stdout_bytes`・`stderr_bytes`・`stdout_truncated`・`stderr_truncated`。`list_commands` の `detail`: `count`。**stdout・stderr の中身と実行ファイルのパスは記録しない**。`result`: `ok`（非 0 の終了コード・タイムアウトを含む）/ `denied`（オフ・名前なし・`invalid_argument`・キルスイッチ・リース・承認の拒否）/ `error`。string の差し込みに秘密を渡さないこと（値が監査に残る）。
+- エラー: `command_disabled`、`command_not_found`、`command_allowlist_invalid`、`command_start_failed`、`invalid_argument`、`file_not_found`、`conflict`、`lease_held_by_other`、`approval_denied`、`approval_timeout`、`kill_switch_active`、`input_blocked`。ホストの絶対パス・許可リストの中身・OS のエラーの中身はエラーに載せない。
+
 
 #### 内蔵エージェント
 
@@ -471,7 +609,7 @@ Cookie を使わないため、ブラウザ上のビューアは `viewer_id`（U
 | `target` | 対象ウィンドウ（スコープ付きのリース。#157。FR-W13。実機未確認）の状態。`{ "state": "none" \| "active" \| "halted", "process"?, "reason"?, "reselect"?, "blocked_by"?: { "window_id", "process", "pid", "reason" }, "members": 1, "notices"?: ["capture_partial"], "excluded"?: [{…}] }`。状態が変わるたび（前回送ったものと同じなら送らない）に配信する。**スコープ付きのリースがない初期状態の `none` は送らない**（接続直後にリースを保持していれば、`ready` の次に現在の状態を送る）。`none` は、保持していたスコープ付きのリースを失った・解放したときに 1 回送り（モニター表示に戻る）、`halted` の `reason` は §3.4 の `detail.reason`（`target_closed` / `target_replaced` / `target_unsupported` / `target_minimized` / `target_not_foreground` / `unrelated_same_process` / `related_cross_process` / `related_unverifiable` / `outside_target_group` / `target_obscured` / `capture_unavailable` / `capture_member_unavailable`）。`reselect: true` は「再開」ができず選び直しのみ（`target_closed` / `target_replaced` / `target_unsupported`）。`notices` の `capture_partial` は**停止ではなく通知**（所有関係を確かめられず表示から除外したウィンドウがある。`excluded` に分類つきで並べる。そのウィンドウが前面・フォーカス先・座標の最上位になったときに停止する）。ウィンドウのタイトルは載せない |
 | `lease` | リースの変化。`{ "state": "idle" \| "pending_approval" \| "held", "holder": { "kind", "label" }, "mine": true }`。`holder` は `idle` のときだけ省く（M3: `pending_approval` では承認待ちの要求者の `holder` を付け、`mine` は要求者が自分のビューアかどうか。承認待ちでは入力が許されない）。リースの変化は、承認待ちの開始（`pending_approval`）・許可（`held`）・拒否・タイムアウト・取り下げ（`idle`）のたびに全ビューアへ送る。クライアントは CustomEvent `remo:lease-changed` を発火し、HTMX がリースパネルを再取得する |
 | `killswitch` | `{ "active": true }`。続けて 4503 で閉じる。以降の接続も 4503 で閉じられる |
-| `error` | `{ "code", "message" }`。入力の拒否と、`POST /viewer/lease/acquire` の承認待ちの失敗。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `desktop_unavailable` / `internal`、承認待ちの失敗の `approval_denied`（ホストが拒否）/ `approval_timeout`（60 秒の無応答）。承認待ちの失敗の `error` は、要求したビューアの接続だけに送り（他のビューアには送らない）、同時に `lease`（`idle`）が全ビューアへ届く。`internal` の `message` は詳細を含まない固定文。切断はしない。**`input_blocked`・`invalid_coordinates` には `reason`（§3.4 の `detail.reason`。`halted` の理由・`key_out_of_scope`・`clipboard_out_of_scope`・`target_halted` など。#157）を付ける** |
+| `error` | `{ "code", "message" }`。入力の拒否と、`POST /viewer/lease/acquire` の承認待ちの失敗。`code` は §2 のコードで、`lease_required` / `lease_held_by_other`（承認待ちの間の入力は、要求者本人でもこれ）/ `lease_revoked` / `input_blocked` / `invalid_coordinates` / `invalid_argument`（`input.text` の長さなど）/ `kill_switch_active` / `input_paused`（FR-M30。`resumes_at`・`retry_after_ms` も付く）/ `desktop_unavailable` / `internal`、承認待ちの失敗の `approval_denied`（ホストが拒否）/ `approval_timeout`（60 秒の無応答）。承認待ちの失敗の `error` は、要求したビューアの接続だけに送り（他のビューアには送らない）、同時に `lease`（`idle`）が全ビューアへ届く。`internal` の `message` は詳細を含まない固定文。切断はしない。**`input_blocked`・`invalid_coordinates` には `reason`（§3.4 の `detail.reason`。`halted` の理由・`key_out_of_scope`・`clipboard_out_of_scope`・`target_halted` など。#157）を付ける** |
 
 **クライアント → サーバー**
 
@@ -612,7 +750,7 @@ GUI は AI が操作できないよう、自ウィンドウをキャプチャか
 | POST | `/approvals/{id}/deny` | なし | 同上（拒否。`Approval.Resolve(id, false)`。取得は `approval_denied`） |
 | GET | `/tasks/{id}/cancel/confirm` | なし | 200 中断の確認モーダル（フラグメント。確定のボタンが `POST /tasks/{id}/cancel` を送り、`#task-status-{id}` を `outerHTML` で差し替える）。無いタスクは 404 `not_found`、終了済みは 409 `conflict`（モーダルなし） |
 | POST | `/tasks/{id}/cancel` | なし | 200 タスクの状態の 1 行（`[data-task-status]`。状態バッジ・ステップ数 / 上限・経過時間。中断できる状態なら中断ボタン）と、完了のトースト（OOB）。ダッシュボードの実行中タスクと詳細の先頭が同じ部品で、中断のボタンは確認モーダル（`GET /tasks/{id}/cancel/confirm`）を開き、確定のボタンが `#task-status-{id}` を `outerHTML` で差し替える（応答は `#modal-root` も OOB で空にする）。操作主体は `host` で、監査は `TaskAdmin.CancelByHost` が記録する。**終了済みなら現在の状態をそのまま返し**（冪等。トーストは「すでに終了しています」）、中断した（`cancelled`）ときは「タスクを中断しました。」、まだ終わっていないときは「タスクの中断を要求しました。」。無い `id` は 404 `not_found`（エラーのインラインアラート。確認モーダルを開いたままにしないよう、応答は `#modal-root` を空にする OOB も添える）。M4 |
-| PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`update.apply_mode`、`update.channel`（`stable` / `nightly`）、`autostart`（OS のスタートアップ登録）。ログのレベル（NFR-O01）は設定項目ではなく、環境変数 `PUPPET_REMO_LOG_LEVEL` で指定する（受け付けない） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
+| PUT | `/settings` | `server.port`（1024〜65535）、`killswitch.hotkey`、`screenshot.max_dimension`（256〜4096）、`lease.idle_timeout_sec`（30〜3600）、`viewer.default_quality`、`viewer.default_fps`、`audit.thumbnails_enabled`、`audit.record_text`、`audit.retention_days`、`audit.thumbs_max_bytes`、`file_transfer.root`（ファイル転送の置き場所。ローカルの絶対パス。UNC・ドライブの直下は不可。空なら既定の `%LOCALAPPDATA%\PuppetRemo\inbox`。FR-S24）、`file_transfer.max_file_bytes`（1〜2^53。既定 104857600）、`file_transfer.max_total_bytes`（1〜2^53。既定 1073741824）、`command.enabled`（チェックボックス。外れていると off。既定 off。コマンド実行を認める。FR-S25。#265）、`command.allowlist_path`（許可リストのファイル。ローカルの絶対パス。UNC・ドライブの直下は不可。空なら既定の `%LOCALAPPDATA%\puppet-remo\commands.json`）、`update.apply_mode`、`update.channel`（`stable` / `nightly`）、`hostinput.pause_enabled`（チェックボックス。外れていると off。FR-M30）、`hostinput.pause_idle_sec`（1〜600）、`autostart`（OS のスタートアップ登録）。ログのレベル（NFR-O01）は設定項目ではなく、環境変数 `PUPPET_REMO_LOG_LEVEL` で指定する（受け付けない） | 200 フォームのフラグメント。検証エラーは 422 のフラグメント（項目別のメッセージ）。`server.port` の変更は再 Listen する |
 | PUT | `/agent` | `enabled`、`consent`（`enabled` を on にするときは必須のチェック。文面は接続方式が `chatgpt`・`chatgpt-codex` のときは ChatGPT のプランの使用量が使われる旨を含む。FR-G14）、`model`（接続方式 `openai_api_key` 用。FR-S11）、`max_steps`（1〜500）、`max_duration_sec`（30〜7200）、`keep_screenshots`（1〜10。FR-S19。`chatgpt-codex` では効かない）、`deny_processes`、`approve_processes`（改行区切り） | 200 フラグメント。選んだ接続方式が使えない状態（`openai_api_key` で API キー未登録、`chatgpt` で未サインイン・認可切れなど、`chatgpt-codex` でエンジン未取得・未サインイン・認可切れなど）で `enabled` にしようとすると 409 `agent_disabled`。同意なしは 422。有効化時は `agent.consent_at` と監査記録（FR-G14） |
 | PUT | `/agent/api-key` | `api_key`（伏せ字の入力） | 200 「登録済み」のフラグメント。**値は応答・ログ・監査に出さない**。資格情報マネージャーに保存し、保存に失敗したら 500 `internal` |
 | DELETE | `/agent/api-key` | なし | 200（資格情報を削除し、エージェントを無効にする。実行中のタスクは中断） |
@@ -820,3 +958,9 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.58 | 2026-11-26 | §6 の JSON API（`/api/v1/status`・`monitors`・`lease`・`openapi.json`）を実装した旨に改め、`openapi.json` を表に加えた。§7.5 の M1 の差分から `/api/v1` の「M2 以降」を外した | #232 |
 | 1.59 | 2026-11-27 | §2 の `audit_unavailable` に GUI の設定変更を追記。§7.3 の冒頭に、設定変更（`PUT /settings`・`/agent*`・`/apps*`）の fail-closed（監査に書けなければ変更を戻して 503。戻せなければ警告文）を追記（#182） | #182 |
 | 1.60 | 2026-11-27 | 内蔵エージェントの接続方式に `chatgpt-codex` を追加（#247）: §1 のホスト専用の操作、§2 の `agent_disabled` の `detail.reason`（`openai_key_missing` と `codex_*` の 6 種）と失敗コード（`codex_usage_limit` / `codex_unauthorized` / `codex_engine_unavailable` / `codex_error`）、§3.3 の `run_task`・`get_task`（`connection` の値・`openai_steps` の数え方・`error_code`）、§3.4、§7.1 の `/agent`、§7.3 の `PUT /agent`・`PUT /agent/connection`（`chatgpt` ↔ `chatgpt-codex` は確認なし）と `/agent/codex/*` のルート（取得・中止・サインイン・中止・サインアウトの確認・`DELETE /agent/codex`〔`remove_engine`〕・再開・モデル・`PUT /agent/codex`）、§7.4 の `rev_codex`・`#codex-card`。公式経路: §7.6 のポートを `1455` → `1457` → 空きポートに、`POST /agent/chatgpt/signin` のポリシー拒否（`policy_denied`・Codex への案内）、§7.5 の ChatGPT のプラン経路を実装済みの記述に（実装の名前） | #247 |
+| 1.61 | 2026-11-28 | §3.3 の `screenshot` に `window_id`（ウィンドウ単位の撮影。PrintWindow・前面にしない・モニター撮影へ切り替えない）と `include_owned` を追加し、出力に `window_id`・`rect`（対象が最も重なるモニターの縮小座標）・`windows`・`omitted`、拒否（`window_not_found`・自ウィンドウ `own_window` / `elevated_window` / `target_minimized` / `target_unsupported` / `capture_unavailable` の `input_blocked`）を追記。`window_id` を省略したときの動作は変更なし | #269（FR-M26） |
+| 1.62 | 2026-11-28 | §3.3 に `find_ui_element`（UI 要素を名前・AutomationId・ControlType で探す。FR-M28。#267）と `wait_for`（ウィンドウ・UI 要素が現れる・消えるまで待つ。タイムアウトは結果で候補を返す。FR-M29。#266）を追加し、`get_ui_tree` の各ノードに `control_type`・`automation_id`・`class_name`・`patterns`・`offscreen` と要素 ID を出すようにした。§2 に `stale_element`（409）を追加 | #266・#267 |
+| 1.63 | 2026-11-28 | ホストの実入力による一時停止（FR-M30。#270）: §2 に `input_paused`（409）、§3 の `get_control_status` に `paused`・`resumes_at` など、WebSocket の `error` に `input_paused`、§7.3 の設定項目に `hostinput.pause_enabled`・`hostinput.pause_idle_sec` | ホストの人の操作とリモートの入力の取り合いを避けるため |
+| 1.64 | 2026-11-28 | ファイル転送の MCP ツール `put_file` / `get_file` / `list_files` / `delete_file`（FR-M27。#264）を追加: §2 に `file_not_found`（404）・`file_too_large`（413）・`file_store_full`（507）、§3.1 の `instructions`、§3.3 のツール表と「ファイル転送」節（パスの規則・リンクの拒否・1 回 512 KiB と `offset` での分割・SHA-256 と大きさ・検査の順序・監査）、§7.3 の `PUT /settings` に `file_transfer.*` | #264 |
+| 1.65 | 2026-11-28 | §3.3 に `ui_action`（UI 要素を UI Automation のパターンで操作する。カーソル・フォーカスを動かさない。FR-M31。#268）を追加。§2 に `pattern_unsupported`・`element_disabled`・`element_read_only`・`ui_action_failed`（いずれも 409）を追加 | #268 |
+| 1.66 | 2026-11-28 | コマンド実行の MCP ツール `run_command` / `list_commands`（FR-M32。#265）を追加: §2 に `command_disabled`（403）・`command_not_found`（404）・`command_allowlist_invalid`（503）・`command_start_failed`（502）、§3.1 の `instructions`、§3.3 のツール表と「コマンド実行」節（既定オフ・許可リストの項目だけ・名前と型つきの引数だけ・シェルを使わない・型・タイムアウトと出力の上限・文字コード・検査の順序・監査）、§7.3 の `PUT /settings` に `command.*` | #265 |

@@ -28,7 +28,13 @@ const (
 	CodeInvalidArgument     Code = "invalid_argument"
 	CodeConflict            Code = "conflict"
 	CodeWindowNotFound      Code = "window_not_found"
+	CodeStaleElement        Code = "stale_element"
+	CodePatternUnsupported  Code = "pattern_unsupported"
+	CodeElementDisabled     Code = "element_disabled"
+	CodeElementReadOnly     Code = "element_read_only"
+	CodeUIActionFailed      Code = "ui_action_failed"
 	CodeInputBlocked        Code = "input_blocked"
+	CodeInputPaused         Code = "input_paused"
 	CodeDesktopUnavailable  Code = "desktop_unavailable"
 	CodeAgentDisabled       Code = "agent_disabled"
 	CodeTaskNotFound        Code = "task_not_found"
@@ -37,37 +43,59 @@ const (
 	CodeLaunchFailed        Code = "launch_failed"
 	CodeAuditUnavailable    Code = "audit_unavailable"
 	CodeInternal            Code = "internal"
+	// ファイル転送（#264。put_file / get_file / list_files / delete_file）。
+	CodeFileNotFound  Code = "file_not_found"
+	CodeFileTooLarge  Code = "file_too_large"
+	CodeFileStoreFull Code = "file_store_full"
+	// コマンド実行（#265。run_command / list_commands）。
+	CodeCommandDisabled         Code = "command_disabled"
+	CodeCommandNotFound         Code = "command_not_found"
+	CodeCommandAllowlistInvalid Code = "command_allowlist_invalid"
+	CodeCommandStartFailed      Code = "command_start_failed"
 )
 
 // codeStatus は Code → HTTP ステータス（API 仕様 §2 の表）。
 var codeStatus = map[Code]int{
-	CodeInvalidHost:         400,
-	CodeInvalidOrigin:       403,
-	CodeMissingHeader:       403,
-	CodeWhoisFailed:         403,
-	CodeDeviceNotRegistered: 403,
-	CodeClientDisabled:      403,
-	CodeUnauthorized:        401,
-	CodeRateLimited:         429,
-	CodeKillSwitchActive:    503,
-	CodeLeaseRequired:       409,
-	CodeLeaseHeldByOther:    409,
-	CodeLeaseRevoked:        409,
-	CodeApprovalDenied:      403,
-	CodeApprovalTimeout:     408,
-	CodeInvalidCoordinates:  400,
-	CodeInvalidArgument:     400,
-	CodeConflict:            409,
-	CodeWindowNotFound:      404,
-	CodeInputBlocked:        409,
-	CodeDesktopUnavailable:  503,
-	CodeAgentDisabled:       409,
-	CodeTaskNotFound:        404,
-	CodeAppNotFound:         404,
-	CodeAppDenied:           403,
-	CodeLaunchFailed:        409,
-	CodeAuditUnavailable:    503,
-	CodeInternal:            500,
+	CodeInvalidHost:             400,
+	CodeInvalidOrigin:           403,
+	CodeMissingHeader:           403,
+	CodeWhoisFailed:             403,
+	CodeDeviceNotRegistered:     403,
+	CodeClientDisabled:          403,
+	CodeUnauthorized:            401,
+	CodeRateLimited:             429,
+	CodeKillSwitchActive:        503,
+	CodeLeaseRequired:           409,
+	CodeLeaseHeldByOther:        409,
+	CodeLeaseRevoked:            409,
+	CodeApprovalDenied:          403,
+	CodeApprovalTimeout:         408,
+	CodeInvalidCoordinates:      400,
+	CodeInvalidArgument:         400,
+	CodeConflict:                409,
+	CodeWindowNotFound:          404,
+	CodeStaleElement:            409,
+	CodePatternUnsupported:      409,
+	CodeElementDisabled:         409,
+	CodeElementReadOnly:         409,
+	CodeUIActionFailed:          409,
+	CodeInputBlocked:            409,
+	CodeInputPaused:             409,
+	CodeDesktopUnavailable:      503,
+	CodeAgentDisabled:           409,
+	CodeTaskNotFound:            404,
+	CodeAppNotFound:             404,
+	CodeAppDenied:               403,
+	CodeLaunchFailed:            409,
+	CodeAuditUnavailable:        503,
+	CodeInternal:                500,
+	CodeFileNotFound:            404,
+	CodeFileTooLarge:            413,
+	CodeFileStoreFull:           507,
+	CodeCommandDisabled:         403,
+	CodeCommandNotFound:         404,
+	CodeCommandAllowlistInvalid: 503,
+	CodeCommandStartFailed:      502,
 }
 
 // Valid は c が API 仕様のエラーコード表にあるコードかを返す。
@@ -148,7 +176,21 @@ var (
 	ErrInvalidCoordinates = NewError(CodeInvalidCoordinates, "coordinates are out of range", nil)
 	ErrInvalidArgument    = NewError(CodeInvalidArgument, "invalid argument", nil)
 	ErrWindowNotFound     = NewError(CodeWindowNotFound, "window not found", nil)
-	ErrInputBlocked       = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	// ErrStaleElement は、UI 要素 ID の指す要素（ウィンドウ・プロセスを含む）がもう無いこと。古い ID は別の要素に当たらず、必ずこれになる。
+	ErrStaleElement = NewError(CodeStaleElement, "the element no longer exists (find it again)", nil)
+	// ErrPatternUnsupported は、ui_action の操作に必要な UI Automation のパターンを要素が持たないこと（detail: action・pattern・supported）。
+	// キー入力・クリックには切り替えない。
+	ErrPatternUnsupported = NewError(CodePatternUnsupported, "the element does not support the pattern the action needs", nil)
+	// ErrElementDisabled は、操作する要素が無効（IsEnabled が false）なこと。
+	ErrElementDisabled = NewError(CodeElementDisabled, "the element is disabled", nil)
+	// ErrElementReadOnly は、set_value の対象が読み取り専用なこと。
+	ErrElementReadOnly = NewError(CodeElementReadOnly, "the element is read-only", nil)
+	// ErrUIActionFailed は、UI Automation が操作を受け付けなかったこと（detail.reason。要素の状態では実行できない・応答しないなど）。
+	ErrUIActionFailed = NewError(CodeUIActionFailed, "the UI Automation action failed", nil)
+	ErrInputBlocked   = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	// ErrInputPaused は、ホストの人が実際のマウス・キーボードを使っているために、リモートの入力を一時停止している間の拒否（#270）。
+	// Detail は resumes_at（RFC 3339。入力がなければ再開する時刻）と retry_after_ms（再開までの目安のミリ秒）。
+	ErrInputPaused        = NewError(CodeInputPaused, "input is paused while the host is using the mouse or keyboard", nil)
 	ErrDesktopUnavailable = NewError(CodeDesktopUnavailable, "the desktop is unavailable", nil)
 	ErrAgentDisabled      = NewError(CodeAgentDisabled, "the agent is disabled", nil)
 	ErrTaskNotFound       = NewError(CodeTaskNotFound, "task not found", nil)
@@ -160,4 +202,13 @@ var (
 	// ErrAuditUnavailable は、起動の試行を監査に書けないために起動しなかったこと（fail-closed。NFR-S20）。
 	// 書き込みの失敗の原因（DB のパス・SQL など）は載せない。原因は運用ログにだけ残す。
 	ErrAuditUnavailable = NewError(CodeAuditUnavailable, "the audit log is unavailable, so the app was not launched", nil)
+	// ファイル転送（#264）。メッセージにパスは入れない。
+	ErrFileNotFound  = NewError(CodeFileNotFound, "file not found", nil)
+	ErrFileTooLarge  = NewError(CodeFileTooLarge, "the file exceeds the per-file size limit set by the host", nil)
+	ErrFileStoreFull = NewError(CodeFileStoreFull, "the transfer folder would exceed the total size limit set by the host", nil)
+	// コマンド実行（#265）。メッセージに許可リストの中身・実行ファイルのパスは入れない。
+	ErrCommandDisabled         = NewError(CodeCommandDisabled, "command execution is turned off by the host owner", nil)
+	ErrCommandNotFound         = NewError(CodeCommandNotFound, "no such command in the host's allowlist (or it is disabled)", nil)
+	ErrCommandAllowlistInvalid = NewError(CodeCommandAllowlistInvalid, "the host's command allowlist is missing or invalid, so no command can run", nil)
+	ErrCommandStartFailed      = NewError(CodeCommandStartFailed, "the command could not be started", nil)
 )

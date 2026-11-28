@@ -18,6 +18,48 @@ type fakeUIANode struct {
 	// childrenCalls は Children が呼ばれた回数。
 	childrenCalls int
 	childrenErr   error
+
+	// パターン操作（uiaActor）の偽。呼ばれたメソッドを acts に記録する。
+	acts     []string
+	actErr   error // 状態を変える呼び出しが返すエラー
+	toggle   int
+	expand   int
+	selected bool
+	readOnly bool
+	value    string
+}
+
+func (n *fakeUIANode) act(name string) error {
+	n.acts = append(n.acts, name)
+	return n.actErr
+}
+
+func (n *fakeUIANode) Invoke() error { return n.act("Invoke") }
+func (n *fakeUIANode) ValueIsReadOnly() (bool, error) {
+	return n.readOnly, nil
+}
+func (n *fakeUIANode) SetValue(text string) error {
+	n.value = text
+	return n.act("SetValue")
+}
+func (n *fakeUIANode) ToggleState() (int, error) { return n.toggle, nil }
+func (n *fakeUIANode) Toggle() error {
+	n.toggle = (n.toggle + 1) % 3
+	return n.act("Toggle")
+}
+func (n *fakeUIANode) Select() error {
+	n.selected = true
+	return n.act("Select")
+}
+func (n *fakeUIANode) IsSelected() (bool, error) { return n.selected, nil }
+func (n *fakeUIANode) ExpandState() (int, error) { return n.expand, nil }
+func (n *fakeUIANode) Expand() error {
+	n.expand = uiaExpandExpanded
+	return n.act("Expand")
+}
+func (n *fakeUIANode) Collapse() error {
+	n.expand = uiaExpandCollapsed
+	return n.act("Collapse")
 }
 
 func (n *fakeUIANode) Props() uiaProps { return n.props }
@@ -221,7 +263,7 @@ func TestUIATreeRedactsPasswordAndKeepsValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree := uiaTreeFromWalked(nodes)
+	tree := uiaTreeFromWalked(nodes, uiaIDMaker{hwnd: 100, pid: 7})
 	user, pass := tree.Children[0], tree.Children[1]
 	if user.Value != "alice" || user.ValueRedacted {
 		t.Errorf("user = value %q redacted %v", user.Value, user.ValueRedacted)
@@ -237,16 +279,23 @@ func TestUIATreeShape(t *testing.T) {
 	root.props.RuntimeID = []int32{42, 0x1f4, -3}
 	root.props.Rect = domain.Rect{X: 1, Y: 2, W: 3, H: 4}
 	root.props.Enabled = false
+	root.props.AutomationID = "MainWindow"
+	root.props.ClassName = "Notepad"
+	root.props.Patterns = []string{domain.PatternWindow}
+	root.props.Offscreen = true
 	root.kids = []*fakeUIANode{uiaTestNode("b")}
 	nodes, err := walkUIA(context.Background(), root, 1, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree := uiaTreeFromWalked(nodes)
-	if tree.ID != "uia:2a.1f4.fffffffd" || tree.Role != "Window" || tree.Name != "w" || tree.Rect != root.props.Rect || tree.Enabled {
+	tree := uiaTreeFromWalked(nodes, uiaIDMaker{hwnd: 100, pid: 7})
+	if tree.ID != "uie:100:7:2a.1f4.fffffffd" || tree.Role != "Window" || tree.Name != "w" || tree.Rect != root.props.Rect || tree.Enabled {
 		t.Errorf("root = %+v", tree)
 	}
-	if len(tree.Children) != 1 || tree.Children[0].Role != "Button" || tree.Children[0].ID != "uia:n1" {
+	if tree.AutomationID != "MainWindow" || tree.ClassName != "Notepad" || !slices.Equal(tree.Patterns, []string{"Window"}) || !tree.Offscreen {
+		t.Errorf("root automation id %q, class %q, patterns %v, offscreen %v", tree.AutomationID, tree.ClassName, tree.Patterns, tree.Offscreen)
+	}
+	if len(tree.Children) != 1 || tree.Children[0].Role != "Button" || tree.Children[0].ID != "" {
 		t.Errorf("children = %+v", tree.Children)
 	}
 }

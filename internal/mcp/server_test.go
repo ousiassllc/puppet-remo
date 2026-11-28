@@ -40,6 +40,9 @@ var wantTools = map[string]bool{ // 値は readOnlyHint
 	"clipboard_read":     true,
 	"clipboard_write":    false,
 	"get_ui_tree":        true,
+	"find_ui_element":    true,
+	"wait_for":           true,
+	"ui_action":          false,
 	"acquire_control":    false,
 	"release_control":    false,
 	"get_control_status": true,
@@ -50,6 +53,14 @@ var wantTools = map[string]bool{ // 値は readOnlyHint
 	"run_task":    false,
 	"get_task":    true,
 	"cancel_task": false,
+	// ファイル転送（#264）
+	"put_file":    false,
+	"get_file":    true,
+	"list_files":  true,
+	"delete_file": false,
+	// コマンド実行（#265）
+	"run_command":   false,
+	"list_commands": true,
 }
 
 // ownWindowHints は、puppet-remo 自身のウィンドウについて説明に含めるべき語（ツール名 → 語）。
@@ -76,7 +87,8 @@ func TestInitializeAndToolList(t *testing.T) {
 		"already open window forward", "reused_existing_window", "screenshot or list_windows before typing",
 		"never captured in screenshots", "input_blocked", "own_window", "own_windows", "blocked: true",
 		"run_task", "get_task", "cancel_task", "asynchronously", "agent_disabled", "Only one task runs at a time",
-		"untrusted", "only the model's claim", "nor any new window"} {
+		"untrusted", "only the model's claim", "nor any new window",
+		"put_file", "get_file", "list_files", "delete_file", "transfer folder", "SHA-256", "run_command", "allowlist"} {
 		if !strings.Contains(init.Instructions, want) {
 			t.Errorf("Instructions lack %q: %s", want, init.Instructions)
 		}

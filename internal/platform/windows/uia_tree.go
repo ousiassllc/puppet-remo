@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"hash"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -22,7 +21,9 @@ type uiaProps struct {
 	ControlType  int
 	Name         string
 	AutomationID string
-	Value        string // ValuePattern の値。パスワード欄では取得しない
+	ClassName    string
+	Patterns     []string // 対応しているパターン名（domain.Pattern*。この順）
+	Value        string   // ValuePattern の値。パスワード欄では取得しない
 	IsPassword   bool
 	Enabled      bool
 	Offscreen    bool
@@ -33,6 +34,8 @@ type uiaProps struct {
 
 // uiaNode は走査できる UIA 要素。走査は専用スレッド 1 本の上で行う。
 type uiaNode interface {
+	// uiaActor はパターン操作（Act。#268）。
+	uiaActor
 	// Props は要素のプロパティを返す。
 	Props() uiaProps
 	// Children は直接の子（コントロールビュー）を返す。呼び出し側が各子の Release を呼ぶ。
@@ -113,19 +116,36 @@ func uiaReleaseAll(nodes []uiaNode) {
 	}
 }
 
-// uiaTreeFromWalked は走査結果を domain.UINode の木に整形する。パスワード欄は値を持たず ValueRedacted を立てる。
-func uiaTreeFromWalked(nodes []uiaWalked) domain.UINode { return uiaTreeAt(nodes, 0) }
+// uiaIDMaker は要素 ID（domain.ElementRef）を作る。ウィンドウの HWND と、そのプロセスの PID を持つ。
+type uiaIDMaker struct {
+	hwnd uint64
+	pid  uint32
+}
 
-func uiaTreeAt(nodes []uiaWalked, i int) domain.UINode {
+// id は runtimeID の要素の ID。RuntimeId を取れない要素は空（引き直せないので ID を渡さない）。
+func (m uiaIDMaker) id(runtimeID []int32) string {
+	return domain.ElementRef{HWND: m.hwnd, PID: m.pid, RuntimeID: runtimeID}.String()
+}
+
+// uiaTreeFromWalked は走査結果を domain.UINode の木に整形する。パスワード欄は値を持たず ValueRedacted を立てる。
+func uiaTreeFromWalked(nodes []uiaWalked, ids uiaIDMaker) domain.UINode {
+	return uiaTreeAt(nodes, 0, ids)
+}
+
+func uiaTreeAt(nodes []uiaWalked, i int, ids uiaIDMaker) domain.UINode {
 	w := nodes[i]
 	p := w.props
 	n := domain.UINode{
-		ID:        uiaNodeID(p.RuntimeID, i),
-		Role:      uiaRoleName(p.ControlType),
-		Name:      p.Name,
-		Rect:      p.Rect,
-		Enabled:   p.Enabled,
-		Truncated: w.truncated,
+		ID:           ids.id(p.RuntimeID),
+		Role:         uiaRoleName(p.ControlType),
+		Name:         p.Name,
+		AutomationID: p.AutomationID,
+		ClassName:    p.ClassName,
+		Patterns:     slices.Clone(p.Patterns),
+		Rect:         p.Rect,
+		Enabled:      p.Enabled,
+		Offscreen:    p.Offscreen,
+		Truncated:    w.truncated,
 	}
 	if p.IsPassword {
 		n.ValueRedacted = true
@@ -133,21 +153,23 @@ func uiaTreeAt(nodes []uiaWalked, i int) domain.UINode {
 		n.Value = p.Value
 	}
 	for _, c := range w.children {
-		n.Children = append(n.Children, uiaTreeAt(nodes, c))
+		n.Children = append(n.Children, uiaTreeAt(nodes, c, ids))
 	}
 	return n
 }
 
-// uiaNodeID は RuntimeId から参照用の ID を作る（"uia:2a.1f4.3"）。RuntimeId が無いときは走査の添字で代える。
-func uiaNodeID(runtimeID []int32, fallback int) string {
-	if len(runtimeID) == 0 {
-		return "uia:n" + strconv.Itoa(fallback)
+// uiaElementInfo は要素のプロパティを domain.UIElementInfo にする（ID は呼び出し側が付ける）。値・テキスト本文は含めない。
+func uiaElementInfo(p uiaProps) domain.UIElementInfo {
+	return domain.UIElementInfo{
+		ControlType:  uiaRoleName(p.ControlType),
+		Name:         p.Name,
+		AutomationID: p.AutomationID,
+		ClassName:    p.ClassName,
+		Rect:         p.Rect,
+		Enabled:      p.Enabled,
+		Offscreen:    p.Offscreen,
+		Patterns:     slices.Clone(p.Patterns),
 	}
-	parts := make([]string, len(runtimeID))
-	for i, v := range runtimeID {
-		parts[i] = strconv.FormatUint(uint64(uint32(v)), 16)
-	}
-	return "uia:" + strings.Join(parts, ".")
 }
 
 // uiaSnapshotFromWalked は走査結果を文書順（先行順）の要素列とハッシュにする。
@@ -248,22 +270,5 @@ func uiaRoleClass(controlType int) (string, bool) {
 	return c, ok
 }
 
-var uiaRoleNames = map[int]string{
-	50000: "Button", 50001: "Calendar", 50002: "CheckBox", 50003: "ComboBox", 50004: "Edit",
-	50005: "Hyperlink", 50006: "Image", 50007: "ListItem", 50008: "List", 50009: "Menu",
-	50010: "MenuBar", 50011: "MenuItem", 50012: "ProgressBar", 50013: "RadioButton", 50014: "ScrollBar",
-	50015: "Slider", 50016: "Spinner", 50017: "StatusBar", 50018: "Tab", 50019: "TabItem",
-	50020: "Text", 50021: "ToolBar", 50022: "ToolTip", 50023: "Tree", 50024: "TreeItem",
-	50025: "Custom", 50026: "Group", 50027: "Thumb", 50028: "DataGrid", 50029: "DataItem",
-	50030: "Document", 50031: "SplitButton", 50032: "Window", 50033: "Pane", 50034: "Header",
-	50035: "HeaderItem", 50036: "Table", 50037: "TitleBar", 50038: "Separator", 50039: "SemanticZoom",
-	50040: "AppBar",
-}
-
 // uiaRoleName は ControlType の名前（"Button"、"Window"）。未知の型は "Unknown"。
-func uiaRoleName(controlType int) string {
-	if n, ok := uiaRoleNames[controlType]; ok {
-		return n
-	}
-	return "Unknown"
-}
+func uiaRoleName(controlType int) string { return domain.UIControlTypeName(controlType) }

@@ -28,6 +28,11 @@ var apiErrorTable = map[string]int{
 	"invalid_argument":      400,
 	"conflict":              409,
 	"window_not_found":      404,
+	"stale_element":         409,
+	"pattern_unsupported":   409,
+	"element_disabled":      409,
+	"element_read_only":     409,
+	"ui_action_failed":      409,
 	"input_blocked":         409,
 	"desktop_unavailable":   503,
 	"agent_disabled":        409,
@@ -36,6 +41,14 @@ var apiErrorTable = map[string]int{
 	"launch_failed":         409,
 	"audit_unavailable":     503,
 	"internal":              500,
+	"file_not_found":        404,
+	"file_too_large":        413,
+	"file_store_full":       507,
+
+	"command_disabled":          403,
+	"command_not_found":         404,
+	"command_allowlist_invalid": 503,
+	"command_start_failed":      502,
 }
 
 func TestCodeTable(t *testing.T) {
@@ -44,9 +57,11 @@ func TestCodeTable(t *testing.T) {
 		domain.CodeDeviceNotRegistered, domain.CodeClientDisabled, domain.CodeUnauthorized, domain.CodeRateLimited,
 		domain.CodeKillSwitchActive, domain.CodeLeaseRequired, domain.CodeLeaseHeldByOther, domain.CodeLeaseRevoked,
 		domain.CodeApprovalDenied, domain.CodeApprovalTimeout, domain.CodeInvalidCoordinates, domain.CodeInvalidArgument,
-		domain.CodeConflict, domain.CodeWindowNotFound, domain.CodeInputBlocked, domain.CodeDesktopUnavailable,
+		domain.CodeConflict, domain.CodeWindowNotFound, domain.CodeStaleElement, domain.CodePatternUnsupported, domain.CodeElementDisabled, domain.CodeElementReadOnly,
+		domain.CodeUIActionFailed, domain.CodeInputBlocked, domain.CodeDesktopUnavailable,
 		domain.CodeAgentDisabled, domain.CodeTaskNotFound, domain.CodeAppNotFound, domain.CodeLaunchFailed, domain.CodeAuditUnavailable,
-		domain.CodeInternal,
+		domain.CodeInternal, domain.CodeFileNotFound, domain.CodeFileTooLarge, domain.CodeFileStoreFull,
+		domain.CodeCommandDisabled, domain.CodeCommandNotFound, domain.CodeCommandAllowlistInvalid, domain.CodeCommandStartFailed,
 	}
 	if len(codes) != len(apiErrorTable) {
 		t.Fatalf("%d codes, API table has %d", len(codes), len(apiErrorTable))
@@ -87,6 +102,11 @@ func TestSentinelErrors(t *testing.T) {
 		{domain.ErrInvalidCoordinates, domain.CodeInvalidCoordinates},
 		{domain.ErrInvalidArgument, domain.CodeInvalidArgument},
 		{domain.ErrWindowNotFound, domain.CodeWindowNotFound},
+		{domain.ErrStaleElement, domain.CodeStaleElement},
+		{domain.ErrPatternUnsupported, domain.CodePatternUnsupported},
+		{domain.ErrElementDisabled, domain.CodeElementDisabled},
+		{domain.ErrElementReadOnly, domain.CodeElementReadOnly},
+		{domain.ErrUIActionFailed, domain.CodeUIActionFailed},
 		{domain.ErrInputBlocked, domain.CodeInputBlocked},
 		{domain.ErrDesktopUnavailable, domain.CodeDesktopUnavailable},
 		{domain.ErrAgentDisabled, domain.CodeAgentDisabled},
@@ -94,6 +114,9 @@ func TestSentinelErrors(t *testing.T) {
 		{domain.ErrAppNotFound, domain.CodeAppNotFound},
 		{domain.ErrLaunchFailed, domain.CodeLaunchFailed},
 		{domain.ErrAuditUnavailable, domain.CodeAuditUnavailable},
+		{domain.ErrFileNotFound, domain.CodeFileNotFound},
+		{domain.ErrFileTooLarge, domain.CodeFileTooLarge},
+		{domain.ErrFileStoreFull, domain.CodeFileStoreFull},
 	}
 	seen := map[domain.Code]bool{}
 	for _, tt := range tests {

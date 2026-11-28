@@ -3,6 +3,8 @@ package gui_test
 import (
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,12 +12,21 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/web/handler/gui/guitest"
 )
 
+// testFileRoot は OS を問わず絶対パスになる、ファイル転送の置き場所の例。
+var testFileRoot = filepath.Join(os.TempDir(), "qa-inbox")
+
+// testCommandAllowlist は OS を問わず絶対パスになる、コマンド実行の許可リストのファイルの例。
+var testCommandAllowlist = filepath.Join(os.TempDir(), "qa-commands.json")
+
 func validSettings() url.Values {
 	return url.Values{
 		"server.port": {"9000"}, "killswitch.hotkey": {"Ctrl+Alt+Shift+Q"},
 		"screenshot.max_dimension": {"2048"}, "lease.idle_timeout_sec": {"120"}, "viewer.default_quality": {"85"}, "viewer.default_fps": {"24"}, "autostart": {"on"},
 		"audit.thumbnails_enabled": {"on"}, "audit.record_text": {"on"}, "audit.retention_days": {"7"},
 		"audit.thumbs_max_bytes": {"536870912"}, "update.apply_mode": {"auto_idle"}, "update.channel": {"nightly"},
+		"hostinput.pause_enabled": {"on"}, "hostinput.pause_idle_sec": {"8"},
+		"file_transfer.root": {testFileRoot}, "file_transfer.max_file_bytes": {"5242880"}, "file_transfer.max_total_bytes": {"67108864"},
+		"command.enabled": {"on"}, "command.allowlist_path": {testCommandAllowlist},
 	}
 }
 
@@ -34,8 +45,15 @@ func TestSettingsPage(t *testing.T) {
 		`name="audit.retention_days"`, `value="30"`, `name="audit.thumbs_max_bytes"`, `value="1073741824"`,
 		`name="update.apply_mode"`, `<option value="confirm" selected>`, `<option value="auto_idle">`,
 		`name="update.channel"`, `<option value="stable" selected>`, `<option value="nightly">`)
-	if got := strings.Count(res.Body, "checked"); got != 1 {
-		t.Errorf("only audit.thumbnails_enabled is checked by default (autostart is off); checked count = %d", got)
+	// ホストの実入力による一時停止（#270）。既定: 有効・5 秒。
+	contains(t, res, `data-settings-group="hostinput"`, `name="hostinput.pause_enabled"`, `name="hostinput.pause_idle_sec"`, `value="5"`, `data-notice="hostinput-pause"`)
+	// ファイル転送（#264）。既定: 置き場所は空（既定の場所）・100 MiB・1 GiB。
+	contains(t, res, `data-settings-group="file-transfer"`, `name="file_transfer.root"`, `name="file_transfer.max_file_bytes"`, `value="104857600"`,
+		`name="file_transfer.max_total_bytes"`, `value="1073741824"`, "リモートからは変更できません")
+	// コマンド実行（#265）。既定は OFF（チェックなし）で、許可リストのファイルは空（既定の場所）。警告と、リモートから変更できないことを出す。
+	contains(t, res, `data-settings-group="command"`, `name="command.enabled"`, `name="command.allowlist_path"`, `data-notice="command-enabled"`, "既定はオフです", "リモートからは変更できません")
+	if got := strings.Count(res.Body, "checked"); got != 2 {
+		t.Errorf("only audit.thumbnails_enabled and hostinput.pause_enabled are checked by default (autostart is off); checked count = %d", got)
 	}
 	// NFR-S11: サムネイルと本文は平文。BitLocker とサムネイル無効化の案内、本文の記録の警告は常に出す（確認ダイアログは作らない）。
 	contains(t, res, `data-notice="audit-plaintext"`, "平文", "BitLocker", "サムネイルの保存を無効", `data-notice="audit-record-text"`, "パスワード")
@@ -70,7 +88,10 @@ func TestSaveSettings(t *testing.T) {
 		`name="audit.retention_days"`, `value="7"`, `value="536870912"`, `<option value="auto_idle" selected>`, `<option value="nightly" selected>`)
 	lacks(t, res, "data-field-error", "<html")
 	want := service.HostSettings{Port: 9000, KillSwitchHotkey: "Ctrl+Alt+Shift+Q", ScreenshotMaxDimension: 2048, LeaseIdleTimeoutSec: 120, ViewerDefaultQuality: 85, ViewerDefaultFPS: 24,
-		AuditThumbnailsEnabled: true, AuditRecordText: true, AuditRetentionDays: 7, AuditThumbsMaxBytes: 536870912, UpdateApplyMode: service.UpdateApplyAutoIdle, UpdateChannel: "nightly", Autostart: true}
+		HostInputPauseEnabled: true, HostInputPauseIdleSec: 8,
+		AuditThumbnailsEnabled: true, AuditRecordText: true, AuditRetentionDays: 7, AuditThumbsMaxBytes: 536870912, UpdateApplyMode: service.UpdateApplyAutoIdle, UpdateChannel: "nightly", Autostart: true,
+		FileTransferRoot: testFileRoot, FileTransferMaxFileBytes: 5242880, FileTransferMaxTotalBytes: 67108864,
+		CommandEnabled: true, CommandAllowlistPath: testCommandAllowlist}
 	if len(r.f.Settings.Saves) != 1 || r.f.Settings.Saves[0] != want {
 		t.Errorf("saves = %+v, want [%+v]", r.f.Settings.Saves, want)
 	}
@@ -103,6 +124,9 @@ func TestSaveSettingsValidation(t *testing.T) {
 		{"fps too high", func(v url.Values) { v.Set("viewer.default_fps", "31") }, []string{"set-vfps"}, `value="31"`},
 		{"hotkey without modifier", func(v url.Values) { v.Set("killswitch.hotkey", "K") }, []string{"set-hotkey"}, `value="K"`},
 		{"hotkey garbage", func(v url.Values) { v.Set("killswitch.hotkey", "Ctrl+Nope+??") }, []string{"set-hotkey"}, `value="Ctrl+Nope+??"`},
+		{"host input idle too low", func(v url.Values) { v.Set("hostinput.pause_idle_sec", "0") }, []string{"set-hostinput-idle"}, `value="0"`},
+		{"host input idle too high", func(v url.Values) { v.Set("hostinput.pause_idle_sec", "601") }, []string{"set-hostinput-idle"}, `value="601"`},
+		{"host input idle not a number", func(v url.Values) { v.Set("hostinput.pause_idle_sec", "abc") }, []string{"set-hostinput-idle"}, `value="abc"`},
 		{"retention too low", func(v url.Values) { v.Set("audit.retention_days", "0") }, []string{"set-audit-days"}, `value="0"`},
 		{"retention too high", func(v url.Values) { v.Set("audit.retention_days", "36501") }, []string{"set-audit-days"}, `value="36501"`},
 		{"retention not a number", func(v url.Values) { v.Set("audit.retention_days", "abc") }, []string{"set-audit-days"}, `value="abc"`},
@@ -110,6 +134,13 @@ func TestSaveSettingsValidation(t *testing.T) {
 		{"thumbs cap too high", func(v url.Values) { v.Set("audit.thumbs_max_bytes", "9007199254740993") }, []string{"set-audit-cap"}, `value="9007199254740993"`},
 		{"thumbs cap beyond int64", func(v url.Values) { v.Set("audit.thumbs_max_bytes", "99999999999999999999") }, []string{"set-audit-cap"}, `value="99999999999999999999"`},
 		{"thumbs cap not a number", func(v url.Values) { v.Set("audit.thumbs_max_bytes", "1GiB") }, []string{"set-audit-cap"}, `value="1GiB"`},
+		{"command allowlist relative", func(v url.Values) { v.Set("command.allowlist_path", "commands.json") }, []string{"set-command-allowlist"}, `value="commands.json"`},
+		{"command allowlist unc", func(v url.Values) { v.Set("command.allowlist_path", `\\host\share\c.json`) }, []string{"set-command-allowlist"}, `value="`},
+		{"file max too low", func(v url.Values) { v.Set("file_transfer.max_file_bytes", "0") }, []string{"set-file-max"}, `value="0"`},
+		{"file max not a number", func(v url.Values) { v.Set("file_transfer.max_file_bytes", "100MB") }, []string{"set-file-max"}, `value="100MB"`},
+		{"file total too high", func(v url.Values) { v.Set("file_transfer.max_total_bytes", "9007199254740993") }, []string{"set-file-total"}, `value="9007199254740993"`},
+		{"file root relative", func(v url.Values) { v.Set("file_transfer.root", "inbox") }, []string{"set-file-root"}, `value="inbox"`},
+		{"file root unc", func(v url.Values) { v.Set("file_transfer.root", `\\host\share`) }, []string{"set-file-root"}, `value="\\host\share"`},
 		{"apply mode unknown", func(v url.Values) { v.Set("update.apply_mode", "always") }, []string{"set-update-mode"}, ``},
 		{"channel unknown", func(v url.Values) { v.Set("update.channel", "beta") }, []string{"set-update-channel"}, ``},
 		{"channel missing", func(v url.Values) { v.Del("update.channel") }, []string{"set-update-channel"}, ``},
@@ -173,8 +204,8 @@ func TestSaveSettingsValidationKeepsOtherInputs(t *testing.T) {
 	status(t, res, http.StatusUnprocessableEntity)
 	contains(t, res, `data-field-error="set-audit-days"`, `value="536870912"`, `<option value="auto_idle" selected>`, `name="audit.record_text"`, `name="autostart"`)
 	// audit.thumbnails_enabled は外したまま、audit.record_text と autostart はチェックのまま。
-	if got := strings.Count(res.Body, "checked"); got != 2 {
-		t.Errorf("checked count = %d, want 2 (record_text, autostart)", got)
+	if got := strings.Count(res.Body, "checked"); got != 4 {
+		t.Errorf("checked count = %d, want 4 (hostinput.pause_enabled, record_text, autostart, command.enabled)", got)
 	}
 }
 

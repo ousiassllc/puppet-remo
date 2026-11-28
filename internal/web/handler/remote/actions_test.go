@@ -112,6 +112,16 @@ func TestClipboardFailuresDoNotLeakTheText(t *testing.T) {
 	lacks(t, res, "typed-secret", "secret details")
 }
 
+// ホストの実入力による一時停止（#270）は 409 input_paused で、クリップボードの本文を出さない。
+func TestPausedInputIsReportedWithoutLeakingTheText(t *testing.T) {
+	r := newRig(t)
+	h := held(t, r)
+	r.f.Control.DoErr = domain.ErrInputPaused.WithDetail("retry_after_ms", int64(5000))
+	res := r.post("/viewer/clipboard/send", url.Values{"text": {"typed-secret"}}, h...)
+	failed(t, res, http.StatusConflict, "input_paused")
+	lacks(t, res, "typed-secret")
+}
+
 func TestKeysSend(t *testing.T) {
 	r := newRig(t)
 	h := held(t, r)

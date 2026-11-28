@@ -46,6 +46,16 @@ func CheckInputTarget(w WindowInfo) error {
 	return nil
 }
 
+// CheckUIActionTarget は、UI Automation のパターンで要素を操作する ui_action の宛先ウィンドウに対する規則（NFR-S06）。
+// 入力と同じく昇格ウィンドウ（UIPI）は拒否し、自ウィンドウは、クリックスルーのオーバーレイも含めて拒否する
+// （ui_action は座標を通らないので、オーバーレイの下へ入力が抜ける理屈が成り立たない。ホスト GUI の部品を AI が操作してはならない）。
+func CheckUIActionTarget(w WindowInfo) error {
+	if w.Own {
+		return CheckObserveTarget(w)
+	}
+	return CheckInputTarget(w)
+}
+
 // CheckObserveTarget は、ウィンドウの内容を読む操作（UI ツリー）に対する規則。
 // 自ウィンドウは、設定値・API キーの入力欄を AI に見せないために拒否する（NFR-S06）。昇格ウィンドウは読み取りのみで入力しないため拒否しない。
 func CheckObserveTarget(w WindowInfo) error {

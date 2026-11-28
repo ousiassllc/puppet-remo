@@ -148,6 +148,27 @@ func TestMoveToCorrectsOnePixelRoundingError(t *testing.T) {
 	if got, _ := in.CursorPos(); got != p {
 		t.Errorf("cursor = %v, want %v", got, p)
 	}
+	// 自分の補正の動き（印を持てない SetCursorPos）は、フックが実入力と取り違えないよう位置が記録される（1 回だけ）。
+	if !ownCursorMoves.consume(wmMouseMove, int32(p.X), int32(p.Y)) {
+		t.Error("the SetCursorPos correction was not recorded for the host input hook")
+	}
+	if ownCursorMoves.consume(wmMouseMove, int32(p.X), int32(p.Y)) {
+		t.Error("the recorded correction was consumed twice")
+	}
+}
+
+func TestMoveToWithoutCorrectionRecordsNothing(t *testing.T) {
+	in, d := newTestInput(t)
+	ownCursorMoves.expect(domain.Point{X: -1, Y: -1}) // 前のテストの記録を置き換えて、この呼び出しが増やさないことを見る
+	if err := in.MoveTo(context.Background(), domain.Point{X: 640, Y: 360}); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.setPos) != 0 {
+		t.Fatalf("SetCursorPos calls = %v, want none", d.setPos)
+	}
+	if !ownCursorMoves.consume(wmMouseMove, -1, -1) {
+		t.Error("a move without correction replaced the recorded expectation")
+	}
 }
 
 func TestClickSendsModifiersAroundButtonPairs(t *testing.T) {

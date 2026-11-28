@@ -215,7 +215,7 @@ func TestLeaseAcquiringToolsHaveALongerTimeout(t *testing.T) {
 		}
 		return time.Until(d)
 	}
-	for _, tool := range []string{"acquire_control", "left_click", "type", "launch_app"} {
+	for _, tool := range []string{"acquire_control", "left_click", "type", "launch_app", "find_ui_element", "ui_action"} {
 		if got := deadlineOf(tool); got <= DefaultToolTimeout || got > DefaultLeaseToolTimeout {
 			t.Errorf("%s timeout = %v, want about %v", tool, got, DefaultLeaseToolTimeout)
 		}
@@ -224,6 +224,10 @@ func TestLeaseAcquiringToolsHaveALongerTimeout(t *testing.T) {
 		if got := deadlineOf(tool); got > DefaultToolTimeout {
 			t.Errorf("%s timeout = %v, want about %v", tool, got, DefaultToolTimeout)
 		}
+	}
+	// wait_for は承認待ちのあとに、最大の待ち時間（timeout_ms の上限）が残る。
+	if got, want := deadlineOf("wait_for"), DefaultLeaseToolTimeout+service.MaxWaitForTimeout; got <= DefaultLeaseToolTimeout+service.MaxWaitForTimeout-5*time.Second || got > want {
+		t.Errorf("wait_for timeout = %v, want about %v", got, want)
 	}
 }
 

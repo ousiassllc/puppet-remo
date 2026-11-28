@@ -46,7 +46,7 @@ type thumbTarget struct {
 
 // opChangesScreen は op が画面を変える操作か（サムネイルを撮る対象か）を返す。サムネイルの対象はここで決める。
 //
-//   - 撮る: クリック・ドラッグ・スクロール・キー・文字入力・ウィンドウの前面化（MCP）、Web のボタン・ホイール・キー・文字入力。
+//   - 撮る: クリック・ドラッグ・スクロール・キー・文字入力・ウィンドウの前面化・UI Automation のパターン操作（ui_action。画面は変わりうる）（MCP）、Web のボタン・ホイール・キー・文字入力。
 //   - 撮らない: カーソルの移動だけ（MouseMove・PointerMove。クリックを伴わない移動は画面を変えず、Web では連続して来る）、
 //     クリップボード（読み書きとも画面は変わらない）、UI ツリー・待ち。
 //
@@ -54,7 +54,7 @@ type thumbTarget struct {
 func opChangesScreen(op domain.Op) bool {
 	switch op.(type) {
 	case domain.Click, domain.Drag, domain.Scroll, domain.KeyPress, domain.TypeText, domain.FocusWindow,
-		domain.MouseButton, domain.Wheel, domain.KeyEvent:
+		domain.MouseButton, domain.Wheel, domain.KeyEvent, domain.UIAction:
 		return true
 	}
 	return false

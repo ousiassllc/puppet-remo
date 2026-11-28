@@ -375,7 +375,7 @@ func (h *Handler) Clients(c *gin.Context) {
 |---------|---------|------|
 | `remo:lease-changed` | WebSocket の `lease` メッセージの内容 | HTMX がリースパネルを再取得する（`hx-trigger`） |
 | `remo:reselect` | なし | 停止バナーの「別のウィンドウを選ぶ」。ページ側（HTMX。`WindowReselectTrigger`）が `POST /viewer/target/release` でスコープ付きのリースを解放し、一覧を出す（#157） |
-| `remo:error` | `{ code, message, reason? }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がインラインアラート（`#alert-root`）を出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、アラートの文言は `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
+| `remo:error` | `{ code, message, reason? }` | 入力の拒否（`lease_required` / `input_blocked` など）。ページ側のハンドラ（`app.ts`）がインラインアラート（`#alert-root`）を出す。`message` はサーバーのドメインエラー文（英語。WebSocket の契約は変えない）なので、アラートの文言は `code` から日本語にする（`lease_required` / `lease_held_by_other` / `lease_revoked` / `invalid_argument` / `kill_switch_active` / `input_paused` / `desktop_unavailable` / `input_blocked` / `internal`。文言は HTMX のアクション失敗の `failureMessages` と同じ）。表に無い `code`（`invalid_coordinates` など）はサーバーの `message` を出す |
 
 **状態とライフサイクル**
 

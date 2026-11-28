@@ -59,6 +59,7 @@ const (
 	uiaPropControlType       = 30003
 	uiaPropName              = 30005
 	uiaPropIsEnabled         = 30010
+	uiaPropClassName         = 30012
 	uiaPropAutomationID      = 30011
 	uiaPropIsPassword        = 30019
 	uiaPropIsOffscreen       = 30022
@@ -66,6 +67,23 @@ const (
 	uiaPropSelectionIsSel    = 30079
 	uiaPropToggleState       = 30086
 )
+
+// 対応パターンの判定に使うプロパティ（UIA_Is*PatternAvailablePropertyId）と、domain.Pattern* の名前。この順に Patterns へ並べる。
+var uiaPatternProps = []struct {
+	id   uintptr
+	name string
+}{
+	{30031, domain.PatternInvoke},
+	{30043, domain.PatternValue},
+	{30041, domain.PatternToggle},
+	{30036, domain.PatternSelectionItem},
+	{30028, domain.PatternExpandCollapse},
+	{30034, domain.PatternScroll},
+	{30033, domain.PatternRangeValue},
+	{30044, domain.PatternWindow},
+	{30040, domain.PatternText},
+	{30037, domain.PatternSelection},
+}
 
 var (
 	uiaCLSIDAutomation = ole.NewGUID("{ff48dba4-60ef-4201-aa87-54103eef594e}") // CLSID_CUIAutomation
@@ -184,9 +202,14 @@ func (c *uiaCOM) init() error {
 	}
 	for _, id := range []uintptr{
 		uiaPropRuntimeID, uiaPropBoundingRectangle, uiaPropControlType, uiaPropName, uiaPropIsEnabled, uiaPropAutomationID,
-		uiaPropIsPassword, uiaPropIsOffscreen, uiaPropValueValue, uiaPropSelectionIsSel, uiaPropToggleState,
+		uiaPropIsPassword, uiaPropIsOffscreen, uiaPropValueValue, uiaPropSelectionIsSel, uiaPropToggleState, uiaPropClassName,
 	} {
 		if err := uiaCheck(uiaCallI(c.cache, uiaSlotAddProperty, id), "CacheRequest.AddProperty"); err != nil {
+			return err
+		}
+	}
+	for _, p := range uiaPatternProps {
+		if err := uiaCheck(uiaCallI(c.cache, uiaSlotAddProperty, p.id), "CacheRequest.AddProperty"); err != nil {
 			return err
 		}
 	}
@@ -271,6 +294,20 @@ func (n *uiaCOMNode) Props() uiaProps {
 	}
 	if !p.IsPassword {
 		p.Value = n.valueProp()
+	}
+	if v, ok := n.variantProp(uiaPropClassName); ok {
+		if v.VT == ole.VT_BSTR {
+			p.ClassName = v.ToString()
+		}
+		_ = v.Clear()
+	}
+	for _, pat := range uiaPatternProps {
+		if v, ok := n.variantProp(pat.id); ok {
+			if v.VT == ole.VT_BOOL && v.Val&0xFFFF != 0 {
+				p.Patterns = append(p.Patterns, pat.name)
+			}
+			_ = v.Clear()
+		}
 	}
 	if v, ok := n.variantProp(uiaPropToggleState); ok {
 		if v.VT == ole.VT_I4 {

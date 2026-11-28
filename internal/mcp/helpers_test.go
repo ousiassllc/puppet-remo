@@ -2,9 +2,12 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -64,6 +67,9 @@ type fakeControl struct {
 	cursor    service.Cursor
 	clipboard string
 	tree      *domain.UINode
+	found     *domain.UIFindResult   // FindUIElement の結果
+	waited    *service.WaitOutcome   // WaitFor の結果
+	acted     *domain.UIActionResult // UIAction の結果
 
 	// apps は LaunchableApps が返す許可リスト（id と表示名だけ）。launchPID は Launch が返すプロセス ID。
 	apps      []domain.AppSummary
@@ -90,6 +96,10 @@ type fakeControl struct {
 	// screenshotArgs は直近の Screenshot の引数。
 	screenshotMonitor int
 	screenshotFormat  string
+	// windowShot は WindowScreenshot が返す結果、windowShotReq は直近の WindowScreenshot の引数、windowShotCalls はその呼び出し回数。
+	windowShot      service.WindowShot
+	windowShotReq   service.WindowShotRequest
+	windowShotCalls int
 }
 
 func newFakeControl(leases service.LeaseManager, kill service.KillSwitchState) *fakeControl {
@@ -144,6 +154,21 @@ func (f *fakeControl) Do(ctx context.Context, who domain.Actor, op domain.Op) (s
 		return service.Result{Text: f.clipboard}, nil
 	case domain.GetUITree:
 		return service.Result{Tree: f.tree}, nil
+	case domain.FindUIElement:
+		if f.found == nil {
+			return service.Result{Found: &domain.UIFindResult{}}, nil
+		}
+		return service.Result{Found: f.found}, nil
+	case domain.UIAction:
+		if f.acted == nil {
+			return service.Result{Acted: &domain.UIActionResult{Changed: true}}, nil
+		}
+		return service.Result{Acted: f.acted}, nil
+	case domain.WaitFor:
+		if f.waited == nil {
+			return service.Result{Waited: &service.WaitOutcome{Satisfied: true}}, nil
+		}
+		return service.Result{Waited: f.waited}, nil
 	}
 	return service.Result{}, nil
 }
@@ -243,6 +268,17 @@ func (f *fakeControl) Screenshot(_ context.Context, monitor int, format string) 
 	return f.shot, nil
 }
 
+func (f *fakeControl) WindowScreenshot(_ context.Context, req service.WindowShotRequest) (service.WindowShot, error) {
+	f.mu.Lock()
+	f.windowShotReq = req
+	f.windowShotCalls++
+	f.mu.Unlock()
+	if err := f.viewErr(); err != nil {
+		return service.WindowShot{}, err
+	}
+	return f.windowShot, nil
+}
+
 func (f *fakeControl) Monitors(context.Context) ([]domain.Monitor, error) {
 	if err := f.viewErr(); err != nil {
 		return nil, err
@@ -280,6 +316,116 @@ func (f *fakeControl) CursorPosition(ctx context.Context) (service.Cursor, error
 
 func (f *fakeControl) MaxDimension(context.Context) (int, error) { return f.maxDim, nil }
 
+// fakeFiles は service.FileTransfer の偽物。リースの確認は本物の LeaseManager で、FileTransfer と同じ順序（KillSwitch → リース）で行う。
+// ファイルはメモリに持ち、ファイルシステム・パスの検査・上限・監査は本物の FileTransfer のテスト（service）が持つ。
+type fakeFiles struct {
+	leases service.LeaseManager
+	kill   service.KillSwitchState
+
+	mu    sync.Mutex
+	files map[string][]byte
+	puts  []service.FilePutRequest
+	gets  []service.FileGetRequest
+	// err が非 nil なら、検査（キルスイッチ・リース）の後に各呼び出しがこれを返す。
+	err error
+}
+
+func newFakeFiles(leases service.LeaseManager, kill service.KillSwitchState) *fakeFiles {
+	return &fakeFiles{leases: leases, kill: kill, files: map[string][]byte{}}
+}
+
+func (f *fakeFiles) gate(ctx context.Context, who domain.Actor) error {
+	if f.kill.Active() {
+		return domain.ErrKillSwitchActive
+	}
+	err := f.leases.Check(who)
+	if errors.Is(err, domain.ErrLeaseRequired) && who.Kind == domain.ActorMCP {
+		_, err = f.leases.Acquire(ctx, who)
+	}
+	if err != nil {
+		return err
+	}
+	return f.err
+}
+
+func fakeSum(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+func (f *fakeFiles) Put(ctx context.Context, who domain.Actor, req service.FilePutRequest) (service.FileResult, error) {
+	f.mu.Lock()
+	f.puts = append(f.puts, req)
+	f.mu.Unlock()
+	if err := f.gate(ctx, who); err != nil {
+		return service.FileResult{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cur := f.files[req.Path]
+	if req.Offset == 0 {
+		cur = nil
+	} else if int64(len(cur)) != req.Offset {
+		return service.FileResult{}, domain.NewError(domain.CodeConflict, "offset must equal the current size of the file", nil)
+	}
+	cur = append(slices.Clone(cur), req.Data...)
+	f.files[req.Path] = cur
+	return service.FileResult{Path: req.Path, Size: int64(len(cur)), SHA256: fakeSum(cur)}, nil
+}
+
+func (f *fakeFiles) Get(ctx context.Context, who domain.Actor, req service.FileGetRequest) (service.FileChunk, error) {
+	f.mu.Lock()
+	f.gets = append(f.gets, req)
+	f.mu.Unlock()
+	if err := f.gate(ctx, who); err != nil {
+		return service.FileChunk{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.files[req.Path]
+	if !ok {
+		return service.FileChunk{}, domain.ErrFileNotFound
+	}
+	end := len(data)
+	if req.Length > 0 {
+		end = min(end, int(req.Offset)+req.Length)
+	}
+	part := data[min(int(req.Offset), len(data)):end]
+	return service.FileChunk{
+		FileResult: service.FileResult{Path: req.Path, Size: int64(len(data)), SHA256: fakeSum(data)},
+		Offset:     req.Offset, Data: slices.Clone(part), EOF: end == len(data),
+	}, nil
+}
+
+func (f *fakeFiles) List(ctx context.Context, who domain.Actor, path string) (service.FileListing, error) {
+	if err := f.gate(ctx, who); err != nil {
+		return service.FileListing{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out service.FileListing
+	for _, name := range slices.Sorted(maps.Keys(f.files)) {
+		out.Entries = append(out.Entries, service.FileEntry{Path: name, Size: int64(len(f.files[name])), Modified: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)})
+	}
+	return out, nil
+}
+
+func (f *fakeFiles) Delete(ctx context.Context, who domain.Actor, path string) (service.FileResult, error) {
+	if err := f.gate(ctx, who); err != nil {
+		return service.FileResult{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, ok := f.files[path]
+	if !ok {
+		return service.FileResult{}, domain.ErrFileNotFound
+	}
+	delete(f.files, path)
+	return service.FileResult{Path: path, Size: int64(len(data))}, nil
+}
+
+func (f *fakeFiles) ResolveInRoot(context.Context, string) (string, error) { return "", nil }
+
 // env はテスト 1 件分の MCP サーバー（httptest）と、その依存。
 type env struct {
 	t      *testing.T
@@ -289,6 +435,8 @@ type env struct {
 	leases service.LeaseManager
 	kill   *fakeKill
 	agent  *fakeAgent
+	files  *fakeFiles
+	cmds   *fakeCommands
 	events <-chan domain.LeaseEvent
 }
 
@@ -314,10 +462,14 @@ func newEnvWithLeases(t *testing.T, leaseMutate func(*service.LeaseConfig), muta
 	}
 	ctl := newFakeControl(leases, kill)
 	agent := newFakeAgent()
+	files := newFakeFiles(leases, kill)
+	cmds := newFakeCommands(leases, kill)
 	cfg := Config{
 		Control:   ctl,
 		Leases:    leases,
 		Agent:     agent,
+		Files:     files,
+		Commands:  cmds,
 		Principal: testPrincipal,
 		Version:   "9.9.9-test",
 		Logger:    discardLogger(),
@@ -331,7 +483,7 @@ func newEnvWithLeases(t *testing.T, leaseMutate func(*service.LeaseConfig), muta
 	}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return &env{t: t, srv: srv, http: ts, ctl: ctl, leases: leases, kill: kill, agent: agent, events: leases.Subscribe()}
+	return &env{t: t, srv: srv, http: ts, ctl: ctl, leases: leases, kill: kill, agent: agent, files: files, cmds: cmds, events: leases.Subscribe()}
 }
 
 // auditLog は mcp が記録した監査エントリを溜める service.AuditRecorder の偽物。

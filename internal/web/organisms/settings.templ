@@ -66,6 +66,20 @@ templ SettingsForm(f view.SettingsForm) {
 				ログオン時に自動で起動する
 			</label>
 		}
+		@molecules.FieldGroup("ホストの操作との取り合い", "", atoms.Attrs{"data-settings-group": "hostinput"}) {
+			<div class="space-y-1">
+				<label class="flex items-center gap-2 text-sm text-ink">
+					@atoms.Checkbox("set-hostinput-pause", "hostinput.pause_enabled", f.Values.HostInputPause)
+					このPCの実際のマウス・キーボード操作を検知したら、リモートの入力を一時停止する
+				</label>
+				@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-notice": "hostinput-pause"}) {
+					マウスとキーボードのどちらかを実際に動かすと、MCP・ビューア・内蔵エージェントからの入力（カーソルの移動・クリック・キー入力・ウィンドウの前面化）を断ります。画面の取得など読み取りは止めません。検知するのは「操作があった」ことだけで、押したキーや入力した内容は読みません。他のソフトウェアが送った入力と、このアプリ自身の入力では止まりません。
+				}
+			</div>
+			@molecules.FormField("set-hostinput-idle", "再開までの待ち時間（秒）", "1〜600。最後の操作からこの間、操作がなければ自動で再開します。", f.Errors.HostInputPauseIdleSec) {
+				@atoms.Input(atoms.InputProps{ID: "set-hostinput-idle", Name: "hostinput.pause_idle_sec", Type: "number", Value: f.Values.HostInputPauseIdleSec, Required: true, Invalid: f.Errors.HostInputPauseIdleSec != "", Attrs: numberAttrs("1", "600")})
+			}
+		}
 		@molecules.FieldGroup("監査ログ", "", atoms.Attrs{"data-settings-group": "audit"}) {
 			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"role": "note", "data-notice": "audit-plaintext"}) {
 				サムネイル（スクリーンショットの縮小画像）と、有効にした場合の入力・クリップボードの本文は、暗号化されず<strong>平文</strong>でこのPCのディスクに保存されます。ディスクの紛失・盗難に備えて BitLocker でドライブ全体を暗号化してください。画面の内容を残したくないときは、サムネイルの保存を無効にできます。
@@ -88,6 +102,31 @@ templ SettingsForm(f view.SettingsForm) {
 			}
 			@molecules.FormField("set-audit-cap", "サムネイルの容量の上限（バイト）", "1〜9007199254740992。超えると古いサムネイルから削除します（ログの行は残ります）。既定は 1073741824（1 GiB）。", f.Errors.AuditThumbsMaxBytes) {
 				@atoms.Input(atoms.InputProps{ID: "set-audit-cap", Name: "audit.thumbs_max_bytes", Type: "number", Value: f.Values.AuditThumbsMaxBytes, Required: true, Invalid: f.Errors.AuditThumbsMaxBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
+			}
+		}
+		@molecules.FieldGroup("ファイル転送", "", atoms.Attrs{"data-settings-group": "file-transfer"}) {
+			@molecules.FormField("set-file-root", "置き場所（フォルダ）", "リモートのクライアントがファイルを置く・取り出す・消せるフォルダです（MCP の put_file / get_file / list_files / delete_file）。この中だけで、外には出られません。空なら既定の %LOCALAPPDATA%\\PuppetRemo\\inbox（なければ作ります）。ドライブ文字で始まるローカルの絶対パスを指定してください。リモートからは変更できません。", f.Errors.FileTransferRoot) {
+				@atoms.Input(atoms.InputProps{ID: "set-file-root", Name: "file_transfer.root", Type: "text", Value: f.Values.FileTransferRoot, Invalid: f.Errors.FileTransferRoot != "", Placeholder: "%LOCALAPPDATA%\\PuppetRemo\\inbox", Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
+			}
+			@molecules.FormField("set-file-max", "1 ファイルの大きさの上限（バイト）", "1〜9007199254740992。超えるファイルは置けません。既定は 104857600（100 MiB）。", f.Errors.FileTransferMaxFileBytes) {
+				@atoms.Input(atoms.InputProps{ID: "set-file-max", Name: "file_transfer.max_file_bytes", Type: "number", Value: f.Values.FileTransferMaxFileBytes, Required: true, Invalid: f.Errors.FileTransferMaxFileBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
+			}
+			@molecules.FormField("set-file-total", "置き場所全体の大きさの上限（バイト）", "1〜9007199254740992。置き場所の中のファイルの合計がこれを超える置き方はできません。既定は 1073741824（1 GiB）。", f.Errors.FileTransferMaxTotalBytes) {
+				@atoms.Input(atoms.InputProps{ID: "set-file-total", Name: "file_transfer.max_total_bytes", Type: "number", Value: f.Values.FileTransferMaxTotalBytes, Required: true, Invalid: f.Errors.FileTransferMaxTotalBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
+			}
+		}
+		@molecules.FieldGroup("コマンド実行", "", atoms.Attrs{"data-settings-group": "command"}) {
+			<div class="space-y-1">
+				<label class="flex items-center gap-2 text-sm text-ink">
+					@atoms.Checkbox("set-command-enabled", "command.enabled", f.Values.CommandEnabled)
+					リモートのクライアントに、許可リストにあるコマンドの実行を認める
+				</label>
+				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-notice": "command-enabled"}) {
+					既定はオフです。オンにすると、MCP の run_command が、下の許可リストのファイルにあるコマンドだけを、このPCで実行できます（操作リースと承認・キルスイッチの対象です）。任意のコマンドライン・シェルは受け付けず、実行ごとに監査ログへ残ります（出力の中身は記録しません）。許可リストにはリモートから書き込めない場所のファイルを使い、<code>cmd.exe</code>・<code>powershell.exe</code> などの自由な入力を渡せる項目は入れないでください。
+				}
+			</div>
+			@molecules.FormField("set-command-allowlist", "許可リストのファイル", "コマンドの名前・実行ファイル・引数・タイムアウトを JSON で書いたファイルです（書き方は docs/operations/command-allowlist.md）。このファイルはホスト所有者が手で編集し、リモートからは変更できません。ドライブ文字で始まるローカルの絶対パスを指定してください。ファイル転送の置き場所の中は使えません。空なら既定の %LOCALAPPDATA%\\puppet-remo\\commands.json。", f.Errors.CommandAllowlistPath) {
+				@atoms.Input(atoms.InputProps{ID: "set-command-allowlist", Name: "command.allowlist_path", Type: "text", Value: f.Values.CommandAllowlistPath, Invalid: f.Errors.CommandAllowlistPath != "", Placeholder: "%LOCALAPPDATA%\\puppet-remo\\commands.json", Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
 			}
 		}
 		@molecules.FieldGroup("更新", "", atoms.Attrs{"data-settings-group": "update"}) {

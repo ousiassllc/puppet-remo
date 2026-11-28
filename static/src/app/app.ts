@@ -437,6 +437,7 @@ const wsErrorMessages: Readonly<Record<string, string>> = {
   approval_timeout: "ホストから時間内に応答がなく、操作権を取得できませんでした。",
   invalid_argument: "入力内容を確認してください。",
   kill_switch_active: "キルスイッチが発動中です。",
+  input_paused: "ホストの人が操作中のため、入力を一時停止しています。しばらくすると自動で再開します。",
   desktop_unavailable: "ホストの画面を操作できません（ロック画面など）。",
   input_blocked: "ホストの前面のウィンドウには入力できません。",
   internal: "内部エラーが発生しました。",

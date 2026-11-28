@@ -17,13 +17,15 @@ import (
 // 渡してしまったときのために、NewLogger は redactAttr で秘密のキーの値とトークン・ハッシュの形の文字列を隠す）。
 // 閲覧は GUI のログ画面（LogReader。FR-H13）。
 const (
-	logFileName     = "puppet-remo.log"
-	logMaxSizeMiB   = 10
-	logMaxBackups   = 4 // 現在のファイルと合わせて 5 世代
-	logDirMode      = 0o700
-	dataDirName     = "puppet-remo"
-	DatabaseFile    = "puppet-remo.db"
-	logSubdirectory = "logs"
+	logFileName   = "puppet-remo.log"
+	logMaxSizeMiB = 10
+	logMaxBackups = 4 // 現在のファイルと合わせて 5 世代
+	logDirMode    = 0o700
+	dataDirName   = "puppet-remo"
+	DatabaseFile  = "puppet-remo.db"
+	// CommandAllowlistFile はコマンド実行（#265）の許可リストの既定のファイル名（データフォルダの中。設定 command.allowlist_path で変えられる）。
+	CommandAllowlistFile = "commands.json"
+	logSubdirectory      = "logs"
 )
 
 // DataDir はデータのディレクトリ（%LOCALAPPDATA%\puppet-remo。NFR-S11）を返す。localAppData が空ならエラー。
@@ -32,6 +34,15 @@ func DataDir(localAppData string) (string, error) {
 		return "", errors.New("LOCALAPPDATA is not set")
 	}
 	return filepath.Join(localAppData, dataDirName), nil
+}
+
+// DefaultInboxDir はファイル転送の既定の置き場所（%LOCALAPPDATA%\PuppetRemo\inbox。#264）を返す。データのディレクトリ（DataDir。
+// puppet-remo）とは別の場所で、重ならない。localAppData が空ならエラー。
+func DefaultInboxDir(localAppData string) (string, error) {
+	if localAppData == "" {
+		return "", errors.New("LOCALAPPDATA is not set")
+	}
+	return filepath.Join(localAppData, "PuppetRemo", "inbox"), nil
 }
 
 // ParseLogLevel は "debug" / "info" / "warn" / "error"（大文字小文字を区別しない）を slog.Level にする。空は info。
