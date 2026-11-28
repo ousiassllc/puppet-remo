@@ -41,12 +41,14 @@ func TestMuteTextInHoverRowsSwitchesToMuteOnSoft(t *testing.T) {
 	}
 
 	// 行（<tr class="… hover:bg-(--table-row-hover) …"> から </tr> まで）の中の text-mute。
+	rows := 0
 	for _, file := range []string{
 		"organisms/app_log.templ", "organisms/audit.templ", "organisms/clients.templ",
 		"organisms/request_history.templ", "organisms/tasks.templ",
 	} {
 		src := readFile(t, file)
 		for _, loc := range rowOpen.FindAllStringSubmatchIndex(src, -1) {
+			rows++
 			open := src[loc[2]:loc[3]]
 			rest := src[loc[1]:]
 			end := strings.Index(rest, "</tr>")
@@ -68,6 +70,10 @@ func TestMuteTextInHoverRowsSwitchesToMuteOnSoft(t *testing.T) {
 				}
 			}
 		}
+	}
+	// 正規表現が 1 件も当たらないと、検査が空振りのまま緑になる（hover の書き方を変えたときの見落とし）。表の行は 5 ファイルに 7 行ある。
+	if rows < 7 {
+		t.Errorf("hover 付きの表の行が %d 行しか見つからない（7 行以上のはず。rowOpen を見直す）", rows)
 	}
 }
 

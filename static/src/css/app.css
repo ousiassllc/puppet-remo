@@ -31,7 +31,8 @@
   --scrim: rgb(5 5 5 / 0.4);
   --select-arrow: var(--select-arrow-light);
   --ring: color-mix(in srgb, var(--focus) 40%, transparent);
-  /* --accent-soft 地の上の補助文字（ガイドの式。--mute だけでは --accent-soft 上で AA に届かない）。テーマ別の --mute・--ink から導く。 */
+  /* --accent-soft・--surface-sel 地（表の行の hover）の上の補助文字（ガイドの式。--mute だけでは AA に届かない: --accent-soft 上でライト 4.29・ダーク 4.22、--surface-sel 上でライト 4.45）。
+   * この式の文字は --surface-sel 上でライト 5.59・ダーク 6.07、--accent-soft 上でライト 5.39・ダーク 5.24。テーマ別の --mute・--ink から導く。 */
   --mute-on-soft: color-mix(in srgb, var(--mute) 85%, var(--ink));
   /* ごく薄い線（ガイドの --line-soft。--accent の 6%: ライトは ink、ダークは bone）。表の行の区切りと、浮かぶ面（モーダル・ドロップダウン・トースト）の 1px の枠。 */
   --line-soft: color-mix(in srgb, var(--accent) 6%, transparent);
