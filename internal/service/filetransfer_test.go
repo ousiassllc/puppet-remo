@@ -9,7 +9,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -212,6 +214,60 @@ func TestFileTransferSizeLimits(t *testing.T) {
 	set, invalid, err := loadFileTransferSettings(context.Background(), newCtlSettings())
 	if err != nil || invalid || set.MaxFileBytes != 100<<20 || set.MaxTotalBytes != 1<<30 || set.Root != "" {
 		t.Fatalf("defaults = %+v, %v, %v", set, invalid, err)
+	}
+}
+
+// 同時に put しても、置き場所全体の大きさの上限を超えない（合計の確認から書き込みの完了までが 1 つの排他区間。#275）。
+func TestFileTransferConcurrentPutsRespectTotalLimit(t *testing.T) {
+	const (
+		writers = 16
+		size    = 10
+		limit   = 35 // 3 つ（30）までは入り、4 つ目（40）は入らない
+	)
+	e := newFtEnv(t)
+	e.settings.put(settingFileTransferMaxFile, "100")
+	e.settings.put(settingFileTransferMaxTotal, strconv.Itoa(limit))
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make([]error, writers)
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, errs[i] = e.put(ctlAlice, "f"+strconv.Itoa(i), strings.Repeat("x", size))
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	stored := 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			stored++
+		case !errors.Is(err, domain.ErrFileStoreFull):
+			t.Errorf("put %d: %v", i, err)
+		}
+	}
+	if stored != limit/size {
+		t.Errorf("stored %d files, want %d", stored, limit/size)
+	}
+	total := 0
+	entries, err := os.ReadDir(e.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ent := range entries {
+		fi, err := ent.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += int(fi.Size())
+	}
+	if total > limit || total != stored*size {
+		t.Errorf("total on disk = %d bytes (limit %d, stored %d files)", total, limit, stored)
 	}
 }
 
