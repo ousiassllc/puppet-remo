@@ -36,7 +36,9 @@ func TestLayoutLoadsOnlyLocalExternalScriptsInOrder(t *testing.T) {
 	for _, want := range []string{`<link rel="stylesheet" href="/static/css/app.css"`, `hx-ext="response-targets"`, `X-Puppet-Remo`,
 		`id="live-poll"`, `hx-get="/poll"`, `hx-trigger="every 3s"`, `hx-swap="none"`,
 		`id="toast-root"`, `id="alert-root"`, `id="modal-root"`, `id="main"`, `<html lang="ja">`,
-		`<link rel="icon" href="/static/brand/favicon.ico"`, `src="/static/brand/lockup-light.svg"`, `src="/static/brand/lockup-dark.svg"`, `alt="Nefos Remote"`} {
+		`<link rel="icon" href="/static/brand/favicon.ico"`, `src="/static/brand/lockup-light.svg"`, `src="/static/brand/lockup-dark.svg"`, `alt="Nefos Remote"`,
+		// forced-colors 用の形だけのマスク（#282。app.css の .brand-forced-*）。ロックアップのほうが名前（role="img"）を持つ。
+		`class="brand-forced brand-forced-lockup `, `role="img" aria-label="Nefos Remote"></span>`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("layout lacks %q", want)
 		}

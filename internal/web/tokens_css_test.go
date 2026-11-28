@@ -36,7 +36,7 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		"--tip-pad-y", "--tip-pad-x", "--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
 		"--toast-h", "--icon-sm", "--icon-md", "--icon-lg", "--icon-xl",
 		"--table-pad-y", "--table-pad-x", "--table-pad-y-compact", "--table-pad-x-compact",
-		"--table-head-size", "--table-body-size", "--table-row-hover", "--table-divider",
+		"--table-head-size", "--table-body-size", "--row-hover", "--table-divider",
 	} {
 		if !regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `:`).MatchString(css) {
 			t.Errorf("app.css does not define %s", name)
@@ -115,12 +115,12 @@ func TestAppCSSTypeScaleAndCardSurfaceTokens(t *testing.T) {
 	}
 }
 
-// #272: 表の行（td の行間 1.5・hover は --surface-sel・行頭の名前は項目名の段）と字間（見出し・項目 .01em / 本文・説明 .02em / ナビ・ボタン 0）は、
-// app.css のトークンで持つ。テンプレートは値（px・em・行間）を直書きせず、トークンのクラス（tracking-ui・text-item・hover:bg-(--table-row-hover)）で参照する。
+// #272: 表の行（td の行間 1.5・hover は --row-hover。#283・行頭の名前は項目名の段）と字間（見出し・項目 .01em / 本文・説明 .02em / ナビ・ボタン 0）は、
+// app.css のトークンで持つ。テンプレートは値（px・em・行間）を直書きせず、トークンのクラス（tracking-ui・text-item・hover:bg-(--row-hover)）で参照する。
 func TestTableRowAndTrackingTokens(t *testing.T) {
 	css := readAppCSS(t)
 	for _, pat := range []string{
-		`(?m)^\s*--table-body-leading:\s*1\.5;`, `(?m)^\s*--table-row-hover:\s*var\(--surface-sel\);`,
+		`(?m)^\s*--table-body-leading:\s*1\.5;`,
 		`(?m)^\s*--tracking-heading:\s*0\.01em;`, `(?m)^\s*--tracking-body:\s*0\.02em;`, `(?m)^\s*--tracking-ui:\s*0;`,
 		`(?m)^\s*--text-page-title--letter-spacing:\s*var\(--tracking-heading\);`, `(?m)^\s*--text-section--letter-spacing:\s*var\(--tracking-heading\);`,
 		`(?m)^\s*--text-item--letter-spacing:\s*var\(--tracking-heading\);`, `(?m)^\s*--text-lg--letter-spacing:\s*var\(--tracking-heading\);`,
@@ -135,11 +135,7 @@ func TestTableRowAndTrackingTokens(t *testing.T) {
 			t.Errorf("app.css must match %s", pat)
 		}
 	}
-	if regexp.MustCompile(`(?m)^\s*--table-row-hover:\s*var\(--accent-soft\)`).MatchString(css) {
-		t.Error("--table-row-hover must be --surface-sel, not --accent-soft")
-	}
-
-	// テンプレートの表の行は --table-row-hover を参照し、字間・行間の値を直書きしない。ボタンとナビは tracking-ui で字間 0。
+	// テンプレートの表の行は --row-hover を参照し、字間・行間の値を直書きしない。ボタンとナビは tracking-ui で字間 0。
 	hard := regexp.MustCompile(`\btracking-\[|\[letter-spacing:|-?[0-9.]+em\b`)
 	err := fs.WalkDir(os.DirFS(filepath.Join(".")), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
@@ -149,7 +145,7 @@ func TestTableRowAndTrackingTokens(t *testing.T) {
 		if strings.Contains(src, "<tr class=") && strings.Contains(src, "hover:bg-accent-soft") {
 			for _, line := range strings.Split(src, "\n") {
 				if strings.Contains(line, "<tr class=") && strings.Contains(line, "hover:bg-accent-soft") {
-					t.Errorf("%s: 表の行の hover は hover:bg-(--table-row-hover)（--accent-soft ではない）: %s", path, strings.TrimSpace(line))
+					t.Errorf("%s: 表の行の hover は hover:bg-(--row-hover)（--accent-soft ではない）: %s", path, strings.TrimSpace(line))
 				}
 			}
 		}
@@ -167,6 +163,40 @@ func TestTableRowAndTrackingTokens(t *testing.T) {
 	} {
 		if !strings.Contains(readFile(t, file), want) {
 			t.Errorf("%s: ボタン・ナビは %q（字間 0）", file, want)
+		}
+	}
+}
+
+// #282: forced-colors（ハイコントラスト）で、主ボタン（.btn-primary）・ナビの現在地（aria-current="page"）・ロゴは、システム色に置き換える。
+// 状態チップはアイコンで区別できるので変えない。Chromium の forcedColors エミュレーションで確かめた（docs/screenshots/issue-282）。実機のハイコントラストでは確かめていない。
+func TestForcedColorsPrimaryButtonNavAndLogo(t *testing.T) {
+	css := readAppCSS(t)
+	for _, pat := range []string{
+		// 主ボタン: ButtonText の塗り・ButtonFace の字・ButtonText の 1px の輪郭。バックプレートを敷かせない（forced-color-adjust: none）。
+		`(?s)@media \(forced-colors: active\) \{\s*\.btn-primary \{[^}]*forced-color-adjust:\s*none;[^}]*background:\s*ButtonText !important;[^}]*color:\s*ButtonFace !important;[^}]*border:\s*1px solid ButtonText;`,
+		// ナビの現在地: Highlight の地・HighlightText の字。
+		`(?s)@media \(forced-colors: active\) \{\s*#sidebar-nav \[aria-current="page"\] \{[^}]*forced-color-adjust:\s*none;[^}]*background:\s*Highlight !important;[^}]*color:\s*HighlightText !important;`,
+		// ロゴ: 画像（地の板つき）は隠し、形だけのマスクを CanvasText で塗る。
+		`(?s)\.brand-forced \{\s*display:\s*none;\s*\}`,
+		`(?s)@media \(forced-colors: active\) \{\s*\.brand-light,\s*\.brand-dark \{\s*display:\s*none !important;`,
+		`(?s)\.brand-forced \{[^}]*display:\s*block;[^}]*background-color:\s*CanvasText;`,
+		`\.brand-forced-lockup \{\s*mask-image:\s*url\("/static/brand/lockup-mono\.svg"\);`,
+		`\.brand-forced-symbol \{\s*mask-image:\s*url\("/static/brand/symbol-mono\.svg"\);`,
+	} {
+		if !regexp.MustCompile(pat).MatchString(css) {
+			t.Errorf("app.css must match %s", pat)
+		}
+	}
+	// マスクの素材は、地の板（rect）・グラデーション・色つきの塗りを持たない（形だけ。色は CSS の CanvasText が決める）。
+	for _, name := range []string{"lockup-mono.svg", "symbol-mono.svg"} {
+		svg := readFile(t, filepath.Join("..", "..", "static", "src", "brand", name))
+		for _, bad := range []string{"<rect", "<defs", "linearGradient", "url(#", "filter="} {
+			if strings.Contains(svg, bad) {
+				t.Errorf("%s に %q がある（地の板・プリズムの線は除く）", name, bad)
+			}
+		}
+		if strings.Count(svg, "<path") == 0 {
+			t.Errorf("%s に形（path）が無い", name)
 		}
 	}
 }

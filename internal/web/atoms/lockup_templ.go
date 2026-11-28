@@ -17,6 +17,10 @@ import templruntime "github.com/a-h/templ/runtime"
 // ロゴの下地とヘッダーの地を同じ --bone にそろえるため、ロゴを置くヘッダーは bg-bone にする。
 // ライト用・ダーク用の 2 枚ずつを出し、見えるほうを app.css（.brand-light・.brand-dark）がテーマ（data-theme・prefers-color-scheme）で切り替える。
 // 隠れているほうは display: none なので、読み上げには 1 つだけ出る。幅での切り替えは 2 つの包みの min-[360px]。
+//
+// forced-colors（Windows のハイコントラスト。#282）では、画像の SVG は色を OS に合わせられず、自前の下地が四角い板として残る。そこで .brand-forced（通常は display: none）の
+// 形だけのマスク（lockup-mono.svg・symbol-mono.svg。地の板とプリズムの線を除いたもの）を、文字色（CanvasText）で塗って出し、.brand-light・.brand-dark の画像は隠す（app.css）。
+// マスク側の span が読み上げの名前（role="img" aria-label）を持つ。通常は display: none なので重ならない。
 func Lockup() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -38,7 +42,7 @@ func Lockup() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<span class=\"hidden min-[360px]:contents\"><img class=\"brand-light h-10 w-auto min-w-24 shrink object-contain object-left sm:h-[55px]\" src=\"/static/brand/lockup-light.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\"> <img class=\"brand-dark h-10 w-auto min-w-24 shrink object-contain object-left sm:h-[55px]\" src=\"/static/brand/lockup-dark.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\"></span> <span class=\"inline-flex size-6 shrink-0 min-[360px]:hidden\" role=\"img\" aria-label=\"Nefos Remote\"><img class=\"brand-light size-6\" src=\"/static/brand/symbol-light.svg\" width=\"24\" height=\"24\" alt=\"\"> <img class=\"brand-dark size-6\" src=\"/static/brand/symbol-dark.svg\" width=\"24\" height=\"24\" alt=\"\"></span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<span class=\"hidden min-[360px]:contents\"><img class=\"brand-light h-10 w-auto min-w-24 shrink object-contain object-left sm:h-[55px]\" src=\"/static/brand/lockup-light.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\"> <img class=\"brand-dark h-10 w-auto min-w-24 shrink object-contain object-left sm:h-[55px]\" src=\"/static/brand/lockup-dark.svg\" width=\"196\" height=\"55\" alt=\"Nefos Remote\"> <span class=\"brand-forced brand-forced-lockup aspect-[2000/560] h-10 min-w-24 shrink sm:h-[55px]\" role=\"img\" aria-label=\"Nefos Remote\"></span></span> <span class=\"inline-flex size-6 shrink-0 min-[360px]:hidden\" role=\"img\" aria-label=\"Nefos Remote\"><img class=\"brand-light size-6\" src=\"/static/brand/symbol-light.svg\" width=\"24\" height=\"24\" alt=\"\"> <img class=\"brand-dark size-6\" src=\"/static/brand/symbol-dark.svg\" width=\"24\" height=\"24\" alt=\"\"> <span class=\"brand-forced brand-forced-symbol size-6\" aria-hidden=\"true\"></span></span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

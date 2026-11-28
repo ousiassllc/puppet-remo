@@ -102,7 +102,7 @@ templ TaskList(v view.TaskList) {
 					</thead>
 					<tbody class="divide-y divide-line-soft">
 						for _, r := range v.Rows {
-							<tr class="hover:bg-(--table-row-hover)" data-task-row={ r.DetailURL } data-status={ r.Code }>
+							<tr class="hover:bg-(--row-hover)" data-task-row={ r.DetailURL } data-status={ r.Code }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Created }</td>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y)">
 									<a
@@ -203,7 +203,7 @@ templ taskStepArgs(args []view.AuditArg) {
 		<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>
 			for _, a := range args {
 				<div class="flex gap-1">
-					<dt class="font-mono text-mute group-hover:text-mute-on-soft">{ a.Key }:</dt>
+					<dt class="font-mono text-mute">{ a.Key }:</dt>
 					<dd class="break-all font-mono">{ a.Value }</dd>
 				</div>
 			}
@@ -288,13 +288,13 @@ templ TaskDetail(v view.TaskDetail) {
 						</thead>
 						<tbody class="divide-y divide-line-soft">
 							for i, s := range v.Steps {
-								<tr class="group hover:bg-(--table-row-hover)" data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route } data-step-kind={ stepKind(s) }>
+								<tr class="hover:bg-(--row-hover)" data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route } data-step-kind={ stepKind(s) }>
 									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right font-mono text-ink">
 										if s.KindLabel == "" {
 											{ strconv.Itoa(s.No) }
 										} else {
 											@atoms.Tooltip("step-row-tip-"+strconv.Itoa(i), "ステップ "+strconv.Itoa(s.No)+" に付く行") {
-												<span class="text-mute group-hover:text-mute-on-soft">-</span>
+												<span class="text-mute">-</span>
 											}
 										}
 									</td>
@@ -303,10 +303,10 @@ templ TaskDetail(v view.TaskDetail) {
 									</td>
 									<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">
 										if s.KindLabel != "" {
-											<span class="mr-1 text-desc text-mute group-hover:text-mute-on-soft" data-step-kind-label>{ s.KindLabel }</span>
+											<span class="mr-1 text-desc text-mute" data-step-kind-label>{ s.KindLabel }</span>
 										}
 										<span>{ s.Summary }</span>
-										<span class="ml-1 font-mono text-desc text-mute group-hover:text-mute-on-soft">{ s.Event }</span>
+										<span class="ml-1 font-mono text-desc text-mute">{ s.Event }</span>
 										@taskStepArgs(s.Args)
 										if s.AuditURL != "" {
 											<a
@@ -334,7 +334,7 @@ templ TaskDetail(v view.TaskDetail) {
 												data-step-thumb
 											/>
 										} else {
-											<span class="text-mute group-hover:text-mute-on-soft">-</span>
+											<span class="text-mute">-</span>
 										}
 									</td>
 								</tr>
