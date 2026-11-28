@@ -221,7 +221,7 @@ func TestUIATreeRedactsPasswordAndKeepsValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree := uiaTreeFromWalked(nodes)
+	tree := uiaTreeFromWalked(nodes, uiaIDMaker{hwnd: 100, pid: 7})
 	user, pass := tree.Children[0], tree.Children[1]
 	if user.Value != "alice" || user.ValueRedacted {
 		t.Errorf("user = value %q redacted %v", user.Value, user.ValueRedacted)
@@ -237,16 +237,23 @@ func TestUIATreeShape(t *testing.T) {
 	root.props.RuntimeID = []int32{42, 0x1f4, -3}
 	root.props.Rect = domain.Rect{X: 1, Y: 2, W: 3, H: 4}
 	root.props.Enabled = false
+	root.props.AutomationID = "MainWindow"
+	root.props.ClassName = "Notepad"
+	root.props.Patterns = []string{domain.PatternWindow}
+	root.props.Offscreen = true
 	root.kids = []*fakeUIANode{uiaTestNode("b")}
 	nodes, err := walkUIA(context.Background(), root, 1, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree := uiaTreeFromWalked(nodes)
-	if tree.ID != "uia:2a.1f4.fffffffd" || tree.Role != "Window" || tree.Name != "w" || tree.Rect != root.props.Rect || tree.Enabled {
+	tree := uiaTreeFromWalked(nodes, uiaIDMaker{hwnd: 100, pid: 7})
+	if tree.ID != "uie:100:7:2a.1f4.fffffffd" || tree.Role != "Window" || tree.Name != "w" || tree.Rect != root.props.Rect || tree.Enabled {
 		t.Errorf("root = %+v", tree)
 	}
-	if len(tree.Children) != 1 || tree.Children[0].Role != "Button" || tree.Children[0].ID != "uia:n1" {
+	if tree.AutomationID != "MainWindow" || tree.ClassName != "Notepad" || !slices.Equal(tree.Patterns, []string{"Window"}) || !tree.Offscreen {
+		t.Errorf("root automation id %q, class %q, patterns %v, offscreen %v", tree.AutomationID, tree.ClassName, tree.Patterns, tree.Offscreen)
+	}
+	if len(tree.Children) != 1 || tree.Children[0].Role != "Button" || tree.Children[0].ID != "" {
 		t.Errorf("children = %+v", tree.Children)
 	}
 }

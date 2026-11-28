@@ -103,12 +103,85 @@ func RunUIAutomationContract(t *testing.T, newUIA func(t *testing.T) platform.UI
 		}
 	})
 
+	t.Run("Find and Resolve", func(t *testing.T) {
+		u := newUIA(t)
+		matchAll := func(domain.UIElementInfo) bool { return true }
+		_, err := u.Find(ctx, "no-such-window", matchAll, 5, 10)
+		requireCode(t, err, domain.ErrWindowNotFound, "Find")
+		for _, c := range []struct{ results, nodes int }{{0, 10}, {5, 0}, {-1, -1}} {
+			_, err := u.Find(ctx, "", matchAll, c.results, c.nodes)
+			requireCode(t, err, domain.ErrInvalidArgument, "Find limits")
+		}
+
+		all, err := u.Find(ctx, "", matchAll, largeLimit, largeLimit)
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		if all.Window.ID == "" || len(all.Elements) < 3 || all.Truncated {
+			t.Fatalf("Find(all) = window %q, %d elements, Truncated %v; want a window, at least 3 elements, not truncated", all.Window.ID, len(all.Elements), all.Truncated)
+		}
+		one, err := u.Find(ctx, all.Window.ID, matchAll, 1, largeLimit)
+		if err != nil {
+			t.Fatalf("Find(maxResults 1): %v", err)
+		}
+		if len(one.Elements) != 1 || !one.Truncated {
+			t.Errorf("Find(maxResults 1): %d elements, Truncated %v; want 1 and true", len(one.Elements), one.Truncated)
+		}
+		capped, err := u.Find(ctx, all.Window.ID, matchAll, largeLimit, 2)
+		if err != nil {
+			t.Fatalf("Find(maxNodes 2): %v", err)
+		}
+		if len(capped.Elements) > 2 || !capped.Truncated {
+			t.Errorf("Find(maxNodes 2): %d elements, Truncated %v; want at most 2 and true", len(capped.Elements), capped.Truncated)
+		}
+		none, err := u.Find(ctx, all.Window.ID, func(domain.UIElementInfo) bool { return false }, 5, largeLimit)
+		if err != nil || len(none.Elements) != 0 || none.Truncated {
+			t.Errorf("Find(match none) = %d elements, Truncated %v, %v; want none", len(none.Elements), none.Truncated, err)
+		}
+
+		resolved := 0
+		for _, e := range all.Elements {
+			if e.ID == "" {
+				continue // RuntimeId を取れない要素は引き直せない
+			}
+			ref, err := domain.ParseElementRef(e.ID)
+			if err != nil {
+				t.Fatalf("Find returned the id %q, which does not parse: %v", e.ID, err)
+			}
+			if ref.WindowID() != all.Window.ID || ref.PID != all.Window.PID {
+				t.Errorf("id %q is for window %s pid %d; want window %s pid %d", e.ID, ref.WindowID(), ref.PID, all.Window.ID, all.Window.PID)
+			}
+			got, err := u.Resolve(ctx, ref)
+			if err != nil {
+				t.Fatalf("Resolve(%s): %v", e.ID, err)
+			}
+			if got.ID != e.ID {
+				t.Errorf("Resolve(%s) returned %q", e.ID, got.ID)
+			}
+			resolved++
+			if resolved == 5 {
+				break
+			}
+		}
+		if resolved == 0 {
+			t.Error("no element from Find has an id")
+		}
+
+		gone := domain.ElementRef{HWND: 1 << 40, PID: 1, RuntimeID: []int32{1, 2}}
+		_, err = u.Resolve(ctx, gone)
+		requireCode(t, err, domain.ErrStaleElement, "Resolve(unknown window)")
+	})
+
 	t.Run("canceled context", func(t *testing.T) {
 		u := newUIA(t)
 		_, err := u.Tree(canceledCtx(), "", 5, 10)
 		requireCanceled(t, err, "Tree")
 		_, err = u.Snapshot(canceledCtx(), "", 10)
 		requireCanceled(t, err, "Snapshot")
+		_, err = u.Find(canceledCtx(), "", func(domain.UIElementInfo) bool { return true }, 5, 10)
+		requireCanceled(t, err, "Find")
+		_, err = u.Resolve(canceledCtx(), domain.ElementRef{HWND: 1, PID: 1, RuntimeID: []int32{1}})
+		requireCanceled(t, err, "Resolve")
 	})
 }
 

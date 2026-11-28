@@ -3,6 +3,7 @@ package platformtest
 import (
 	"context"
 	"slices"
+	"strconv"
 	"sync"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
@@ -72,10 +73,95 @@ func (f *FakeUIAutomation) Tree(ctx context.Context, windowID string, maxDepth, 
 	root, ok := f.trees[w.ID]
 	f.mu.Unlock()
 	if !ok {
-		root = domain.UINode{ID: w.ID, Role: "Window", Name: w.Title, Rect: w.Rect, Enabled: true}
+		root = f.defaultRoot(w)
 	}
 	budget := maxNodes - 1
 	return pruneTree(root, 0, maxDepth, &budget), nil
+}
+
+// defaultRoot は木を設定していないウィンドウの、根だけのツリー。
+func (f *FakeUIAutomation) defaultRoot(w domain.WindowInfo) domain.UINode {
+	hwnd, _ := strconv.ParseUint(w.ID, 10, 64)
+	ref := domain.ElementRef{HWND: hwnd, PID: w.PID, RuntimeID: []int32{42, int32(hwnd)}}
+	return domain.UINode{ID: ref.String(), Role: "Window", Name: w.Title, Rect: w.Rect, Enabled: true}
+}
+
+// treeOf は w の木（未設定なら根だけ）を返す。
+func (f *FakeUIAutomation) treeOf(w domain.WindowInfo) domain.UINode {
+	f.mu.Lock()
+	root, ok := f.trees[w.ID]
+	f.mu.Unlock()
+	if !ok {
+		root = f.defaultRoot(w)
+	}
+	return root
+}
+
+// bfs は root の子孫を幅優先（浅い階層から）に並べる。root 自身を先頭に含む。
+func bfs(root domain.UINode) []domain.UINode {
+	out := []domain.UINode{root}
+	for i := 0; i < len(out); i++ {
+		out = append(out, out[i].Children...)
+	}
+	return out
+}
+
+func elementInfoOf(n domain.UINode) domain.UIElementInfo {
+	return domain.UIElementInfo{
+		ID: n.ID, ControlType: n.Role, Name: n.Name, AutomationID: n.AutomationID, ClassName: n.ClassName,
+		Rect: n.Rect, Enabled: n.Enabled, Offscreen: n.Offscreen, Patterns: slices.Clone(n.Patterns),
+	}
+}
+
+// Find は platform.UIAutomation.Find。木は SetTree で設定したもの（未設定なら根だけ）。
+func (f *FakeUIAutomation) Find(ctx context.Context, windowID string, match func(domain.UIElementInfo) bool, maxResults, maxNodes int) (domain.UIFindResult, error) {
+	if err := f.enter(ctx, "Find", windowID, maxResults, maxNodes); err != nil {
+		return domain.UIFindResult{}, err
+	}
+	if maxResults < 1 || maxNodes < 1 {
+		return domain.UIFindResult{}, domain.ErrInvalidArgument.WithMsg("maxResults and maxNodes must be at least 1")
+	}
+	w, err := f.resolve(windowID)
+	if err != nil {
+		return domain.UIFindResult{}, err
+	}
+	all := bfs(f.treeOf(w))
+	res := domain.UIFindResult{Window: w}
+	if len(all) > maxNodes {
+		all, res.Truncated = all[:maxNodes], true
+	}
+	for _, n := range all {
+		info := elementInfoOf(n)
+		probe := info
+		probe.ID = ""
+		if !match(probe) {
+			continue
+		}
+		if len(res.Elements) == maxResults {
+			res.Truncated = true
+			break
+		}
+		res.Elements = append(res.Elements, info)
+	}
+	return res, nil
+}
+
+// Resolve は platform.UIAutomation.Resolve。ウィンドウが無い・PID が違う・木に ID の要素が無いときは ErrStaleElement。
+func (f *FakeUIAutomation) Resolve(ctx context.Context, ref domain.ElementRef) (domain.UIElementInfo, error) {
+	if err := f.enter(ctx, "Resolve", ref.String()); err != nil {
+		return domain.UIElementInfo{}, err
+	}
+	w, ok := f.windows.find(ref.WindowID())
+	if !ok || w.PID != ref.PID {
+		return domain.UIElementInfo{}, domain.ErrStaleElement
+	}
+	id := ref.String()
+	for _, n := range bfs(f.treeOf(w)) {
+		if id != "" && n.ID == id {
+			return elementInfoOf(n), nil
+		}
+	}
+	return domain.UIElementInfo{}, domain.ErrStaleElement
 }
 
 // pruneTree は深さ maxDepth・総数 maxNodes までに刈り込む。budget は残りの節点数（n 自身は数え済み）。

@@ -48,6 +48,8 @@ type Control interface {
 	// キー・文字入力・クリップボードは前面のウィンドウ。agent のアクションは 1 件ごとに agent.step（kind = agent）で監査し
 	// （WithAgentStep の step_no・route。type の本文は記録しない）、Judge が allow 以外なら agent.judge も記録する（control_judge.go）。
 	// Wait はリース不要（KillSwitch の後に待つだけ）。
+	// FindUIElement・WaitFor は UI を読むだけの操作で、GetUITree と同じ検査（リース・InputGuard の観測の規則。自ウィンドウは input_blocked）を通る
+	// （control_uia.go。WaitFor は待ちの間も確認のたびにキルスイッチを見る。1 回の呼び出しが 1 行の監査）。
 	Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
 	// Screenshot は閲覧系（リース不要）。monitor は Index か domain.MonitorPrimary。format は "png"（既定）か "jpeg"。
 	Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
@@ -126,6 +128,10 @@ type LaunchResult struct {
 type Result struct {
 	Text string         // ClipboardRead: クリップボードのテキスト（1 MiB まで）
 	Tree *domain.UINode // GetUITree: 物理座標のツリー。縮小座標への変換は呼び出し側が行う
+	// Found は FindUIElement の結果（物理座標。縮小座標への変換は呼び出し側が行う）。
+	Found *domain.UIFindResult
+	// Waited は WaitFor の結果（物理座標）。タイムアウトはエラーではなく Satisfied が false の結果。
+	Waited *WaitOutcome
 }
 
 // Shot は縮小済みのスクリーンショット。

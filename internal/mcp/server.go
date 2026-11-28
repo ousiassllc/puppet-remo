@@ -258,6 +258,9 @@ func (s *Server) toolContext(ctx context.Context, tool string) (context.Context,
 	if leaseAcquiringTools[tool] {
 		timeout = s.leaseToolTimeout
 	}
+	if tool == "wait_for" {
+		timeout += service.MaxWaitForTimeout // 承認待ちのあとに、最大の待ち時間が残るようにする
+	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	stop := context.AfterFunc(aborted, cancel)
 	return ctx, func() { stop(); cancel() }

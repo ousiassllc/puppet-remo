@@ -124,7 +124,7 @@ func scopeGate(s domain.LeaseScope, op domain.Op) error {
 	switch op.(type) {
 	case domain.ClipboardRead:
 		return scopeBlocked(domain.ReasonClipboardOutOfScope, domain.BlockedBy{})
-	case domain.GetUITree:
+	case domain.GetUITree, domain.FindUIElement, domain.WaitFor:
 		return nil // 入力ではない。スコープなしと同じ InputGuard が見る
 	}
 	if s.Halted() {
