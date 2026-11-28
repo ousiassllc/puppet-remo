@@ -307,10 +307,10 @@ type UIAutomation interface {
     Find(ctx context.Context, windowID string, match func(domain.UIElementInfo) bool, maxResults, maxNodes int) (domain.UIFindResult, error)
     // #267: 要素 ID（domain.ElementRef = HWND・PID・RuntimeId）を生きた要素へ引き直す。ウィンドウが無い・PID が違う・要素が無い、は domain.ErrStaleElement。
     Resolve(ctx context.Context, ref domain.ElementRef) (domain.UIElementInfo, error)
-    // #268: 要素 ID の要素を UI Automation のパターンで操作する（domain.UIAction: Invoke・Value の SetValue・Toggle・SelectionItem・ExpandCollapse）。
+    // #268: 要素 ID の要素を UI Automation のパターンで操作する（domain.UIAction: Invoke・Value の SetValue・Toggle・SelectionItem・ExpandCollapse・ScrollItem の ScrollIntoView・RangeValue の SetValue。後ろの 2 つは #278）。
     // カーソルもキーボードフォーカスも動かさず、SendInput にも切り替えない。呼べるのは service.Control だけ（入力と同じ検査・監査を通すため）。
     // 要素の特定は Resolve と同じ（ErrStaleElement）。特定後: 無効 → ErrElementDisabled、パターン無し → ErrPatternUnsupported（detail.supported）、
-    // 読み取り専用の set_value → ErrElementReadOnly、UIA の拒否 → アクセス拒否は ErrInputBlocked（access_denied）・それ以外は ErrUIActionFailed。
+    // 読み取り専用の set_value・set_range_value → ErrElementReadOnly、set_range_value の数が要素の Minimum〜Maximum の外 → ErrInvalidArgument（detail.minimum・maximum。丸めない）、UIA の拒否 → アクセス拒否は ErrInputBlocked（access_denied）・それ以外は ErrUIActionFailed。
     // 特定したあとの失敗も、UIActionResult の Window・Element・Password を入れて返す（監査に ControlType・AutomationId を残すため）。
     Act(ctx context.Context, ref domain.ElementRef, act domain.UIAction) (domain.UIActionResult, error)
 }
@@ -1626,3 +1626,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.74 | 2026-11-28 | ファイル転送（#264）: §3 に `platform.FileStore`（実装 `platform/localfs`）、§5.4.3 に `service.FileTransfer`（設定・検査の順序・直列化・監査・`ResolveInRoot`） | #264 |
 | 1.75 | 2026-11-28 | UI 要素のパターン操作（#268。FR-M31 `ui_action`）: §3 の `UIAutomation` に `Act` を追加（カーソル・フォーカスを動かさず、SendInput に切り替えない。呼べるのは `Control` だけ）。`Control.Do` の `domain.UIAction`（InputGuard は要素のウィンドウを検査。スコープ付きのリースは要素のウィンドウが G のメンバーであること。ホストの実入力による一時停止の対象外） | AI が UI をホストの人の作業を邪魔せずに操作できるようにするため |
 | 1.76 | 2026-11-28 | コマンド実行（#265）: §3 に `platform.CommandRunner`（実装 `platform/localexec`）、§5.4.4 に `service.CommandExec`（検査の順序・許可リストの規則・同時実行の上限・KillSwitch との結線・監査）。`mcp.Config` に `Commands`、`app.Platform` に `Commands` | #265 |
+| 1.77 | 2026-11-28 | UI 要素のパターン操作（#278）: §3 の `UIAutomation.Act` に ScrollItem の ScrollIntoView（`scroll_into_view`）・RangeValue の SetValue（`set_range_value`。範囲外は `ErrInvalidArgument`）を追加。監査は `audit.record_text` のときだけ数を残す | #278 |

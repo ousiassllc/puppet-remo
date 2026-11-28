@@ -79,6 +79,7 @@ var uiaPatternProps = []struct {
 	{30036, domain.PatternSelectionItem},
 	{30028, domain.PatternExpandCollapse},
 	{30034, domain.PatternScroll},
+	{30035, domain.PatternScrollItem},
 	{30033, domain.PatternRangeValue},
 	{30044, domain.PatternWindow},
 	{30040, domain.PatternText},

@@ -27,6 +27,9 @@ type fakeUIANode struct {
 	selected bool
 	readOnly bool
 	value    string
+	// ScrollIntoView・RangeValue の偽。
+	rangeInfo uiaRangeInfo
+	number    float64
 }
 
 func (n *fakeUIANode) act(name string) error {
@@ -60,6 +63,14 @@ func (n *fakeUIANode) Expand() error {
 func (n *fakeUIANode) Collapse() error {
 	n.expand = uiaExpandCollapsed
 	return n.act("Collapse")
+}
+func (n *fakeUIANode) ScrollIntoView() error { return n.act("ScrollIntoView") }
+func (n *fakeUIANode) RangeValueInfo() (uiaRangeInfo, error) {
+	return n.rangeInfo, nil
+}
+func (n *fakeUIANode) SetRangeValue(v float64) error {
+	n.number = v
+	return n.act("SetRangeValue")
 }
 
 func (n *fakeUIANode) Props() uiaProps { return n.props }

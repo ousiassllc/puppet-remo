@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,14 +17,16 @@ import (
 
 // ui_action 用の木の要素（ウィンドウ "1"。uiaID の n）。
 const (
-	uaSave     = 2 // Invoke を持つボタン
-	uaName     = 3 // Value を持つ編集欄
-	uaCheck    = 4 // Toggle を持つチェックボックス
-	uaItem     = 5 // SelectionItem を持つリスト項目
-	uaNode     = 6 // ExpandCollapse を持つ木の項目
-	uaPlain    = 7 // パターンを持たないボタン
-	uaDisabled = 8 // 無効なボタン
-	uaPassword = 9 // パスワード欄
+	uaSave     = 2  // Invoke を持つボタン
+	uaName     = 3  // Value を持つ編集欄
+	uaCheck    = 4  // Toggle を持つチェックボックス
+	uaItem     = 5  // SelectionItem を持つリスト項目
+	uaNode     = 6  // ExpandCollapse を持つ木の項目
+	uaPlain    = 7  // パターンを持たないボタン
+	uaDisabled = 8  // 無効なボタン
+	uaPassword = 9  // パスワード欄
+	uaScroll   = 10 // ScrollItem を持つ画面外のリスト項目
+	uaSlider   = 11 // RangeValue を持つスライダー（範囲は 0〜100）
 )
 
 func setActionTree(e *ctlEnv) {
@@ -38,6 +41,8 @@ func setActionTree(e *ctlEnv) {
 			{ID: uiaID(1, uaPlain), Role: "Button", Name: "Plain", Enabled: true},
 			{ID: uiaID(1, uaDisabled), Role: "Button", Name: "Off", Enabled: false, Patterns: []string{domain.PatternInvoke}},
 			{ID: uiaID(1, uaPassword), Role: "Edit", Name: "Secret", AutomationID: "PwBox", Enabled: true, Patterns: []string{domain.PatternValue}, ValueRedacted: true},
+			{ID: uiaID(1, uaScroll), Role: "ListItem", Name: "Far item", Enabled: true, Patterns: []string{domain.PatternScrollItem}},
+			{ID: uiaID(1, uaSlider), Role: "Slider", Name: "Volume", Enabled: true, Patterns: []string{domain.PatternRangeValue}},
 		},
 	})
 }
@@ -56,6 +61,12 @@ func act(n int32, kind domain.UIActionKind) domain.UIAction {
 func actSetValue(n int32, v string) domain.UIAction {
 	a := act(n, domain.UIActionSetValue)
 	a.Value = &v
+	return a
+}
+
+func actSetRange(n int32, v float64) domain.UIAction {
+	a := act(n, domain.UIActionSetRangeValue)
+	a.Number = &v
 	return a
 }
 
@@ -123,6 +134,16 @@ func TestControlUIActionEachActionSucceedsWithoutInput(t *testing.T) {
 		{"collapse", act(uaNode, domain.UIActionCollapse), func(t *testing.T, e *ctlEnv, res Result) {
 			if res.Acted.Changed || res.Acted.State != domain.ExpandStateCollapsed {
 				t.Errorf("collapse of a collapsed node: %+v", res.Acted)
+			}
+		}},
+		{"scroll_into_view", act(uaScroll, domain.UIActionScrollIntoView), func(t *testing.T, e *ctlEnv, res Result) {
+			if !e.ui.ScrolledIntoView(uiaID(1, uaScroll)) || !res.Acted.Changed || res.Acted.State != "" {
+				t.Errorf("acted = %+v", res.Acted)
+			}
+		}},
+		{"set_range_value", actSetRange(uaSlider, 42.5), func(t *testing.T, e *ctlEnv, res Result) {
+			if v, ok := e.ui.Number(uiaID(1, uaSlider)); !ok || v != 42.5 || !res.Acted.Changed {
+				t.Errorf("number = %v, %v, acted = %+v", v, ok, res.Acted)
 			}
 		}},
 	}
@@ -414,6 +435,139 @@ func TestControlUIActionIsAudited(t *testing.T) {
 			t.Errorf("detail = %v", d)
 		}
 	})
+}
+
+func TestControlUIActionSetRangeValueAuditNumber(t *testing.T) {
+	ctx := context.Background()
+	entry := func(e *ctlEnv) map[string]any {
+		t.Helper()
+		for _, en := range e.audit.Entries() {
+			if en.Event == "tool.ui_action" {
+				if en.Tool != "ui_action" {
+					t.Errorf("tool = %s", en.Tool)
+				}
+				return detailOf(t, en)
+			}
+		}
+		t.Fatal("no tool.ui_action entry")
+		return nil
+	}
+	t.Run("the number is not recorded by default", func(t *testing.T) {
+		e := newActionEnv(t)
+		if _, err := e.control.Do(ctx, ctlAlice, actSetRange(uaSlider, 73.5)); err != nil {
+			t.Fatal(err)
+		}
+		d := entry(e)
+		if _, ok := d["number"]; ok || d["action"] != "set_range_value" || d["control_type"] != "Slider" || d["changed"] != true {
+			t.Errorf("detail = %v", d)
+		}
+		raw, _ := json.Marshal(d)
+		if strings.Contains(string(raw), "73.5") {
+			t.Errorf("the number leaked into the audit: %s", raw)
+		}
+	})
+	t.Run("record_text on records the number", func(t *testing.T) {
+		e := newActionEnv(t)
+		e.settings.put(settingAuditRecordText, "true")
+		if _, err := e.control.Do(ctx, ctlAlice, actSetRange(uaSlider, 73.5)); err != nil {
+			t.Fatal(err)
+		}
+		if d := entry(e); d["number"] != 73.5 {
+			t.Errorf("number = %v", d["number"])
+		}
+	})
+	t.Run("a rejected number is audited as an error without the number", func(t *testing.T) {
+		e := newActionEnv(t)
+		_, err := e.control.Do(ctx, ctlAlice, actSetRange(uaSlider, 1000))
+		if !errors.Is(err, domain.ErrInvalidArgument) {
+			t.Fatalf("error = %v", err)
+		}
+		for _, en := range e.audit.Entries() {
+			if en.Event == "tool.ui_action" && (en.Result != "error" || en.ErrorCode != string(domain.CodeInvalidArgument)) {
+				t.Errorf("result = %s, error code = %s", en.Result, en.ErrorCode)
+			}
+		}
+		if d := entry(e); d["control_type"] != "Slider" || d["action"] != "set_range_value" {
+			t.Errorf("detail = %v", d)
+		} else if _, ok := d["number"]; ok {
+			t.Errorf("number recorded: %v", d)
+		}
+	})
+	t.Run("scroll_into_view is audited like the other actions", func(t *testing.T) {
+		e := newActionEnv(t)
+		if _, err := e.control.Do(ctx, ctlAlice, act(uaScroll, domain.UIActionScrollIntoView)); err != nil {
+			t.Fatal(err)
+		}
+		d := entry(e)
+		if d["action"] != "scroll_into_view" || d["control_type"] != "ListItem" || d["element_id"] != uiaID(1, uaScroll) || d["changed"] != true {
+			t.Errorf("detail = %v", d)
+		}
+	})
+}
+
+func TestControlUIActionSetRangeValueRejections(t *testing.T) {
+	ctx := context.Background()
+	for name, tt := range map[string]struct {
+		op   domain.UIAction
+		want *domain.Error
+	}{
+		"missing number":            {act(uaSlider, domain.UIActionSetRangeValue), domain.ErrInvalidArgument},
+		"NaN":                       {actSetRange(uaSlider, math.NaN()), domain.ErrInvalidArgument},
+		"Inf":                       {actSetRange(uaSlider, math.Inf(1)), domain.ErrInvalidArgument},
+		"number on invoke":          {func() domain.UIAction { a := act(uaSave, domain.UIActionInvoke); n := 1.0; a.Number = &n; return a }(), domain.ErrInvalidArgument},
+		"above the maximum":         {actSetRange(uaSlider, 100.5), domain.ErrInvalidArgument},
+		"below the minimum":         {actSetRange(uaSlider, -1), domain.ErrInvalidArgument},
+		"pattern unsupported":       {actSetRange(uaName, 1), domain.ErrPatternUnsupported},
+		"scroll without ScrollItem": {act(uaSave, domain.UIActionScrollIntoView), domain.ErrPatternUnsupported},
+		"scroll on a disabled item": {act(uaDisabled, domain.UIActionScrollIntoView), domain.ErrElementDisabled},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newActionEnv(t)
+			e.input.Reset()
+			_, err := e.control.Do(ctx, ctlAlice, tt.op)
+			var de *domain.Error
+			if !errors.As(err, &de) || de.Code != tt.want.Code {
+				t.Fatalf("error = %v, want %s", err, tt.want.Code)
+			}
+			if _, ok := e.ui.Number(uiaID(1, uaSlider)); ok {
+				t.Error("a number was set")
+			}
+			requireNoInputSideEffects(t, e)
+		})
+	}
+	t.Run("read-only", func(t *testing.T) {
+		e := newActionEnv(t)
+		e.ui.SetReadOnly(uiaID(1, uaSlider), true)
+		if _, err := e.control.Do(ctx, ctlAlice, actSetRange(uaSlider, 5)); !errors.Is(err, domain.ErrElementReadOnly) {
+			t.Fatalf("error = %v, want element_read_only", err)
+		}
+		if _, ok := e.ui.Number(uiaID(1, uaSlider)); ok {
+			t.Error("a number was set on a read-only element")
+		}
+	})
+	t.Run("range error carries the bounds", func(t *testing.T) {
+		e := newActionEnv(t)
+		e.ui.SetRange(uiaID(1, uaSlider), -5, 5)
+		_, err := e.control.Do(ctx, ctlAlice, actSetRange(uaSlider, 6))
+		var de *domain.Error
+		if !errors.As(err, &de) || de.Detail["minimum"] != -5.0 || de.Detail["maximum"] != 5.0 {
+			t.Fatalf("error = %v", err)
+		}
+	})
+}
+
+// 境界の値（0・最小・最大）は通る。0 は「数を省略した」とは別。
+func TestControlUIActionSetRangeValueAcceptsBoundsAndZero(t *testing.T) {
+	for _, v := range []float64{0, 100, 33.25} {
+		e := newActionEnv(t)
+		res, err := e.control.Do(context.Background(), ctlAlice, actSetRange(uaSlider, v))
+		if err != nil || res.Acted == nil || !res.Acted.Changed {
+			t.Fatalf("%v: Do = %+v, %v", v, res, err)
+		}
+		if got, ok := e.ui.Number(uiaID(1, uaSlider)); !ok || got != v {
+			t.Errorf("number = %v, %v; want %v", got, ok, v)
+		}
+	}
 }
 
 func TestUIActionIsAScreenChangingOpButNotPausedByHostInput(t *testing.T) {
