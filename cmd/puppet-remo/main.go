@@ -116,6 +116,7 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		return fail(fmt.Errorf("hotkey: %w", err))
 	}
 	closers = append(closers, closerFunc(func() error { hotkey.Close(); return nil }))
+	hostInput := windows.NewHostInput()
 	power := windows.NewPower()
 	closers = append(closers, power)
 	autostart, err := windows.NewAutostart()
@@ -136,7 +137,7 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		Repo: db,
 		Platform: app.Platform{
 			Capturer: windows.NewCapturer(), Input: input, Windows: wm, Clipboard: windows.NewClipboard(),
-			UI: ui, Hotkey: hotkey, Power: power, Autostart: autostart,
+			UI: ui, Hotkey: hotkey, HostInput: hostInput, Power: power, Autostart: autostart,
 			// ファイル選択ダイアログ（ホスト GUI の /apps。FR-H12）は、Wails のメインウィンドウを親にしたモーダルにする。
 			Launcher: windows.NewLauncher(), FilePicker: windows.NewFilePicker(host.MainWindowHandle),
 			// 署名検証済みの更新のインストーラは、NSIS を `/S` で起動する（UAC の確認つき。FR-H09）。

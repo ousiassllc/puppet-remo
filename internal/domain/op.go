@@ -108,3 +108,25 @@ func (PointerMove) isOp()    {}
 func (MouseButton) isOp()    {}
 func (Wheel) isOp()          {}
 func (KeyEvent) isOp()       {}
+
+// HostInputGated は、ホストの人が実際のマウス・キーボードを使っている間の一時停止（#270）の対象になるかを、Op 自身が答えるための任意の窓口。
+// 組み込みの Op の判定は OpPausedByHostInput が持つ。新しい Op（UI Automation のパターン操作など）は、カーソル・フォーカス・キー入力を
+// 動かすなら実装して true を返す。実装しない Op は一時停止の対象にならない。
+type HostInputGated interface {
+	Op
+	PausedByHostInput() bool
+}
+
+// OpPausedByHostInput は op が、ホストの実入力による一時停止（service.HostInputPause）で拒否される操作かを返す。
+// 対象は、実際のカーソルを動かす・キーを押す・前面を奪う操作: MouseMove・Click・Drag・Scroll・KeyPress・TypeText・FocusWindow と、
+// Web UI の PointerMove・MouseButton・Wheel・KeyEvent（いずれも SendInput か前面の切り替え）。
+// 対象外は、読み取り（ClipboardRead・GetUITree・スクリーンショットなど）、待ち（Wait）、クリップボードへの書き込み（カーソル・フォーカスを動かさない）。
+// HostInputGated を実装した Op は、その答えに従う。
+func OpPausedByHostInput(op Op) bool {
+	switch op.(type) {
+	case MouseMove, Click, Drag, Scroll, KeyPress, TypeText, FocusWindow, PointerMove, MouseButton, Wheel, KeyEvent:
+		return true
+	}
+	g, ok := op.(HostInputGated)
+	return ok && g.PausedByHostInput()
+}

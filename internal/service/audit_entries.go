@@ -62,7 +62,7 @@ func auditResult(err error) string {
 	case "":
 		return auditOK
 	case domain.CodeKillSwitchActive, domain.CodeLeaseRequired, domain.CodeLeaseHeldByOther, domain.CodeLeaseRevoked,
-		domain.CodeInputBlocked, domain.CodeApprovalDenied, domain.CodeApprovalTimeout, domain.CodeAppNotFound,
+		domain.CodeInputBlocked, domain.CodeInputPaused, domain.CodeApprovalDenied, domain.CodeApprovalTimeout, domain.CodeAppNotFound,
 		domain.CodeAppDenied:
 		return auditDenied
 	}

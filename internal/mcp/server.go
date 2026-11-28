@@ -62,6 +62,9 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"Only one session holds the lease at a time (it is also unavailable while another session waits for the host's approval); others get lease_held_by_other. " +
 	"When the host requires approval for this client, acquiring the lease waits for the host's answer and fails with " +
 	"approval_denied (the host denied) or approval_timeout (no answer in time). " +
+	"While the host person is physically using the mouse or keyboard, input that moves the real cursor, presses keys or changes the foreground window " +
+	"(click, type, key, scroll, drag, mouse_move, focus_window, and run_task's actions) is rejected with input_paused (detail.resumes_at, detail.retry_after_ms) " +
+	"and resumes by itself once the host has been idle for a while; get_control_status reports paused. Viewing tools are not paused. " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
 	"you pass an app_id, never arguments or a working directory, and it needs the lease like input tools. " +
 	"Only when list_launchable_apps reports mode denylist may you pass the absolute path of a .exe instead; the host owner's denied apps fail with app_denied. " +
@@ -98,6 +101,9 @@ type Config struct {
 	// 登録したまま agent_disabled で失敗する。登録の有無を設定で変えないのは、ツールの一覧をホストの設定から独立させ、
 	// 有効・無効の判断を Agent（設定・API キー・クライアントの agent_enabled）に一本化するため。
 	Agent service.Agent
+	// HostInput は get_control_status に出す、ホストの実入力による一時停止の状態（#270）。nil なら常に paused = false。
+	// 入力の拒否そのものは Control が行う（ここは状態を見せるだけ）。
+	HostInput service.HostInputPause
 	// Version は initialize で返すアプリの版。
 	Version string
 	Logger  *slog.Logger // nil なら slog.Default()
@@ -128,6 +134,7 @@ type Server struct {
 	onSessions func()
 	audit      service.AuditRecorder
 	agent      service.Agent
+	hostInput  service.HostInputPause // nil なら停止の状態を見せない
 
 	toolTimeout      time.Duration
 	leaseToolTimeout time.Duration
@@ -160,6 +167,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		control:          cfg.Control,
 		agent:            cfg.Agent,
+		hostInput:        cfg.HostInput,
 		leases:           cfg.Leases,
 		principal:        cfg.Principal,
 		onSessions:       cfg.OnSessionsChange,

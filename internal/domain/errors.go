@@ -29,6 +29,7 @@ const (
 	CodeConflict            Code = "conflict"
 	CodeWindowNotFound      Code = "window_not_found"
 	CodeInputBlocked        Code = "input_blocked"
+	CodeInputPaused         Code = "input_paused"
 	CodeDesktopUnavailable  Code = "desktop_unavailable"
 	CodeAgentDisabled       Code = "agent_disabled"
 	CodeTaskNotFound        Code = "task_not_found"
@@ -60,6 +61,7 @@ var codeStatus = map[Code]int{
 	CodeConflict:            409,
 	CodeWindowNotFound:      404,
 	CodeInputBlocked:        409,
+	CodeInputPaused:         409,
 	CodeDesktopUnavailable:  503,
 	CodeAgentDisabled:       409,
 	CodeTaskNotFound:        404,
@@ -149,6 +151,9 @@ var (
 	ErrInvalidArgument    = NewError(CodeInvalidArgument, "invalid argument", nil)
 	ErrWindowNotFound     = NewError(CodeWindowNotFound, "window not found", nil)
 	ErrInputBlocked       = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	// ErrInputPaused は、ホストの人が実際のマウス・キーボードを使っているために、リモートの入力を一時停止している間の拒否（#270）。
+	// Detail は resumes_at（RFC 3339。入力がなければ再開する時刻）と retry_after_ms（再開までの目安のミリ秒）。
+	ErrInputPaused        = NewError(CodeInputPaused, "input is paused while the host is using the mouse or keyboard", nil)
 	ErrDesktopUnavailable = NewError(CodeDesktopUnavailable, "the desktop is unavailable", nil)
 	ErrAgentDisabled      = NewError(CodeAgentDisabled, "the agent is disabled", nil)
 	ErrTaskNotFound       = NewError(CodeTaskNotFound, "task not found", nil)

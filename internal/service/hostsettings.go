@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
@@ -60,6 +61,9 @@ type HostSettings struct {
 	AuditRecordText        bool  // audit.record_text（既定 false。FR-AU03）
 	AuditRetentionDays     int   // audit.retention_days（1〜36500。既定 30。FR-AU04）
 	AuditThumbsMaxBytes    int64 // audit.thumbs_max_bytes（1〜2^53。既定 1 GiB。単位はバイト。FR-AU04）
+	// ホストの実入力による一時停止（#270。FR-M30）。
+	HostInputPauseEnabled bool // hostinput.pause_enabled（既定 true）
+	HostInputPauseIdleSec int  // hostinput.pause_idle_sec（1〜600。既定 5）
 	// UpdateApplyMode は update.apply_mode（UpdateApplyConfirm / UpdateApplyAutoIdle。既定 confirm。FR-S09）。
 	UpdateApplyMode string
 	// UpdateChannel は update.channel（domain.ChannelStable / domain.ChannelNightly の文字列。既定 stable。FR-S09）。
@@ -79,6 +83,8 @@ const (
 	FieldAuditRecordText        = "audit.record_text"
 	FieldAuditRetentionDays     = "audit.retention_days"
 	FieldAuditThumbsMaxBytes    = "audit.thumbs_max_bytes"
+	FieldHostInputPauseEnabled  = settingHostInputPauseEnabled
+	FieldHostInputPauseIdleSec  = settingHostInputPauseIdleSec
 	FieldUpdateApplyMode        = "update.apply_mode"
 	FieldUpdateChannel          = "update.channel"
 	fieldAutostart              = "autostart"
@@ -123,6 +129,9 @@ func (s HostSettings) Validate() error {
 	}
 	if s.AuditThumbsMaxBytes < 1 || s.AuditThumbsMaxBytes > maxJSONInteger {
 		bad[FieldAuditThumbsMaxBytes] = fmt.Sprintf("1〜%d バイトの整数を指定してください。", maxJSONInteger)
+	}
+	if s.HostInputPauseIdleSec < minHostInputPauseIdleSec || s.HostInputPauseIdleSec > maxHostInputPauseIdleSec {
+		bad[FieldHostInputPauseIdleSec] = fmt.Sprintf("%d〜%d 秒の整数を指定してください。", minHostInputPauseIdleSec, maxHostInputPauseIdleSec)
 	}
 	if s.UpdateApplyMode != UpdateApplyConfirm && s.UpdateApplyMode != UpdateApplyAutoIdle {
 		bad[FieldUpdateApplyMode] = "「ホストが確認して適用」か「アイドル時に自動で適用」を選んでください。"
@@ -244,6 +253,10 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 	if err != nil {
 		return HostSettings{}, err
 	}
+	pause, err := LoadHostInputPolicy(ctx, h.cfg.Settings)
+	if err != nil {
+		return HostSettings{}, err
+	}
 	applyMode, err := loadUpdateApplyMode(ctx, h.cfg.Settings)
 	if err != nil {
 		return HostSettings{}, err
@@ -272,7 +285,8 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 		Port: port, KillSwitchHotkey: hotkey, ScreenshotMaxDimension: dim,
 		LeaseIdleTimeoutSec: idle, ViewerDefaultQuality: quality, ViewerDefaultFPS: fps,
 		AuditThumbnailsEnabled: thumbsOn, AuditRecordText: recordText, AuditRetentionDays: int(retention),
-		AuditThumbsMaxBytes: thumbsMax, UpdateApplyMode: applyMode, UpdateChannel: string(channel), Autostart: autostart,
+		AuditThumbsMaxBytes: thumbsMax, HostInputPauseEnabled: pause.Enabled, HostInputPauseIdleSec: int(pause.Idle / time.Second),
+		UpdateApplyMode: applyMode, UpdateChannel: string(channel), Autostart: autostart,
 	}, nil
 }
 
@@ -370,6 +384,8 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		{settingAuditRecordText, s.AuditRecordText, func(a *HostSettings) { a.AuditRecordText = s.AuditRecordText }},
 		{settingAuditRetentionDays, s.AuditRetentionDays, func(a *HostSettings) { a.AuditRetentionDays = s.AuditRetentionDays }},
 		{settingAuditThumbsMaxBytes, s.AuditThumbsMaxBytes, func(a *HostSettings) { a.AuditThumbsMaxBytes = s.AuditThumbsMaxBytes }},
+		{settingHostInputPauseEnabled, s.HostInputPauseEnabled, func(a *HostSettings) { a.HostInputPauseEnabled = s.HostInputPauseEnabled }},
+		{settingHostInputPauseIdleSec, s.HostInputPauseIdleSec, func(a *HostSettings) { a.HostInputPauseIdleSec = s.HostInputPauseIdleSec }},
 		{settingUpdateApplyMode, s.UpdateApplyMode, func(a *HostSettings) { a.UpdateApplyMode = s.UpdateApplyMode }},
 		{settingUpdateChannel, s.UpdateChannel, func(a *HostSettings) { a.UpdateChannel = s.UpdateChannel }},
 	} {
@@ -440,6 +456,8 @@ func (h *hostSettings) auditEntry(old, updated HostSettings) (entry repository.A
 		{FieldAuditRecordText, old.AuditRecordText != updated.AuditRecordText, nil},
 		{FieldAuditRetentionDays, old.AuditRetentionDays != updated.AuditRetentionDays, updated.AuditRetentionDays},
 		{FieldAuditThumbsMaxBytes, old.AuditThumbsMaxBytes != updated.AuditThumbsMaxBytes, updated.AuditThumbsMaxBytes},
+		{FieldHostInputPauseEnabled, old.HostInputPauseEnabled != updated.HostInputPauseEnabled, updated.HostInputPauseEnabled},
+		{FieldHostInputPauseIdleSec, old.HostInputPauseIdleSec != updated.HostInputPauseIdleSec, updated.HostInputPauseIdleSec},
 		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode, updated.UpdateApplyMode},
 		{FieldUpdateChannel, old.UpdateChannel != updated.UpdateChannel, updated.UpdateChannel},
 		{fieldAutostart, old.Autostart != updated.Autostart, updated.Autostart},

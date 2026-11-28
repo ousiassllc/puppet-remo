@@ -371,6 +371,7 @@ func TestInputRejectionsAreReportedAsErrorMessages(t *testing.T) {
 		"input blocked":       {domain.ErrInputBlocked.WithDetail("reason", "own_window"), "input_blocked"},
 		"invalid coordinates": {domain.ErrInvalidCoordinates, "invalid_coordinates"},
 		"kill switch":         {domain.ErrKillSwitchActive, "kill_switch_active"},
+		"input paused":        {domain.ErrInputPaused.WithDetail("resumes_at", "2026-11-28T09:00:05Z").WithDetail("retry_after_ms", int64(5000)), "input_paused"},
 		"desktop unavailable": {domain.NewError(domain.CodeDesktopUnavailable, "locked", nil), "desktop_unavailable"},
 		"internal":            {io.ErrUnexpectedEOF, "internal"},
 	} {
@@ -386,6 +387,9 @@ func TestInputRejectionsAreReportedAsErrorMessages(t *testing.T) {
 			m := readType(t, c, "error")
 			if m["code"] != tc.wantCode {
 				t.Errorf("code = %v, want %s", m["code"], tc.wantCode)
+			}
+			if tc.wantCode == "input_paused" && (m["resumes_at"] != "2026-11-28T09:00:05Z" || m["retry_after_ms"] != float64(5000)) {
+				t.Errorf("input_paused lacks the resume hint: %v", m)
 			}
 			if tc.wantCode == "internal" && m["message"] != "internal error" {
 				t.Errorf("an unexpected error leaked its message: %v", m["message"])
