@@ -508,6 +508,23 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | D20 | `/apps` の見た目の確認（スクリーンショットを残す）: 「起動の方式」のパネル（ホワイトリスト方式・ブラックリスト方式の両方）、確認モーダル、「拒否リスト」の欄（項目の種別の表示・追加フォーム・編集・削除の確認・上限 200 の注意・ブラックリスト方式でだけ効く旨・`cmd.exe` / `powershell.exe` などのインタープリタの注意） | 文言が欠けず、レイアウトが崩れない（WebView2 の表示。§4.3 と同じ観点）。長い値の行がパネルの外へ溢れない。画像は Issue #88 に添付する |
 | D21 | 後始末 | 起動したペイント・メモ帳（`renamed-np.exe` など）をすべて閉じる（`tasklist` で残りが無い）。`rmdir C:\SmokeJunction`、`del C:\SmokeDeny\link.exe`、`rmdir /s /q C:\SmokeDeny`。`/apps` の拒否リストのテスト用の行を削除し、方式をホワイトリスト方式に戻す |
 
+### 4.18 ホストの実入力による一時停止（#270。FR-M30。未確認）
+
+ホスト GUI の設定画面の「ホストの操作との取り合い」（既定: 有効・5 秒）。tailnet 上の別端末の MCP クライアントで `mouse_move` などを繰り返し送りながら、ホストの実機の物理マウス・キーボードを操作する。低レベルフック（`WH_MOUSE_LL` / `WH_KEYBOARD_LL`）の injected フラグの扱いは実機でしか確かめられない。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| H1 | 既定の設定（有効・5 秒）で、MCP クライアントから 1 秒おきに `mouse_move` を送り続け、ホストの**物理マウス**を動かす | 動かした直後から `mouse_move` が `input_paused`（`detail.resumes_at`・`retry_after_ms` 付き）で断られ、カーソルは物理マウスの動きだけに従う。`get_control_status` が `paused: true`・`paused_reason: host_input` |
+| H2 | H1 のあと、マウスから手を離して 5 秒待つ | 自動で再開し、`mouse_move` が通る。`get_control_status` が `paused: false`。操作を続けている間は再開しない（最後の操作から 5 秒） |
+| H3 | **物理キーボード**のキーを 1 つ押す | H1 と同じく停止し、`key` / `type` も断られる。H2 と同様に再開する |
+| H4 | MCP の `mouse_move`・`left_click`・`type`・`key`・`scroll`（Web ビューアの操作・`run_task` も）を、ホストが何も触れていないときに送る | **停止しない**（自分の `SendInput` はフックの injected フラグと `dwExtraInfo` の印で実入力から外れる）。`mouse_move` の位置補正（`SetCursorPos`）でも停止しない。**停止する場合は、injected フラグの扱いの不備として報告する** |
+| H5 | 停止中に `screenshot`・`cursor_position`・`list_windows`・`get_ui_tree`・`clipboard_write` を呼ぶ | すべて通る（読み取りとクリップボードの書き込みは止めない） |
+| H6 | Web ビューアでマウスボタンを押したまま（`input.mouse` の down）、ホストの物理マウスを動かす | 停止に入った時点で押下中のボタンが離され（ReleaseAll）、ボタンが押しっぱなしにならない。以後のビューアの入力は `error`（`input_paused`）で断られ、インラインアラートが出る |
+| H7 | 停止中にキルスイッチ（`Ctrl+Alt+Shift+K`） | 通常どおり 1 秒以内に発動する（停止とは独立）。ホットキーの押下で停止しても無害 |
+| H8 | 設定画面で一時停止を無効にして保存し、物理マウスを動かしながら `mouse_move` を送る | 停止しない。停止中に無効にすると、すぐ再開する。有効に戻して保存すると H1 の動作に戻る。待ち時間を 10 に変えて H2 を繰り返すと、再開が 10 秒後になる |
+| H9 | 別のソフト（AutoHotkey など）が `SendInput` で入力を注入しているとき | 実入力に数えず、停止しない |
+| H10 | 監査ログ（DB の `audit_logs`） | H1 で `input.host_paused`（`detail` は `source: mouse`）、H2 で `input.host_resumed`（`reason: idle`、`paused_ms`）が 1 件ずつ。停止中に断られた入力は `tool.mouse_move` の `result = denied`・`error_code = input_paused`。押したキーや入力した文字は記録されない |
+
 ### 4.17 M1 の実機確認（Issue #15）の項目と手順の対応
 
 Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認の項目）」のチェックリストの各項目と、この文書の手順の対応表。#15 の項目を実機で確かめるときは、この表の手順を使い、結果（OS 版・tailscale 版・不具合があれば別途報告）を #15 のコメントに残す。**どの項目も、実機では未確認**（CI は `GOOS=windows` の build と vet だけ。環境は §1 の準備を満たす使い捨ての Windows と、実 tailscaled が動く tailnet）。
@@ -562,3 +579,4 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-11 | §3.8 に起動場所の検査の実機確認 L10〜L19（通常の System32・大文字小文字・`/` 区切り・8.3 短縮名・ジャンクション・シンボリックリンク・`subst`・マップドドライブ・UNC。`TestSmokeAppLauncherLocation`。未確認）を追加し、§2 に `PUPPET_REMO_SMOKE_LAUNCH_MAPPED` / `PUPPET_REMO_SMOKE_LAUNCH_UNC` を追加 | #36 |
 | — | 2026-11-11 | §4.17（#15 の項目と手順の対応表）を追加し、§4.4 に R7（WhoIs の確認）・R8（IP 変化の監視）を足した。実機の確認は未確認 | #15 |
 | — | 2026-11-18 | §4.7 の P2 を表示名（Nefos Remote）に合わせ、旧名の版からの更新 P3 とアンインストール P4 を追加（未確認）。製品名の prose を Nefos Remote に改めた | #188 |
+| — | 2026-11-28 | §4.18 にホストの実入力による一時停止の実機確認 H1〜H10 を追加（未確認） | #270 |

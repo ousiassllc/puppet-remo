@@ -234,6 +234,8 @@ erDiagram
 | `killswitch.state` | object `{active, triggered_at, source}` | `{"active": false}` | FR-H06、NFR-S07 |
 | `screenshot.max_dimension` | number | 1568 | FR-S03 |
 | `lease.idle_timeout_sec` | number | 300 | FR-S04 |
+| `hostinput.pause_enabled` | boolean | true | FR-M30 |
+| `hostinput.pause_idle_sec` | number | 5 | FR-M30 |
 | `viewer.default_quality` | number | 70 | FR-S06 |
 | `viewer.default_fps` | number | 10 | FR-S06 |
 | `audit.thumbnails_enabled` | boolean | true | FR-AU02 |
@@ -504,6 +506,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | クライアントの変更 | `client` | `client.replace` / `client.update` / `client.delete` | `host` |
 | リースの取得・解放・剥奪 | `lease` | `lease.acquire`（取得の失敗は `denied`）/ `lease.release` / `lease.revoke` | 保持者（剥奪は剥奪した側） |
 | リースの対象ウィンドウ（入力スコープ。#156） | `lease` / `input` | `lease.target_set`（スコープ付きのリースの束縛。`lease.acquire` の直後。`kind = lease`）/ `lease.target_resumed`（保持者の明示的な再開。`kind = lease`）/ `input.target_halted`（入力の検証の失敗・撮影の失敗による停止。`kind = input`、`result = denied`、`error_code = input_blocked`） | 保持者 |
+| ホストの実入力によるリモート入力の一時停止・再開（#270。FR-M30） | `input` | `input.host_paused`（ホストの人が実際のマウス・キーボードを使い始めた。`kind = input`、`actor_type = host`、`result = ok`。`detail_json` は `{ "source": "mouse" \| "keyboard", "idle_sec" }`）/ `input.host_resumed`（最後の実入力から待ち時間のあいだ実入力がなかった、または設定で無効にした。`detail_json` は `{ "paused_ms", "reason": "idle" \| "disabled" }`。`ts` は再開した時刻）。停止中に拒否された入力は通常の `tool.<名前>`（`result = denied`、`error_code = input_paused`）。押されたキー・文字・座標は記録しない |
 | リースの取得要求・承認・拒否（承認モード） | `lease` | `approval.requested`（idle → pending_approval）/ `approval.granted`（pending_approval → held。続けて `lease.acquire`）/ `approval.denied`（ホストの拒否）/ `approval.timeout`（60 秒の失効）/ `approval.withdrawn`（キルスイッチ・切断・クライアントの削除・要求側の取り下げ。`detail.reason` に理由）/ `approval.reset`（承認済みの取り消し。ホスト GUI） | 承認を求めたセッション（`approval.reset` は `host`） |
 | MCP ツール呼び出し | `tool` | `tool.<ツール名>`（`tool.left_click`・`tool.type`・`tool.launch_app` など） | `mcp` |
 | Web UI からの入力操作 | `input` | `tool.<入力種別>`（`tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up`・`tool.type`・`tool.clipboard_read` など。`PointerMove` は記録しない） | `web` |
@@ -653,3 +656,4 @@ erDiagram
 | 1.38 | 2026-11-27 | `launch_denylist` の照合（`MatchDenied`）の大文字小文字の比較を Windows の OrdinalIgnoreCase 相当にした旨を追記 | #183 |
 | 1.39 | 2026-11-27 | 設定変更の監査は fail-closed（#182）の共通の規則と、対象外（キルスイッチ・システム側の無効化・`update.last_checked_at`・`client.*`）の根拠を追記。`audit_unavailable` の Detail を `subject`・`restored` に | #182 |
 | 1.40 | 2026-11-27 | 内蔵エージェントに Codex 経路（`chatgpt-codex`。#247）を追加: `settings` の `agent.connection` の値に `chatgpt-codex`、新しいキー `agent.codex.model`、`agent_tasks.connection` の `CHECK`（3 値）とマイグレーション `0007_agent_task_connection.sql`（v7）、`error_code` に `codex_*`、監査イベント `agent.codex.install` / `signin_start` / `signin` / `signout` / `resume` と `agent.connection` の `to` に `chatgpt-codex`。公式経路のトークンの分割保存（`puppet-remo/chatgpt` の見出し `{"v":1,"parts":N}` と `puppet-remo/chatgpt/1` … `/N`。2560 バイトの上限のため）を方針のシークレットに反映 | #247 |
+| 1.41 | 2026-11-28 | ホストの実入力による一時停止（#270。FR-M30）: `settings` に `hostinput.pause_enabled`（既定 true）・`hostinput.pause_idle_sec`（既定 5）、監査イベント `input.host_paused` / `input.host_resumed` を追加 | ホストの人の操作とリモートの入力の取り合いを避けるため |
