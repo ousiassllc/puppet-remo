@@ -404,7 +404,7 @@
     }
   }
 
-  /* 枠なしの --surface-sel 面（インラインアラート・入れ子の行・ビューアの枠）は、forced-colors では背景色の差が消えて境目が無くなるので、CanvasText の 1px で区切る。 */
+  /* 枠なしの --surface-sel 面（インラインアラート・入れ子の行）は、forced-colors では背景色の差が消えて境目が無くなるので、CanvasText の 1px で区切る。 */
   @media (forced-colors: active) {
     .bg-surface-sel {
       border: 1px solid CanvasText;

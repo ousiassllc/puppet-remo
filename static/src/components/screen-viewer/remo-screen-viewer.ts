@@ -157,7 +157,7 @@ export class RemoScreenViewer extends LitElement {
       display: block;
       width: 100%;
       height: auto;
-      background: var(--bone);
+      background: var(--surface);
     }
     /* グループ源（#157）は等倍で出す（幅いっぱいに拡大しない。メニュー・ダイアログの開閉で画像の大きさが変わっても、T の表示の大きさ・位置が動かない。幅を超えるときだけ縮める）。 */
     canvas[data-group] {
