@@ -47,6 +47,8 @@ type Fakes struct {
 	Updates    *Updates
 
 	AgentSettings *AgentSettings
+	ChatGPT       *ChatGPT
+	Codex         *Codex
 	Tasks         *Tasks
 }
 
@@ -54,6 +56,8 @@ type Fakes struct {
 func New() *Fakes {
 	clock := &FixedClock{T: time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)}
 	bus := service.NewBus()
+	chatgpt, codex, agent := NewChatGPT(), NewCodex(), NewAgentSettings(clock)
+	agent.ChatGPT, agent.Codex = chatgpt, codex
 	return &Fakes{
 		Clock:      clock,
 		Bus:        bus,
@@ -69,7 +73,7 @@ func New() *Fakes {
 		Updates: &Updates{Current: service.UpdateStatus{
 			CurrentVersion: "0.1.0", Channel: domain.ChannelStable, ApplyMode: service.UpdateApplyConfirm, Updatable: true, KeyConfigured: true,
 		}},
-		AgentSettings: NewAgentSettings(clock),
+		AgentSettings: agent, ChatGPT: chatgpt, Codex: codex,
 
 		Logs: &Logs{FilePath: `C:\Users\demo\AppData\Local\puppet-remo\logs\puppet-remo.log`},
 		Settings: &Settings{Values: service.HostSettings{Port: 8765, KillSwitchHotkey: "Ctrl+Alt+Shift+K", ScreenshotMaxDimension: 1568, LeaseIdleTimeoutSec: 300, ViewerDefaultQuality: 70, ViewerDefaultFPS: 10,
@@ -81,7 +85,7 @@ func New() *Fakes {
 func (f *Fakes) Deps() gui.Deps {
 	return gui.Deps{
 		Status: f.Status, Sessions: f.Sessions, Leases: f.Leases, KillSwitch: f.KillSwitch, Admin: f.Admin, Approval: f.Approval,
-		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Updates: f.Updates, AgentSettings: f.AgentSettings, Tasks: f.Tasks, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
+		Settings: f.Settings, Apps: f.Apps, Logs: f.Logs, Audit: f.Audit, Updates: f.Updates, AgentSettings: f.AgentSettings, ChatGPT: f.ChatGPT, Codex: f.Codex, Tasks: f.Tasks, Events: f.Bus, Clock: f.Clock, Location: time.UTC,
 	}
 }
 

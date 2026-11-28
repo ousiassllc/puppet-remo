@@ -102,25 +102,29 @@ templ DeniedSection(v view.DeniedSection) {
 				<ul class="space-y-2">
 					for _, row := range v.Rows {
 						if row.Editing {
-							<li class="rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
+							<li class="rounded-lg border border-border bg-surface p-(--pad-card-sm)" data-denied={ row.ID }>
 								@deniedEditForm(row, v.ListURL)
 							</li>
 						} else {
-							<li class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-4" data-denied={ row.ID }>
-								<span data-denied-kind>
-									if row.IsPath {
-										@atoms.Badge(atoms.BadgeLabel, "パス")
-									} else {
-										@atoms.Badge(atoms.BadgeLabel, "実行ファイル名")
-									}
-								</span>
-								<code class="min-w-0 flex-1 break-all" data-denied-value>{ row.Value }</code>
-								@atoms.Button(atoms.ButtonProps{Label: "編集", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
-									"hx-get": row.EditURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",
-								}})
-								@atoms.Button(atoms.ButtonProps{Label: "削除", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
-									"hx-get": row.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
-								}})
+							<li class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-(--pad-card-sm) sm:flex-row sm:items-center" data-denied={ row.ID }>
+								<div class="flex min-w-0 flex-1 items-center gap-2 text-sm">
+									<span class="shrink-0" data-denied-kind>
+										if row.IsPath {
+											@atoms.Badge(atoms.BadgeLabel, "パス")
+										} else {
+											@atoms.Badge(atoms.BadgeLabel, "実行ファイル名")
+										}
+									</span>
+									<code class="min-w-0 flex-1 break-all" data-denied-value>{ row.Value }</code>
+								</div>
+								<div class="flex shrink-0 gap-2" data-denied-actions>
+									@atoms.Button(atoms.ButtonProps{Label: "編集", Small: true, Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+										"hx-get": row.EditURL, "hx-target": "#denied-section", "hx-swap": "outerHTML",
+									}})
+									@atoms.Button(atoms.ButtonProps{Label: "削除", Small: true, Variant: atoms.ButtonDanger, Attrs: atoms.Attrs{
+										"hx-get": row.DeleteConfirm, "hx-target": "#modal-root", "hx-swap": "innerHTML",
+									}})
+								</div>
 							</li>
 						}
 					}

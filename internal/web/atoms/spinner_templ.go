@@ -8,7 +8,7 @@ package atoms
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// Spinner は読み込み中の表示（20px の回転する円 + 文言）。hx-indicator の対象にする（.htmx-indicator は app.css が opacity で切り替える）。
+// Spinner は読み込み中の表示（20px の回転する円 + 文言）。hx-indicator の対象にする（.htmx-indicator は app.css が opacity で切り替え、待機していない間は invisible で支援技術からも隠す。htmx が .htmx-request を付けるのは indicator 自身または祖先なので、両方で visible に戻す）。
 func Spinner(id string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -43,7 +43,7 @@ func Spinner(id string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"htmx-indicator inline-flex items-center gap-2 text-sm text-mute\" role=\"status\"><span class=\"spinner\" aria-hidden=\"true\"></span> 処理中…</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"htmx-indicator invisible [transition-property:opacity,visibility] in-[.htmx-request]:visible [&.htmx-request]:visible inline-flex items-center gap-2 text-sm text-mute\" role=\"status\"><span class=\"spinner\" aria-hidden=\"true\"></span> 処理中…</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -127,7 +127,7 @@ func TestGetTaskOutputShapes(t *testing.T) {
 				"task_id": "t-run", "status": "running", "step_count": 7.0, "fast_steps": 4.0, "openai_steps": 3.0,
 				"handoff_reason": "no_progress", "max_steps": 50.0, "input_tokens": 41230.0, "output_tokens": 912.0,
 				"created_at": "2026-10-29T03:12:00Z", "started_at": "2026-10-29T03:12:02Z", "finished_at": nil,
-				"result_text": nil, "error_code": nil, "note": nil,
+				"result_text": nil, "error_code": nil, "note": nil, "connection": nil,
 			},
 		},
 		{
@@ -137,33 +137,33 @@ func TestGetTaskOutputShapes(t *testing.T) {
 				"task_id": "t-pend", "status": "pending_approval", "step_count": 0.0, "fast_steps": 0.0, "openai_steps": 0.0,
 				"handoff_reason": nil, "max_steps": 50.0, "input_tokens": 0.0, "output_tokens": 0.0,
 				"created_at": "2026-10-29T03:12:00Z", "started_at": nil, "finished_at": nil,
-				"result_text": nil, "error_code": nil, "note": nil,
+				"result_text": nil, "error_code": nil, "note": nil, "connection": nil,
 			},
 		},
 		{
 			"失敗: error_code だけ。result_text は付かない",
 			domain.Task{
-				ID: "t-fail", Status: domain.TaskFailed, MaxSteps: 50, StepCount: 2, OpenAISteps: 2, ErrorCode: "judge_denied",
+				ID: "t-fail", Status: domain.TaskFailed, MaxSteps: 50, StepCount: 2, OpenAISteps: 2, ErrorCode: "judge_denied", Connection: domain.ConnectionChatGPT,
 				ResultText: "ignored", CreatedAt: taskCreated, StartedAt: new(taskStarted), FinishedAt: new(taskFinished),
 			},
 			map[string]any{
 				"task_id": "t-fail", "status": "failed", "step_count": 2.0, "fast_steps": 0.0, "openai_steps": 2.0,
 				"handoff_reason": nil, "max_steps": 50.0, "input_tokens": 0.0, "output_tokens": 0.0,
 				"created_at": "2026-10-29T03:12:00Z", "started_at": "2026-10-29T03:12:02Z", "finished_at": "2026-10-29T03:13:00Z",
-				"result_text": nil, "error_code": "judge_denied", "note": nil,
+				"result_text": nil, "error_code": "judge_denied", "note": nil, "connection": "chatgpt",
 			},
 		},
 		{
 			"リース承認の拒否: started_at は null、finished_at あり",
 			domain.Task{
-				ID: "t-den", Status: domain.TaskDenied, MaxSteps: 50, ErrorCode: "approval_denied",
+				ID: "t-den", Status: domain.TaskDenied, MaxSteps: 50, ErrorCode: "approval_denied", Connection: domain.ConnectionChatGPTCodex,
 				CreatedAt: taskCreated, FinishedAt: new(taskFinished),
 			},
 			map[string]any{
 				"task_id": "t-den", "status": "denied", "step_count": 0.0, "fast_steps": 0.0, "openai_steps": 0.0,
 				"handoff_reason": nil, "max_steps": 50.0, "input_tokens": 0.0, "output_tokens": 0.0,
 				"created_at": "2026-10-29T03:12:00Z", "started_at": nil, "finished_at": "2026-10-29T03:13:00Z",
-				"result_text": nil, "error_code": "approval_denied", "note": nil,
+				"result_text": nil, "error_code": "approval_denied", "note": nil, "connection": "chatgpt-codex",
 			},
 		},
 	}
@@ -320,6 +320,32 @@ func TestTaskToolsMapAgentErrors(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// 接続方式が使えないときの agent_disabled は detail.reason を応答に出す（FR-G01。API 仕様 §2）。
+func TestRunTaskAgentDisabledCarriesTheReason(t *testing.T) {
+	e := newEnv(t)
+	e.agent.setErr(domain.ErrAgentDisabled.WithDetail("reason", domain.AgentDisabledChatGPTNotSignedIn))
+	cs := e.connect("c1")
+	res := callTool(t, cs, "run_task", map[string]any{"prompt": "x"})
+	if got := res.errCode(t); got != domain.CodeAgentDisabled {
+		t.Fatalf("code = %s", got)
+	}
+	var body struct {
+		Detail map[string]any `json:"detail"`
+	}
+	res.decode(t, &body)
+	if body.Detail["reason"] != domain.AgentDisabledChatGPTNotSignedIn {
+		t.Errorf("detail = %v, want reason chatgpt_not_signed_in", body.Detail)
+	}
+	// reason の無い agent_disabled（無効・同意なしなど）は detail を出さない。
+	e.agent.setErr(domain.ErrAgentDisabled)
+	res = callTool(t, cs, "run_task", map[string]any{"prompt": "x"})
+	body.Detail = nil
+	res.decode(t, &body)
+	if body.Detail != nil {
+		t.Errorf("detail = %v, want none", body.Detail)
 	}
 }
 

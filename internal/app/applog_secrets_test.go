@@ -207,3 +207,36 @@ func post(t *testing.T, e *env, token string, want int) {
 		t.Fatalf("POST /mcp with %q = %d, want %d", token, resp.StatusCode, want)
 	}
 }
+
+// ChatGPT のプラン経路の OAuth の秘密（NFR-S13）: id_token・code_verifier・nonce・oauth_ のキー名と、JWT の形の文字列は、呼び出し側が渡しても隠す。
+// error_code・status_code・connection_state のように部分一致だけのキー名と、普通の文は隠さない。
+func TestLoggerRedactsOAuthSecretsEvenWhenCallersPassThem(t *testing.T) {
+	const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJlLWZvci10ZXN0"
+	dir := t.TempDir()
+	log, closer, err := NewLogger(dir, slog.LevelDebug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Info("sign-in "+jwt, "id_token", "idt-value", "id_token_hint", "hint-value", "code_verifier", "verifier-value", "nonce", "nonce-value",
+		"oauth_code", "oauth-code-value", "refresh_token", "rt-value", "access_token", "at-value",
+		"note", "got "+jwt+" back", "error", errors.New("exchange failed for "+jwt),
+		"error_code", "invalid_grant", "status_code", "400", "connection_state", "signing_in")
+	if err := closer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw := readLogFile(t, LogFilePath(dir))
+	assertNoSecrets(t, "the log file", raw, []string{jwt, "idt-value", "hint-value", "verifier-value", "nonce-value", "oauth-code-value", "rt-value", "at-value"})
+	for _, keep := range []string{`"error_code":"invalid_grant"`, `"status_code":"400"`, `"connection_state":"signing_in"`, redactedValue} {
+		if !strings.Contains(raw, keep) {
+			t.Errorf("log file lost %q:\n%s", keep, raw)
+		}
+	}
+
+	r := NewLogReader(t.TempDir())
+	writeLogFile(t, r.Path(), logLine(0, "ERROR", "failed "+jwt, "nonce", `"nonce-value"`, "x", fmt.Sprintf("%q", "got "+jwt)))
+	p, err := r.Entries(t.Context(), service.AppLogAll, 1)
+	if err != nil || len(p.Items) != 1 {
+		t.Fatalf("entries = %v, %v", p.Items, err)
+	}
+	assertNoSecrets(t, "the log page", fmt.Sprint(p.Items[0]), []string{jwt, "nonce-value"})
+}

@@ -18,15 +18,22 @@ var (
 	hexHashPattern = regexp.MustCompile(`\b[0-9a-fA-F]{64}\b`)
 	// Authorization ヘッダーの値（"Bearer xxxx"。値は 20 文字以上の英数字と記号。"bearer authentication" のような普通の文は隠さない）。
 	bearerPattern = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{20,}`)
+	// JWT の形（eyJ… で始まる 3 つの部分をドットでつないだもの。ChatGPT のアクセス・ID トークン。NFR-S13）。
+	jwtPattern = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
 )
 
 // sensitiveKeyParts は、キー名にこれを含む属性の値を丸ごと隠す（小文字で比較）。token_id のような ID は含まない。
-var sensitiveKeyParts = []string{"secret", "password", "passwd", "apikey", "api_key", "api-key", "authorization", "plaintext", "hash"}
+// ChatGPT のプラン経路の OAuth の秘密（NFR-S13）: id_token（id_token_hint を含む）・code_verifier・nonce を含むキー名と、oauth_ 接頭辞のキー名。
+// access_token・refresh_token は _token の接尾辞で伏せる。error_code・status_code・connection_state のような部分一致だけのキー名は伏せない。
+var sensitiveKeyParts = []string{
+	"secret", "password", "passwd", "apikey", "api_key", "api-key", "authorization", "plaintext", "hash",
+	"id_token", "code_verifier", "nonce",
+}
 
 // sensitiveKey は属性のキー名が秘密を指すか。
 func sensitiveKey(key string) bool {
 	k := strings.ToLower(key)
-	if k == "token" || strings.HasSuffix(k, "_token") || strings.HasSuffix(k, "-token") {
+	if k == "token" || strings.HasSuffix(k, "_token") || strings.HasSuffix(k, "-token") || strings.HasPrefix(k, "oauth_") {
 		return true
 	}
 	for _, p := range sensitiveKeyParts {
@@ -44,6 +51,7 @@ func redactString(s string) string {
 	}
 	s = bearerPattern.ReplaceAllString(s, "Bearer "+redactedValue)
 	s = tokenPattern.ReplaceAllString(s, redactedValue)
+	s = jwtPattern.ReplaceAllString(s, redactedValue)
 	return hexHashPattern.ReplaceAllString(s, redactedValue)
 }
 

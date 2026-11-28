@@ -19,28 +19,39 @@ type PagerProps struct {
 
 // Pager は件数が分からない一覧向けの、前へ／次へだけのページ送り（ガイドの「前へ／次へだけのページ送り」）。
 // 中央に「N ページ目」（sm14・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
-// ボタンは Secondary・Small。狭い幅（モバイル）では、「N ページ目」を折り返さず、ボタンを次の行へ折り返す。押した側が端になったときの、反対側へのフォーカスの移動は app.ts（data-pager-prev / -next）。
+// ボタンは Secondary・Small。sm（640px）以上は PrevLabel / NextLabel をそのまま出し、両端寄せの 1 行（入りきらなければ折り返す）。
+// sm 未満（モバイル。#179）は 3 列のグリッドで「‹ 前へ」「N ページ目」「次へ ›」を 1 行に並べる（長い PrevLabel / NextLabel は入りきらないので、
+// 見た目だけ短くする。ボタンの aria-label は PrevLabel / NextLabel のままで、「新しいほう／古いほう」の意味を保つ）。
+// 押した側が端になったときの、反対側へのフォーカスの移動は app.ts（data-pager-prev / -next）。
 templ Pager(p PagerProps) {
-	<nav class="flex flex-wrap items-center justify-between gap-2" aria-label="ページ送り" data-pager>
-		@pagerButton(p.PrevURL, p.PrevLabel, p.Target, "data-pager-prev")
+	<nav class="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex sm:flex-wrap sm:justify-between" aria-label="ページ送り" data-pager>
+		@pagerButton(p.PrevURL, p.PrevLabel, p.Target, "data-pager-prev", "‹ 前へ", "justify-self-start")
 		<span class="whitespace-nowrap text-sm text-mute" data-page={ strconv.Itoa(p.Page) }><span class="font-mono">{ strconv.Itoa(p.Page) }</span> ページ目</span>
-		@pagerButton(p.NextURL, p.NextLabel, p.Target, "data-pager-next")
+		@pagerButton(p.NextURL, p.NextLabel, p.Target, "data-pager-next", "次へ ›", "justify-self-end")
 	</nav>
 }
 
-templ pagerButton(url, label, target, side string) {
+// pagerButton は前へ／次への 1 つ。short は sm 未満で出す短い表示（label は aria-label と sm 以上の表示）。
+// 短い表示は装飾の記号（‹ ›）を含むので、読み上げは aria-label に任せる（見える文字「前へ」「次へ」は aria-label の先頭に含まれる）。
+templ pagerButton(url, label, target, side, short, justify string) {
 	if url != "" {
 		<a
 			href={ templ.SafeURL(url) }
-			class={ atoms.ButtonClass(atoms.ButtonSecondary, true) }
+			class={ atoms.ButtonClass(atoms.ButtonSecondary, true), justify, "sm:justify-self-auto" }
+			aria-label={ label }
 			data-ripple
 			hx-get={ url }
 			hx-target={ target }
 			hx-swap="outerHTML"
 			hx-push-url="true"
 			{ atoms.Attrs{side: true}... }
-		>{ label }</a>
+		>@pagerLabel(label, short)</a>
 	} else {
-		<button type="button" class={ atoms.ButtonClass(atoms.ButtonSecondary, true) } disabled { atoms.Attrs{side: true}... }>{ label }</button>
+		<button type="button" class={ atoms.ButtonClass(atoms.ButtonSecondary, true), justify, "sm:justify-self-auto" } aria-label={ label } disabled { atoms.Attrs{side: true}... }>@pagerLabel(label, short)</button>
 	}
+}
+
+templ pagerLabel(label, short string) {
+	<span class="sm:hidden" aria-hidden="true">{ short }</span>
+	<span class="hidden sm:inline">{ label }</span>
 }

@@ -29,6 +29,9 @@ type Model interface {
 type StepInput struct {
 	Model   string   // 例: gpt-6.1-sol（設定 agent.model。FR-G04）。空は不可
 	History *History // 呼び出し側（run）が所有し、Step は読むだけ
+	// Instructions は関数ツールの経路（ChatGPT のプラン・Codex）の指示（FR-G26 の instructions / Codex の baseInstructions）。
+	// computer ツールの経路は使わない（指示は History の最初のユーザーメッセージにある）。
+	Instructions string
 }
 
 // StepOutput は 1 回の応答。
@@ -43,8 +46,24 @@ type StepOutput struct {
 	// CallID は computer_call の call_id。空でないことと computer_call が返ったことは同値で、空なら最終回答（FinalText）。
 	CallID       string
 	SafetyChecks []SafetyCheck // pending_safety_checks（FR-G08）
-	FinalText    string        // computer_call が返らなかったときの最終回答
-	Usage        Usage         // input / output トークン
+	// Calls は関数ツールの経路（FR-G27）の、応答の function_call（namespace desktop）を出力の順に並べたもの。
+	// computer ツールの経路では常に空。関数ツールの経路では、空なら最終回答（FinalText）。
+	Calls     []ToolCall
+	FinalText string // computer_call / function_call が返らなかったときの最終回答
+	Usage     Usage  // input / output トークン
+}
+
+// ToolCall は関数ツールの呼び出し 1 件（FR-G27）。引数は ParseDesktopCall で検査済み。
+type ToolCall struct {
+	CallID string
+	Name   string    // desktop の関数名（left_click など）。監査・ログ用
+	Op     domain.Op // 実行する操作。screenshot は nil（実行時に新しい画面を撮るだけ）
+}
+
+// TaskCloser は、タスクごとにサーバー側の状態を持つ Model（Codex の app-server のスレッド）が実装する任意のインターフェース。
+// ループはタスクの終了（成功・失敗・中断のどれでも）で 1 回だけ CloseTask を呼び、h に結び付いた状態を片付けさせる。
+type TaskCloser interface {
+	CloseTask(h *History)
 }
 
 // OutputItem は応答の出力アイテム 1 つ。変更せず、そのまま次の呼び出しへ返す（FR-G24）。

@@ -27,7 +27,7 @@ func cardID(c view.Client) string { return "client-" + c.ID }
 // 名前の見出し（項目名）は、一覧のカードだけが h3（sr-only の h2「クライアント一覧」の下。base 16 SemiBold）。詳細ページの名前はページの h1
 // （pages/clients.templ の text-page-title）なので、このカードは名前を出さない。
 templ ClientCard(c view.Client) {
-	<article id={ cardID(c) } class="rounded-lg border border-border bg-surface p-4" data-client={ c.ID }>
+	<article id={ cardID(c) } class="rounded-lg border border-border bg-surface p-(--pad-card)" data-client={ c.ID }>
 		<div class="flex flex-wrap items-baseline justify-between gap-2">
 			if c.CanOpenDetail {
 				<h3 class="text-base font-semibold text-ink">{ c.DisplayName }</h3>

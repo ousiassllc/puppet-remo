@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
 	"github.com/ousiassllc/puppet-remo/internal/platform"
@@ -523,5 +524,38 @@ func TestFakeAppLauncherResolve(t *testing.T) {
 	}
 	if _, err := l.Resolve(ctx, `C:\Windows\System32\net-link.exe`); !errors.As(err, &le) || le.Reason != domain.LaunchAccessDenied {
 		t.Errorf("Resolve(link to a non-fixed drive) = %v, want access_denied", err)
+	}
+}
+
+func TestFakeBrowserOpenerContract(t *testing.T) {
+	platformtest.RunBrowserOpenerContract(t, func(*testing.T) platform.BrowserOpener { return platformtest.NewFakeBrowserOpener() })
+}
+
+func TestFakeBrowserOpenerRecordsOpensAndInjectsErrors(t *testing.T) {
+	const u = "https://auth.openai.com/api/accounts/authorize?x=1"
+	f := platformtest.NewFakeBrowserOpener()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := f.OpenURL(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := f.Next(ctx); err != nil || got != u {
+		t.Fatalf("Next = %q, %v; want the opened url", got, err)
+	}
+	boom := errors.New("boom")
+	f.SetError("OpenURL", boom)
+	if err := f.OpenURL(ctx, u); !errors.Is(err, boom) {
+		t.Fatalf("OpenURL error = %v, want the injected error", err)
+	}
+	if got := f.Opened(); !reflect.DeepEqual(got, []string{u}) {
+		t.Errorf("Opened = %v, want only the first open", got)
+	}
+	if got := f.CallsTo("OpenURL"); len(got) != 2 || len(got[0].Args) != 0 {
+		t.Errorf("CallsTo(OpenURL) = %+v, want 2 calls without the url", got)
+	}
+	cancel()
+	if _, err := f.Next(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Next with a canceled context = %v, want context.Canceled", err)
 	}
 }

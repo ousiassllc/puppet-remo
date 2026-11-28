@@ -110,7 +110,7 @@ templ AgentForm(f view.AgentForm) {
 			@atoms.Checkbox("agent-enabled", "enabled", f.Values.Enabled)
 			エージェントを有効にする
 		</label>
-		<p class="text-sm text-ink">既定は無効です。有効にするには、OpenAI API キーの登録と、下の同意が必要です。</p>
+		<p class="text-sm text-ink" data-agent-enable-hint={ f.Connection }>{ agentEnableHint(f.Connection) }</p>
 		@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "openai"}) {
 			<label class="flex items-start gap-2">
 				if f.Errors.Consent != "" {
@@ -119,7 +119,11 @@ templ AgentForm(f view.AgentForm) {
 				@atoms.CheckboxWith(atoms.CheckboxProps{ID: "agent-consent", Name: "consent", Checked: f.Values.Consent, Invalid: f.Errors.Consent != ""})
 				<span>エージェントが操作するたびに、画面のスクリーンショット（縮小したプライマリモニターの全体。画面に映るものはすべて含まれます）と指示・操作の履歴が <strong>OpenAI に送信される</strong>ことに同意します。</span>
 			</label>
-			<p class="mt-4">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
+			if planConnection(f.Connection) {
+				<p class="mt-4" data-consent-usage="plan"><strong>ChatGPT のプランの使用量が使われます</strong>（<span data-consent-connection>{ planConnectionLabel(f.Connection) }</span>。OpenAI API の従量課金にはなりません）。ChatGPT のプランのデータの扱いは、ChatGPT のアカウント（ワークスペース）の設定に従います。</p>
+			} else {
+				<p class="mt-4">API のデータは、OpenAI の文書では既定でモデルの学習に使われません（常に store: false で送ります）。不正利用の監視のためのログは最大 30 日保持されることがあります。</p>
+			}
 			if f.ConsentAt != "" {
 				<p class="text-xs text-mute" data-consent-at="openai">同意済み: <span class="font-mono">{ f.ConsentAt }</span></p>
 			}
@@ -127,7 +131,7 @@ templ AgentForm(f view.AgentForm) {
 				@molecules.FieldError("agent-consent", f.Errors.Consent)
 			}
 		}
-		@molecules.FormField("agent-model", "モデル", "OpenAI のモデル名。既定は gpt-6.1-sol。", f.Errors.Model) {
+		@molecules.FormField("agent-model", "モデル（OpenAI API キー用）", "接続方式が OpenAI API キーのときに使う OpenAI のモデル名。既定は gpt-6.1-sol。ChatGPT のプランのモデルは、上のカードで選びます。", f.Errors.Model) {
 			@atoms.Input(atoms.InputProps{ID: "agent-model", Name: "model", Value: f.Values.Model, Required: true, Invalid: f.Errors.Model != "", Attrs: atoms.Attrs{"autocomplete": "off"}})
 		}
 		@molecules.FormField("agent-max-steps", "ステップ数の上限", "1〜500。既定は 50。超えるとタスクを中止します。", f.Errors.MaxSteps) {
@@ -175,6 +179,11 @@ templ FastpathForm(f view.FastpathForm) {
 			@atoms.Checkbox("fastpath-enabled", "enabled", f.Values.Enabled)
 			高速パスを有効にする
 		</label>
+		if f.PlanActive {
+			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-fastpath": "plan-inactive"}) {
+				接続方式が ChatGPT のプランのあいだは、高速パスは効きません（設定は保存できますが、使われるのは接続方式が OpenAI API キーのときだけです）。
+			}
+		}
 		<p class="text-sm text-ink">既定は無効です。有効にするには、TypeSafe API キーの登録と、下の別の同意が必要です（エージェントの有効・無効とは独立）。確信が持てないときは、OpenAI の通常のループへ引き継ぎます。</p>
 		@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-consent": "typesafe"}) {
 			<label class="flex items-start gap-2">
@@ -211,11 +220,15 @@ templ FastpathForm(f view.FastpathForm) {
 	</form>
 }
 
-// AgentSections はエージェント設定の本体（#agent-sections）。OpenAI のキーと設定、高速パスのキーと設定の 4 つ。
-// API キーの削除は、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
+// AgentSections はエージェント設定の本体（#agent-sections）。先頭が接続方式の選択と、ChatGPT のプランの 2 つのカード（公式・Codex 経由）、
+// そのあとに OpenAI のキーと設定、高速パスのキーと設定。
+// API キーの削除・接続方式の切り替えは、エージェント・高速パスの設定にも及ぶため、確定の応答はこの全体を差し替える。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 templ AgentSections(v view.AgentSettings) {
 	<div id="agent-sections" class="space-y-6">
-		@molecules.Card("OpenAI エージェント") {
+		@ConnectionPanel(v.Connection)
+		@ChatGPTCard(v.ChatGPT)
+		@CodexCard(v.Codex)
+		@molecules.Card("エージェントの設定") {
 			<div class="space-y-6">
 				@APIKeyPanel(v.AgentKey)
 				<div class="border-t border-border pt-4">
