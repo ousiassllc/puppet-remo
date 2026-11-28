@@ -15,7 +15,7 @@ import (
 )
 
 func requestsTabClass(active bool) string {
-	base := "motion-hover -mb-px inline-flex items-center border-b-2 px-3 py-2 text-sm "
+	base := "motion-hover -mb-px inline-flex items-center border-b-2 px-3 py-2 text-sm tracking-ui "
 	if active {
 		return base + "border-accent text-ink"
 	}
@@ -185,14 +185,14 @@ func ConnectionRequestHistory(v view.RequestHistory) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, r := range v.Rows {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<tr class=\"hover:bg-accent-soft\" data-history-request=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<tr class=\"hover:bg-(--table-row-hover)\" data-history-request=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/request_history.templ`, Line: 73, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/request_history.templ`, Line: 73, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -205,7 +205,7 @@ func ConnectionRequestHistory(v view.RequestHistory) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(r.ResultCode)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/request_history.templ`, Line: 73, Col: 96}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/request_history.templ`, Line: 73, Col: 104}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {

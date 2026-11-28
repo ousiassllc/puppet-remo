@@ -142,8 +142,8 @@ templ TokenList(v view.TokenList, oob bool) {
 				</thead>
 				<tbody class="divide-y divide-line-soft">
 					for _, t := range v.Items {
-						<tr class="group hover:bg-accent-soft" data-token={ t.ID }>
-							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-ink">{ t.Label }</td>
+						<tr class="group hover:bg-(--table-row-hover)" data-token={ t.ID }>
+							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-item font-semibold text-ink">{ t.Label }</td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><code>{ t.Prefix }…</code></td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">@atoms.Badge(tone(t.StatusTone), t.Status)
 </td>

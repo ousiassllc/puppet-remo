@@ -7,7 +7,7 @@ import (
 )
 
 func requestsTabClass(active bool) string {
-	base := "motion-hover -mb-px inline-flex items-center border-b-2 px-3 py-2 text-sm "
+	base := "motion-hover -mb-px inline-flex items-center border-b-2 px-3 py-2 text-sm tracking-ui "
 	if active {
 		return base + "border-accent text-ink"
 	}
@@ -70,7 +70,7 @@ templ ConnectionRequestHistory(v view.RequestHistory) {
 					</thead>
 					<tbody class="divide-y divide-line-soft">
 						for _, r := range v.Rows {
-							<tr class="hover:bg-accent-soft" data-history-request={ r.ID } data-result={ r.ResultCode }>
+							<tr class="hover:bg-(--table-row-hover)" data-history-request={ r.ID } data-result={ r.ResultCode }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.ReceivedAt }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.DisplayName }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y)"><code>{ r.RemoteIP }</code></td>

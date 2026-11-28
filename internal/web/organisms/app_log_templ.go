@@ -15,7 +15,7 @@ import (
 )
 
 func logFilterClass(active bool) string {
-	base := "motion-hover inline-flex h-8 items-center rounded-full border px-3 text-sm "
+	base := "motion-hover inline-flex h-8 items-center rounded-full border px-3 text-sm tracking-ui "
 	if active {
 		return base + "border-border bg-accent-soft text-ink"
 	}
@@ -194,14 +194,14 @@ func AppLog(v view.AppLog) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, r := range v.Rows {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<tr class=\"group hover:bg-accent-soft\" data-log-level=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<tr class=\"group hover:bg-(--table-row-hover)\" data-log-level=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(r.Level)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_log.templ`, Line: 59, Col: 70}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/app_log.templ`, Line: 59, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {

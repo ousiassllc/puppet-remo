@@ -7,14 +7,14 @@ import (
 	"testing"
 )
 
-// C6: 表の行はホバーで --accent-soft 地になるが、--mute はその上で AA 4.5:1 に届かない（ライト 4.29・ダーク 4.22）。
+// C6: 表の行はホバーで --table-row-hover（--surface-sel）地になるが、--mute はその上で AA 4.5:1 に届かない（ライト 4.45・ダーク 4.89 のうちライトが未満。--mute-on-soft は 5.59・6.07）。
 // 行の中の text-mute の文字は、行に `group` を付けて `group-hover:text-mute-on-soft` に切り替える
 // （docs/architecture/frontend.md §8.4「色・ダーク（C）」）。
 // 行の中で描く部品（auditThumbCell・taskStepArgs）も、行の外に text-mute を持たない前提で同じ規則を当てる。
 func TestMuteTextInHoverRowsSwitchesToMuteOnSoft(t *testing.T) {
 	const switched = "group-hover:text-mute-on-soft"
 	mute := regexp.MustCompile(`class="[^"]*\btext-mute\b[^"]*"`)
-	rowOpen := regexp.MustCompile(`<tr class="([^"]*\bhover:bg-accent-soft\b[^"]*)"`)
+	rowOpen := regexp.MustCompile(`<tr class="([^"]*\bhover:bg-\(--table-row-hover\)[^"]*)"`)
 
 	// 行の中で描く部品: 先頭の templ 宣言から、次の行頭の `}` まで。
 	for _, c := range []struct{ file, decl string }{
@@ -40,7 +40,7 @@ func TestMuteTextInHoverRowsSwitchesToMuteOnSoft(t *testing.T) {
 		}
 	}
 
-	// 行（<tr class="… hover:bg-accent-soft …"> から </tr> まで）の中の text-mute。
+	// 行（<tr class="… hover:bg-(--table-row-hover) …"> から </tr> まで）の中の text-mute。
 	for _, file := range []string{
 		"organisms/app_log.templ", "organisms/audit.templ", "organisms/clients.templ",
 		"organisms/request_history.templ", "organisms/tasks.templ",

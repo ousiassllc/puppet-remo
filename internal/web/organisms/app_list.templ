@@ -66,8 +66,8 @@ templ AppList(v view.AppList) {
 		<h2 class="sr-only">アプリ一覧</h2>
 		<p class="text-desc text-mute" data-app-count={ strconv.Itoa(v.Count) }>登録 <span class="font-mono">{ strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) }</span> 件</p>
 		if len(v.Rows) == 0 {
-			@molecules.EmptyState("apps") {
-				起動を許可したアプリはまだありません。下のフォームから追加すると、MCP のクライアントが <code>launch_app</code> で起動できます。
+			@molecules.EmptyStatePlain("apps") {
+				起動を許可したアプリはまだありません。
 			}
 		}
 		for _, row := range v.Rows {

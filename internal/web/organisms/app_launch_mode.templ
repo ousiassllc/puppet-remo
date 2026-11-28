@@ -95,7 +95,7 @@ templ DeniedSection(v view.DeniedSection) {
 					<p class="mt-2 text-desc text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 <span class="font-mono">{ strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) }</span> 件</p>
 				</div>
 				if len(v.Rows) == 0 {
-					@molecules.EmptyState("denied") {
+					@molecules.EmptyStatePlain("denied") {
 						拒否するアプリはまだ登録されていません。
 					}
 				}

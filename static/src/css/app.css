@@ -199,9 +199,12 @@
   --select-arrow-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b6b6e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
   --select-arrow-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b8e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
 
+  /* 表（#272）: 行の hover は --surface-sel（カードの面より一段上。--accent-soft は使わない）。td の行間は 1.5（本文 sm の 1.7 より詰める）。
+   * 行頭の名前の列は項目名の段（text-item 15 / 600）で、クラスが付ける。 */
   --table-head-size: 13px;
   --table-body-size: 14px;
-  --table-row-hover: var(--accent-soft);
+  --table-body-leading: 1.5;
+  --table-row-hover: var(--surface-sel);
   --table-divider: var(--line-soft);
 }
 
@@ -239,31 +242,46 @@
  *   本文 14 / 400 / 1.7（text-sm。body の既定）・説明とチップと表の見出し 13 / 400 / 1.6 / --mute（text-desc。--surface-sel 上は --mute-on-soft）。
  * サイズと行間はこのトークンの 1 か所で決め、テンプレートに px を直書きしない。ウェイトは class（font-semibold）が付ける。
  * これ以外に、ダイアログ（確認モーダル・承認ダイアログ）の題 lg 18 と長文 base 16、ツールチップ tip 12、バッジ数 2xs 11 を残す（アプリ画面の主な段には使わない）。
- * ウェイトは本文・リンク・フォームが Regular（400）、SemiBold（600）は見出し・項目名・ナビ・ボタン。Bold（700）はどこにも使わない（最大 600）。 */
+ * ウェイトは本文・リンク・フォームが Regular（400）、SemiBold（600）は見出し・項目名・ナビ・ボタン。Bold（700）はどこにも使わない（最大 600）。
+ * 字間（#272）も段のトークンで持つ: 見出し・項目名（page-title・section・item・lg）は --tracking-heading（.01em）、本文・説明（sm・desc・base・tip）は --tracking-body（.02em）、
+ * ナビ・ボタンは --tracking-ui（0。クラス tracking-ui を text-item・text-sm のあとに付けて、段の字間を打ち消す）。テンプレートに字間（em）を直書きしない。 */
 @theme {
   --font-sans: Sora, "Noto Sans JP", sans-serif;
   /* Mono の和文のフォールバック（承認済みの逸脱。docs §8.4 の T の行）: JetBrains Mono に全角の字がないので、日本語を含む値（パス・ログの値）だけ Noto Sans JP で穴埋めする。 */
   --font-mono: "JetBrains Mono", "Noto Sans JP", ui-monospace, monospace;
 
+  --tracking-*: initial;
+  --tracking-heading: 0.01em;
+  --tracking-body: 0.02em;
+  --tracking-ui: 0;
+
   --text-*: initial;
   --text-page-title: 1.375rem;
   --text-page-title--line-height: 1.35;
+  --text-page-title--letter-spacing: var(--tracking-heading);
   --text-section: 1rem;
   --text-section--line-height: 1.5;
+  --text-section--letter-spacing: var(--tracking-heading);
   --text-item: 0.9375rem;
   --text-item--line-height: 1.5;
+  --text-item--letter-spacing: var(--tracking-heading);
   --text-sm: 0.875rem;
   --text-sm--line-height: 1.7;
+  --text-sm--letter-spacing: var(--tracking-body);
   --text-desc: 0.8125rem;
   --text-desc--line-height: 1.6;
+  --text-desc--letter-spacing: var(--tracking-body);
   /* ダイアログの長文 base 16 と題 lg 18（ガイド: ダイアログなどの長文はこれまでどおり base 16）。 */
   --text-base: 1rem;
   --text-base--line-height: 1.8;
+  --text-base--letter-spacing: var(--tracking-body);
   --text-lg: 1.125rem;
   --text-lg--line-height: 1.7;
+  --text-lg--letter-spacing: var(--tracking-heading);
   /* ツールチップだけは 12px（ガイドの「ツールチップ」）。 */
   --text-tip: 0.75rem;
   --text-tip--line-height: 1.6;
+  --text-tip--letter-spacing: var(--tracking-body);
   /* 2xs はバッジ数（P1。11px Mono）だけに使う。本文・注記には使わない（T3）。 */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1;
@@ -282,6 +300,21 @@
   /* 表の見出しセルは、ブラウザの既定（太字）にせず、thead のクラスで決める（SemiBold は見出し行だけ。T2）。 */
   th {
     font-weight: inherit;
+  }
+
+  /* 表の本文セル（td）の行間は 1.5（#272。table の text-sm が持つ 1.7 より詰める）。行頭の名前（text-item）と同じ 1.5 に揃う。 */
+  td {
+    line-height: var(--table-body-leading);
+  }
+
+  /* 見出し要素の字間は、段のクラスが付かない場合も --tracking-heading にする（段のクラスがあればそちらが勝つ）。 */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    letter-spacing: var(--tracking-heading);
   }
 
   /* 文中・値のインライン code（T1・T3。#209）は、すべてこの 1 つの書き方（テンプレートの <code> にクラスは付けない）:
@@ -315,6 +348,7 @@
     color: var(--ink);
     font-size: var(--text-sm);
     line-height: var(--text-sm--line-height);
+    letter-spacing: var(--tracking-body);
   }
 
   /* フォーカスリング（C3）: 既定は 2px solid --focus + オフセット 2px（テキストリンクなど）。ボタン・アイコンボタン・チェック・スイッチ・
@@ -408,6 +442,14 @@
   @media (forced-colors: active) {
     .bg-surface-sel {
       border: 1px solid CanvasText;
+    }
+  }
+
+  /* 表の行の hover は背景色の差で示すが、forced-colors では背景が Canvas に揃って消えるので、Highlight の 1px の輪郭で示す。 */
+  @media (forced-colors: active) {
+    tbody tr:hover {
+      outline: 1px solid Highlight;
+      outline-offset: -1px;
     }
   }
 

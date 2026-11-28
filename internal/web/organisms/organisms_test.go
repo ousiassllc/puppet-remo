@@ -113,14 +113,14 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 // キー・値とも機械的な識別子・数値なので Mono（T5。#214）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<tr class="group hover:bg-accent-soft"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="font-mono text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all font-mono">送信ボタン</dd>`)
+	has(t, out, `<tr class="group hover:bg-(--table-row-hover)"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="font-mono text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all font-mono">送信ボタン</dd>`)
 	hasNot(t, out, `class="mt-1 space-y-2 text-desc text-mute"`)
 }
 
 // T5（#214）: 監査詳細の「引数」表・アプリのログの属性（キー・値）も、タスクのステップの引数と同じく Mono。
 func TestKeyValueAttributesUseMono(t *testing.T) {
 	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "tool.click", Args: []view.AuditArg{{Key: "x", Value: "640"}}}))
-	has(t, audit, `text-left font-mono text-ink">x</th>`, `font-mono text-ink">640</td>`)
+	has(t, audit, `text-left font-mono text-item font-semibold text-ink">x</th>`, `font-mono text-ink">640</td>`)
 	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: []view.LogRow{{Time: "t", Level: "INFO", Attrs: []view.LogAttr{{Key: "tool", Value: "screenshot"}}}}}))
 	has(t, log, `<dt class="inline font-mono text-mute group-hover:text-mute-on-soft">tool</dt><dd class="ml-1 inline font-mono">screenshot</dd>`)
 }
@@ -441,8 +441,8 @@ func TestAppFormModesAndNotice(t *testing.T) {
 // 一覧: 空のときは案内だけ。行にはパス・引数・作業ディレクトリを出し、Form のある行はカードの代わりに編集フォーム。
 func TestAppListRowsAndEditingRow(t *testing.T) {
 	empty := webtest.Render(t, organisms.AppList(view.AppList{Max: 50}))
-	has(t, empty, `data-empty="apps"`, `data-app-count="0"`)
-	hasNot(t, empty, "<article")
+	has(t, empty, `data-empty="apps"`, `data-app-count="0"`, "起動を許可したアプリはまだありません。")
+	hasNot(t, empty, "<article", "border", "bg-surface", "rounded-card")
 
 	form := view.AppForm{ID: "a2", DOMID: "app-form-a2", ActionURL: "/apps/a2", PickURL: "/apps/pick-file", CancelURL: "/apps"}
 	out := webtest.Render(t, organisms.AppList(view.AppList{Count: 2, Max: 50, Rows: []view.AppRow{
@@ -854,7 +854,8 @@ func TestAuditResetIsABodyLink(t *testing.T) {
 // 表: 見出し行は Regular 13 の --mute・背景なし。行ホバーは --accent-soft。padding は --table-pad-*。数値列（所要時間）は Mono・右寄せ。
 func TestAuditTableFollowsTheTableSpec(t *testing.T) {
 	out := webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1", Time: "t", Client: "c", Kind: "tool", Event: "e", Result: "ok", ResultTone: view.ToneOK, Duration: "12 ms"}}}))
-	has(t, out, "text-left text-desc text-mute", "hover:bg-accent-soft", "px-(--table-pad-x) py-(--table-pad-y)", "text-right font-mono")
+	has(t, out, "text-left text-desc text-mute", "hover:bg-(--table-row-hover)", "px-(--table-pad-x) py-(--table-pad-y)", "text-right font-mono")
+	hasNot(t, out, "hover:bg-accent-soft")
 	hasNot(t, out, "bg-slate-50", "shadow-sm", "px-3 py-2", "font-semibold text-mute")
 }
 

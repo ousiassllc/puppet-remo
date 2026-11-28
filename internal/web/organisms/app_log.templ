@@ -7,7 +7,7 @@ import (
 )
 
 func logFilterClass(active bool) string {
-	base := "motion-hover inline-flex h-8 items-center rounded-full border px-3 text-sm "
+	base := "motion-hover inline-flex h-8 items-center rounded-full border px-3 text-sm tracking-ui "
 	if active {
 		return base + "border-border bg-accent-soft text-ink"
 	}
@@ -56,7 +56,7 @@ templ AppLog(v view.AppLog) {
 					</thead>
 					<tbody class="divide-y divide-line-soft">
 						for _, r := range v.Rows {
-							<tr class="group hover:bg-accent-soft" data-log-level={ r.Level }>
+							<tr class="group hover:bg-(--table-row-hover)" data-log-level={ r.Level }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) align-top font-mono text-ink">{ r.Time }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) align-top">
 									@atoms.Badge(badgeTone(r.LevelTone), r.Level)

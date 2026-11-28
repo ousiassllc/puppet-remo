@@ -104,7 +104,7 @@ templ AuditList(v view.AuditList) {
 					</thead>
 					<tbody class="divide-y divide-line-soft">
 						for _, r := range v.Rows {
-							<tr class="group hover:bg-accent-soft" data-audit-row={ r.DetailURL } data-result={ r.Result }>
+							<tr class="group hover:bg-(--table-row-hover)" data-audit-row={ r.DetailURL } data-result={ r.Result }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Time }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Client }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.Kind }</td>
@@ -174,8 +174,8 @@ templ AuditDetail(v view.AuditDetail) {
 						</thead>
 						<tbody class="divide-y divide-line-soft">
 							for _, a := range v.Args {
-								<tr class="hover:bg-accent-soft">
-									<th scope="row" class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-left font-mono text-ink">{ a.Key }</th>
+								<tr class="hover:bg-(--table-row-hover)">
+									<th scope="row" class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-left font-mono text-item font-semibold text-ink">{ a.Key }</th>
 									<td class="break-all px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ a.Value }</td>
 								</tr>
 							}

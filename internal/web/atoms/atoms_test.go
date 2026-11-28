@@ -280,6 +280,13 @@ func TestEmptyState(t *testing.T) {
 	hasNot(t, out, "text-base", "rounded-lg")
 }
 
+// 枠なしの空状態（#272。起動許可アプリの空・拒否リストの空）: アイコン + 1 行だけ。線（border）も面の地（bg-surface）も角丸も持たない。
+func TestEmptyStatePlainHasNoFrame(t *testing.T) {
+	out := webtest.Render(t, molecules.EmptyStatePlain("apps"))
+	has(t, out, `data-empty="apps"`, "text-sm text-ink", "<svg")
+	hasNot(t, out, "border", "bg-surface", "rounded")
+}
+
 // 確認モーダル: --z-modal・rounded-xl・影はモーダルだけ。外側（スクラム）のクリックは app.ts が閉じる（#modal の id が目印）。
 func TestModalFollowsTheOverlaySpec(t *testing.T) {
 	out := webtest.Render(t, molecules.Modal(view.ConfirmModal{Title: "削除しますか？", Message: "元に戻せません。", Label: "削除する", ConfirmURL: "/x", Method: "delete", Target: "#t", Swap: "outerHTML"}))
