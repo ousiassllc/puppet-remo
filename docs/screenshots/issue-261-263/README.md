@@ -6,3 +6,5 @@
 - apps: 起動許可アプリの警告（左帯なし・アイコン＋`--surface-sel` 地）
 - audit / tasks: 表の見出し 13/400 `--mute`・本文 14/400・行の区切り `--line-soft`
 - `after-header-killswitch-{light,dark}-{390,360,320}.png`: キルスイッチ発動中（最も長いバッジ「キルスイッチ発動中」）のヘッダー。「ホスト」は sm 未満で sr-only、ロゴは 96px より縮めず、360px 未満（320）は文字ロゴの代わりにシンボル 24px（aria-label「Nefos Remote」）。1 段のまま（ヘッダー高 56px・横スクロールなし）
+
+注: ダークの `after-*` のうち、`after-dashboard-dark-1280.png` と `after-header-killswitch-dark-*.png` 以外（`after-dashboard-dark-390`・`after-{apps,audit,tasks}-dark-{1280,390}`）は、カードの枠を 0 にする前の撮影で、カードに `--line-soft` の 1px 枠が残っている。

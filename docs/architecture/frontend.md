@@ -551,7 +551,7 @@ graph LR
 
 ### 8.4 デザインガイドの適用（Ousiass 共通デザインガイド）
 
-見た目の値（色・書体・サイズ・角丸・影・モーション・z-index・表の余白）は、Ousiass 共通デザインガイド（brand-guide `d430361`）のトークンで、`static/src/css/app.css` の 1 か所に定義する。Templ と Lit はトークン（Tailwind のユーティリティ `bg-bone` `text-ink` `text-mute` `bg-surface` `border-border` `bg-accent` `bg-accent-soft` `text-danger` や CSS の `var(--ink)`）だけを参照し、Tailwind 既定のパレット・ハードコードの色・ガイドに無い値を使わない（`@theme` で既定のパレット・サイズ・角丸・影を空にしてあるので、既定の `slate-*` などは生成されない）。
+見た目の値（色・書体・サイズ・角丸・影・モーション・z-index・表の余白）は、Ousiass 共通デザインガイド（brand-guide `c171ceb7`）のトークンで、`static/src/css/app.css` の 1 か所に定義する。Templ と Lit はトークン（Tailwind のユーティリティ `bg-bone` `text-ink` `text-mute` `bg-surface` `border-border` `bg-accent` `bg-accent-soft` `text-danger` や CSS の `var(--ink)`）だけを参照し、Tailwind 既定のパレット・ハードコードの色・ガイドに無い値を使わない（`@theme` で既定のパレット・サイズ・角丸・影を空にしてあるので、既定の `slate-*` などは生成されない）。
 
 | 領域 | 実装 |
 |------|------|
@@ -607,9 +607,9 @@ graph LR
 
 合わせていない（値ではない規定・対象の部品がこのアプリに無いもの・採用の印が無いもの）: 主ボタンのホバーの混色（ガイド #285。アプリは `hover:bg-accent/90`）・メニュー・ナビ項目の角丸 `--r-sm`（#285。アプリは `rounded-md`）・タブの高さ 40・項目間 4（#284。アプリは `py-2`・項目間 8）・スイッチ・ラジオ・ドロップダウン・`--toast-duration-action`（5 秒。操作つきトーストの部品がこのアプリに無い）・入力・チェックボックス・スライダーの disabled の opacity .5（ガイドが .4 と書くのはボタン・メニュー項目・スイッチ・ラジオ）。
 
-#### アプリ画面の文字 5 段・面と枠・部品（`a66e8514` → `d430361`。#246・#261・#262・#263）
+#### アプリ画面の文字 5 段・面と枠・部品（`a66e8514` → `c171ceb7`。#246・#261・#262・#263）
 
-基準のコミットは `d430361` のまま、文字の段は **brand-guide PR #97（未マージ。「アプリ画面の文字を 3 段から 5 段にし、ウェイトを最大 600 にする」）の値**にそろえた（#97 がマージされたら、そのトークン（`--app-title`・`--app-section`・`--app-item`・`--app-body`・`--app-desc`）の値と食い違わないかを確かめる）。見出しタグ（h1〜h6）と表示サイズは独立で、5 段は見た目の役割。サイズスケール（xs〜3xl）は廃し、`app.css` の `--text-*` は下の段とダイアログ用・ツールチップ用・バッジ数用だけにした（`text-xs` と `text-xl` 以上は無い。`spacing_scale_test.go` の `TestTemplsUseOnlyTheAppTypeScale` が、`text-base`・`text-lg` を `molecules/modal.templ` と `organisms/approval.templ` に限って検出する）。
+基準のコミットは `c171ceb7`（brand-guide PR #97 のマージコミット）で、文字の段は **brand-guide PR #97（「アプリ画面の文字を 3 段から 5 段にし、ウェイトを最大 600 にする」）の値**にそろえた（#97 のトークン（`--app-title`・`--app-section`・`--app-item`・`--app-body`・`--app-desc`）の値と一致させてある）。見出しタグ（h1〜h6）と表示サイズは独立で、5 段は見た目の役割。サイズスケール（xs〜3xl）は廃し、`app.css` の `--text-*` は下の段とダイアログ用・ツールチップ用・バッジ数用だけにした（`text-xs` と `text-xl` 以上は無い。`spacing_scale_test.go` の `TestTemplsUseOnlyTheAppTypeScale` が、`text-base`・`text-lg` を `molecules/modal.templ` と `organisms/approval.templ` に限って検出する）。
 
 | 段 | サイズ / ウェイト / 行間 | トークン（Tailwind） | 使う場所 |
 |---|---|---|---|
@@ -625,7 +625,7 @@ graph LR
 - 表の本文は 14 / 400（本文の段）。12px のまま残る文字はない。ライセンス全文（`<pre>`）・タスク ID のリンクなど、`text-xs` だった 12px の文字は、識別子・値なら `text-sm`（14）、補足なら `text-desc`（13）に上げた。
 - **面と枠（#262。ガイド「面と枠」）**: ページ `--bone` → カード `--surface` → 選択・ホバー・入れ子 `--surface-sel`（ライト `#ebebea`・ダーク `#1e1e21`）。カードは外枠なし・カードの題の下に線なし（ライトもダークも面の色で分ける。ダークは `#050505` → `#141414`。`.card-edge` の `--card-edge-w` は全テーマで 0）。`--line-soft`（`--accent` の 6%）の 1px は浮く面（モーダル・メニューなど）だけに残す。入れ子の行（拒否リストの行など）は枠なしの `--surface-sel`。表の行の区切りは `divide-line-soft`。浮かぶ面（モーダル・承認ダイアログ）は `border-line-soft` の 1px。入力欄の枠・危険の枠 40%・フォーカスの輪は残す。カードの角 `--r-card`（16）・内側余白 `--pad-card`（22）・ボタンはピル（`rounded-full`）。
 - **インラインアラート（#262）**: `atoms.Alert`・`atoms.Notice` とも、地 `--surface-sel`・角 `--r-card`・左のアクセントバーなし。状態色は先頭のアイコンだけで、danger のアラートだけ枠 40%。起動許可アプリの警告（cmd.exe・powershell.exe…）・操作権のパネルの注意書きなど `Notice` を使う面はすべて同じ。
-- **ヘッダーの折り返し（#263）**: `organisms.Header` は 1 段（高さ 56px）のまま 2 段にしない。キルスイッチのバッジは `whitespace-nowrap shrink-0`、「ホスト」は sm 未満で `sr-only`（sm 以上で表示。読み上げには残る）にした。ロゴ（`atoms.Lockup`）は sm 未満で高さ 40px にして幅を縮められるが、96px（`min-w-24`）より縮めない。360px 未満（320 など）は文字ロゴの代わりにシンボルだけ（24px・`aria-label`「Nefos Remote」）を出す。390 / 360 / 320 幅とも、キルスイッチ発動中（最も長いバッジ）でもロゴ・バッジが文字の途中で縦に折れず、ヘッダー高 56px・横スクロールなしになる（`docs/screenshots/issue-261-263/` の `after-header-killswitch-*`）。1280 幅（sm 以上）のロゴは従来の 55px のまま。`TestHeaderKeepsOneRowAtNarrowWidths`（`organisms_test.go`）で固定する。
+- **ヘッダーの折り返し（#263）**: `organisms.Header` は 1 段（高さ 56px）のまま 2 段にしない。キルスイッチのバッジは `whitespace-nowrap shrink-0`、「ホスト」は sm 未満で `sr-only`（sm 以上で表示。読み上げには残る）にした。ロゴ（`atoms.Lockup`）は sm 未満で高さ 40px にして幅を縮められるが、96px（`min-w-24`）より縮めない。360px 未満（359・320 など）は文字ロゴの代わりにシンボルだけ（24px・`aria-label`「Nefos Remote」）を出す。実測（Playwright・キルスイッチ発動中・ライト／ダークとも同じ値）: 390 幅＝ロゴ 142.8px、360 幅＝ロゴ 117px、359 幅・320 幅＝シンボル 24px。どの幅でも表示中の `<img>` は 1 つだけ、ヘッダー高 56px・横スクロールなし・バッジは画面内に収まる（`docs/screenshots/issue-261-263/` の `after-header-killswitch-{light,dark}-{390,360,320}.png`）。1280 幅（sm 以上）のロゴは従来の 55px のまま。`TestHeaderKeepsOneRowAtNarrowWidths`（`organisms_test.go`）で固定する。
 - 他の PR との重なり: PR #248（#246。develop にマージ済み）が同じ `app.css` の文字の節・`frontend.md` のこの節・`typography_test.go` を触っており、この版はその上に積んである（競合なし）。
 
 ### 8.5 Noto Sans JP のサブセット化（#130）
