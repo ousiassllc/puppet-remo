@@ -550,7 +550,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | H1 | 既定の設定（有効・5 秒）で、MCP クライアントから 1 秒おきに `mouse_move` を送り続け、ホストの**物理マウス**を動かす | 動かした直後から `mouse_move` が `input_paused`（`detail.resumes_at`・`retry_after_ms` 付き）で断られ、カーソルは物理マウスの動きだけに従う。`get_control_status` が `paused: true`・`paused_reason: host_input` |
 | H2 | H1 のあと、マウスから手を離して 5 秒待つ | 自動で再開し、`mouse_move` が通る。`get_control_status` が `paused: false`。操作を続けている間は再開しない（最後の操作から 5 秒） |
 | H3 | **物理キーボード**のキーを 1 つ押す | H1 と同じく停止し、`key` / `type` も断られる。H2 と同様に再開する |
-| H4 | MCP の `mouse_move`・`left_click`・`type`・`key`・`scroll`（Web ビューアの操作・`run_task` も）を、ホストが何も触れていないときに送る | **停止しない**（自分の `SendInput` はフックの injected フラグと `dwExtraInfo` の印で実入力から外れる）。`mouse_move` の位置補正（`SetCursorPos`）でも停止しない。**停止する場合は、injected フラグの扱いの不備として報告する** |
+| H4 | MCP の `mouse_move`・`left_click`・`type`・`key`・`scroll`（Web ビューアの操作・`run_task` も）を、ホストが何も触れていないときに送る | **停止しない**（自分の `SendInput` はフックの injected フラグと `dwExtraInfo` の印で実入力から外れる）。`mouse_move` の位置補正（`SetCursorPos`。`dwExtraInfo` の印を付けられないので、補正する位置を短い間だけ記録し、フックが injected フラグ無しで同じ位置の `WM_MOUSEMOVE` を受けたとき 1 回だけ無視する）でも停止しない。解像度・拡大率の違う複数モニターでも `mouse_move` を何度か送り、1 画素の補正が起きても停止しないことを見る。**停止する場合は、injected フラグの扱いまたは補正の記録の不備として報告する** |
 | H5 | 停止中に `screenshot`・`cursor_position`・`list_windows`・`get_ui_tree`・`clipboard_write` を呼ぶ | すべて通る（読み取りとクリップボードの書き込みは止めない） |
 | H6 | Web ビューアでマウスボタンを押したまま（`input.mouse` の down）、ホストの物理マウスを動かす | 停止に入った時点で押下中のボタンが離され（ReleaseAll）、ボタンが押しっぱなしにならない。以後のビューアの入力は `error`（`input_paused`）で断られ、インラインアラートが出る |
 | H7 | 停止中にキルスイッチ（`Ctrl+Alt+Shift+K`） | 通常どおり 1 秒以内に発動する（停止とは独立）。ホットキーの押下で停止しても無害 |

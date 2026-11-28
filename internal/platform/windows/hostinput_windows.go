@@ -35,7 +35,7 @@ var (
 
 // msllHookStruct は MSLLHOOKSTRUCT。
 type msllHookStruct struct {
-	_           w32Point // pt（座標は読まない）
+	pt          w32Point
 	_           uint32   // mouseData
 	flags       uint32
 	_           uint32 // time
@@ -164,7 +164,7 @@ func hookStruct[T any](lParam uintptr) *T {
 func hostInputMouseHook(nCode, wParam, lParam uintptr) uintptr {
 	if int32(nCode) == hcAction {
 		ev := hookStruct[msllHookStruct](lParam)
-		if isHostMouseEvent(ev.flags, ev.dwExtraInfo) {
+		if isHostMouseEvent(ev.flags, ev.dwExtraInfo) && !ownCursorMoves.consume(wParam, ev.pt.X, ev.pt.Y) {
 			if fn := hostInputSink.Load(); fn != nil {
 				(*fn)(platform.HostInputMouse)
 			}

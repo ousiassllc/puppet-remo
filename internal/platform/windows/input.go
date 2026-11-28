@@ -326,6 +326,8 @@ func (in *Input) settleCursor(p domain.Point) error {
 	if got == p {
 		return nil
 	}
+	// SetCursorPos の動きは dwExtraInfo の印を持てないので、フックが実入力と取り違えないよう位置を先に記録する（hostinput.go）。
+	ownCursorMoves.expect(p)
 	return in.drv.setCursorPos(p)
 }
 
