@@ -53,6 +53,7 @@ templ HeaderKillSwitchOOB(active bool) {
 }
 
 // RequestsBadge はサイドバーの接続要求の件数（0 件なら何も出さない）。通知バッジ数（P1）: --accent 地 + --bone 字・11px Mono・最小 18px。99 を超える件数は 99+ にする。
+// forced-colors（ハイコントラスト。#285）では --accent の塗りが消えるので、app.css が data-pending-count に CanvasText の 1px の輪郭を足して丸を残す（現在地の行の中は HighlightText）。
 templ RequestsBadge(n int) {
 	if n > 0 {
 		<span class="ml-auto inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-accent px-1 font-mono text-2xs text-bone" data-pending-count={ strconv.Itoa(n) }>{ badgeCount(n) }</span>

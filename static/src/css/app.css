@@ -481,6 +481,18 @@
     }
   }
 
+  /* ナビの「接続要求」件数バッジ（[data-pending-count]。organisms.RequestsBadge）: bg-accent の丸の塗りが forced-colors では Canvas に置き換わって消え、数字だけが残る。
+   * CanvasText の 1px の輪郭で丸を残す（高さ h-4.5 は border-box なので、輪郭を足しても大きさは変わらない）。
+   * 現在地の行（上の規則の Highlight の地）の中では、地の上で見える HighlightText にする。 */
+  @media (forced-colors: active) {
+    #sidebar-nav [data-pending-count] {
+      border: 1px solid CanvasText;
+    }
+    #sidebar-nav [aria-current="page"] [data-pending-count] {
+      border-color: HighlightText;
+    }
+  }
+
   /* 本文のリンク（C3・C7）: インク色 + --mute の下線。主操作・選択状態以外で色を足さない。 */
   .link {
     color: var(--ink);

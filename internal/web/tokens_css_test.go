@@ -168,6 +168,7 @@ func TestTableRowAndTrackingTokens(t *testing.T) {
 }
 
 // #282: forced-colors（ハイコントラスト）で、主ボタン（.btn-primary）・ナビの現在地（aria-current="page"）・ロゴは、システム色に置き換える。
+// #285: ナビの「接続要求」件数バッジは、塗りが消えるので CanvasText の 1px の輪郭で丸を残す（現在地の行の中は HighlightText）。
 // 状態チップはアイコンで区別できるので変えない。Chromium の forcedColors エミュレーションで確かめた（docs/screenshots/issue-282）。実機のハイコントラストでは確かめていない。
 func TestForcedColorsPrimaryButtonNavAndLogo(t *testing.T) {
 	css := readAppCSS(t)
@@ -176,6 +177,8 @@ func TestForcedColorsPrimaryButtonNavAndLogo(t *testing.T) {
 		`(?s)@media \(forced-colors: active\) \{\s*\.btn-primary \{[^}]*forced-color-adjust:\s*none;[^}]*background:\s*ButtonText !important;[^}]*color:\s*ButtonFace !important;[^}]*border:\s*1px solid ButtonText;`,
 		// ナビの現在地: Highlight の地・HighlightText の字。
 		`(?s)@media \(forced-colors: active\) \{\s*#sidebar-nav \[aria-current="page"\] \{[^}]*forced-color-adjust:\s*none;[^}]*background:\s*Highlight !important;[^}]*color:\s*HighlightText !important;`,
+		// 件数バッジ: CanvasText の 1px の輪郭。現在地の行（Highlight の地）の中では HighlightText。
+		`(?s)@media \(forced-colors: active\) \{\s*#sidebar-nav \[data-pending-count\] \{\s*border:\s*1px solid CanvasText;\s*\}\s*#sidebar-nav \[aria-current="page"\] \[data-pending-count\] \{\s*border-color:\s*HighlightText;`,
 		// ロゴ: 画像（地の板つき）は隠し、形だけのマスクを CanvasText で塗る。
 		`(?s)\.brand-forced \{\s*display:\s*none;\s*\}`,
 		`(?s)@media \(forced-colors: active\) \{\s*\.brand-light,\s*\.brand-dark \{\s*display:\s*none !important;`,
