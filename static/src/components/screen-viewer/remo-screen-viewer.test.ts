@@ -1091,5 +1091,25 @@ describe("<remo-screen-viewer>", () => {
       const names = overlay?.getAnimations().map((a) => (a as CSSAnimation).animationName) ?? [];
       expect(names).to.include("overlay-fade-in");
     });
+
+    // #261-263: 覆いの地は --bone ではなく、そのテーマの --surface 85%。スピナーと文言は --surface-sel のピルに入れる（枠なし）。
+    it("覆いの地は --surface 85%、スピナーと文言は --surface-sel のピルに入る", async () => {
+      const viewer = await fixture<RemoScreenViewer>(html`<remo-screen-viewer ws-url=${WS_URL}></remo-screen-viewer>`);
+      viewer.style.setProperty("--bone", "rgb(5, 5, 5)");
+      viewer.style.setProperty("--surface", "rgb(20, 20, 20)");
+      viewer.style.setProperty("--surface-sel", "rgb(30, 30, 33)");
+      const overlay = viewer.shadowRoot?.querySelector(".overlay") as HTMLElement;
+      const pill = overlay.querySelector(".overlay-pill") as HTMLElement;
+      expect(pill.querySelector(".spinner")).to.not.equal(null);
+      expect(pill.textContent?.trim()).to.not.equal("");
+      expect(getComputedStyle(pill).backgroundColor).to.equal("rgb(30, 30, 33)");
+      expect(getComputedStyle(pill).borderTopWidth).to.equal("0px");
+      const probe = document.createElement("div");
+      probe.style.background = "color-mix(in srgb, rgb(20, 20, 20) 85%, transparent)";
+      document.body.append(probe);
+      const expected = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      expect(getComputedStyle(overlay).backgroundColor).to.equal(expected);
+    });
   });
 });

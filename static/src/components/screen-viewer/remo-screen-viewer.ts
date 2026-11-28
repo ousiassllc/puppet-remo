@@ -300,13 +300,29 @@ export class RemoScreenViewer extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
       padding: 1rem;
-      background: color-mix(in srgb, var(--bone) 85%, transparent);
+      /* 地はそのテーマの --surface 85%（ライト・ダークとも）。ダークでは canvas の地（--surface）と背景（--bone）の境目が溶けるので、
+         覆いも --surface にそろえる。真ん中の印と文言は --surface-sel のピルに入れて浮かせる。枠は付けない。 */
+      background: color-mix(in srgb, var(--surface) 85%, transparent);
       color: var(--ink);
       font-size: 0.875rem;
       text-align: center;
       animation: overlay-fade-in var(--motion-fade-in) var(--ease-out) both;
+    }
+    .overlay-pill {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      max-width: 100%;
+      padding: 0.5rem 1rem;
+      border-radius: var(--r-full);
+      background: var(--surface-sel);
+    }
+    @media (forced-colors: active) {
+      .overlay-pill {
+        border: 1px solid CanvasText;
+      }
     }
     .overlay[data-leaving] {
       animation: overlay-fade-out var(--motion-fade-out) var(--ease-in) both;
@@ -508,7 +524,7 @@ export class RemoScreenViewer extends LitElement {
       ></textarea>
       ${shown === null
         ? nothing
-        : html`<div class="overlay" role="status" ?data-leaving=${text === ""}>${overlayIcon(shown.status)}<span>${shown.text}</span></div>`}
+        : html`<div class="overlay" role="status" ?data-leaving=${text === ""}><div class="overlay-pill">${overlayIcon(shown.status)}<span>${shown.text}</span></div></div>`}
       ${banner !== null ? this.renderBanner(banner, false) : this.leavingBanner !== null ? this.renderBanner(this.leavingBanner, true) : nothing}
     `;
   }
