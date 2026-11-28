@@ -45,32 +45,44 @@ func (t *processTree) attach(cmd *exec.Cmd) error {
 	if err := windows.AssignProcessToJobObject(t.job, h); err != nil {
 		return err
 	}
-	return resumeMainThread(pid)
+	return resumeThreads(pid)
 }
 
-// resumeMainThread は CREATE_SUSPENDED で作った pid のプロセスの、ただ 1 つのスレッド（主スレッド）を動かす。
+// resumeThreads は CREATE_SUSPENDED で作った pid のプロセスのスレッドを動かす。
 // os/exec は CreateProcess が返すスレッドのハンドルを閉じてしまうので、スレッドの一覧から pid のものを探す。
-// 止まっているプロセスにはスレッドが 1 つしかなく、pid はプロセスのハンドル（cmd.Process）を持っている間は再利用されない。
-func resumeMainThread(pid uint32) error {
+// 止まっているプロセスのスレッドは主スレッドだけだが、外から差し込まれたスレッドがあっても主スレッドが止まったままにならないよう、
+// pid のスレッドをすべて再開する（止まっていないスレッドへの ResumeThread は何もしない）。pid はプロセスのハンドル（cmd.Process）を持っている間は再利用されない。
+func resumeThreads(pid uint32) error {
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = windows.CloseHandle(snap) }()
 	entry := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
+	resumed := false
 	for err := windows.Thread32First(snap, &entry); err == nil; err = windows.Thread32Next(snap, &entry) {
 		if entry.OwnerProcessID != pid {
 			continue
 		}
-		th, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, entry.ThreadID)
-		if err != nil {
+		if err := resumeThread(entry.ThreadID); err != nil {
 			return err
 		}
-		defer func() { _ = windows.CloseHandle(th) }()
-		_, err = windows.ResumeThread(th)
+		resumed = true
+	}
+	if !resumed {
+		return windows.ERROR_NOT_FOUND
+	}
+	return nil
+}
+
+func resumeThread(tid uint32) error {
+	th, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, tid)
+	if err != nil {
 		return err
 	}
-	return windows.ERROR_NOT_FOUND
+	defer func() { _ = windows.CloseHandle(th) }()
+	_, err = windows.ResumeThread(th)
+	return err
 }
 
 // kill はジョブ（と、ジョブに入る前のプロセス）を終了させる。ジョブがまだ空のうちに呼ばれると TerminateJobObject は何も終わらせずに
