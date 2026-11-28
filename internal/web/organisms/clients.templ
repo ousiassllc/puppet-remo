@@ -142,19 +142,19 @@ templ TokenList(v view.TokenList, oob bool) {
 				</thead>
 				<tbody class="divide-y divide-line-soft">
 					for _, t := range v.Items {
-						<tr class="group hover:bg-(--table-row-hover)" data-token={ t.ID }>
+						<tr class="hover:bg-(--row-hover)" data-token={ t.ID }>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-item font-semibold text-ink">{ t.Label }</td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)"><code>{ t.Prefix }…</code></td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact)">@atoms.Badge(tone(t.StatusTone), t.Status)
 </td>
 							<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.CreatedAt }</td>
 							if t.ExpiresAt == "" {
-								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute" data-field="expires-at-none">無期限</td>
 							} else {
 								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.ExpiresAt }</td>
 							}
 							if t.LastUsedAt == "" {
-								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>
+								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute" data-field="last-used-at-none">未使用</td>
 							} else {
 								<td class="px-(--table-pad-x-compact) py-(--table-pad-y-compact) font-mono text-ink">{ t.LastUsedAt }</td>
 							}

@@ -131,7 +131,7 @@ func TestClientDetailPage(t *testing.T) {
 		`<option value="90" selected>`, "無期限", `href="/clients"`,
 		"prm_AbCd…", "claude-desktop", "ci-bot", "old-laptop", "expired-one", "有効", "失効済み", "期限切れ", "2026-11-29 12:00")
 	// #221: 値が無いときの文言（無期限・未使用）は Mono の外（text-mute の Regular）。日時は従来どおり font-mono。
-	contains(t, res, `text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>`, `text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>`, `font-mono text-ink">2026-11-29 12:00</td>`)
+	contains(t, res, `text-mute" data-field="expires-at-none">無期限</td>`, `text-mute" data-field="last-used-at-none">未使用</td>`, `font-mono text-ink">2026-11-29 12:00</td>`)
 	lacks(t, res, `font-mono text-ink">無期限`, `font-mono text-ink">未使用`)
 	// 一覧のカードではないので、削除と詳細への導線は出さない。
 	lacks(t, res, "/delete/confirm", `href="/clients/c1"`)

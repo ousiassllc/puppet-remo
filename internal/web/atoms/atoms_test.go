@@ -161,7 +161,7 @@ func TestToastIsAShortInkPill(t *testing.T) {
 // 危険は塗りでなく、透明地・--danger の文字・--danger 45% の枠（in srgb の --color-danger-line-strong。O7。主より弱い見た目）。
 func TestButtonVariantsAndSizes(t *testing.T) {
 	for v, want := range map[atoms.ButtonVariant]string{
-		atoms.ButtonPrimary: "bg-accent text-bone", atoms.ButtonDanger: "border border-danger-line-strong bg-transparent text-danger hover:bg-danger-wash",
+		atoms.ButtonPrimary: "btn-primary bg-accent text-bone", atoms.ButtonDanger: "border border-danger-line-strong bg-transparent text-danger hover:bg-danger-wash",
 		atoms.ButtonSecondary: "border border-border", atoms.ButtonGhost: "bg-transparent text-ink",
 	} {
 		out := webtest.Render(t, atoms.Button(atoms.ButtonProps{Label: "操作", Variant: v}))

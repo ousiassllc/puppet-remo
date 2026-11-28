@@ -70,7 +70,7 @@ templ ConnectionRequestHistory(v view.RequestHistory) {
 					</thead>
 					<tbody class="divide-y divide-line-soft">
 						for _, r := range v.Rows {
-							<tr class="hover:bg-(--table-row-hover)" data-history-request={ r.ID } data-result={ r.ResultCode }>
+							<tr class="hover:bg-(--row-hover)" data-history-request={ r.ID } data-result={ r.ResultCode }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.ReceivedAt }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">{ r.DisplayName }</td>
 								<td class="px-(--table-pad-x) py-(--table-pad-y)"><code>{ r.RemoteIP }</code></td>

@@ -109,11 +109,11 @@ func TestTaskStatusRendersCancelOnlyWhenCancellable(t *testing.T) {
 	}
 }
 
-// タスク詳細のステップの引数: キーだけが補助（text-mute。行のホバーでは group-hover:text-mute-on-soft に切り替える）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
+// タスク詳細のステップの引数: キーだけが補助（text-mute。行の hover の地 --row-hover の上でも AA に届くので切り替えない）で、値は内容なので本文色（text-ink・text-sm）にする（C6）。
 // キー・値とも機械的な識別子・数値なので Mono（T5。#214）。
 func TestTaskDetailStepArgsValueIsBodyColor(t *testing.T) {
 	out := webtest.Render(t, organisms.TaskDetail(view.TaskDetail{ID: "t1", Steps: []view.TaskStepRow{{No: 1, Summary: "クリック", Args: []view.AuditArg{{Key: "target", Value: "送信ボタン"}}}}}))
-	has(t, out, `<tr class="group hover:bg-(--table-row-hover)"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="font-mono text-mute group-hover:text-mute-on-soft">target:</dt>`, `<dd class="break-all font-mono">送信ボタン</dd>`)
+	has(t, out, `<tr class="hover:bg-(--row-hover)"`, `<dl class="mt-1 space-y-2 text-sm text-ink" data-step-args>`, `<dt class="font-mono text-mute">target:</dt>`, `<dd class="break-all font-mono">送信ボタン</dd>`)
 	hasNot(t, out, `class="mt-1 space-y-2 text-desc text-mute"`)
 }
 
@@ -122,7 +122,7 @@ func TestKeyValueAttributesUseMono(t *testing.T) {
 	audit := webtest.Render(t, organisms.AuditDetail(view.AuditDetail{Event: "tool.click", Args: []view.AuditArg{{Key: "x", Value: "640"}}}))
 	has(t, audit, `text-left font-mono text-item font-semibold text-ink">x</th>`, `font-mono text-ink">640</td>`)
 	log := webtest.Render(t, organisms.AppLog(view.AppLog{Filter: "all", Page: 1, Rows: []view.LogRow{{Time: "t", Level: "INFO", Attrs: []view.LogAttr{{Key: "tool", Value: "screenshot"}}}}}))
-	has(t, log, `<dt class="inline font-mono text-mute group-hover:text-mute-on-soft">tool</dt><dd class="ml-1 inline font-mono">screenshot</dd>`)
+	has(t, log, `<dt class="inline font-mono text-mute">tool</dt><dd class="ml-1 inline font-mono">screenshot</dd>`)
 }
 
 // 題付きのセクション（molecules.Card。#166）同士は、部品どうしの 24（--gap-grid-lg。space-y-6）で区切る（ガイド「部品どうし 16–24」・S5。#204 の 48 は
@@ -856,7 +856,7 @@ func TestAuditResetIsABodyLink(t *testing.T) {
 // 表: 見出し行は Regular 13 の --mute・背景なし。行ホバーは --accent-soft。padding は --table-pad-*。数値列（所要時間）は Mono・右寄せ。
 func TestAuditTableFollowsTheTableSpec(t *testing.T) {
 	out := webtest.Render(t, organisms.AuditList(view.AuditList{Rows: []view.AuditRow{{ID: 1, DetailURL: "/audit/1", Time: "t", Client: "c", Kind: "tool", Event: "e", Result: "ok", ResultTone: view.ToneOK, Duration: "12 ms"}}}))
-	has(t, out, "text-left text-desc text-mute", "hover:bg-(--table-row-hover)", "px-(--table-pad-x) py-(--table-pad-y)", "text-right font-mono")
+	has(t, out, "text-left text-desc text-mute", "hover:bg-(--row-hover)", "px-(--table-pad-x) py-(--table-pad-y)", "text-right font-mono")
 	hasNot(t, out, "hover:bg-accent-soft")
 	hasNot(t, out, "bg-slate-50", "shadow-sm", "px-3 py-2", "font-semibold text-mute")
 }
@@ -876,7 +876,7 @@ func TestTableDateTimeCellsUseMono(t *testing.T) {
 	has(t, tokens, mono+"2026-10-01<", mono+"2027-10-01<", mono+"2026-11-01<")
 	// #221: 値が無いときの文言（無期限・未使用）は Mono の外（Regular の text-mute）。
 	none := webtest.Render(t, organisms.TokenList(view.TokenList{ClientID: "c1", Items: []view.Token{{ID: "a", CreatedAt: "2026-10-01"}}}, false))
-	has(t, none, `text-mute group-hover:text-mute-on-soft" data-field="expires-at-none">無期限</td>`, `text-mute group-hover:text-mute-on-soft" data-field="last-used-at-none">未使用</td>`)
+	has(t, none, `text-mute" data-field="expires-at-none">無期限</td>`, `text-mute" data-field="last-used-at-none">未使用</td>`)
 	hasNot(t, none, mono+"無期限", mono+"未使用")
 }
 
@@ -1018,8 +1018,8 @@ func TestTaskDetailAuxRowUsesATooltipNotTitle(t *testing.T) {
 		{No: 2, KindLabel: "判定", Summary: "Judge"},
 	}}))
 	has(t, out,
-		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
-		`aria-describedby="step-row-tip-2"><span class="text-mute group-hover:text-mute-on-soft">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
+		`<span class="tip-host" tabindex="0" aria-describedby="step-row-tip-1"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-1" class="tip">ステップ 1 に付く行</span></span>`,
+		`aria-describedby="step-row-tip-2"><span class="text-mute">-</span><span role="tooltip" id="step-row-tip-2" class="tip">ステップ 2 に付く行</span>`)
 	hasNot(t, out, "title=", `id="step-row-tip-0"`)
 }
 

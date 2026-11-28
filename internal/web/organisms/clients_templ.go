@@ -523,14 +523,14 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, t := range v.Items {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<tr class=\"group hover:bg-(--table-row-hover)\" data-token=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<tr class=\"hover:bg-(--row-hover)\" data-token=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var23 string
 				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 145, Col: 70}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/clients.templ`, Line: 145, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {
@@ -588,7 +588,7 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				if t.ExpiresAt == "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<td class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft\" data-field=\"expires-at-none\">無期限</td>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<td class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute\" data-field=\"expires-at-none\">無期限</td>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -612,7 +612,7 @@ func TokenList(v view.TokenList, oob bool) templ.Component {
 					}
 				}
 				if t.LastUsedAt == "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<td class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute group-hover:text-mute-on-soft\" data-field=\"last-used-at-none\">未使用</td>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<td class=\"px-(--table-pad-x-compact) py-(--table-pad-y-compact) text-mute\" data-field=\"last-used-at-none\">未使用</td>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

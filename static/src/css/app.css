@@ -20,6 +20,9 @@
   --surface: #ffffff;
   /* 選択・ホバー・入れ子の面（ガイドの --surface-sel）。ページ --bone → カード --surface → この面と、地より一段上げて分ける（枠線は使わない）。 */
   --surface-sel: #ebebea;
+  /* 表の行の hover 専用の面（#283）。ライトは --bone と同じ #f5f5f4。--surface-sel（#ebebea）だと、行の中の中立チップ（--accent-soft #e7e7e5）の地とほぼ同じ色になって輪郭が溶ける
+   * （チップ地との差: --surface-sel は 1.04 倍、これは 1.14 倍）。ダークは --surface-sel と同じ。--surface-sel は面・入れ子の行・アラートの地としてそのまま使う。 */
+  --row-hover: #f5f5f4;
   --border: #e7e7e5;
   --accent: #050505;
   --accent-soft: #e7e7e5;
@@ -31,8 +34,8 @@
   --scrim: rgb(5 5 5 / 0.4);
   --select-arrow: var(--select-arrow-light);
   --ring: color-mix(in srgb, var(--focus) 40%, transparent);
-  /* --accent-soft・--surface-sel 地（表の行の hover）の上の補助文字（ガイドの式。--mute だけでは AA に届かない: --accent-soft 上でライト 4.29・ダーク 4.22、--surface-sel 上でライト 4.45）。
-   * この式の文字は --surface-sel 上でライト 5.59・ダーク 6.07、--accent-soft 上でライト 5.39・ダーク 5.24。テーマ別の --mute・--ink から導く。 */
+  /* --accent-soft 地（タスクのカードの hover。sm 未満）の上の補助文字（ガイドの式。--mute だけでは AA に届かない: --accent-soft 上でライト 4.29・ダーク 4.22）。
+   * この式の文字は --accent-soft 上でライト 5.39・ダーク 5.24。テーマ別の --mute・--ink から導く。表の行の hover（--row-hover）の上は --mute のままで AA に届く（ライト 4.87・ダーク 4.89。#283）。 */
   --mute-on-soft: color-mix(in srgb, var(--mute) 85%, var(--ink));
   /* ごく薄い線（ガイドの --line-soft。--accent の 6%: ライトは ink、ダークは bone）。表の行の区切りと、浮かぶ面（モーダル・ドロップダウン・トースト）の 1px の枠。 */
   --line-soft: color-mix(in srgb, var(--accent) 6%, transparent);
@@ -48,6 +51,7 @@
   --bone: #050505;
   --surface: #141414;
   --surface-sel: #1e1e21;
+  --row-hover: #1e1e21;
   --card-edge-w: 0px;
   --border: #2a2a2a;
   --accent: #f5f5f4;
@@ -70,6 +74,7 @@
     --bone: #050505;
     --surface: #141414;
     --surface-sel: #1e1e21;
+    --row-hover: #1e1e21;
     --card-edge-w: 0px;
     --border: #2a2a2a;
     --accent: #f5f5f4;
@@ -200,12 +205,11 @@
   --select-arrow-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b6b6e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
   --select-arrow-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b8e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9L12 15L18 9'/%3E%3C/svg%3E");
 
-  /* 表（#272）: 行の hover は --surface-sel（カードの面より一段上。--accent-soft は使わない）。td の行間は 1.5（本文 sm の 1.7 より詰める）。
+  /* 表（#272・#283）: 行の hover は --row-hover（カードの面より一段上。--accent-soft は使わない）。td の行間は 1.5（本文 sm の 1.7 より詰める）。
    * 行頭の名前の列は項目名の段（text-item 15 / 600）で、クラスが付ける。 */
   --table-head-size: 13px;
   --table-body-size: 14px;
   --table-body-leading: 1.5;
-  --table-row-hover: var(--surface-sel);
   --table-divider: var(--line-soft);
 }
 
@@ -240,7 +244,7 @@
  * フォントは Sora + Noto Sans JP（UI）と JetBrains Mono（コード・桁を揃える数値）。@font-face は scripts/copy-fonts.mjs が生成する。
  * アプリ画面の文字は 5 段（brand-guide の「アプリ UI」の文字。サイズ / ウェイト / 行間）:
  *   ページタイトル 22 / 600 / 1.35（text-page-title）・節とカードの題 16 / 600 / 1.5（text-section）・項目名とナビとボタン 15 / 600 / 1.5（text-item）・
- *   本文 14 / 400 / 1.7（text-sm。body の既定）・説明とチップと表の見出し 13 / 400 / 1.6 / --mute（text-desc。--surface-sel 上は --mute-on-soft）。
+ *   本文 14 / 400 / 1.7（text-sm。body の既定）・説明とチップと表の見出し 13 / 400 / 1.6 / --mute（text-desc。--accent-soft 上は --mute-on-soft）。
  * サイズと行間はこのトークンの 1 か所で決め、テンプレートに px を直書きしない。ウェイトは class（font-semibold）が付ける。
  * これ以外に、ダイアログ（確認モーダル・承認ダイアログ）の題 lg 18 と長文 base 16、ツールチップ tip 12、バッジ数 2xs 11 を残す（アプリ画面の主な段には使わない）。
  * ウェイトは本文・リンク・フォームが Regular（400）、SemiBold（600）は見出し・項目名・ナビ・ボタン。Bold（700）はどこにも使わない（最大 600）。
@@ -451,6 +455,29 @@
     tbody tr:hover {
       outline: 1px solid Highlight;
       outline-offset: -1px;
+    }
+  }
+
+  /* 主ボタン（atoms.Button の primary。.btn-primary）: 塗り（--accent）が forced-colors では消えて、輪郭も無いただの太字になる。ButtonText の塗り・ButtonFace の字・1px の ButtonText の輪郭にして、
+   * 副ボタン（輪郭だけ）と塗りで見分ける。utilities 層の bg-accent・text-bone・hover:bg-accent/90 より優先するため !important（これらは通常の色なので forced-colors が Canvas に置き換えてしまう）。
+   * forced-color-adjust: none は必須: 既定（auto）のままだと、Chromium は文字の下に Canvas 色の板（バックプレート）を敷き、地が ButtonText・字が ButtonFace でも字が板に埋もれて読めなくなる。
+   * none にすると、ここで指定したシステム色がそのまま使われる（Chromium の forcedColors エミュレーションで確認）。 */
+  @media (forced-colors: active) {
+    .btn-primary {
+      forced-color-adjust: none;
+      background: ButtonText !important;
+      color: ButtonFace !important;
+      border: 1px solid ButtonText;
+    }
+  }
+
+  /* ナビの現在地（aria-current="page"）: 選択の地（--accent-soft）が forced-colors では消えて、他の項目と見分けがつかない。Highlight の地・HighlightText の字にする。
+   * utilities 層の bg-accent-soft・text-ink より優先するため !important。forced-color-adjust: none の理由は主ボタンと同じ（バックプレートで字が消える）。 */
+  @media (forced-colors: active) {
+    #sidebar-nav [aria-current="page"] {
+      forced-color-adjust: none;
+      background: Highlight !important;
+      color: HighlightText !important;
     }
   }
 
@@ -705,6 +732,31 @@
     }
     :root:not([data-theme="light"]) .brand-dark {
       display: block;
+    }
+  }
+
+  /* forced-colors では、画像のロゴ（地の板・色つきの下地を持つ SVG）を出さず、形だけのマスク（lockup-mono.svg・symbol-mono.svg。地の板なし）を CanvasText で塗って出す。
+   * 地の板が消え、線と塗りは文字色のシステム色になる。通常は出さない（display: none）。画像側の display は上のテーマ別の規則（詳細度が高い）に勝つため !important にする。 */
+  .brand-forced {
+    display: none;
+  }
+  @media (forced-colors: active) {
+    .brand-light,
+    .brand-dark {
+      display: none !important;
+    }
+    .brand-forced {
+      display: block;
+      background-color: CanvasText;
+      mask-position: left center;
+      mask-repeat: no-repeat;
+      mask-size: contain;
+    }
+    .brand-forced-lockup {
+      mask-image: url("/static/brand/lockup-mono.svg");
+    }
+    .brand-forced-symbol {
+      mask-image: url("/static/brand/symbol-mono.svg");
     }
   }
 }
