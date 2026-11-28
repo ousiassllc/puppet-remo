@@ -67,6 +67,8 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"and resumes by itself once the host has been idle for a while; get_control_status reports paused. Viewing tools are not paused. " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
 	"you pass an app_id, never arguments or a working directory, and it needs the lease like input tools. " +
+	"run_command runs one command from the host owner's allowlist (off by default; see list_commands for names and typed parameters) " +
+	"and returns its exit code, stdout and stderr; you pass only the command name and its named args, never a command line, and it needs the lease like input tools. " +
 	"put_file, get_file, list_files and delete_file move files in and out of one transfer folder chosen by the host owner " +
 	"(paths are relative to it and can never leave it; content is base64, at most 512 KiB per call, larger files in chunks by offset; " +
 	"put_file and get_file return the size and SHA-256 of the whole file); they need the lease like input tools, and the host owner sets the folder and the size limits. " +
@@ -109,6 +111,9 @@ type Config struct {
 	// Files はファイル転送（put_file / get_file / list_files / delete_file。FR-M27）の窓口。必須。検査（キルスイッチ・リース・パス・上限）と
 	// 監査は FileTransfer が行うので、mcp はここで記録しない。置き場所・上限を変える経路は mcp に無い。
 	Files service.FileTransfer
+	// Commands はコマンド実行（run_command / list_commands。FR-M32）の窓口。必須。検査（キルスイッチ・ON/OFF・リース・許可リスト・引数）と
+	// 監査は CommandExec が行うので、mcp はここで記録しない。ON/OFF・許可リストを変える経路は mcp に無い。
+	Commands service.CommandExec
 	// HostInput は get_control_status に出す、ホストの実入力による一時停止の状態（#270）。nil なら常に paused = false。
 	// 入力の拒否そのものは Control が行う（ここは状態を見せるだけ）。
 	HostInput service.HostInputPause
@@ -143,6 +148,7 @@ type Server struct {
 	audit      service.AuditRecorder
 	agent      service.Agent
 	files      service.FileTransfer
+	commands   service.CommandExec
 	hostInput  service.HostInputPause // nil なら停止の状態を見せない
 
 	toolTimeout      time.Duration
@@ -174,11 +180,14 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("mcp: Principal is required")
 	case cfg.Files == nil:
 		return nil, errors.New("mcp: Files is required")
+	case cfg.Commands == nil:
+		return nil, errors.New("mcp: Commands is required")
 	}
 	s := &Server{
 		control:          cfg.Control,
 		agent:            cfg.Agent,
 		files:            cfg.Files,
+		commands:         cfg.Commands,
 		hostInput:        cfg.HostInput,
 		leases:           cfg.Leases,
 		principal:        cfg.Principal,
@@ -280,6 +289,9 @@ func (s *Server) toolContext(ctx context.Context, tool string) (context.Context,
 	}
 	if tool == "wait_for" {
 		timeout += service.MaxWaitForTimeout // 承認待ちのあとに、最大の待ち時間が残るようにする
+	}
+	if tool == "run_command" {
+		timeout += domain.MaxCommandTimeout // 承認待ちのあとに、項目の最大のタイムアウトが残るようにする
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	stop := context.AfterFunc(aborted, cancel)

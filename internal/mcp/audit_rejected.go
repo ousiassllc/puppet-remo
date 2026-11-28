@@ -10,17 +10,17 @@ import (
 	"github.com/ousiassllc/puppet-remo/internal/service"
 )
 
-// launch_app の入力スキーマ違反の監査（FR-AU06）。
+// launch_app（と run_command）の入力スキーマ違反の監査（FR-AU06）。
 //
 // 入力スキーマに合わない呼び出し（app_id の欠落・型違い・追加のプロパティ）は、SDK が実行前に拒否する（IsError の結果を返す）ため、
 // ツールの本体にも Control.Launch にも届かず、そのままでは監査に残らない。受信ミドルウェアが、本体に届かなかった launch_app の
 // 呼び出しを tool.launch_app（denied・invalid_argument）として 1 件記録する。本体に届いた呼び出しは Control.Launch が記録する。
 //
-// 記録するのは launch_app だけ。他のツール（mouse_move など）のスキーマ違反は何も実行せず状態を変えないため、FR-AU01 の範囲外とする
+// 記録するのは launch_app と run_command（#265。コマンドラインなどの余計なプロパティを渡そうとした試みを残す）だけ。他のツール（mouse_move など）のスキーマ違反は何も実行せず状態を変えないため、FR-AU01 の範囲外とする
 // （決定事項。#38。docs/api/endpoints.md §3.4）。
 
 // auditedWhenRejected は、スキーマ違反の拒否を受信側で記録するツール。
-const auditedWhenRejected = "launch_app"
+var auditedWhenRejected = map[string]bool{"launch_app": true, "run_command": true}
 
 // reachedKey は、本体に届いたかを registerTool のハンドラが受信ミドルウェアへ知らせるための ctx のキー。
 type reachedKey struct{}
@@ -32,11 +32,11 @@ func markReached(ctx context.Context) {
 	}
 }
 
-// auditRejectedLaunch は、SDK がスキーマ違反で拒否した launch_app の呼び出しを監査へ記録する受信ミドルウェア。
+// auditRejectedLaunch は、SDK がスキーマ違反で拒否した launch_app・run_command の呼び出しを監査へ記録する受信ミドルウェア。
 func (s *Server) auditRejectedLaunch(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
 	return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
 		call, ok := req.(*mcpsdk.CallToolRequest)
-		if method != "tools/call" || s.audit == nil || !ok || call.Params == nil || call.Params.Name != auditedWhenRejected {
+		if method != "tools/call" || s.audit == nil || !ok || call.Params == nil || !auditedWhenRejected[call.Params.Name] {
 			return next(ctx, method, req)
 		}
 		var reached atomic.Bool

@@ -17,6 +17,8 @@ var controlAudited = []string{
 	"find_ui_element", "wait_for", "launch_app",
 	// ファイル転送は service.FileTransfer が自分で監査する（#264。パス・大きさ・SHA-256 を持つので、mcp 層の引数の要約では足りない）。
 	"put_file", "get_file", "list_files", "delete_file",
+	// コマンド実行も service.CommandExec が自分で監査する（#265。項目名・引数の値・終了コード・出力の大きさを持つ）。
+	"run_command", "list_commands",
 }
 
 // toolCallArgs は全ツールを成功させる引数。
@@ -43,6 +45,8 @@ var toolCallArgs = map[string]map[string]any{
 	"get_file":        {"path": "a.txt"},
 	"list_files":      {},
 	"delete_file":     {"path": "a.txt"},
+	"run_command":     {"name": "echo-version"},
+	"list_commands":   {},
 	"run_task":        {"prompt": "hunter2"},
 	"get_task":        {"task_id": "task-seed"},
 	"cancel_task":     {"task_id": "task-seed"},

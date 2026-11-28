@@ -16,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -76,6 +77,8 @@ type Platform struct {
 	Browser platform.BrowserOpener
 	// Files はファイル転送（MCP の put_file / get_file / list_files / delete_file。#264）の置き場所への出し入れ。service.FileTransfer が唯一の呼び出し元。
 	Files platform.FileStore
+	// Commands はコマンド実行（MCP の run_command。#265）の起動。service.CommandExec が唯一の呼び出し元。
+	Commands platform.CommandRunner
 }
 
 // UpdateOptions は更新（service.Updater。#74）の設定の上書き。ゼロ値なら本番の既定（埋め込みの公開鍵・GitHub・6 時間ごと）。
@@ -223,8 +226,8 @@ func (c Config) validate() error {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
-		p.Hotkey == nil, p.HostInput == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil, p.Browser == nil, p.Files == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, HostInput, Power, Installer, Secrets, Browser and Files")
+		p.Hotkey == nil, p.HostInput == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil, p.Browser == nil, p.Files == nil, p.Commands == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, HostInput, Power, Installer, Secrets, Browser, Files and Commands")
 	case c.Windows == nil:
 		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
@@ -370,6 +373,16 @@ func (a *App) build(ctx context.Context) error {
 			}
 		}()
 	})
+	// コマンド実行。ON/OFF（既定 OFF）と許可リストのファイルの場所は settings の command.*（ホスト GUI の設定画面だけが書く）。
+	// 許可リストの既定の場所はデータフォルダの中（リモートが書けるファイル転送の置き場所とは重ならない）。
+	commands, err := service.NewCommandExec(service.CommandExecConfig{
+		Runner: p.Commands, Files: files, Leases: a.leases, Kill: killMgr, Settings: settings,
+		DefaultAllowlistPath: filepath.Join(cfg.DataDir, CommandAllowlistFile), DefaultInboxRoot: cfg.InboxDir,
+		Audit: audit, Clock: cfg.Clock, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("command exec: %w", err)
+	}
 	if err := a.buildAgent(control, killMgr); err != nil {
 		return err
 	}
@@ -385,7 +398,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.mcp, err = mcp.New(mcp.Config{
-		Control: control, Leases: a.leases, Audit: audit, Agent: a.agent, Files: files, HostInput: a.hostPause, Version: cfg.Version, Logger: a.log,
+		Control: control, Leases: a.leases, Audit: audit, Agent: a.agent, Files: files, Commands: commands, HostInput: a.hostPause, Version: cfg.Version, Logger: a.log,
 		// 連鎖（web/middleware）が認証した主体を MCP サーバーへ渡す。mcp は web を import できない。
 		Principal:        func(r *http.Request) (service.Principal, bool) { return middleware.PrincipalFrom(r.Context()) },
 		OnSessionsChange: func() { a.bus.Publish(service.Event{Topic: service.TopicSessions}) },
@@ -395,6 +408,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 	// キルスイッチの発動で全 MCP セッションを閉じる（各セッションのリースは切断の検知で解放される）。
 	killMgr.RegisterCloser("mcp-sessions", a.mcp.CloseSessions)
+	killMgr.RegisterCloser("commands", commands.CancelAll) // 実行中のコマンドも止める（#265）
 	a.kill = service.NewNotifyingKillSwitch(killMgr, a.bus)
 
 	// 画面配信とビューアのセッション（viewer_id）。キルスイッチの発動で全ビューアを閉じるクローザー（web-sessions）は

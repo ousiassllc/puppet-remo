@@ -271,9 +271,12 @@ type SettingsValues struct {
 	FileTransferRoot          string
 	FileTransferMaxFileBytes  string
 	FileTransferMaxTotalBytes string
-	UpdateApplyMode           string // confirm | auto_idle（FR-S09）
-	UpdateChannel             string // stable | nightly（FR-S09）
-	Autostart                 bool
+	// コマンド実行（#265。FR-S25）。許可リストのファイルは空なら既定の場所。
+	CommandEnabled       bool
+	CommandAllowlistPath string
+	UpdateApplyMode      string // confirm | auto_idle（FR-S09）
+	UpdateChannel        string // stable | nightly（FR-S09）
+	Autostart            bool
 }
 
 // SettingsField は設定の項目別のエラー。
@@ -292,8 +295,10 @@ type SettingsErrors struct {
 	FileTransferRoot          string
 	FileTransferMaxFileBytes  string
 	FileTransferMaxTotalBytes string
-	UpdateApplyMode           string
-	UpdateChannel             string
+	// コマンド実行（#265）の項目別のエラー。
+	CommandAllowlistPath string
+	UpdateApplyMode      string
+	UpdateChannel        string
 }
 
 // SettingsForm は設定フォーム。

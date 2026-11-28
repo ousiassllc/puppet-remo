@@ -19,6 +19,7 @@ import (
 	"unsafe"
 
 	"github.com/ousiassllc/puppet-remo/internal/app"
+	"github.com/ousiassllc/puppet-remo/internal/platform/localexec"
 	"github.com/ousiassllc/puppet-remo/internal/platform/localfs"
 	"github.com/ousiassllc/puppet-remo/internal/platform/windows"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
@@ -155,6 +156,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 			Browser: windows.NewBrowserOpener(),
 			// ファイル転送（#264）は、ホストが決めた置き場所の中だけで、リンクをたどらずにファイルを出し入れする。
 			Files: localfs.New(),
+			// コマンド実行（#265）は、許可リストの項目を、シェルを使わずに起動する（既定 OFF）。
+			Commands: localexec.New(),
 		},
 		// 承認ダイアログ（FR-H05）は専用の Wails ウィンドウ（キャプチャ除外）で開く。
 		Windows: host.Windows(),
