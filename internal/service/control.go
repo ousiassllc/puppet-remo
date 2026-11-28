@@ -51,6 +51,10 @@ type Control interface {
 	Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
 	// Screenshot は閲覧系（リース不要）。monitor は Index か domain.MonitorPrimary。format は "png"（既定）か "jpeg"。
 	Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
+	// WindowScreenshot は req.WindowID のウィンドウだけのスクリーンショット（screenshot の window_id。FR-M26。リース不要。キルスイッチ中は拒否）。
+	// PrintWindow（GroupCapturer.GrabGroup）で撮り、前面にしない・モニター撮影には切り替えない。自ウィンドウ・昇格・最小化は ErrInputBlocked（detail.reason）、
+	// 存在しない id は ErrWindowNotFound。画像の座標と縮小は WindowShot の説明（control_window_shot.go）に従う。
+	WindowScreenshot(ctx context.Context, req WindowShotRequest) (WindowShot, error)
 	Monitors(ctx context.Context) ([]domain.Monitor, error)
 	// Windows は物理座標のウィンドウ一覧。縮小座標への変換は呼び出し側（mcp）が行う。
 	Windows(ctx context.Context) ([]domain.WindowInfo, error)
