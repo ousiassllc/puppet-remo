@@ -127,6 +127,14 @@ func (c *control) judgeTargets(ctx context.Context, op domain.Op) ([]domain.Wind
 		if o.WindowID != "" {
 			return c.windowByID(ctx, o.WindowID)
 		}
+	case domain.FindUIElement:
+		if o.Window.WindowID != "" {
+			return c.windowByID(ctx, o.Window.WindowID)
+		}
+	case domain.WaitFor:
+		if o.Window.WindowID != "" {
+			return c.windowByID(ctx, o.Window.WindowID)
+		}
 	}
 	f, err := c.windows.Foreground()
 	if err != nil {

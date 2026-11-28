@@ -24,11 +24,16 @@ func seededWindows() *platformtest.FakeWindows {
 
 func seededUIA(w *platformtest.FakeWindows) *platformtest.FakeUIAutomation {
 	u := platformtest.NewFakeUIAutomation(w)
+	id := func(n int32) string {
+		return domain.ElementRef{HWND: 100, PID: 4120, RuntimeID: []int32{42, n}}.String()
+	}
 	u.SetTree("100", domain.UINode{
-		ID: "root", Role: "Window", Name: "メモ帳", Enabled: true,
+		ID: id(1), Role: "Window", Name: "メモ帳", Enabled: true,
 		Children: []domain.UINode{
-			{ID: "a", Role: "MenuBar", Enabled: true, Children: []domain.UINode{{ID: "a1", Role: "MenuItem", Name: "ファイル", Enabled: true}}},
-			{ID: "b", Role: "Edit", Enabled: true, ValueRedacted: true},
+			{ID: id(2), Role: "MenuBar", Enabled: true, Children: []domain.UINode{
+				{ID: id(3), Role: "MenuItem", Name: "ファイル", AutomationID: "File", Enabled: true, Patterns: []string{domain.PatternInvoke, domain.PatternExpandCollapse}},
+			}},
+			{ID: id(4), Role: "Edit", AutomationID: "15", ClassName: "RichEditD2DPT", Enabled: true, ValueRedacted: true, Patterns: []string{domain.PatternValue, domain.PatternText}},
 		},
 	})
 	u.SetSnapshot("100", domain.UISnapshot{
@@ -557,5 +562,78 @@ func TestFakeBrowserOpenerRecordsOpensAndInjectsErrors(t *testing.T) {
 	cancel()
 	if _, err := f.Next(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("Next with a canceled context = %v, want context.Canceled", err)
+	}
+}
+
+func TestFakeUIAutomationFindAndResolve(t *testing.T) {
+	ctx := context.Background()
+	w := seededWindows()
+	u := seededUIA(w)
+
+	res, err := u.Find(ctx, "100", func(e domain.UIElementInfo) bool { return e.AutomationID == "File" }, 5, 100)
+	if err != nil || len(res.Elements) != 1 || res.Window.ID != "100" {
+		t.Fatalf("Find = %+v, %v", res, err)
+	}
+	item := res.Elements[0]
+	if item.ControlType != "MenuItem" || item.Name != "ファイル" || len(item.Patterns) != 2 || item.ID == "" {
+		t.Fatalf("element = %+v", item)
+	}
+	ref, err := domain.ParseElementRef(item.ID)
+	if err != nil || ref.WindowID() != "100" || ref.PID != 4120 {
+		t.Fatalf("ref = %+v, %v", ref, err)
+	}
+	if got, err := u.Resolve(ctx, ref); err != nil || got.ID != item.ID || got.Name != "ファイル" {
+		t.Fatalf("Resolve = %+v, %v", got, err)
+	}
+
+	// 要素が消えた（木が変わった）: 古い ID は別の要素に当たらず無効。
+	u.SetTree("100", domain.UINode{ID: domain.ElementRef{HWND: 100, PID: 4120, RuntimeID: []int32{42, 1}}.String(), Role: "Window"})
+	if _, err := u.Resolve(ctx, ref); !errors.Is(err, domain.ErrStaleElement) {
+		t.Errorf("after the element is gone: error = %v, want ErrStaleElement", err)
+	}
+
+	// ウィンドウが閉じた。
+	u = seededUIA(w)
+	w.Remove("100")
+	if _, err := u.Resolve(ctx, ref); !errors.Is(err, domain.ErrStaleElement) {
+		t.Errorf("after the window is gone: error = %v, want ErrStaleElement", err)
+	}
+}
+
+func TestFakeUIAutomationResolveRejectsAReusedWindowHandle(t *testing.T) {
+	ctx := context.Background()
+	w := seededWindows()
+	u := seededUIA(w)
+	res, err := u.Find(ctx, "100", func(e domain.UIElementInfo) bool { return e.Name == "ファイル" }, 1, 100)
+	if err != nil || len(res.Elements) != 1 {
+		t.Fatalf("Find = %+v, %v", res, err)
+	}
+	ref, err := domain.ParseElementRef(res.Elements[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 同じ HWND を別のプロセスが再利用する。木に同じ ID の要素があっても、プロセスが違えば古い。
+	w.Replace("100", domain.WindowInfo{Title: "Other app", Process: "other.exe", PID: 9999})
+	if _, err := u.Resolve(ctx, ref); !errors.Is(err, domain.ErrStaleElement) {
+		t.Errorf("error = %v, want ErrStaleElement", err)
+	}
+}
+
+func TestFakeUIAutomationFindBounds(t *testing.T) {
+	ctx := context.Background()
+	u := seededUIA(seededWindows())
+	all := func(domain.UIElementInfo) bool { return true }
+
+	res, err := u.Find(ctx, "100", all, 2, 100)
+	if err != nil || len(res.Elements) != 2 || !res.Truncated || res.Elements[0].ControlType != "Window" || res.Elements[1].ControlType != "MenuBar" {
+		t.Errorf("Find(maxResults 2) = %+v, %v; want Window, MenuBar and Truncated", res, err)
+	}
+	res, err = u.Find(ctx, "100", all, 100, 3)
+	if err != nil || len(res.Elements) != 3 || !res.Truncated {
+		t.Errorf("Find(maxNodes 3) = %d elements, Truncated %v, %v", len(res.Elements), res.Truncated, err)
+	}
+	res, err = u.Find(ctx, "100", all, 100, 100)
+	if err != nil || len(res.Elements) != 4 || res.Truncated {
+		t.Errorf("Find(all) = %d elements, Truncated %v, %v; want 4, false", len(res.Elements), res.Truncated, err)
 	}
 }

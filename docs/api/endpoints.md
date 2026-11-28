@@ -84,7 +84,8 @@ FR-M17 のコードに、HTTP 層のコードを加えたもの。
 | `invalid_coordinates` | 400 | 操作系 | 座標がモニターの範囲外 |
 | `invalid_argument` | 400 | 共通 | 引数が不正（`viewer_id` が別のクライアントに束縛されている場合を含む）。`launch_app` では、`app_id` と `path` の同時指定・どちらも無い・ホワイトリスト方式での `path` の指定・`path` の形の不正（絶対パスでない・UNC・`..` を含む・`.exe` でない・使えない文字）もこれ（§3.3） |
 | `conflict` | 409 | GUI | 現在の状態では実行できない（要求が `pending` でない、更新を適用できない状態など） |
-| `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない |
+| `window_not_found` | 404 | ウィンドウ系 | 対象が存在しない（`find_ui_element` / `wait_for` では、`title`・`process_name` で探して合うウィンドウが無い場合を含む） |
+| `stale_element` | 409 | UI 要素 | 要素 ID の指す要素（そのウィンドウ・プロセスを含む）がもう無い。古い ID が別の要素に当たることはない（FR-M28。#267。`get_ui_tree` / `find_ui_element` の `id` を受け取る道具が返す） |
 | `app_not_found` | 404 | `launch_app` | `app_id` が許可リストに無い（読めない行・起動の再検査を満たさない行を含む。FR-M19。M1.5）。どちらの起動の方式でも同じ |
 | `app_denied` | 403 | `launch_app` | 起動の方式がブラックリストで、起動しようとしたアプリがホスト所有者の拒否リストに当たる（`app_id` で起動する許可リストのアプリも、拒否リストに当たれば拒否する。#88）。MCP は同じ `code` のツールエラー。メッセージは `the host owner does not allow this app to be launched` で固定し、**パス・拒否リストの中身は含めない**。監査は `denied` |
 | `input_blocked` | 409 | 操作系 | 自ウィンドウ・管理者権限ウィンドウなどで入力不可（NFR-S06 / UIPI）。`detail.reason` は `own_window` / `elevated_window` / `secure_attention_sequence`。`own_window` の `detail.own_windows` に Nefos Remote のウィンドウの範囲を付ける（§3.4）。**スコープ付きのリース**（FR-L09〜L14。#156）では、対象グループの外への入力・停止中の入力・クリップボード読み取りなども `input_blocked` で、`detail.reason` と `detail.blocked_by` は §3.4 の表 |
@@ -140,6 +141,8 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `clipboard_read` | FR-M13 | 必要 | ro |
 | `clipboard_write` | FR-M13 | 必要 | |
 | `get_ui_tree` | FR-M14 | 必要 | ro |
+| `find_ui_element` | FR-M28 | 必要 | ro。UI 要素を名前・AutomationId・ControlType で探す（#267） |
+| `wait_for` | FR-M29 | 必要 | ro。ウィンドウ・UI 要素が現れる・消えるまで待つ（#266） |
 | `acquire_control` / `release_control` / `get_control_status` | FR-M15 | 不要 | `get_control_status` は ro |
 | `list_launchable_apps` | FR-M18 | 不要 | ro。起動の方式 `mode` と登録済みのアプリを返す |
 | `launch_app` | FR-M19 | 必要 | `app_id` か `path`（`path` はブラックリスト方式のときだけ） |
@@ -245,7 +248,43 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 | `max_depth` | integer | 既定 5、最大 20（超えると `invalid_argument`） |
 | `max_nodes` | integer | 既定 500、最大 5000（超えると `invalid_argument`） |
 
-出力: `{ "window_id": "…", "truncated": false, "root": { "id": "…", "role": "Window", "name": "…", "value": "…", "rect": {…}, "enabled": true, "children": [ … ] } }`。`rect` は縮小座標。パスワード欄は `value` を含めず `"value_redacted": true` にする。`id` は UI Automation の RuntimeId から作る参照用の文字列で、他のツールの引数には使わない。
+出力: `{ "window_id": "…", "truncated": false, "root": { "id": "uie:…", "role": "Window", "control_type": "Window", "name": "…", "automation_id": "…", "class_name": "…", "patterns": ["Window"], "value": "…", "rect": {…}, "enabled": true, "offscreen": false, "children": [ … ] } }`。`rect` は縮小座標。パスワード欄は `value` を含めず `"value_redacted": true` にする。`id` は**要素 ID**（`find_ui_element` の `id` と同じ形式 `uie:<HWND>:<PID>:<RuntimeId>`。UI Automation が RuntimeId を返さない要素は空文字列）で、`stale_element` の検査つきで要素を引き直す道具の引数に使う。`control_type` は `role` と同じ値、`patterns` は対応パターン（無ければ `[]`）。
+
+**`find_ui_element`**（FR-M28。#267）
+
+| 引数 | 型 | 説明 |
+|------|----|------|
+| `window_id` | string | 対象ウィンドウ（`list_windows` の `id`。`title`・`process_name` より優先） |
+| `title` | string | ウィンドウのタイトル（`match` に従う） |
+| `process_name` | string | ウィンドウのプロセス名（例 `notepad.exe`。大文字小文字を区別しない完全一致） |
+| `name` | string | 要素の名前（`match` に従う） |
+| `automation_id` | string | 要素の AutomationId（完全一致） |
+| `control_type` | string | 要素の ControlType の名前（`Button`・`Edit`・`CheckBox` など。大文字小文字を区別しない。不明な名前は `invalid_argument`） |
+| `match` | `"exact"` \| `"contains"` | `title` と `name` の比較。既定 `exact`（大文字小文字を区別する完全一致）。`contains` は大文字小文字を区別しない部分一致 |
+| `max_results` | integer | 既定 20、最大 100（超えると `invalid_argument`） |
+
+ウィンドウの項目が無ければ前面のウィンドウ。複数のウィンドウに合えば Z オーダーの最上位（自ウィンドウは `title`・`process_name` では選ばれない）。`name`・`automation_id`・`control_type` の**どれか 1 つは必須**（無ければ `invalid_argument`）で、指定した項目はすべて満たす要素が合う。
+
+出力: `{ "window": { …list_windows の 1 件と同じ… }, "truncated": false, "elements": [ { "id": "uie:197382:4812:2a.1f4.3", "control_type": "Button", "name": "保存", "automation_id": "SaveButton", "class_name": "Button", "rect": {…}, "enabled": true, "offscreen": false, "visible": true, "patterns": ["Invoke"] } ] }`。`rect` は縮小座標（`get_ui_tree` と同じ変換）。`elements` は浅い階層から最大 `max_results` 件で、一致がまだある・走査（20,000 節点）を打ち切ったときは `truncated: true`。`visible` は、`offscreen` でなく、矩形がモニター上にあること。`patterns` は `Invoke`・`Value`・`Toggle`・`SelectionItem`・`ExpandCollapse`・`Scroll`・`RangeValue`・`Window`・`Text`・`Selection` のうち対応するもの。`id` は `get_ui_tree` の `id` と同じ形式の要素 ID で、要素・ウィンドウが消える、または同じ HWND を別のプロセスが使うと無効になる（受け取る道具は `stale_element`）。読み取りだけで入力しない。値・テキスト本文は返さない。
+
+エラー: `kill_switch_active`・リースのエラー（`get_ui_tree` と同じ。暗黙の取得を試みる）、`invalid_argument`（要素の項目が無い・`control_type`・`match`・`max_results` が不正）、`window_not_found`（合うウィンドウが無い）、`input_blocked`（`own_window`。`window_id` が自ウィンドウ、または前面が自ウィンドウ。`detail.own_windows` つき）。
+
+**`wait_for`**（FR-M29。#266）
+
+| 引数 | 型 | 説明 |
+|------|----|------|
+| `window_id` / `title` / `process_name` | string | ウィンドウの探し方（`find_ui_element` と同じ）。要素を待たないときは、どれか 1 つが必須 |
+| `name` / `automation_id` / `control_type` | string | 要素の探し方（`find_ui_element` と同じ）。1 つでも指定すると、その窓の中の要素を待つ。窓の項目が無ければ前面のウィンドウ |
+| `match` | `"exact"` \| `"contains"` | `title` と `name` の比較（既定 `exact`） |
+| `state`\* | `"appear"` \| `"disappear"` | 現れるまで / 消えるまで |
+| `timeout_ms`\* | integer | 待つ上限。1〜60,000（範囲外は `invalid_argument`） |
+| `interval_ms` | integer | 確認の間隔。既定 500、100〜5,000 |
+
+最初の確認は待たずに行い、以後 `interval_ms` ごとに確かめる。キルスイッチが発動したら `kill_switch_active` ですぐ止まり、ツール呼び出しの取り消し・タイムアウトでも止まる（ツールのタイムアウトは `timeout_ms` の分だけ長い）。
+
+出力（成功とタイムアウトのどちらも**ツールの成功**。`isError` は付かない）: `{ "state": "appear", "target": "window" \| "element", "matched": true, "timed_out": false, "waited_ms": 1500, "window": { …list_windows の 1 件と同じ… }, "elements": [ …find_ui_element の要素と同じ… ] }`。成功時、`appear` は `window`（要素を待つときはその要素を含む窓）と、要素を待つときの `elements`（一致した要素。最大 20）を次の操作用に返す。`disappear` の成功は `window`・`elements` を含まない。タイムアウトは `matched: false`・`timed_out: true` で、`candidates: { "windows": […], "elements": […] }`（各最大 20 件。欠けたら `truncated: true`）を付ける: `appear` は近い候補（指定した項目のどれか 1 つに当たるものが先。ウィンドウ待ちは無ければ見えているウィンドウ、要素待ちは窓があればその窓の近い要素・窓が無ければ見えているウィンドウ）、`disappear` は消えずに残っている対象。要素を待つときの `window` は探した窓（無ければ省略）。自ウィンドウは候補に出さない。
+
+エラー: `find_ui_element` と同じ。加えて、`window_id` で指した窓が無いまま `appear` を待つのは現れないので、待たずに `window_not_found`（`disappear` は窓が無ければ成立）。読み取りだけで入力しない。
 
 #### リース
 
@@ -841,3 +880,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.59 | 2026-11-27 | §2 の `audit_unavailable` に GUI の設定変更を追記。§7.3 の冒頭に、設定変更（`PUT /settings`・`/agent*`・`/apps*`）の fail-closed（監査に書けなければ変更を戻して 503。戻せなければ警告文）を追記（#182） | #182 |
 | 1.60 | 2026-11-27 | 内蔵エージェントの接続方式に `chatgpt-codex` を追加（#247）: §1 のホスト専用の操作、§2 の `agent_disabled` の `detail.reason`（`openai_key_missing` と `codex_*` の 6 種）と失敗コード（`codex_usage_limit` / `codex_unauthorized` / `codex_engine_unavailable` / `codex_error`）、§3.3 の `run_task`・`get_task`（`connection` の値・`openai_steps` の数え方・`error_code`）、§3.4、§7.1 の `/agent`、§7.3 の `PUT /agent`・`PUT /agent/connection`（`chatgpt` ↔ `chatgpt-codex` は確認なし）と `/agent/codex/*` のルート（取得・中止・サインイン・中止・サインアウトの確認・`DELETE /agent/codex`〔`remove_engine`〕・再開・モデル・`PUT /agent/codex`）、§7.4 の `rev_codex`・`#codex-card`。公式経路: §7.6 のポートを `1455` → `1457` → 空きポートに、`POST /agent/chatgpt/signin` のポリシー拒否（`policy_denied`・Codex への案内）、§7.5 の ChatGPT のプラン経路を実装済みの記述に（実装の名前） | #247 |
 | 1.61 | 2026-11-28 | §3.3 の `screenshot` に `window_id`（ウィンドウ単位の撮影。PrintWindow・前面にしない・モニター撮影へ切り替えない）と `include_owned` を追加し、出力に `window_id`・`rect`（対象が最も重なるモニターの縮小座標）・`windows`・`omitted`、拒否（`window_not_found`・自ウィンドウ `own_window` / `elevated_window` / `target_minimized` / `target_unsupported` / `capture_unavailable` の `input_blocked`）を追記。`window_id` を省略したときの動作は変更なし | #269（FR-M26） |
+| 1.62 | 2026-11-28 | §3.3 に `find_ui_element`（UI 要素を名前・AutomationId・ControlType で探す。FR-M28。#267）と `wait_for`（ウィンドウ・UI 要素が現れる・消えるまで待つ。タイムアウトは結果で候補を返す。FR-M29。#266）を追加し、`get_ui_tree` の各ノードに `control_type`・`automation_id`・`class_name`・`patterns`・`offscreen` と要素 ID を出すようにした。§2 に `stale_element`（409）を追加 | #266・#267 |

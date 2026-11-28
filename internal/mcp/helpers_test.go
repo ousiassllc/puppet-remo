@@ -64,6 +64,8 @@ type fakeControl struct {
 	cursor    service.Cursor
 	clipboard string
 	tree      *domain.UINode
+	found     *domain.UIFindResult // FindUIElement の結果
+	waited    *service.WaitOutcome // WaitFor の結果
 
 	// apps は LaunchableApps が返す許可リスト（id と表示名だけ）。launchPID は Launch が返すプロセス ID。
 	apps      []domain.AppSummary
@@ -148,6 +150,16 @@ func (f *fakeControl) Do(ctx context.Context, who domain.Actor, op domain.Op) (s
 		return service.Result{Text: f.clipboard}, nil
 	case domain.GetUITree:
 		return service.Result{Tree: f.tree}, nil
+	case domain.FindUIElement:
+		if f.found == nil {
+			return service.Result{Found: &domain.UIFindResult{}}, nil
+		}
+		return service.Result{Found: f.found}, nil
+	case domain.WaitFor:
+		if f.waited == nil {
+			return service.Result{Waited: &service.WaitOutcome{Satisfied: true}}, nil
+		}
+		return service.Result{Waited: f.waited}, nil
 	}
 	return service.Result{}, nil
 }

@@ -175,7 +175,7 @@ graph TD
 |---------|------|--------------|
 | `domain` | クライアント、リース状態機械、承認モード、座標変換、ツール引数、エラー種別、高速パスの候補（`Candidate` / `CandidateTable`: 役割クラスの対応表、除外、ID 導出、選択の検証）などの純粋なモデルとルール | なし |
 | `repository` | SQLite へのアクセス（クライアント、トークン、設定、接続要求、監査ログ） | `domain` |
-| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree` と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助・アプリ起動（`AppLauncher`。M1.5）・ファイル選択（`FilePicker`。M1.5）のインターフェースと Windows 実装 | `domain` |
+| `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`〔探索 `Find` と要素 ID の引き直し `Resolve`。#266・#267〕と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助・アプリ起動（`AppLauncher`。M1.5）・ファイル選択（`FilePicker`。M1.5）のインターフェースと Windows 実装 | `domain` |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs + 10 秒キャッシュ、Listener 管理） | `domain` |
 | `openai` | OpenAI Responses API のクライアント（API キー経路の `computer` ツールの要求・応答、ChatGPT のプラン経路の関数ツールとストリーム（SSE）の読み取り、`store: false` 固定、タイムアウト、キー・アクセストークンの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)）。ChatGPT のサインイン・更新・失効・接続の状態（#49）は `service` が持つ部品とし、ブラウザの起動・コールバック受信口・資格情報は `platform` / `service` の背後に置く（[API 仕様 §7.5・§7.6](../api/endpoints.md)） | `domain` |
 | `codex` | Codex の app-server 経由の ChatGPT のプラン経路（接続方式 `chatgpt-codex`。#247）: 固定した版のカタログ（`catalog`）、エンジンの取得・検証・展開・削除（`engine`）、JSON-RPC（`rpc`）、app-server の子プロセスの起動・ハンドシェイク・サーバー要求の拒否・異常終了の検知（`appserver`。Windows はコンソール窓なし・アプリと一緒に終わるジョブ）、`openai.Model` の実装（desktop の関数ツールを dynamicTools で渡す）。Codex のトークンは読まず・保存しない。`Model` インターフェースの背後に置き、テストでは偽の app-server（`codextest`）を使う（[NFR-O06](../requirements/non-functional.md)）。エンジンの状態・ログイン・接続の状態（`CodexAuthService`）は `service` が持つ | `domain`、`openai` |

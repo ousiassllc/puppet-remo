@@ -28,6 +28,7 @@ const (
 	CodeInvalidArgument     Code = "invalid_argument"
 	CodeConflict            Code = "conflict"
 	CodeWindowNotFound      Code = "window_not_found"
+	CodeStaleElement        Code = "stale_element"
 	CodeInputBlocked        Code = "input_blocked"
 	CodeDesktopUnavailable  Code = "desktop_unavailable"
 	CodeAgentDisabled       Code = "agent_disabled"
@@ -59,6 +60,7 @@ var codeStatus = map[Code]int{
 	CodeInvalidArgument:     400,
 	CodeConflict:            409,
 	CodeWindowNotFound:      404,
+	CodeStaleElement:        409,
 	CodeInputBlocked:        409,
 	CodeDesktopUnavailable:  503,
 	CodeAgentDisabled:       409,
@@ -148,6 +150,8 @@ var (
 	ErrInvalidCoordinates = NewError(CodeInvalidCoordinates, "coordinates are out of range", nil)
 	ErrInvalidArgument    = NewError(CodeInvalidArgument, "invalid argument", nil)
 	ErrWindowNotFound     = NewError(CodeWindowNotFound, "window not found", nil)
+	// ErrStaleElement は、UI 要素 ID の指す要素（ウィンドウ・プロセスを含む）がもう無いこと。古い ID は別の要素に当たらず、必ずこれになる。
+	ErrStaleElement       = NewError(CodeStaleElement, "the element no longer exists (find it again)", nil)
 	ErrInputBlocked       = NewError(CodeInputBlocked, "input is blocked for this target", nil)
 	ErrDesktopUnavailable = NewError(CodeDesktopUnavailable, "the desktop is unavailable", nil)
 	ErrAgentDisabled      = NewError(CodeAgentDisabled, "the agent is disabled", nil)

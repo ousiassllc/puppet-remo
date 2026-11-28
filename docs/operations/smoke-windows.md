@@ -102,7 +102,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | B5 | `ctx` の取り消し | 待ちの途中でも `context.Canceled` を返す |
 | B6 | サイズ上限（1 MiB。NFR-S09） | platform は上限を持たない。上限は `service` / `mcp` の責務なので、ここでは確認しない |
 
-### 3.5 UI Automation（`get_ui_tree`。FR-M14）
+### 3.5 UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`。FR-M14・M28・M29）
 
 契約テスト（§2 の `TestSmokeUIAutomation`）は、前面にメモ帳など 3 ノード以上のウィンドウがあることを前提にする。
 
@@ -113,6 +113,13 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | U3 | パスワード入力欄を含む画面（ブラウザのログインフォーム） | パスワード欄の `Value` が空（値を読まない） |
 | U4 | UIA を呼んでいる最中に対象アプリが固まっている | 呼び出しがタイムアウトして戻る（`get_ui_tree` が 30 秒で打ち切られる。アプリ全体が固まらない） |
 | U5 | 管理者権限のウィンドウが前面 | 失敗が `input_blocked` ではなく読み取りの失敗として返る（ツリーを返せない場合は原因つきのエラー） |
+| U6 | メモ帳を前面にして `get_ui_tree`（#267） | 各ノードに `control_type`・`automation_id`・`class_name`・`patterns`（編集欄に `Value`・`Text`、メニュー項目に `Invoke` など、実際に対応するもの）が出る。`id` は `uie:<HWND>:<PID>:<RuntimeId>` の形で、`list_windows` の `id`・`pid` と HWND・PID が一致する |
+| U7 | `find_ui_element`（`window_id` = メモ帳）を `control_type: "Edit"`、`name`（`match: contains`）、`automation_id` で試す | 編集欄・メニュー項目が見つかり、`id`・`rect`（縮小座標。`get_ui_tree` の同じ要素と同じ値）・`enabled`・`offscreen`・`visible`・`patterns` が実際の状態と合う。`max_results` の上限で `truncated` が立つ。`title` / `process_name` だけの指定（`window_id` なし）でも、最上位の該当ウィンドウが選ばれる |
+| U8 | U7 で得た要素 ID を、メモ帳のタブを閉じる・ダイアログを閉じるなどで要素を消したあとの道具で使う（`Resolve` を使う道具ができるまでは、`go test` の契約テストの `Find and Resolve`〔`TestSmokeUIAutomation`〕で代える） | 要素が消えたあと・メモ帳を終了したあとの ID は `stale_element`。別のアプリが同じ HWND を再利用した場合も `stale_element`（別の要素に当たらない） |
+| U9 | `wait_for`（ウィンドウ）: メモ帳を終了した状態で `title: "メモ帳"`・`state: "appear"`・`timeout_ms: 20000` を呼んでから、メモ帳を起動する | 起動後、待ちが終わり `matched: true`・`window`（id・タイトル・プロセス・矩形）が返る。`waited_ms` が実際の待ち時間に近い |
+| U10 | `wait_for` の `disappear`: メモ帳のウィンドウを閉じる直前に呼ぶ | 閉じると `matched: true`。閉じないまま `timeout_ms` が過ぎると `timed_out: true` と、残っているウィンドウが `candidates.windows` に入る |
+| U11 | `wait_for`（要素）: 名前を付けて保存のダイアログの `automation_id`（例 `FileNameControlHost`）を `appear` で待ち、Ctrl+Shift+S を押す | ダイアログが出ると `matched: true`・`elements`（id・rect・patterns）が返る。存在しない名前でタイムアウトさせると `timed_out: true` と、近い要素（`control_type` や名前の一部が合うもの）が `candidates.elements` に入る |
+| U12 | `find_ui_element`・`wait_for` の検査（#266・#267） | Nefos Remote 自身のウィンドウは `window_id` 指定で `input_blocked`（`own_window`）、`title`・`process_name` では見つからない（`window_not_found`）。キルスイッチを発動すると、`wait_for` の待ちの最中でも次の確認で `kill_switch_active` になり止まる。リースを他者が持っていると `lease_held_by_other`。どちらも監査に 1 行（`tool.find_ui_element` / `tool.wait_for`）だけ残り、入力は一切起きない（カーソルもキー入力も動かない） |
 
 ### 3.6 グローバルホットキー（FR-H06・FR-S02）
 
@@ -537,7 +544,7 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | GDI（`BitBlt`）のキャプチャ: マルチモニター・DPI・スクリーンショットの縮小座標 | §3.1 C1〜C7（C2・C4: DPI、C3: マルチモニター）、§3.2 I1（縮小 → 物理の座標の往復）、§4.10 S2（DPI 混在の縮小） | 継続キャプチャ `Watch` は §3.9（M2） |
 | `SendInput`: マウス・クリック・ドラッグ・ホイール、キー・修飾キー、`KEYEVENTF_UNICODE` による日本語の `type`、UIPI | §3.2 I3〜I7（マウス・キー）、I10（日本語・絵文字の `Text`）、I12（管理者権限のウィンドウ。UIPI） | 契約テスト `TestSmokeInput*`（§2） |
 | ウィンドウ列挙・`focus_window`（前面化）、クリップボードのテキスト読み書き | §3.3 WM1〜WM10（WM8: `Focus`）、§3.4 B1〜B5 | |
-| UI Automation（`get_ui_tree`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト | §3.5 U1〜U5（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
+| UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト、対応パターンの取得・RuntimeId での引き直し | §3.5 U1〜U12（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト、U6〜U8: パターン・要素 ID・`stale_element`、U9〜U11: `wait_for`） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
 | グローバルホットキー（既定 `Ctrl+Alt+Shift+K`）によるキルスイッチ（1 秒以内の効果） | §3.6 K1〜K4、§4.5 | |
 | `SetThreadExecutionState`（リース保持中のスリープ・画面オフ抑止。`powercfg /requests`） | §4.6 SL1〜SL7 | |
 | 実 tailscaled: LocalAPI の `WhoIs`、IP 変化の監視、tailscaled 再起動後の 10 秒以内の復旧、tailnet の IPv4・IPv6 のみへの Listen | §4.4 R1（Listen）、R4（再起動後 10 秒以内の復旧）、**R7（WhoIs）**、**R8（IP 変化の監視）** | R7・R8 は #15 の項目に手順がなかったため足した |

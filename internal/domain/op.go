@@ -63,6 +63,35 @@ type GetUITree struct {
 	MaxDepth, MaxNodes int
 }
 
+// FindUIElement はウィンドウの中の UI 要素を探す（#267。読み取りだけで入力しない）。Window が空なら前面ウィンドウ。
+// MaxResults が 0 なら既定値（20。上限 100）。
+type FindUIElement struct {
+	Window     WindowLocator
+	Element    ElementLocator
+	MaxResults int
+}
+
+// WaitState は WaitFor の待ち方。
+type WaitState string
+
+const (
+	WaitAppear    WaitState = "appear"    // 対象が現れるまで
+	WaitDisappear WaitState = "disappear" // 対象が消えるまで
+)
+
+// Valid は s が既知の待ち方かを返す。
+func (s WaitState) Valid() bool { return s == WaitAppear || s == WaitDisappear }
+
+// WaitFor はウィンドウ（Element が nil のとき。Window で探す）または UI 要素（Window のウィンドウの中の Element）が
+// 現れる・消えるまで、Timeout を上限に待つ（#266。読み取りだけで入力しない）。Interval が 0 なら既定の間隔。
+type WaitFor struct {
+	Window   WindowLocator
+	Element  *ElementLocator
+	State    WaitState
+	Timeout  time.Duration
+	Interval time.Duration
+}
+
 // Wait は Duration だけ待つ（FR-M10。上限 10 秒）。
 type Wait struct{ Duration time.Duration }
 
@@ -103,6 +132,8 @@ func (FocusWindow) isOp()    {}
 func (ClipboardRead) isOp()  {}
 func (ClipboardWrite) isOp() {}
 func (GetUITree) isOp()      {}
+func (FindUIElement) isOp()  {}
+func (WaitFor) isOp()        {}
 func (Wait) isOp()           {}
 func (PointerMove) isOp()    {}
 func (MouseButton) isOp()    {}

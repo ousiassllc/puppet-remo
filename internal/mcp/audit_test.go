@@ -14,7 +14,7 @@ import (
 var controlAudited = []string{
 	"mouse_move", "left_click", "right_click", "middle_click", "double_click", "triple_click",
 	"left_click_drag", "scroll", "key", "type", "wait", "focus_window", "clipboard_read", "clipboard_write", "get_ui_tree",
-	"launch_app",
+	"find_ui_element", "wait_for", "launch_app",
 }
 
 // toolCallArgs は全ツールを成功させる引数。
@@ -33,6 +33,8 @@ var toolCallArgs = map[string]map[string]any{
 	"focus_window":    {"id": "w1"},
 	"clipboard_write": {"text": "hunter2"},
 	"get_ui_tree":     {"window_id": "w1"},
+	"find_ui_element": {"name": "hunter2", "window_id": "w1"},
+	"wait_for":        {"window_id": "w1", "state": "appear", "timeout_ms": 1000},
 	"screenshot":      {"monitor": 0, "format": "png"},
 	"launch_app":      {"app_id": "app-1"},
 	"run_task":        {"prompt": "hunter2"},

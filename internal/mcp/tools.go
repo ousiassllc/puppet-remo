@@ -135,6 +135,7 @@ var leaseAcquiringTools = map[string]bool{
 	"mouse_move":      true, "left_click": true, "right_click": true, "middle_click": true, "double_click": true, "triple_click": true,
 	"left_click_drag": true, "scroll": true, "key": true, "type": true,
 	"focus_window": true, "clipboard_read": true, "clipboard_write": true, "get_ui_tree": true,
+	"find_ui_element": true, "wait_for": true,
 	"launch_app": true,
 }
 
@@ -143,6 +144,7 @@ func (s *Server) addTools() {
 	s.addViewTools()
 	s.addInputTools()
 	s.addWindowTools()
+	s.addUIATools()
 	s.addLeaseTools()
 	s.addAppTools()
 	s.addTaskTools()

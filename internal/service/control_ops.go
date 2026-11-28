@@ -135,6 +135,12 @@ func (c *control) plan(ctx context.Context, op domain.Op) (plan, error) {
 			o.MaxNodes = defaultUITreeNodes
 		}
 		return plan{op: o}, nil
+	case domain.FindUIElement:
+		o, err := planFindUIElement(o)
+		return plan{op: o}, err
+	case domain.WaitFor:
+		o, err := planWaitFor(o)
+		return plan{op: o}, err
 	default:
 		return plan{}, domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("unsupported operation %T", op))
 	}
@@ -367,6 +373,10 @@ func (c *control) execute(ctx context.Context, p plan, sr *scopeRun) (Result, er
 			return Result{}, err
 		}
 		return Result{Tree: &tree}, nil
+	case domain.FindUIElement:
+		return c.findElement(ctx, o)
+	case domain.WaitFor:
+		return c.waitFor(ctx, o)
 	}
 	return Result{}, domain.ErrInvalidArgument.WithMsg(fmt.Sprintf("unsupported operation %T", p.op))
 }
@@ -432,10 +442,55 @@ func describeOp(op domain.Op, res Result) (tool string, args map[string]any) {
 		return "clipboard_write", map[string]any{"text_len": utf8.RuneCountInString(o.Text)}
 	case domain.GetUITree:
 		return "get_ui_tree", map[string]any{"window_id": o.WindowID, "max_depth": o.MaxDepth, "max_nodes": o.MaxNodes}
+	case domain.FindUIElement:
+		args = locatorArgs(o.Window, &o.Element)
+		args["max_results"] = o.MaxResults
+		if res.Found != nil {
+			args["count"] = len(res.Found.Elements)
+		}
+		return "find_ui_element", args
+	case domain.WaitFor:
+		args = locatorArgs(o.Window, o.Element)
+		args["state"] = string(o.State)
+		args["timeout_ms"] = o.Timeout.Milliseconds()
+		if res.Waited != nil {
+			args["matched"] = res.Waited.Satisfied
+			args["waited_ms"] = res.Waited.Elapsed.Milliseconds()
+		}
+		return "wait_for", args
 	case domain.Wait:
 		return "wait", map[string]any{"ms": o.Duration.Milliseconds()}
 	}
 	return "unknown", map[string]any{"type": fmt.Sprintf("%T", op)}
+}
+
+// locatorMaxRunes は監査に残す探し方の文字列 1 つの上限（文字数）。
+const locatorMaxRunes = 200
+
+// locatorArgs は find_ui_element・wait_for の探し方を監査の引数にする。空の項目は入れない。文字列はトークンの形を伏せて切り詰める。
+func locatorArgs(w domain.WindowLocator, e *domain.ElementLocator) map[string]any {
+	args := map[string]any{}
+	put := func(key, v string) {
+		if v == "" {
+			return
+		}
+		v, _ = cutAtRunes(auditRedactString(v), locatorMaxRunes)
+		args[key] = v
+	}
+	put("window_id", w.WindowID)
+	put("title", w.Title)
+	put("process_name", w.ProcessName)
+	if e != nil {
+		put("name", e.Name)
+		put("automation_id", e.AutomationID)
+		put("control_type", e.ControlType)
+	}
+	if w.Match != "" {
+		args["match"] = string(w.Match)
+	} else if e != nil && e.Match != "" {
+		args["match"] = string(e.Match)
+	}
+	return args
 }
 
 // recordedTextMaxRunes は audit.record_text が true のとき detail_json に入れる本文の上限（文字数）。
