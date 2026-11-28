@@ -222,7 +222,7 @@ func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr 
 			Launcher: launcher, FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
 			Secrets: secrets, Browser: platformtest.NewFakeBrowserOpener(),
 			Hotkey: platformtest.NewFakeHotkey(), HostInput: platformtest.NewFakeHostInput(), Power: platformtest.NewFakePower(),
-			Files: localfs.New(),
+			Files: localfs.New(), Commands: platformtest.NewFakeCommandRunner(),
 		},
 		Watcher: watcher, WhoIs: whois,
 		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,

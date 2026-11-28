@@ -47,46 +47,55 @@ const (
 	CodeFileNotFound  Code = "file_not_found"
 	CodeFileTooLarge  Code = "file_too_large"
 	CodeFileStoreFull Code = "file_store_full"
+	// コマンド実行（#265。run_command / list_commands）。
+	CodeCommandDisabled         Code = "command_disabled"
+	CodeCommandNotFound         Code = "command_not_found"
+	CodeCommandAllowlistInvalid Code = "command_allowlist_invalid"
+	CodeCommandStartFailed      Code = "command_start_failed"
 )
 
 // codeStatus は Code → HTTP ステータス（API 仕様 §2 の表）。
 var codeStatus = map[Code]int{
-	CodeInvalidHost:         400,
-	CodeInvalidOrigin:       403,
-	CodeMissingHeader:       403,
-	CodeWhoisFailed:         403,
-	CodeDeviceNotRegistered: 403,
-	CodeClientDisabled:      403,
-	CodeUnauthorized:        401,
-	CodeRateLimited:         429,
-	CodeKillSwitchActive:    503,
-	CodeLeaseRequired:       409,
-	CodeLeaseHeldByOther:    409,
-	CodeLeaseRevoked:        409,
-	CodeApprovalDenied:      403,
-	CodeApprovalTimeout:     408,
-	CodeInvalidCoordinates:  400,
-	CodeInvalidArgument:     400,
-	CodeConflict:            409,
-	CodeWindowNotFound:      404,
-	CodeStaleElement:        409,
-	CodePatternUnsupported:  409,
-	CodeElementDisabled:     409,
-	CodeElementReadOnly:     409,
-	CodeUIActionFailed:      409,
-	CodeInputBlocked:        409,
-	CodeInputPaused:         409,
-	CodeDesktopUnavailable:  503,
-	CodeAgentDisabled:       409,
-	CodeTaskNotFound:        404,
-	CodeAppNotFound:         404,
-	CodeAppDenied:           403,
-	CodeLaunchFailed:        409,
-	CodeAuditUnavailable:    503,
-	CodeInternal:            500,
-	CodeFileNotFound:        404,
-	CodeFileTooLarge:        413,
-	CodeFileStoreFull:       507,
+	CodeInvalidHost:             400,
+	CodeInvalidOrigin:           403,
+	CodeMissingHeader:           403,
+	CodeWhoisFailed:             403,
+	CodeDeviceNotRegistered:     403,
+	CodeClientDisabled:          403,
+	CodeUnauthorized:            401,
+	CodeRateLimited:             429,
+	CodeKillSwitchActive:        503,
+	CodeLeaseRequired:           409,
+	CodeLeaseHeldByOther:        409,
+	CodeLeaseRevoked:            409,
+	CodeApprovalDenied:          403,
+	CodeApprovalTimeout:         408,
+	CodeInvalidCoordinates:      400,
+	CodeInvalidArgument:         400,
+	CodeConflict:                409,
+	CodeWindowNotFound:          404,
+	CodeStaleElement:            409,
+	CodePatternUnsupported:      409,
+	CodeElementDisabled:         409,
+	CodeElementReadOnly:         409,
+	CodeUIActionFailed:          409,
+	CodeInputBlocked:            409,
+	CodeInputPaused:             409,
+	CodeDesktopUnavailable:      503,
+	CodeAgentDisabled:           409,
+	CodeTaskNotFound:            404,
+	CodeAppNotFound:             404,
+	CodeAppDenied:               403,
+	CodeLaunchFailed:            409,
+	CodeAuditUnavailable:        503,
+	CodeInternal:                500,
+	CodeFileNotFound:            404,
+	CodeFileTooLarge:            413,
+	CodeFileStoreFull:           507,
+	CodeCommandDisabled:         403,
+	CodeCommandNotFound:         404,
+	CodeCommandAllowlistInvalid: 503,
+	CodeCommandStartFailed:      502,
 }
 
 // Valid は c が API 仕様のエラーコード表にあるコードかを返す。
@@ -197,4 +206,9 @@ var (
 	ErrFileNotFound  = NewError(CodeFileNotFound, "file not found", nil)
 	ErrFileTooLarge  = NewError(CodeFileTooLarge, "the file exceeds the per-file size limit set by the host", nil)
 	ErrFileStoreFull = NewError(CodeFileStoreFull, "the transfer folder would exceed the total size limit set by the host", nil)
+	// コマンド実行（#265）。メッセージに許可リストの中身・実行ファイルのパスは入れない。
+	ErrCommandDisabled         = NewError(CodeCommandDisabled, "command execution is turned off by the host owner", nil)
+	ErrCommandNotFound         = NewError(CodeCommandNotFound, "no such command in the host's allowlist (or it is disabled)", nil)
+	ErrCommandAllowlistInvalid = NewError(CodeCommandAllowlistInvalid, "the host's command allowlist is missing or invalid, so no command can run", nil)
+	ErrCommandStartFailed      = NewError(CodeCommandStartFailed, "the command could not be started", nil)
 )

@@ -44,6 +44,11 @@ var apiErrorTable = map[string]int{
 	"file_not_found":        404,
 	"file_too_large":        413,
 	"file_store_full":       507,
+
+	"command_disabled":          403,
+	"command_not_found":         404,
+	"command_allowlist_invalid": 503,
+	"command_start_failed":      502,
 }
 
 func TestCodeTable(t *testing.T) {
@@ -56,6 +61,7 @@ func TestCodeTable(t *testing.T) {
 		domain.CodeUIActionFailed, domain.CodeInputBlocked, domain.CodeDesktopUnavailable,
 		domain.CodeAgentDisabled, domain.CodeTaskNotFound, domain.CodeAppNotFound, domain.CodeLaunchFailed, domain.CodeAuditUnavailable,
 		domain.CodeInternal, domain.CodeFileNotFound, domain.CodeFileTooLarge, domain.CodeFileStoreFull,
+		domain.CodeCommandDisabled, domain.CodeCommandNotFound, domain.CodeCommandAllowlistInvalid, domain.CodeCommandStartFailed,
 	}
 	if len(codes) != len(apiErrorTable) {
 		t.Fatalf("%d codes, API table has %d", len(codes), len(apiErrorTable))

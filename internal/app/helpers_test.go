@@ -271,7 +271,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 			Clipboard: platformtest.NewFakeClipboard(), UI: platformtest.NewFakeUIAutomation(windows),
 			Launcher: e.launcher, FilePicker: e.picker, Installer: e.installer,
 			Secrets: platformtest.NewFakeSecretStore(), Browser: platformtest.NewFakeBrowserOpener(),
-			Hotkey: e.hotkey, HostInput: e.hostInput, Power: e.power, Autostart: e.autostart, Files: localfs.New(),
+			Hotkey: e.hotkey, HostInput: e.hostInput, Power: e.power, Autostart: e.autostart, Files: localfs.New(), Commands: platformtest.NewFakeCommandRunner(),
 		},
 		Watcher:     e.watcher,
 		WhoIs:       e.whois,

@@ -350,6 +350,8 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 		HostInputPauseIdleSec: strings.TrimSpace(c.PostForm(service.FieldHostInputPauseIdleSec)),
 		// チェックボックスは、外れていると値が送られない。
 		HostInputPause:            checked(c, service.FieldHostInputPauseEnabled),
+		CommandEnabled:            checked(c, service.FieldCommandEnabled),
+		CommandAllowlistPath:      strings.TrimSpace(c.PostForm(service.FieldCommandAllowlistPath)),
 		AuditThumbnails:           checked(c, service.FieldAuditThumbnails),
 		AuditRecordText:           checked(c, service.FieldAuditRecordText),
 		AuditRetentionDays:        strings.TrimSpace(c.PostForm(service.FieldAuditRetentionDays)),
@@ -371,6 +373,7 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 		HostInputPauseEnabled:  in.HostInputPause,
 		AuditThumbnailsEnabled: in.AuditThumbnails, AuditRecordText: in.AuditRecordText, UpdateApplyMode: in.UpdateApplyMode, UpdateChannel: in.UpdateChannel,
 		FileTransferRoot: in.FileTransferRoot,
+		CommandEnabled:   in.CommandEnabled, CommandAllowlistPath: in.CommandAllowlistPath,
 	}
 	s.Port, errs.Port = parseInt(in.Port)
 	s.ScreenshotMaxDimension, errs.ScreenshotMaxDim = parseInt(in.ScreenshotMaxDim)
@@ -426,6 +429,7 @@ func mergeFieldErrors(errs view.SettingsErrors, verr *service.ValidationError) v
 	fill(&errs.FileTransferRoot, service.FieldFileTransferRoot)
 	fill(&errs.FileTransferMaxFileBytes, service.FieldFileTransferMaxFile)
 	fill(&errs.FileTransferMaxTotalBytes, service.FieldFileTransferMaxTotal)
+	fill(&errs.CommandAllowlistPath, service.FieldCommandAllowlistPath)
 	fill(&errs.UpdateApplyMode, service.FieldUpdateApplyMode)
 	fill(&errs.UpdateChannel, service.FieldUpdateChannel)
 	return errs

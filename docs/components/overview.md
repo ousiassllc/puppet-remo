@@ -383,6 +383,13 @@ type FileStore interface {
     Resolve(ctx context.Context, root, rel string) (string, error) // 実在する通常ファイルの実体の絶対パス（他の機能が参照するため）
     TotalSize(ctx context.Context, root string) (int64, error)
 }
+// コマンド実行（#265。MCP の run_command）: 許可リストの項目を実プロセスとして起動し、終了を待って結果を返す。許可・引数の検査・リース・監査は service.CommandExec。
+// シェルを使わない（Executable を Args の配列で直接起動）。Timeout で（Windows ではジョブオブジェクトで子孫ごと）終了させ TimedOut を立てる。stdout・stderr は MaxOutputBytes まで保持して Truncated を立てる。
+// 起動できなければ domain.ErrCommandStartFailed（パスを含めない）、ctx の取り消しは ctx.Err()。実装は `platform/localexec`（OS を問わず同じコード。子孫ごとの終了だけ OS ごと）。
+type CommandRunner interface {
+    Run(ctx context.Context, spec CommandSpec) (CommandResult, error) // 非 0 の終了コードはエラーではなく結果の ExitCode
+}
+// CommandSpec: Executable（ローカルの絶対パス）・Args・Dir・Timeout・MaxOutputBytes。CommandResult: ExitCode・Stdout・Stderr・StdoutTruncated・StderrTruncated・TimedOut・Duration。
 ```
 
 **所有する goroutine**: `Capturer.Watch` が 1 モニターにつき 1 本のキャプチャ goroutine を持つ（`ctx` で停止。呼び出し側が閲覧者ゼロで取り消す）。`Hotkey.Register` が Win32 のメッセージループ用に 1 本の専用 OS スレッド（`runtime.LockOSThread`）を持つ。`FilePicker.PickExecutable` は、ダイアログを開いている間だけ `ctx` の取り消しを監視する goroutine を 1 本持つ（ダイアログ自体は呼び出し元の goroutine を OS スレッドに固定して開き、閉じるまで戻らない。同時に開くのは 1 つ）。それ以外のインターフェースは goroutine を内部に持たず、呼び出し元のそれで同期的に動く。
@@ -889,6 +896,17 @@ type LaunchResult struct {
 - **書き込み・削除は 1 つの mutex で直列化**する（置き場所全体の上限の計算と書き込みの間に、別の書き込みが入らないように。単一プロセスの前提）。
 - **監査**は `FileTransfer` が `tool.<ツール名>` を記録する（mcp 層は記録しない。`mcp.Config.Files` は必須）。ファイルの中身は記録しない。
 - **`ResolveInRoot(rel)`**: 置き場所の中の実在する通常ファイルの実体の絶対パスを返す（同じ規則・リンクの拒否。リースは見ない。キルスイッチ中は拒否）。ホスト上で置いたファイルを参照する他の機能（#265）のための窓口。
+
+
+### 5.4.4 CommandExec（コマンド実行。#265。FR-M32・FR-S25）
+
+`service.CommandExec`（`NewCommandExec`）は MCP の `run_command` / `list_commands` の実体で、`platform.CommandRunner` を呼ぶ唯一の入口。許可リストの規則（読み込みと検査・型つきの引数・テンプレートの展開・出力の文字コード）は `domain/command.go` の純粋関数（`ParseCommandAllowlist`・`CommandEntry.Bind` / `Argv`・`DecodeCommandOutput`）で、`service` は設定・ファイルの読み込み・リース・監査・実行の制御だけを持つ。
+
+- **設定**: `command.enabled`（既定 false）・`command.allowlist_path`（空なら `<データフォルダ>\commands.json`。`app.CommandAllowlistFile`）。書くのは `HostSettingsService` = ホスト GUI の設定画面だけ。壊れた値は既定へ切り替えず使えなくする（fail closed）。
+- **検査の順序**（1 つでも失敗したら何も起動しない）: KillSwitch → ON/OFF（`ErrCommandDisabled`。リースを取りに行かない）→ `ensureLease`（`control.ensureLease` と同じ関数。ウィンドウに束縛されたリースは `command_out_of_scope`）→ 許可リストの読み込み（呼び出しごとに読み直す。1 項目でも不備なら全体を `ErrCommandAllowlistInvalid`）→ 名前（`ErrCommandNotFound`）→ 引数（`Bind`。`inbox_path` は `FileTransfer.ResolveInRoot` で実体にする）→ KillSwitch の再確認 → 実行。許可リスト・実行ファイル・作業フォルダが、リモートが書けるファイル転送の置き場所の中にあれば使えない。
+- **同時実行**は 4 つまで（超えれば `conflict`）。実行中の `Run` は `CancelAll` で取り消せ、`app` が KillSwitch のクローザー（`commands`）として登録する（取り消された `Run` は `ErrKillSwitchActive`）。
+- **監査**は `CommandExec` が `tool.run_command` / `tool.list_commands` を記録する（mcp 層は記録しない。`mcp.Config.Commands` は必須）。引数の値は長さを切って残し、出力の中身・実行ファイルのパスは記録しない。
+- ホストの実入力による一時停止（`HostInputPause`）は見ない（入力を注入しないため）。
 
 
 ### 5.4.2 入力スコープ（#156。FR-L09〜L14。NFR-S06 の追記）
@@ -1607,3 +1625,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.73 | 2026-11-28 | ホストの実入力による一時停止（#270。FR-M30）を追加: §3 の `HostInputWatcher`、§5.4 の `HostInputPauser` と `Control.Do` の検査 | ホストの人の操作とリモートの入力の取り合いを避けるため |
 | 1.74 | 2026-11-28 | ファイル転送（#264）: §3 に `platform.FileStore`（実装 `platform/localfs`）、§5.4.3 に `service.FileTransfer`（設定・検査の順序・直列化・監査・`ResolveInRoot`） | #264 |
 | 1.75 | 2026-11-28 | UI 要素のパターン操作（#268。FR-M31 `ui_action`）: §3 の `UIAutomation` に `Act` を追加（カーソル・フォーカスを動かさず、SendInput に切り替えない。呼べるのは `Control` だけ）。`Control.Do` の `domain.UIAction`（InputGuard は要素のウィンドウを検査。スコープ付きのリースは要素のウィンドウが G のメンバーであること。ホストの実入力による一時停止の対象外） | AI が UI をホストの人の作業を邪魔せずに操作できるようにするため |
+| 1.76 | 2026-11-28 | コマンド実行（#265）: §3 に `platform.CommandRunner`（実装 `platform/localexec`）、§5.4.4 に `service.CommandExec`（検査の順序・許可リストの規則・同時実行の上限・KillSwitch との結線・監査）。`mcp.Config` に `Commands`、`app.Platform` に `Commands` | #265 |

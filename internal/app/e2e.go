@@ -133,7 +133,7 @@ func RunE2E(ctx context.Context, opts E2EOptions) error {
 			UI: platformtest.NewFakeUIAutomation(hostWindows), Launcher: platformtest.NewFakeAppLauncher(),
 			FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(), Secrets: secrets,
 			Hotkey: platformtest.NewFakeHotkey(), HostInput: platformtest.NewFakeHostInput(), Power: platformtest.NewFakePower(), Browser: platformtest.NewFakeBrowserOpener(),
-			Files: localfs.New(),
+			Files: localfs.New(), Commands: platformtest.NewFakeCommandRunner(),
 		},
 		Watcher: tailnet.NewE2EWatcher(tailnet.E2EStatus()), WhoIs: srv.whois,
 		Static: opts.Static, Logs: NewLogReader(dir, WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,

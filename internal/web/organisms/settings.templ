@@ -115,6 +115,20 @@ templ SettingsForm(f view.SettingsForm) {
 				@atoms.Input(atoms.InputProps{ID: "set-file-total", Name: "file_transfer.max_total_bytes", Type: "number", Value: f.Values.FileTransferMaxTotalBytes, Required: true, Invalid: f.Errors.FileTransferMaxTotalBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
 			}
 		}
+		@molecules.FieldGroup("コマンド実行", "", atoms.Attrs{"data-settings-group": "command"}) {
+			<div class="space-y-1">
+				<label class="flex items-center gap-2 text-sm text-ink">
+					@atoms.Checkbox("set-command-enabled", "command.enabled", f.Values.CommandEnabled)
+					リモートのクライアントに、許可リストにあるコマンドの実行を認める
+				</label>
+				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-notice": "command-enabled"}) {
+					既定はオフです。オンにすると、MCP の run_command が、下の許可リストのファイルにあるコマンドだけを、このPCで実行できます（操作リースと承認・キルスイッチの対象です）。任意のコマンドライン・シェルは受け付けず、実行ごとに監査ログへ残ります（出力の中身は記録しません）。許可リストにはリモートから書き込めない場所のファイルを使い、<code>cmd.exe</code>・<code>powershell.exe</code> などの自由な入力を渡せる項目は入れないでください。
+				}
+			</div>
+			@molecules.FormField("set-command-allowlist", "許可リストのファイル", "コマンドの名前・実行ファイル・引数・タイムアウトを JSON で書いたファイルです（書き方は docs/operations/command-allowlist.md）。このファイルはホスト所有者が手で編集し、リモートからは変更できません。ドライブ文字で始まるローカルの絶対パスを指定してください。ファイル転送の置き場所の中は使えません。空なら既定の %LOCALAPPDATA%\\puppet-remo\\commands.json。", f.Errors.CommandAllowlistPath) {
+				@atoms.Input(atoms.InputProps{ID: "set-command-allowlist", Name: "command.allowlist_path", Type: "text", Value: f.Values.CommandAllowlistPath, Invalid: f.Errors.CommandAllowlistPath != "", Placeholder: "%LOCALAPPDATA%\\puppet-remo\\commands.json", Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
+			}
+		}
 		@molecules.FieldGroup("更新", "", atoms.Attrs{"data-settings-group": "update"}) {
 			@molecules.FormField("set-update-channel", "更新のチャネル", "追いかける版です。署名を検証できた更新だけを適用します。ナイトリーから正式版へは、新しい正式版が出たときに切り替わります。", f.Errors.UpdateChannel) {
 				@atoms.SelectWith(atoms.SelectProps{ID: "set-update-channel", Name: "update.channel", Options: updateChannelOptions(f.Values.UpdateChannel), Invalid: f.Errors.UpdateChannel != ""})

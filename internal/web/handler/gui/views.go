@@ -370,7 +370,8 @@ func settingsValues(s service.HostSettings) view.SettingsValues {
 		AuditRetentionDays: strconv.Itoa(s.AuditRetentionDays), AuditThumbsMaxBytes: strconv.FormatInt(s.AuditThumbsMaxBytes, 10),
 		FileTransferRoot: s.FileTransferRoot, FileTransferMaxFileBytes: strconv.FormatInt(s.FileTransferMaxFileBytes, 10),
 		FileTransferMaxTotalBytes: strconv.FormatInt(s.FileTransferMaxTotalBytes, 10),
-		UpdateApplyMode:           s.UpdateApplyMode, UpdateChannel: s.UpdateChannel,
+		CommandEnabled:            s.CommandEnabled, CommandAllowlistPath: s.CommandAllowlistPath,
+		UpdateApplyMode: s.UpdateApplyMode, UpdateChannel: s.UpdateChannel,
 	}
 }
 
