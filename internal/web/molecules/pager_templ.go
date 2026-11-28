@@ -26,7 +26,7 @@ type PagerProps struct {
 }
 
 // Pager は件数が分からない一覧向けの、前へ／次へだけのページ送り（ガイドの「前へ／次へだけのページ送り」）。
-// 中央に「N ページ目」（sm14・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
+// 中央に「N ページ目」（desc13・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
 // ボタンは Secondary・Small。sm（640px）以上は PrevLabel / NextLabel をそのまま出し、両端寄せの 1 行（入りきらなければ折り返す）。
 // sm 未満（モバイル。#179）は 3 列のグリッドで「‹ 前へ」「N ページ目」「次へ ›」を 1 行に並べる（長い PrevLabel / NextLabel は入りきらないので、
 // 見た目だけ短くする。ボタンの aria-label は PrevLabel / NextLabel のままで、「新しいほう／古いほう」の意味を保つ）。
@@ -60,14 +60,14 @@ func Pager(p PagerProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"whitespace-nowrap text-sm text-mute\" data-page=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"whitespace-nowrap text-desc text-mute\" data-page=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(p.Page))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 29, Col: 84}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 29, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -80,7 +80,7 @@ func Pager(p PagerProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(p.Page))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 29, Col: 133}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/molecules/pager.templ`, Line: 29, Col: 135}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {

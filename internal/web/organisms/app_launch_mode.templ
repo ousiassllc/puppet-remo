@@ -90,9 +90,9 @@ templ DeniedSection(v view.DeniedSection) {
 						大文字小文字は区別しません。ファイルをコピーして別の名前にしたものは名前では見分けられません。
 					</p>
 					if !v.Active {
-						<p class="text-xs text-mute" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>
+						<p class="text-desc text-mute" data-denied-inactive>いまはホワイトリスト方式なので、この拒否リストは使われていません。</p>
 					}
-					<p class="mt-2 text-xs text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 <span class="font-mono">{ strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) }</span> 件</p>
+					<p class="mt-2 text-desc text-mute" data-denied-count={ strconv.Itoa(v.Count) }>登録 <span class="font-mono">{ strconv.Itoa(v.Count) } / { strconv.Itoa(v.Max) }</span> 件</p>
 				</div>
 				if len(v.Rows) == 0 {
 					@molecules.EmptyState("denied") {
@@ -102,11 +102,11 @@ templ DeniedSection(v view.DeniedSection) {
 				<ul class="space-y-2">
 					for _, row := range v.Rows {
 						if row.Editing {
-							<li class="rounded-lg border border-border bg-surface p-(--pad-card-sm)" data-denied={ row.ID }>
+							<li class="rounded-lg bg-surface-sel p-(--pad-card-sm)" data-denied={ row.ID }>
 								@deniedEditForm(row, v.ListURL)
 							</li>
 						} else {
-							<li class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-(--pad-card-sm) sm:flex-row sm:items-center" data-denied={ row.ID }>
+							<li class="flex flex-col gap-2 rounded-lg bg-surface-sel p-(--pad-card-sm) sm:flex-row sm:items-center" data-denied={ row.ID }>
 								<div class="flex min-w-0 flex-1 items-center gap-2 text-sm">
 									<span class="shrink-0" data-denied-kind>
 										if row.IsPath {

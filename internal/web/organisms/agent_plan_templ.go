@@ -68,7 +68,7 @@ func ConnectionPanel(v view.ConnectionPanel) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"space-y-4\"><p class=\"text-sm text-ink\">エージェントが OpenAI のモデルを呼び出す方法を選びます。タスクの開始時の方式でそのタスクが終わるまで動き、別の方式へ自動では切り替えません。</p><ul class=\"divide-y divide-border rounded-md border border-border\" aria-label=\"接続方式\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"space-y-4\"><p class=\"text-sm text-ink\">エージェントが OpenAI のモデルを呼び出す方法を選びます。タスクの開始時の方式でそのタスクが終わるまで動き、別の方式へ自動では切り替えません。</p><ul class=\"divide-y divide-line-soft rounded-md bg-surface-sel\" aria-label=\"接続方式\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -96,7 +96,7 @@ func ConnectionPanel(v view.ConnectionPanel) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "><div class=\"min-w-0 flex-1\"><p class=\"text-base font-semibold text-ink\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "><div class=\"min-w-0 flex-1\"><p class=\"text-item font-semibold text-ink\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

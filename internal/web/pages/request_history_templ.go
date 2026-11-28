@@ -45,7 +45,7 @@ func requestsHistoryBody(v view.RequestsHistory) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p class=\"text-base text-ink\">これまでの接続要求です（許可・拒否・失効・未処理）。届いた日時の新しい順に、ページを分けて表示します。保持期間（最後に要求が届いてから 7 日）を過ぎたものは消えます。操作ログの閲覧画面（監査ログ）とは別のものです。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p class=\"text-sm text-ink\">これまでの接続要求です（許可・拒否・失効・未処理）。届いた日時の新しい順に、ページを分けて表示します。保持期間（最後に要求が届いてから 7 日）を過ぎたものは消えます。操作ログの閲覧画面（監査ログ）とは別のものです。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -194,7 +194,7 @@ func ClipboardPanel(scoped bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if scoped {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"text-xs text-mute\" data-clipboard-write-only>ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<p class=\"text-desc text-mute\" data-clipboard-write-only>ウィンドウを選んだ操作中は、クリップボードの読み取りは使えません（書き込みだけ使えます）。</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -360,7 +360,7 @@ func KeyMenu(items []view.KeyMenuItem) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<p class=\"mb-2 text-xs text-mute\">ブラウザが先に処理するキー操作を、ホストへ送ります。</p><div class=\"flex flex-wrap gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<p class=\"mb-2 text-desc text-mute\">ブラウザが先に処理するキー操作を、ホストへ送ります。</p><div class=\"flex flex-wrap gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

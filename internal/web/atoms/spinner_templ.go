@@ -43,7 +43,7 @@ func Spinner(id string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"htmx-indicator invisible [transition-property:opacity,visibility] in-[.htmx-request]:visible [&.htmx-request]:visible inline-flex items-center gap-2 text-sm text-mute\" role=\"status\"><span class=\"spinner\" aria-hidden=\"true\"></span> 処理中…</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"htmx-indicator invisible [transition-property:opacity,visibility] in-[.htmx-request]:visible [&.htmx-request]:visible inline-flex items-center gap-2 text-desc text-mute\" role=\"status\"><span class=\"spinner\" aria-hidden=\"true\"></span> 処理中…</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

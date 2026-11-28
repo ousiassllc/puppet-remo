@@ -37,7 +37,7 @@ func licensesBody(v view.Licenses) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-4xl space-y-6\"><h1 class=\"text-page-title font-semibold text-ink\">ライセンス表記</h1><p class=\"text-base text-ink\">このアプリが同梱するフォント・アイコン・ライブラリのライセンスの全文です。同じ内容は、インストール先の <code>THIRD_PARTY_NOTICES.txt</code> にもあります。</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-4xl space-y-6\"><h1 class=\"text-page-title font-semibold text-ink\">ライセンス表記</h1><p class=\"text-sm text-ink\">このアプリが同梱するフォント・アイコン・ライブラリのライセンスの全文です。同じ内容は、インストール先の <code>THIRD_PARTY_NOTICES.txt</code> にもあります。</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -76,7 +76,7 @@ func licensesBody(v view.Licenses) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-base text-ink\"><a href=\"/settings\" class=\"link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">設定に戻る</a></p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p class=\"text-sm text-ink\"><a href=\"/settings\" class=\"link\" hx-boost=\"true\" hx-target=\"#main\" hx-target-error=\"#main\" hx-swap=\"innerHTML\">設定に戻る</a></p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

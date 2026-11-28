@@ -18,7 +18,7 @@ type PagerProps struct {
 }
 
 // Pager は件数が分からない一覧向けの、前へ／次へだけのページ送り（ガイドの「前へ／次へだけのページ送り」）。
-// 中央に「N ページ目」（sm14・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
+// 中央に「N ページ目」（desc13・--mute）、端ではその側のボタンを disabled（opacity .4）にして両側を常に描画する。
 // ボタンは Secondary・Small。sm（640px）以上は PrevLabel / NextLabel をそのまま出し、両端寄せの 1 行（入りきらなければ折り返す）。
 // sm 未満（モバイル。#179）は 3 列のグリッドで「‹ 前へ」「N ページ目」「次へ ›」を 1 行に並べる（長い PrevLabel / NextLabel は入りきらないので、
 // 見た目だけ短くする。ボタンの aria-label は PrevLabel / NextLabel のままで、「新しいほう／古いほう」の意味を保つ）。
@@ -26,7 +26,7 @@ type PagerProps struct {
 templ Pager(p PagerProps) {
 	<nav class="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex sm:flex-wrap sm:justify-between" aria-label="ページ送り" data-pager>
 		@pagerButton(p.PrevURL, p.PrevLabel, p.Target, "data-pager-prev", "‹ 前へ", "justify-self-start")
-		<span class="whitespace-nowrap text-sm text-mute" data-page={ strconv.Itoa(p.Page) }><span class="font-mono">{ strconv.Itoa(p.Page) }</span> ページ目</span>
+		<span class="whitespace-nowrap text-desc text-mute" data-page={ strconv.Itoa(p.Page) }><span class="font-mono">{ strconv.Itoa(p.Page) }</span> ページ目</span>
 		@pagerButton(p.NextURL, p.NextLabel, p.Target, "data-pager-next", "次へ ›", "justify-self-end")
 	</nav>
 }

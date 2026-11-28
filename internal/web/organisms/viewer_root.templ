@@ -23,7 +23,7 @@ templ ViewerRoot(v view.Viewer) {
 			@ViewerOps(v.Ops)
 		</div>
 		<remo-screen-viewer
-			class="block overflow-hidden rounded-lg border border-border bg-bone"
+			class="block overflow-hidden rounded-card card-edge bg-surface"
 			ws-url={ v.WSURL }
 			readonly?={ !v.Lease.Mine }
 			monitor={ strconv.Itoa(v.Monitor) }

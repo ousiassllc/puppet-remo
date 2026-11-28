@@ -30,6 +30,7 @@ func TestAppCSSDefinesTheGuideNamedTokens(t *testing.T) {
 		"--gap-label", "--gap-help", "--gap-field",
 		"--gap-h1", "--gap-h2", "--gap-h3", "--gap-heading-body", "--gap-para",
 		"--pad-card", "--pad-card-sm", "--gap-card-section", "--gap-inline",
+		"--surface-sel", "--line-soft", "--r-card", "--card-edge-w",
 		"--gap-section", "--gap-section-sm",
 		"--bp-sm", "--bp-md", "--bp-lg", "--bp-xl",
 		"--tip-pad-y", "--tip-pad-x", "--z-popup", "--sb-size", "--sb-thumb", "--sb-thumb-hover", "--sb-thumb-active",
@@ -83,11 +84,34 @@ func TestTailwindThemeReferencesTheNamedTokens(t *testing.T) {
 	for _, want := range []string{
 		"--spacing: var(--s-1);",
 		"--radius-sm: var(--r-sm);", "--radius-md: var(--r-md);", "--radius-lg: var(--r-lg);",
-		"--radius-xl: var(--r-xl);", "--radius-full: var(--r-full);",
+		"--radius-xl: var(--r-xl);", "--radius-card: var(--r-card);", "--radius-full: var(--r-full);",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("app.css @theme must contain %q", want)
 		}
+	}
+}
+
+// T3・面: 文字の段（app.css の @theme）と、カードの面（--surface-sel・--line-soft・--card-edge-w）の値。表の見出しは説明の段（13px）、カードの余白 --pad-card は 22px。
+// カードの枠はライトもダークも --card-edge-w: 0px（枠なし。面の色で分ける）。text-xs は @theme から外してある。
+func TestAppCSSTypeScaleAndCardSurfaceTokens(t *testing.T) {
+	css := readAppCSS(t)
+	for _, pat := range []string{
+		`(?m)^\s*--text-section:\s*1rem;`, `(?m)^\s*--text-section--line-height:\s*1\.5;`,
+		`(?m)^\s*--text-item:\s*0\.9375rem;`, `(?m)^\s*--text-item--line-height:\s*1\.5;`,
+		`(?m)^\s*--text-sm:\s*0\.875rem;`, `(?m)^\s*--text-sm--line-height:\s*1\.7;`,
+		`(?m)^\s*--text-desc:\s*0\.8125rem;`, `(?m)^\s*--text-desc--line-height:\s*1\.6;`,
+		`(?m)^\s*--text-tip:\s*0\.75rem;`,
+		`(?m)^\s*--table-head-size:\s*13px;`, `(?m)^\s*--pad-card:\s*22px;`,
+		`(?m)^\s*--card-edge-w:\s*0px;`,
+		`(?m)^\s*--r-card:\s*var\(--r-xl\);`,
+	} {
+		if !regexp.MustCompile(pat).MatchString(css) {
+			t.Errorf("app.css must match %s", pat)
+		}
+	}
+	if regexp.MustCompile(`(?m)^\s*--text-(?:xs|xl|2xl|3xl):`).MatchString(css) {
+		t.Error("app.css must not define --text-xs / xl / 2xl / 3xl (the type scale has no such rung)")
 	}
 }
 
@@ -346,7 +370,7 @@ func TestTooltipShowsOnHoverAndFocusVisible(t *testing.T) {
 		return m[1]
 	}
 	base := rule(".tip")
-	for _, want := range []string{"visibility: hidden;", "padding: var(--tip-pad-y) var(--tip-pad-x);", "border-radius: var(--radius-sm);", "background: var(--ink);", "color: var(--bone);", "font-size: var(--text-xs);", "z-index: var(--z-dropdown);"} {
+	for _, want := range []string{"visibility: hidden;", "padding: var(--tip-pad-y) var(--tip-pad-x);", "border-radius: var(--radius-sm);", "background: var(--ink);", "color: var(--bone);", "font-size: var(--text-tip);", "z-index: var(--z-dropdown);"} {
 		if !strings.Contains(base, want) {
 			t.Errorf(".tip lacks %q:\n%s", want, base)
 		}
@@ -453,7 +477,7 @@ func TestViewerLocalStackingUsesZTokens(t *testing.T) {
 }
 
 // T1・T3（#209）: 文中・値のインライン code は 1 つの書き方で、app.css の `code` ルールが決める（Mono・--accent-soft 地・--r-sm・左右 4px・
-// 大きさは親に従う・文字色 --ink）。テンプレートの <code> には、チップの見た目のクラス（text-xs・px-*・py-*・bg-*・rounded-*・text-*・font-*）を付けない。
+// 大きさは親に従う・文字色 --ink）。テンプレートの <code> には、チップの見た目のクラス（text-desc・px-*・py-*・bg-*・rounded-*・text-*・font-*）を付けない。
 // 付けると画面ごとに大きさ・余白が分かれ、本文の中で 12px に縮む。折り返し・レイアウトのクラス（break-all・min-w-0 など）は付けてよい。
 func TestInlineCodeHasOneStyleFromAppCSS(t *testing.T) {
 	css := readAppCSS(t)
@@ -472,7 +496,7 @@ func TestInlineCodeHasOneStyleFromAppCSS(t *testing.T) {
 
 	codeOpen := regexp.MustCompile(`<code\b[^>]*>`)
 	classAttr := regexp.MustCompile(`class="([^"]*)"`)
-	styled := regexp.MustCompile(`^(text-(xs|sm|base|lg|xl|2xl|3xl|2xs|page-title|ink|mute)|px-|py-|p-|bg-|rounded|font-|border)`)
+	styled := regexp.MustCompile(`^(text-(sm|desc|item|section|tip|base|lg|2xs|page-title|ink|mute)|px-|py-|p-|bg-|rounded|font-|border)`)
 	found := 0
 	err := filepath.WalkDir(filepath.Join("..", "web"), func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {

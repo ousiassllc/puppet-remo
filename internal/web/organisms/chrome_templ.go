@@ -53,7 +53,8 @@ func HeaderKillSwitch(active bool) templ.Component {
 	})
 }
 
-// Header は全画面共通のヘッダー。
+// Header は全画面共通のヘッダー（高さ 56 の 1 段。折り返さない）。390〜320 幅（#263）でも、ロゴ・状態のバッジが文字の途中で縦に折れないよう、
+// 「ホスト」は sm 未満で sr-only（読み上げには残す）にし、バッジは折り返さず縮まない（whitespace-nowrap・shrink-0）。足りない幅はロゴ（atoms.Lockup。96px まで縮められ、360px 未満はシンボル 24px）が受ける。
 func Header(h view.Header) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -75,7 +76,7 @@ func Header(h view.Header) templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"flex h-14 items-center justify-between border-b border-border bg-bone px-4 md:px-6\"><div class=\"flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"flex h-14 items-center justify-between gap-2 border-b border-border bg-bone px-4 md:px-6\"><div class=\"flex min-w-0 items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -87,7 +88,7 @@ func Header(h view.Header) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"text-sm text-mute\">ホスト</span></div><div id=\"header-killswitch\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"sr-only shrink-0 whitespace-nowrap text-desc text-mute sm:not-sr-only\">ホスト</span></div><div id=\"header-killswitch\" class=\"shrink-0 whitespace-nowrap\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -240,7 +241,7 @@ func RequestsBadge(n int) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(n))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 57, Col: 173}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 58, Col: 173}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -253,7 +254,7 @@ func RequestsBadge(n int) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(badgeCount(n))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 57, Col: 191}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 58, Col: 191}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -333,7 +334,7 @@ var navItems = []navItem{
 }
 
 func navLinkClass(active bool) string {
-	base := "motion-hover flex h-10 items-center gap-2 rounded-md px-3 text-base "
+	base := "motion-hover flex h-10 items-center gap-2 rounded-md px-3 text-item font-semibold "
 	if active {
 		return base + "bg-accent-soft text-ink"
 	}
@@ -381,7 +382,7 @@ func Sidebar(c view.Chrome) templ.Component {
 			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<nav id=\"sidebar-nav\" class=\"nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-[78%] max-w-[320px] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:w-60 md:overflow-visible\" aria-label=\"メイン\"><p id=\"sidebar-nav-title\" class=\"px-3 pb-2 pt-1 text-xs text-mute\">メニュー</p><div id=\"nav-live\" class=\"sr-only\" role=\"status\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<nav id=\"sidebar-nav\" class=\"nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-[78%] max-w-[320px] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:w-60 md:overflow-visible\" aria-label=\"メイン\"><p id=\"sidebar-nav-title\" class=\"px-3 pb-2 pt-1 text-desc text-mute\">メニュー</p><div id=\"nav-live\" class=\"sr-only\" role=\"status\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -445,7 +446,7 @@ func SidebarLinks(c view.Chrome, oob bool) templ.Component {
 			var templ_7745c5c3_Var13 templ.SafeURL
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(it.URL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 136, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 137, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -479,7 +480,7 @@ func SidebarLinks(c view.Chrome, oob bool) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(it.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 144, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/organisms/chrome.templ`, Line: 145, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {

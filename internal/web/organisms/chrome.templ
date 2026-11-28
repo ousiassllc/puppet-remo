@@ -17,15 +17,16 @@ templ HeaderKillSwitch(active bool) {
 	}
 }
 
-// Header は全画面共通のヘッダー。
+// Header は全画面共通のヘッダー（高さ 56 の 1 段。折り返さない）。390〜320 幅（#263）でも、ロゴ・状態のバッジが文字の途中で縦に折れないよう、
+// 「ホスト」は sm 未満で sr-only（読み上げには残す）にし、バッジは折り返さず縮まない（whitespace-nowrap・shrink-0）。足りない幅はロゴ（atoms.Lockup。96px まで縮められ、360px 未満はシンボル 24px）が受ける。
 templ Header(h view.Header) {
-	<header class="flex h-14 items-center justify-between border-b border-border bg-bone px-4 md:px-6">
-		<div class="flex items-center gap-2">
+	<header class="flex h-14 items-center justify-between gap-2 border-b border-border bg-bone px-4 md:px-6">
+		<div class="flex min-w-0 items-center gap-2">
 			@navToggle()
 			@atoms.Lockup()
-			<span class="text-sm text-mute">ホスト</span>
+			<span class="sr-only shrink-0 whitespace-nowrap text-desc text-mute sm:not-sr-only">ホスト</span>
 		</div>
-		<div id="header-killswitch">
+		<div id="header-killswitch" class="shrink-0 whitespace-nowrap">
 			@HeaderKillSwitch(h.KillSwitchActive)
 		</div>
 	</header>
@@ -92,7 +93,7 @@ var navItems = []navItem{
 }
 
 func navLinkClass(active bool) string {
-	base := "motion-hover flex h-10 items-center gap-2 rounded-md px-3 text-base "
+	base := "motion-hover flex h-10 items-center gap-2 rounded-md px-3 text-item font-semibold "
 	if active {
 		return base + "bg-accent-soft text-ink"
 	}
@@ -121,7 +122,7 @@ func oobAttrs(oob bool) atoms.Attrs {
 // M5・#202）。遷移で更新するのはリンク群（#sidebar-nav-links。SidebarLinks）だけ。
 templ Sidebar(c view.Chrome) {
 	<nav id="sidebar-nav" class="nav-drawer fixed inset-y-0 left-0 z-(--z-drawer) w-[78%] max-w-[320px] shrink-0 space-y-2 overflow-y-auto border-r border-border bg-surface p-3 md:static md:z-auto md:w-60 md:overflow-visible" aria-label="メイン">
-		<p id="sidebar-nav-title" class="px-3 pb-2 pt-1 text-xs text-mute">メニュー</p>
+		<p id="sidebar-nav-title" class="px-3 pb-2 pt-1 text-desc text-mute">メニュー</p>
 		<div id="nav-live" class="sr-only" role="status"></div>
 		@SidebarLinks(c, false)
 	</nav>

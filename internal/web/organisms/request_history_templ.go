@@ -172,7 +172,7 @@ func ConnectionRequestHistory(v view.RequestHistory) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"overflow-x-auto rounded-lg border border-border bg-surface\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"overflow-x-auto rounded-card card-edge bg-surface\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -180,7 +180,7 @@ func ConnectionRequestHistory(v view.RequestHistory) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "><table class=\"min-w-full divide-y divide-border text-sm\"><thead class=\"text-left text-xs font-semibold text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">届いた日時</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">デバイス名</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">tailnet IP</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">ユーザー</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">結果</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">処理した日時</th></tr></thead> <tbody class=\"divide-y divide-border\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "><table class=\"min-w-full divide-y divide-line-soft text-sm\"><thead class=\"text-left text-desc text-mute\"><tr><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">届いた日時</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">デバイス名</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">tailnet IP</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">ユーザー</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">結果</th><th scope=\"col\" class=\"px-(--table-pad-x) py-(--table-pad-y)\">処理した日時</th></tr></thead> <tbody class=\"divide-y divide-line-soft\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

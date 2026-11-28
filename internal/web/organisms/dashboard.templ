@@ -64,13 +64,13 @@ templ SessionListBody(v view.Sessions) {
 			接続中のセッションはありません。
 		}
 	} else {
-		<ul class="divide-y divide-border text-sm">
+		<ul class="divide-y divide-line-soft text-sm">
 			for _, s := range v.Items {
 				<li class="flex items-center justify-between py-2" data-session>
 					<span class="text-ink">{ s.ClientLabel }</span>
 					<span class="flex items-center gap-2">
 						@atoms.Badge(atoms.BadgeLabel, s.KindLabel)
-						<span class="text-xs text-mute"><span class="font-mono">{ s.Since }</span> から</span>
+						<span class="text-desc text-mute"><span class="font-mono">{ s.Since }</span> から</span>
 					</span>
 				</li>
 			}
@@ -96,7 +96,7 @@ templ LeaseDisplay(v view.Lease) {
 		@molecules.LeaseBadge(v.Held, v.HolderLabel, v.KindLabel)
 	}
 	if v.Held {
-		<p class="mt-2 text-xs text-mute"><span class="font-mono">{ v.Since }</span> から ・ アイドル解放まで <span class="font-mono">{ v.IdleRemaining }</span></p>
+		<p class="mt-2 text-desc text-mute"><span class="font-mono">{ v.Since }</span> から ・ アイドル解放まで <span class="font-mono">{ v.IdleRemaining }</span></p>
 	}
 }
 
@@ -174,10 +174,10 @@ templ killSwitchPanel(v view.KillSwitch, oob bool) {
 						発動中です。すべての操作権を剥奪し、リモートからの要求を断っています。
 					}
 					if v.Since != "" {
-						<p class="text-xs text-mute"><span class="font-mono">{ v.Since }</span> に発動（{ v.Source }）</p>
+						<p class="text-desc text-mute"><span class="font-mono">{ v.Since }</span> に発動（{ v.Source }）</p>
 					}
 				} else {
-					<p class="text-base text-ink" data-killswitch="inactive">
+					<p class="text-sm text-ink" data-killswitch="inactive">
 						緊急時に、すべての操作権を剥奪し、リモートからの要求を断ちます。
 					</p>
 				}

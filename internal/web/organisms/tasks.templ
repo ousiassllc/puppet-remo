@@ -33,7 +33,7 @@ templ runningTasks(v view.RunningTasks, oob bool) {
 		<input type="hidden" name="rev_tasks" value={ v.Rev } data-poll-rev/>
 		if len(v.Items) > 0 {
 			@molecules.Card("実行中のエージェントタスク") {
-				<ul class="divide-y divide-border" data-running-tasks>
+				<ul class="divide-y divide-line-soft" data-running-tasks>
 					for _, t := range v.Items {
 						<li class="space-y-2 py-3 first:pt-0 last:pb-0" data-running-task>
 							<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
@@ -87,9 +87,9 @@ templ TaskList(v view.TaskList) {
 					@taskCard(r)
 				}
 			</ul>
-			<div class="hidden overflow-x-auto rounded-lg border border-border bg-surface sm:block">
-				<table class="min-w-full divide-y divide-border text-sm">
-					<thead class="text-left text-xs font-semibold text-mute">
+			<div class="hidden overflow-x-auto rounded-card card-edge bg-surface sm:block">
+				<table class="min-w-full divide-y divide-line-soft text-sm">
+					<thead class="text-left text-desc text-mute">
 						<tr>
 							<th scope="col" class="px-(--table-pad-x) py-(--table-pad-y)">開始</th>
 							<th scope="col" class="px-(--table-pad-x) py-(--table-pad-y)">タスク</th>
@@ -100,7 +100,7 @@ templ TaskList(v view.TaskList) {
 							<th scope="col" class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right">所要時間</th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-border">
+					<tbody class="divide-y divide-line-soft">
 						for _, r := range v.Rows {
 							<tr class="hover:bg-accent-soft" data-task-row={ r.DetailURL } data-status={ r.Code }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Created }</td>
@@ -139,7 +139,7 @@ templ TaskList(v view.TaskList) {
 // フォーカスリングはカードの外周に出る（app.css の .task-card）。余白は内側 --pad-card-sm（16）・段の間 8・カードの間 8（ul の space-y-2）。
 // ホバーで --accent-soft 地になるので、ミュートの文字は group-hover で --mute-on-soft にする（C6）。
 templ taskCard(r view.TaskRow) {
-	<li class="task-card group relative cursor-pointer space-y-2 rounded-lg border border-border bg-surface p-(--pad-card-sm) hover:bg-accent-soft" data-task-card={ r.DetailURL } data-status={ r.Code }>
+	<li class="task-card group relative cursor-pointer space-y-2 rounded-card card-edge bg-surface p-(--pad-card-sm) hover:bg-accent-soft" data-task-card={ r.DetailURL } data-status={ r.Code }>
 		<div class="flex items-center justify-between gap-2">
 			<span class="whitespace-nowrap font-mono text-sm text-ink">{ r.Created }</span>
 			<span class="shrink-0 whitespace-nowrap">
@@ -147,7 +147,7 @@ templ taskCard(r view.TaskRow) {
 			</span>
 		</div>
 		<p class="line-clamp-2 break-words text-sm text-ink" data-task-card-prompt>{ r.PromptExcerpt }</p>
-		<p class="flex items-baseline gap-x-2 whitespace-nowrap text-xs text-mute group-hover:text-mute-on-soft">
+		<p class="flex items-baseline gap-x-2 whitespace-nowrap text-desc text-mute group-hover:text-mute-on-soft">
 			<a
 				href={ templ.SafeURL(r.DetailURL) }
 				class="task-card-link link shrink-0 font-mono text-sm after:absolute after:inset-0"
@@ -215,7 +215,7 @@ templ taskStepArgs(args []view.AuditArg) {
 // ステップは監査ログの行で、入力した文字列の本文・要素の値は持たない。サムネイルは監査の画面と同じ経路（/audit/{id}/thumbnail）。題付きの Card（部品）同士は 24（--gap-grid-lg。space-y-6）。
 templ TaskDetail(v view.TaskDetail) {
 	<div class="space-y-6" data-task-detail={ v.ID }>
-		<div class="space-y-4 rounded-lg border border-border bg-surface p-(--pad-card)">
+		<div class="space-y-4 rounded-card card-edge bg-surface p-(--pad-card)">
 			@TaskStatus(v.Status)
 			<dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
 				@taskField("タスク ID", v.ID, "id", true)
@@ -275,8 +275,8 @@ templ TaskDetail(v view.TaskDetail) {
 				}
 			} else {
 				<div class="overflow-x-auto" { atoms.ScrollRegion("ステップ")... }>
-					<table class="min-w-full divide-y divide-border text-sm" data-task-steps-table>
-						<thead class="text-left text-xs font-semibold text-mute">
+					<table class="min-w-full divide-y divide-line-soft text-sm" data-task-steps-table>
+						<thead class="text-left text-desc text-mute">
 							<tr>
 								<th scope="col" class="px-(--table-pad-x) py-(--table-pad-y) text-right">#</th>
 								<th scope="col" class="px-(--table-pad-x) py-(--table-pad-y)">経路</th>
@@ -286,7 +286,7 @@ templ TaskDetail(v view.TaskDetail) {
 								<th scope="col" class="px-(--table-pad-x) py-(--table-pad-y)">画像</th>
 							</tr>
 						</thead>
-						<tbody class="divide-y divide-border">
+						<tbody class="divide-y divide-line-soft">
 							for i, s := range v.Steps {
 								<tr class="group hover:bg-accent-soft" data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route } data-step-kind={ stepKind(s) }>
 									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right font-mono text-ink">
@@ -303,10 +303,10 @@ templ TaskDetail(v view.TaskDetail) {
 									</td>
 									<td class="px-(--table-pad-x) py-(--table-pad-y) text-ink">
 										if s.KindLabel != "" {
-											<span class="mr-1 text-xs text-ink" data-step-kind-label>{ s.KindLabel }</span>
+											<span class="mr-1 text-desc text-mute group-hover:text-mute-on-soft" data-step-kind-label>{ s.KindLabel }</span>
 										}
 										<span>{ s.Summary }</span>
-										<span class="ml-1 font-mono text-xs text-mute group-hover:text-mute-on-soft">{ s.Event }</span>
+										<span class="ml-1 font-mono text-desc text-mute group-hover:text-mute-on-soft">{ s.Event }</span>
 										@taskStepArgs(s.Args)
 										if s.AuditURL != "" {
 											<a
@@ -330,7 +330,7 @@ templ TaskDetail(v view.TaskDetail) {
 												src={ s.ThumbURL }
 												alt={ "ステップ " + strconv.Itoa(s.No) + " の直後の縮小スクリーンショット" }
 												loading="lazy"
-												class="h-16 w-auto rounded-sm border border-border"
+												class="h-16 w-auto rounded-sm border border-line-soft"
 												data-step-thumb
 											/>
 										} else {

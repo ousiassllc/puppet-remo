@@ -14,6 +14,7 @@ import (
 func TestChipsAndPillsAreDrawnByBadge(t *testing.T) {
 	allowed := map[string]string{
 		"atoms/badge.templ":       "Badge 本体",
+		"atoms/button.templ":      "ボタン本体（ピル）",
 		"atoms/toast.templ":       "トースト（ink 地の通知。ピルだが状態のラベルではない）",
 		"organisms/app_log.templ": "ログの絞り込みチップ（押せるリンク。ラベルではなく操作の部品）",
 		"organisms/chrome.templ":  "サイドバーの承認待ちの件数（accent 地の数字だけの丸。ナビ項目の添え物）",
