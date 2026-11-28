@@ -95,9 +95,12 @@ func (Runner) Run(ctx context.Context, spec platform.CommandSpec) (platform.Comm
 		return platform.CommandResult{}, domain.ErrCommandStartFailed // OS のエラーにはパスが入るので載せない
 	}
 	if err := tree.attach(cmd); err != nil {
-		// 子孫ごと終了させる準備ができなかった: 動かさずに終わらせる。
+		// 子孫ごと終了させる準備ができなかった（Windows では、止めたまま起こしたプロセスをジョブへ入れて動かせなかった）: 動かさずに終わらせる。
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return platform.CommandResult{}, ctxErr // 準備の間に呼び出し側が取り消した
+		}
 		return platform.CommandResult{}, domain.ErrCommandStartFailed
 	}
 	waitErr := cmd.Wait()
