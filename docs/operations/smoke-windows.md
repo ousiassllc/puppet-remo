@@ -598,6 +598,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | X13 | 実行中にキルスイッチを発動する | `kill_switch_active` で返り、起こしたプロセスが終了する。解除するまで `run_command` は `kill_switch_active` |
 | X14 | リースを別のクライアントが保持している間に `run_command`。ウィンドウを選んだ操作権（`acquire_control` にウィンドウを指定）で `run_command` | `lease_held_by_other` / `input_blocked`（`command_out_of_scope`）。何も起動しない |
 | X15 | 監査ログ（`/audit`）を見る | `tool.run_command` に項目名・引数の値・終了コード・`timed_out`・出力の大きさ・切り詰め・所要時間が残る。stdout / stderr の中身と実行ファイルのパスは残らない |
+| X16 | 起動した直後に子プロセスを作って眠るプログラム（許可リストに入れた使い捨ての実行ファイル。例: `cmd.exe /c start /b ping -n 100 localhost` を起こす項目。#279）を `timeout_sec` を 3 にして呼ぶ。続けて、同じ項目を呼んで実行中にキルスイッチを発動する | どちらも、起こしたプロセスと、起動の直後に作られた子孫（`ping.exe`）が、タスクマネージャー・`tasklist` に残っていない（プロセスは止めた状態（`CREATE_SUSPENDED`）で起こし、ジョブへ入れてから動かすので、起動直後の子もジョブに入る）。呼び出しは約 3 秒で `timed_out: true`、キルスイッチでは `kill_switch_active`。X1〜X15 が変わらず通る（止めた状態からの起動が、出力の取得・終了コード・作業フォルダ・環境変数に影響しない） |
 
 
 
@@ -660,3 +661,4 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-28 | §4.19（ファイル転送。#264。FR-M27・FR-S24）を追加 | #264 |
 | — | 2026-11-28 | §3.5 に `ui_action` の実機確認 U13〜U18（Invoke・Value・Toggle・SelectionItem・ExpandCollapse・拒否・検査・カーソル / 前面の不変・WebView2 の `SetValue` と `v-model`。未確認）を追加 | #268 |
 | — | 2026-11-28 | §4.20（コマンド実行。#265。FR-M32・FR-S25。X1〜X15。未確認）を追加 | #265 |
+| — | 2026-11-28 | §4.20 に X16（起動直後の孫プロセスもタイムアウト・キルスイッチで終了。止めた状態で起こしてジョブへ入れてから動かす。未確認）を追加 | #279 |
