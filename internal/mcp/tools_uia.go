@@ -80,12 +80,14 @@ type waitForBody struct {
 	Truncated  bool                `json:"truncated,omitempty"`
 }
 
-// uiActionIn は ui_action の入力。value は set_value のときだけ必須（空文字列も有効で、内容を空にする）なので、省略と空を区別できるポインタ。
+// uiActionIn は ui_action の入力。value は set_value のときだけ必須（空文字列も有効で、内容を空にする）、number は set_range_value のときだけ必須（0 も有効）なので、
+// どちらも省略と空・0 を区別できるポインタ。
 type uiActionIn struct {
-	ElementID string  `json:"element_id" jsonschema:"element id (id) returned by find_ui_element, get_ui_tree or wait_for"`
-	Action    string  `json:"action" jsonschema:"invoke, set_value, toggle, select, expand or collapse"`
-	Value     *string `json:"value,omitempty" jsonschema:"text for set_value (required for it; an empty string clears the field). Not allowed for other actions"`
-	State     string  `json:"state,omitempty" jsonschema:"toggle only: on or off to set that state (default: flip the current state)"`
+	ElementID string   `json:"element_id" jsonschema:"element id (id) returned by find_ui_element, get_ui_tree or wait_for"`
+	Action    string   `json:"action" jsonschema:"invoke, set_value, toggle, select, expand, collapse, scroll_into_view or set_range_value"`
+	Value     *string  `json:"value,omitempty" jsonschema:"text for set_value (required for it; an empty string clears the field). Not allowed for other actions"`
+	Number    *float64 `json:"number,omitempty" jsonschema:"set_range_value only (required for it): the finite number to set on a slider or spinner; 0 is valid. Outside the element's minimum and maximum it is rejected, not clamped"`
+	State     string   `json:"state,omitempty" jsonschema:"toggle only: on or off to set that state (default: flip the current state)"`
 }
 
 // uiActionBody は ui_action の結果。element は操作した要素（find_ui_element と同じ形。縮小座標。値は含めない）。
@@ -164,15 +166,17 @@ const uiActionNote = "Operate a UI element through its UI Automation pattern, wi
 	"element_id is the id from find_ui_element, get_ui_tree or wait_for. Actions: invoke (Invoke pattern: press a button, menu item or link), " +
 	"set_value (Value pattern: replace the text of an edit field with value; not typed, so IME and focus are not involved), " +
 	"toggle (Toggle pattern: flip a check box or toggle button, or set state to on or off), select (SelectionItem pattern: select a list item, tab or radio button), " +
-	"expand and collapse (ExpandCollapse pattern). The result has the element, changed (false when it was already in that state) and the resulting state. " +
+	"expand and collapse (ExpandCollapse pattern), scroll_into_view (ScrollItem pattern: bring an off-screen item into view inside its scrollable parent; no other argument), " +
+	"set_range_value (RangeValue pattern: set a slider or spinner to number; a number outside the element's minimum and maximum is rejected with invalid_argument (detail.minimum and detail.maximum), never clamped). " +
+	"The result has the element, changed (false when it was already in that state) and the resulting state. " +
 	"Errors: pattern_unsupported (the element lacks the pattern; detail.supported lists its patterns; use the pointer or keyboard tools instead), " +
-	"stale_element (the element or its window is gone; find it again), element_disabled, element_read_only (set_value), " +
+	"stale_element (the element or its window is gone; find it again), element_disabled, element_read_only (set_value, set_range_value), " +
 	"input_blocked (own_window: a puppet-remo window; elevated_window or access_denied: the app is elevated so UI Automation cannot reach it), " +
 	"ui_action_failed (detail.reason), invalid_argument. " +
 	"Web content (WebView2, browsers): Invoke on buttons and links usually works, but set_value may not fire the page's input events (a framework such as Vue may not see the change); " +
 	"check the result on screen, and fall back to click and type when it does not take effect. " +
 	"With a window-scoped lease the element's window must belong to the target window group (outside_target_group otherwise). " +
-	"It counts as input: the control lease is needed (acquired implicitly), the kill switch stops it, and it is audited (the action and the element's control type and automation id; for set_value only the length of the text). " +
+	"It counts as input: the control lease is needed (acquired implicitly), the kill switch stops it, and it is audited (the action and the element's control type and automation id; for set_value only the length of the text, for set_range_value no number unless the audit.record_text setting is on). " +
 	"Unlike mouse and keyboard tools it is not paused while the host person is using the mouse or keyboard."
 
 // addUIATools は UI Automation のツールを登録する: FR-M28（find_ui_element）・FR-M29（wait_for）・FR-M31（ui_action）。
@@ -180,7 +184,7 @@ func (s *Server) addUIATools() {
 	addTool(s, "find_ui_element",
 		"Find UI elements in a window with UI Automation, by name, automation_id and/or control_type (all given must match). "+
 			"Returns up to max_results elements (shallowest first) with id (the same element id get_ui_tree returns), control_type, name, automation_id, class_name, "+
-			"rect (scaled coordinates), enabled, offscreen, visible and the supported patterns (Invoke, Value, Toggle, SelectionItem, ExpandCollapse, Scroll, RangeValue, Window, Text, Selection). "+
+			"rect (scaled coordinates), enabled, offscreen, visible and the supported patterns (Invoke, Value, Toggle, SelectionItem, ExpandCollapse, Scroll, ScrollItem, RangeValue, Window, Text, Selection). "+
 			"An element id stops working (stale_element) once the element or its window is gone. Read-only: no input is sent. "+
 			locatorDoc+" Needs the control lease (acquired implicitly).",
 		true, func(ctx context.Context, who domain.Actor, in findUIElementIn) (toolResult, error) {
@@ -238,7 +242,7 @@ func (s *Server) addUIATools() {
 
 	addTool(s, "ui_action", uiActionNote,
 		false, func(ctx context.Context, who domain.Actor, in uiActionIn) (toolResult, error) {
-			op := domain.UIAction{ElementID: in.ElementID, Kind: domain.UIActionKind(strings.ToLower(in.Action)), Value: in.Value, State: strings.ToLower(in.State)}
+			op := domain.UIAction{ElementID: in.ElementID, Kind: domain.UIActionKind(strings.ToLower(in.Action)), Value: in.Value, Number: in.Number, State: strings.ToLower(in.State)}
 			res, err := s.control.Do(ctx, who, op)
 			if err != nil {
 				return toolResult{}, err

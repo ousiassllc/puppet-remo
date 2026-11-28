@@ -42,6 +42,9 @@ func TestUIAPerformEachAction(t *testing.T) {
 		{"collapse", domain.UIAction{Kind: domain.UIActionCollapse}, domain.PatternExpandCollapse,
 			func(n *fakeUIANode) { n.expand = uiaExpandExpanded }, []string{"Collapse"}, true, domain.ExpandStateCollapsed},
 		{"collapse when collapsed", domain.UIAction{Kind: domain.UIActionCollapse}, domain.PatternExpandCollapse, nil, nil, false, domain.ExpandStateCollapsed},
+		{"scroll_into_view", domain.UIAction{Kind: domain.UIActionScrollIntoView}, domain.PatternScrollItem, nil, []string{"ScrollIntoView"}, true, ""},
+		{"set_range_value", domain.UIAction{Kind: domain.UIActionSetRangeValue, Number: new(42.5)}, domain.PatternRangeValue,
+			func(n *fakeUIANode) { n.rangeInfo = uiaRangeInfo{Minimum: 0, Maximum: 100} }, []string{"SetRangeValue"}, true, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,6 +76,89 @@ func TestUIAPerformSetValuePassesTheText(t *testing.T) {
 	}
 	if n.value != "日本語 text" {
 		t.Errorf("value = %q", n.value)
+	}
+}
+
+func TestUIAPerformSetRangeValue(t *testing.T) {
+	setNumber := func(v float64) domain.UIAction {
+		return domain.UIAction{Kind: domain.UIActionSetRangeValue, Number: &v}
+	}
+	newSlider := func() *fakeUIANode {
+		n := &fakeUIANode{props: actProps(domain.PatternRangeValue)}
+		n.rangeInfo = uiaRangeInfo{Minimum: -10, Maximum: 10}
+		return n
+	}
+	t.Run("passes the number through", func(t *testing.T) {
+		n := newSlider()
+		if _, err := uiaPerform(n, n.props, actRef, setNumber(-2.25)); err != nil || n.number != -2.25 {
+			t.Errorf("err = %v, number = %v", err, n.number)
+		}
+	})
+	t.Run("the bounds are accepted", func(t *testing.T) {
+		for _, v := range []float64{-10, 10} {
+			n := newSlider()
+			if _, err := uiaPerform(n, n.props, actRef, setNumber(v)); err != nil || !slices.Equal(n.acts, []string{"SetRangeValue"}) {
+				t.Errorf("%v: err = %v, acts = %v", v, err, n.acts)
+			}
+		}
+	})
+	t.Run("outside the range is rejected without calling SetValue", func(t *testing.T) {
+		for _, v := range []float64{-10.001, 10.001, 1e300} {
+			n := newSlider()
+			res, err := uiaPerform(n, n.props, actRef, setNumber(v))
+			var de *domain.Error
+			if !errors.As(err, &de) || de.Code != domain.CodeInvalidArgument || de.Detail["minimum"] != -10.0 || de.Detail["maximum"] != 10.0 {
+				t.Errorf("%v: err = %v", v, err)
+			}
+			if len(n.acts) != 0 || res.Changed {
+				t.Errorf("%v: acts = %v, changed = %v", v, n.acts, res.Changed)
+			}
+		}
+	})
+	t.Run("read-only", func(t *testing.T) {
+		n := newSlider()
+		n.rangeInfo.ReadOnly = true
+		_, err := uiaPerform(n, n.props, actRef, setNumber(1))
+		if !errors.Is(err, domain.ErrElementReadOnly) || len(n.acts) != 0 {
+			t.Errorf("err = %v, acts = %v", err, n.acts)
+		}
+	})
+	t.Run("without the RangeValue pattern", func(t *testing.T) {
+		n := &fakeUIANode{props: actProps(domain.PatternValue)}
+		_, err := uiaPerform(n, n.props, actRef, setNumber(1))
+		var de *domain.Error
+		if !errors.As(err, &de) || de.Code != domain.CodePatternUnsupported || de.Detail["pattern"] != domain.PatternRangeValue {
+			t.Errorf("err = %v", err)
+		}
+		if len(n.acts) != 0 {
+			t.Errorf("a pattern call was made: %v", n.acts)
+		}
+	})
+	t.Run("the actor's error is returned", func(t *testing.T) {
+		n := newSlider()
+		n.actErr = domain.ErrInputBlocked
+		res, err := uiaPerform(n, n.props, actRef, setNumber(1))
+		if !errors.Is(err, domain.ErrInputBlocked) || res.Changed {
+			t.Errorf("err = %v, changed = %v", err, res.Changed)
+		}
+	})
+}
+
+func TestUIAPerformScrollIntoViewNeedsTheScrollItemPattern(t *testing.T) {
+	n := &fakeUIANode{props: actProps(domain.PatternScroll, domain.PatternInvoke)}
+	_, err := uiaPerform(n, n.props, actRef, domain.UIAction{Kind: domain.UIActionScrollIntoView})
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodePatternUnsupported || de.Detail["pattern"] != domain.PatternScrollItem {
+		t.Fatalf("err = %v", err)
+	}
+	if len(n.acts) != 0 {
+		t.Errorf("a pattern call was made: %v", n.acts)
+	}
+	off := actProps(domain.PatternScrollItem)
+	off.Enabled = false
+	m := &fakeUIANode{props: off}
+	if _, err := uiaPerform(m, off, actRef, domain.UIAction{Kind: domain.UIActionScrollIntoView}); !errors.Is(err, domain.ErrElementDisabled) || len(m.acts) != 0 {
+		t.Errorf("disabled: err = %v, acts = %v", err, m.acts)
 	}
 }
 

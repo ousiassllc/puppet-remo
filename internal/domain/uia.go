@@ -47,6 +47,7 @@ const (
 	PatternSelectionItem  = "SelectionItem"
 	PatternExpandCollapse = "ExpandCollapse"
 	PatternScroll         = "Scroll"
+	PatternScrollItem     = "ScrollItem"
 	PatternRangeValue     = "RangeValue"
 	PatternWindow         = "Window"
 	PatternText           = "Text"

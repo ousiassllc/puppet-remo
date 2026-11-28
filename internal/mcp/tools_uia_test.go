@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -274,6 +276,61 @@ func TestUIActionDistinguishesAMissingValueFromAnEmptyOne(t *testing.T) {
 			t.Errorf("%s: value = %v, want %v", name, op.Value, tt.want)
 		}
 	}
+}
+
+// number の省略と 0 は区別する（set_range_value 0 は有効な値）。scroll_into_view は引数を取らない。
+func TestUIActionPassesNumberAndScrollIntoView(t *testing.T) {
+	e := newEnv(t)
+	cs := e.connect("c1")
+	for name, tt := range map[string]struct {
+		args map[string]any
+		want *float64
+	}{
+		"zero":     {map[string]any{"element_id": "uie:1:2:3", "action": "set_range_value", "number": 0}, new(0.0)},
+		"fraction": {map[string]any{"element_id": "uie:1:2:3", "action": "Set_Range_Value", "number": -12.5}, new(-12.5)},
+		"missing":  {map[string]any{"element_id": "uie:1:2:3", "action": "set_range_value"}, nil},
+	} {
+		if res := callTool(t, cs, "ui_action", tt.args); res.IsError {
+			t.Fatalf("%s: %s", name, res.text())
+		}
+		op, ok := e.ctl.lastCall(t).Op.(domain.UIAction)
+		if !ok || op.Kind != domain.UIActionSetRangeValue || !reflect.DeepEqual(op.Number, tt.want) || op.Value != nil {
+			t.Errorf("%s: op = %#v, want number %v", name, op, tt.want)
+		}
+	}
+	if res := callTool(t, cs, "ui_action", map[string]any{"element_id": "uie:1:2:3", "action": "scroll_into_view"}); res.IsError {
+		t.Fatal(res.text())
+	}
+	wantOp := domain.UIAction{ElementID: "uie:1:2:3", Kind: domain.UIActionScrollIntoView}
+	if got := e.ctl.lastCall(t).Op; !reflect.DeepEqual(got, wantOp) {
+		t.Errorf("op = %#v, want %#v", got, wantOp)
+	}
+}
+
+// 入力の schema と説明に、新しい 2 つの action と number がある（number は数値型）。
+func TestUIActionSchemaListsTheNewActions(t *testing.T) {
+	e := newEnv(t)
+	cs := e.connect("c1")
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name != "ui_action" {
+			continue
+		}
+		raw, _ := json.Marshal(tool.InputSchema)
+		for _, want := range []string{`"number"`, "scroll_into_view", "set_range_value"} {
+			if !strings.Contains(string(raw), want) {
+				t.Errorf("input schema lacks %s: %s", want, raw)
+			}
+		}
+		if !strings.Contains(tool.Description, "scroll_into_view") || !strings.Contains(tool.Description, "set_range_value") {
+			t.Errorf("description lacks the new actions: %s", tool.Description)
+		}
+		return
+	}
+	t.Fatal("ui_action is not registered")
 }
 
 func TestUIActionErrorsAreStructured(t *testing.T) {

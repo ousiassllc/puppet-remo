@@ -126,6 +126,8 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | U16 | `ui_action` の拒否: 無効なボタン（`enabled: false`）・読み取り専用の欄（`set_value`）・`Value` を持たないボタンへの `set_value`・消えた要素の ID | `element_disabled`・`element_read_only`・`pattern_unsupported`（`detail.supported`）・`stale_element`。いずれもカーソル・キー入力は起きず、アプリの状態も変わらない。応答しないアプリ（`SuspendThread` したプロセスなど）への操作は、`ui_action_failed`（`timeout`）か ctx のタイムアウトで返り、ワーカーが詰まらない |
 | U17 | `ui_action` の検査: 管理者として起動したメモ帳の要素、Nefos Remote 自身のウィンドウの要素 | 昇格ウィンドウは `input_blocked`（`elevated_window`。ウィンドウ情報から。または UI Automation の拒否で `access_denied`）。自ウィンドウは `input_blocked`（`own_window`）で、操作は起きない。キルスイッチを発動すると `kill_switch_active`。他者がリースを持っていると `lease_held_by_other`。ウィンドウ指定のリース（スコープ付き）で、対象のウィンドウの外の要素は `outside_target_group`（その操作だけの拒否。リースは停止しない） |
 | U18 | `ui_action` とホストの実入力の一時停止（#270。§4.18） | ホストの物理マウスを動かして一時停止中でも、`ui_action` は通る（`mouse_move` などは `input_paused`）。`audit.record_text` を有効にして `set_value` すると監査の `detail.text` に本文が入り、パスワード欄（`IsPassword`）への `set_value` は本文が入らない（`text_len` のみ） |
+| U19 | `ui_action` の `scroll_into_view`（#278）: 縦にスクロールするリスト（設定アプリの一覧・エクスプローラーのファイル一覧など）で、画面外の項目（`find_ui_element` の `offscreen: true`。`patterns` に `ScrollItem`）を指定する。呼ぶ前にホストのカーソルを画面の端に置き、別のアプリを前面にしておく | 項目が見える位置へスクロールし（`get_ui_tree`・`find_ui_element` の `offscreen: false`・`visible: true`）、`changed: true`。**カーソルの位置も前面のウィンドウもキーボードフォーカスも呼ぶ前と同じ**。`ScrollItem` を持たない要素は `pattern_unsupported`（`detail.supported`）。すでに見えている項目に呼んでも成功する。監査に `tool.ui_action` が 1 行（`action: "scroll_into_view"`・`control_type`・`automation_id`。ほかの項目は無い） |
+| U20 | `ui_action` の `set_range_value`（#278）: スライダー（`Slider`。設定アプリの音量・明るさ、ペイントの拡大率など）とスピナー（`Spinner`。`RangeValue` を持つもの）。`number` に ① 範囲内の整数 ② 小数 ③ `0` ④ 最小値・最大値ちょうど ⑤ 範囲の外（最大値より大きい・最小値より小さい）⑥ 読み取り専用の要素 ⑦ `NaN` / `Infinity`（MCP の JSON では送れない。`go test` の `TestUIActionValidate` で代える）を指定する。**x64 の double 引数が実際に届くか（`RangeValue.SetValue` は浮動小数点の第 2 引数）を、小数・負の数・大きな数で確かめる** | ①②③④は値が入り（画面のつまみ・表示が動き）`changed: true`。小数は、アプリが刻み幅へ丸めるならその値になる。⑤は `invalid_argument`（`detail.minimum`・`detail.maximum` が要素の範囲と合う）で、値は変わらない（丸めて入れない）。⑥は `element_read_only`。`RangeValue` を持たない要素は `pattern_unsupported`。いずれもカーソル・前面・キーボードフォーカスは不変。監査の `detail` に `number` は入らない。`audit.record_text` を有効にすると `detail.number` に数が入る（パスワード欄ではない）。**届いた値が違うとき（0 や NaN 相当になる）は XMM レジスタの渡し方の不具合として報告する** |
 
 ### 3.6 グローバルホットキー（FR-H06・FR-S02）
 
@@ -598,6 +600,7 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | X13 | 実行中にキルスイッチを発動する | `kill_switch_active` で返り、起こしたプロセスが終了する。解除するまで `run_command` は `kill_switch_active` |
 | X14 | リースを別のクライアントが保持している間に `run_command`。ウィンドウを選んだ操作権（`acquire_control` にウィンドウを指定）で `run_command` | `lease_held_by_other` / `input_blocked`（`command_out_of_scope`）。何も起動しない |
 | X15 | 監査ログ（`/audit`）を見る | `tool.run_command` に項目名・引数の値・終了コード・`timed_out`・出力の大きさ・切り詰め・所要時間が残る。stdout / stderr の中身と実行ファイルのパスは残らない |
+| X16 | 子プロセス（孫）を作って眠る使い捨ての実行ファイル（自作のヘルパー。インタープリタの `cmd.exe` などは許可リストに入れない）を許可リストに入れ、`timeout_sec` を 3 にして呼ぶ。続けて、同じ項目を呼んで実行中にキルスイッチを発動する（#279）。**この手順は退行の確認**（止めた状態からの起動が壊れていない・ジョブ経由で子孫まで終了する）で、起動と同時に孫が作られる競合そのものは人手では再現できない | どちらも、起こしたプロセスと孫が、タスクマネージャー・`tasklist` に残っていない（プロセスは止めた状態（`CREATE_SUSPENDED`）で起こし、ジョブへ入れてから動かすので、起動直後の子もジョブに入る設計）。呼び出しは約 3 秒で `timed_out: true`、キルスイッチでは `kill_switch_active`（実行中の `Run` が `CancelAll` で終わる経路）。X1〜X15 が変わらず通る（止めた状態からの起動が、出力の取得・終了コード・作業フォルダ・環境変数に影響しない）。**実機では未確認** |
 
 ### 4.21 ハイコントラスト（forced-colors）での画面の見え方（#282。#280 の実機確認を移した。未確認）
 
@@ -627,7 +630,7 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | GDI（`BitBlt`）のキャプチャ: マルチモニター・DPI・スクリーンショットの縮小座標 | §3.1 C1〜C7（C2・C4: DPI、C3: マルチモニター）、§3.2 I1（縮小 → 物理の座標の往復）、§4.10 S2（DPI 混在の縮小） | 継続キャプチャ `Watch` は §3.9（M2） |
 | `SendInput`: マウス・クリック・ドラッグ・ホイール、キー・修飾キー、`KEYEVENTF_UNICODE` による日本語の `type`、UIPI | §3.2 I3〜I7（マウス・キー）、I10（日本語・絵文字の `Text`）、I12（管理者権限のウィンドウ。UIPI） | 契約テスト `TestSmokeInput*`（§2） |
 | ウィンドウ列挙・`focus_window`（前面化）、クリップボードのテキスト読み書き | §3.3 WM1〜WM10（WM8: `Focus`）、§3.4 B1〜B5 | |
-| UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`・`ui_action`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト、対応パターンの取得・RuntimeId での引き直し | §3.5 U1〜U18（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト、U6〜U8: パターン・要素 ID・`stale_element`、U9〜U11: `wait_for`） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
+| UI Automation（`get_ui_tree`・`find_ui_element`・`wait_for`・`ui_action`）: COM のスレッド、`max_depth` / `max_nodes`、応答しないアプリでのタイムアウト、対応パターンの取得・RuntimeId での引き直し | §3.5 U1〜U20（U2: 深さ 5・500 ノードの打ち切り、U4: 応答しないアプリのタイムアウト、U6〜U8: パターン・要素 ID・`stale_element`、U9〜U11: `wait_for`、U19〜U20: `scroll_into_view`・`set_range_value`） | COM のスレッドは U1（契約テスト）が `PASS` すること（`-count=3` で 3 回続けても `PASS`） |
 | グローバルホットキー（既定 `Ctrl+Alt+Shift+K`）によるキルスイッチ（1 秒以内の効果） | §3.6 K1〜K4、§4.5 | |
 | `SetThreadExecutionState`（リース保持中のスリープ・画面オフ抑止。`powercfg /requests`） | §4.6 SL1〜SL7 | |
 | 実 tailscaled: LocalAPI の `WhoIs`、IP 変化の監視、tailscaled 再起動後の 10 秒以内の復旧、tailnet の IPv4・IPv6 のみへの Listen | §4.4 R1（Listen）、R4（再起動後 10 秒以内の復旧）、**R7（WhoIs）**、**R8（IP 変化の監視）** | R7・R8 は #15 の項目に手順がなかったため足した |
@@ -676,5 +679,7 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-28 | §4.18 にホストの実入力による一時停止の実機確認 H1〜H10 を追加（未確認） | #270 |
 | — | 2026-11-28 | §4.19（ファイル転送。#264。FR-M27・FR-S24）を追加 | #264 |
 | — | 2026-11-28 | §3.5 に `ui_action` の実機確認 U13〜U18（Invoke・Value・Toggle・SelectionItem・ExpandCollapse・拒否・検査・カーソル / 前面の不変・WebView2 の `SetValue` と `v-model`。未確認）を追加 | #268 |
+| — | 2026-11-28 | §3.5 に `ui_action` の `scroll_into_view`・`set_range_value` の実機確認 U19・U20（カーソル / 前面 / フォーカスの不変・範囲外の拒否・x64 の double 引数の到達・監査の `number`。未確認）を追加 | #278 |
 | — | 2026-11-28 | §4.20（コマンド実行。#265。FR-M32・FR-S25。X1〜X15。未確認）を追加 | #265 |
+| — | 2026-11-28 | §4.20 に X16（起動直後の孫プロセスもタイムアウト・キルスイッチで終了。止めた状態で起こしてジョブへ入れてから動かす。未確認）を追加 | #279 |
 | — | 2026-11-28 | §4.21（ハイコントラスト〔forced-colors〕での主ボタン・ナビの現在地・ロゴの実機確認 F1〜F6。#280 から移した。未確認）を追加 | #282 |

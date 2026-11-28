@@ -9,10 +9,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/platform"
 	"github.com/ousiassllc/puppet-remo/internal/platform/localfs"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 )
@@ -212,6 +217,106 @@ func TestFileTransferSizeLimits(t *testing.T) {
 	set, invalid, err := loadFileTransferSettings(context.Background(), newCtlSettings())
 	if err != nil || invalid || set.MaxFileBytes != 100<<20 || set.MaxTotalBytes != 1<<30 || set.Root != "" {
 		t.Fatalf("defaults = %+v, %v, %v", set, invalid, err)
+	}
+}
+
+// 同時に put しても、置き場所全体の大きさの上限を超えない（合計の確認から書き込みの完了までが 1 つの排他区間。#275）。
+func TestFileTransferConcurrentPutsRespectTotalLimit(t *testing.T) {
+	const (
+		writers = 16
+		size    = 10
+		limit   = 35 // 3 つ（30）までは入り、4 つ目（40）は入らない
+	)
+	e := newFtEnv(t)
+	e.settings.put(settingFileTransferMaxFile, "100")
+	e.settings.put(settingFileTransferMaxTotal, strconv.Itoa(limit))
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make([]error, writers)
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, errs[i] = e.put(ctlAlice, "f"+strconv.Itoa(i), strings.Repeat("x", size))
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	stored := 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			stored++
+		case !errors.Is(err, domain.ErrFileStoreFull):
+			t.Errorf("put %d: %v", i, err)
+		}
+	}
+	if stored != limit/size {
+		t.Errorf("stored %d files, want %d", stored, limit/size)
+	}
+	total := 0
+	entries, err := os.ReadDir(e.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ent := range entries {
+		fi, err := ent.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += int(fi.Size())
+	}
+	if total > limit || total != stored*size {
+		t.Errorf("total on disk = %d bytes (limit %d, stored %d files)", total, limit, stored)
+	}
+}
+
+// putProbe は Put の入口で同時に実行中の数を数え、少し待つ FileStore（排他が無いと、待っている間に別の Put が入る）。
+type putProbe struct {
+	platform.FileStore
+	inflight, peak atomic.Int32
+}
+
+func (p *putProbe) Put(ctx context.Context, root string, req platform.FilePut) (platform.FileInfo, error) {
+	n := p.inflight.Add(1)
+	defer p.inflight.Add(-1)
+	for {
+		old := p.peak.Load()
+		if n <= old || p.peak.CompareAndSwap(old, n) {
+			break
+		}
+	}
+	time.Sleep(10 * time.Millisecond)
+	return p.FileStore.Put(ctx, root, req)
+}
+
+// FileStore.Put（合計の集計と書き込み）は同時に 1 つしか走らない。上のテストは確率的にしか排他の欠落を捉えないので、Put の中で待たせて重なりやすくしたこちらで確かめる（排他を外すと、ほぼ確実に落ちる。#275）。
+func TestFileTransferSerializesStorePuts(t *testing.T) {
+	e := newFtEnv(t)
+	probe := &putProbe{FileStore: localfs.New()}
+	ft, err := NewFileTransfer(FileTransferConfig{
+		Files: probe, Leases: e.leases, Kill: e.kill, Settings: e.settings, DefaultRoot: e.root,
+		ProtectedDirs: []string{e.dataDir}, Audit: e.audit, Clock: e.clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := ft.Put(context.Background(), ctlAlice, FilePutRequest{Path: "f" + strconv.Itoa(i), Data: []byte("x")}); err != nil {
+				t.Errorf("put %d: %v", i, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if peak := probe.peak.Load(); peak != 1 {
+		t.Errorf("up to %d puts ran at the same time in the store; want 1", peak)
 	}
 }
 

@@ -29,7 +29,8 @@ type UIAutomation interface {
 	// 要素の特定は Resolve と同じ（ウィンドウが無い・HWND が別のプロセスのものになった・要素が無い・操作の途中で消えた、のいずれも ErrStaleElement）。特定したあと、次の順に拒否する:
 	//   - 要素が無効 → ErrElementDisabled
 	//   - 操作に必要なパターンが無い → ErrPatternUnsupported（detail: action・pattern・supported〔要素の対応パターン〕）
-	//   - set_value の対象が読み取り専用 → ErrElementReadOnly
+	//   - set_value・set_range_value の対象が読み取り専用 → ErrElementReadOnly
+	//   - set_range_value の数が要素の Minimum〜Maximum の外 → ErrInvalidArgument（detail: minimum・maximum。丸めず、値は変えない）
 	//   - UI Automation が拒否した → アクセス拒否（UIPI・昇格）は ErrInputBlocked（detail.reason = access_denied）、それ以外は ErrUIActionFailed（detail.reason）
 	// すでにその状態の toggle（State 指定）・expand・collapse は、パターンの操作を呼ばず Changed を false にして成功とする。
 	// 結果の State は操作後の状態。値（テキスト本文）は返さない。要素を特定したあとの失敗も、UIActionResult の Window・Element・Password を入れて返す。

@@ -24,7 +24,7 @@ type FakeUIAutomation struct {
 	states    map[string]*fakeElementState // 要素 ID → Act が変える状態
 }
 
-// fakeElementState は Act が変える要素の状態。未設定の要素は、トグルがオフ・未選択・折りたたみ・読み取り専用でない。
+// fakeElementState は Act が変える要素の状態。未設定の要素は、トグルがオフ・未選択・折りたたみ・読み取り専用でなく、RangeValue の範囲は 0〜100・スクロールされていない。
 type fakeElementState struct {
 	toggle   string // domain.ToggleState*
 	selected bool
@@ -32,6 +32,11 @@ type fakeElementState struct {
 	value    string
 	readOnly bool
 	hasValue bool // SetValue で値が入った（Value が返す）
+
+	rangeMin, rangeMax float64 // RangeValue の Minimum・Maximum
+	number             float64 // set_range_value で入れた数
+	hasNumber          bool    // set_range_value で数が入った（Number が返す）
+	scrolled           bool    // scroll_into_view が呼ばれた
 }
 
 func NewFakeUIAutomation(windows *FakeWindows) *FakeUIAutomation {
@@ -221,7 +226,7 @@ func (f *FakeUIAutomation) Snapshot(ctx context.Context, windowID string, maxNod
 func (f *FakeUIAutomation) state(id string) *fakeElementState {
 	st, ok := f.states[id]
 	if !ok {
-		st = &fakeElementState{toggle: domain.ToggleStateOff, expand: domain.ExpandStateCollapsed}
+		st = &fakeElementState{toggle: domain.ToggleStateOff, expand: domain.ExpandStateCollapsed, rangeMax: 100}
 		f.states[id] = st
 	}
 	return st
@@ -241,11 +246,19 @@ func (f *FakeUIAutomation) SetExpandState(id, state string) {
 	f.state(id).expand = state
 }
 
-// SetReadOnly は id の要素を set_value できない（読み取り専用）にする。
+// SetReadOnly は id の要素を set_value・set_range_value できない（読み取り専用）にする。
 func (f *FakeUIAutomation) SetReadOnly(id string, readOnly bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.state(id).readOnly = readOnly
+}
+
+// SetRange は id の要素の RangeValue の範囲（Minimum・Maximum）を設定する。既定は 0〜100。
+func (f *FakeUIAutomation) SetRange(id string, minimum, maximum float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	st := f.state(id)
+	st.rangeMin, st.rangeMax = minimum, maximum
 }
 
 // ToggleState は id の要素のトグルの今の状態。
@@ -275,6 +288,21 @@ func (f *FakeUIAutomation) Value(id string) (value string, ok bool) {
 	defer f.mu.Unlock()
 	st := f.state(id)
 	return st.value, st.hasValue
+}
+
+// Number は id の要素に set_range_value で入れた数。入れていなければ ok が false。
+func (f *FakeUIAutomation) Number(id string) (number float64, ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	st := f.state(id)
+	return st.number, st.hasNumber
+}
+
+// ScrolledIntoView は id の要素に scroll_into_view を行ったか。
+func (f *FakeUIAutomation) ScrolledIntoView(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.state(id).scrolled
 }
 
 // Act は platform.UIAutomation.Act。要素の状態だけを変え、カーソル・フォーカス・入力には触れない（FakeInput・FakeWindows の記録は変わらない）。
@@ -347,6 +375,17 @@ func (f *FakeUIAutomation) Act(ctx context.Context, ref domain.ElementRef, act d
 			st.expand, res.Changed = domain.ExpandStateCollapsed, true
 		}
 		res.State = st.expand
+	case domain.UIActionScrollIntoView:
+		st.scrolled, res.Changed = true, true
+	case domain.UIActionSetRangeValue:
+		if st.readOnly {
+			return res, domain.ErrElementReadOnly
+		}
+		if *act.Number < st.rangeMin || *act.Number > st.rangeMax {
+			return res, domain.ErrInvalidArgument.WithMsg("number is outside the range the element accepts").
+				WithDetail("minimum", st.rangeMin).WithDetail("maximum", st.rangeMax)
+		}
+		st.number, st.hasNumber, res.Changed = *act.Number, true, true
 	}
 	return res, nil
 }
