@@ -67,15 +67,18 @@ func TestPageH1HasGapH1BelowIt(t *testing.T) {
 	}
 }
 
-// T3（ガイド d430361）: アプリ画面のページタイトルは 28px / 700 / --ink（`text-page-title font-bold text-ink`）。サイズは app.css の
-// --text-page-title（1.75rem）で 1 か所に持ち、テンプレートに 28px を直書きしない。Bold（700）はこの h1 だけで、ほかの見出しには使わない。
+// T3: アプリ画面のページタイトルは 22px / 600 / --ink（`text-page-title font-semibold text-ink`）、行高 1.35。サイズと行高は app.css の
+// --text-page-title（1.375rem・1.35）で 1 か所に持ち、テンプレートに 22px を直書きしない。Bold（700）はどのテンプレートにも使わない。
 // 据え置く h1: 承認ダイアログの題（lg 18 SemiBold。モーダルの題と同じ段）・ビューアの sr-only・待機ページの `.pg-t`（承認済みの逸脱）。
-func TestPageTitleIsTwentyEightBold(t *testing.T) {
+func TestPageTitleIsTwentyTwoSemibold(t *testing.T) {
 	css := readAppCSS(t)
-	if !regexp.MustCompile(`(?m)^\s*--text-page-title:\s*1\.75rem;`).MatchString(css) {
-		t.Error("app.css must define --text-page-title as 1.75rem (28px)")
+	if !regexp.MustCompile(`(?m)^\s*--text-page-title:\s*1\.375rem;`).MatchString(css) {
+		t.Error("app.css must define --text-page-title as 1.375rem (22px)")
 	}
-	const pageTitle = `class="text-page-title font-bold text-ink"`
+	if !regexp.MustCompile(`(?m)^\s*--text-page-title--line-height:\s*1\.35;`).MatchString(css) {
+		t.Error("app.css must define --text-page-title--line-height as 1.35")
+	}
+	const pageTitle = `class="text-page-title font-semibold text-ink"`
 	h1 := regexp.MustCompile(`<h1\b[^>]*>`)
 	kept := []string{`class="text-lg font-semibold text-ink"`, `class="sr-only"`, `class="pg-t"`}
 	pageH1 := 0
@@ -88,8 +91,8 @@ func TestPageTitleIsTwentyEightBold(t *testing.T) {
 			return err
 		}
 		for i, line := range strings.Split(string(src), "\n") {
-			if strings.Contains(line, "font-bold") && !strings.Contains(line, "text-page-title") {
-				t.Errorf("%s:%d: font-bold (700) is only for the page title (text-page-title): %s", path, i+1, strings.TrimSpace(line))
+			if strings.Contains(line, "font-bold") {
+				t.Errorf("%s:%d: font-bold (700) must not be used; the page title is font-semibold (600): %s", path, i+1, strings.TrimSpace(line))
 			}
 			for _, tag := range h1.FindAllString(line, -1) {
 				switch {

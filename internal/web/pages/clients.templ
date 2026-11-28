@@ -12,7 +12,7 @@ const clientsTitle = "クライアント管理"
 
 templ clientsBody(v view.Clients) {
 	<div class="space-y-6">
-		<h1 class="text-page-title font-bold text-ink">クライアント管理</h1>
+		<h1 class="text-page-title font-semibold text-ink">クライアント管理</h1>
 		<p class="text-base text-ink">許可リストに登録されたクライアントです。機能ごとの有効化、Bearer トークンの発行・失効、削除ができます。</p>
 		@organisms.ClientList(v.List)
 	</div>
@@ -39,7 +39,7 @@ templ clientDetailBody(v view.ClientDetail) {
 			クライアント一覧
 		</a>
 		<div class="space-y-6">
-			<h1 class="text-page-title font-bold text-ink">{ v.Client.DisplayName }</h1>
+			<h1 class="text-page-title font-semibold text-ink">{ v.Client.DisplayName }</h1>
 			@organisms.ClientCard(v.Client)
 			@molecules.Card("Bearer トークン") {
 				<div class="space-y-6">
