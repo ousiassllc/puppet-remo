@@ -1,13 +1,21 @@
 package atoms
 
-// Lockup はヘッダーの製品ロゴ（「Nefos Remote」のロックアップ。素材は static/src/brand の lockup-light.svg・lockup-dark.svg を加工せずに配信する）。
+// Lockup はヘッダーの製品ロゴ。360px 以上は「Nefos Remote」のロックアップ、360px 未満は文字ロゴの代わりにシンボルだけを出す（#263）。
+// 素材は static/src/brand の lockup-{light,dark}.svg（ロックアップ。加工せず配信）と symbol-{light,dark}.svg（小サイズ用の単色の v5c。Nefos の light-32・dark-32）。
 //
 // ロックアップは 2000×560 で、自前の下地（ライトは --bone、ダークは --bone のダーク値）を持つ。sm（640px）以上は高さ 55px（ヘッダー h-14 の 56px から下の枠線 1px を引いた中身の高さ）で幅 196px。
-// sm 未満（390 幅など）は高さ 40px（幅 140px）に下げ、それでも足りないときは幅を縮める（min-w-0 shrink・object-contain。下地はヘッダーと同じ色なので余白は見えない）。
+// sm 未満（390 幅など）は高さ 40px（幅 140px）に下げ、足りないときは幅を縮める。ただし 96px（min-w-24）より縮めない（object-contain。下地はヘッダーと同じ色なので余白は見えない）。
+// シンボルは 24px 角で、読み上げの名前は包む span の role="img" aria-label="Nefos Remote"（中の img は alt=""）。縮まない（shrink-0）。
 // ロゴの下地とヘッダーの地を同じ --bone にそろえるため、ロゴを置くヘッダーは bg-bone にする。
-// ライト用・ダーク用の 2 枚を出し、見えるほうを app.css（.brand-lockup-*）がテーマ（data-theme・prefers-color-scheme）で切り替える。
-// 隠れているほうは display: none なので、読み上げには 1 つだけ出る。
+// ライト用・ダーク用の 2 枚ずつを出し、見えるほうを app.css（.brand-light・.brand-dark）がテーマ（data-theme・prefers-color-scheme）で切り替える。
+// 隠れているほうは display: none なので、読み上げには 1 つだけ出る。幅での切り替えは 2 つの包みの min-[360px]。
 templ Lockup() {
-	<img class="brand-lockup brand-lockup-light h-10 w-auto min-w-0 shrink object-contain object-left sm:h-[55px]" src="/static/brand/lockup-light.svg" width="196" height="55" alt="Nefos Remote"/>
-	<img class="brand-lockup brand-lockup-dark h-10 w-auto min-w-0 shrink object-contain object-left sm:h-[55px]" src="/static/brand/lockup-dark.svg" width="196" height="55" alt="Nefos Remote"/>
+	<span class="hidden min-[360px]:contents">
+		<img class="brand-light h-10 w-auto min-w-24 shrink object-contain object-left sm:h-[55px]" src="/static/brand/lockup-light.svg" width="196" height="55" alt="Nefos Remote"/>
+		<img class="brand-dark h-10 w-auto min-w-24 shrink object-contain object-left sm:h-[55px]" src="/static/brand/lockup-dark.svg" width="196" height="55" alt="Nefos Remote"/>
+	</span>
+	<span class="inline-flex size-6 shrink-0 min-[360px]:hidden" role="img" aria-label="Nefos Remote">
+		<img class="brand-light size-6" src="/static/brand/symbol-light.svg" width="24" height="24" alt=""/>
+		<img class="brand-dark size-6" src="/static/brand/symbol-dark.svg" width="24" height="24" alt=""/>
+	</span>
 }

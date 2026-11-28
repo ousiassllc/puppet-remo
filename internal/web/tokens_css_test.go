@@ -93,7 +93,7 @@ func TestTailwindThemeReferencesTheNamedTokens(t *testing.T) {
 }
 
 // T3・面: 文字の段（app.css の @theme）と、カードの面（--surface-sel・--line-soft・--card-edge-w）の値。表の見出しは説明の段（13px）、カードの余白 --pad-card は 22px。
-// ダークの枠は --card-edge-w: 1px で足し、ライトは 0px（枠なし）。text-xs は @theme から外してある。
+// カードの枠はライトもダークも --card-edge-w: 0px（枠なし。面の色で分ける）。text-xs は @theme から外してある。
 func TestAppCSSTypeScaleAndCardSurfaceTokens(t *testing.T) {
 	css := readAppCSS(t)
 	for _, pat := range []string{
@@ -103,7 +103,7 @@ func TestAppCSSTypeScaleAndCardSurfaceTokens(t *testing.T) {
 		`(?m)^\s*--text-desc:\s*0\.8125rem;`, `(?m)^\s*--text-desc--line-height:\s*1\.6;`,
 		`(?m)^\s*--text-tip:\s*0\.75rem;`,
 		`(?m)^\s*--table-head-size:\s*13px;`, `(?m)^\s*--pad-card:\s*22px;`,
-		`(?m)^\s*--card-edge-w:\s*0px;`, `(?m)^\s*--card-edge-w:\s*1px;`,
+		`(?m)^\s*--card-edge-w:\s*0px;`,
 		`(?m)^\s*--r-card:\s*var\(--r-xl\);`,
 	} {
 		if !regexp.MustCompile(pat).MatchString(css) {

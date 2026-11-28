@@ -1,7 +1,7 @@
 /* Tailwind のエントリーポイント（docs/architecture/frontend.md §8.1）。
  * Templ のファイルをコンテンツとして走査する。スタイルはすべて Tailwind のクラスで表し、インラインの
  * <style> と style= は使わない（CSP。§7.1）。
- * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide d430361）のトークンで、この 1 か所に定義する（§8.4）。
+ * 色・書体・形などの値は Ousiass 共通デザインガイド（brand-guide c171ceb7）のトークンで、この 1 か所に定義する（§8.4）。
  * テンプレートと Lit は、ここで定義したトークン（bg-bone・text-ink・var(--ink) など）だけを参照し、
  * Tailwind 既定のパレットやハードコードの色を使わない。 */
 @import "tailwindcss";
@@ -35,7 +35,7 @@
   --mute-on-soft: color-mix(in srgb, var(--mute) 85%, var(--ink));
   /* ごく薄い線（ガイドの --line-soft。--accent の 6%: ライトは ink、ダークは bone）。表の行の区切りと、浮かぶ面（モーダル・ドロップダウン・トースト）の 1px の枠。 */
   --line-soft: color-mix(in srgb, var(--accent) 6%, transparent);
-  /* カードの外枠の太さ。ライトは枠なし（面の色の差で分ける）、ダークは --line-soft の 1px を残す（.surface-card）。 */
+  /* カードの外枠の太さ。ライトもダークも枠なし（面の色の差 --bone → --surface で分ける）。--line-soft の 1px は浮く面（モーダル・メニューなど）だけに残す。 */
   --card-edge-w: 0px;
   --shadow-modal-color: rgb(0 0 0 / 0.06);
 }
@@ -47,7 +47,7 @@
   --bone: #050505;
   --surface: #141414;
   --surface-sel: #1e1e21;
-  --card-edge-w: 1px;
+  --card-edge-w: 0px;
   --border: #2a2a2a;
   --accent: #f5f5f4;
   --accent-soft: #2a2a2a;
@@ -69,7 +69,7 @@
     --bone: #050505;
     --surface: #141414;
     --surface-sel: #1e1e21;
-    --card-edge-w: 1px;
+    --card-edge-w: 0px;
     --border: #2a2a2a;
     --accent: #f5f5f4;
     --accent-soft: #2a2a2a;
@@ -393,8 +393,8 @@
 }
 
 @layer components {
-  /* カードの外枠（面の分け方。ガイド「面と枠」）: ライトは枠なし（ページ --bone → カード --surface の色の差だけで分ける）、ダークは --line-soft の 1px を残す
-   * （太さは --card-edge-w。:root が 0、ダークが 1px）。forced-colors では色の差が消えるので、両テーマとも CanvasText の 1px で区切る。 */
+  /* カードの外枠（面の分け方。ガイド「面と枠」）: ライトもダークも枠なし（ページ --bone → カード --surface の色の差だけで分ける。ダークは #050505 → #141414）。
+   * （太さは --card-edge-w。全テーマで 0）。forced-colors では色の差が消えるので、両テーマとも CanvasText の 1px で区切る。 */
   .card-edge {
     border: var(--card-edge-w) solid var(--line-soft);
   }
@@ -645,22 +645,22 @@
 }
 
 @layer components {
-  /* ヘッダーのロゴ（atoms.Lockup）。ライト用とダーク用の 2 枚のうち、テーマに合うほうだけ出す。
+  /* ヘッダーのロゴ（atoms.Lockup。ロックアップとシンボル）。ライト用とダーク用の 2 枚のうち、テーマに合うほうだけ出す。
    * テーマの決め方はトークンと同じ: <html data-theme> の明示が先で、無ければ prefers-color-scheme。 */
-  .brand-lockup-dark {
+  .brand-dark {
     display: none;
   }
-  [data-theme="dark"] .brand-lockup-light {
+  [data-theme="dark"] .brand-light {
     display: none;
   }
-  [data-theme="dark"] .brand-lockup-dark {
+  [data-theme="dark"] .brand-dark {
     display: block;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .brand-lockup-light {
+    :root:not([data-theme="light"]) .brand-light {
       display: none;
     }
-    :root:not([data-theme="light"]) .brand-lockup-dark {
+    :root:not([data-theme="light"]) .brand-dark {
       display: block;
     }
   }

@@ -53,8 +53,8 @@ func HeaderKillSwitch(active bool) templ.Component {
 	})
 }
 
-// Header は全画面共通のヘッダー。390 幅（#263）でも、ロゴ・「ホスト」・状態のバッジが文字の途中で縦に折れないよう、
-// 「ホスト」とバッジは折り返さず縮まない（whitespace-nowrap・shrink-0）。足りない幅はロゴ（atoms.Lockup。縮められる）が受ける。
+// Header は全画面共通のヘッダー（高さ 56 の 1 段。折り返さない）。390〜320 幅（#263）でも、ロゴ・状態のバッジが文字の途中で縦に折れないよう、
+// 「ホスト」は sm 未満で sr-only（読み上げには残す）にし、バッジは折り返さず縮まない（whitespace-nowrap・shrink-0）。足りない幅はロゴ（atoms.Lockup。96px まで縮められ、360px 未満はシンボル 24px）が受ける。
 func Header(h view.Header) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -88,7 +88,7 @@ func Header(h view.Header) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"shrink-0 whitespace-nowrap text-desc text-mute\">ホスト</span></div><div id=\"header-killswitch\" class=\"shrink-0 whitespace-nowrap\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<span class=\"sr-only shrink-0 whitespace-nowrap text-desc text-mute sm:not-sr-only\">ホスト</span></div><div id=\"header-killswitch\" class=\"shrink-0 whitespace-nowrap\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

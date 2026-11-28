@@ -748,6 +748,15 @@ func TestSidebarAndHeaderFollowTheSkeleton(t *testing.T) {
 	has(t, header, "h-14", "border-b", "border-border")
 }
 
+// ヘッダー（#263）: 「ホスト」は sm 未満で sr-only、ロゴは 96px（min-w-24）より縮めず、360px 未満はシンボル（24px・aria-label「Nefos Remote」）に替える。2 段にしない（flex-wrap なし）。
+func TestHeaderKeepsOneRowAtNarrowWidths(t *testing.T) {
+	header := webtest.Render(t, organisms.Header(view.Header{KillSwitchActive: true}))
+	has(t, header, `class="sr-only shrink-0 whitespace-nowrap text-desc text-mute sm:not-sr-only">ホスト<`, "min-w-24",
+		`class="hidden min-[360px]:contents"`, `class="inline-flex size-6 shrink-0 min-[360px]:hidden" role="img" aria-label="Nefos Remote"`,
+		`src="/static/brand/symbol-light.svg"`, `src="/static/brand/symbol-dark.svg"`, "キルスイッチ発動中")
+	hasNot(t, header, "flex-wrap", "min-w-0 shrink object-contain")
+}
+
 // ドロワーの枠（#sidebar-nav）は遷移の応答で差し替えない（退出のフェードが切れる。M5・#202）。差し替えるのはリンク群（#sidebar-nav-links）だけで、
 // 現在のページの強調（aria-current）と接続要求のバッジは、その中にある。
 func TestSidebarLinksAreSwappedWithoutTheDrawerFrame(t *testing.T) {

@@ -17,14 +17,14 @@ templ HeaderKillSwitch(active bool) {
 	}
 }
 
-// Header は全画面共通のヘッダー。390 幅（#263）でも、ロゴ・「ホスト」・状態のバッジが文字の途中で縦に折れないよう、
-// 「ホスト」とバッジは折り返さず縮まない（whitespace-nowrap・shrink-0）。足りない幅はロゴ（atoms.Lockup。縮められる）が受ける。
+// Header は全画面共通のヘッダー（高さ 56 の 1 段。折り返さない）。390〜320 幅（#263）でも、ロゴ・状態のバッジが文字の途中で縦に折れないよう、
+// 「ホスト」は sm 未満で sr-only（読み上げには残す）にし、バッジは折り返さず縮まない（whitespace-nowrap・shrink-0）。足りない幅はロゴ（atoms.Lockup。96px まで縮められ、360px 未満はシンボル 24px）が受ける。
 templ Header(h view.Header) {
 	<header class="flex h-14 items-center justify-between gap-2 border-b border-border bg-bone px-4 md:px-6">
 		<div class="flex min-w-0 items-center gap-2">
 			@navToggle()
 			@atoms.Lockup()
-			<span class="shrink-0 whitespace-nowrap text-desc text-mute">ホスト</span>
+			<span class="sr-only shrink-0 whitespace-nowrap text-desc text-mute sm:not-sr-only">ホスト</span>
 		</div>
 		<div id="header-killswitch" class="shrink-0 whitespace-nowrap">
 			@HeaderKillSwitch(h.KillSwitchActive)
