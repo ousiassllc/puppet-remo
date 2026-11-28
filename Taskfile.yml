@@ -201,6 +201,7 @@ tasks:
     desc: リモート Web UI（/viewer）とホスト GUI を偽の platform・tailnet で loopback に起動する（スクリーンショット・手動確認用。本番のバイナリには入らない）
     deps: [frontend:build]
     cmds:
+      # 8765 が使用中なら -addr のポートを変える（例: -addr 127.0.0.1:9000。Host ヘッダーの検査のポートも追従する。docs/environment/setup.md）
       - go run ./internal/app/internal/remotedemo -addr 127.0.0.1:8765 -gui-addr 127.0.0.1:8899
 
   build:production:

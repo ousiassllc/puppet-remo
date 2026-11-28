@@ -77,3 +77,48 @@ func TestRunRejectsUnknownFlagValues(t *testing.T) {
 		t.Error("an unknown -agent must be rejected")
 	}
 }
+
+// -agent の各状態で /agent が描画でき、スクリーンショットの元になる要点（カードの状態・架空のメール）が出る。
+func TestSeedRendersEveryAgentState(t *testing.T) {
+	want := map[string][]string{
+		agentEmpty:               {`data-chatgpt-state="signed_out"`, "Continue with ChatGPT"},
+		agentRegistered:          {`data-connection="openai_api_key"`, `data-key-state="registered"`},
+		agentChatGPTSignedOut:    {`data-chatgpt-state="signed_out"`},
+		agentChatGPTSigningIn:    {`data-chatgpt-state="signing_in"`},
+		agentChatGPTConnected:    {`data-chatgpt-state="connected"`, "demo-user@example.com", "ChatGPT のプランを使用中"},
+		agentChatGPTUsageLimited: {`data-chatgpt-state="usage_limited"`, "使用量の上限に達しました", "API キーに切り替える…"},
+		agentChatGPTPolicyDenied: {`data-chatgpt-problem="policy_denied"`, "Codex 経由で使う"},
+		agentCodexMissing:        {`data-codex-engine="missing"`, `data-connection="chatgpt-codex"`},
+		agentCodexInstalling:     {`data-codex-engine="installing"`, "42%"},
+		agentCodexSignedOut:      {`data-codex-engine="installed"`, "Codex でログイン"},
+		agentCodexConnected:      {`data-codex-state="connected"`, "demo-user@example.com", "plus"},
+		agentCodexUsageLimited:   {`data-codex-state="usage_limited"`, "API キーに切り替える…"},
+	}
+	for _, state := range agentStates {
+		t.Run(state, func(t *testing.T) {
+			f := seed(leaseHeld, approvalNone)
+			seedAgent(f, state)
+			d := f.Deps()
+			d.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+			h, err := gui.New(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dist := fstest.MapFS{"css/app.css": {Data: []byte("body{}")}, "js/app.js": {Data: []byte("")}}
+			r, err := router.NewGUI(router.GUIConfig{Handler: h, Static: static.NewHandler(dist, true)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/agent", nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d", rec.Code)
+			}
+			for _, w := range want[state] {
+				if !strings.Contains(rec.Body.String(), w) {
+					t.Errorf("body lacks %q", w)
+				}
+			}
+		})
+	}
+}

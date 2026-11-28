@@ -35,6 +35,7 @@ type AppReader interface {
 // HostAdmin には統合しない（依存が重ならないため）。M4 の Agent も同じ AppRegistry を使う。
 //
 // 書き込みはホスト所有者の操作として actor_type = host で監査する（settings.launchable_app.create / update / delete）。
+// 監査の行は同期で書き、書けなければ変更を元に戻して audit_unavailable を返す（fail-closed。#182。audit_commit.go）。
 // 引数と作業ディレクトリはどのイベントにも記録しない（arg_count だけ。FR-AU06）。
 type AppRegistry interface {
 	AppReader
@@ -50,7 +51,7 @@ type AppRegistry interface {
 	// 不正な値は AppFieldErrors{"mode": …}。変わるときだけ settings.launch_mode.update を監査する（from・to）。
 	// fail-closed（#174）: 設定を書いたあと、監査の行を同期で書き（SyncAuditRecorder.RecordSync）、書けなければ設定を元の方式へ戻して
 	// domain.ErrAuditUnavailable（code = audit_unavailable）を返す。成功を返すのは、設定の変更と監査の行がそろったときだけ。
-	// 他の settings.*（許可リスト・拒否リスト）の監査は今までどおり非同期（best-effort）。
+	// 許可リスト・拒否リストの書き込みも同じ（#182。audit_commit.go）。
 	SetLaunchMode(ctx context.Context, mode domain.LaunchMode) error
 	// CreateDenied は拒否リストに 1 件登録する。value は実行ファイルのパス（登録時に実体のパスへ解決して保存する。
 	// ファイルが無い・解決できないときは入力の綴りのまま）か、実行ファイル名（cmd.exe など）。domain.ClassifyDenied が分ける。
@@ -98,20 +99,19 @@ type AppRegistryConfig struct {
 	// Launcher は存在確認（Inspect）と拒否リストのパスの解決（Resolve）にだけ使う。起動（Launch）は Control だけが呼ぶ。
 	Launcher platform.AppLauncher
 	Picker   platform.FilePicker
-	// Audit は監査の記録先。nil なら記録しない（テスト用）。SetLaunchMode だけが RecordSync（同期。書けなければ切り替えを戻す）を使い、
-	// ほかの書き込みは Record（非同期）。
+	// Audit は監査の記録先。nil なら記録しない（テスト用）。書き込みはすべて RecordSync（同期。書けなければ変更を戻す。commitAudited）で記録する。
 	Audit  SyncAuditRecorder
 	Clock  domain.Clock
 	IDs    domain.IDGen
-	Logger *slog.Logger // nil なら slog.Default()。方式の切り替えを監査に書けなかったときの出力先
+	Logger *slog.Logger // nil なら slog.Default()。変更を監査に書けなかったときの出力先
 }
 
 type appRegistry struct {
 	cfg AppRegistryConfig
 	log *slog.Logger
-	// modeMu は SetLaunchMode の「読む → 書く → 監査 → 失敗なら戻す」を 1 つの臨界区間にする。排他しないと、監査に失敗した呼び出しの
-	// ロールバックが、並行して成功した別の切り替えを取り消し、設定と監査の行が食い違う。
-	modeMu sync.Mutex
+	// mu は書き込み（方式の切り替え・許可リスト・拒否リスト）の「読む → 書く → 監査 → 失敗なら戻す」を 1 つの臨界区間にする。
+	// 排他しないと、監査に失敗した呼び出しのロールバックが、並行して成功した別の変更を取り消し、設定と監査の行が食い違う。
+	mu sync.Mutex
 }
 
 // NewAppRegistry は AppRegistry を返す。
@@ -136,6 +136,8 @@ func (r *appRegistry) PickExecutable(ctx context.Context) (string, bool, error) 
 }
 
 func (r *appRegistry) Create(ctx context.Context, in domain.AppInput) (domain.LaunchableApp, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	in = normalizeAppInput(in)
 	if err := r.check(ctx, in); err != nil {
 		return domain.LaunchableApp{}, err
@@ -148,13 +150,19 @@ func (r *appRegistry) Create(ctx context.Context, in domain.AppInput) (domain.La
 	if err := r.cfg.Apps.Create(ctx, a, domain.MaxLaunchableApps); err != nil {
 		return domain.LaunchableApp{}, mapAppWriteErr(err)
 	}
-	r.audit(ctx, "settings.launchable_app.create", map[string]any{
+	entry := r.auditEntry("settings.launchable_app.create", map[string]any{
 		"app_id": a.ID, "label": a.Label, "exe_path": a.ExePath, "arg_count": len(a.Args),
 	})
+	undo := undoLog{func(ctx context.Context) error { return r.cfg.Apps.Delete(ctx, a.ID) }}
+	if err := commitAudited(ctx, r.log, r.cfg.Audit, AuditSubjectLaunchableApp, undo, entry); err != nil {
+		return domain.LaunchableApp{}, err
+	}
 	return a, nil
 }
 
 func (r *appRegistry) Update(ctx context.Context, id string, in domain.AppInput) (domain.LaunchableApp, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	before, err := r.Get(ctx, id)
 	if err != nil {
 		return domain.LaunchableApp{}, err
@@ -170,14 +178,20 @@ func (r *appRegistry) Update(ctx context.Context, id string, in domain.AppInput)
 	if err := r.cfg.Apps.Update(ctx, a); err != nil {
 		return domain.LaunchableApp{}, mapAppWriteErr(err)
 	}
-	r.audit(ctx, "settings.launchable_app.update", map[string]any{
+	entry := r.auditEntry("settings.launchable_app.update", map[string]any{
 		"app_id": a.ID, "label": a.Label, "exe_path": a.ExePath, "arg_count": len(a.Args),
 		"changed": changedAppFields(before, a),
 	})
+	undo := undoLog{func(ctx context.Context) error { return r.restoreApp(ctx, before, r.cfg.Apps.Update) }}
+	if err := commitAudited(ctx, r.log, r.cfg.Audit, AuditSubjectLaunchableApp, undo, entry); err != nil {
+		return domain.LaunchableApp{}, err
+	}
 	return a, nil
 }
 
 func (r *appRegistry) Delete(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	a, err := r.Get(ctx, id)
 	if err != nil {
 		return err
@@ -185,8 +199,25 @@ func (r *appRegistry) Delete(ctx context.Context, id string) error {
 	if err := r.cfg.Apps.Delete(ctx, id); err != nil {
 		return mapAppErr(err)
 	}
-	r.audit(ctx, "settings.launchable_app.delete", map[string]any{"app_id": a.ID, "label": a.Label})
-	return nil
+	entry := r.auditEntry("settings.launchable_app.delete", map[string]any{"app_id": a.ID, "label": a.Label})
+	undo := undoLog{func(ctx context.Context) error {
+		return r.restoreApp(ctx, a, func(ctx context.Context, a domain.LaunchableApp) error {
+			return r.cfg.Apps.Create(ctx, a, domain.MaxLaunchableApps)
+		})
+	}}
+	return commitAudited(ctx, r.log, r.cfg.Audit, AuditSubjectLaunchableApp, undo, entry)
+}
+
+// errCorruptAppNotRestorable は、読めない行（Corrupt。引数の JSON が壊れている）を元の内容へ戻せないことを表す。
+// 読めた範囲（Args 空）で書き戻すと、起動が拒否されていた行が、引数なしで起動できる行に変わってしまうため、戻さない。
+var errCorruptAppNotRestorable = errors.New("service: a launchable app with unreadable arguments cannot be restored")
+
+// restoreApp は監査に書けなかった変更を戻すため、変更前の行 before を write で書き戻す。読めない行は戻せない（errCorruptAppNotRestorable）。
+func (r *appRegistry) restoreApp(ctx context.Context, before domain.LaunchableApp, write func(context.Context, domain.LaunchableApp) error) error {
+	if before.Corrupt {
+		return errCorruptAppNotRestorable
+	}
+	return write(ctx, before)
 }
 
 // normalizeAppInput は保存する形にする: 表示名の前後の空白を除き、引数は非 nil にする（複製して呼び出し側と共有しない）。
@@ -268,14 +299,7 @@ func changedAppFields(before, after domain.LaunchableApp) []string {
 	return changed
 }
 
-// audit はホスト所有者の操作を actor_type = host で記録する。detail に引数・作業ディレクトリを入れてはならない。
-func (r *appRegistry) audit(ctx context.Context, event string, detail map[string]any) {
-	if r.cfg.Audit == nil {
-		return
-	}
-	r.cfg.Audit.Record(ctx, r.auditEntry(event, detail))
-}
-
+// auditEntry はホスト所有者の操作の監査の行（actor_type = host）。detail に引数・作業ディレクトリを入れてはならない。
 func (r *appRegistry) auditEntry(event string, detail map[string]any) repository.AuditEntry {
 	raw, err := json.Marshal(detail)
 	if err != nil {

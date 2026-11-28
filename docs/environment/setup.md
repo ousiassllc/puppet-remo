@@ -17,7 +17,7 @@
 | Format | gofmt |
 | Linterly | 未導入 |
 | Git フック | Lefthook（`lefthook.yml`。[#41](https://github.com/ousiassllc/puppet-remo/issues/41)） |
-| API ドキュメント | Huma が `/api/v1` の OpenAPI を出す設計（M2 以降。現状は未導入） |
+| API ドキュメント | Huma が `/api/v1` の OpenAPI を出す（`GET /api/v1/openapi.json`） |
 
 ## ディレクトリ構造
 
@@ -99,7 +99,7 @@ GitHub Actions。すべてのジョブは、GitHub のランナー（`ubuntu-lat
 |--------|------|
 | `go (linux)` | gofmt の差分チェック、`go build ./...`、`go vet ./...`、`scripts/check-imports.sh`、`go test -race ./...` |
 | `go (GOOS=windows build/vet)` | `GOOS=windows GOARCH=amd64` の `go build`・`go vet`・import 規則 |
-| `frontend` | templ（`go.mod` の版）の導入 → `templ generate` の差分チェック → `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p .` → `go build -tags production ./...`（Linux と `GOOS=windows`）→ `go test -tags production ./static/...` |
+| `frontend` | templ（`go.mod` の版）の導入 → `templ generate` の差分チェック → `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p .` → `go build -tags production ./...`（Linux と `GOOS=windows`）→ `go test -tags production ./static/...` → 第三者のライセンス表記が最新か（`static/` で `bun scripts/third-party-notices.mjs --check`。`licenses/THIRD_PARTY_NOTICES.txt`） |
 | `e2e`（#64） | `bun install --frozen-lockfile` → `bun run build` → `bunx tsc -p e2e` → `bunx playwright install --with-deps chromium`（`PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright`）→ Lit のテスト（`bun run test`）→ `go build -tags e2e ./...` → `go vet -tags e2e ./...` → `go test -race -tags e2e`（テスト専用サーバーのテスト）→ Playwright の E2E（`bun run e2e`）。templ は再生成しない（コミット済みの `_templ.go` を使う） |
 | `lint` | golangci-lint v2.15.0（ホスト OS・`GOOS=windows`・`-tags e2e` の 3 回） |
 | `release scripts` | 配信スクリプトのテスト（`scripts/ci/test-release-scripts.sh`）と `actionlint` |
@@ -124,6 +124,7 @@ GitHub Actions。すべてのジョブは、GitHub のランナー（`ubuntu-lat
 | `go (GOOS=windows build/vet)` ジョブの `scripts/check-imports.sh`（`GOOS=windows`） | `task ci` の `check:imports` はホスト OS だけ | `GOOS=windows GOARCH=amd64 task check:imports` |
 | `e2e` ジョブの `go test -race -tags e2e -run 'E2E\|Loopback' ./internal/app/ ./internal/tailnet/` | `task test:e2e` は `-race` も `-run` も付けず、対象に `./internal/app/...`・`./internal/tailnet/...` のほか `./cmd/...` を含む（範囲は CI より広い。`-race` の検査は無い） | `go test -race -tags e2e -run 'E2E\|Loopback' ./internal/app/ ./internal/tailnet/` |
 | `e2e` ジョブの `bunx playwright install --with-deps chromium` | `task frontend:browsers` は `--with-deps` なし・sudo なし（システムのライブラリは手元に先に入れておく） | — |
+| `frontend` ジョブの第三者のライセンス表記の検査（`static/` で `bun scripts/third-party-notices.mjs --check`） | 対応するタスクが無い（依存を足したら `licenses/THIRD_PARTY_NOTICES.txt` を作り直す） | `cd static && bun scripts/third-party-notices.mjs --check` |
 | `release scripts` ジョブ（`scripts/ci/test-release-scripts.sh`・`actionlint`） | 対応するタスクが無い | `./scripts/ci/test-release-scripts.sh`。`actionlint` は `go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12` で入れて、リポジトリのルートで `actionlint` |
 | `installer (build only)` ジョブ | `task ci` は呼ばない（`makensis`・`wails3` が要る） | `task package`（[配信の運用](../operations/release.md)） |
 
@@ -144,6 +145,18 @@ task e2e                 # Playwright の E2E（static/dist のビルドと Chro
 - `bun run e2e` は `static/` で動く。`webServer` が、リポジトリのルートで `go build -tags e2e ./cmd/puppet-remo-e2e` のテスト専用サーバーを作って起動し、制御エンドポイントの `GET /ready` を待つ。ポートの既定はリモートルーター `18765`・制御 `18766`（環境変数 `E2E_REMOTE_PORT`・`E2E_CONTROL_PORT` で変える）。`static/dist`（`bun run build`）が要る。失敗したテストのトレースは `static/test-results/`（`.gitignore`）に残る（`bunx playwright show-trace`）。
 - テスト専用サーバーだけを手で動かして試すには: `cd static && bun run build && cd .. && go run -tags e2e ./cmd/puppet-remo-e2e -port 18765 -control 127.0.0.1:18766`。リモートルーターは `127.0.0.1:18765`、制御エンドポイント（loopback のみ。ホスト側の操作と偽の injector の入力の読み取り）は `127.0.0.1:18766`。使い方は [コンポーネント設計](../components/overview.md) §13.13。
 - テスト専用サーバーは `//go:build e2e` のファイルだけで、`-tags e2e` を付けないビルド（`go build ./...`・`task build`・本番のバイナリ）には入らない。
+
+### デモサーバー（remotedemo）の待ち受けポート
+
+`task remote:demo`（`go run ./internal/app/internal/remotedemo`。スクリーンショット・手動確認用。本番のバイナリには入らない）は、リモートルーターを `127.0.0.1:8765`、ホスト GUI を `127.0.0.1:8899` で待ち受ける。別のプロセスが 8765 を使っているときは `-addr` で変える（#185）。
+
+```sh
+go run ./internal/app/internal/remotedemo -addr 127.0.0.1:9000 -gui-addr 127.0.0.1:8899
+```
+
+- `-addr` は loopback の IP とポート（`127.0.0.1:9000`・`[::1]:9000`）。ポートは設定 `server.port` と同じ 1024〜65535。`localhost` などの名前・loopback 以外の IP・ポートの省略や数字以外・範囲外は、理由を出して終了コード 1 で終わる。
+- Host ヘッダーの検査（偽の tailnet の IP・DNS 名とポート、MCP の Host の検査）は設定 `server.port` と比べる。デモは `server.port` を `-addr` のポートに揃えて起動するので、ブラウザ・curl の Host は `100.64.0.1:<-addr のポート>` にする（例: `--host-resolver-rules="MAP 100.64.0.1 127.0.0.1"` と `http://100.64.0.1:9000/viewer`）。起動時のログにも、ポートを反映した URL・curl（`-agent-demo`）が出る。
+- `-addr` を指定しなければ、これまでどおり `127.0.0.1:8765`。
 
 ## Lint
 
@@ -189,12 +202,12 @@ task hooks:install    # lefthook install（.git/hooks にフックを入れる�
 
 - フックを入れずに手元で実行するには `task hooks:pre-commit`（ステージ済みのファイルが対象）と `task hooks:pre-push` を使う。どちらも `lefthook run ... --no-auto-install` を呼ぶので、`.git/hooks` は書き換えない。
 - pre-commit・pre-push のツール（golangci-lint・templ・bun）は PATH に要る。
-- CI の残り（`go test -race`、`GOOS=windows` の build・vet・lint、本番ビルド）は pre-push では走らせない。`task ci` で確認する。
+- CI の `go test -race` と Windows の本番ビルドは pre-push では走らせない。`-race` は `task test:race`、Windows の本番ビルドは `GOOS=windows GOARCH=amd64 task build:production` で確認する。それ以外の CI の主な検査は `task ci` で確認する（CI と完全に同じではない。上の「`task ci` が実行しない CI の検査」）。
 - フックは CI の代わりではない。push 前の早期検知で、CI は常に走る。
 
 ## Swagger/OpenAPI
 
-設計では、Huma が `/api/v1` の JSON API の OpenAPI 3.1 を出す（`GET /api/v1/openapi.json`。[API 仕様](../api/endpoints.md) §6、[フロントエンド設計](../architecture/frontend.md)）。ただし現状の実装は Huma を使っておらず（`go.mod` に無い）、`/api/v1` は M2 以降に提供する（[アーキテクチャ設計](../architecture/overview.md) の「M1 実装での差分」）。
+Huma が `/api/v1` の JSON API の OpenAPI 3.1 を出す（`GET /api/v1/openapi.json`。[API 仕様](../api/endpoints.md) §6、[フロントエンド設計](../architecture/frontend.md)）。実装は `internal/web/handler/api`（Huma の `humago` アダプター。Huma の既定の docs・schemas・YAML の経路は公開しない）。
 
 OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義は MCP の `tools/list` が正とする。Stoplight Elements などの UI や、`/swagger` のエンドポイント、`SWAGGER_ENABLED` の切り替え、spec 生成タスクは追加しない（Huma が OpenAPI を実行時に出すので、spec ファイルの生成と CI での差分チェックも要らない）。
 
@@ -208,3 +221,6 @@ OpenAPI の範囲は `/api/v1` の JSON API だけで、MCP のツール定義�
 | 1.3 | 2026-11-02 | CI/CD の実行環境を、セルフホストの Linux ランナーから GitHub のランナー（`ubuntu-latest`）に変更。`e2e` ジョブの Chromium は `--with-deps` 付き | 組織の runner グループがセルフホストの runner を公開リポジトリに許可しないため、リポジトリの公開に備える（オーナー決定） |
 | 1.4 | 2026-11-23 | `task lint` に `-tags e2e` の検査を足し、Lint 節を CI の `lint` ジョブと同じ 3 回に直した | #236 |
 | 1.5 | 2026-11-23 | 「CI と同じ検査を手元で走らせる」に、`task ci` が実行しない CI の検査（`-race`・Windows の本番ビルドと import 規則・e2e の Go のテストの範囲・配信スクリプトのテストと `actionlint`・installer）を追記し、`task ci` を「CI と同じ」と書いた表現を改めた | #237 |
+| 1.6 | 2026-11-27 | 「デモサーバー（remotedemo）の待ち受けポート」を追記（`-addr` でポートを変えられる。Host ヘッダーの検査のポートも追従） | #185 |
+| 1.7 | 2026-11-28 | Git フック節の「CI の残りは `task ci` で確認する」を、`-race` は `task test:race`、Windows の本番ビルドは `GOOS=windows GOARCH=amd64 task build:production`、それ以外は `task ci` と書き分けた（README・`lefthook.yml` も同じ） | #253 |
+| 1.8 | 2026-11-28 | `frontend` ジョブの行と「`task ci` が実行しない CI の検査」の表に、第三者のライセンス表記の検査（`bun scripts/third-party-notices.mjs --check`）を追記 | #254 |

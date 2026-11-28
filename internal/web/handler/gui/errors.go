@@ -38,13 +38,37 @@ func classify(err error) failure {
 	case domain.CodeKillSwitchActive:
 		return failure{http.StatusServiceUnavailable, string(domain.CodeKillSwitchActive), "キルスイッチが発動中です。"}
 	case domain.CodeAuditUnavailable:
-		// 監査に書けない操作は成立させない（fail-closed。起動の方式の切り替え。#174）。
-		if launchModeRollbackFailed(err) {
-			return failure{http.StatusServiceUnavailable, string(domain.CodeAuditUnavailable), msgLaunchModeRollbackFailed}
-		}
-		return failure{http.StatusServiceUnavailable, string(domain.CodeAuditUnavailable), "監査ログに書き込めないため、起動の方式は切り替えませんでした。時間をおいてやり直してください。"}
+		// 設定の変更を監査に書けなかった（fail-closed。変更は元に戻した。#174・#182）。
+		return auditChangeFailure(err)
 	}
 	return failure{http.StatusInternalServerError, string(domain.CodeInternal), "内部エラーが発生しました。"}
+}
+
+// auditSubjectLabels は、設定変更の対象（service.AuditSubject*）の、アラートの文に入れる呼び名。
+var auditSubjectLabels = map[string]string{
+	service.AuditSubjectLaunchMode:     "起動の方式",
+	service.AuditSubjectLaunchableApp:  "起動許可リスト",
+	service.AuditSubjectLaunchDenylist: "拒否リスト",
+	service.AuditSubjectHostSettings:   "設定",
+	service.AuditSubjectAgentSettings:  "エージェントの設定",
+	service.AuditSubjectFastpath:       "高速パスの設定",
+	service.AuditSubjectAPIKey:         "API キーの登録状態",
+}
+
+// auditChangeFailure は設定変更の audit_unavailable（503）の応答。元に戻せたときは「変更しませんでした」、
+// 戻す書き込みも失敗したときは、変更が残っているかもしれないので、現在の状態を確認するよう伝える（警告文。#182）。
+func auditChangeFailure(err error) failure {
+	subject, restored, ok := service.AuditChangeFailure(err)
+	restored = restored || !ok // 対象の情報が無いときは、戻せた扱い（戻せなかった場合だけ、サービスが Detail に印を付ける）
+	label := auditSubjectLabels[subject]
+	if label == "" {
+		label = "設定"
+	}
+	code := string(domain.CodeAuditUnavailable)
+	if !restored {
+		return failure{http.StatusServiceUnavailable, code, "監査ログに書き込めず、" + label + "を元に戻すこともできませんでした。現在の状態を確認してください。"}
+	}
+	return failure{http.StatusServiceUnavailable, code, "監査ログに書き込めないため、" + label + "は変更しませんでした。時間をおいてやり直してください。"}
 }
 
 // errorAlert はエラーのインラインアラート（data-error-code 付き）。アクションの失敗と、応答に添えるエラー（OOB）の共通の見た目。
@@ -68,9 +92,14 @@ func (h *Handler) fail(c *gin.Context, err error) {
 // #modal-root が空で閉じる意味がなく、開いている別のモーダルを巻き込んで閉じてしまうため。承認ダイアログのウィンドウ（#modal-root が無い）では、
 // OOB の対象が無いので添えても無害。
 func (h *Handler) failMessage(c *gin.Context, status int, code, message string, extra ...templ.Component) {
+	h.failAlert(c, status, errorAlert(code, message), extra...)
+}
+
+// failAlert は組み立て済みのアラート（data-error-reason 付きなど）で failMessage と同じ形に返す。
+func (h *Handler) failAlert(c *gin.Context, status int, alert atoms.AlertProps, extra ...templ.Component) {
 	c.Header("HX-Retarget", "#alert-root")
 	c.Header("HX-Reswap", "innerHTML")
-	comps := []templ.Component{atoms.Alert(errorAlert(code, message))}
+	comps := []templ.Component{atoms.Alert(alert)}
 	if c.Request.Method != http.MethodGet {
 		comps = append(comps, organisms.ModalClear())
 	}

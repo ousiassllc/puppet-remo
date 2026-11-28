@@ -9,6 +9,7 @@
 // -lease で操作権の状態（idle / pending_approval / held / held_agent。既定 held）を選べる。pending_approval ではダッシュボードに「承認待ち」を出し、
 // 承認ダイアログのページ（/approvals/ap-demo-001。残り時間は固定の偽の時計で 60 秒のまま）が開ける。held_agent は、エージェントのタスクが操作権を
 // 保持している状態（ダッシュボードに実行中タスクと中断ボタン、強制剥奪）。終了済みのタスク（/tasks）はいつも入る。
+// -agent で、エージェント設定の状態（OpenAI キー登録済み・ChatGPT のプランの接続方式の各状態・Codex 経由の各状態）を選べる（偽の service。実際の ChatGPT・Codex には接続しない）。
 // -approval（none / safety_check / judge_action。既定 none）で、エージェントの承認ダイアログ（/approvals/ap-demo-sc・/approvals/ap-demo-ja）を出す。
 package main
 
@@ -42,7 +43,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8899", "待ち受けるアドレス（loopback のみ）")
 	lease := flag.String("lease", leaseHeld, "操作権の状態（idle / pending_approval / held / held_agent）")
 	approval := flag.String("approval", approvalNone, "エージェントの承認ダイアログ（none / safety_check / judge_action）")
-	agent := flag.String("agent", agentEmpty, "エージェント設定の状態（empty = 無効・キー未登録 / registered = OpenAI キー登録済みで有効。TypeSafe キーも登録済み・高速パスは無効）")
+	agent := flag.String("agent", agentEmpty, "エージェント設定の状態（"+agentStatesHelp+"）")
 	flag.Parse()
 	if err := run(*addr, *lease, *approval, *agent); err != nil {
 		log.Fatal(err)
@@ -61,7 +62,28 @@ const (
 const (
 	agentEmpty      = "empty"
 	agentRegistered = "registered"
+
+	// ChatGPT のプランの接続方式（#247）。メールは架空の example。
+	agentChatGPTSignedOut    = "chatgpt_signed_out"
+	agentChatGPTSigningIn    = "chatgpt_signing_in"
+	agentChatGPTConnected    = "chatgpt_connected"
+	agentChatGPTUsageLimited = "chatgpt_usage_limited"
+	agentChatGPTPolicyDenied = "chatgpt_policy_denied"
+	agentCodexMissing        = "codex_missing"
+	agentCodexInstalling     = "codex_installing"
+	agentCodexSignedOut      = "codex_signed_out"
+	agentCodexConnected      = "codex_connected"
+	agentCodexUsageLimited   = "codex_usage_limited"
+	agentStatesHelp          = "empty = 無効・キー未登録（接続方式は既定の ChatGPT のプラン） / registered = OpenAI キー登録済みで有効（接続方式は OpenAI API キー。TypeSafe キーも登録済み・高速パスは無効） / " +
+		"chatgpt_signed_out / chatgpt_signing_in / chatgpt_connected / chatgpt_usage_limited / chatgpt_policy_denied / " +
+		"codex_missing / codex_installing / codex_signed_out / codex_connected / codex_usage_limited（プランの接続方式の表示の確認。偽の service で、実際の ChatGPT・Codex には接続しない）"
 )
+
+// agentStates は -agent で選べる状態。
+var agentStates = []string{
+	agentEmpty, agentRegistered, agentChatGPTSignedOut, agentChatGPTSigningIn, agentChatGPTConnected, agentChatGPTUsageLimited, agentChatGPTPolicyDenied,
+	agentCodexMissing, agentCodexInstalling, agentCodexSignedOut, agentCodexConnected, agentCodexUsageLimited,
+}
 
 func run(addr, lease, approval, agent string) error {
 	if lease != leaseIdle && lease != leasePending && lease != leaseHeld && lease != leaseHeldAgent {
@@ -70,8 +92,8 @@ func run(addr, lease, approval, agent string) error {
 	if approval != approvalNone && approval != approvalSafetyCheck && approval != approvalJudgeAction {
 		return fmt.Errorf("guidemo: -approval は none / safety_check / judge_action のどれか（%q）", approval)
 	}
-	if agent != agentEmpty && agent != agentRegistered {
-		return fmt.Errorf("guidemo: -agent は empty / registered のどちらか（%q）", agent)
+	if !slices.Contains(agentStates, agent) {
+		return fmt.Errorf("guidemo: -agent は %v のどれか（%q）", agentStates, agent)
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -82,9 +104,7 @@ func run(addr, lease, approval, agent string) error {
 	}
 
 	f := seed(lease, approval)
-	if agent == agentRegistered {
-		seedAgentRegistered(f)
-	}
+	seedAgent(f, agent)
 	deps := f.Deps()
 	h, err := gui.New(deps)
 	if err != nil {
@@ -119,9 +139,89 @@ func run(addr, lease, approval, agent string) error {
 	return nil
 }
 
+// seedAgent は -agent の状態を入れる。empty と registered 以外は、接続方式をプラン（ChatGPT・Codex 経由）にして、状態を偽の窓口へ入れる。
+func seedAgent(f *guitest.Fakes, state string) {
+	if state == agentRegistered {
+		seedAgentRegistered(f)
+		return
+	}
+	connect := func(conn domain.AgentConnection) { f.AgentSettings.SetConnectionDirect(conn) }
+	connect(domain.ConnectionChatGPT) // 本物の既定
+	const email = "demo-user@example.com"
+	chatgpt := func(st service.ChatGPTStatus) {
+		st.AccountEmail = ifConnected(st.State, email)
+		f.ChatGPT.Set(st)
+	}
+	codex := func(engine service.CodexEngineStatus, st service.PlanState, problem service.PlanProblem) {
+		cs := service.CodexStatus{Engine: engine, State: st, Problem: problem}
+		cs.AccountEmail = ifConnected(st, email)
+		if cs.AccountEmail != "" {
+			cs.PlanType = "plus"
+		}
+		f.Codex.Set(cs)
+	}
+	installed := service.CodexEngineStatus{State: service.CodexEngineInstalled, Version: "rust-v0.164.0"}
+	switch state {
+	case agentChatGPTSigningIn:
+		chatgpt(service.ChatGPTStatus{State: service.PlanSigningIn})
+	case agentChatGPTConnected:
+		chatgpt(service.ChatGPTStatus{State: service.PlanConnected})
+	case agentChatGPTUsageLimited:
+		f.AgentSettings.Registered(true, false) // 「API キーに切り替える…」を出す（登録済みのときだけ）
+		chatgpt(service.ChatGPTStatus{State: service.PlanUsageLimited})
+	case agentChatGPTPolicyDenied:
+		chatgpt(service.ChatGPTStatus{State: service.PlanSignedOut, Problem: service.PlanProblemPolicyDenied})
+	case agentCodexMissing:
+		connect(domain.ConnectionChatGPTCodex)
+	case agentCodexInstalling:
+		connect(domain.ConnectionChatGPTCodex)
+		codex(service.CodexEngineStatus{State: service.CodexEngineInstalling, Version: "rust-v0.164.0", Progress: 42}, service.PlanSignedOut, "")
+	case agentCodexSignedOut:
+		connect(domain.ConnectionChatGPTCodex)
+		codex(installed, service.PlanSignedOut, "")
+	case agentCodexConnected:
+		connect(domain.ConnectionChatGPTCodex)
+		codex(installed, service.PlanConnected, "")
+	case agentCodexUsageLimited:
+		f.AgentSettings.Registered(true, false)
+		connect(domain.ConnectionChatGPTCodex)
+		codex(installed, service.PlanUsageLimited, "")
+	}
+	switch state {
+	case agentChatGPTConnected, agentChatGPTUsageLimited, agentCodexConnected, agentCodexUsageLimited:
+		enableAgent(f)
+	}
+}
+
+// ifConnected は接続中（上限を含む）のときだけメールを返す（本物と同じ。接続していないカードにメールは出ない）。
+func ifConnected(st service.PlanState, email string) string {
+	if st == service.PlanConnected || st == service.PlanUsageLimited {
+		return email
+	}
+	return ""
+}
+
+// enableAgent はエージェントを同意つきで有効にする（接続方式はそのまま）。有効にできるのは接続が使える状態のときだけ（FR-G01）なので、
+// 一時的に接続中の状態にして保存し、元の状態へ戻す（使用量の上限の表示などの状態を、有効なエージェントのまま見せるため）。
+func enableAgent(f *guitest.Fakes) {
+	gpt, cdx := f.ChatGPT.State(), f.Codex.State()
+	f.ChatGPT.Set(service.ChatGPTStatus{State: service.PlanConnected})
+	f.Codex.Set(service.CodexStatus{Engine: service.CodexEngineStatus{State: service.CodexEngineInstalled}, State: service.PlanConnected})
+	defer func() { f.ChatGPT.Set(gpt); f.Codex.Set(cdx) }()
+	st := f.AgentSettings.State()
+	in := service.AgentSettingsInput{
+		Enabled: true, Consent: true, Model: st.Model, MaxSteps: st.MaxSteps, MaxDurationSec: st.MaxDurationSec,
+		KeepScreenshots: st.KeepScreenshots, DenyProcesses: st.DenyProcesses,
+	}
+	if err := f.AgentSettings.SaveAgent(context.Background(), in); err != nil {
+		log.Fatalf("guidemo: enable agent: %v", err)
+	}
+}
+
 // seedAgentRegistered は OpenAI キー・TypeSafe キーを登録済みにし、エージェントを同意つきで有効にする（高速パスは無効のまま）。
 func seedAgentRegistered(f *guitest.Fakes) {
 	f.AgentSettings.Registered(true, true)
+	f.AgentSettings.SetConnectionDirect(domain.ConnectionOpenAIAPIKey)
 	st := f.AgentSettings.State()
 	in := service.AgentSettingsInput{
 		Enabled: true, Consent: true, Model: st.Model, MaxSteps: st.MaxSteps, MaxDurationSec: st.MaxDurationSec,

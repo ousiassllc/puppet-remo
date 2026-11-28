@@ -4,6 +4,7 @@ package atoms
 // children（出す側の印。文字や記号）を、フォーカスできる要素（tabindex="0"）に包み、aria-describedby で role="tooltip" の本文につなぐ。
 // 本文は隠れている間も DOM に残る（読み上げ用）。id はページ内で一意にする（呼び出し側が決める）。
 // 本文はボタン・リンクを含めない（ホバーで出る文は触れない。ガイド）。見た目は app.css の .tip-host・.tip（--tip-* トークン）。
+// 出す側の真上（入りきらなければ真下）に出し、Esc で閉じられる（app.ts。WCAG 1.4.13）。
 templ Tooltip(id, text string) {
 	<span class="tip-host" tabindex="0" aria-describedby={ id }>
 		{ children... }

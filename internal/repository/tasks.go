@@ -62,7 +62,7 @@ type taskStore struct{ db *DB }
 
 const taskColumns = `id, client_id, client_label, prompt, status, model, max_steps, max_duration_sec,
 	step_count, fast_steps, openai_steps, handoff_reason, input_tokens, output_tokens, result_text, error_code,
-	created_at, started_at, finished_at, target_window_id, target_process, target_pid, capture_partial`
+	created_at, started_at, finished_at, target_window_id, target_process, target_pid, capture_partial, connection`
 
 // taskActive は ix_task_active（部分索引）の条件。索引の WHERE と同じ式にして索引を使わせる。
 const taskActive = `status IN ('pending_approval', 'running')`
@@ -77,10 +77,11 @@ func scanTask(r rowScanner) (domain.Task, error) {
 		targetWindow, targetProc           sql.NullString
 		targetPID                          sql.NullInt64
 		partial                            int
+		connection                         string
 	)
 	if err := r.Scan(&t.ID, &client, &t.ClientLabel, &t.Prompt, &status, &t.Model, &t.MaxSteps, &t.MaxDurationSec,
 		&t.StepCount, &t.FastSteps, &t.OpenAISteps, &handoff, &t.InputTokens, &t.OutputTokens, &resultText, &errCd,
-		&created, &started, &finished, &targetWindow, &targetProc, &targetPID, &partial); err != nil {
+		&created, &started, &finished, &targetWindow, &targetProc, &targetPID, &partial, &connection); err != nil {
 		return domain.Task{}, err
 	}
 	t.ClientID = client.String
@@ -91,6 +92,7 @@ func scanTask(r rowScanner) (domain.Task, error) {
 	t.StartedAt, t.FinishedAt = fromNullMS(started), fromNullMS(finished)
 	t.TargetWindowID, t.TargetProcess, t.TargetPID = targetWindow.String, targetProc.String, uint32(targetPID.Int64)
 	t.CapturePartial = partial != 0
+	t.Connection = domain.AgentConnection(connection)
 	return t, nil
 }
 
@@ -108,6 +110,8 @@ func checkTaskValues(t domain.Task) error {
 			domain.ErrInvalidArgument, t.StepCount, t.FastSteps, t.OpenAISteps)
 	case t.HandoffReason != "" && !t.HandoffReason.Valid():
 		return fmt.Errorf("%w: task handoff_reason %q", domain.ErrInvalidArgument, t.HandoffReason)
+	case t.Connection != "" && !t.Connection.Valid():
+		return fmt.Errorf("%w: task connection %q", domain.ErrInvalidArgument, t.Connection)
 	case t.Status.Terminal() && t.FinishedAt == nil:
 		return fmt.Errorf("%w: task status %q requires finished_at", domain.ErrInvalidArgument, t.Status)
 	case !t.Status.Terminal() && t.FinishedAt != nil:
@@ -127,15 +131,19 @@ func (s taskStore) Create(ctx context.Context, t domain.Task) error {
 	if created.IsZero() {
 		created = s.db.clock.Now()
 	}
+	connection := t.Connection
+	if connection == "" { // 指定のない作成は #49 より前と同じ OpenAI API キーの経路
+		connection = domain.ConnectionOpenAIAPIKey
+	}
 	_, err := s.db.sql.ExecContext(ctx,
 		`INSERT INTO agent_tasks (id, client_id, client_label, prompt, status, model, max_steps, max_duration_sec,
 			step_count, fast_steps, openai_steps, handoff_reason, input_tokens, output_tokens, result_text, error_code,
-			created_at, started_at, finished_at, target_window_id, target_process, target_pid, capture_partial)
-		VALUES (?, (SELECT id FROM clients WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_at, started_at, finished_at, target_window_id, target_process, target_pid, capture_partial, connection)
+		VALUES (?, (SELECT id FROM clients WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, nullStr(t.ClientID), t.ClientLabel, t.Prompt, string(t.Status), t.Model, t.MaxSteps, t.MaxDurationSec,
 		t.StepCount, t.FastSteps, t.OpenAISteps, nullStr(string(t.HandoffReason)), t.InputTokens, t.OutputTokens,
 		nullStr(t.ResultText), nullStr(t.ErrorCode), toMS(created), toNullMS(t.StartedAt), toNullMS(t.FinishedAt),
-		nullStr(t.TargetWindowID), nullStr(t.TargetProcess), nullPID(t.TargetPID), boolInt(t.CapturePartial))
+		nullStr(t.TargetWindowID), nullStr(t.TargetProcess), nullPID(t.TargetPID), boolInt(t.CapturePartial), string(connection))
 	return mapErr(err)
 }
 

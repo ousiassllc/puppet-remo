@@ -10,9 +10,9 @@
 - **OS 依存部はインターフェースの背後に置く**（`platform` パッケージ）。コアは OS 非依存でテストできる（[NFR-O03](../requirements/non-functional.md)）
 - **純 Go（cgo なし）**。画像は JPEG のみ（配信・サムネイルとも）
 - tailnet への参加は**ホストの tailscaled** に任せ、本アプリは LocalAPI クライアントになる
-- **内蔵エージェントは「別の操作主体」であり、安全機構は共通**。OpenAI の `computer` ツールが返すアクション（ChatGPT のプラン経路では関数ツールの呼び出し。[FR-G27](../requirements/functional.md)）を 1 件ずつ、MCP 直接・Web UI と同じ入力層（キルスイッチ → リース → InputGuard → Judge → 操作 → 監査）に通す。モデルが生成したコードをホストで実行する方式（`exec_py` 等）は採らない。ほかに承認を省略できる経路を作らない（[NFR-S15](../requirements/non-functional.md)）。接続方式（ChatGPT のプラン / API キー）を自動で切り替えない（[NFR-S22](../requirements/non-functional.md)）
+- **内蔵エージェントは「別の操作主体」であり、安全機構は共通**。OpenAI の `computer` ツールが返すアクション（ChatGPT のプラン経路〔`chatgpt`・`chatgpt-codex`〕では関数ツールの呼び出し。[FR-G27](../requirements/functional.md)）を 1 件ずつ、MCP 直接・Web UI と同じ入力層（キルスイッチ → リース → InputGuard → Judge → 操作 → 監査）に通す。モデルが生成したコードをホストで実行する方式（`exec_py` 等）は採らない。ほかに承認を省略できる経路を作らない（[NFR-S15](../requirements/non-functional.md)）。接続方式（ChatGPT のプラン〔公式〕/ ChatGPT のプラン〔Codex 経由〕/ API キー）を自動で切り替えない（[NFR-S22](../requirements/non-functional.md)）
 - **高速パス（任意。既定は無効）は「選ぶだけ」の補助**。TypeSafe の Jev は、アプリが UI Automation から作った**不変の候補表から ID を 1 つ選ぶ**だけで、ツール名・座標・引数を生成しない。迷ったら OpenAI の `computer` ツールのループへ引き継ぎ、**タスクの完了宣言は常に OpenAI が行う**。Jev は Judge ではなく、承認を緩めることはない（[FR-G16](../requirements/functional.md)、[NFR-S17](../requirements/non-functional.md)）
-- **外部通信は GitHub（更新）、OpenAI（エージェント有効時のみ。ChatGPT のサインインを使うときは `auth.openai.com` も）、TypeSafe（高速パス有効時のみ）だけ**。OpenAI API キー・TypeSafe API キー・ChatGPT の OAuth トークンは Windows 資格情報マネージャーにだけ置く。OpenAI へは常に `store: false` で送る（[FR-G24](../requirements/functional.md)、[NFR-PR03](../requirements/non-functional.md)、ChatGPT のプラン経路は [NFR-PR05](../requirements/non-functional.md)）
+- **外部通信は GitHub（更新・Codex のエンジンの取得）、OpenAI（エージェント有効時のみ。ChatGPT のサインインを使うときは `auth.openai.com` も）、TypeSafe（高速パス有効時のみ）だけ**。接続方式 `chatgpt-codex` の推論・サインインの通信は、アプリが起動した Codex の子プロセスが行う（アプリは Codex のトークンを持たない。[NFR-S23](../requirements/non-functional.md)）。OpenAI API キー・TypeSafe API キー・ChatGPT の OAuth トークンは Windows 資格情報マネージャーにだけ置く。OpenAI へは常に `store: false` で送る（[FR-G24](../requirements/functional.md)、[NFR-PR03](../requirements/non-functional.md)、ChatGPT のプラン経路は [NFR-PR05](../requirements/non-functional.md)。`chatgpt-codex` は送り方を Codex が決める）
 
 ## 技術選定
 
@@ -34,8 +34,8 @@
 | 入力注入 | Win32 `SendInput`（`golang.org/x/sys/windows`） | cgo 不要。`type` は `KEYEVENTF_UNICODE` で日本語を直接送る |
 | UI Automation | COM `IUIAutomation`（`github.com/go-ole/go-ole` v1.3.0・MIT。IUIAutomation の vtable バインディングは自前で書く） | `get_ui_tree` と高速パスの候補表（スナップショット）用 |
 | 画像エンコード | 標準 `image/jpeg` | 純 Go 制約のため JPEG のみ |
-| OpenAI クライアント | `github.com/openai/openai-go/v3` | v3.90.0 で確認済み: `responses.ComputerToolParam`（`{type:"computer"}`）、`ResponseComputerToolCall` の `Actions`（`click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot`）と `PendingSafetyChecks`、`ResponseComputerToolCallOutputItem` の `AcknowledgedSafetyChecks`。旧 `computer_use_preview`（`environment: "windows"` 等を指定する旧方式）は使わない。ChatGPT のプラン経路（#49）は、アクセストークンを Bearer にしてストリーム（`stream: true`）で呼ぶ。同じ SDK で足りるか（namespace の関数ツールと必須のストリームの型）は実装時に確認する（[非機能要件「ChatGPT プラン経路: 未確認」](../requirements/non-functional.md)）。足りなければ標準 `net/http` と SSE の読み取りで書く |
-| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` v0.2.8・MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go で、cgo 不要をソースと `go list` で確認済み） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く。OpenAI キーと TypeSafe キー（ターゲット名はそれぞれ `puppet-remo/openai:puppet-remo`・`puppet-remo/typesafe:puppet-remo`）は同じ SecretStore に置く。ChatGPT の OAuth トークン（アクセス・リフレッシュ・ID トークン・期限・scope をまとめた 1 件）も同じ SecretStore のターゲット `puppet-remo/chatgpt:puppet-remo` に置く（#49 の設計。実装は未着手） |
+| OpenAI クライアント | `github.com/openai/openai-go/v3` | v3.90.0 で確認済み: `responses.ComputerToolParam`（`{type:"computer"}`）、`ResponseComputerToolCall` の `Actions`（`click` / `double_click` / `drag` / `move` / `scroll` / `keypress` / `type` / `wait` / `screenshot`）と `PendingSafetyChecks`、`ResponseComputerToolCallOutputItem` の `AcknowledgedSafetyChecks`。旧 `computer_use_preview`（`environment: "windows"` 等を指定する旧方式）は使わない。ChatGPT のプラン経路 `chatgpt`（#49）は、アクセストークンを Bearer にしてストリーム（`stream: true`）で呼ぶ（実装は `openai.NewChatGPT`。関数ツールの定義と呼び出しの検査は `openai.DesktopTools`・`openai.ParseDesktopCall`）。同じ SDK で足りるか（namespace の関数ツールと必須のストリームの型）は [非機能要件「ChatGPT プラン経路: 未確認」](../requirements/non-functional.md)に従い実 API で確かめる。足りなければ標準 `net/http` と SSE の読み取りで書く。`chatgpt-codex`（#247）は OpenAI の SDK を使わず、Codex の app-server と標準入出力の JSON-RPC で話す（`internal/codex`） |
+| API キー保管 | Windows 資格情報マネージャー（`github.com/zalando/go-keyring` v0.2.8・MIT。内部で `danieljoos/wincred` v1.2.3 を使う純 Go で、cgo 不要をソースと `go list` で確認済み） | [NFR-S14](../requirements/non-functional.md)。`platform.SecretStore` の背後に置く。OpenAI キーと TypeSafe キー（ターゲット名はそれぞれ `puppet-remo/openai:puppet-remo`・`puppet-remo/typesafe:puppet-remo`）は同じ SecretStore に置く。ChatGPT の OAuth トークン（アクセス・リフレッシュ・ID トークン・期限・scope をまとめた 1 件の JSON の記録）も同じ SecretStore に置くが、1 件 2560 バイトの上限を超えるため分割保存する（見出し `puppet-remo/chatgpt:puppet-remo`〔`{"v":1,"parts":N}`〕と、本体を 2000 バイト以下ずつの `puppet-remo/chatgpt/1:puppet-remo` … `/N`。実装は `service.ChatGPTAuthService` の `SecretChatGPT`）。`chatgpt-codex` の Codex のトークンは Codex が自分で保管し、アプリは持たない |
 | 高速パス（Jev による候補選択） | TypeSafe API（`POST https://api.typesafe.ai/v1/systemone`、モデル既定 `jev-1.13`）を `internal/typesafe` から直接呼ぶ。Go SDK は無いため標準 `net/http` | 既定は無効（`agent.fastpath.enabled`）。入力はテキストと JSON のみ（スクリーンショットは送らない）。呼び出しは 5 秒タイムアウト・再試行なし。**Jev は Judge ではない**（承認を緩めない）。Judge は既定のルールベース（自前の `RuleJudge`）のまま。品質は自前のタスクで M4 に測定して確認し、仕様書には性能の主張を書かない（[FR-G16](../requirements/functional.md)） |
 | ID 生成 | `github.com/oklog/ulid/v2` v2.1.2（Apache-2.0） | タスク・監査ログなどの ID。時刻順に並ぶ |
 | 検討したが採らない | Cua Driver（`trycua/cua`、Rust 製、MIT） | CLI・MCP・型付き SDK 経由で OS 操作を提供するが、本アプリは同一プロセス・純 Go で InputGuard・リース・監査を一貫して制御するため `platform` 層を自前実装する |
@@ -51,10 +51,12 @@ graph TD
     end
     subgraph Cloud["インターネット"]
         OAI["OpenAI API<br/>(Responses / computer ツール または 関数ツール)"]
+        CHATGPT["ChatGPT / OpenAI<br/>(Codex の子プロセスが通信。chatgpt-codex のとき)"]
         TSAFE["TypeSafe API<br/>(Jev・高速パス有効時のみ)"]
     end
     subgraph Host["ホスト (Windows) — 単一プロセス Nefos Remote"]
         TS["tailscaled"]
+        CODEX["Codex app-server (子プロセス)<br/>chatgpt-codex のときだけ・固定版・標準入出力の JSON-RPC"]
         subgraph Net["tailnet 公開面 (tailnet IP のみ Listen。サインイン中だけ開く 127.0.0.1 のコールバック受信口を除く)"]
             RR["リモートルーター (Gin)<br/>/mcp /ws /viewer /api/v1"]
             MW["ミドルウェア<br/>Host/Origin 検証 → キルスイッチ → WhoIs → 許可リスト → Bearer(/mcp)"]
@@ -103,6 +105,8 @@ graph TD
     AGENT --> SECRET
     AGENT -- "HTTPS (指示・スクリーンショット・履歴)" --> OAI
     AGENT --> FASTPATH
+    AGENT -- "JSON-RPC (指示・スクリーンショット・関数ツールの呼び出し)" --> CODEX
+    CODEX -- "HTTPS (Codex が通信)" --> CHATGPT
     FASTPATH --> UIA
     FASTPATH --> TOOLS
     FASTPATH --> SECRET
@@ -146,6 +150,7 @@ graph TD
     P["platform<br/>(interface + windows 実装)"]
     TN["tailnet<br/>(LocalAPI クライアント)"]
     OA["openai<br/>(Responses API クライアント)"]
+    CX["codex<br/>(app-server 経由の Model・エンジン)"]
     TY["typesafe<br/>(Chooser: Jev クライアント)"]
     D["domain<br/>(純粋なモデル・ルール)"]
     H --> S
@@ -159,6 +164,9 @@ graph TD
     TN --> D
     S --> OA
     OA --> D
+    S --> CX
+    CX --> OA
+    CX --> D
     S --> TY
     TY --> D
 ```
@@ -170,8 +178,9 @@ graph TD
 | `platform` | 画面キャプチャ・入力注入・ウィンドウ列挙・UI Automation（`get_ui_tree` と、候補表に使えるスナップショット: 役割 / ControlType・名前・有効・画面外・外接矩形・祖先パス）・クリップボード・資格情報（SecretStore）・オーバーレイ補助・アプリ起動（`AppLauncher`。M1.5）・ファイル選択（`FilePicker`。M1.5）のインターフェースと Windows 実装 | `domain` |
 | `tailnet` | tailscaled 連携（IP 監視、WhoIs + 10 秒キャッシュ、Listener 管理） | `domain` |
 | `openai` | OpenAI Responses API のクライアント（API キー経路の `computer` ツールの要求・応答、ChatGPT のプラン経路の関数ツールとストリーム（SSE）の読み取り、`store: false` 固定、タイムアウト、キー・アクセストークンの読み出し）。`Model` インターフェースの背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)）。ChatGPT のサインイン・更新・失効・接続の状態（#49）は `service` が持つ部品とし、ブラウザの起動・コールバック受信口・資格情報は `platform` / `service` の背後に置く（[API 仕様 §7.5・§7.6](../api/endpoints.md)） | `domain` |
+| `codex` | Codex の app-server 経由の ChatGPT のプラン経路（接続方式 `chatgpt-codex`。#247）: 固定した版のカタログ（`catalog`）、エンジンの取得・検証・展開・削除（`engine`）、JSON-RPC（`rpc`）、app-server の子プロセスの起動・ハンドシェイク・サーバー要求の拒否・異常終了の検知（`appserver`。Windows はコンソール窓なし・アプリと一緒に終わるジョブ）、`openai.Model` の実装（desktop の関数ツールを dynamicTools で渡す）。Codex のトークンは読まず・保存しない。`Model` インターフェースの背後に置き、テストでは偽の app-server（`codextest`）を使う（[NFR-O06](../requirements/non-functional.md)）。エンジンの状態・ログイン・接続の状態（`CodexAuthService`）は `service` が持つ | `domain`、`openai` |
 | `typesafe` | TypeSafe（Jev）の HTTP クライアント。境界のインターフェース `Chooser`（`Choose(ctx, ChoiceRequest) (ChoiceResult, error)`）の背後に置き、テストではモックする（[NFR-O06](../requirements/non-functional.md)） | `domain` |
-| `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、高速パス（`FastPath`。Agent の内部）、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai`、`typesafe` |
+| `service` | ユースケース。リース、承認、操作ツール、内蔵エージェント、高速パス（`FastPath`。Agent の内部）、Judge、画面配信、監査、更新 | `domain`、`repository`、`platform`、`tailnet`、`openai`、`codex`、`typesafe` |
 | `web/handler`、`mcp`、`ws` | HTTP / MCP / WebSocket の入口。`repository` と `platform` を直接使わない | `service`、`domain` |
 | `web` テンプレート | Templ（Atomic Design） | `domain`（表示用データ） |
 
@@ -400,6 +409,7 @@ sequenceDiagram
 - **状態の永続化**: タスクは状態遷移のたびに `agent_tasks` を更新する。ステップは監査ログの行として `task_id` と連番付きで保存する（[ER](er.md)）。実行状態（ループ・リース）はメモリのみで、再起動時に `running` / `pending_approval` のタスクを `aborted` にする（NFR-A08）
 - **会話の継続はステートレス**（[FR-G24](../requirements/functional.md)）: すべての Responses API 呼び出しで `store: false` を送り、`previous_response_id` は使わない。毎回、指示・これまでの出力アイテム（原文のまま）・`computer_call_output` アイテムを含む履歴を再送する。スクリーンショットは直近 `agent.keep_screenshots` 枚（既定 3、FR-S19）だけを残し、古いものはテキストのプレースホルダに置き換える。`reasoning` の暗号化コンテンツなど `include` に必要なものは、実装時のスモークテストで実 API に対して確認する
 - **ChatGPT のプラン経路（接続方式 `chatgpt`。既定。FR-G25〜G30）**: 同じ「エージェントのタスク実行」のフローで、モデル呼び出しだけが違う。(1) `run_task` の開始時に、設定 `agent.connection` で接続方式を決めてタスクに固定する。`chatgpt` で接続の状態が `connected` でなければ `agent_disabled`（`detail.reason`）。(2) 呼び出しの直前にアクセストークンの残りを見て、5 分以下なら更新する（排他。失敗の扱いは FR-G29）。(3) `POST https://api.openai.com/v1/responses` を `Authorization: Bearer <アクセストークン>`・`store: false`・`stream: true`・関数ツール（namespace `desktop`。FR-G27）・`input`（履歴）で呼び、ストリームを終端のイベントまで読む（全体で 60 秒。NFR-S16）。`response.completed` の `function_call` だけを取り出す。(4) 各 `function_call` を、API キー経路の `actions[]` と同じく 1 件ずつ入力層（キルスイッチ → リース → InputGuard → RuleJudge → 実行 → 監査）に通し、`function_call_output` と、新しいスクリーンショットの `input_image`（user メッセージ）を次の `input` に足す。(5) `response.failed`（`subscription_sharing_usage_limit_exceeded`）は、部分的な出力を実行せずタスクを `failed`（`chatgpt_usage_limit`）にし、接続を `usage_limited` にする。**API キー経路へは自動で切り替えない**（NFR-S22）。ホスト所有者が GUI の確認モーダルで承認したときだけ `agent.connection` を `openai_api_key` に変える（FR-G30）。(6) API の安全チェック（FR-G08）と高速パス（FR-G16）はこの経路には無い。サインインは、ホスト GUI → 既定のブラウザ（`auth.openai.com`）→ `127.0.0.1` の一時的なコールバック受信口 → コードの交換・ID トークンの検証 → 資格情報マネージャーへ保存、の順（FR-G28・NFR-S21・[API 仕様 §7.6](../api/endpoints.md)）
+- **Codex 経路（接続方式 `chatgpt-codex`。公式の経路の代替。FR-G31〜G40）**: 同じ「エージェントのタスク実行」のフローで、モデル呼び出しだけが違う。(1) `run_task` の開始時に `agent.connection` でタスクに固定する。`chatgpt-codex` でエンジンが `installed`・接続の状態が `connected` でなければ `agent_disabled`（`detail.reason` = `codex_*`）。(2) Codex のエンジン（固定版 `rust-v0.164.0`）は、ホスト GUI の「Codex をダウンロード」で公式のリリースから取得し、SHA-256・サイズを検証して `<実行ファイルのディレクトリ>\codex\` に置く（FR-G32）。(3) app-server の子プロセスは必要になったときに 1 つ起動し（専用の `CODEX_HOME`・空の作業ディレクトリ・環境の除去・`codexHome` の検査・コンソール窓なし・ジョブオブジェクト。FR-G33・G37）、サインインは `account/login/start` が返した URL を既定のブラウザで開く（FR-G36）。(4) タスクは `thread/start`（`ephemeral`・読み取り専用の sandbox・`approvalPolicy: "never"`・道具の無効化・`dynamicTools` = namespace `desktop`。FR-G34）と `turn/start`（指示 + 最初のスクリーンショットの `localImage`）で始め、app-server が出す `item/tool/call` を `openai.ParseDesktopCall` で検査して 1 件ずつ入力層（`Control.Do`）に通し、結果と新しいスクリーンショット（`inputImage`）を `contentItems` で応答する（FR-G35）。(5) `item/tool/call` 以外のサーバー要求は拒否し、道具のアイテムを始めたターンは中断して `codex_error`（FR-G34）。使用量の上限は `codex_usage_limit` でタスクを終え、接続を `usage_limited` にする（FR-G39）。**どの経路へも自動で切り替えない**（NFR-S22）。公式の経路がワークスペースのポリシーで拒否されたときは、カードの案内から利用者が明示的に `chatgpt-codex` を選ぶ（FR-G40）。実装は `service.CodexAuthService`（状態・取得・サインイン）と `internal/codex`（エンジンの取得と検証・app-server・JSON-RPC。[コンポーネント設計 §4.3.2](../components/overview.md)）
 - **OpenAI 側のデータ保持**（OpenAI の文書による）: API のデータは既定で学習に使われない。不正利用監視のログは最大 30 日保持される（ゼロデータ保持の承認があれば除く）。`store` を省略または `true` にするとアプリの状態が 30 日以上保持される。画像入力は CSAM のスキャン対象で、ゼロデータ保持でも審査のために保持されうる（[NFR-PR03](../requirements/non-functional.md)）
 - **スクリーンショットの大きさ**: 最大辺の既定は 1568 px（FR-S03）。16:9 では 1568×882 = 49×28 = 1,372 パッチで、文書上の拒否上限 30,000 パッチと、リサイズの予算（10,000 / 2,500 パッチ）を大きく下回る。PNG を `detail: "original"` で送る。測定に基づく調整は設定で行える
 
@@ -597,6 +607,7 @@ puppet-remo/
 │   │   └── windows/              # capture(DXGI/GDI), input, window, uia, clipboard, secret(資格情報), launcher(CreateProcess), filepicker
 │   ├── tailnet/                  # LocalAPI クライアント、Watcher、Listener 管理
 │   ├── openai/                   # Responses API クライアント (Model インターフェース + 実装、モック)
+│   ├── codex/                    # Codex 経路 (chatgpt-codex) の app-server クライアント (catalog, engine, rpc, protocol, appserver)
 │   ├── typesafe/                 # TypeSafe (Jev) HTTP クライアント (Chooser インターフェース + 実装、モック)
 │   ├── service/                  # authz, lease, approval, control, agent (fastpath を含む), judge, streamer, audit, updater
 │   ├── mcp/                      # MCP サーバー (ツール定義と service 呼び出し)
@@ -641,7 +652,7 @@ M1 の実装が本書の記述と異なる点、本書にあって M1 では存�
 
 | 項目 | 設計 | M1 の実装 |
 |------|------|----------|
-| Huma（JSON API） | `/api/v1` を提供 | 使わない（`go.mod` に無い）。`/api/v1` は M2 以降 |
+| Huma（JSON API） | `/api/v1` を提供 | 実装した（#232。`github.com/danielgtaylor/huma/v2` v2.34.1、`humago` アダプター。`web/handler/api`）。Huma の既定の docs・schemas・YAML の経路は有効にしない |
 | WebSocket | `github.com/coder/websocket` v1.8.15 | M2（#61）で直接依存にした（`internal/ws`。v1.8.14 の間接依存だったものを v1.8.15 に上げた） |
 | 資格情報マネージャー | `github.com/zalando/go-keyring` v0.2.8 | M4（#19）で依存に加え、`platform/windows` の `SecretStore` の背後に置いた（M1 は `platform.SecretStore` の宣言・偽実装・契約テストだけだった）。呼び出しは M4 の後続の変更で足す |
 | DXGI キャプチャ | `kirides/go-d3d`（M2 のスパイク） | M2（#57）で直接依存に追加し採用を確定した（`internal/platform/windows` の `dxgi_windows.go`）。`Capturer.Watch` は DXGI を主、GDI をフォールバックとして実装した。変更矩形は使わず `Frame.Dirty` は全面 |
@@ -724,3 +735,5 @@ M1 の `Trigger` は、先にメモリ上の状態を `active` にして（以�
 | 1.30 | 2026-11-03 | 起動の方式（ホワイトリスト〔既定〕/ ブラックリスト）を追加: 構成図の許可リスト・拒否リスト・起動の方式（`AppRegistry`・`AppReader`）、「アプリ起動」の流れ図（起動の方式の確認・`path` の分岐・`app_denied`・実体のパスの解決）と本文、`AppRegistry` が方式と拒否リストの書き込みを持ち `Control` は読み取り専用の `AppReader`（`LaunchMode`・`ListDenied` を含む）だけを受け取ること | #88 |
 | 1.31 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。「ビルドと配布」に表示名の方針（変えるもの・変えないもの）を追記 | #188 |
 | 1.32 | 2026-11-23 | M1 実装での差分のディレクトリ構成の表を現状に合わせた: `internal/openai`・`internal/typesafe`・`internal/ws` の行（実装済みのため）と `windows/` の `secret` は無い、の記述を削除、`internal/router` のデモサーバーのパスを `internal/router/internal/guidemo` に訂正、`middleware/` の一覧に `bodylimit` を追加 | #235 |
+| 1.33 | 2026-11-27 | 内蔵エージェントに Codex 経路（`chatgpt-codex`。#247）を追加: 設計方針（外部通信に Codex のエンジンの取得・子プロセスの通信）、技術選定（OpenAI クライアントの実装名、資格情報の分割保存）、構成図（Codex の子プロセス）、エージェントのタスク実行に Codex 経路のフローを追記。公式経路のトークンの分割保存を反映し、「実装は未着手」の記述を実装済みに直した。レイヤー表の `codex` の行は実装のスライスが足す | #247 |
+| 1.34 | 2026-11-28 | ディレクトリ構成のツリーに `internal/codex/`（Codex 経路。#247 で追加済み）を足した | #257 |

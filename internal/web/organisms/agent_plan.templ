@@ -1,0 +1,336 @@
+package organisms
+
+import (
+	"github.com/ousiassllc/puppet-remo/internal/web/atoms"
+	"github.com/ousiassllc/puppet-remo/internal/web/molecules"
+	"github.com/ousiassllc/puppet-remo/internal/web/view"
+	"strconv"
+)
+
+// ConnectionPanel は接続方式の選択（FR-H11・G25。#247）。ChatGPT のプラン〔既定〕/ ChatGPT のプラン（Codex 経由）/ OpenAI API キー。
+// 現在の方式にはバッジ、ほかには選ぶボタンを出す（状態駆動）。chatgpt ↔ chatgpt-codex は確認なしで PUT /agent/connection、
+// openai_api_key への切り替えだけは確認モーダル（GET /agent/connection/api-key/confirm）を経る（FR-G30 (4)）。
+templ ConnectionPanel(v view.ConnectionPanel) {
+	<div id="connection-panel" data-connection={ v.Current }>
+		@molecules.Card("接続方式") {
+			<div class="space-y-4">
+				<p class="text-sm text-ink">エージェントが OpenAI のモデルを呼び出す方法を選びます。タスクの開始時の方式でそのタスクが終わるまで動き、別の方式へ自動では切り替えません。</p>
+				<ul class="divide-y divide-border rounded-md border border-border" aria-label="接続方式">
+					for _, o := range v.Options {
+						<li class="flex flex-wrap items-center justify-between gap-4 p-4" data-connection-option={ o.Value } data-current?={ o.Current }>
+							<div class="min-w-0 flex-1">
+								<p class="text-base font-semibold text-ink">{ o.Label }</p>
+								<p class="mt-1 text-sm text-ink">{ o.Description }</p>
+							</div>
+							if o.Current {
+								@atoms.Badge(atoms.BadgeOK, "使用中の接続方式")
+							} else {
+								@atoms.Button(atoms.ButtonProps{Label: "この方式を使う", Variant: atoms.ButtonSecondary, Small: true, Attrs: connectionButtonAttrs(o)})
+							}
+						</li>
+					}
+				</ul>
+			</div>
+		}
+	</div>
+}
+
+// PlanModelSection はプランのモデルの選択（FR-G26）。まず現在のモデルと「モデルを変更」だけを出し、押すとアカウントごとの一覧を取りに行く。
+templ PlanModelSection(s view.PlanModelSection) {
+	<div id={ s.ID } class="space-y-2" data-plan-model={ s.Current }>
+		<p class="text-sm text-ink"><span class="text-mute">モデル</span> <code data-field="plan-model">{ s.Current }</code></p>
+		@atoms.Button(atoms.ButtonProps{Label: "モデルを変更", Variant: atoms.ButtonSecondary, Small: true, Attrs: atoms.Attrs{
+			"hx-get": s.ModelsURL, "hx-target": "#" + s.ID, "hx-swap": "outerHTML", "hx-disabled-elt": "this",
+		}})
+	</div>
+}
+
+// PlanModelChoices はモデルの一覧（選択欄と保存）。一覧はアカウントごとにサーバーが返した順。保存の応答はカード全体。
+templ PlanModelChoices(s view.PlanModelSection) {
+	<form
+		id={ s.ID }
+		class="space-y-2"
+		novalidate
+		hx-put={ s.PutURL }
+		hx-target={ "#" + s.CardID }
+		hx-swap="outerHTML"
+		hx-disabled-elt="find button[type=submit]"
+		data-plan-model-choices
+	>
+		@molecules.FormField(s.ID+"-select", "モデル", "このアカウントで使えるモデルの一覧です。", "") {
+			@atoms.Select(s.ID+"-select", "model", modelOptions(s.Options))
+		}
+		<div class="flex items-center gap-2">
+			@atoms.Button(atoms.ButtonProps{Label: "保存", Variant: atoms.ButtonPrimary, Small: true, Type: "submit"})
+		</div>
+	</form>
+}
+
+func modelOptions(opts []view.PlanModelOption) []atoms.SelectOption {
+	out := make([]atoms.SelectOption, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, atoms.SelectOption{Value: o.Slug, Label: o.Label, Selected: o.Selected})
+	}
+	return out
+}
+
+// ChatGPTCard は公式の Sign in with ChatGPT のカード（#chatgpt-card。FR-H11・G28〜G30）。data-chatgpt-state で 5 状態
+// （signed_out / signing_in / connected / reauth_required / usage_limited）を描き分ける。操作はすべて、状態に合うものだけを出す（状態駆動）。
+// 隠し入力 rev_chatgpt（data-poll-rev）は描画した表示モデルの版で、GET /poll が送り返された版と違うときだけ ChatGPTCardOOB で差し替える。
+templ ChatGPTCard(v view.ChatGPTCard) {
+	@chatgptCard(v, false)
+}
+
+// ChatGPTCardOOB は GET /poll（と失敗の応答）に添えて、#chatgpt-card を差し替える（OOB）。
+templ ChatGPTCardOOB(v view.ChatGPTCard) {
+	@chatgptCard(v, true)
+}
+
+templ chatgptCard(v view.ChatGPTCard, oob bool) {
+	<div id="chatgpt-card" data-chatgpt-state={ v.State } data-selected?={ v.Selected } { oobAttrs(oob)... }>
+		<input type="hidden" name="rev_chatgpt" value={ v.Rev } data-poll-rev/>
+		@molecules.Card("ChatGPT のプラン") {
+			<div class="space-y-4">
+				<div class="flex flex-wrap items-center gap-2">
+					@planStateBadge(v.State, "サインイン")
+					if v.Selected {
+						@atoms.Badge(atoms.BadgeLabel, "接続方式に選択中")
+					}
+				</div>
+				<p class="text-sm text-ink">公式の「Sign in with ChatGPT」で、ChatGPT のアカウントのプランの使用量でエージェントを動かします。サインインはこの画面（ホストの GUI）でだけ始められます。</p>
+				if v.ProblemMessage != "" {
+					@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-chatgpt-problem": v.Problem}) {
+						{ v.ProblemMessage }
+					}
+				}
+				if v.OfferCodex {
+					<div class="flex flex-wrap items-center gap-2" data-chatgpt="offer-codex">
+						@atoms.Button(atoms.ButtonProps{Label: "Codex 経由で使う", Variant: atoms.ButtonSecondary, Attrs: atoms.Attrs{
+							"hx-put": "/agent/connection", "hx-vals": jsonVals(map[string]string{"connection": "chatgpt-codex"}),
+							"hx-target": "#agent-sections", "hx-swap": "outerHTML", "hx-disabled-elt": "this", "data-chatgpt-use-codex": true,
+						}})
+						<span class="text-sm text-ink">押すと接続方式を「ChatGPT のプラン（Codex 経由）」に変えます（自動では変わりません）。</span>
+					</div>
+				}
+				switch v.State {
+					case "signing_in":
+						@atoms.NoticeAnimated(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-chatgpt": "signing-in"}) {
+							ブラウザで ChatGPT のサインインを完了してください。完了すると、この画面が自動で更新されます（最長 5 分）。
+						}
+						<div class="flex flex-wrap items-center gap-2">
+							@atoms.Button(atoms.ButtonProps{Label: "中止", Variant: atoms.ButtonSecondary, Attrs: cardPost("/agent/chatgpt/signin/cancel", "chatgpt-card")})
+						</div>
+					case "connected":
+						@chatgptAccount(v.Email, "chatgpt-email")
+						@chatgptUsing("ChatGPT のプランを使用中")
+						@PlanModelSection(v.Model)
+						<div class="flex flex-wrap items-center gap-2">
+							@chatgptUsageButton(atoms.ButtonSecondary)
+							@atoms.Button(atoms.ButtonProps{Label: "解除", Variant: atoms.ButtonDanger, Attrs: modalGet("/agent/chatgpt/signout/confirm")})
+						</div>
+					case "usage_limited":
+						@chatgptAccount(v.Email, "chatgpt-email")
+						@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-chatgpt": "usage-limited"}) {
+							<strong class="no-underline">ChatGPT のプランの使用量の上限に達しました。</strong>
+							<span class="block">新しいタスクは止まっています。ChatGPT の使用量の設定を確認してから、「再開」してください（再開の時刻は分かりません。使えるかは次のタスクの最初の呼び出しで分かります）。API キーの接続方式へ切り替えたときは、OpenAI API の従量課金になります。</span>
+						}
+						<div class="flex flex-wrap items-center gap-2">
+							@chatgptUsageButton(atoms.ButtonPrimary)
+							@atoms.Button(atoms.ButtonProps{Label: "再開", Variant: atoms.ButtonSecondary, Attrs: cardPost("/agent/chatgpt/resume", "chatgpt-card")})
+							if v.OpenAIKeyRegistered {
+								@atoms.Button(atoms.ButtonProps{Label: "API キーに切り替える…", Variant: atoms.ButtonSecondary, Attrs: modalGet("/agent/connection/api-key/confirm?reason=usage_limit")})
+							}
+							@atoms.Button(atoms.ButtonProps{Label: "解除", Variant: atoms.ButtonDanger, Attrs: modalGet("/agent/chatgpt/signout/confirm")})
+						</div>
+					default:
+						// signed_out・reauth_required
+						if v.State == "reauth_required" {
+							@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-chatgpt": "reauth-required"}) {
+								ChatGPT の認可が切れました（保存していたトークンは消しました）。もう一度サインインしてください。それまでエージェントは使えません。
+							}
+						}
+						<div class="flex flex-wrap items-center gap-2">
+							@atoms.Button(atoms.ButtonProps{Label: "Continue with ChatGPT", Variant: atoms.ButtonPrimary, Attrs: cardPost("/agent/chatgpt/signin", "chatgpt-card")})
+						</div>
+				}
+				if v.WelcomePending {
+					// 初回のサインイン直後の確認（FR-G28 (7)）。カードが現れたとき、確認モーダルを #modal-root に取りに行く。
+					<div hidden hx-get="/agent/chatgpt/welcome" hx-trigger="load" hx-target="#modal-root" hx-swap="innerHTML" data-chatgpt="welcome"></div>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ planStateBadge(state, signIn string) {
+	{{ tone, label := planBadge(state, signIn) }}
+	<span data-plan-state-badge={ state }>
+		@atoms.Badge(tone, label)
+	</span>
+}
+
+templ chatgptAccount(email, field string) {
+	if email != "" {
+		<p class="text-sm text-ink"><span class="text-mute">アカウント</span> <span class="font-mono break-all" data-field={ field }>{ email }</span></p>
+	}
+}
+
+templ chatgptUsing(text string) {
+	<p class="text-sm font-semibold text-ink" data-chatgpt="using">{ text }</p>
+}
+
+templ chatgptUsageButton(variant atoms.ButtonVariant) {
+	@atoms.Button(atoms.ButtonProps{Label: "使用量を管理", Variant: variant, Attrs: atoms.Attrs{
+		"hx-post": "/agent/chatgpt/open-usage", "hx-swap": "none", "hx-disabled-elt": "this", "data-chatgpt-open-usage": true,
+	}})
+}
+
+// CodexCard は Codex 経由の ChatGPT のプランのカード（#codex-card。#247）。data-codex-state（プランの状態）と data-codex-engine
+// （エンジンの状態）で描き分ける。エンジンは公式の GitHub リリースの固定した版だけを取得して検証する（利用者指定のバイナリは不可）。
+// アプリは Codex のトークンを読まない・保存しない。隠し入力 rev_codex は描画した表示モデルの版（GET /poll の差し替えの判定）。
+templ CodexCard(v view.CodexCard) {
+	@codexCard(v, false)
+}
+
+// CodexCardOOB は GET /poll（と失敗の応答）に添えて、#codex-card を差し替える（OOB）。
+templ CodexCardOOB(v view.CodexCard) {
+	@codexCard(v, true)
+}
+
+templ codexCard(v view.CodexCard, oob bool) {
+	<div id="codex-card" data-codex-state={ v.State } data-codex-engine={ v.Engine } data-selected?={ v.Selected } { oobAttrs(oob)... }>
+		<input type="hidden" name="rev_codex" value={ v.Rev } data-poll-rev/>
+		@molecules.Card("ChatGPT のプラン（Codex 経由）") {
+			<div class="space-y-4">
+				<div class="flex flex-wrap items-center gap-2">
+					@codexEngineBadge(v.Engine)
+					if engineReady(v.Engine) {
+						@planStateBadge(v.State, "ログイン")
+					}
+					if v.Selected {
+						@atoms.Badge(atoms.BadgeLabel, "接続方式に選択中")
+					}
+				</div>
+				<p class="text-sm text-ink">公式のサインインが、ワークスペースのアカウント（Business・Enterprise・Edu）を拒否するときの代わりの経路です。OpenAI の Codex のエンジン（app-server）を取得して、ChatGPT のプランの使用量でエージェントを動かします。</p>
+				@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-codex": "terms"}) {
+					<strong class="no-underline">利用条件</strong>
+					<ul class="list-disc space-y-1 pl-6">
+						<li>Codex の利用は、ローカルでの個人の利用に限られます。</li>
+						<li>ワークスペースのアカウントでは、管理者が「Codex Local」を許可している必要があります。</li>
+						<li>このアプリは Codex のトークンを読まず、保存もしません（ログインとトークンの保管は Codex のエンジンが行います）。</li>
+					</ul>
+				}
+				if v.ProblemMessage != "" {
+					@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-codex-problem": v.Problem}) {
+						{ v.ProblemMessage }
+					}
+				}
+				@codexEngine(v)
+				if engineReady(v.Engine) {
+					@codexAccount(v)
+				}
+			</div>
+		}
+	</div>
+}
+
+templ codexEngineBadge(engine string) {
+	{{ tone, label := engineBadge(engine) }}
+	<span data-engine-badge={ engine }>
+		@atoms.Badge(tone, label)
+	</span>
+}
+
+templ codexEngine(v view.CodexCard) {
+	switch v.Engine {
+		case "unsupported":
+			@atoms.Notice(atoms.AlertInfo, atoms.Attrs{"data-codex": "unsupported"}) {
+				この PC の OS・CPU には、公式の Codex のエンジンがありません（Windows の x64・ARM64 だけに対応）。この経路は使えません。
+			}
+		case "missing":
+			<div class="flex flex-wrap items-center gap-2">
+				@atoms.Button(atoms.ButtonProps{Label: "エンジンを取得する", Variant: atoms.ButtonPrimary, Attrs: cardPost("/agent/codex/install", "codex-card")})
+				<span class="text-sm text-ink">公式の GitHub リリース（<code>{ v.EngineVersion }</code>）から取得し、SHA-256 とサイズを検証します。</span>
+			</div>
+		case "installing":
+			<div class="space-y-2" data-codex="installing">
+				<p class="text-sm text-ink">エンジンを取得しています（<code>{ v.EngineVersion }</code>）… <span class="font-mono" data-field="codex-progress">{ progressText(v.Progress) }</span></p>
+				<progress class="w-full" max="100" value={ strconv.Itoa(v.Progress) } aria-label="エンジンの取得の進み"></progress>
+				@atoms.Button(atoms.ButtonProps{Label: "中止", Variant: atoms.ButtonSecondary, Attrs: cardPost("/agent/codex/install/cancel", "codex-card")})
+			</div>
+		case "failed":
+			@atoms.NoticeAnimated(atoms.AlertDanger, atoms.Attrs{"role": "alert", "data-codex": "install-failed"}) {
+				エンジンの取得・検証に失敗しました。
+				if v.EngineError != "" {
+					<span class="block" data-field="codex-engine-error">{ v.EngineError }</span>
+				}
+			}
+			<div class="flex flex-wrap items-center gap-2">
+				@atoms.Button(atoms.ButtonProps{Label: "もう一度取得する", Variant: atoms.ButtonPrimary, Attrs: cardPost("/agent/codex/install", "codex-card")})
+			</div>
+		case "outdated":
+			@atoms.Notice(atoms.AlertWarning, atoms.Attrs{"data-codex": "outdated"}) {
+				取得済みのエンジンの版が、固定した版（<code>{ v.EngineVersion }</code>）と違います。取り直してください。
+			}
+			<div class="flex flex-wrap items-center gap-2">
+				@atoms.Button(atoms.ButtonProps{Label: "取り直す", Variant: atoms.ButtonPrimary, Attrs: cardPost("/agent/codex/install", "codex-card")})
+			</div>
+		default:
+			// installed
+			<p class="text-sm text-ink"><span class="text-mute">エンジンの版</span> <code data-field="codex-version">{ v.EngineVersion }</code></p>
+	}
+}
+
+templ codexAccount(v view.CodexCard) {
+	switch v.State {
+		case "signing_in":
+			@atoms.NoticeAnimated(atoms.AlertInfo, atoms.Attrs{"role": "status", "data-codex": "signing-in"}) {
+				ブラウザで ChatGPT のログインを完了してください。完了すると、この画面が自動で更新されます。
+			}
+			<div class="flex flex-wrap items-center gap-2">
+				@atoms.Button(atoms.ButtonProps{Label: "中止", Variant: atoms.ButtonSecondary, Attrs: cardPost("/agent/codex/signin/cancel", "codex-card")})
+			</div>
+		case "connected":
+			@codexAccountLine(v)
+			@PlanModelSection(v.Model)
+			<div class="flex flex-wrap items-center gap-2">
+				@atoms.Button(atoms.ButtonProps{Label: "ログアウト", Variant: atoms.ButtonDanger, Attrs: modalGet("/agent/codex/signout/confirm")})
+			</div>
+		case "usage_limited":
+			@codexAccountLine(v)
+			@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-codex": "usage-limited"}) {
+				<strong class="no-underline">Codex 経由の ChatGPT のプランの使用量の上限に達しました。</strong>
+				<span class="block">新しいタスクは止まっています。ChatGPT の使用量の設定を確認してから、「再開」してください（再開の時刻は分かりません）。</span>
+			}
+			<div class="flex flex-wrap items-center gap-2">
+				@chatgptUsageButton(atoms.ButtonPrimary)
+				@atoms.Button(atoms.ButtonProps{Label: "再開", Variant: atoms.ButtonSecondary, Attrs: cardPost("/agent/codex/resume", "codex-card")})
+				if v.OpenAIKeyRegistered {
+					@atoms.Button(atoms.ButtonProps{Label: "API キーに切り替える…", Variant: atoms.ButtonSecondary, Attrs: modalGet("/agent/connection/api-key/confirm?reason=usage_limit")})
+				}
+				@atoms.Button(atoms.ButtonProps{Label: "ログアウト", Variant: atoms.ButtonDanger, Attrs: modalGet("/agent/codex/signout/confirm")})
+			</div>
+		default:
+			// signed_out・reauth_required
+			if v.State == "reauth_required" {
+				@atoms.NoticeAnimated(atoms.AlertWarning, atoms.Attrs{"role": "status", "data-codex": "reauth-required"}) {
+					Codex のログインが切れました。もう一度ログインしてください。それまでエージェントは使えません。
+				}
+			}
+			<div class="flex flex-wrap items-center gap-2">
+				@atoms.Button(atoms.ButtonProps{Label: "Codex でログイン", Variant: atoms.ButtonPrimary, Attrs: cardPost("/agent/codex/signin", "codex-card")})
+				@atoms.Button(atoms.ButtonProps{Label: "エンジンを削除", Variant: atoms.ButtonDanger, Attrs: modalGet("/agent/codex/signout/confirm")})
+			</div>
+	}
+}
+
+templ codexAccountLine(v view.CodexCard) {
+	if v.Email != "" {
+		<p class="text-sm text-ink"><span class="text-mute">アカウント</span> <span class="font-mono break-all" data-field="codex-email">{ v.Email }</span>
+			if v.PlanType != "" {
+				<span class="text-mute"> ・ プラン</span> <span class="font-mono" data-field="codex-plan">{ v.PlanType }</span>
+			}
+		</p>
+	}
+	@chatgptUsing("ChatGPT のプランを使用中")
+}

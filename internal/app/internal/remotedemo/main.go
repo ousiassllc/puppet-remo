@@ -9,6 +9,9 @@
 //
 // リモートルーターは tailnet の IP の Host ヘッダーしか受け付けないため、ブラウザは Host を偽の tailnet IP にして接続する
 // （例: google-chrome --host-resolver-rules="MAP 100.64.0.1 127.0.0.1" http://100.64.0.1:8765/viewer）。
+// リモートルーターの待ち受けは -addr（既定 127.0.0.1:8765）で変えられる。例: -addr 127.0.0.1:9000。loopback の IP:ポートだけ（ポートは
+// 1024〜65535）で、不正な値は理由を出して終了コード 1 で終わる。Host ヘッダーの検査は設定 server.port のポートと比べるので、デモは
+// server.port を -addr のポートに合わせて起動する（偽の tailnet の Host は 100.64.0.1:<-addr のポート>）。以下の例は既定の 8765。
 // ホスト GUI（ダッシュボード）は別のポートで配信する。接続元のデバイスは、ホスト GUI のポートの
 // /__demo/identity?as=registered|unregistered で切り替える（未登録なら待機ページになる）。
 //
@@ -36,6 +39,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -48,6 +52,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -62,42 +67,54 @@ import (
 )
 
 const (
-	// demoPort は service の既定の待ち受けポート。Host ヘッダーの検査は設定のポートと比べるので、リモートの待ち受けはこれに揃える。
-	demoPort     = "8765"
-	demoTailnet  = "100.64.0.1"
-	demoDNSName  = "demo-host.tail-demo.ts.net"
-	registeredID = "client-demo-1"
+	// defaultRemoteAddr は -addr の既定。ポートは service の既定の待ち受けポート（設定 server.port の既定）と同じ。
+	defaultRemoteAddr = "127.0.0.1:8765"
+	// minRemotePort は設定 server.port が受け付ける最小のポート（service.settingMinPort）。-addr のポートはそのまま server.port になる。
+	minRemotePort = 1024
+	demoTailnet   = "100.64.0.1"
+	demoDNSName   = "demo-host.tail-demo.ts.net"
+	registeredID  = "client-demo-1"
 )
 
 func main() {
-	remoteAddr := flag.String("addr", "127.0.0.1:"+demoPort, "リモートルーターの待ち受けアドレス（loopback のみ。ポートは "+demoPort+" 固定）")
+	remoteAddr := flag.String("addr", defaultRemoteAddr, "リモートルーターの待ち受けアドレス（loopback の IP:ポートのみ。ポートは 1024〜65535。設定 server.port と Host ヘッダーの検査のポートも同じ値にする）")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:8899", "ホスト GUI の待ち受けアドレス（loopback のみ）")
 	agentDemo := flag.Bool("agent-demo", false, "内蔵エージェントをオフラインで動かす（台本つきの偽のモデル。OpenAI・TypeSafe は呼ばない。使い方はこのファイルの先頭のコメント）")
 	agentScope := flag.String("agent-scope", "", "-agent-demo に window_id つきの台本を足す（save: メニューを開いて保存ダイアログまで（1 バッチ内の click→click で中断）/ foreign: 前面が別のウィンドウに替わって failed）。偽のメモ帳（window_id 1001）が対象。偽 platform で、実機の代わりにならない")
 	viewerScope := flag.Bool("viewer-scope", false, "ビューアのウィンドウ選択・グループ表示・手動操作を、偽のメモ帳（window_id 1001）と周りの偽のウィンドウで確かめる（使い方は viewerscope.go の先頭のコメント。-agent-demo とは一緒に使えない）。偽 platform で、実機の代わりにならない")
 	agentSafety := flag.Bool("agent-safety-check", false, "-agent-demo の台本の 2 ステップ目に OpenAI の安全チェック（承認ダイアログ）を付ける")
+	taskHistory := flag.Int("task-history", 0, "/tasks の確認用に、終了済みのタスクの履歴を N 件入れる（60 など、1 ページ 50 件を超える数でページ送りが出る。スクリーンショット用）")
+	pendingRequest := flag.Bool("pending-request", false, "/requests の確認用に、未処理の接続要求を 1 件入れる（スクリーンショット用）")
 	approval := flag.String("approval", string(domain.ApprovalAuto), "デモのクライアントの承認モード（auto: 承認なしでリースを取る / always: 毎回承認。承認要求の id はログに出る）")
 	flag.Parse()
-	if err := run(*remoteAddr, *guiAddr, domain.ApprovalMode(*approval), *agentDemo, *agentSafety, *agentScope, *viewerScope); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := run(ctx, nil, *remoteAddr, *guiAddr, domain.ApprovalMode(*approval), *agentDemo, *agentSafety, *agentScope, *viewerScope, *taskHistory, *pendingRequest); err != nil {
+		stop() // log.Fatal は defer を走らせないので、シグナルの購読を先に解く
 		log.Fatal(err)
 	}
 }
 
-func checkLoopback(flagName, addr, wantPort string) error {
-	host, port, err := net.SplitHostPort(addr)
+// checkLoopback は -flagName の値 addr が「loopback の IP:ポート」かを調べ、ポートを返す。
+// ポートは 10 進の数字だけで minPort〜65535（0 は OS 任せになり、Host ヘッダーの検査と合わせられないので、minPort が 0 のときだけ許す）。
+// "localhost" などの名前は解決で loopback 以外になりうるので受け付けない。
+func checkLoopback(flagName, addr string, minPort int) (int, error) {
+	host, portText, err := net.SplitHostPort(addr)
 	if err != nil {
-		return err
+		return 0, fmt.Errorf("-%s %q は IP:ポート の形で指定する（例: 127.0.0.1:8765）: %w", flagName, addr, err)
 	}
 	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("remotedemo は loopback でだけ待ち受ける（-%s %q）", flagName, addr)
+		return 0, fmt.Errorf("remotedemo は loopback の IP（127.0.0.1・::1）でだけ待ち受ける（-%s %q）", flagName, addr)
 	}
-	if wantPort != "" && port != wantPort {
-		return fmt.Errorf("-%s のポートは %s 固定（Host ヘッダーの検査が設定のポートと比べるため）: %q", flagName, wantPort, addr)
+	port, err := strconv.ParseUint(portText, 10, 16) // 符号・空・範囲外（65535 超）は拒否される
+	if err != nil || int(port) < minPort {
+		return 0, fmt.Errorf("-%s のポートは %d〜65535 の数字で指定する（%q）", flagName, minPort, addr)
 	}
-	return nil
+	return int(port), nil
 }
 
-func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, agentSafety bool, agentScope string, viewerScope bool) error {
+// run はデモを起動し、ctx が終わるまで動かす。ready が nil でなければ、待ち受けを始めた後にホスト GUI のアドレスを渡して呼ぶ（テスト用）。
+func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, agentSafety bool, agentScope string, viewerScope bool, taskHistory int, pendingRequest bool) error {
 	if viewerScope && agentDemo {
 		return errors.New("remotedemo: -viewer-scope は -agent-demo と一緒に使えない")
 	}
@@ -107,14 +124,13 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 	if approval != domain.ApprovalAuto && approval != domain.ApprovalAlways {
 		return fmt.Errorf("remotedemo: -approval は auto / always のどちらか（%q）", approval)
 	}
-	if err := checkLoopback("addr", remoteAddr, demoPort); err != nil {
+	remotePort, err := checkLoopback("addr", remoteAddr, minRemotePort)
+	if err != nil {
 		return err
 	}
-	if err := checkLoopback("gui-addr", guiAddr, ""); err != nil {
+	if _, err := checkLoopback("gui-addr", guiAddr, 0); err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 
 	dir, err := os.MkdirTemp("", "remotedemo-")
 	if err != nil {
@@ -126,12 +142,27 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 		return err
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Host ヘッダーの検査（偽の tailnet の IP:ポート・MCP の SDK）は設定 server.port と比べるので、-addr のポートに揃える。
+	if err := db.Settings().Set(ctx, "server.port", json.RawMessage(strconv.Itoa(remotePort))); err != nil {
+		_ = db.Close()
+		return err
+	}
 
 	if err := db.Clients().Create(ctx, domain.Client{
 		ID: registeredID, StableNodeID: "node-demo-1", LoginName: "demo-user@example.com", DisplayName: "demo-laptop",
 		WebEnabled: true, MCPEnabled: true, AgentEnabled: agentDemo, ApprovalMode: approval, // 既定の auto は承認を待たずにリースを取る。always は承認ダイアログ（偽のウィンドウ）を開き、ホスト GUI の /approvals/{id} で決める
 	}); err != nil {
 		return err
+	}
+
+	if err := seedTaskHistory(ctx, db, taskHistory); err != nil {
+		return err
+	}
+
+	if pendingRequest {
+		if err := seedPendingRequest(ctx, db); err != nil {
+			return err
+		}
 	}
 
 	secrets := platformtest.NewFakeSecretStore()
@@ -183,16 +214,16 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 			Capturer: capturer, Input: injector,
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
 			Launcher: launcher, FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
-			Secrets: secrets,
-			Hotkey:  platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
+			Secrets: secrets, Browser: platformtest.NewFakeBrowserOpener(),
+			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
 		},
 		Watcher: watcher, WhoIs: whois,
-		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())),
+		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,
 		Version: "demo", Logger: logger, OpenAIModel: model,
-		// tailnet の IP の代わりに、-addr の loopback で待ち受ける（IPv4 の 1 本だけ）。
+		// tailnet の IP の代わりに、-addr の loopback で待ち受ける（1 本だけ）。
 		// 接続の LocalAddr は偽の tailnet アドレスに見せる（MCP の SDK は loopback 宛ての Host 検査をするため。agentdemo.go）。
 		ListenFunc: func(_ context.Context, _, addr string) (net.Listener, error) {
-			ln, err := net.Listen("tcp4", remoteAddr)
+			ln, err := net.Listen("tcp", remoteAddr)
 			if err != nil {
 				return nil, err
 			}
@@ -218,12 +249,15 @@ func run(remoteAddr, guiAddr string, approval domain.ApprovalMode, agentDemo, ag
 	if err != nil {
 		return err
 	}
-	log.Printf("remotedemo: viewer http://%s:%s/viewer (Host は %s: --host-resolver-rules=\"MAP %s %s\")", demoTailnet, demoPort, demoTailnet, demoTailnet, "127.0.0.1")
+	log.Printf("remotedemo: viewer http://%s:%d/viewer (Host は %s: --host-resolver-rules=\"MAP %s %s\")", demoTailnet, remotePort, demoTailnet, demoTailnet, "127.0.0.1")
 	if agentDemo {
-		logAgentDemo(remoteAddr)
+		logAgentDemo(remoteAddr, remotePort)
 	}
 	log.Printf("remotedemo: host GUI http://%s/  identity switch http://%s/__demo/identity?as=unregistered", ln.Addr(), ln.Addr())
 
+	if ready != nil {
+		ready(ln.Addr())
+	}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

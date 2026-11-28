@@ -405,3 +405,73 @@ test("[偽 platform の表示] 「モニター表示」「ウィンドウ表示�
   await expect(page.getByRole("button", { name: "モニター表示" })).toHaveCount(0);
   await waitForImage(canvas, STREAM_WIDTH, STREAM_HEIGHT);
 });
+
+// #180・#181: ツールチップ（無効のショートカットのキーの出す側）。実描画の位置（真上か真下・画面内）と、WCAG 1.4.13（Esc で閉じる・hoverable・persistent）。
+for (const viewport of [
+  { width: 1280, height: 720 },
+  { width: 390, height: 844 },
+]) {
+  test(`[ツールチップ ${viewport.width} 幅] 出す側の真上か真下で画面内に出て、Esc で閉じ（フォーカスは動かない）、本文の上でも消えない`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await openViewer(page);
+    await selectWindow(page, "無題 - FakeNotepad");
+    const trigger = page.locator("#key-menu .tip-host").first();
+    const tip = trigger.locator(".tip");
+    await trigger.scrollIntoViewIfNeeded();
+    const box = async (locator: Locator) => {
+      const b = await locator.boundingBox();
+      if (!b) {
+        throw new Error("no bounding box");
+      }
+      return b;
+    };
+
+    await test.step("ホバーで出る。出す側の真上か真下（横にずらさず中央）で、画面から出ない", async () => {
+      await trigger.hover();
+      await expect(tip).toBeVisible();
+      const host = await box(trigger);
+      const t = await box(tip);
+      const above = t.y + t.height <= host.y;
+      const below = t.y >= host.y + host.height;
+      expect(above || below, "the tooltip sits entirely above or below its trigger").toBe(true);
+      expect(t.x).toBeGreaterThanOrEqual(0);
+      expect(t.x + t.width).toBeLessThanOrEqual(viewport.width);
+      expect(t.y).toBeGreaterThanOrEqual(0);
+      expect(t.y + t.height).toBeLessThanOrEqual(viewport.height);
+      // 本文が出す側の横の範囲を含む（隣へ寄らない）。
+      expect(t.x).toBeLessThanOrEqual(host.x + host.width);
+      expect(t.x + t.width).toBeGreaterThanOrEqual(host.x);
+    });
+
+    await test.step("hoverable: 出す側と本文の間の隙間も、本文の上も、消えない", async () => {
+      const host = await box(trigger);
+      const t = await box(tip);
+      const gapY = t.y + t.height <= host.y ? (t.y + t.height + host.y) / 2 : (host.y + host.height + t.y) / 2;
+      await page.mouse.move(host.x + host.width / 2, gapY);
+      await expect(tip).toBeVisible();
+      await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2);
+      await expect(tip).toBeVisible();
+    });
+
+    await test.step("Esc で閉じる。ポインターは動かさず、同じ出す側に置いたまま。再びホバーすると出る", async () => {
+      await page.keyboard.press("Escape");
+      await expect(tip).toBeHidden();
+      await page.mouse.move(0, viewport.height - 1);
+      await trigger.hover();
+      await expect(tip).toBeVisible();
+    });
+
+    await test.step("フォーカスで出る。Esc で閉じてもフォーカスは出す側に残り、persistent（フォーカスが外れるまで出たまま）", async () => {
+      await page.mouse.move(0, viewport.height - 1);
+      await expect(tip).toBeHidden();
+      await trigger.focus();
+      await expect(tip).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(tip).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await trigger.evaluate((el) => el.blur());
+      await trigger.focus();
+      await expect(tip).toBeVisible();
+    });
+  });
+}

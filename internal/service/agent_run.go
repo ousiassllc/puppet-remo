@@ -22,7 +22,8 @@ import (
 type run struct {
 	a      *AgentService
 	id     string
-	cfg    AgentConfig // タスクの開始時の設定（そのタスクでは固定する）
+	conn   domain.AgentConnection // タスクの接続方式（開始時に固定。task.Connection と同じ値で、他の goroutine が読めるようここにも持つ）
+	cfg    AgentConfig            // タスクの開始時の設定（そのタスクでは固定する）
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 	// stopLimit は実行時間の上限のタイマーの取り消し（armLimitTimer。running になるまでは nil）。
@@ -93,6 +94,10 @@ func (r *run) loop() outcome {
 	}
 	r.markRunning()
 	r.armLimitTimer()
+	// 接続方式がプラン（chatgpt・chatgpt-codex）なら関数ツールのループ。高速パスは使わない（Enabled も Run も呼ばない。FR-G25・G27）。
+	if r.conn.Plan() {
+		return r.planLoop()
+	}
 
 	var summary []string
 	// 高速パスはスコープ付き（window_id つき）では使わない（Enabled も Run も呼ばない。UIA の読み取り・TypeSafe への送信も起きない。FR-G22）。
@@ -163,19 +168,7 @@ func (r *run) runActions(ctx context.Context, ops []domain.Op) (executed int, yi
 		r.scope.diff = domain.GroupDiff{}
 	}
 	for _, op := range ops {
-		if err := r.checkBeforeAction(); err != nil {
-			return executed, false, false, err
-		}
-		step := AgentStep{No: r.task.StepCount, Route: AgentRouteOpenAI}
-		actx := ctx
-		if r.scope != nil {
-			if op, err = r.scope.convert(op); err != nil {
-				return executed, false, false, err
-			}
-			step.ExtraDetail = map[string]any{"target_window_id": r.task.TargetWindowID}
-			actx = withGroupObserver(WithPhysicalCoords(actx), r.scope.observe)
-		}
-		if _, err := r.a.cfg.Control.Do(WithAgentStep(actx, step), r.actor, op); err != nil {
+		if err := r.doOp(ctx, op); err != nil {
 			if r.scope != nil && IsGroupChanged(err) {
 				return executed, true, IsGroupChangedPartial(err), nil
 			}
@@ -184,6 +177,25 @@ func (r *run) runActions(ctx context.Context, ops []domain.Op) (executed int, yi
 		executed++
 	}
 	return executed, false, false, nil
+}
+
+// doOp は Op 1 件を実行する: 取り消し・実行時間の検査 → （スコープ付きなら座標の変換と対象グループの観察）→ Control.Do。
+// 拒否・ブロック・対象グループの変化（IsGroupChanged）は err で返す。両方の経路（computer ツール・関数ツール）が使う。
+func (r *run) doOp(ctx context.Context, op domain.Op) error {
+	if err := r.checkBeforeAction(); err != nil {
+		return err
+	}
+	step := AgentStep{No: r.task.StepCount, Route: AgentRouteOpenAI}
+	if r.scope != nil {
+		var err error
+		if op, err = r.scope.convert(op); err != nil {
+			return err
+		}
+		step.ExtraDetail = map[string]any{"target_window_id": r.task.TargetWindowID}
+		ctx = withGroupObserver(WithPhysicalCoords(ctx), r.scope.observe)
+	}
+	_, err := r.a.cfg.Control.Do(WithAgentStep(ctx, step), r.actor, op)
+	return err
 }
 
 // auditYield は中断（対象グループの変化）を監査 agent.batch_yielded に残す（実行・一部実行・未実行の件数と理由。タイトル・入力文字は含めない）。
@@ -566,7 +578,7 @@ func (a *AgentService) taskStartEntry(r *run) repository.AuditEntry {
 	e := agentAuditBase(context.Background(), r.actor, agentTaskStartAuditEvent, "")
 	e.Result = auditOK
 	detail := map[string]any{
-		"prompt_len": utf8.RuneCountInString(r.task.Prompt), "model": r.task.Model,
+		"prompt_len": utf8.RuneCountInString(r.task.Prompt), "model": r.task.Model, "connection": string(r.task.Connection),
 		"max_steps": r.task.MaxSteps, "max_duration_sec": r.task.MaxDurationSec,
 	}
 	if r.task.Scoped() {
@@ -615,7 +627,7 @@ func (a *AgentService) taskEndEntry(r *run, finished time.Time) repository.Audit
 }
 
 // taskEndResult は agent.task_end の result。拒否・ブロック（FR-G07）とホストの承認の拒否、リースの競合負けは denied、
-// それ以外の失敗は error、完了・中断（キルスイッチ・リースの喪失を含む）・上限は ok（タスクとして正常に終わった）。
+// それ以外の失敗は error（接続方式 chatgpt・chatgpt-codex の使用量の上限は denied）、完了・中断（キルスイッチ・リースの喪失を含む）・上限は ok（タスクとして正常に終わった）。
 func taskEndResult(status domain.TaskStatus, code string) string {
 	switch status {
 	case domain.TaskDenied:
@@ -623,7 +635,8 @@ func taskEndResult(status domain.TaskStatus, code string) string {
 	case domain.TaskFailed:
 		switch code {
 		case domain.TaskErrorInputBlocked, domain.TaskErrorJudgeDenied, domain.TaskErrorApprovalDenied, domain.TaskErrorApprovalTimeout,
-			domain.TaskErrorLeaseHeldByOther, domain.TaskErrorSafetyCheckDenied:
+			domain.TaskErrorLeaseHeldByOther, domain.TaskErrorSafetyCheckDenied,
+			domain.TaskErrorChatGPTUsageLimit, domain.TaskErrorCodexUsageLimit: // 使用量の上限は拒否された扱い（FR-G30・G38）
 			return auditDenied
 		}
 		return auditError

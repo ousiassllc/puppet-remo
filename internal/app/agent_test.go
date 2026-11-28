@@ -75,6 +75,10 @@ func newAgentEnv(t *testing.T, model service.AgentModel, mutate ...func(*Config)
 	if err := e.app.agentCfg.SetOpenAIKey(ctx, "sk-test-dummy-presence-marker"); err != nil {
 		t.Fatal(err)
 	}
+	// この試験は API キーの経路（computer ツール）で動かす（既定の接続方式は chatgpt。FR-G25）。
+	if err := e.app.agentCfg.SetConnection(ctx, domain.ConnectionOpenAIAPIKey, true, "manual"); err != nil {
+		t.Fatal(err)
+	}
 	if err := e.app.agentCfg.SaveAgent(ctx, service.AgentSettingsInput{
 		Enabled: true, Consent: true, Model: "gpt-6.1-sol", MaxSteps: 50, MaxDurationSec: 600, KeepScreenshots: 3,
 		DenyProcesses: []string{"KeePass.exe"},

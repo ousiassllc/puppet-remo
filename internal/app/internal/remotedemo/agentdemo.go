@@ -98,10 +98,10 @@ func (m *demoModel) Step(ctx context.Context, in agenttest.StepInput) (agenttest
 }
 
 // logAgentDemo はデモの使い方をログに出す。
-func logAgentDemo(remoteAddr string) {
+func logAgentDemo(remoteAddr string, remotePort int) {
 	log.Printf("remotedemo: agent demo is on. The demo client may run tasks; the OpenAI model is a script (nothing leaves this machine).")
 	log.Printf("remotedemo: start a task (the Host header must be the fake tailnet IP):")
-	log.Printf(`  curl -s -H "Host: %s:%s" -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \`, demoTailnet, demoPort, demoToken)
+	log.Printf(`  curl -s -H "Host: %s:%d" -H "Authorization: Bearer %s" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \`, demoTailnet, remotePort, demoToken)
 	log.Printf(`    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' http://%s/mcp -D -`, remoteAddr)
 	log.Printf("  (then send the Mcp-Session-Id header from that response with tools/call run_task / get_task / cancel_task; see the remotedemo doc comment)")
 }

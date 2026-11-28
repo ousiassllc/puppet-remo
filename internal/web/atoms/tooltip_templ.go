@@ -12,6 +12,7 @@ import templruntime "github.com/a-h/templ/runtime"
 // children（出す側の印。文字や記号）を、フォーカスできる要素（tabindex="0"）に包み、aria-describedby で role="tooltip" の本文につなぐ。
 // 本文は隠れている間も DOM に残る（読み上げ用）。id はページ内で一意にする（呼び出し側が決める）。
 // 本文はボタン・リンクを含めない（ホバーで出る文は触れない。ガイド）。見た目は app.css の .tip-host・.tip（--tip-* トークン）。
+// 出す側の真上（入りきらなければ真下）に出し、Esc で閉じられる（app.ts。WCAG 1.4.13）。
 func Tooltip(id, text string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -40,7 +41,7 @@ func Tooltip(id, text string) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/tooltip.templ`, Line: 8, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/tooltip.templ`, Line: 9, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -61,7 +62,7 @@ func Tooltip(id, text string) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/tooltip.templ`, Line: 10, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/tooltip.templ`, Line: 11, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -74,7 +75,7 @@ func Tooltip(id, text string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/tooltip.templ`, Line: 10, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/atoms/tooltip.templ`, Line: 11, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

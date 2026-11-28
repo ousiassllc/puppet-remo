@@ -799,6 +799,19 @@ func TestSettings(t *testing.T) {
 	if _, ok, _ := ss.Get(ctx, "k"); ok {
 		t.Error("invalid value was stored")
 	}
+
+	// Delete は行を消し、行が無くても成功する。
+	for range 2 {
+		if err := ss.Delete(ctx, "server.port"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+	}
+	if _, ok, err := ss.Get(ctx, "server.port"); err != nil || ok {
+		t.Errorf("Get after Delete: ok = %v, err = %v; want absent", ok, err)
+	}
+	if _, ok, _ := ss.Get(ctx, "killswitch.state"); !ok {
+		t.Error("Delete removed another key")
+	}
 }
 
 func TestAuditAppend(t *testing.T) {
