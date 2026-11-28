@@ -126,6 +126,20 @@ func (m Monitor) ScaledRect(r Rect, maxDim int) (Rect, bool) {
 	return Rect{X: tl.X, Y: tl.Y, W: br.X - tl.X + 1, H: br.Y - tl.Y + 1}, true
 }
 
+// ScaledExtent は仮想デスクトップ上の物理座標の矩形 r を、このモニターの縮小座標の矩形にする。ScaledRect と違い、モニターの範囲へ切り詰めない
+// （モニターからはみ出す部分は、負の座標や縮小スクリーンショットの外の座標のまま返す）。ウィンドウ単位のスクリーンショット（ウィンドウ全体の画像）を、
+// モニターの縮小座標へ置くのに使う。左上と右下（排他的な端）をそれぞれ PhysicalToScaled と同じ丸めで縮小するので、画像の 1 px が縮小座標の 1 単位に対応し、
+// 隣り合う矩形の境界が重なっても隙間もできない。空の矩形は 1×1 以上にしない（空のまま返す）。
+func (m Monitor) ScaledExtent(r Rect, maxDim int) Rect {
+	if r.Empty() {
+		return Rect{}
+	}
+	num, den := m.ratio(maxDim)
+	x0, y0 := divRound((r.X-m.Origin.X)*num, den), divRound((r.Y-m.Origin.Y)*num, den)
+	x1, y1 := divRound((r.X+r.W-m.Origin.X)*num, den), divRound((r.Y+r.H-m.Origin.Y)*num, den)
+	return Rect{X: x0, Y: y0, W: max(1, x1-x0), H: max(1, y1-y0)}
+}
+
 // MonitorAt は物理座標 p を含むモニターを返す。どれにも含まれなければ false。
 func MonitorAt(monitors []Monitor, p Point) (Monitor, bool) {
 	for _, m := range monitors {

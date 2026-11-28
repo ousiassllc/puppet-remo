@@ -734,6 +734,9 @@ type Control interface {
     Do(ctx context.Context, who domain.Actor, op domain.Op) (Result, error)
     // 閲覧系（リース不要）。
     Screenshot(ctx context.Context, monitor int, format string) (Shot, error)
+    // ウィンドウ単位の閲覧（リース不要。FR-M26。#269）。screenshot の window_id。GroupCapturer.GrabGroup（PrintWindow。前面にしない・モニター撮影に切り替えない）で
+    // 撮り、自ウィンドウ・昇格・最小化は ErrInputBlocked、存在しない id は ErrWindowNotFound。座標は WindowShot.Rect（対象が最も重なるモニターの縮小座標）。
+    WindowScreenshot(ctx context.Context, req WindowShotRequest) (WindowShot, error)
     Monitors(ctx context.Context) ([]domain.Monitor, error)
     Windows(ctx context.Context) ([]domain.WindowInfo, error)
     // M1 で mcp が使う読み取り（リース不要）。CursorPosition は縮小座標とモニター、MaxDimension は設定 `screenshot.max_dimension`（縮小率の算出に使う）。

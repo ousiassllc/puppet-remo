@@ -90,6 +90,10 @@ type fakeControl struct {
 	// screenshotArgs は直近の Screenshot の引数。
 	screenshotMonitor int
 	screenshotFormat  string
+	// windowShot は WindowScreenshot が返す結果、windowShotReq は直近の WindowScreenshot の引数、windowShotCalls はその呼び出し回数。
+	windowShot      service.WindowShot
+	windowShotReq   service.WindowShotRequest
+	windowShotCalls int
 }
 
 func newFakeControl(leases service.LeaseManager, kill service.KillSwitchState) *fakeControl {
@@ -241,6 +245,17 @@ func (f *fakeControl) Screenshot(_ context.Context, monitor int, format string) 
 		return service.Shot{}, err
 	}
 	return f.shot, nil
+}
+
+func (f *fakeControl) WindowScreenshot(_ context.Context, req service.WindowShotRequest) (service.WindowShot, error) {
+	f.mu.Lock()
+	f.windowShotReq = req
+	f.windowShotCalls++
+	f.mu.Unlock()
+	if err := f.viewErr(); err != nil {
+		return service.WindowShot{}, err
+	}
+	return f.windowShot, nil
 }
 
 func (f *fakeControl) Monitors(context.Context) ([]domain.Monitor, error) {

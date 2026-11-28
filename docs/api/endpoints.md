@@ -167,10 +167,30 @@ SDK の localhost 向け保護には依存せず、自前の Host / Origin 検�
 |------|----|------|------|
 | `monitor` | integer | いいえ | モニター index（既定: プライマリ） |
 | `format` | `"png"` \| `"jpeg"` | いいえ | 既定 `png` |
+| `window_id` | string | いいえ | `list_windows` の `id`。指定するとそのウィンドウだけを撮る（FR-M26。下の「ウィンドウ単位」）。`monitor` とは同時に指定できない（`invalid_argument`）。省略するとモニター全体で、従来と出力は変わらない |
+| `include_owned` | boolean | いいえ | `window_id` のときだけ（`window_id` なしは `invalid_argument`）。既定 `false`。`true` で、同一プロセスで所有関係を検証できるダイアログ・メニュー・子ウィンドウも 1 枚に重ねる |
 
 出力: MCP の画像コンテンツ（`image/png` または `image/jpeg`、base64。縮小済み）と、テキストコンテンツの JSON `{ "monitor": 0, "physical": {…}, "scaled": {…}, "scale": 0.6125, "own_windows": [ {"monitor": 0, "rect": {"x": 784, "y": 0, "width": 393, "height": 442}} ] }`。
 
 `own_windows` は、撮影した時点でそのモニター上にある Nefos Remote 自身のウィンドウの範囲（無ければ空配列）。これらのウィンドウは画像に**写らず**（キャプチャ除外。NFR-S06）、入力は `input_blocked`（`own_window`）になるため、`rect`（この画像の座標。縮小座標）の範囲を避ける。画像には印を描かない（FR-M20）。範囲を取れなかったときも画像は返し、`own_windows` は空になる。
+
+**ウィンドウ単位（`window_id` つき。FR-M26。#269）**: そのウィンドウ 1 枚の画像だけを返す。ウィンドウ自身の内容を PrintWindow（`PW_RENDERFULLCONTENT`）で撮るので、**前面にならず**、**上に別のウィンドウが重なっていても対象自身の内容だけが写る**（#156 の `GroupCapturer.GrabGroup` と共通。画面の DC・モニター撮影・デスクトップの切り抜きは使わず、撮れないときもモニター撮影へ切り替えない）。リースは不要（モニター全体の `screenshot` と同じ閲覧系）。出力のテキストは次の項目が加わる（`window_id` なしでは出ない）:
+
+```json
+{ "monitor": 0, "physical": {"width": 550, "height": 320}, "scaled": {"width": 270, "height": 157}, "scale": 0.49,
+  "own_windows": [],
+  "window_id": "1001",
+  "rect": {"x": 49, "y": 39, "width": 270, "height": 157},
+  "windows": [ {"id": "1003", "relation": "owned", "rect": {"x": 220, "y": 39, "width": 98, "height": 59}},
+               {"id": "1001", "relation": "target", "rect": {"x": 49, "y": 49, "width": 196, "height": 147}} ],
+  "omitted": [ {"id": "1004", "reason": "related_cross_process"} ] }
+```
+
+- 座標: `monitor` は対象のウィンドウが最も重なるモニター（座標系の基準）、`scale` はそのモニターの縮小率、`physical` は撮れた画像の元の大きさ（物理ピクセル）、`scaled` は画像の大きさ。**`rect` は画像の左上と大きさを、そのモニターの縮小スクリーンショットの座標で表す**（`list_windows` の `rect` と同じ座標系。ただしモニターの範囲へは切り詰めない）。画像の点 `(px, py)` は縮小座標 `(rect.x + px, rect.y + py)` で、そのまま `left_click` などの `x`・`y` に使える（`monitor` を同じ値で渡す。±1 px の丸め）。ウィンドウがモニターからはみ出しているときは、はみ出した部分が負の座標かモニターの外の座標になり、そこへの入力は `invalid_coordinates`
+- `windows`: 画像に写っているウィンドウ（前面が先。`include_owned` なしでは対象 1 件）。`relation` は `target` / `owned`（所有されたダイアログ）/ `child` / `menu`。`rect` は同じ座標系
+- `include_owned: true`: 対象と**同一プロセス**で所有関係を検証できるウィンドウだけを重ねる（画像と `rect` はその外接矩形）。別プロセスのウィンドウ（`related_cross_process`。共通ダイアログなど）・所有関係を確かめられないウィンドウ（`related_unverifiable`）は自動では入れず `omitted`（`id`・`reason`）に出す。メンバーが撮れなかったとき（`capture_member_unavailable`）も撮影は失敗にせず `omitted`。`omitted` は空なら出ない
+- 拒否・失敗（ツールエラー）: キルスイッチ中は `kill_switch_active`。`window_id` が空・`monitor` との同時指定・`include_owned` だけの指定・不明な `format` は `invalid_argument`。**存在しない・閉じた・cloaked・形式が不正な `window_id`、撮る直前に閉じた・別のウィンドウに置き換わったウィンドウは `window_not_found`**。**Nefos Remote 自身のウィンドウは決して撮らず**（`input_blocked`・`detail.reason` = `own_window`。`detail.own_windows` 付き。NFR-S06）、昇格（`elevated_window`）・最小化（`target_minimized`）・同一性を確かめる値が不明、または検証前の UWP（`target_unsupported`）は `input_blocked`、PrintWindow の失敗・何も描かれなかった・撮影が 3 秒で終わらない・応答しないアプリ・ホストに `GroupCapturer` がないは `input_blocked`（`detail.reason` = `capture_unavailable`）。いずれも `detail.window_id` が付く
+- 監査: ほかの `screenshot` と同じく `kind = tool` で記録する。引数の要約に `window_id`・`include_owned`（ウィンドウのタイトル・画像は含めない）
 
 **`cursor_position`**
 
@@ -820,3 +840,4 @@ ChatGPT へのサインイン（FR-G28）で、ブラウザが認可のあとに
 | 1.58 | 2026-11-26 | §6 の JSON API（`/api/v1/status`・`monitors`・`lease`・`openapi.json`）を実装した旨に改め、`openapi.json` を表に加えた。§7.5 の M1 の差分から `/api/v1` の「M2 以降」を外した | #232 |
 | 1.59 | 2026-11-27 | §2 の `audit_unavailable` に GUI の設定変更を追記。§7.3 の冒頭に、設定変更（`PUT /settings`・`/agent*`・`/apps*`）の fail-closed（監査に書けなければ変更を戻して 503。戻せなければ警告文）を追記（#182） | #182 |
 | 1.60 | 2026-11-27 | 内蔵エージェントの接続方式に `chatgpt-codex` を追加（#247）: §1 のホスト専用の操作、§2 の `agent_disabled` の `detail.reason`（`openai_key_missing` と `codex_*` の 6 種）と失敗コード（`codex_usage_limit` / `codex_unauthorized` / `codex_engine_unavailable` / `codex_error`）、§3.3 の `run_task`・`get_task`（`connection` の値・`openai_steps` の数え方・`error_code`）、§3.4、§7.1 の `/agent`、§7.3 の `PUT /agent`・`PUT /agent/connection`（`chatgpt` ↔ `chatgpt-codex` は確認なし）と `/agent/codex/*` のルート（取得・中止・サインイン・中止・サインアウトの確認・`DELETE /agent/codex`〔`remove_engine`〕・再開・モデル・`PUT /agent/codex`）、§7.4 の `rev_codex`・`#codex-card`。公式経路: §7.6 のポートを `1455` → `1457` → 空きポートに、`POST /agent/chatgpt/signin` のポリシー拒否（`policy_denied`・Codex への案内）、§7.5 の ChatGPT のプラン経路を実装済みの記述に（実装の名前） | #247 |
+| 1.61 | 2026-11-28 | §3.3 の `screenshot` に `window_id`（ウィンドウ単位の撮影。PrintWindow・前面にしない・モニター撮影へ切り替えない）と `include_owned` を追加し、出力に `window_id`・`rect`（対象が最も重なるモニターの縮小座標）・`windows`・`omitted`、拒否（`window_not_found`・自ウィンドウ `own_window` / `elevated_window` / `target_minimized` / `target_unsupported` / `capture_unavailable` の `input_blocked`）を追記。`window_id` を省略したときの動作は変更なし | #269（FR-M26） |

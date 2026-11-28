@@ -144,7 +144,7 @@ stateDiagram-v2
 | ID | ツール | 引数 | 戻り値 | リース | 優先度 |
 |----|-------|------|--------|-------|--------|
 | FR-M01 | `get_screen_info` | なし | モニター一覧（index、名称、プライマリか、物理サイズ、原点、DPI スケール、スクリーンショット縮小率） | 不要 | M1 |
-| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター、`own_windows`＝Nefos Remote 自身のウィンドウの範囲。FR-M20） | 不要 | M1 |
+| FR-M02 | `screenshot` | `monitor?`（既定: プライマリ）、`format?`（`png` 既定 / `jpeg`）、`window_id?`（`list_windows` の id。指定するとそのウィンドウだけを撮る。`monitor` とは同時に指定できない。FR-M26）、`include_owned?`（`window_id` のときだけ。既定 false） | 画像（縮小済み）とメタ情報（元サイズ、縮小後サイズ、縮小率、モニター、`own_windows`＝Nefos Remote 自身のウィンドウの範囲。FR-M20。`window_id` つきは加えて `window_id`・`rect`・`windows`・`omitted`。FR-M26） | 不要 | M1 |
 | FR-M03 | `cursor_position` | なし | カーソル座標（縮小座標系）とモニター | 不要 | M1 |
 | FR-M04 | `mouse_move` | `x`, `y`, `monitor?` | OK | 必要 | M1 |
 | FR-M05 | `left_click` / `right_click` / `middle_click` / `double_click` / `triple_click` | `x?`, `y?`（省略時は現在位置）, `modifiers?`（`ctrl` / `shift` / `alt` / `win` の配列）, `monitor?` | OK | 必要 | M1 |
@@ -455,6 +455,18 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 - **事前（説明）**: MCP の `instructions` と、`screenshot`・`list_windows`・座標を取る入力ツール・`key`・`type` のツールの説明に、「puppet-remo のウィンドウはスクリーンショットに写らず、入力は `input_blocked`（`own_window`）になる。範囲は `own_windows` と `blocked` で分かる」旨を書く
 - **採らなかった案**: スクリーンショットの該当範囲への塗りつぶし・枠の描画は、(1) キャプチャの経路（`Capturer.Grab` → 縮小 → 符号化）に、ウィンドウの一覧との同時性（撮影の直後にウィンドウが動く）を前提にした描画を足すことになり、ずれた印が誤った安全の手がかりになる、(2) 印が画像上の他のアプリの内容を隠し、AI が背後を読めなくなる、(3) 同じ情報は `own_windows`（機械可読）で足りる、ため行わない。NFR-S06 のキャプチャ除外（`WDA_EXCLUDEFROMCAPTURE`）は変更しない
 
+**ウィンドウ単位のスクリーンショット（FR-M26。#269）**
+
+`screenshot` に `window_id` を渡すと、そのウィンドウ 1 枚の画像だけを返す。`window_id` を省略したときの動作・出力は従来（FR-M02。モニター全体）と変わらない（`window_id`・`rect`・`windows`・`omitted` は出力に出ない）。
+
+- **撮り方**: ウィンドウ自身の内容を PrintWindow（`PW_RENDERFULLCONTENT`）でメモリ DC へ撮る。**前面にしない**（フォーカスを奪わない）・画面の DC やモニター撮影・デスクトップの切り抜きは使わない・**対象の上に別のウィンドウが重なっていても、写るのは対象自身の内容だけ**（他のウィンドウの画素が混ざらない）。#156 の `GroupCapturer.GrabGroup`（FR-L09〜L14 の対象グループの撮影）をそのまま使う（同一性の確認・タイムアウト・応答なしのアプリを撮らない・sentinel による「何も描かれなかった」の検出・合成も共通）。撮れないときに**モニター撮影へ切り替えない**
+- **検査の順序**: キルスイッチ（`kill_switch_active`）→ 引数（`format` が不正・`window_id` が空・`monitor` との同時指定・`window_id` なしの `include_owned` は `invalid_argument`）→ ウィンドウの特定（可視で cloaked でないトップレベルウィンドウにない〔閉じた・cloaked・形式が不正〕は `window_not_found`）→ 撮らないウィンドウの拒否 → 撮影。リースは不要（閲覧系。FR-M02 と同じ）。承認・Judge・スコープ付きリースの検査は通らない（モニター全体の `screenshot` と同じ扱い。ウィンドウ単位は**見える範囲を狭める**だけで、モニター全体より多くは見せない）
+- **撮らないウィンドウ（`input_blocked`。`detail.reason` と `detail.window_id`）**: **Nefos Remote 自身のウィンドウ**は決して撮らない（`own_window`。NFR-S06。`detail.own_windows` も付く。設定値・API キーの入力欄を AI に見せないため。`include_owned` でも自ウィンドウは画像に入らない）、昇格ウィンドウ（`elevated_window`。UIPI のため PrintWindow が届かない）、最小化（`target_minimized`。内容を撮れない）、同一性を確かめる値（PID・開始時刻・クラス）が不明なウィンドウと検証前の UWP（`target_unsupported`）。撮影の失敗（PrintWindow が失敗・何も描かれなかった・撮影が 3 秒で終わらない・応答しないアプリ・ホストに `GroupCapturer` がない）も `input_blocked`（`detail.reason` = `capture_unavailable`）。撮る直前にウィンドウが閉じた・別のウィンドウに置き換わった（HWND の再利用）は `window_not_found`。GPU 描画のアプリが黒く写る範囲は実機で確かめる（docs/operations/smoke-windows.md §3.10.5）
+- **座標（FR-M16 との対応）**: 画像は、対象のウィンドウが**最も重なるモニター**（`rect` の基準。`monitor` で返す）の縮小率（`scale`。`get_screen_info` の値）で縮小する。`rect` は画像の左上と大きさを**そのモニターの縮小スクリーンショットの座標**で表す（`window_id` なしの `screenshot`・`list_windows` の `rect` と同じ座標系・同じ丸め）。画像の点 `(px, py)` は縮小座標 `(rect.x + px, rect.y + py)` で、そのまま `left_click` などの `x`・`y`（`monitor` は `rect` の `monitor`）に使える（往復で ±1 px）。ウィンドウがモニターからはみ出しているときは、はみ出した部分が負の座標かモニターの縮小スクリーンショットの外の座標になり、そこへの入力は `invalid_coordinates` になる。ウィンドウがモニターより大きいと、画像の長辺が `screenshot.max_dimension` を超えることがある（縮小率はモニターのものに揃える。縮小座標との対応を崩さないため）
+- **`include_owned`（既定 false）**: true にすると、対象と**同一プロセスで所有関係を検証できる**関連ウィンドウ（所有されたダイアログ・メニュー・子ウィンドウ。#156 の対象グループ G のメンバー。`domain.ResolveGroup`）を Z オーダーで 1 枚の透明のキャンバスに重ねる。画像はメンバーの見た目の枠の外接矩形で、`rect` はその外接矩形。`windows` に写っているウィンドウ（`id`・`relation`〔`target` / `owned` / `child` / `menu`〕・画像と同じ座標系の `rect`。前面が先）を、`omitted` に写さなかった関連ウィンドウ（`id`・`reason`）を返す。**別プロセスのウィンドウ（`related_cross_process`。共通ダイアログなど）・所有関係を確かめられないウィンドウ（`related_unverifiable`）は自動では入れず**、`omitted` に出す（別アプリの内容を、対象の一部として黙って見せない）。メンバーが撮れなかったとき（`capture_member_unavailable`）も撮影は失敗にせず `omitted` に出す。最小化されたメンバー・自ウィンドウは入れない。false のときは、対象 1 枚だけ（`windows` は対象 1 件）
+- **監査**: `screenshot` の呼び出しとして `kind = tool` で監査する（引数の要約に `window_id`・`include_owned`。結果・失敗のコード。ウィンドウのタイトル・画像は含めない）
+- **未確認**: Windows 実機での成立性（PrintWindow の描画・GPU 描画アプリ・DPI・複数モニター・メニュー・ダイアログ）は実機未確認。docs/operations/smoke-windows.md §3.10.5
+
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 | 変更理由 |
@@ -509,3 +521,4 @@ Nefos Remote 自身のウィンドウ（ホスト GUI・承認ダイアログ。
 | 1.47 | 2026-11-18 | 製品名を Nefos Remote に改めた（旧名 puppet-remo）。本文の製品名だけを差し替え、`agent_name_hint` の値・MCP の説明文・識別子は変えない | #188 |
 | 1.48 | 2026-11-27 | FR-H12・FR-AU06: 設定変更（許可リスト・拒否リスト・設定画面・エージェント設定・API キー）も、監査の行を書けなければ変更を戻して `audit_unavailable` にする fail-closed に統一（#182） | #182 |
 | 1.49 | 2026-11-27 | 内蔵エージェントの接続方式に `chatgpt-codex`（Codex の app-server 経由の ChatGPT のプラン。公式の経路がワークスペースのアカウントを拒むときの代替）を追加: FR-G25（3 経路・切り替えの承認の要否）・G01（利用条件と `agent_disabled` の理由）・G14・H10・H11・AU01・S20、新設の FR-G31〜G40（目的と利用条件・エンジンの取得と検証・隔離と秘密・道具の無効化・推論の呼び方・サインインとサインアウト・プロセスの寿命・失敗コード・使用量の上限・公式経路のポリシー拒否からの案内）と FR-S23、3 経路の違いの表。公式経路の決定を反映: コールバックのポートは `1455` → `1457` → 空きポート（FR-G28 (4)）、トークンの分割保存（FR-G28 (7)）。Windows 実機・実アカウントでの確認は未（非機能要件「Codex 経路: 未確認」） | #247 |
+| 1.50 | 2026-11-28 | `screenshot` に `window_id`（ウィンドウ単位の撮影。PrintWindow・前面にしない・モニター撮影へ切り替えない）と `include_owned`（同一プロセスのダイアログ・メニュー・子ウィンドウの合成）を追加: FR-M26（座標は対象が最も重なるモニターの縮小座標の `rect`、自ウィンドウ・昇格・最小化の拒否、`window_not_found` / `input_blocked` / `capture_unavailable`、`windows` / `omitted`）、FR-M02 の引数と出力。`window_id` を省略したときの動作は変更なし。Windows 実機未確認 | #269 |
