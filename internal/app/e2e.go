@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/platform/localfs"
 	"github.com/ousiassllc/puppet-remo/internal/platform/platformtest"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -103,6 +104,12 @@ func RunE2E(ctx context.Context, opts E2EOptions) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	// ファイル転送の置き場所は、データのフォルダ（dir）とは別の一時フォルダ（重なるとファイル転送は使えない）。
+	inboxDir, err := os.MkdirTemp("", "puppet-remo-e2e-inbox-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(inboxDir) }()
 	db, err := repository.Open(ctx, filepath.Join(dir, "puppet-remo.db"))
 	if err != nil {
 		return err
@@ -126,10 +133,11 @@ func RunE2E(ctx context.Context, opts E2EOptions) error {
 			UI: platformtest.NewFakeUIAutomation(hostWindows), Launcher: platformtest.NewFakeAppLauncher(),
 			FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(), Secrets: secrets,
 			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(), Browser: platformtest.NewFakeBrowserOpener(),
+			Files: localfs.New(),
 		},
 		Watcher: tailnet.NewE2EWatcher(tailnet.E2EStatus()), WhoIs: srv.whois,
 		Static: opts.Static, Logs: NewLogReader(dir, WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,
-		Version: "e2e", Logger: logger,
+		InboxDir: inboxDir, Version: "e2e", Logger: logger,
 		// tailnet の IPv4 の代わりに、同じポートの 127.0.0.1 で待ち受ける（本物の Listener の絞り込み・State はそのまま）。
 		ListenFunc: tailnet.LoopbackListenFunc(),
 		Closers:    []io.Closer{db},

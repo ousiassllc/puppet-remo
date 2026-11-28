@@ -378,9 +378,14 @@ func (c *control) guardOrScope(ctx context.Context, who domain.Actor, leaseID st
 // ensureLease は who のリースを確かめ、保持者のリース ID と、束縛した対象（スコープなしは nil）を返す。
 // 未保持の mcp は暗黙に（スコープなしで）取得を試みる（FR-L04）。他の種別は取得せず ErrLeaseRequired。
 func (c *control) ensureLease(ctx context.Context, who domain.Actor) (string, *domain.LeaseScope, error) {
-	err := c.leases.Check(who)
+	return ensureLease(ctx, c.leases, who)
+}
+
+// ensureLease は control.ensureLease の実体（FileTransfer も同じ規則でリースを確かめる）。
+func ensureLease(ctx context.Context, leases LeaseManager, who domain.Actor) (string, *domain.LeaseScope, error) {
+	err := leases.Check(who)
 	if errors.Is(err, domain.ErrLeaseRequired) && who.Kind == domain.ActorMCP {
-		l, aerr := c.leases.Acquire(ctx, who)
+		l, aerr := leases.Acquire(ctx, who)
 		if aerr != nil {
 			return "", nil, aerr
 		}
@@ -389,7 +394,7 @@ func (c *control) ensureLease(ctx context.Context, who domain.Actor) (string, *d
 	if err != nil {
 		return "", nil, err
 	}
-	if h, ok := c.leases.Holder(); ok && h.Actor.SameSession(who) {
+	if h, ok := leases.Holder(); ok && h.Actor.SameSession(who) {
 		return h.LeaseID, h.Scope, nil
 	}
 	return "", nil, nil

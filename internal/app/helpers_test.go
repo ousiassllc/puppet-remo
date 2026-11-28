@@ -18,6 +18,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ousiassllc/puppet-remo/internal/domain"
+	"github.com/ousiassllc/puppet-remo/internal/platform/localfs"
 	"github.com/ousiassllc/puppet-remo/internal/platform/platformtest"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/service"
@@ -269,13 +270,14 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 			Clipboard: platformtest.NewFakeClipboard(), UI: platformtest.NewFakeUIAutomation(windows),
 			Launcher: e.launcher, FilePicker: e.picker, Installer: e.installer,
 			Secrets: platformtest.NewFakeSecretStore(), Browser: platformtest.NewFakeBrowserOpener(),
-			Hotkey: e.hotkey, Power: e.power, Autostart: e.autostart,
+			Hotkey: e.hotkey, Power: e.power, Autostart: e.autostart, Files: localfs.New(),
 		},
 		Watcher:     e.watcher,
 		WhoIs:       e.whois,
 		Static:      staticFiles(),
 		Logs:        NewLogReader(t.TempDir()),
 		DataDir:     t.TempDir(),
+		InboxDir:    filepath.Join(t.TempDir(), "inbox"),
 		Version:     "0.0.0-test",
 		Logger:      discardLogger(),
 		ListenFunc:  e.listens.listen,

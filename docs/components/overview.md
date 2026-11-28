@@ -358,6 +358,17 @@ type FolderOpener interface {
     // Windows 実装は ShellExecute の "open"（動詞固定・引数なし。シェル・コマンドラインを経由しない）。開いたら返し、ウィンドウは待たない。ctx が取り消し済みなら開かずに ctx.Err()。
     OpenFolder(ctx context.Context, dir string) error
 }
+// ホストが決めたフォルダ（置き場所）の中だけでファイルを置く・取り出す・一覧する・消す（#264。FR-M27）。呼び出し元は service.FileTransfer だけ（`ResolveInRoot` を除く。置き場所・上限・リースの判定は service が持つ）。
+// すべての操作は root（絶対パス）と相対パス rel を取り、実装が root の中に収まること・途中と末尾にシンボリックリンク・ジャンクション・リパースポイントが無いことを保証する（呼び出し側の検査に頼らない）。
+// 実装は `platform/localfs`（OS を問わず同じコード。Windows 固有なのは、リパースポイントの判定とリンクをたどらない open だけ。Linux でも本物のシンボリックリンクでテストできる）。
+type FileStore interface {
+    Put(ctx context.Context, root string, req FilePut) (FileInfo, error) // Offset 0 は新規作成（置き換え）、0 超は大きさがちょうど Offset のファイルへの追記（違えば conflict）。上限超えは file_too_large / file_store_full で何も書かない
+    Get(ctx context.Context, root, rel string, offset int64, length int) ([]byte, FileInfo, error) // FileInfo はファイル全体の大きさと SHA-256
+    List(ctx context.Context, root, rel string, limit int) (entries []FileEntry, truncated bool, err error) // 直下だけ・名前の昇順・リンクは出さない
+    Delete(ctx context.Context, root, rel string) (FileInfo, error) // ファイルまたは空のフォルダ
+    Resolve(ctx context.Context, root, rel string) (string, error) // 実在する通常ファイルの実体の絶対パス（他の機能が参照するため）
+    TotalSize(ctx context.Context, root string) (int64, error)
+}
 ```
 
 **所有する goroutine**: `Capturer.Watch` が 1 モニターにつき 1 本のキャプチャ goroutine を持つ（`ctx` で停止。呼び出し側が閲覧者ゼロで取り消す）。`Hotkey.Register` が Win32 のメッセージループ用に 1 本の専用 OS スレッド（`runtime.LockOSThread`）を持つ。`FilePicker.PickExecutable` は、ダイアログを開いている間だけ `ctx` の取り消しを監視する goroutine を 1 本持つ（ダイアログ自体は呼び出し元の goroutine を OS スレッドに固定して開き、閉じるまで戻らない。同時に開くのは 1 つ）。それ以外のインターフェースは goroutine を内部に持たず、呼び出し元のそれで同期的に動く。
@@ -849,6 +860,17 @@ type LaunchResult struct {
 `AppRegistry` の実装（`NewAppRegistry`）は `repository.LaunchableApps`・`repository.LaunchDenylist`・`repository.Settings`（`launch.mode`）・`platform.AppLauncher`（`Inspect` と、拒否リストのパスを実体へ解決する `Resolve` だけ。`Launch` は `Control` だけが呼ぶ）・`platform.FilePicker` と、監査の記録先 `SyncAuditRecorder`（任意。書き込みはすべて同期の `RecordSync` で記録し、書けなければ変更を戻して `ErrAuditUnavailable` を返す。#174・#182。`audit_commit.go` の `commitAudited` / `setSetting` / `undoLog` が共通の処理）を受け取る。許可リスト・拒否リストの `Create` / `Update` / `Delete`・`CreateDenied` / `UpdateDenied` / `DeleteDenied` も、方式の切り替えと同じ mutex の下で「書く → 監査 → 失敗なら戻す（作成は削除、変更は変更前の行へ、削除は行の再作成）」を行う（読めない行〔`Corrupt`〕の削除を戻すときは、引数なしで起動できる行に変わってしまうため戻さず、`restored = false` で返す）。`Create` / `Update` は表示名の前後の空白を除いて検証し、実行ファイルの存在 → 作業ディレクトリの存在の順に `Inspect` する（`Inspect` はどちらが無いかを区別しないため、作業ディレクトリは実行ファイルがあるときだけ確かめる。形が不正な項目のパスは渡さない）。`Inspect` 自体の失敗（`ErrNotFound` 以外）は項目エラーにせずそのまま返す。`Update` の監査の `changed` は変わった項目だけを `label`・`exe_path`・`args`・`working_dir` の順に並べる。`LaunchMode` は `launch.mode` が未設定・JSON として読めない・定義外の値のとき `allowlist` を返す（手で書き換えられた値は、より厳しい方式として扱う。fail closed）。`SetLaunchMode` は `settings` に JSON 文字列で保存し、変わるときだけ `settings.launch_mode.update`（`{from, to}`）を監査する。`CreateDenied` / `UpdateDenied` は入力の前後の空白を除き、`domain.ClassifyDenied` で分けて、`path` は `Resolve` した実体のパスで保存し、`repository.LaunchDenylist.Create(limit = domain.MaxDeniedApps)` / `Update` の重複（`ErrConflict`）を `AppFieldErrors{"value": …}`、上限（`ErrLimitReached`）を `domain.CodeConflict` に写す。拒否リストの監査（`settings.launch_denylist.create` / `update` / `delete`）は `{id, kind, value}`（`update` は `before_kind`・`before_value` も）を記録する。
 
 `AppRegistry` を `HostAdmin`（§13.5）に統合せず分けるのは、`Control` が読み取り（`Get` / `List`）に使い、`HostAdmin` の責務（クライアント・接続要求・トークンの操作と `SessionCloser` による切断）と依存が重ならないため。ホスト所有者の操作として `actor_type = host` で監査する点と、書き込みを GUI ルーターだけに渡す点（ルーター組み立てのテストで `mcp` / リモート側に `AppRegistry` を渡さないことを検査する）は `HostAdmin` と同じ。
+
+### 5.4.3 FileTransfer（ファイル転送。#264。FR-M27・FR-S24）
+
+`service.FileTransfer`（`NewFileTransfer`）は MCP の `put_file` / `get_file` / `list_files` / `delete_file` の実体で、`platform.FileStore` を呼ぶ唯一の入口（`ResolveInRoot` を除く）。`Control` とは別のサービスで、検査の順序（キルスイッチ → リース〔`ensureLease`。`Control` と同じ関数。未保持の `mcp` は暗黙に取得〕→ 設定 → 引数 → キルスイッチの再確認 → 実行 → 監査）は `Control.Do` の入力系と揃えてある。ウィンドウに束縛されたリース（#156）は `input_blocked`（`file_out_of_scope`）で拒否する。
+
+- **設定**: `file_transfer.root`・`file_transfer.max_file_bytes`・`file_transfer.max_total_bytes`（`repository.Settings`。書くのは `HostSettingsService` = ホスト GUI の設定画面だけ）。置き場所が空・未設定なら `FileTransferConfig.DefaultRoot`（`%LOCALAPPDATA%\PuppetRemo\inbox`。`app.DefaultInboxDir`）。壊れた値・アプリのデータフォルダ（`ProtectedDirs`）と重なる値は、既定へ静かに切り替えずに `invalid_argument`（fail closed）。上限の不正な値は既定値（100 MiB・1 GiB）と警告。
+- **パスの検査**は `domain.CleanTransferPath`（OS に依らない純粋関数。`..`・絶対・ドライブ・UNC・デバイスパス・`:`・予約デバイス名など）と `domain.ValidateTransferRoot`（置き場所の形）。実体の確認（リンクを経由しない・外に出ない）は `platform/localfs` が行う（二重の防御）。
+- **書き込み・削除は 1 つの mutex で直列化**する（置き場所全体の上限の計算と書き込みの間に、別の書き込みが入らないように。単一プロセスの前提）。
+- **監査**は `FileTransfer` が `tool.<ツール名>` を記録する（mcp 層は記録しない。`mcp.Config.Files` は必須）。ファイルの中身は記録しない。
+- **`ResolveInRoot(rel)`**: 置き場所の中の実在する通常ファイルの実体の絶対パスを返す（同じ規則・リンクの拒否。リースは見ない。キルスイッチ中は拒否）。ホスト上で置いたファイルを参照する他の機能（#265）のための窓口。
+
 
 ### 5.4.2 入力スコープ（#156。FR-L09〜L14。NFR-S06 の追記）
 
@@ -1563,3 +1585,4 @@ Playwright の E2E（[フロントエンド設計](../architecture/frontend.md) 
 | 1.70 | 2026-11-27 | 設定変更の監査を fail-closed に統一（共通の `commitAudited`）: `AppRegistry` の許可リスト・拒否リスト、`HostSettingsService.Save`、`AgentSettings` の保存・API キーの登録と削除。`repository.Settings` に `Delete` を追加。`audit_unavailable` の Detail は `subject`・`restored`（`launch_mode_restored` を置き換え） | #182 |
 | 1.71 | 2026-11-27 | Codex 経路（`chatgpt-codex`。#247）を追加: §1 の `openai` の責務、新設の §4.3.2（`internal/codex` の `catalog`・`engine`・`rpc`・`protocol`・`appserver`・`codextest`・`Model`、`CodexAuth`・`CodexAuthService`）、§5.6 のループの違い（`CancelConnection`）、§10・§11・§12。公式経路の決定を反映: §4.3.1 を実装の名前（`openai.NewChatGPT`・`ParseDesktopCall`・`ChatGPTAuthService`・`PlanGate`）に改め「設計のみ・実装は未着手」を実装済みに、`SecretChatGPT` の分割保存（見出し `{"v":1,"parts":N}`・2000 バイト以下ずつの parts）、受信口のポート `1455` → `1457` → 空きポート、`Problem` の `policy_denied` | #247 |
 | 1.72 | 2026-11-28 | §13.6 の `web/middleware` の一覧に `bodylimit` を足した | #258 |
+| 1.73 | 2026-11-28 | ファイル転送（#264）: §3 に `platform.FileStore`（実装 `platform/localfs`）、§5.4.3 に `service.FileTransfer`（設定・検査の順序・直列化・監査・`ResolveInRoot`） | #264 |

@@ -136,9 +136,11 @@ var leaseAcquiringTools = map[string]bool{
 	"left_click_drag": true, "scroll": true, "key": true, "type": true,
 	"focus_window": true, "clipboard_read": true, "clipboard_write": true, "get_ui_tree": true,
 	"launch_app": true,
+	// ファイル転送（#264）。承認が要るクライアントでは暗黙のリース取得が承認待ちでブロックする。
+	"put_file": true, "get_file": true, "list_files": true, "delete_file": true,
 }
 
-// addTools は FR-M01〜M15・M18・M19 と FR-G02（run_task / get_task / cancel_task）の全ツールを登録する。
+// addTools は FR-M01〜M15・M18〜M20 と FR-G02（run_task / get_task / cancel_task）の全ツールを登録する。
 func (s *Server) addTools() {
 	s.addViewTools()
 	s.addInputTools()
@@ -146,4 +148,5 @@ func (s *Server) addTools() {
 	s.addLeaseTools()
 	s.addAppTools()
 	s.addTaskTools()
+	s.addFileTools()
 }

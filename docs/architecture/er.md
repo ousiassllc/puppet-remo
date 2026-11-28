@@ -244,6 +244,9 @@ erDiagram
 | `update.channel` | string `"stable"` / `"nightly"` | `"stable"` | FR-S09（更新のチャネル。#74） |
 | `update.last_checked_at` | number（UTC ミリ秒） | なし | FR-H09（最後に更新を確認した時刻。成功・失敗を問わず確認のたびに `service.Updater` が保存する。#74） |
 | `launch.mode` | string（`"allowlist"` / `"denylist"`） | `"allowlist"`（行が無いとき。読めない値・定義外の値も `allowlist` として扱う〔fail closed〕。v5 のマイグレーションは行を書かないので、既存のインストールは `allowlist` のまま） | FR-M18・M19・H12、NFR-S20（`launch_app` の起動の方式。`allowlist` = ホワイトリスト方式〔既定。`launchable_apps` のアプリだけを `app_id` で起動〕、`denylist` = ブラックリスト方式〔`launch_denylist` に当たらない固定ディスク上の `.exe` を `path` でも起動できる〕。**ホスト GUI の `/apps` だけが変更できる**（MCP・Web UI には経路が無い）。`denylist` への切り替えは確認モーダルを経る。変わるときだけ `settings.launch_mode.update` を監査する） |
+| `file_transfer.root` | string（ローカルの絶対パス） | なし（行が無い・空文字は、既定の `%LOCALAPPDATA%\PuppetRemo\inbox`。文字列でない値・形が不正な値・アプリのデータフォルダと重なる値は、既定の場所に切り替えずファイル転送を使えなくする〔fail closed〕） | FR-S24、FR-M27（ファイル転送の置き場所。#264。**ホスト GUI の設定画面だけが変更できる**〔MCP・Web UI には経路が無い〕。UNC・ドライブの直下・`..` は不可） |
+| `file_transfer.max_file_bytes` | number（1〜2^53。バイト） | 104857600（100 MiB。行が無い・不正な値のとき） | FR-S24、FR-M27（1 ファイルの大きさの上限。ホスト GUI だけが変更できる） |
+| `file_transfer.max_total_bytes` | number（1〜2^53。バイト） | 1073741824（1 GiB。行が無い・不正な値のとき） | FR-S24、FR-M27（置き場所全体の大きさの上限。ホスト GUI だけが変更できる） |
 | `agent.enabled` | boolean | false | FR-S10、FR-G14 |
 | `agent.consent_at` | number（UTC ミリ秒） | なし | FR-G14（OpenAI へのスクリーンショット送信への同意の日時。有効化時に記録し、無効化で削除） |
 | `agent.connection` | string（`"chatgpt"` / `"chatgpt-codex"` / `"openai_api_key"`） | `"chatgpt"`（ただし未設定のまま起動したとき、OpenAI API キーが登録済みなら `"openai_api_key"` を一度だけ保存する） | FR-S20、FR-G25（内蔵エージェントの接続方式。ホスト GUI のみで変更。`openai_api_key` への変更だけ確認モーダルを経る。`chatgpt` ↔ `chatgpt-codex` は確認なし。FR-G30、NFR-S22） |
@@ -506,6 +509,7 @@ M1.5 のアプリ起動の監査（FR-AU06）。新しい `kind` は作らず、
 | リースの対象ウィンドウ（入力スコープ。#156） | `lease` / `input` | `lease.target_set`（スコープ付きのリースの束縛。`lease.acquire` の直後。`kind = lease`）/ `lease.target_resumed`（保持者の明示的な再開。`kind = lease`）/ `input.target_halted`（入力の検証の失敗・撮影の失敗による停止。`kind = input`、`result = denied`、`error_code = input_blocked`） | 保持者 |
 | リースの取得要求・承認・拒否（承認モード） | `lease` | `approval.requested`（idle → pending_approval）/ `approval.granted`（pending_approval → held。続けて `lease.acquire`）/ `approval.denied`（ホストの拒否）/ `approval.timeout`（60 秒の失効）/ `approval.withdrawn`（キルスイッチ・切断・クライアントの削除・要求側の取り下げ。`detail.reason` に理由）/ `approval.reset`（承認済みの取り消し。ホスト GUI） | 承認を求めたセッション（`approval.reset` は `host`） |
 | MCP ツール呼び出し | `tool` | `tool.<ツール名>`（`tool.left_click`・`tool.type`・`tool.launch_app` など） | `mcp` |
+| ファイル転送の MCP ツール（#264。FR-M27） | `tool` | `tool.put_file` / `tool.get_file` / `tool.list_files` / `tool.delete_file`（`service.FileTransfer` が記録する。`result`: `ok` / `denied`〔`invalid_argument`・キルスイッチ・リース・承認の拒否〕/ `error`）。`detail` は `{ "path", "offset"?, "length"?, "size"?, "sha256"?, "count"?, "truncated"? }`（`path` は置き場所からの相対パス。`size`・`sha256` は `put_file`・`get_file` の成功時〔ファイル全体の値〕。`delete_file` は成功時に `size`）。**ファイルの中身は記録しない**。置き場所の絶対パスも記録しない | `mcp` |
 | Web UI からの入力操作 | `input` | `tool.<入力種別>`（`tool.mouse_down`・`tool.mouse_up`・`tool.wheel`・`tool.key_down`・`tool.key_up`・`tool.type`・`tool.clipboard_read` など。`PointerMove` は記録しない） | `web` |
 | キルスイッチの発動・解除 | `killswitch` | `killswitch.trigger` / `killswitch.release` | `host` |
 | 設定変更 | `settings` | `settings.update`（変えたキー名の配列）、`settings.launchable_app.create` / `.update` / `.delete`、`settings.launch_mode.update`、`settings.launch_denylist.create` / `.update` / `.delete` | `host` |
@@ -653,3 +657,5 @@ erDiagram
 | 1.38 | 2026-11-27 | `launch_denylist` の照合（`MatchDenied`）の大文字小文字の比較を Windows の OrdinalIgnoreCase 相当にした旨を追記 | #183 |
 | 1.39 | 2026-11-27 | 設定変更の監査は fail-closed（#182）の共通の規則と、対象外（キルスイッチ・システム側の無効化・`update.last_checked_at`・`client.*`）の根拠を追記。`audit_unavailable` の Detail を `subject`・`restored` に | #182 |
 | 1.40 | 2026-11-27 | 内蔵エージェントに Codex 経路（`chatgpt-codex`。#247）を追加: `settings` の `agent.connection` の値に `chatgpt-codex`、新しいキー `agent.codex.model`、`agent_tasks.connection` の `CHECK`（3 値）とマイグレーション `0007_agent_task_connection.sql`（v7）、`error_code` に `codex_*`、監査イベント `agent.codex.install` / `signin_start` / `signin` / `signout` / `resume` と `agent.connection` の `to` に `chatgpt-codex`。公式経路のトークンの分割保存（`puppet-remo/chatgpt` の見出し `{"v":1,"parts":N}` と `puppet-remo/chatgpt/1` … `/N`。2560 バイトの上限のため）を方針のシークレットに反映 | #247 |
+
+| 1.41 | 2026-11-28 | ファイル転送（#264）: `settings` のキー `file_transfer.root`・`file_transfer.max_file_bytes`・`file_transfer.max_total_bytes`、監査イベント `tool.put_file` / `tool.get_file` / `tool.list_files` / `tool.delete_file`（`detail` に相対パス・大きさ・SHA-256。ファイルの中身は記録しない） | #264 |

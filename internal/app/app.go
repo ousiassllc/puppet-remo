@@ -71,6 +71,8 @@ type Platform struct {
 	Secrets platform.SecretStore
 	// Browser は ChatGPT のサインイン・使用量の管理・Codex のログインで、既定のブラウザに固定の https の URL を開く（FR-G28・G30。#247）。
 	Browser platform.BrowserOpener
+	// Files はファイル転送（MCP の put_file / get_file / list_files / delete_file。#264）の置き場所への出し入れ。service.FileTransfer が唯一の呼び出し元。
+	Files platform.FileStore
 }
 
 // UpdateOptions は更新（service.Updater。#74）の設定の上書き。ゼロ値なら本番の既定（埋め込みの公開鍵・GitHub・6 時間ごと）。
@@ -103,6 +105,9 @@ type Config struct {
 	// DataDir はアプリのデータディレクトリ（%LOCALAPPDATA%\puppet-remo）。Codex の経路の専用 CODEX_HOME（codex-home）と空の作業
 	// ディレクトリ（codex-work）をその下に置く（#247）。必須。
 	DataDir string
+	// InboxDir はファイル転送の既定の置き場所（DefaultInboxDir。ホストが設定画面で別の場所を決めていなければここを使う。#264）。
+	// 絶対パスで、DataDir と重ならないこと（重なると、ファイル転送は使えない）。必須。
+	InboxDir string
 	// CodexEngineDir は Codex のエンジン（app-server）の置き場所（`<実行ファイルのディレクトリ>\codex`。#247）。空ならエンジンを取得しない
 	// （Codex の経路は unsupported）。
 	CodexEngineDir string
@@ -213,8 +218,8 @@ func (c Config) validate() error {
 	case c.Repo == nil:
 		return errors.New("app: Repo is required")
 	case p.Capturer == nil, p.Input == nil, p.Windows == nil, p.Clipboard == nil, p.UI == nil, p.Launcher == nil, p.FilePicker == nil,
-		p.Hotkey == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil, p.Browser == nil:
-		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power, Installer, Secrets and Browser")
+		p.Hotkey == nil, p.Power == nil, p.Installer == nil, p.Secrets == nil, p.Browser == nil, p.Files == nil:
+		return errors.New("app: Platform requires Capturer, Input, Windows, Clipboard, UI, Launcher, FilePicker, Hotkey, Power, Installer, Secrets, Browser and Files")
 	case c.Windows == nil:
 		return errors.New("app: Windows is required")
 	case c.Watcher == nil, c.WhoIs == nil:
@@ -225,6 +230,8 @@ func (c Config) validate() error {
 		return errors.New("app: Logs is required")
 	case c.DataDir == "":
 		return errors.New("app: DataDir is required")
+	case c.InboxDir == "":
+		return errors.New("app: InboxDir is required")
 	}
 	return nil
 }
@@ -332,6 +339,14 @@ func (a *App) build(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("control: %w", err)
 	}
+	// ファイル転送。置き場所・上限は settings の file_transfer.*（ホスト GUI の設定画面だけが書く）。アプリのデータフォルダとは重ねない。
+	files, err := service.NewFileTransfer(service.FileTransferConfig{
+		Files: p.Files, Leases: a.leases, Kill: killMgr, Settings: settings, DefaultRoot: cfg.InboxDir,
+		ProtectedDirs: []string{cfg.DataDir}, Audit: audit, Clock: cfg.Clock, Logger: a.log,
+	})
+	if err != nil {
+		return fmt.Errorf("file transfer: %w", err)
+	}
 	if err := a.buildAgent(control, killMgr); err != nil {
 		return err
 	}
@@ -347,7 +362,7 @@ func (a *App) build(ctx context.Context) error {
 	}
 
 	a.mcp, err = mcp.New(mcp.Config{
-		Control: control, Leases: a.leases, Audit: audit, Agent: a.agent, Version: cfg.Version, Logger: a.log,
+		Control: control, Leases: a.leases, Audit: audit, Agent: a.agent, Files: files, Version: cfg.Version, Logger: a.log,
 		// 連鎖（web/middleware）が認証した主体を MCP サーバーへ渡す。mcp は web を import できない。
 		Principal:        func(r *http.Request) (service.Principal, bool) { return middleware.PrincipalFrom(r.Context()) },
 		OnSessionsChange: func() { a.bus.Publish(service.Event{Topic: service.TopicSessions}) },

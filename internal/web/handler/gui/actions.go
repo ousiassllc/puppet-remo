@@ -348,13 +348,16 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 		ViewerQuality:    strings.TrimSpace(c.PostForm(service.FieldViewerDefaultQuality)),
 		ViewerFPS:        strings.TrimSpace(c.PostForm(service.FieldViewerDefaultFPS)),
 		// チェックボックスは、外れていると値が送られない。
-		AuditThumbnails:     checked(c, service.FieldAuditThumbnails),
-		AuditRecordText:     checked(c, service.FieldAuditRecordText),
-		AuditRetentionDays:  strings.TrimSpace(c.PostForm(service.FieldAuditRetentionDays)),
-		AuditThumbsMaxBytes: strings.TrimSpace(c.PostForm(service.FieldAuditThumbsMaxBytes)),
-		UpdateApplyMode:     strings.TrimSpace(c.PostForm(service.FieldUpdateApplyMode)),
-		UpdateChannel:       strings.TrimSpace(c.PostForm(service.FieldUpdateChannel)),
-		Autostart:           current.Autostart,
+		AuditThumbnails:           checked(c, service.FieldAuditThumbnails),
+		AuditRecordText:           checked(c, service.FieldAuditRecordText),
+		AuditRetentionDays:        strings.TrimSpace(c.PostForm(service.FieldAuditRetentionDays)),
+		AuditThumbsMaxBytes:       strings.TrimSpace(c.PostForm(service.FieldAuditThumbsMaxBytes)),
+		FileTransferRoot:          strings.TrimSpace(c.PostForm(service.FieldFileTransferRoot)),
+		FileTransferMaxFileBytes:  strings.TrimSpace(c.PostForm(service.FieldFileTransferMaxFile)),
+		FileTransferMaxTotalBytes: strings.TrimSpace(c.PostForm(service.FieldFileTransferMaxTotal)),
+		UpdateApplyMode:           strings.TrimSpace(c.PostForm(service.FieldUpdateApplyMode)),
+		UpdateChannel:             strings.TrimSpace(c.PostForm(service.FieldUpdateChannel)),
+		Autostart:                 current.Autostart,
 	}
 	if h.d.Settings.AutostartAvailable() {
 		in.Autostart = checked(c, "autostart")
@@ -364,6 +367,7 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 	s := service.HostSettings{
 		KillSwitchHotkey: in.Hotkey, Autostart: in.Autostart,
 		AuditThumbnailsEnabled: in.AuditThumbnails, AuditRecordText: in.AuditRecordText, UpdateApplyMode: in.UpdateApplyMode, UpdateChannel: in.UpdateChannel,
+		FileTransferRoot: in.FileTransferRoot,
 	}
 	s.Port, errs.Port = parseInt(in.Port)
 	s.ScreenshotMaxDimension, errs.ScreenshotMaxDim = parseInt(in.ScreenshotMaxDim)
@@ -372,6 +376,8 @@ func (h *Handler) SaveSettings(c *gin.Context) {
 	s.ViewerDefaultFPS, errs.ViewerFPS = parseInt(in.ViewerFPS)
 	s.AuditRetentionDays, errs.AuditRetentionDays = parseInt(in.AuditRetentionDays)
 	s.AuditThumbsMaxBytes, errs.AuditThumbsMaxBytes = parseInt64(in.AuditThumbsMaxBytes)
+	s.FileTransferMaxFileBytes, errs.FileTransferMaxFileBytes = parseInt64(in.FileTransferMaxFileBytes)
+	s.FileTransferMaxTotalBytes, errs.FileTransferMaxTotalBytes = parseInt64(in.FileTransferMaxTotalBytes)
 
 	// 数値に読めなかった項目のほかにも、範囲・書式の不備を同時に示す（読めなかった項目は 0 として検証し、メッセージは上書きしない）。
 	var verr *service.ValidationError
@@ -412,6 +418,9 @@ func mergeFieldErrors(errs view.SettingsErrors, verr *service.ValidationError) v
 	fill(&errs.ViewerFPS, service.FieldViewerDefaultFPS)
 	fill(&errs.AuditRetentionDays, service.FieldAuditRetentionDays)
 	fill(&errs.AuditThumbsMaxBytes, service.FieldAuditThumbsMaxBytes)
+	fill(&errs.FileTransferRoot, service.FieldFileTransferRoot)
+	fill(&errs.FileTransferMaxFileBytes, service.FieldFileTransferMaxFile)
+	fill(&errs.FileTransferMaxTotalBytes, service.FieldFileTransferMaxTotal)
 	fill(&errs.UpdateApplyMode, service.FieldUpdateApplyMode)
 	fill(&errs.UpdateChannel, service.FieldUpdateChannel)
 	return errs

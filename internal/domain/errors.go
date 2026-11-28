@@ -37,6 +37,10 @@ const (
 	CodeLaunchFailed        Code = "launch_failed"
 	CodeAuditUnavailable    Code = "audit_unavailable"
 	CodeInternal            Code = "internal"
+	// ファイル転送（#264。put_file / get_file / list_files / delete_file）。
+	CodeFileNotFound  Code = "file_not_found"
+	CodeFileTooLarge  Code = "file_too_large"
+	CodeFileStoreFull Code = "file_store_full"
 )
 
 // codeStatus は Code → HTTP ステータス（API 仕様 §2 の表）。
@@ -68,6 +72,9 @@ var codeStatus = map[Code]int{
 	CodeLaunchFailed:        409,
 	CodeAuditUnavailable:    503,
 	CodeInternal:            500,
+	CodeFileNotFound:        404,
+	CodeFileTooLarge:        413,
+	CodeFileStoreFull:       507,
 }
 
 // Valid は c が API 仕様のエラーコード表にあるコードかを返す。
@@ -160,4 +167,8 @@ var (
 	// ErrAuditUnavailable は、起動の試行を監査に書けないために起動しなかったこと（fail-closed。NFR-S20）。
 	// 書き込みの失敗の原因（DB のパス・SQL など）は載せない。原因は運用ログにだけ残す。
 	ErrAuditUnavailable = NewError(CodeAuditUnavailable, "the audit log is unavailable, so the app was not launched", nil)
+	// ファイル転送（#264）。メッセージにパスは入れない。
+	ErrFileNotFound  = NewError(CodeFileNotFound, "file not found", nil)
+	ErrFileTooLarge  = NewError(CodeFileTooLarge, "the file exceeds the per-file size limit set by the host", nil)
+	ErrFileStoreFull = NewError(CodeFileStoreFull, "the transfer folder would exceed the total size limit set by the host", nil)
 )
