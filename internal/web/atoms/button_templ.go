@@ -44,7 +44,7 @@ func ButtonClass(v ButtonVariant, small bool) string {
 }
 
 func buttonClass(v ButtonVariant, size string) string {
-	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full font-semibold disabled:opacity-40 " + size
+	base := "motion-hover inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full font-semibold tracking-ui disabled:opacity-40 " + size
 	switch v {
 	case ButtonDanger:
 		return base + "border border-danger-line-strong bg-transparent text-danger hover:bg-danger-wash"

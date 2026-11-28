@@ -322,7 +322,7 @@ func DeniedSection(v view.DeniedSection) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = molecules.EmptyState("denied").Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = molecules.EmptyStatePlain("denied").Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

@@ -102,7 +102,7 @@ templ TaskList(v view.TaskList) {
 					</thead>
 					<tbody class="divide-y divide-line-soft">
 						for _, r := range v.Rows {
-							<tr class="hover:bg-accent-soft" data-task-row={ r.DetailURL } data-status={ r.Code }>
+							<tr class="hover:bg-(--table-row-hover)" data-task-row={ r.DetailURL } data-status={ r.Code }>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) font-mono text-ink">{ r.Created }</td>
 								<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y)">
 									<a
@@ -288,7 +288,7 @@ templ TaskDetail(v view.TaskDetail) {
 						</thead>
 						<tbody class="divide-y divide-line-soft">
 							for i, s := range v.Steps {
-								<tr class="group hover:bg-accent-soft" data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route } data-step-kind={ stepKind(s) }>
+								<tr class="group hover:bg-(--table-row-hover)" data-step-no={ strconv.Itoa(s.No) } data-route={ s.Route } data-step-kind={ stepKind(s) }>
 									<td class="whitespace-nowrap px-(--table-pad-x) py-(--table-pad-y) text-right font-mono text-ink">
 										if s.KindLabel == "" {
 											{ strconv.Itoa(s.No) }

@@ -115,6 +115,62 @@ func TestAppCSSTypeScaleAndCardSurfaceTokens(t *testing.T) {
 	}
 }
 
+// #272: 表の行（td の行間 1.5・hover は --surface-sel・行頭の名前は項目名の段）と字間（見出し・項目 .01em / 本文・説明 .02em / ナビ・ボタン 0）は、
+// app.css のトークンで持つ。テンプレートは値（px・em・行間）を直書きせず、トークンのクラス（tracking-ui・text-item・hover:bg-(--table-row-hover)）で参照する。
+func TestTableRowAndTrackingTokens(t *testing.T) {
+	css := readAppCSS(t)
+	for _, pat := range []string{
+		`(?m)^\s*--table-body-leading:\s*1\.5;`, `(?m)^\s*--table-row-hover:\s*var\(--surface-sel\);`,
+		`(?m)^\s*--tracking-heading:\s*0\.01em;`, `(?m)^\s*--tracking-body:\s*0\.02em;`, `(?m)^\s*--tracking-ui:\s*0;`,
+		`(?m)^\s*--text-page-title--letter-spacing:\s*var\(--tracking-heading\);`, `(?m)^\s*--text-section--letter-spacing:\s*var\(--tracking-heading\);`,
+		`(?m)^\s*--text-item--letter-spacing:\s*var\(--tracking-heading\);`, `(?m)^\s*--text-lg--letter-spacing:\s*var\(--tracking-heading\);`,
+		`(?m)^\s*--text-sm--letter-spacing:\s*var\(--tracking-body\);`, `(?m)^\s*--text-desc--letter-spacing:\s*var\(--tracking-body\);`,
+		`(?m)^\s*--text-base--letter-spacing:\s*var\(--tracking-body\);`, `(?m)^\s*--text-tip--letter-spacing:\s*var\(--tracking-body\);`,
+		`(?s)\btd \{\s*line-height:\s*var\(--table-body-leading\);\s*\}`,
+		`(?s)body \{[^}]*letter-spacing:\s*var\(--tracking-body\);`,
+		// forced-colors: hover の背景色の差は消えるので、Highlight の輪郭で示す。
+		`(?s)@media \(forced-colors: active\) \{\s*tbody tr:hover \{[^}]*outline:\s*1px solid Highlight;`,
+	} {
+		if !regexp.MustCompile(pat).MatchString(css) {
+			t.Errorf("app.css must match %s", pat)
+		}
+	}
+	if regexp.MustCompile(`(?m)^\s*--table-row-hover:\s*var\(--accent-soft\)`).MatchString(css) {
+		t.Error("--table-row-hover must be --surface-sel, not --accent-soft")
+	}
+
+	// テンプレートの表の行は --table-row-hover を参照し、字間・行間の値を直書きしない。ボタンとナビは tracking-ui で字間 0。
+	hard := regexp.MustCompile(`\btracking-\[|\[letter-spacing:|-?[0-9.]+em\b`)
+	err := fs.WalkDir(os.DirFS(filepath.Join(".")), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".templ") {
+			return err
+		}
+		src := readFile(t, path)
+		if strings.Contains(src, "<tr class=") && strings.Contains(src, "hover:bg-accent-soft") {
+			for _, line := range strings.Split(src, "\n") {
+				if strings.Contains(line, "<tr class=") && strings.Contains(line, "hover:bg-accent-soft") {
+					t.Errorf("%s: 表の行の hover は hover:bg-(--table-row-hover)（--accent-soft ではない）: %s", path, strings.TrimSpace(line))
+				}
+			}
+		}
+		if m := hard.FindString(src); m != "" {
+			t.Errorf("%s: 字間・行間を直書きしている（%q）。app.css のトークンを使う", path, m)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, want := range map[string]string{
+		"atoms/button.templ":     "font-semibold tracking-ui",
+		"organisms/chrome.templ": "text-item font-semibold tracking-ui",
+	} {
+		if !strings.Contains(readFile(t, file), want) {
+			t.Errorf("%s: ボタン・ナビは %q（字間 0）", file, want)
+		}
+	}
+}
+
 // S3: モーダルの影は 0 1px 2px で、色だけテーマで変える（ガイド「モーダルの影」: ライト 6%・ダーク 40%）。
 // 色は --shadow-modal-color で、:root（ライト）と、ダークの 2 ブロック（[data-theme="dark"]・prefers-color-scheme）に同じ値を置く。
 func TestModalShadowColorFollowsTheTheme(t *testing.T) {

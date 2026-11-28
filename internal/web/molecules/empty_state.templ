@@ -14,3 +14,16 @@ templ EmptyState(name string) {
 		</p>
 	</div>
 }
+
+// EmptyStatePlain は枠なしの空状態（#272）。アイコン + 1 行の文言だけで、線も面の地も持たない（置かれた面の上にそのまま乗る）。
+// 起動許可アプリの空の一覧と、拒否リストの空の一覧が使う。name は data-empty の値。文言は 1 行で言い切る。
+templ EmptyStatePlain(name string) {
+	<div class="flex flex-col items-center gap-2 py-6 text-center text-sm text-ink" data-empty={ name }>
+		<span class="text-mute">
+			@atoms.Icon(atoms.IconEmptyPage, atoms.IconXL)
+		</span>
+		<p>
+			{ children... }
+		</p>
+	</div>
+}
