@@ -189,6 +189,7 @@ type env struct {
 	whois     *fakeWhoIs
 	listens   *listenLog
 	hotkey    *platformtest.FakeHotkey
+	hostInput *platformtest.FakeHostInput
 	windows   *platformtest.FakeWindows
 	dialogs   *FakeWindows // 承認ダイアログなどのウィンドウ（app.Windows の偽物）
 	power     *platformtest.FakePower
@@ -257,7 +258,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 		t: t, db: db, windows: windows, dialogs: NewFakeWindows(),
 		watcher: &fakeWatcher{},
 		whois:   &fakeWhoIs{id: tailnet.Identity{LoginName: "alice@example.com", StableNodeID: "nodeA", NodeName: "alice-laptop"}},
-		listens: &listenLog{}, hotkey: platformtest.NewFakeHotkey(), power: platformtest.NewFakePower(), input: platformtest.NewFakeInput(),
+		listens: &listenLog{}, hotkey: platformtest.NewFakeHotkey(), hostInput: platformtest.NewFakeHostInput(), power: platformtest.NewFakePower(), input: platformtest.NewFakeInput(),
 		autostart: platformtest.NewFakeAutostart(), closers: &closeLog{},
 		launcher: platformtest.NewFakeAppLauncher(), picker: platformtest.NewFakeFilePicker(), installer: platformtest.NewFakeInstaller(),
 	}
@@ -269,7 +270,7 @@ func newEnvWithDB(t *testing.T, db *repository.DB, mutate ...func(*Config)) *env
 			Clipboard: platformtest.NewFakeClipboard(), UI: platformtest.NewFakeUIAutomation(windows),
 			Launcher: e.launcher, FilePicker: e.picker, Installer: e.installer,
 			Secrets: platformtest.NewFakeSecretStore(), Browser: platformtest.NewFakeBrowserOpener(),
-			Hotkey: e.hotkey, Power: e.power, Autostart: e.autostart,
+			Hotkey: e.hotkey, HostInput: e.hostInput, Power: e.power, Autostart: e.autostart,
 		},
 		Watcher:     e.watcher,
 		WhoIs:       e.whois,

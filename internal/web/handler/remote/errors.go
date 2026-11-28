@@ -35,6 +35,7 @@ var failureMessages = map[domain.Code]string{
 	domain.CodeInvalidArgument:    "入力内容を確認してください。",
 	domain.CodeConflict:           "現在の状態と合わないため実行できませんでした。",
 	domain.CodeKillSwitchActive:   "キルスイッチが発動中です。",
+	domain.CodeInputPaused:        "ホストの人が操作中のため、入力を一時停止しています。しばらくすると自動で再開します。",
 	domain.CodeDesktopUnavailable: "ホストの画面を操作できません（ロック画面など）。",
 	domain.CodeWindowNotFound:     "選んだウィンドウは閉じられたか、別のウィンドウに置き換わりました。一覧を更新してください。",
 }

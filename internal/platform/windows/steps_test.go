@@ -100,6 +100,16 @@ func TestEncodeInputsLayout(t *testing.T) {
 	if got[5].typ != inputMouse || int32(got[5].mi.mouseData) != -120 || got[5].mi.flags != mouseeventfWheel {
 		t.Errorf("wheel = %+v", got[5])
 	}
+	// どの INPUT も、自分の注入と分かる印（dwExtraInfo）を持つ。
+	for i := range got {
+		extra := got[i].mi.dwExtraInfo
+		if got[i].typ == inputKeyboard {
+			extra = key(i).dwExtraInfo
+		}
+		if extra != ownInputTag {
+			t.Errorf("INPUT %d dwExtraInfo = %#x, want ownInputTag", i, extra)
+		}
+	}
 }
 
 func TestButtonStep(t *testing.T) {

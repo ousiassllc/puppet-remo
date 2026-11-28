@@ -30,6 +30,7 @@ const (
 	CodeWindowNotFound      Code = "window_not_found"
 	CodeStaleElement        Code = "stale_element"
 	CodeInputBlocked        Code = "input_blocked"
+	CodeInputPaused         Code = "input_paused"
 	CodeDesktopUnavailable  Code = "desktop_unavailable"
 	CodeAgentDisabled       Code = "agent_disabled"
 	CodeTaskNotFound        Code = "task_not_found"
@@ -62,6 +63,7 @@ var codeStatus = map[Code]int{
 	CodeWindowNotFound:      404,
 	CodeStaleElement:        409,
 	CodeInputBlocked:        409,
+	CodeInputPaused:         409,
 	CodeDesktopUnavailable:  503,
 	CodeAgentDisabled:       409,
 	CodeTaskNotFound:        404,
@@ -153,6 +155,9 @@ var (
 	// ErrStaleElement は、UI 要素 ID の指す要素（ウィンドウ・プロセスを含む）がもう無いこと。古い ID は別の要素に当たらず、必ずこれになる。
 	ErrStaleElement       = NewError(CodeStaleElement, "the element no longer exists (find it again)", nil)
 	ErrInputBlocked       = NewError(CodeInputBlocked, "input is blocked for this target", nil)
+	// ErrInputPaused は、ホストの人が実際のマウス・キーボードを使っているために、リモートの入力を一時停止している間の拒否（#270）。
+	// Detail は resumes_at（RFC 3339。入力がなければ再開する時刻）と retry_after_ms（再開までの目安のミリ秒）。
+	ErrInputPaused        = NewError(CodeInputPaused, "input is paused while the host is using the mouse or keyboard", nil)
 	ErrDesktopUnavailable = NewError(CodeDesktopUnavailable, "the desktop is unavailable", nil)
 	ErrAgentDisabled      = NewError(CodeAgentDisabled, "the agent is disabled", nil)
 	ErrTaskNotFound       = NewError(CodeTaskNotFound, "task not found", nil)

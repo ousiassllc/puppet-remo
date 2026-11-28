@@ -18,6 +18,9 @@ type Control interface {
 	// Do は入力系の操作を実行する。検査の順序は固定で、1 つでも失敗したら実行しない:
 	//
 	//  1. KillSwitch → ErrKillSwitchActive
+	//  1b. ホストの実入力による一時停止（HostInputPause。#270。FR-M30）→ ErrInputPaused。対象は domain.OpPausedByHostInput の操作だけ
+	//     （実際のカーソル・フォーカス・キー入力を動かす操作。読み取り・Wait・クリップボード書き込みは止めない）。リースの取得・承認より前に断る。
+	//     Judge・承認を待ったあとの、実行の直前（キルスイッチの再確認と同じ位置）にも確かめ直す
 	//  2. LeaseManager.Check（リース未保持の mcp は暗黙に Acquire を試みる。FR-L04）
 	//  3. 引数の検査と縮小座標 → 物理座標の変換（FR-M16。範囲外は ErrInvalidCoordinates）
 	//  4. InputGuard.Check → ErrInputBlocked（NFR-S06、UIPI。own_window には puppet-remo のウィンドウの範囲を DetailOwnWindows で付ける）。
@@ -177,6 +180,8 @@ type ControlConfig struct {
 
 	Leases LeaseManager
 	Kill   ControlKillSwitch
+	// HostPause は、ホストの人が実際のマウス・キーボードを使っている間の一時停止（#270）。nil なら停止しない（テスト用。本番の結線は渡す）。
+	HostPause HostInputPause
 
 	Settings repository.Settings // nil なら screenshot.max_dimension は既定値
 	// Audit は監査の記録先。nil なら記録しない（テスト用。本番の結線は必ず渡す）。launch_app の起動の前の「試行」の行は
@@ -218,6 +223,7 @@ type control struct {
 	apps      AppReader
 	leases    LeaseManager
 	kill      KillSwitchState
+	hostPause HostInputPause // nil なら停止しない
 	guard     InputGuard
 	settings  repository.Settings
 	audit     SyncAuditRecorder
@@ -247,6 +253,7 @@ func NewControl(cfg ControlConfig) (Control, error) {
 		apps:      cfg.Apps,
 		leases:    cfg.Leases,
 		kill:      cfg.Kill,
+		hostPause: cfg.HostPause,
 		guard:     InputGuard{Windows: cfg.Windows},
 		settings:  cfg.Settings,
 		audit:     cfg.Audit,
@@ -331,6 +338,9 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if w, ok := op.(domain.Wait); ok {
 		return Result{}, "", nil, c.wait(ctx, w)
 	}
+	if err := c.checkHostInput(op); err != nil {
+		return Result{}, "", nil, err
+	}
 	leaseID, scope, err := c.ensureLease(ctx, who)
 	if err != nil {
 		return Result{}, "", nil, err
@@ -353,8 +363,20 @@ func (c *control) do(ctx context.Context, who domain.Actor, op domain.Op, tr *ju
 	if c.kill.Active() {
 		return Result{}, leaseID, nil, domain.ErrKillSwitchActive
 	}
+	// 承認の待ちなどの間に、ホストの人が入力を始めたときも断る。
+	if err := c.checkHostInput(op); err != nil {
+		return Result{}, leaseID, nil, err
+	}
 	res, err := c.execute(ctx, p, sr)
 	return res, leaseID, p.op, err
+}
+
+// checkHostInput は検査 1b。一時停止中に、対象の操作（domain.OpPausedByHostInput）なら ErrInputPaused。
+func (c *control) checkHostInput(op domain.Op) error {
+	if c.hostPause == nil || !domain.OpPausedByHostInput(op) {
+		return nil
+	}
+	return c.hostPause.Check()
 }
 
 // guardOrScope は検査 4。スコープなしのリースは InputGuard.Check（NFR-S06）で、検証の文脈は nil。スコープ付きのリースは、実行前の拒否

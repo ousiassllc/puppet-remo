@@ -215,7 +215,7 @@ func run(ctx context.Context, ready func(guiAddr net.Addr), remoteAddr, guiAddr 
 			Windows: hostWindows, Clipboard: clip, UI: platformtest.NewFakeUIAutomation(hostWindows),
 			Launcher: launcher, FilePicker: platformtest.NewFakeFilePicker(), Installer: platformtest.NewFakeInstaller(),
 			Secrets: secrets, Browser: platformtest.NewFakeBrowserOpener(),
-			Hotkey: platformtest.NewFakeHotkey(), Power: platformtest.NewFakePower(),
+			Hotkey: platformtest.NewFakeHotkey(), HostInput: platformtest.NewFakeHostInput(), Power: platformtest.NewFakePower(),
 		},
 		Watcher: watcher, WhoIs: whois,
 		Static: mustStatic(), Logs: app.NewLogReader(dir, app.WithFolderOpener(platformtest.NewFakeFolderOpener())), DataDir: dir,
