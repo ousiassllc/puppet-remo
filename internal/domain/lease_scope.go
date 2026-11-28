@@ -28,6 +28,7 @@ const (
 	// 停止にはしない、その操作だけの拒否（スコープの規則。保持者の状態は変えない）。
 	ReasonKeyOutOfScope       GroupReason = "key_out_of_scope"       // win 修飾・Alt+Tab・Alt+Esc・Ctrl+Esc・Ctrl+Shift+Esc
 	ReasonClipboardOutOfScope GroupReason = "clipboard_out_of_scope" // ClipboardRead（スコープ付きは書き込みだけ）
+	ReasonFileOutOfScope      GroupReason = "file_out_of_scope"      // ファイル転送（put_file など。スコープ付きのリースでは使えない。#264）
 
 	// 対象の移動・リサイズ（エージェントの基準 S と比べて T または既存メンバーの矩形が違う。#158。入力の注入の前に検出する）。
 	ReasonTargetMoved GroupReason = "target_moved"

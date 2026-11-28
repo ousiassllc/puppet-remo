@@ -267,9 +267,13 @@ type SettingsValues struct {
 	AuditRecordText     bool
 	AuditRetentionDays  string
 	AuditThumbsMaxBytes string
-	UpdateApplyMode     string // confirm | auto_idle（FR-S09）
-	UpdateChannel       string // stable | nightly（FR-S09）
-	Autostart           bool
+	// ファイル転送（#264。FR-S24）。置き場所は空なら既定の場所。上限はバイト。
+	FileTransferRoot          string
+	FileTransferMaxFileBytes  string
+	FileTransferMaxTotalBytes string
+	UpdateApplyMode           string // confirm | auto_idle（FR-S09）
+	UpdateChannel             string // stable | nightly（FR-S09）
+	Autostart                 bool
 }
 
 // SettingsField は設定の項目別のエラー。
@@ -284,8 +288,12 @@ type SettingsErrors struct {
 	HostInputPauseIdleSec string
 	AuditRetentionDays    string
 	AuditThumbsMaxBytes   string
-	UpdateApplyMode       string
-	UpdateChannel         string
+	// ファイル転送（#264）の項目別のエラー。
+	FileTransferRoot          string
+	FileTransferMaxFileBytes  string
+	FileTransferMaxTotalBytes string
+	UpdateApplyMode           string
+	UpdateChannel             string
 }
 
 // SettingsForm は設定フォーム。
@@ -377,7 +385,7 @@ type Apps struct {
 	Denied  DeniedSection
 }
 
-// LaunchModePanel は起動の方式（launch.mode）の表示と切り替え。方式の切り替えはホスト GUI だけにある（NFR-S20）。
+// LaunchModePanel は起動の方式（launch.mode）の表示と切り替え。方式の切り替えはホスト GUI だけにある（NFR-S24）。
 // Denylist が false なら ホワイトリスト方式（既定）。切り替えの操作は、ブラックリストへは確認モーダル、ホワイトリストへは直接。
 type LaunchModePanel struct {
 	Denylist bool

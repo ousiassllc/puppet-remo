@@ -19,6 +19,7 @@ import (
 	"unsafe"
 
 	"github.com/ousiassllc/puppet-remo/internal/app"
+	"github.com/ousiassllc/puppet-remo/internal/platform/localfs"
 	"github.com/ousiassllc/puppet-remo/internal/platform/windows"
 	"github.com/ousiassllc/puppet-remo/internal/repository"
 	"github.com/ousiassllc/puppet-remo/internal/tailnet"
@@ -89,6 +90,12 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		return nil, err
 	}
 
+	// ファイル転送（#264）の既定の置き場所。ホストが設定画面で別の場所を決めていればそちらが使われる。
+	inboxDir, err := app.DefaultInboxDir(os.Getenv("LOCALAPPDATA"))
+	if err != nil {
+		return fail(err)
+	}
+
 	db, err := repository.Open(ctx, filepath.Join(dataDir, app.DatabaseFile))
 	if err != nil {
 		return fail(fmt.Errorf("open database: %w", err))
@@ -146,6 +153,8 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 			Secrets: windows.NewSecretStore(),
 			// ChatGPT のサインイン・使用量の管理・Codex のログインは、既定のブラウザで固定の https の URL だけを開く（NFR-S21）。
 			Browser: windows.NewBrowserOpener(),
+			// ファイル転送（#264）は、ホストが決めた置き場所の中だけで、リンクをたどらずにファイルを出し入れする。
+			Files: localfs.New(),
 		},
 		// 承認ダイアログ（FR-H05）は専用の Wails ウィンドウ（キャプチャ除外）で開く。
 		Windows: host.Windows(),
@@ -157,6 +166,7 @@ func compose(ctx context.Context, dataDir string, log *slog.Logger, logCloser io
 		// Codex の経路（#247）: 専用の CODEX_HOME はデータディレクトリの下、エンジンは実行ファイルの隣の codex\ に置く
 		// （インストーラー版はアンインストールで一緒に消える）。実行ファイルの場所が分からなければエンジンは取得しない。
 		DataDir:        dataDir,
+		InboxDir:       inboxDir,
 		CodexEngineDir: codexEngineDir(log),
 		Version:        version,
 		Logger:         log,

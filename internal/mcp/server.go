@@ -67,6 +67,9 @@ const Instructions = "puppet-remo lets you operate the host Windows desktop. " +
 	"and resumes by itself once the host has been idle for a while; get_control_status reports paused. Viewing tools are not paused. " +
 	"launch_app starts only apps the host owner has allowed (list them with list_launchable_apps, which does not need the lease); " +
 	"you pass an app_id, never arguments or a working directory, and it needs the lease like input tools. " +
+	"put_file, get_file, list_files and delete_file move files in and out of one transfer folder chosen by the host owner " +
+	"(paths are relative to it and can never leave it; content is base64, at most 512 KiB per call, larger files in chunks by offset; " +
+	"put_file and get_file return the size and SHA-256 of the whole file); they need the lease like input tools, and the host owner sets the folder and the size limits. " +
 	"Only when list_launchable_apps reports mode denylist may you pass the absolute path of a .exe instead; the host owner's denied apps fail with app_denied. " +
 	"Some apps only bring an already open window forward when launched instead of opening a new one (tabbed single-window apps " +
 	"such as Windows 11 Notepad, browsers, Windows Terminal), and that window may hold the user's unsaved work: " +
@@ -103,6 +106,9 @@ type Config struct {
 	// 登録したまま agent_disabled で失敗する。登録の有無を設定で変えないのは、ツールの一覧をホストの設定から独立させ、
 	// 有効・無効の判断を Agent（設定・API キー・クライアントの agent_enabled）に一本化するため。
 	Agent service.Agent
+	// Files はファイル転送（put_file / get_file / list_files / delete_file。FR-M27）の窓口。必須。検査（キルスイッチ・リース・パス・上限）と
+	// 監査は FileTransfer が行うので、mcp はここで記録しない。置き場所・上限を変える経路は mcp に無い。
+	Files service.FileTransfer
 	// HostInput は get_control_status に出す、ホストの実入力による一時停止の状態（#270）。nil なら常に paused = false。
 	// 入力の拒否そのものは Control が行う（ここは状態を見せるだけ）。
 	HostInput service.HostInputPause
@@ -136,6 +142,7 @@ type Server struct {
 	onSessions func()
 	audit      service.AuditRecorder
 	agent      service.Agent
+	files      service.FileTransfer
 	hostInput  service.HostInputPause // nil なら停止の状態を見せない
 
 	toolTimeout      time.Duration
@@ -165,10 +172,13 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("mcp: Leases is required")
 	case cfg.Principal == nil:
 		return nil, errors.New("mcp: Principal is required")
+	case cfg.Files == nil:
+		return nil, errors.New("mcp: Files is required")
 	}
 	s := &Server{
 		control:          cfg.Control,
 		agent:            cfg.Agent,
+		files:            cfg.Files,
 		hostInput:        cfg.HostInput,
 		leases:           cfg.Leases,
 		principal:        cfg.Principal,

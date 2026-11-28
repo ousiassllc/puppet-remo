@@ -385,6 +385,8 @@ func TestSettingsFormAuditAndUpdateFields(t *testing.T) {
 		`name="audit.thumbs_max_bytes"`, `value="1073741824"`, `<option value="auto_idle" selected>`,
 		`data-field-error="set-audit-days"`, `data-field-error="set-update-mode"`, `data-field-error="set-update-channel"`, `<option value="nightly" selected>`)
 	hasNot(t, out, `data-field-error="set-audit-cap"`, `<option value="confirm" selected>`)
+	// ファイル転送（#264）の項目。
+	has(t, out, `data-settings-group="file-transfer"`, `name="file_transfer.root"`, `name="file_transfer.max_file_bytes"`, `name="file_transfer.max_total_bytes"`)
 	// エラーのある選択欄は不正の状態とエラー文を持ち、エラーのない選択欄は不正にしない。
 	has(t, out, `id="set-update-channel-error"`, `aria-describedby="set-update-channel-hint set-update-channel-error"`, `id="set-audit-days-hint"`, `aria-describedby="set-audit-days-hint set-audit-days-error"`)
 	if got := strings.Count(out, `<select`); got != 2 {

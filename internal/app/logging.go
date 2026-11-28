@@ -34,6 +34,15 @@ func DataDir(localAppData string) (string, error) {
 	return filepath.Join(localAppData, dataDirName), nil
 }
 
+// DefaultInboxDir はファイル転送の既定の置き場所（%LOCALAPPDATA%\PuppetRemo\inbox。#264）を返す。データのディレクトリ（DataDir。
+// puppet-remo）とは別の場所で、重ならない。localAppData が空ならエラー。
+func DefaultInboxDir(localAppData string) (string, error) {
+	if localAppData == "" {
+		return "", errors.New("LOCALAPPDATA is not set")
+	}
+	return filepath.Join(localAppData, "PuppetRemo", "inbox"), nil
+}
+
 // ParseLogLevel は "debug" / "info" / "warn" / "error"（大文字小文字を区別しない）を slog.Level にする。空は info。
 func ParseLogLevel(s string) (slog.Level, error) {
 	if strings.TrimSpace(s) == "" {

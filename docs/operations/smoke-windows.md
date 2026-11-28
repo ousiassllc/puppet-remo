@@ -551,6 +551,24 @@ go test -tags smoke -v -count=1 ./internal/platform/windows/
 | H8 | 設定画面で一時停止を無効にして保存し、物理マウスを動かしながら `mouse_move` を送る | 停止しない。停止中に無効にすると、すぐ再開する。有効に戻して保存すると H1 の動作に戻る。待ち時間を 10 に変えて H2 を繰り返すと、再開が 10 秒後になる |
 | H9 | 別のソフト（AutoHotkey など）が `SendInput` で入力を注入しているとき | 実入力に数えず、停止しない |
 | H10 | 監査ログ（DB の `audit_logs`） | H1 で `input.host_paused`（`detail` は `source: mouse`）、H2 で `input.host_resumed`（`reason: idle`、`paused_ms`）が 1 件ずつ。停止中に断られた入力は `tool.mouse_move` の `result = denied`・`error_code = input_paused`。押したキーや入力した文字は記録されない |
+### 4.19 ファイル転送（`put_file` / `get_file` / `list_files` / `delete_file`。#264。FR-M27・FR-S24）
+
+実装（`internal/platform/localfs`）は OS を問わない標準ライブラリのコードで、Linux では本物のシンボリックリンクでテスト済み。Windows 固有の部分（`FILE_ATTRIBUTE_REPARSE_POINT` の判定・`FILE_FLAG_OPEN_REPARSE_POINT` でのリンクを開かない open）は実機でしか確かめられないので、次を NTFS で確認する。自動の確認（ジャンクションの作成まで行う）: `go test -v -count=1 -run 'Junction|Symlink' ./internal/platform/localfs/`（シンボリックリンクは管理者または開発者モードが要る。作れなければ飛ばす）。
+
+準備（使い捨ての環境）: tailnet 上の別端末の MCP クライアントを用意する。置き場所は既定の `%LOCALAPPDATA%\PuppetRemo\inbox`（なければ作られる）。外側の試験用ファイル `mkdir C:\SmokeFiles` と `echo secret > C:\SmokeFiles\secret.txt`。
+
+| # | 確認項目 | 期待 |
+|---|---------|------|
+| F1 | `put_file`（`logs/a.txt`、本文 `hello` の base64）→ `get_file` → `list_files` → `delete_file` | 置き場所の下に `logs\a.txt` ができる。`get_file` の本文が一致し、`size` = 5、`sha256` が `hello` の SHA-256 と一致する。`list_files` に出て、`delete_file` で消える |
+| F2 | 700 KiB 超のファイルを `offset` で分けて `put_file` し、`get_file` を `offset` で分けて取る | 最後の `size`・`sha256` がホスト上のファイル（`Get-FileHash`）と一致。`offset` を間違えると `conflict` |
+| F3 | 置き場所の下に、外へのシンボリックリンク（`mklink "%LOCALAPPDATA%\PuppetRemo\inbox\sym.txt" C:\SmokeFiles\secret.txt`）とジャンクション（`mklink /J "%LOCALAPPDATA%\PuppetRemo\inbox\junc" C:\SmokeFiles`）を作る。`get_file` に `sym.txt`・`junc/secret.txt`、`put_file` に `junc/new.txt`、`delete_file` に `junc/secret.txt`・`sym.txt` | すべて `invalid_argument`。`C:\SmokeFiles` に新しいファイルができず、`secret.txt` は変わらない。`list_files` にリンクが出ない |
+| F4 | OneDrive・クラウドのプレースホルダーなど、リパースポイント属性のあるファイルを置き場所に置いて `get_file` | `invalid_argument`（属性があるものは拒否する。通常のファイルは影響を受けない） |
+| F5 | `..\x`・`C:\Windows\win.ini`・`\\host\share\x`・`\\?\C:\x`・`a.txt:s`・`CON`・`NUL.txt`・`a.` を `put_file` / `get_file` に渡す | すべて `invalid_argument`。置き場所の外には何もできない |
+| F6 | 設定画面の「ファイル転送」で 1 ファイルの上限を 10 バイト・全体を 15 バイトにして保存し、11 バイトと 6 バイトを `put_file` | 11 バイトは `file_too_large`、（10 バイトのファイルがあるとき）6 バイトの追加は `file_store_full`。何も書かれない。保存は監査（`settings.update`）に残る |
+| F7 | 設定画面で置き場所を別のフォルダ（例 `D:\QA`）に変えて `put_file` | そのフォルダに置かれる。UNC（`\\host\share`）・相対パス・ドライブの直下（`D:\`）は保存できず、アプリのデータフォルダ（`%LOCALAPPDATA%\puppet-remo`）と重ねるとファイル転送が `invalid_argument` になる |
+| F8 | リースを別のクライアントが保持している間に 4 つのツールを呼ぶ。キルスイッチを発動して呼ぶ | `lease_held_by_other` / `kill_switch_active`。ファイルは変わらない |
+| F9 | 監査ログ（`/audit`）を見る | `tool.put_file` などに相対パス・大きさ・SHA-256・結果が残り、ファイルの中身は残らない |
+
 
 ### 4.17 M1 の実機確認（Issue #15）の項目と手順の対応
 
@@ -608,3 +626,4 @@ Issue #15「Windows 実機・実 tailscaled での確認（PR #14 で未確認�
 | — | 2026-11-18 | §4.7 の P2 を表示名（Nefos Remote）に合わせ、旧名の版からの更新 P3 とアンインストール P4 を追加（未確認）。製品名の prose を Nefos Remote に改めた | #188 |
 | — | 2026-11-28 | §3.10.5（`screenshot` の `window_id`・`include_owned`。W1〜W13。#269。未確認）を追加 | #269 |
 | — | 2026-11-28 | §4.18 にホストの実入力による一時停止の実機確認 H1〜H10 を追加（未確認） | #270 |
+| — | 2026-11-28 | §4.19（ファイル転送。#264。FR-M27・FR-S24）を追加 |

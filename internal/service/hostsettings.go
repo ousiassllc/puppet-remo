@@ -61,6 +61,10 @@ type HostSettings struct {
 	AuditRecordText        bool  // audit.record_text（既定 false。FR-AU03）
 	AuditRetentionDays     int   // audit.retention_days（1〜36500。既定 30。FR-AU04）
 	AuditThumbsMaxBytes    int64 // audit.thumbs_max_bytes（1〜2^53。既定 1 GiB。単位はバイト。FR-AU04）
+	// ファイル転送（#264。FR-S24）。MCP の put_file などが使う置き場所と上限。MCP からは変えられない。
+	FileTransferRoot          string // file_transfer.root（絶対パス。空なら既定の %LOCALAPPDATA%\PuppetRemo\inbox）
+	FileTransferMaxFileBytes  int64  // file_transfer.max_file_bytes（1〜2^53。既定 100 MiB）
+	FileTransferMaxTotalBytes int64  // file_transfer.max_total_bytes（1〜2^53。既定 1 GiB）
 	// ホストの実入力による一時停止（#270。FR-M30）。
 	HostInputPauseEnabled bool // hostinput.pause_enabled（既定 true）
 	HostInputPauseIdleSec int  // hostinput.pause_idle_sec（1〜600。既定 5）
@@ -83,6 +87,9 @@ const (
 	FieldAuditRecordText        = "audit.record_text"
 	FieldAuditRetentionDays     = "audit.retention_days"
 	FieldAuditThumbsMaxBytes    = "audit.thumbs_max_bytes"
+	FieldFileTransferRoot       = settingFileTransferRoot
+	FieldFileTransferMaxFile    = settingFileTransferMaxFile
+	FieldFileTransferMaxTotal   = settingFileTransferMaxTotal
 	FieldHostInputPauseEnabled  = settingHostInputPauseEnabled
 	FieldHostInputPauseIdleSec  = settingHostInputPauseIdleSec
 	FieldUpdateApplyMode        = "update.apply_mode"
@@ -132,6 +139,17 @@ func (s HostSettings) Validate() error {
 	}
 	if s.HostInputPauseIdleSec < minHostInputPauseIdleSec || s.HostInputPauseIdleSec > maxHostInputPauseIdleSec {
 		bad[FieldHostInputPauseIdleSec] = fmt.Sprintf("%d〜%d 秒の整数を指定してください。", minHostInputPauseIdleSec, maxHostInputPauseIdleSec)
+	}
+	if s.FileTransferRoot != "" {
+		if err := domain.ValidateTransferRoot(s.FileTransferRoot); err != nil {
+			bad[FieldFileTransferRoot] = "ドライブ文字で始まる絶対パスを、末尾の「\\」・「..」なしで指定してください（ネットワーク共有・UNC・ドライブの直下は不可）。空なら既定の場所を使います。"
+		}
+	}
+	if s.FileTransferMaxFileBytes < 1 || s.FileTransferMaxFileBytes > maxJSONInteger {
+		bad[FieldFileTransferMaxFile] = fmt.Sprintf("1〜%d バイトの整数を指定してください。", maxJSONInteger)
+	}
+	if s.FileTransferMaxTotalBytes < 1 || s.FileTransferMaxTotalBytes > maxJSONInteger {
+		bad[FieldFileTransferMaxTotal] = fmt.Sprintf("1〜%d バイトの整数を指定してください。", maxJSONInteger)
 	}
 	if s.UpdateApplyMode != UpdateApplyConfirm && s.UpdateApplyMode != UpdateApplyAutoIdle {
 		bad[FieldUpdateApplyMode] = "「ホストが確認して適用」か「アイドル時に自動で適用」を選んでください。"
@@ -257,6 +275,18 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 	if err != nil {
 		return HostSettings{}, err
 	}
+	fileRoot, err := h.loadFileTransferRoot(ctx)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	fileMax, err := h.loadFileTransferInt(ctx, settingFileTransferMaxFile, domain.DefaultFileMaxBytes)
+	if err != nil {
+		return HostSettings{}, err
+	}
+	fileTotal, err := h.loadFileTransferInt(ctx, settingFileTransferMaxTotal, domain.DefaultFileTotalMaxBytes)
+	if err != nil {
+		return HostSettings{}, err
+	}
 	applyMode, err := loadUpdateApplyMode(ctx, h.cfg.Settings)
 	if err != nil {
 		return HostSettings{}, err
@@ -286,6 +316,7 @@ func (h *hostSettings) Load(ctx context.Context) (HostSettings, error) {
 		LeaseIdleTimeoutSec: idle, ViewerDefaultQuality: quality, ViewerDefaultFPS: fps,
 		AuditThumbnailsEnabled: thumbsOn, AuditRecordText: recordText, AuditRetentionDays: int(retention),
 		AuditThumbsMaxBytes: thumbsMax, HostInputPauseEnabled: pause.Enabled, HostInputPauseIdleSec: int(pause.Idle / time.Second),
+		FileTransferRoot: fileRoot, FileTransferMaxFileBytes: fileMax, FileTransferMaxTotalBytes: fileTotal,
 		UpdateApplyMode: applyMode, UpdateChannel: string(channel), Autostart: autostart,
 	}, nil
 }
@@ -296,6 +327,33 @@ func (h *hostSettings) loadAuditInt(ctx context.Context, key string, def, upper 
 	v, invalid, err := readBoundedInt(ctx, h.cfg.Settings, key, def, upper)
 	if invalid {
 		h.log.Warn("invalid audit retention setting; using the default", "key", key, "default", def)
+	}
+	return v, err
+}
+
+// loadFileTransferRoot は file_transfer.root を設定画面に出す値として読む。未設定は空（既定の場所）。文字列なら、形が不正でも
+// そのまま返す（画面に出して、保存し直して直せるようにする。使う側の FileTransfer は不正な値のとき fail closed で使えない）。文字列でなければ空にして警告する。
+func (h *hostSettings) loadFileTransferRoot(ctx context.Context) (string, error) {
+	raw, ok, err := h.cfg.Settings.Get(ctx, settingFileTransferRoot)
+	if err != nil {
+		return "", fmt.Errorf("read setting %s: %w", settingFileTransferRoot, err)
+	}
+	if !ok {
+		return "", nil
+	}
+	var root string
+	if err := json.Unmarshal(raw, &root); err != nil {
+		h.log.Warn("invalid file transfer folder setting; file transfer is disabled until it is saved again", "key", settingFileTransferRoot)
+		return "", nil
+	}
+	return root, nil
+}
+
+// loadFileTransferInt は file_transfer の上限（バイト）を、FileTransfer と同じ規則で読む（不正な値は既定値と警告）。
+func (h *hostSettings) loadFileTransferInt(ctx context.Context, key string, def int64) (int64, error) {
+	v, invalid, err := readBoundedInt(ctx, h.cfg.Settings, key, def, maxJSONInteger)
+	if invalid {
+		h.log.Warn("invalid file transfer size limit setting; using the default", "key", key, "default", def)
 	}
 	return v, err
 }
@@ -349,6 +407,7 @@ func ViewerDefaults(ctx context.Context, settings repository.Settings) (quality,
 
 func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, error) {
 	s.KillSwitchHotkey = strings.TrimSpace(s.KillSwitchHotkey)
+	s.FileTransferRoot = cleanFileTransferRoot(s.FileTransferRoot)
 	if err := s.Validate(); err != nil {
 		return HostSettings{}, err
 	}
@@ -384,6 +443,9 @@ func (h *hostSettings) Save(ctx context.Context, s HostSettings) (HostSettings, 
 		{settingAuditRecordText, s.AuditRecordText, func(a *HostSettings) { a.AuditRecordText = s.AuditRecordText }},
 		{settingAuditRetentionDays, s.AuditRetentionDays, func(a *HostSettings) { a.AuditRetentionDays = s.AuditRetentionDays }},
 		{settingAuditThumbsMaxBytes, s.AuditThumbsMaxBytes, func(a *HostSettings) { a.AuditThumbsMaxBytes = s.AuditThumbsMaxBytes }},
+		{settingFileTransferRoot, s.FileTransferRoot, func(a *HostSettings) { a.FileTransferRoot = s.FileTransferRoot }},
+		{settingFileTransferMaxFile, s.FileTransferMaxFileBytes, func(a *HostSettings) { a.FileTransferMaxFileBytes = s.FileTransferMaxFileBytes }},
+		{settingFileTransferMaxTotal, s.FileTransferMaxTotalBytes, func(a *HostSettings) { a.FileTransferMaxTotalBytes = s.FileTransferMaxTotalBytes }},
 		{settingHostInputPauseEnabled, s.HostInputPauseEnabled, func(a *HostSettings) { a.HostInputPauseEnabled = s.HostInputPauseEnabled }},
 		{settingHostInputPauseIdleSec, s.HostInputPauseIdleSec, func(a *HostSettings) { a.HostInputPauseIdleSec = s.HostInputPauseIdleSec }},
 		{settingUpdateApplyMode, s.UpdateApplyMode, func(a *HostSettings) { a.UpdateApplyMode = s.UpdateApplyMode }},
@@ -456,6 +518,9 @@ func (h *hostSettings) auditEntry(old, updated HostSettings) (entry repository.A
 		{FieldAuditRecordText, old.AuditRecordText != updated.AuditRecordText, nil},
 		{FieldAuditRetentionDays, old.AuditRetentionDays != updated.AuditRetentionDays, updated.AuditRetentionDays},
 		{FieldAuditThumbsMaxBytes, old.AuditThumbsMaxBytes != updated.AuditThumbsMaxBytes, updated.AuditThumbsMaxBytes},
+		{FieldFileTransferRoot, old.FileTransferRoot != updated.FileTransferRoot, updated.FileTransferRoot},
+		{FieldFileTransferMaxFile, old.FileTransferMaxFileBytes != updated.FileTransferMaxFileBytes, updated.FileTransferMaxFileBytes},
+		{FieldFileTransferMaxTotal, old.FileTransferMaxTotalBytes != updated.FileTransferMaxTotalBytes, updated.FileTransferMaxTotalBytes},
 		{FieldHostInputPauseEnabled, old.HostInputPauseEnabled != updated.HostInputPauseEnabled, updated.HostInputPauseEnabled},
 		{FieldHostInputPauseIdleSec, old.HostInputPauseIdleSec != updated.HostInputPauseIdleSec, updated.HostInputPauseIdleSec},
 		{FieldUpdateApplyMode, old.UpdateApplyMode != updated.UpdateApplyMode, updated.UpdateApplyMode},

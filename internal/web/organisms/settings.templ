@@ -104,6 +104,17 @@ templ SettingsForm(f view.SettingsForm) {
 				@atoms.Input(atoms.InputProps{ID: "set-audit-cap", Name: "audit.thumbs_max_bytes", Type: "number", Value: f.Values.AuditThumbsMaxBytes, Required: true, Invalid: f.Errors.AuditThumbsMaxBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
 			}
 		}
+		@molecules.FieldGroup("ファイル転送", "", atoms.Attrs{"data-settings-group": "file-transfer"}) {
+			@molecules.FormField("set-file-root", "置き場所（フォルダ）", "リモートのクライアントがファイルを置く・取り出す・消せるフォルダです（MCP の put_file / get_file / list_files / delete_file）。この中だけで、外には出られません。空なら既定の %LOCALAPPDATA%\\PuppetRemo\\inbox（なければ作ります）。ドライブ文字で始まるローカルの絶対パスを指定してください。リモートからは変更できません。", f.Errors.FileTransferRoot) {
+				@atoms.Input(atoms.InputProps{ID: "set-file-root", Name: "file_transfer.root", Type: "text", Value: f.Values.FileTransferRoot, Invalid: f.Errors.FileTransferRoot != "", Placeholder: "%LOCALAPPDATA%\\PuppetRemo\\inbox", Attrs: atoms.Attrs{"autocomplete": "off", "spellcheck": "false"}})
+			}
+			@molecules.FormField("set-file-max", "1 ファイルの大きさの上限（バイト）", "1〜9007199254740992。超えるファイルは置けません。既定は 104857600（100 MiB）。", f.Errors.FileTransferMaxFileBytes) {
+				@atoms.Input(atoms.InputProps{ID: "set-file-max", Name: "file_transfer.max_file_bytes", Type: "number", Value: f.Values.FileTransferMaxFileBytes, Required: true, Invalid: f.Errors.FileTransferMaxFileBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
+			}
+			@molecules.FormField("set-file-total", "置き場所全体の大きさの上限（バイト）", "1〜9007199254740992。置き場所の中のファイルの合計がこれを超える置き方はできません。既定は 1073741824（1 GiB）。", f.Errors.FileTransferMaxTotalBytes) {
+				@atoms.Input(atoms.InputProps{ID: "set-file-total", Name: "file_transfer.max_total_bytes", Type: "number", Value: f.Values.FileTransferMaxTotalBytes, Required: true, Invalid: f.Errors.FileTransferMaxTotalBytes != "", Attrs: numberAttrs("1", "9007199254740992")})
+			}
+		}
 		@molecules.FieldGroup("更新", "", atoms.Attrs{"data-settings-group": "update"}) {
 			@molecules.FormField("set-update-channel", "更新のチャネル", "追いかける版です。署名を検証できた更新だけを適用します。ナイトリーから正式版へは、新しい正式版が出たときに切り替わります。", f.Errors.UpdateChannel) {
 				@atoms.SelectWith(atoms.SelectProps{ID: "set-update-channel", Name: "update.channel", Options: updateChannelOptions(f.Values.UpdateChannel), Invalid: f.Errors.UpdateChannel != ""})
